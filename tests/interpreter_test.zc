@@ -659,6 +659,18 @@ fn run_tests() -> void {
     check_int((char*)"call: ArrayProto.indexOf",    (char*)r"Array.prototype.indexOf.call([10,20,30], 20)", 1);
     check_int((char*)"apply: ArrayProto.push",      (char*)r"let a = []; Array.prototype.push.apply(a, [1,2,3]); a.length", 3);
 
+    // --- String constructor + prototype expansion ------------------
+    check_string((char*)"String.fromCharCode: ABC",   (char*)r"String.fromCharCode(65,66,67)", (char*)"ABC");
+    check_string((char*)"str.charAt(1)",              (char*)r"'hello'.charAt(1)", (char*)"e");
+    check_string((char*)"str.charAt(OOB)",            (char*)r"'hi'.charAt(99)", (char*)"");
+    check_int((char*)"str.charCodeAt(0)",             (char*)r"'A'.charCodeAt(0)", 65);
+    check_string((char*)"str.toUpperCase",            (char*)r"'hello'.toUpperCase()", (char*)"HELLO");
+    check_string((char*)"str.toLowerCase",            (char*)r"'WORLD'.toLowerCase()", (char*)"world");
+    check_string((char*)"str.concat 2 args",          (char*)r"'abc'.concat('def','ghi')", (char*)"abcdefghi");
+    // Object-literal string + numeric keys (parser/compiler enhancements)
+    check_int((char*)"obj literal: string key",       (char*)r"({'a': 1, 'b': 2}).b", 2);
+    check_int((char*)"obj literal: numeric key",      (char*)r"({0: 99, 1: 88})[0]", 99);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

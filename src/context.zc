@@ -1172,6 +1172,93 @@ fn host_string_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return ctx_intern_string_take(ctx, buf, outlen);
 }
 
+fn host_string_char_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_string(this_val) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let s = zjs_as_string(this_val);
+    let idx: i32 = 0;
+    if argc >= 1 { idx = (i32)zjs_to_double(args[0]); }
+    if idx < 0 || (u32)idx >= s.length {
+        return ctx_intern_string(ctx, (char*)"", 0);
+    }
+    let buf: char* = NULL;
+    let off = (u32)idx;
+    let sd = s.data;
+    raw {
+        buf = (char*)malloc(2);
+        buf[0] = sd[off];
+        buf[1] = '\0';
+    }
+    return ctx_intern_string_take(ctx, buf, 1);
+}
+
+fn host_string_char_code_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_string(this_val) == 0 {
+        let nan: f64 = 0.0; raw { nan = (double)NAN; }
+        return zjs_double(nan);
+    }
+    let s = zjs_as_string(this_val);
+    let idx: i32 = 0;
+    if argc >= 1 { idx = (i32)zjs_to_double(args[0]); }
+    if idx < 0 || (u32)idx >= s.length {
+        let nan: f64 = 0.0; raw { nan = (double)NAN; }
+        return zjs_double(nan);
+    }
+    let c = (u8)s.data[(u32)idx];
+    return zjs_int32((i32)c);
+}
+
+fn host_string_to_upper_case(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_string(this_val) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let s = zjs_as_string(this_val);
+    let buf: char* = NULL;
+    let n = s.length;
+    let sd = s.data;
+    raw {
+        buf = (char*)malloc(n + 1);
+        for (uint32_t i = 0; i < n; i++) {
+            char c = sd[i];
+            buf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
+        }
+        buf[n] = '\0';
+    }
+    return ctx_intern_string_take(ctx, buf, n);
+}
+
+fn host_string_to_lower_case(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_string(this_val) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let s = zjs_as_string(this_val);
+    let buf: char* = NULL;
+    let n = s.length;
+    let sd = s.data;
+    raw {
+        buf = (char*)malloc(n + 1);
+        for (uint32_t i = 0; i < n; i++) {
+            char c = sd[i];
+            buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
+        }
+        buf[n] = '\0';
+    }
+    return ctx_intern_string_take(ctx, buf, n);
+}
+
+fn host_string_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_string(this_val) == 0 { this_val = zjs_to_string(ctx, this_val); }
+    let result = this_val;
+    let i: u32 = 0;
+    while i < argc {
+        let other = args[i];
+        if zjs_is_string(other) == 0 { other = zjs_to_string(ctx, other); }
+        result = zjs_string_concat(ctx, result, other);
+        i = i + 1;
+    }
+    return result;
+}
+
 fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = ctx.host_this;
     if zjs_is_string(this_val) == 0 {
@@ -2090,6 +2177,23 @@ fn host_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_to_string(ctx, args[0]);
 }
 
+// String.fromCharCode(...codes) — build a string from numeric char codes.
+// MVP: ASCII only, takes each arg's truncated u8.
+fn host_string_from_char_code(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let buf: char* = NULL;
+    let n = argc;
+    raw { buf = (char*)malloc(n + 1); }
+    let i: u32 = 0;
+    while i < argc {
+        let cu = (u8)((u32)zjs_to_double(args[i]) & 255);
+        buf[i] = (char)cu;
+        i = i + 1;
+    }
+    raw { buf[n] = 0; }
+    return ctx_intern_string_take(ctx, buf, argc);
+}
+
 // --- Error subtypes (Phase 3.8c) ----------------------------------
 //
 // ReferenceError / TypeError / RangeError — each builds an object
@@ -2310,7 +2414,17 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let eval_ptr:    void* = NULL; raw { eval_ptr    = (void*)host_eval_stub; }
     ctx_register_host_function(ctx, (char*)"Boolean",        bool_ptr);
     ctx_register_host_function(ctx, (char*)"Number",         num_ptr);
-    ctx_register_host_function(ctx, (char*)"String",         str_ptr);
+    let strv_full = ctx_register_host_function(ctx, (char*)"String", str_ptr);
+    // Attach String.fromCharCode via .props on the constructor.
+    let strv_hf = zjs_as_host_function(strv_full);
+    let fcc_ptr: void* = NULL; raw { fcc_ptr = (void*)host_string_from_char_code; }
+    let fcc_v = ctx_make_host_function(ctx, (char*)"fromCharCode", fcc_ptr);
+    if strv_hf.props == NULL {
+        let pv = ctx_new_object(ctx);
+        strv_hf.props = zjs_as_object(pv);
+    }
+    object_set(ctx, strv_hf.props,
+               ctx_intern_atom(ctx, (char*)"fromCharCode", 12), fcc_v);
     ctx_register_host_function(ctx, (char*)"ReferenceError", referr_ptr);
     ctx_register_host_function(ctx, (char*)"TypeError",      typerr_ptr);
     ctx_register_host_function(ctx, (char*)"RangeError",     rngerr_ptr);
@@ -2444,6 +2558,21 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"slice", slice_ptr));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"split", 5),
                ctx_make_host_function(ctx, (char*)"split", split_ptr));
+    let scat_ptr:   void* = NULL; raw { scat_ptr   = (void*)host_string_concat; }
+    let scha_ptr:   void* = NULL; raw { scha_ptr   = (void*)host_string_char_at; }
+    let scca_ptr:   void* = NULL; raw { scca_ptr   = (void*)host_string_char_code_at; }
+    let suc_ptr:    void* = NULL; raw { suc_ptr    = (void*)host_string_to_upper_case; }
+    let slc_ptr:    void* = NULL; raw { slc_ptr    = (void*)host_string_to_lower_case; }
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"concat", 6),
+               ctx_make_host_function(ctx, (char*)"concat", scat_ptr));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"charAt", 6),
+               ctx_make_host_function(ctx, (char*)"charAt", scha_ptr));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"charCodeAt", 10),
+               ctx_make_host_function(ctx, (char*)"charCodeAt", scca_ptr));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"toUpperCase", 11),
+               ctx_make_host_function(ctx, (char*)"toUpperCase", suc_ptr));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"toLowerCase", 11),
+               ctx_make_host_function(ctx, (char*)"toLowerCase", slc_ptr));
     ctx.string_proto = string_proto;
 
     // --- JSON namespace (Phase 3.5b) ---
