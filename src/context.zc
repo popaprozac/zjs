@@ -10,6 +10,7 @@ import "string.h" as libc_str;
 import "./value.zc";
 
 raw {
+    #include <stdio.h>
     #include <stdlib.h>
     #include <string.h>
 }
@@ -25,13 +26,14 @@ struct ZjsContext {
     global_count:   u32;
     global_cap:     u32;
 
-    // All compiled functions, owned by the context. Freed on
-    // zjs_free_context. Stored as void* because Function lives in
-    // bytecode.zc (which imports value.zc, which we don't want a
-    // back-edge from).
-    functions:      void**;
-    function_count: u32;
-    function_cap:   u32;
+    // All heap-allocated cells owned by the context (Functions,
+    // Strings, eventually Objects/Arrays). Each cell starts with a
+    // CellHeader whose type_tag drives the free dispatch on
+    // zjs_free_context. Stored as void* because cell concrete types
+    // live in other modules.
+    cells:          void**;
+    cell_count:     u32;
+    cell_cap:       u32;
 }
 
 fn zjs_new_context() -> ZjsContext* {
@@ -54,39 +56,114 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     let globals = ctx.globals;
     raw { free(globals); }
 
-    // Free all compiled functions registered with this context.
+    // Free every heap cell, dispatched by its type tag.
     let j: u32 = 0;
-    while j < ctx.function_count {
-        let fp = ctx.functions[j];
-        raw {
-            // Each function entry has the shape declared in bytecode.zc;
-            // we use function_free, which casts and releases.
-            // Caller side ensures the void* came from function_new().
-            extern void function_free_void(void* f);
-            function_free_void(fp);
+    while j < ctx.cell_count {
+        let cp = ctx.cells[j];
+        let tag: u8 = 0;
+        raw { tag = ((CellHeader*)cp)->type_tag; }
+        if tag == TAG_FUNCTION {
+            raw {
+                extern void function_free_void(void* f);
+                function_free_void(cp);
+            }
+        } else if tag == TAG_STRING {
+            string_free_void(cp);
         }
         j = j + 1;
     }
-    let fns = ctx.functions;
+    let cells = ctx.cells;
     raw {
-        free(fns);
+        free(cells);
         free(ctx);
     }
 }
 
-// Append a function to the context's owned-functions list. Called by
-// the compiler whenever it produces a fresh Function value.
-fn ctx_register_function(ctx: ZjsContext*, f: void*) -> void {
-    if ctx.function_count >= ctx.function_cap {
-        let new_cap: u32 = if ctx.function_cap == 0 { 8 } else { ctx.function_cap * 2 };
-        let old = ctx.functions;
+// Append a heap cell to the context's owned-cells list. Called whenever
+// a new Function / String / etc. is allocated by the compiler or
+// interpreter.
+fn ctx_register_cell(ctx: ZjsContext*, p: void*) -> void {
+    if ctx.cell_count >= ctx.cell_cap {
+        let new_cap: u32 = if ctx.cell_cap == 0 { 16 } else { ctx.cell_cap * 2 };
+        let old = ctx.cells;
         let new_arr: void** = NULL;
         raw { new_arr = (void**)realloc(old, new_cap * sizeof(void*)); }
-        ctx.functions = new_arr;
-        ctx.function_cap = new_cap;
+        ctx.cells = new_arr;
+        ctx.cell_cap = new_cap;
     }
-    ctx.functions[ctx.function_count] = f;
-    ctx.function_count = ctx.function_count + 1;
+    ctx.cells[ctx.cell_count] = p;
+    ctx.cell_count = ctx.cell_count + 1;
+}
+
+// Intern a string by copying the input bytes. The returned ZjsValue
+// is a NaN-boxed cell pointer registered with the context.
+fn ctx_intern_string(ctx: ZjsContext*, data: char*, length: u32) -> ZjsValue {
+    let s = zjs_string_new(data, length);
+    ctx_register_cell(ctx, (void*)s);
+    return zjs_cell_from_ptr((void*)s);
+}
+
+// Take ownership of an already-malloc'd buffer. Used by zjs_string_concat
+// which allocates the result buffer itself.
+fn ctx_intern_string_take(ctx: ZjsContext*, data: char*, length: u32) -> ZjsValue {
+    let s = zjs_string_new_take(data, length);
+    ctx_register_cell(ctx, (void*)s);
+    return zjs_cell_from_ptr((void*)s);
+}
+
+// =====================================================================
+// ToString — produces a string ZjsValue from any input. Allocates on
+// the context's cell list. Lives here (not in value.zc) because it
+// needs to allocate cells via ctx_intern_string.
+// =====================================================================
+
+fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
+    if zjs_is_string(v) != 0 { return v; }
+
+    let buf: char[64];
+    let len: usize = 0;
+
+    if zjs_is_int32(v) != 0 {
+        let n = zjs_as_int32(v);
+        raw { len = (size_t)snprintf(buf, 64, "%d", (int)n); }
+    } else if zjs_is_double(v) != 0 {
+        let d = zjs_as_double(v);
+        raw { len = (size_t)snprintf(buf, 64, "%g", d); }
+    } else if zjs_is_bool(v) != 0 {
+        if zjs_as_bool(v) != 0 { raw { len = (size_t)snprintf(buf, 64, "true"); } }
+        else                    { raw { len = (size_t)snprintf(buf, 64, "false"); } }
+    } else if zjs_is_null(v) != 0 {
+        raw { len = (size_t)snprintf(buf, 64, "null"); }
+    } else if zjs_is_undefined(v) != 0 {
+        raw { len = (size_t)snprintf(buf, 64, "undefined"); }
+    } else {
+        raw { len = (size_t)snprintf(buf, 64, "[object]"); }
+    }
+
+    return ctx_intern_string(ctx, &buf[0], (u32)len);
+}
+
+// String concatenation: a + b where at least one is a string. Both
+// operands are coerced to strings; result is a fresh interned string
+// on the context.
+fn zjs_string_concat(ctx: ZjsContext*, a: ZjsValue, b: ZjsValue) -> ZjsValue {
+    let sa_val = zjs_to_string(ctx, a);
+    let sb_val = zjs_to_string(ctx, b);
+    let sa = zjs_as_string(sa_val);
+    let sb = zjs_as_string(sb_val);
+    let total = sa.length + sb.length;
+    let buf: char* = NULL;
+    let sa_data = sa.data;
+    let sb_data = sb.data;
+    let sa_len = sa.length;
+    let sb_len = sb.length;
+    raw {
+        buf = (char*)malloc(total + 1);
+        memcpy(buf, sa_data, sa_len);
+        memcpy(buf + sa_len, sb_data, sb_len);
+        buf[total] = 0;
+    }
+    return ctx_intern_string_take(ctx, buf, total);
 }
 
 // Find an existing global by name. Returns -1 if not found (i32 so we

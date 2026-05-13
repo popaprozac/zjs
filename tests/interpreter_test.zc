@@ -105,6 +105,32 @@ fn check_undefined(name: char*, source: char*) -> void {
     pass(name);
 }
 
+fn check_string(name: char*, source: char*, expected: char*) -> void {
+    let ctx = zjs_new_context();
+    defer zjs_free_context(ctx);
+    let v = zjs_eval(ctx, source);
+    if zjs_is_string(v) == 0 {
+        fail_msg(name, (char*)"result not a string");
+        return;
+    }
+    let s = zjs_as_string(v);
+    let data = s.data;
+    let eq: int = 0;
+    raw {
+        size_t want_len = strlen(expected);
+        eq = (s->length == (uint32_t)want_len && memcmp(s->data, expected, want_len) == 0) ? 1 : 0;
+    }
+    if eq == 0 {
+        g_fail = g_fail + 1;
+        raw {
+            fprintf(stderr, "[FAIL] %s — got \"%.*s\", expected \"%s\" (source: \"%s\")\n",
+                    name, (int)s->length, s->data, expected, source);
+        }
+        return;
+    }
+    pass(name);
+}
+
 fn run_tests() -> void {
     // --- Literals --------------------------------------------------
     check_int   ((char*)"int literal",     (char*)"42",         42);
@@ -223,6 +249,43 @@ fn run_tests() -> void {
 
     // Calls in expression position
     check_int((char*)"call in expr",  (char*)r"function f(x) { return x + 1; } f(1) + f(2) + f(3)", 9);
+
+    // --- Strings (Phase 3.1a) ---------------------------------------
+    check_string((char*)"str literal dq",  (char*)"\"hello\"",     (char*)"hello");
+    check_string((char*)"str literal sq",  (char*)"'hello'",       (char*)"hello");
+    check_string((char*)"str empty",       (char*)"\"\"",          (char*)"");
+    check_string((char*)"str escape \\n",  (char*)"\"a\\nb\"",     (char*)"a\nb");
+    check_string((char*)"str escape \\t",  (char*)"\"a\\tb\"",     (char*)"a\tb");
+    check_string((char*)"str escape \\\\", (char*)"\"a\\\\b\"",    (char*)"a\\b");
+    check_string((char*)"str escape \\\"", (char*)"\"a\\\"b\"",    (char*)"a\"b");
+
+    // String concat
+    check_string((char*)"concat str+str", (char*)"'foo' + 'bar'",   (char*)"foobar");
+    check_string((char*)"concat str+int", (char*)"'a' + 1",         (char*)"a1");
+    check_string((char*)"concat int+str", (char*)"1 + 'b'",         (char*)"1b");
+    check_string((char*)"concat double",  (char*)"'pi=' + 3.14",    (char*)"pi=3.14");
+    check_string((char*)"concat bool",    (char*)"'b=' + true",     (char*)"b=true");
+    check_string((char*)"concat null",    (char*)"'n=' + null",     (char*)"n=null");
+    check_string((char*)"concat undef",   (char*)"'u=' + undefined",(char*)"u=undefined");
+    check_string((char*)"concat chain",   (char*)"'a' + 'b' + 'c'", (char*)"abc");
+    check_string((char*)"concat expr",    (char*)"'sum: ' + (1 + 2 * 3)", (char*)"sum: 7");
+
+    // String storage in variables
+    check_string((char*)"str var",        (char*)"let s = 'world'; 'hello ' + s", (char*)"hello world");
+    check_string((char*)"str via fn",     (char*)r"function greet(name) { return 'hi, ' + name; } greet('Zach')", (char*)"hi, Zach");
+
+    // String equality
+    check_bool((char*)"str === same",     (char*)"'abc' === 'abc'", 1);
+    check_bool((char*)"str === diff",     (char*)"'abc' === 'abd'", 0);
+    check_bool((char*)"str === diff len", (char*)"'a' === 'aa'",    0);
+    check_bool((char*)"str !== diff",     (char*)"'abc' !== 'xyz'", 1);
+    check_bool((char*)"str loose eq",     (char*)"'foo' == 'foo'",  1);
+
+    // String ToBoolean
+    check_int((char*)"truthy str",        (char*)"if ('a') 1; else 2",       1);
+    check_int((char*)"falsy empty str",   (char*)"if ('') 1; else 2",        2);
+    check_bool((char*)"!empty str",       (char*)"!''",                       1);
+    check_bool((char*)"!truthy str",      (char*)"!'x'",                      0);
 }
 
 // Verify that globals persist across multiple zjs_eval calls on the

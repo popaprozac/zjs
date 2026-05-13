@@ -210,7 +210,12 @@ fn zjs_to_bool_coerce(v: ZjsValue) -> int {
     }
     if zjs_is_null(v) != 0      { return 0; }
     if zjs_is_undefined(v) != 0 { return 0; }
-    if zjs_is_cell(v) != 0      { return 1; }   // objects/strings are truthy (strings: TBD)
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        if s.length > 0 { return 1; }
+        return 0;
+    }
+    if zjs_is_cell(v) != 0      { return 1; }   // non-string objects are truthy
     return 0;
 }
 
@@ -317,6 +322,9 @@ fn zjs_strict_eq(a: ZjsValue, b: ZjsValue) -> int {
         if af == bf { return 1; }   // NaN != NaN by IEEE, correct
         return 0;
     }
+    if zjs_is_string(a) != 0 && zjs_is_string(b) != 0 {
+        return zjs_string_equals(zjs_as_string(a), zjs_as_string(b));
+    }
     // Different categories — equal only if bit-equal AND not a NaN double.
     if a.bits == b.bits { return 1; }
     return 0;
@@ -351,15 +359,25 @@ fn zjs_cmp_le(a: ZjsValue, b: ZjsValue) -> int {
 }
 
 // =====================================================================
-// Function values — NaN-boxed cell pointers. For Phase 3.0b every cell
-// is a function (no strings/arrays/objects yet); when those land we'll
-// add a cell header with a type tag and update is_cell to mean
-// "any heap object" while a separate predicate distinguishes functions.
+// Heap cells — every heap-allocated value starts with a CellHeader.
+// The NaN-box "cell" predicate (is_cell) checks the bit pattern; the
+// header's type_tag then distinguishes Function / String / (later)
+// Object / Array.
 // =====================================================================
 
-// Note: ZjsValue's bit layout puts pointers in the low 48 bits with
-// high 16 zero. We don't import the Function type here (bytecode.zc
-// imports value.zc, not the other way), so we accept it as void*.
+def TAG_FUNCTION: u8 = 0;
+def TAG_STRING:   u8 = 1;
+
+struct CellHeader {
+    type_tag: u8;
+    _pad:     u8;
+}
+
+struct ZjsString {
+    header: CellHeader;
+    length: u32;
+    data:   char*;     // null-terminated, owned (freed in string_free_void)
+}
 
 fn zjs_cell_from_ptr(p: void*) -> ZjsValue {
     let bits: u64 = 0;
@@ -373,3 +391,82 @@ fn zjs_cell_as_ptr(v: ZjsValue) -> void* {
     raw { p = (void*)(uintptr_t)bits; }
     return p;
 }
+
+// --- Tag-aware predicates -------------------------------------------
+
+fn zjs_cell_tag(v: ZjsValue) -> u8 {
+    if zjs_is_cell(v) == 0 { return 255; }
+    let p = zjs_cell_as_ptr(v);
+    let tag: u8 = 0;
+    raw { tag = ((CellHeader*)p)->type_tag; }
+    return tag;
+}
+
+fn zjs_is_function(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_FUNCTION { return 1; }
+    return 0;
+}
+
+fn zjs_is_string(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_STRING { return 1; }
+    return 0;
+}
+
+fn zjs_as_string(v: ZjsValue) -> ZjsString* {
+    let p = zjs_cell_as_ptr(v);
+    let s: ZjsString* = NULL;
+    raw { s = (ZjsString*)p; }
+    return s;
+}
+
+// --- String allocation ----------------------------------------------
+//
+// `zjs_string_new` copies the input bytes; `zjs_string_new_take` takes
+// ownership of an already-malloc'd, null-terminated buffer. Both
+// produce a cell that must be registered on a ZjsContext for cleanup
+// (the caller in context.zc handles that).
+
+fn zjs_string_new_take(data: char*, length: u32) -> ZjsString* {
+    let s: ZjsString* = NULL;
+    raw { s = (ZjsString*)calloc(1, sizeof(ZjsString)); }
+    s.header.type_tag = TAG_STRING;
+    s.length = length;
+    s.data = data;
+    return s;
+}
+
+fn zjs_string_new(data: char*, length: u32) -> ZjsString* {
+    let copy: char* = NULL;
+    raw {
+        copy = (char*)malloc(length + 1);
+        memcpy(copy, data, length);
+        copy[length] = 0;
+    }
+    return zjs_string_new_take(copy, length);
+}
+
+fn string_free_void(p: void*) -> void {
+    let s: ZjsString* = NULL;
+    raw { s = (ZjsString*)p; }
+    if s == NULL { return; }
+    let d = s.data;
+    raw { free(d); free(s); }
+}
+
+// Byte-equality for strings. Same length + same bytes.
+fn zjs_string_equals(a: ZjsString*, b: ZjsString*) -> int {
+    if a.length != b.length { return 0; }
+    if a == b { return 1; }
+    let len = a.length;
+    let ad = a.data;
+    let bd = b.data;
+    let eq: int = 0;
+    raw { eq = (memcmp(ad, bd, len) == 0) ? 1 : 0; }
+    return eq;
+}
+
+// --- ToBoolean extension --------------------------------------------
+//
+// String ToBoolean: empty string is falsy, non-empty is truthy.
+// (Already covered by the existing is_cell branch returning 1 for
+// any cell, which is wrong for empty strings — patched here.)

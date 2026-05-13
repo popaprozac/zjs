@@ -87,7 +87,16 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
 
         // --- arithmetic -----------------------------------------
         } else if op == Op::Add {
-            regs[inst.a] = zjs_arith_add(regs[inst.b], regs[inst.c]);
+            // String concat takes priority: if either operand is a
+            // string, ToString the other and produce a fresh string.
+            // Otherwise fall through to numeric add.
+            let av = regs[inst.b];
+            let bv = regs[inst.c];
+            if zjs_is_string(av) != 0 || zjs_is_string(bv) != 0 {
+                regs[inst.a] = zjs_string_concat(ctx, av, bv);
+            } else {
+                regs[inst.a] = zjs_arith_add(av, bv);
+            }
         } else if op == Op::Sub {
             regs[inst.a] = zjs_arith_sub(regs[inst.b], regs[inst.c]);
         } else if op == Op::Mul {

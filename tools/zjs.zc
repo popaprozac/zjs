@@ -193,6 +193,14 @@ fn print_value(v: ZjsValue) -> void {
     }
     if zjs_is_null(v) != 0      { println "null"; return; }
     if zjs_is_undefined(v) != 0 { println "undefined"; return; }
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        let data = s.data;
+        let len  = s.length;
+        raw { fwrite(data, 1, len, stdout); fputc('\n', stdout); }
+        return;
+    }
+    if zjs_is_function(v) != 0  { println "[function]"; return; }
     if zjs_is_cell(v) != 0      { println "[cell]"; return; }
     println "[unknown value]";
 }

@@ -129,6 +129,7 @@ fn make_inst_i16(op: Op, v: i32) -> Inst {
 // functions and stores them on the context.
 
 struct Function {
+    header:         CellHeader; // { type_tag = TAG_FUNCTION } — must be first field
     code:           Inst*;     // bytecode (heap-allocated)
     code_len:       usize;
     constants:      ZjsValue*; // constant pool
@@ -142,6 +143,7 @@ fn function_new() -> Function* {
     raw {
         f = (Function*)calloc(1, sizeof(Function));
     }
+    f.header.type_tag = TAG_FUNCTION;
     return f;
 }
 

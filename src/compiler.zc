@@ -239,6 +239,9 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         emit(c, make_inst_a(Op::LoadUndefined, dst));
         return dst;
     }
+    if k == NodeKind::StringExpr {
+        return compile_string_literal(c, node);
+    }
     if k == NodeKind::IdentExpr {
         let name = c.source + node.start;
         let name_len = node.end - node.start;
@@ -456,6 +459,60 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
 }
 
 // =====================================================================
+// String literals. Resolve escape sequences at compile time, intern
+// the resulting bytes as a heap string on the context, push the cell
+// pointer into this function's constant pool.
+// =====================================================================
+
+fn compile_string_literal(c: Compiler*, node: AstNode*) -> u8 {
+    // node.start/end include the surrounding quotes.
+    let raw_start = node.start + 1;
+    let raw_end   = if node.end > 0 { node.end - 1 } else { node.start + 1 };
+    let raw_len   = if raw_end > raw_start { raw_end - raw_start } else { 0 };
+
+    // Decoded length is at most raw_len (escapes shrink, never grow).
+    let buf: char* = NULL;
+    raw { buf = (char*)malloc(raw_len + 1); }
+
+    let out: u32 = 0;
+    let i: u32 = 0;
+    let src = c.source;
+    while i < raw_len {
+        let ch = src[raw_start + i];
+        if ch == 92 && i + 1 < raw_len {        // backslash
+            let nx = src[raw_start + i + 1];
+            let mapped: char = 0;
+            if      nx == 110 { mapped = 10; }   // \n
+            else if nx == 116 { mapped = 9; }    // \t
+            else if nx == 114 { mapped = 13; }   // \r
+            else if nx == 98  { mapped = 8; }    // \b
+            else if nx == 102 { mapped = 12; }   // \f
+            else if nx == 118 { mapped = 11; }   // \v
+            else if nx == 48  { mapped = 0; }    // \0
+            else              { mapped = nx; }   // \\ \" \' and anything else: literal
+            buf[out] = mapped;
+            out = out + 1;
+            i = i + 2;
+        } else {
+            buf[out] = ch;
+            out = out + 1;
+            i = i + 1;
+        }
+    }
+    buf[out] = 0;
+
+    // Take ownership: zjs_string_new_take doesn't copy. Register on
+    // the context so it's freed at zjs_free_context.
+    let s = zjs_string_new_take(buf, out);
+    ctx_register_cell(c.ctx, (void*)s);
+    let val = zjs_cell_from_ptr((void*)s);
+    let idx = add_const(c, val);
+    let dst = alloc_reg(c);
+    emit(c, make_inst_a_u16(Op::LoadConst, dst, idx));
+    return dst;
+}
+
+// =====================================================================
 // Function compilation. A FunctionDecl/FunctionExpr/ArrowFunc creates
 // a fresh child Compiler with its own register file and constants.
 // The resulting Function* is registered with the context (for cleanup)
@@ -537,7 +594,7 @@ fn compile_function_value(c: Compiler*, node: AstNode*) -> u8 {
     if f == NULL { c.had_error = true; return alloc_reg(c); }
     let fp: void* = NULL;
     raw { fp = (void*)f; }
-    ctx_register_function(c.ctx, fp);
+    ctx_register_cell(c.ctx, fp);
 
     let val = zjs_cell_from_ptr(fp);
     let idx = add_const(c, val);
@@ -680,7 +737,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         if f == NULL { c.had_error = true; return; }
         let fp: void* = NULL;
         raw { fp = (void*)f; }
-        ctx_register_function(c.ctx, fp);
+        ctx_register_cell(c.ctx, fp);
         let val = zjs_cell_from_ptr(fp);
         let idx = add_const(c, val);
         let r = alloc_reg(c);
