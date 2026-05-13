@@ -805,6 +805,77 @@ fn host_math_min(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 }
 
 // =====================================================================
+// Phase 3.4 — for-in / for-of iteration prepare.
+//
+// `kind` 0 = for-in (own enumerable string keys of an object); 1 = for-of
+// (element values; strings yield each char as a 1-char string). Non-
+// iterables yield an empty array. Used by Op::IterPrepare.
+// =====================================================================
+
+fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
+    if kind == 0 {
+        // for-in: enumerate own string keys of an object.
+        if zjs_is_object(src) != 0 {
+            let o = zjs_as_object(src);
+            let count = o.cls.prop_count;
+            let arr_v = ctx_new_array(ctx, count);
+            let arr = zjs_as_array(arr_v);
+            let cls = o.cls;
+            while cls != NULL && cls.parent != NULL {
+                let name = cls.transition_name;
+                let slot = cls.transition_slot;
+                arr.elements[slot] = zjs_cell_from_ptr((void*)name);
+                cls = cls.parent;
+            }
+            arr.length = count;
+            return arr_v;
+        }
+        return ctx_new_array(ctx, 0);
+    }
+
+    // for-of: element values.
+    if zjs_is_array(src) != 0 {
+        // Snapshot a copy so the user can't mutate the source mid-iteration.
+        let a = zjs_as_array(src);
+        let copy_v = ctx_new_array(ctx, a.length);
+        let copy = zjs_as_array(copy_v);
+        let i: u32 = 0;
+        while i < a.length {
+            copy.elements[i] = a.elements[i];
+            i = i + 1;
+        }
+        copy.length = a.length;
+        return copy_v;
+    }
+    if zjs_is_string(src) != 0 {
+        // Split into 1-char strings. Cheap fallback — proper iterator
+        // protocol arrives later.
+        let s = zjs_as_string(src);
+        let arr_v = ctx_new_array(ctx, s.length);
+        ctx_push_temp_root(ctx, arr_v);
+        let arr = zjs_as_array(arr_v);
+        let sdata = s.data;
+        let i: u32 = 0;
+        while i < s.length {
+            let buf: char* = NULL;
+            let off = i;
+            raw {
+                buf = (char*)malloc(2);
+                buf[0] = sdata[off];
+                buf[1] = '\0';
+            }
+            let piece = ctx_intern_string_take(ctx, buf, 1);
+            arr.elements[i] = piece;
+            i = i + 1;
+        }
+        arr.length = s.length;
+        ctx_pop_temp_root(ctx);
+        return arr_v;
+    }
+    return ctx_new_array(ctx, 0);
+}
+
+// =====================================================================
 // Phase 3.5 — Object / Array / String / JSON built-ins.
 // =====================================================================
 

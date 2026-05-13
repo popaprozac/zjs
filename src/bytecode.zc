@@ -75,6 +75,20 @@ enum Op {
     LoadProp,         // a=dst, b=obj_reg, c=ic_slot (u8)
     StoreProp,        // a=obj_reg, b=ic_slot (u8), c=val_reg
 
+    // Iteration setup (Phase 3.4).
+    //
+    // IterPrepare normalizes the iterable into a plain array of items
+    // to walk. `kind` selects the iteration mode:
+    //   0 = for-in  — collect own enumerable string keys
+    //   1 = for-of  — collect element values (string → char strings)
+    // The result is an array; the loop walks 0..length with regular
+    // LoadElem + ArrayLength.
+    IterPrepare,      // a=dst, b=src, c=kind
+
+    // Direct array.length read — bypasses property_get for the
+    // for-in/of loop bound. Returns 0 for non-arrays.
+    ArrayLength,      // a=dst, b=src
+
     // Method calls (Phase 3.5).
     // Same encoding shape as Invoke, but regs[base+1] is the receiver
     // (`this`) and explicit JS args start at regs[base+2]. arg_count

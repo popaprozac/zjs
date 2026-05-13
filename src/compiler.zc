@@ -1520,6 +1520,126 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         reset_temps(c);
         return;
     }
+    if k == NodeKind::ForInStmt || k == NodeKind::ForOfStmt {
+        // Desugar to:
+        //   iter = IterPrepare(src, kind)
+        //   len  = ArrayLength(iter)
+        //   one  = 1                       (used to increment i in-loop)
+        //   i    = 0
+        //   loop_top:
+        //     cond = i < len
+        //     if !cond goto loop_end
+        //     elem = iter[i]
+        //     <binding> = elem
+        //     <body>
+        //     i = i + one
+        //     goto loop_top
+        //   loop_end:
+        let kind: u8 = if k == NodeKind::ForInStmt { 0 } else { 1 };
+
+        // src
+        let src_r = compile_expr(c, node.right);
+        let iter_r = alloc_reg(c);
+        emit(c, make_inst_abc(Op::IterPrepare, iter_r, src_r, kind));
+        if src_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        let len_r = alloc_reg(c);
+        emit(c, make_inst_ab(Op::ArrayLength, len_r, iter_r));
+        let one_r = alloc_reg(c);
+        emit(c, make_inst_a_i16(Op::LoadInt, one_r, 1));
+        let i_r = alloc_reg(c);
+        emit(c, make_inst_a_i16(Op::LoadInt, i_r, 0));
+
+        // Bump fixed_regs so reset_temps between body statements doesn't
+        // re-allocate over the loop-state slots.
+        let saved_fixed = c.fixed_regs;
+        if i_r + 1 > c.fixed_regs { c.fixed_regs = i_r + 1; }
+
+        let loop_top = (u32)c.code_count;
+        let cond_r = alloc_reg(c);
+        emit(c, make_inst_abc(Op::CmpLt, cond_r, i_r, len_r));
+        let jmp_exit_idx = emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_r, 0));
+        release_reg(c, cond_r);
+
+        let elem_r = alloc_reg(c);
+        emit(c, make_inst_abc(Op::LoadElem, elem_r, iter_r, i_r));
+
+        // Write `elem_r` into the binding. Supported binding shapes:
+        //   VarDecl with one declarator (`let k`)
+        //   IdentExpr (bare `k`)
+        let binding = node.left;
+        if binding == NULL || (binding.kind != NodeKind::VarDecl && binding.kind != NodeKind::IdentExpr) {
+            c.had_error = true; return;
+        }
+        let bname_start: u32 = 0;
+        let bname_len:   u32 = 0;
+        if binding.kind == NodeKind::VarDecl {
+            if binding.children_count != 1 { c.had_error = true; return; }
+            let decl = binding.children[0];
+            bname_start = decl.name_start;
+            bname_len   = decl.name_length;
+        } else {
+            bname_start = binding.start;
+            bname_len   = binding.end - binding.start;
+        }
+        let bname = c.source + bname_start;
+
+        // Resolve and store. Mirror Assignment's lookup chain.
+        if c.is_function {
+            let lidx = find_local_index(c, bname, bname_len);
+            if lidx >= 0 {
+                if c.locals[(u32)lidx].captured {
+                    let name_atom = ctx_intern_atom(c.ctx, bname, bname_len);
+                    let ic = alloc_ic_slot(c, name_atom);
+                    emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, elem_r));
+                } else {
+                    emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, elem_r));
+                }
+            } else {
+                // Bare identifier referencing a captured outer local, or
+                // a global. Match Assignment.
+                let outer_idx: i32 = -1;
+                if c.parent != NULL {
+                    let oi = find_local_index(c.parent, bname, bname_len);
+                    if oi >= 0 && c.parent.locals[(u32)oi].captured {
+                        outer_idx = oi;
+                        c.has_outer_refs = true;
+                    }
+                }
+                if outer_idx >= 0 {
+                    let env_r = alloc_reg(c);
+                    emit(c, make_inst_a(Op::LoadEnv, env_r));
+                    let name_atom = ctx_intern_atom(c.ctx, bname, bname_len);
+                    let ic = alloc_ic_slot(c, name_atom);
+                    emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, elem_r));
+                    release_reg(c, env_r);
+                } else {
+                    let slot = ctx_intern_global(c.ctx, bname, bname_len);
+                    emit(c, make_inst_a_u16(Op::StoreGlobal, elem_r, (u16)slot));
+                }
+            }
+        } else {
+            let slot = ctx_intern_global(c.ctx, bname, bname_len);
+            emit(c, make_inst_a_u16(Op::DefineGlobal, elem_r, (u16)slot));
+        }
+        release_reg(c, elem_r);
+
+        // body
+        if node.children_count > 0 {
+            compile_stmt(c, node.children[0]);
+        }
+
+        // i = i + 1
+        emit(c, make_inst_abc(Op::Add, i_r, i_r, one_r));
+
+        emit_jump_back(c, Op::Jmp, loop_top);
+        patch_jump(c, (u32)jmp_exit_idx);
+
+        // Release the loop-scoped temps + restore fixed_regs.
+        c.fixed_regs = saved_fixed;
+        c.next_reg = saved_fixed;
+        reset_temps(c);
+        return;
+    }
     if k == NodeKind::ForStmt {
         // init
         if node.left != NULL { compile_stmt_or_expr(c, node.left); }

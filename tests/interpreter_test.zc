@@ -520,6 +520,25 @@ fn run_tests() -> void {
     check_int((char*)"JSON: roundtrip int",         (char*)r"JSON.parse(JSON.stringify({n:42})).n", 42);
     check_int((char*)"JSON: roundtrip array",       (char*)r"JSON.parse(JSON.stringify([1,2,3])).length", 3);
 
+    // --- for-in / for-of (Phase 3.4) --------------------------------
+    // for-of on array
+    check_int((char*)"for-of: sum",                 (char*)r"let s=0; for (let v of [1,2,3,4]) { s = s + v }; s", 10);
+    check_int((char*)"for-of: empty",               (char*)r"let s=42; for (let v of []) { s = s + v }; s", 42);
+    check_int((char*)"for-of: bare ident",          (char*)r"let v; for (v of [7,8,9]) {} v", 9);
+    check_int((char*)"for-of: inside fn",           (char*)r"function sumArr(xs) { let s = 0; for (let x of xs) { s = s + x }; return s } sumArr([10,20,30])", 60);
+    check_int((char*)"for-of: snapshot length",     (char*)r"let xs = [1,2,3]; let s = 0; for (let v of xs) { s = s + v; xs.push(99) }; s", 6);
+    // for-of on string
+    check_int((char*)"for-of: string len",          (char*)r"let r=0; for (let c of 'abc') { r = r + 1 }; r", 3);
+    check_string((char*)"for-of: string concat",    (char*)r"let r=''; for (let c of 'hi') { r = r + c }; r", (char*)"hi");
+    // for-in on object
+    check_int((char*)"for-in: count",               (char*)r"let n=0; for (let k in {a:1,b:2,c:3}) { n = n + 1 }; n", 3);
+    check_string((char*)"for-in: insertion order",  (char*)r"let keys=''; for (let k in {a:1,b:2,c:3}) { keys = keys + k }; keys", (char*)"abc");
+    check_int((char*)"for-in: sum values",          (char*)r"let o={a:10,b:20,c:30}; let s=0; for (let k in o) { s = s + o[k] }; s", 60);
+    // for-in on non-object yields zero iterations
+    check_int((char*)"for-in: array no iter",       (char*)r"let n=0; for (let k in [1,2,3]) { n = n + 1 }; n", 0);
+    // Nested
+    check_int((char*)"for-of: nested",              (char*)r"let s=0; for (let a of [[1,2],[3,4]]) { for (let b of a) { s = s + b } }; s", 10);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

@@ -566,6 +566,16 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             regs[inst.a] = property_get(ctx, regs[inst.b], regs[inst.c]);
         } else if op == Op::StoreElem {
             property_set(ctx, regs[inst.a], regs[inst.b], regs[inst.c]);
+        } else if op == Op::IterPrepare {
+            regs[inst.a] = iter_prepare(ctx, regs[inst.b], (u32)inst.c);
+        } else if op == Op::ArrayLength {
+            let src = regs[inst.b];
+            if zjs_is_array(src) != 0 {
+                let a = zjs_as_array(src);
+                regs[inst.a] = zjs_int32((i32)a.length);
+            } else {
+                regs[inst.a] = zjs_int32(0);
+            }
         }
         // else: unknown opcode — ignore (interpreter is permissive
         // during MVP; the compiler shouldn't emit such ops).
