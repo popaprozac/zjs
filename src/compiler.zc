@@ -1001,20 +1001,25 @@ fn compile_object_literal(c: Compiler*, node: AstNode*) -> u8 {
             continue;
         }
 
-        // Key: identifier bytes for now. String-key form (e.g. `"x": v`)
-        // requires escape decoding — defer to a later slice. Detect via
-        // the leading byte: identifiers don't start with a quote.
+        // Key: identifier bytes, OR a quoted-string-literal slice with
+        // the quotes stripped. (Real escape decoding is still TODO — we
+        // handle only the common no-escape case.)
         let first_byte = c.source[prop.name_start];
+        let name_start = prop.name_start;
+        let name_len   = prop.name_length;
         if first_byte == 34 || first_byte == 39 {
-            // ASCII " or '
-            c.had_error = true;
-            i = i + 1;
-            continue;
+            // Strip the leading + trailing quote. Assumes no embedded
+            // escapes; tests using `\"` etc. still error.
+            if name_len < 2 {
+                c.had_error = true; i = i + 1; continue;
+            }
+            name_start = name_start + 1;
+            name_len   = name_len - 2;
         }
 
         let key_r = emit_load_name_string(c,
-                                          c.source + prop.name_start,
-                                          prop.name_length);
+                                          c.source + name_start,
+                                          name_len);
         let val_r = compile_expr(c, prop.left);
         emit(c, make_inst_abc(Op::StoreElem, dst, key_r, val_r));
         release_reg(c, val_r);

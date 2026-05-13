@@ -1480,8 +1480,11 @@ fn parse_object(p: Parser*) -> AstNode* {
 
     while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
         let key_tok = peek(p);
-        // Key: identifier or string literal (MVP).
-        if key_tok.kind != TokenKind::Identifier && key_tok.kind != TokenKind::StringLit {
+        // Key: identifier, string literal, or numeric literal (MVP — no
+        // computed [key] forms yet).
+        if key_tok.kind != TokenKind::Identifier
+            && key_tok.kind != TokenKind::StringLit
+            && key_tok.kind != TokenKind::NumberLit {
             p.had_error = true;
             break;
         }
