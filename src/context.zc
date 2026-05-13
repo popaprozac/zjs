@@ -208,6 +208,16 @@ fn ctx_pop_temp_root(ctx: ZjsContext*) -> void {
     }
 }
 
+// Overwrite the top temp_root slot in place. Pairs cleanly with
+// `push + defer pop` for code that loops, allocating a fresh value
+// each iteration that supersedes the previous one (string concat,
+// array join, etc.).
+fn ctx_replace_top_temp_root(ctx: ZjsContext*, v: ZjsValue) -> void {
+    if ctx.temp_root_count > 0 {
+        ctx.temp_roots[ctx.temp_root_count - 1] = v;
+    }
+}
+
 // Append a heap cell to the context's owned-cells list. Called whenever
 // a new Function / String / etc. is allocated by the compiler or
 // interpreter.
@@ -1286,11 +1296,19 @@ fn host_string_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     let this_val = ctx.host_this;
     if zjs_is_string(this_val) == 0 { this_val = zjs_to_string(ctx, this_val); }
     let result = this_val;
+    // Defensive rooting: `result` is held across loop iterations of
+    // zjs_string_concat (which allocates). `other` is also briefly
+    // held across the concat call and rooted just for that span.
+    ctx_push_temp_root(ctx, result);
+    defer ctx_pop_temp_root(ctx);
     let i: u32 = 0;
     while i < argc {
         let other = args[i];
         if zjs_is_string(other) == 0 { other = zjs_to_string(ctx, other); }
+        ctx_push_temp_root(ctx, other);
         result = zjs_string_concat(ctx, result, other);
+        ctx_pop_temp_root(ctx);
+        ctx_replace_top_temp_root(ctx, result);
         i = i + 1;
     }
     return result;
@@ -1431,17 +1449,31 @@ fn host_array_join(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // Build the joined string by repeated zjs_string_concat. O(n^2)
     // worst case — fine for the test262 inputs we care about.
     let result: ZjsValue = ctx_intern_string(ctx, (char*)"", 0);
+    // Defensive rooting: result + sep_v are held across many
+    // allocations (string concat per element, possibly ToString of
+    // each element). Push both; release after the loop.
+    ctx_push_temp_root(ctx, sep_v);
+    ctx_push_temp_root(ctx, result);
+    defer ctx_pop_temp_root(ctx);
+    defer ctx_pop_temp_root(ctx);
     let arr: ZjsArray* = NULL;
     if zjs_is_array(this_val) != 0 { arr = zjs_as_array(this_val); }
     let i: u32 = 0;
     while i < len {
-        if i > 0 { result = zjs_string_concat(ctx, result, sep_v); }
+        if i > 0 {
+            result = zjs_string_concat(ctx, result, sep_v);
+            ctx_replace_top_temp_root(ctx, result);
+        }
         let elem: ZjsValue = zjs_undefined();
         if arr != NULL { elem = arr.elements[i]; }
         else if zjs_is_object(this_val) != 0 { elem = obj_get_indexed(ctx, zjs_as_object(this_val), i); }
         if zjs_is_undefined(elem) == 0 && zjs_is_null(elem) == 0 {
             if zjs_is_string(elem) == 0 { elem = zjs_to_string(ctx, elem); }
+            // Protect `elem` across the concat allocation.
+            ctx_push_temp_root(ctx, elem);
             result = zjs_string_concat(ctx, result, elem);
+            ctx_pop_temp_root(ctx);
+            ctx_replace_top_temp_root(ctx, result);
         }
         i = i + 1;
     }
@@ -2126,6 +2158,14 @@ fn host_console_error(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
 // internally-thrown errors.
 fn build_typed_error(ctx: ZjsContext*, type_name: char*, type_len: u32, msg: char*, msg_len: u32) -> ZjsValue {
     let obj_v = ctx_new_object(ctx);
+    // Defensive rooting: obj_v lives across multiple cell-allocating
+    // helper calls below (intern, object_set with possible class
+    // transitions, intern_string). Today GC only fires at interp
+    // boundaries so we're not at real risk, but this insulates us
+    // when item 1 (GC-in-allocator) lands — and from any future
+    // refactor that adds a JS callback to this path.
+    ctx_push_temp_root(ctx, obj_v);
+    defer ctx_pop_temp_root(ctx);
     let obj = zjs_as_object(obj_v);
     // Set proto from the matching global error constructor's prototype.
     let ctor_slot = ctx_intern_global(ctx, type_name, type_len);
@@ -2372,6 +2412,12 @@ fn make_named_error(ctx: ZjsContext*, name: char*, name_len: u32, args: ZjsValue
     // so `instanceof Foo` works.
     let obj_v: ZjsValue = ctx.host_this;
     if zjs_is_object(obj_v) == 0 { obj_v = ctx_new_object(ctx); }
+    // Defensive rooting: obj_v is either ctx.host_this (already rooted)
+    // or a fresh object held across several cell-allocating calls
+    // below. Pushing in both cases is safe and one-liner — host_this is
+    // already on the temp_roots path conceptually.
+    ctx_push_temp_root(ctx, obj_v);
+    defer ctx_pop_temp_root(ctx);
     let obj = zjs_as_object(obj_v);
     let msg: ZjsValue = zjs_undefined();
     if argc > 0 { msg = args[0]; }
