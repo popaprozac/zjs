@@ -21,16 +21,20 @@ struct GlobalEntry {
     value:    ZjsValue;
 }
 
+struct GcRootFrame {
+    regs:      ZjsValue*;
+    reg_count: u32;
+}
+
 struct ZjsContext {
     globals:        GlobalEntry*;
     global_count:   u32;
     global_cap:     u32;
 
     // All heap-allocated cells owned by the context (Functions,
-    // Strings, eventually Objects/Arrays). Each cell starts with a
-    // CellHeader whose type_tag drives the free dispatch on
-    // zjs_free_context. Stored as void* because cell concrete types
-    // live in other modules.
+    // Strings, Objects, Arrays, HostFunctions). Each cell starts with
+    // a CellHeader whose type_tag drives the free dispatch. The mark
+    // bit drives GC reachability.
     cells:          void**;
     cell_count:     u32;
     cell_cap:       u32;
@@ -39,6 +43,13 @@ struct ZjsContext {
     // Public ABI: zjs_had_error / zjs_get_error.
     had_error:      bool;
     last_error:     ZjsValue;
+
+    // --- GC state ---
+    root_frames:    GcRootFrame*;     // grown geometrically
+    root_depth:     u32;              // # of active interpret() frames
+    root_cap:       u32;
+    cells_since_gc: u32;              // allocations since last collection
+    gc_threshold:   u32;              // run GC when cells_since_gc >= this
 }
 
 fn zjs_new_context() -> ZjsContext* {
@@ -47,6 +58,9 @@ fn zjs_new_context() -> ZjsContext* {
         result = (ZjsContext*)calloc(1, sizeof(ZjsContext));
     }
     if result != NULL {
+        // GC initial threshold: collect after the first 4096 cell allocations,
+        // then adapt to 2× live count after each collection.
+        result.gc_threshold = 4096;
         ctx_init_builtins(result);
     }
     return result;
@@ -54,6 +68,8 @@ fn zjs_new_context() -> ZjsContext* {
 
 fn zjs_free_context(ctx: ZjsContext*) -> void {
     if ctx == NULL { return; }
+    let root_frames = ctx.root_frames;
+    raw { free(root_frames); }
     // Free every interned global name.
     let i: u32 = 0;
     while i < ctx.global_count {
@@ -107,6 +123,153 @@ fn ctx_register_cell(ctx: ZjsContext*, p: void*) -> void {
     }
     ctx.cells[ctx.cell_count] = p;
     ctx.cell_count = ctx.cell_count + 1;
+    ctx.cells_since_gc = ctx.cells_since_gc + 1;
+}
+
+// =====================================================================
+// GC — mark-sweep, run between interpreter instructions.
+// =====================================================================
+
+fn ctx_push_root_frame(ctx: ZjsContext*, regs: ZjsValue*, reg_count: u32) -> void {
+    if ctx.root_depth >= ctx.root_cap {
+        let new_cap: u32 = if ctx.root_cap == 0 { 16 } else { ctx.root_cap * 2 };
+        let old = ctx.root_frames;
+        let new_arr: GcRootFrame* = NULL;
+        raw { new_arr = (GcRootFrame*)realloc(old, new_cap * sizeof(GcRootFrame)); }
+        ctx.root_frames = new_arr;
+        ctx.root_cap = new_cap;
+    }
+    ctx.root_frames[ctx.root_depth].regs = regs;
+    ctx.root_frames[ctx.root_depth].reg_count = reg_count;
+    ctx.root_depth = ctx.root_depth + 1;
+}
+
+fn ctx_pop_root_frame(ctx: ZjsContext*) -> void {
+    if ctx.root_depth > 0 { ctx.root_depth = ctx.root_depth - 1; }
+}
+
+// Mark a single value's reachable graph. Idempotent — already-marked
+// cells return immediately, breaking cycles.
+fn gc_mark_value(v: ZjsValue) -> void {
+    if zjs_is_cell(v) == 0 { return; }
+    let p = zjs_cell_as_ptr(v);
+    if p == NULL { return; }
+    let h: CellHeader* = NULL;
+    raw { h = (CellHeader*)p; }
+    if h.mark != 0 { return; }
+    h.mark = 1;
+
+    let tag = h.type_tag;
+    if tag == TAG_STRING        { return; }     // leaf
+    if tag == TAG_HOST_FUNCTION { return; }     // leaf
+
+    if tag == TAG_OBJECT {
+        let o: ZjsObject* = NULL;
+        raw { o = (ZjsObject*)p; }
+        let i: u32 = 0;
+        while i < o.prop_count {
+            let name_str = o.props[i].name;
+            if name_str != NULL { name_str.header.mark = 1; }
+            gc_mark_value(o.props[i].value);
+            i = i + 1;
+        }
+        return;
+    }
+
+    if tag == TAG_ARRAY {
+        let a: ZjsArray* = NULL;
+        raw { a = (ZjsArray*)p; }
+        let i: u32 = 0;
+        while i < a.length {
+            gc_mark_value(a.elements[i]);
+            i = i + 1;
+        }
+        return;
+    }
+
+    if tag == TAG_FUNCTION {
+        let f: Function* = NULL;
+        raw { f = (Function*)p; }
+        let i: u32 = 0;
+        while i < f.const_count {
+            gc_mark_value(f.constants[i]);
+            i = i + 1;
+        }
+        return;
+    }
+}
+
+fn gc_mark_roots(ctx: ZjsContext*) -> void {
+    // Globals
+    let i: u32 = 0;
+    while i < ctx.global_count {
+        gc_mark_value(ctx.globals[i].value);
+        i = i + 1;
+    }
+    // Last uncaught error (so the C consumer can still inspect it)
+    gc_mark_value(ctx.last_error);
+    // Each active call frame
+    let j: u32 = 0;
+    while j < ctx.root_depth {
+        let frame = ctx.root_frames[j];
+        let k: u32 = 0;
+        while k < frame.reg_count {
+            gc_mark_value(frame.regs[k]);
+            k = k + 1;
+        }
+        j = j + 1;
+    }
+}
+
+fn gc_sweep(ctx: ZjsContext*) -> void {
+    let i: u32 = 0;
+    let kept: u32 = 0;
+    while i < ctx.cell_count {
+        let p = ctx.cells[i];
+        let h: CellHeader* = NULL;
+        raw { h = (CellHeader*)p; }
+        if h.mark != 0 {
+            h.mark = 0;
+            ctx.cells[kept] = p;
+            kept = kept + 1;
+        } else {
+            let tag = h.type_tag;
+            if tag == TAG_FUNCTION      {
+                raw { extern void function_free_void(void* f); function_free_void(p); }
+            } else if tag == TAG_STRING        { string_free_void(p); }
+              else if tag == TAG_OBJECT        { object_free_void(p); }
+              else if tag == TAG_ARRAY         { array_free_void(p); }
+              else if tag == TAG_HOST_FUNCTION { host_function_free_void(p); }
+        }
+        i = i + 1;
+    }
+    ctx.cell_count = kept;
+}
+
+fn gc_run(ctx: ZjsContext*) -> void {
+    gc_mark_roots(ctx);
+    gc_sweep(ctx);
+    ctx.cells_since_gc = 0;
+    // Adapt threshold to grow with the live set; minimum floor of 256.
+    let target: u32 = ctx.cell_count * 2;
+    if target < 256 { target = 256; }
+    ctx.gc_threshold = target;
+}
+
+fn ctx_maybe_gc(ctx: ZjsContext*) -> void {
+    if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+}
+
+// --- Public ABI -----------------------------------------------------
+
+fn zjs_gc(ctx: ZjsContext*) -> void {
+    if ctx == NULL { return; }
+    gc_run(ctx);
+}
+
+fn zjs_cell_count(ctx: ZjsContext*) -> u32 {
+    if ctx == NULL { return 0; }
+    return ctx.cell_count;
 }
 
 // Intern a string by copying the input bytes. The returned ZjsValue

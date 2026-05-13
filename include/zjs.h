@@ -54,6 +54,14 @@ int zjs_is_null(ZjsValue v);
 int zjs_is_undefined(ZjsValue v);
 int zjs_is_cell(ZjsValue v);
 
+/* Cell-tag predicates — disambiguate which heap-kind a cell is. */
+int zjs_is_string(ZjsValue v);
+int zjs_is_object(ZjsValue v);
+int zjs_is_array(ZjsValue v);
+int zjs_is_function(ZjsValue v);     /* user-defined Function */
+int zjs_is_host_function(ZjsValue v);
+int zjs_is_callable(ZjsValue v);     /* user fn OR host fn */
+
 /* Unboxers — undefined behavior if the matching predicate is false.
  * The caller is responsible for the type check. */
 int32_t zjs_as_int32(ZjsValue v);
@@ -75,6 +83,19 @@ const char* zjs_version(void);
  */
 int         zjs_had_error(ZjsContext* ctx);
 ZjsValue    zjs_get_error(ZjsContext* ctx);
+
+/* Garbage collection.
+ *
+ * zjs_gc triggers a full stop-the-world mark-sweep. The engine runs
+ * GC automatically at instruction boundaries when allocation pressure
+ * exceeds an adaptive threshold; this function is for tests + manual
+ * memory pressure control.
+ *
+ * zjs_cell_count returns the number of live heap cells at the moment
+ * of the call. Useful for verifying GC frees what it should.
+ */
+void         zjs_gc(ZjsContext* ctx);
+unsigned int zjs_cell_count(ZjsContext* ctx);
 
 #ifdef __cplusplus
 }

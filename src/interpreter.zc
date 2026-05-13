@@ -140,9 +140,20 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
     let throwing: bool = false;
     let thrown:   ZjsValue = zjs_undefined();
 
+    // Register this call frame's register file with the GC so the
+    // collector can see all our temporaries + locals as roots.
+    ctx_push_root_frame(ctx, regs, reg_count);
+    defer ctx_pop_root_frame(ctx);
+
     let ip: usize = 0;
 
     while ip < f.code_len {
+        // GC may run between instructions when allocation pressure
+        // exceeds the threshold. All live values are already in our
+        // rooted register file, in globals, or transitively reachable
+        // — safe boundary.
+        ctx_maybe_gc(ctx);
+
         // Unwind before fetching the next instruction.
         if throwing {
             if try_depth > 0 {

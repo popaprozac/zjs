@@ -259,6 +259,53 @@ static void test_engine_path(void) {
  * Phase 3.1c — uncaught-throw detection through the public C ABI.
  * --------------------------------------------------------------------- */
 
+/* -----------------------------------------------------------------------
+ * Phase 3.1d — mark-sweep GC. Verify cells get freed.
+ * --------------------------------------------------------------------- */
+
+static void test_gc(void) {
+    ZjsContext* ctx = zjs_new_context();
+    unsigned baseline = zjs_cell_count(ctx);
+
+    /* Each iteration creates a fresh string that becomes unreachable
+     * once the next loop body assigns to s. After enough iterations
+     * the cell count should rise above baseline. */
+    for (int i = 0; i < 200; i++) {
+        zjs_eval(ctx, "let s = 'iter' + 99");
+    }
+    unsigned grown = zjs_cell_count(ctx);
+    CHECK(grown > baseline, "cells should accumulate (baseline=%u, grown=%u)",
+          baseline, grown);
+
+    /* Force a collection — most of the per-iteration garbage should drop. */
+    zjs_gc(ctx);
+    unsigned after = zjs_cell_count(ctx);
+    CHECK(after < grown, "gc should free unreachable cells (grown=%u, after=%u)",
+          grown, after);
+    CHECK(after <= baseline + 16,
+          "gc should drop back close to baseline (baseline=%u, after=%u)",
+          baseline, after);
+
+    /* Liveness: values held via globals survive collection. The most
+     * direct test is to allocate something, GC, then read it back. */
+    zjs_eval(ctx, "let keep = []; for (let i = 0; i < 20; i = i + 1) keep[i] = 'item' + i");
+    zjs_gc(ctx);
+    ZjsValue len = zjs_eval(ctx, "keep.length");
+    CHECK(zjs_is_int32(len) && zjs_as_int32(len) == 20,
+          "live array's length survives GC");
+    ZjsValue first = zjs_eval(ctx, "keep[0]");
+    CHECK(zjs_is_string(first), "live array's elements still readable post-GC");
+
+    /* A nested reachable graph: { x: { y: 'deep' } } via global. GC,
+     * then reach in. */
+    zjs_eval(ctx, "let nested = { x: { y: 'deep value' } }");
+    zjs_gc(ctx);
+    ZjsValue deep = zjs_eval(ctx, "nested.x.y");
+    CHECK(zjs_is_string(deep), "deeply nested string survives GC");
+
+    zjs_free_context(ctx);
+}
+
 static void test_throw_abi(void) {
     ZjsContext* ctx = zjs_new_context();
 
@@ -292,6 +339,7 @@ int main(void) {
     test_mutual_exclusion();
     test_engine_path();
     test_throw_abi();
+    test_gc();
 
     printf("[smoke] %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

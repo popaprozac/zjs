@@ -373,7 +373,7 @@ def TAG_HOST_FUNCTION: u8 = 4;
 
 struct CellHeader {
     type_tag: u8;
-    _pad:     u8;
+    mark:     u8;       // GC mark bit; 0 = white (unreachable), 1 = grey/black (reachable)
 }
 
 struct ZjsString {
