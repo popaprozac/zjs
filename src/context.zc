@@ -341,21 +341,44 @@ fn gc_mark_value(v: ZjsValue) -> void {
             gc_mark_value(f.constants[i]);
             i = i + 1;
         }
-        // Walk inline-cache entries — each carries a HiddenClass* that
-        // must stay alive while this Function is reachable. Atom names
+        // Phase 3.8 note: inline-cache entries used to mark ic.class_
+        // strongly, which leaked hidden classes for objects long since
+        // dead. The class_ pointer is now a WEAK ref — see
+        // gc_nullify_dead_ics() between mark and sweep. The atom names
         // are pinned via the atom-table root, so we don't re-mark them.
-        let j: u32 = 0;
-        while j < f.ic_count {
-            let c = f.ics[j].class_;
-            if c != NULL { gc_mark_hidden_class(c); }
-            j = j + 1;
-        }
         // Phase 3.6: .prototype.
         if f.prototype != NULL {
             let pv = zjs_cell_from_ptr((void*)f.prototype);
             gc_mark_value(pv);
         }
         return;
+    }
+}
+
+// After the mark phase but before sweep, walk all live Functions'
+// inline caches and null out entries whose cached HiddenClass wasn't
+// independently marked alive. Without this pass, the IC keeps long-dead
+// classes pinned and we slow-leak shape memory in long-running programs.
+fn gc_nullify_dead_ics(ctx: ZjsContext*) -> void {
+    let i: u32 = 0;
+    while i < ctx.cell_count {
+        let p = ctx.cells[i];
+        let h: CellHeader* = NULL;
+        raw { h = (CellHeader*)p; }
+        if h.mark != 0 && h.type_tag == TAG_FUNCTION {
+            let f: Function* = NULL;
+            raw { f = (Function*)p; }
+            let j: u32 = 0;
+            while j < f.ic_count {
+                let cls = f.ics[j].class_;
+                if cls != NULL && cls.header.mark == 0 {
+                    f.ics[j].class_ = NULL;
+                    f.ics[j].slot = 0;
+                }
+                j = j + 1;
+            }
+        }
+        i = i + 1;
     }
 }
 
@@ -464,6 +487,7 @@ fn gc_sweep(ctx: ZjsContext*) -> void {
 
 fn gc_run(ctx: ZjsContext*) -> void {
     gc_mark_roots(ctx);
+    gc_nullify_dead_ics(ctx);
     gc_sweep(ctx);
     ctx.cells_since_gc = 0;
     // Adapt threshold to grow with the live set; minimum floor of 256.
