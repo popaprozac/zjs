@@ -887,6 +887,19 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             } else {
                 regs[dst] = new_obj_v;
             }
+        } else if op == Op::BuildArguments {
+            // Build a fresh array from the call's args + arg_count and
+            // stash it in regs[a]. Emitted at function entry when the
+            // body references `arguments`.
+            let arr_v = ctx_new_array(ctx, arg_count);
+            let arr = zjs_as_array(arr_v);
+            let i: u32 = 0;
+            while i < arg_count {
+                arr.elements[i] = args[i];
+                i = i + 1;
+            }
+            arr.length = arg_count;
+            regs[inst.a] = arr_v;
         } else if op == Op::IterPrepare {
             regs[inst.a] = iter_prepare(ctx, regs[inst.b], (u32)inst.c);
         } else if op == Op::ArrayLength {

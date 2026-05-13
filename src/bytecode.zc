@@ -90,6 +90,12 @@ enum Op {
     // for-in/of loop bound. Returns 0 for non-arrays.
     ArrayLength,      // a=dst, b=src
 
+    // `arguments` (Phase 3.8e).
+    // Emitted at function entry when the body references `arguments`.
+    // Builds a fresh array containing all call args and stores it in
+    // regs[a]. Reads interp()'s `args` + `arg_count` parameters.
+    BuildArguments,   // a=dst
+
     // Method calls (Phase 3.5).
     // Same encoding shape as Invoke, but regs[base+1] is the receiver
     // (`this`) and explicit JS args start at regs[base+2]. arg_count

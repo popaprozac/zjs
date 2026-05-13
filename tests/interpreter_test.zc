@@ -681,6 +681,16 @@ fn run_tests() -> void {
     check_int((char*)"arr.concat: arrays",         (char*)r"[1,2,3].concat([4,5]).length", 5);
     check_int((char*)"arr.concat: scalars",        (char*)r"[1].concat(2, [3,4], 5).length", 5);
 
+    // --- `arguments` object (Phase 3.8e) ----------------------------
+    check_int((char*)"arguments.length: variadic",  (char*)r"function f() { return arguments.length } f(1,2,3)", 3);
+    check_int((char*)"arguments.length: zero args", (char*)r"function f(x) { return arguments.length } f()", 0);
+    check_int((char*)"arguments.length: more than params", (char*)r"function f(a,b) { return arguments.length } f(1,2,3,4,5)", 5);
+    check_string((char*)"arguments[i] indexing",     (char*)r"function f() { return arguments[1] } f('a','b','c')", (char*)"b");
+    check_int((char*)"arguments iterate sum",       (char*)r"function f() { let s=0; for (let i=0;i<arguments.length;i++) s=s+arguments[i]; return s } f(1,2,3,4)", 10);
+    check_int((char*)"arguments: param shadow",     (char*)r"function f(arguments) { return arguments } f(42)", 42);
+    check_int((char*)"arguments: var shadow",       (char*)r"function f() { var arguments = 99; return arguments } f(1,2,3)", 99);
+    check_int((char*)"arguments: nested fn isolates", (char*)r"function outer() { function inner() { return arguments.length }; return inner('a','b') } outer(1,2,3)", 2);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

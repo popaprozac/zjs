@@ -75,6 +75,12 @@ struct Compiler {
 
     had_error:     bool;
 
+    // Phase 3.8e — implicit `arguments` binding. -1 if the function
+    // doesn't reference `arguments` (or it's shadowed by a real
+    // local of the same name). Otherwise: the reg holding the
+    // arguments array, populated by Op::BuildArguments at fn entry.
+    arguments_reg: i32;
+
     // Phase 3.8a — loop context stack for break / continue.
     // Pushed on entry to a loop, popped on exit. `continue_target` is
     // the bytecode offset to jump to on `continue` (loop test for
@@ -106,6 +112,7 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.ctx = ctx;
     c.source = source;
     c.last_expr_reg = -1;
+    c.arguments_reg = -1;
     return c;
 }
 
@@ -421,6 +428,19 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
                 emit(c, make_inst_ab(Op::Mov, dst, c.locals[(u32)local_idx].reg));
             }
             return dst;
+        }
+
+        // 2a. Implicit `arguments` — only inside a function that uses
+        //     it AND where no real local of the same name was hoisted.
+        //     compile_function set c.arguments_reg in that case.
+        if c.arguments_reg >= 0 && name_len == 9 {
+            let is_arg: int = 0;
+            raw { is_arg = (memcmp(name, "arguments", 9) == 0) ? 1 : 0; }
+            if is_arg != 0 {
+                let dst = alloc_reg(c);
+                emit(c, make_inst_ab(Op::Mov, dst, (u8)c.arguments_reg));
+                return dst;
+            }
         }
 
         // 2. If we're in an inner function, check the parent's locals.
@@ -1161,6 +1181,14 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
         c.env_reg = alloc_reg(c);
     }
 
+    // 2d. `arguments` — if the body references it and no local of
+    //     that name was hoisted, reserve a register. The actual array
+    //     is built by Op::BuildArguments at function entry below.
+    let need_args = node.left != NULL && body_uses_arguments(c, node.left) && !has_arguments_local(c);
+    if need_args {
+        c.arguments_reg = (i32)alloc_reg(c);
+    }
+
     // 3. Locals are now fixed; temps live above this watermark.
     c.fixed_regs = c.next_reg;
 
@@ -1168,6 +1196,9 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     //     function: NewObject env_reg, then store each captured param
     //     into env with its name as key. Locals declared later in the
     //     body get stored when their VarDecl executes.
+    if c.arguments_reg >= 0 {
+        emit(c, make_inst_a(Op::BuildArguments, (u8)c.arguments_reg));
+    }
     if c.needs_env {
         emit(c, make_inst_a(Op::NewObject, c.env_reg));
         let j: u32 = 0;
@@ -1395,6 +1426,51 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
 
     release_reg(c, proto_reg);
     return ctor_reg;
+}
+
+// Does any IdentExpr in this function's body reference `arguments`,
+// not counting nested functions (which have their own arguments)?
+fn body_uses_arguments(c: Compiler*, node: AstNode*) -> bool {
+    if node == NULL { return false; }
+    let k = node.kind;
+    if k == NodeKind::FunctionDecl || k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
+        return false;   // nested fn — has its own arguments
+    }
+    if k == NodeKind::IdentExpr {
+        let n = c.source + node.start;
+        let nl = node.end - node.start;
+        if nl == 9 {
+            let is_arg: int = 0;
+            raw { is_arg = (memcmp(n, "arguments", 9) == 0) ? 1 : 0; }
+            if is_arg != 0 { return true; }
+        }
+        return false;
+    }
+    if node.left  != NULL && body_uses_arguments(c, node.left)  { return true; }
+    if node.right != NULL && body_uses_arguments(c, node.right) { return true; }
+    if node.third != NULL && body_uses_arguments(c, node.third) { return true; }
+    let i: u32 = 0;
+    while i < node.children_count {
+        if body_uses_arguments(c, node.children[i]) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+// Does the locals table already have a binding named "arguments"?
+// (User-declared via var/let/const/function/class shadows our implicit one.)
+fn has_arguments_local(c: Compiler*) -> bool {
+    let i: u32 = 0;
+    while i < c.local_count {
+        if c.locals[i].name_length == 9 {
+            let p = c.source + c.locals[i].name_start;
+            let is_arg: int = 0;
+            raw { is_arg = (memcmp(p, "arguments", 9) == 0) ? 1 : 0; }
+            if is_arg != 0 { return true; }
+        }
+        i = i + 1;
+    }
+    return false;
 }
 
 // Postfix / prefix ++/-- on an identifier target. MVP — only IdentExpr;
