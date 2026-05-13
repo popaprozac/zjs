@@ -1635,6 +1635,136 @@ fn host_json_parse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return result;
 }
 
+// --- console.log (Phase 3.8a) -------------------------------------
+//
+// Minimum console implementation: log / info / warn / error all print
+// their args space-separated to stdout (warn/error to stderr) followed
+// by a newline. Formatting roughly matches the CLI's `eval` printer.
+
+raw {
+    #include <stdio.h>
+}
+
+fn console_write_value(v: ZjsValue, stream_is_stderr: bool) -> void {
+    if zjs_is_undefined(v) != 0 {
+        raw {
+            if (stream_is_stderr) fputs("undefined", stderr);
+            else fputs("undefined", stdout);
+        }
+        return;
+    }
+    if zjs_is_null(v) != 0 {
+        raw {
+            if (stream_is_stderr) fputs("null", stderr);
+            else fputs("null", stdout);
+        }
+        return;
+    }
+    if zjs_is_bool(v) != 0 {
+        let b = zjs_as_bool(v);
+        raw {
+            if (stream_is_stderr) fputs(b ? "true" : "false", stderr);
+            else fputs(b ? "true" : "false", stdout);
+        }
+        return;
+    }
+    if zjs_is_int32(v) != 0 {
+        let n = zjs_as_int32(v);
+        raw {
+            if (stream_is_stderr) fprintf(stderr, "%d", (int)n);
+            else fprintf(stdout, "%d", (int)n);
+        }
+        return;
+    }
+    if zjs_is_double(v) != 0 {
+        let d = zjs_as_double(v);
+        raw {
+            if (stream_is_stderr) fprintf(stderr, "%g", d);
+            else fprintf(stdout, "%g", d);
+        }
+        return;
+    }
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        let sd = s.data;
+        let sn = s.length;
+        raw {
+            FILE* out = stream_is_stderr ? stderr : stdout;
+            fwrite(sd, 1, sn, out);
+        }
+        return;
+    }
+    // For arrays/objects, defer to JSON.stringify-style output.
+    // Simplest path: produce JSON output (skips functions). Reuses
+    // json_stringify_value with a fresh buf so we don't fight the
+    // CLI's pretty printer.
+    if zjs_is_array(v) != 0 || zjs_is_object(v) != 0 {
+        let b: JsonBuf;
+        b.data = NULL; b.len = 0; b.cap = 0;
+        // We need a context for atom interning during stringify. The
+        // value isn't context-tagged, but json_stringify_value only
+        // reads ctx for ToString of doubles inside numbers — none of
+        // which happen for plain dump. Pass NULL and rely on the
+        // cell-shape walk being self-contained.
+        let nullctx: ZjsContext* = NULL;
+        json_stringify_value(nullctx, &b, v);
+        let bd = b.data;
+        let bn = b.len;
+        raw {
+            FILE* out = stream_is_stderr ? stderr : stdout;
+            if (bd && bn) fwrite(bd, 1, bn, out);
+            free(bd);
+        }
+        return;
+    }
+    if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 || zjs_is_host_function(v) != 0 {
+        raw {
+            FILE* out = stream_is_stderr ? stderr : stdout;
+            fputs("[function]", out);
+        }
+        return;
+    }
+    raw {
+        FILE* out = stream_is_stderr ? stderr : stdout;
+        fputs("[unknown]", out);
+    }
+}
+
+fn console_emit(ctx: ZjsContext*, args: ZjsValue*, argc: u32, stderr_stream: bool) -> ZjsValue {
+    let i: u32 = 0;
+    while i < argc {
+        if i > 0 {
+            raw {
+                if (stderr_stream) fputc(' ', stderr);
+                else fputc(' ', stdout);
+            }
+        }
+        console_write_value(args[i], stderr_stream);
+        i = i + 1;
+    }
+    raw {
+        if (stderr_stream) fputc('\n', stderr);
+        else fputc('\n', stdout);
+    }
+    return zjs_undefined();
+}
+
+fn host_console_log(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return console_emit(ctx, args, argc, false);
+}
+
+fn host_console_info(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return console_emit(ctx, args, argc, false);
+}
+
+fn host_console_warn(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return console_emit(ctx, args, argc, true);
+}
+
+fn host_console_error(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return console_emit(ctx, args, argc, true);
+}
+
 fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // --- Error ---
     let err_ptr: void* = NULL;
@@ -1734,6 +1864,24 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"parse", parse_ptr));
     let json_slot = ctx_intern_global(ctx, (char*)"JSON", 4);
     ctx.globals[json_slot].value = json_v;
+
+    // --- console (Phase 3.8a) ---
+    let console_v = ctx_new_object(ctx);
+    let console_o = zjs_as_object(console_v);
+    let log_ptr:   void* = NULL; raw { log_ptr   = (void*)host_console_log; }
+    let info_ptr:  void* = NULL; raw { info_ptr  = (void*)host_console_info; }
+    let warn_ptr:  void* = NULL; raw { warn_ptr  = (void*)host_console_warn; }
+    let cerr_ptr:  void* = NULL; raw { cerr_ptr  = (void*)host_console_error; }
+    object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"log", 3),
+               ctx_make_host_function(ctx, (char*)"log", log_ptr));
+    object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"info", 4),
+               ctx_make_host_function(ctx, (char*)"info", info_ptr));
+    object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"warn", 4),
+               ctx_make_host_function(ctx, (char*)"warn", warn_ptr));
+    object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"error", 5),
+               ctx_make_host_function(ctx, (char*)"error", cerr_ptr));
+    let console_slot = ctx_intern_global(ctx, (char*)"console", 7);
+    ctx.globals[console_slot].value = console_v;
 }
 
 // --- Error inspection (public ABI) ----------------------------------

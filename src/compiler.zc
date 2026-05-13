@@ -74,6 +74,26 @@ struct Compiler {
     ic_cap:        u32;
 
     had_error:     bool;
+
+    // Phase 3.8a — loop context stack for break / continue.
+    // Pushed on entry to a loop, popped on exit. `continue_target` is
+    // the bytecode offset to jump to on `continue` (loop test for
+    // while; update step for for; loop top for for-in/of). Pending
+    // `break` sites stay in break_patches[] until the loop body ends.
+    loop_depth:    u32;
+    loop_stack:    LoopFrame*;
+    loop_cap:      u32;
+}
+
+struct LoopFrame {
+    continue_target: u32;        // bytecode offset for `continue` to jump to
+    have_continue:   bool;       // false until set; if false, continue emits a placeholder + patch
+    break_patches:   u32*;
+    break_count:     u32;
+    break_cap:       u32;
+    continue_patches: u32*;      // placeholders awaiting target resolution
+    continue_count:  u32;
+    continue_cap:    u32;
 }
 
 // --- Lifecycle ------------------------------------------------------
@@ -89,15 +109,94 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     return c;
 }
 
+fn loop_push(c: Compiler*) -> void {
+    if c.loop_depth >= c.loop_cap {
+        let new_cap: u32 = if c.loop_cap == 0 { 4 } else { c.loop_cap * 2 };
+        let old = c.loop_stack;
+        let new_arr: LoopFrame* = NULL;
+        raw { new_arr = (LoopFrame*)realloc(old, new_cap * sizeof(LoopFrame)); }
+        c.loop_stack = new_arr;
+        c.loop_cap = new_cap;
+    }
+    c.loop_stack[c.loop_depth].continue_target = 0;
+    c.loop_stack[c.loop_depth].have_continue   = false;
+    c.loop_stack[c.loop_depth].break_patches   = NULL;
+    c.loop_stack[c.loop_depth].break_count     = 0;
+    c.loop_stack[c.loop_depth].break_cap       = 0;
+    c.loop_stack[c.loop_depth].continue_patches = NULL;
+    c.loop_stack[c.loop_depth].continue_count   = 0;
+    c.loop_stack[c.loop_depth].continue_cap     = 0;
+    c.loop_depth = c.loop_depth + 1;
+}
+
+// Set / publish the continue target. Once called any further
+// ContinueStmt can emit a direct back-edge; previously-queued
+// placeholders are patched immediately.
+fn loop_set_continue(c: Compiler*, target: u32) -> void {
+    if c.loop_depth == 0 { return; }
+    let lp = &c.loop_stack[c.loop_depth - 1];
+    lp.continue_target = target;
+    lp.have_continue = true;
+    // Patch any continue placeholders that were emitted before the
+    // target was known (typical for ForStmt: continue jumps target the
+    // update step which is positioned AFTER the body).
+    let i: u32 = 0;
+    while i < lp.continue_count {
+        patch_jump(c, lp.continue_patches[i]);
+        i = i + 1;
+    }
+}
+
+fn loop_add_break(c: Compiler*, jmp_idx: u32) -> void {
+    if c.loop_depth == 0 { return; }
+    let lp = &c.loop_stack[c.loop_depth - 1];
+    if lp.break_count >= lp.break_cap {
+        let new_cap: u32 = if lp.break_cap == 0 { 4 } else { lp.break_cap * 2 };
+        let old = lp.break_patches;
+        let new_arr: u32* = NULL;
+        raw { new_arr = (uint32_t*)realloc(old, new_cap * sizeof(uint32_t)); }
+        lp.break_patches = new_arr;
+        lp.break_cap = new_cap;
+    }
+    lp.break_patches[lp.break_count] = jmp_idx;
+    lp.break_count = lp.break_count + 1;
+}
+
+fn loop_add_continue_patch(c: Compiler*, jmp_idx: u32) -> void {
+    if c.loop_depth == 0 { return; }
+    let lp = &c.loop_stack[c.loop_depth - 1];
+    if lp.continue_count >= lp.continue_cap {
+        let new_cap: u32 = if lp.continue_cap == 0 { 4 } else { lp.continue_cap * 2 };
+        let old = lp.continue_patches;
+        let new_arr: u32* = NULL;
+        raw { new_arr = (uint32_t*)realloc(old, new_cap * sizeof(uint32_t)); }
+        lp.continue_patches = new_arr;
+        lp.continue_cap = new_cap;
+    }
+    lp.continue_patches[lp.continue_count] = jmp_idx;
+    lp.continue_count = lp.continue_count + 1;
+}
+
+fn loop_pop(c: Compiler*) -> void {
+    if c.loop_depth == 0 { return; }
+    c.loop_depth = c.loop_depth - 1;
+    let bp = c.loop_stack[c.loop_depth].break_patches;
+    let cp = c.loop_stack[c.loop_depth].continue_patches;
+    if bp != NULL { raw { free(bp); } }
+    if cp != NULL { raw { free(cp); } }
+}
+
 fn compiler_free(c: Compiler*) -> void {
     if c == NULL { return; }
     let code = c.code;
     let consts = c.constants;
     let locals = c.locals;
     let ics = c.ics;
+    let loop_stack = c.loop_stack;
     raw {
         free(code);
         free(consts);
+        free(loop_stack);
         free(locals);
         free(ics);
         free(c);
@@ -1699,6 +1798,8 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     }
     if k == NodeKind::WhileStmt {
         let loop_top = (u32)c.code_count;
+        loop_push(c);
+        loop_set_continue(c, loop_top);
         let cond_reg = compile_expr(c, node.left);
         let jmp_exit = emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_reg, 0));
         release_reg(c, cond_reg);
@@ -1707,15 +1808,33 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         compile_stmt(c, node.right);    // body
         emit_jump_back(c, Op::Jmp, loop_top);
         patch_jump(c, jmp_exit);
+        let frame_w = c.loop_stack[c.loop_depth - 1];
+        let bi: u32 = 0;
+        while bi < frame_w.break_count {
+            patch_jump(c, frame_w.break_patches[bi]);
+            bi = bi + 1;
+        }
+        loop_pop(c);
         return;
     }
     if k == NodeKind::DoWhileStmt {
         let loop_top = (u32)c.code_count;
+        // continue jumps target the test, only known after body.
+        loop_push(c);
         compile_stmt(c, node.left);     // body
+        let test_at = (u32)c.code_count;
+        loop_set_continue(c, test_at);
         let cond_reg = compile_expr(c, node.right);
         emit_jump_back_if(c, Op::JmpIfTrue, cond_reg, loop_top);
         release_reg(c, cond_reg);
         reset_temps(c);
+        let frame_d = c.loop_stack[c.loop_depth - 1];
+        let bi: u32 = 0;
+        while bi < frame_d.break_count {
+            patch_jump(c, frame_d.break_patches[bi]);
+            bi = bi + 1;
+        }
+        loop_pop(c);
         return;
     }
     if k == NodeKind::ForInStmt || k == NodeKind::ForOfStmt {
@@ -1753,6 +1872,8 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         if i_r + 1 > c.fixed_regs { c.fixed_regs = i_r + 1; }
 
         let loop_top = (u32)c.code_count;
+        // `continue` goes to the increment step; set after body.
+        loop_push(c);
         let cond_r = alloc_reg(c);
         emit(c, make_inst_abc(Op::CmpLt, cond_r, i_r, len_r));
         let jmp_exit_idx = emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_r, 0));
@@ -1826,11 +1947,20 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             compile_stmt(c, node.children[0]);
         }
 
-        // i = i + 1
+        // i = i + 1  — also the `continue` landing pad.
+        let inc_at = (u32)c.code_count;
+        loop_set_continue(c, inc_at);
         emit(c, make_inst_abc(Op::Add, i_r, i_r, one_r));
 
         emit_jump_back(c, Op::Jmp, loop_top);
         patch_jump(c, (u32)jmp_exit_idx);
+        let frame_o = c.loop_stack[c.loop_depth - 1];
+        let bi: u32 = 0;
+        while bi < frame_o.break_count {
+            patch_jump(c, frame_o.break_patches[bi]);
+            bi = bi + 1;
+        }
+        loop_pop(c);
 
         // Release the loop-scoped temps + restore fixed_regs.
         c.fixed_regs = saved_fixed;
@@ -1842,6 +1972,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // init
         if node.left != NULL { compile_stmt_or_expr(c, node.left); }
         let loop_top = (u32)c.code_count;
+        // Pushed with continue_target = loop_top; we update to the
+        // update-step offset below so `continue` runs the increment.
+        loop_push(c);
         // test
         let jmp_exit_idx: i32 = -1;
         if node.right != NULL {
@@ -1854,7 +1987,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         if node.children_count > 0 {
             compile_stmt(c, node.children[0]);
         }
-        // update
+        // update step — `continue` jumps here
+        let update_at = (u32)c.code_count;
+        loop_set_continue(c, update_at);
         if node.third != NULL {
             let r = compile_expr(c, node.third);
             release_reg(c, r);
@@ -1862,6 +1997,13 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         }
         emit_jump_back(c, Op::Jmp, loop_top);
         if jmp_exit_idx >= 0 { patch_jump(c, (u32)jmp_exit_idx); }
+        let frame_f = c.loop_stack[c.loop_depth - 1];
+        let bi: u32 = 0;
+        while bi < frame_f.break_count {
+            patch_jump(c, frame_f.break_patches[bi]);
+            bi = bi + 1;
+        }
+        loop_pop(c);
         return;
     }
     if k == NodeKind::ReturnStmt {
@@ -1879,8 +2021,26 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::EmptyStmt   { return; }
-    if k == NodeKind::BreakStmt   { c.had_error = true; return; }       // labels would land here; MVP errors
-    if k == NodeKind::ContinueStmt{ c.had_error = true; return; }
+    if k == NodeKind::BreakStmt {
+        if c.loop_depth == 0 { c.had_error = true; return; }
+        let jmp_idx = emit(c, make_inst_i16(Op::Jmp, 0));
+        loop_add_break(c, (u32)jmp_idx);
+        return;
+    }
+    if k == NodeKind::ContinueStmt {
+        if c.loop_depth == 0 { c.had_error = true; return; }
+        let lp = c.loop_stack[c.loop_depth - 1];
+        if lp.have_continue {
+            emit_jump_back(c, Op::Jmp, lp.continue_target);
+        } else {
+            // Target not yet known (for-style loops where `continue`
+            // means "run the update step"). Emit placeholder, patch
+            // at loop_set_continue time.
+            let jmp_idx = emit(c, make_inst_i16(Op::Jmp, 0));
+            loop_add_continue_patch(c, (u32)jmp_idx);
+        }
+        return;
+    }
 
     if k == NodeKind::ThrowStmt {
         let r = compile_expr(c, node.left);

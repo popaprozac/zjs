@@ -579,6 +579,23 @@ fn run_tests() -> void {
     // Two methods, two instances, separate this state
     check_int((char*)"class: distinct this",       (char*)r"class C { constructor() { this.n = 0 } bump() { this.n = this.n + 1; return this.n } } let x = new C(); let y = new C(); x.bump(); x.bump(); y.bump(); x.bump() + y.bump()", 5);
 
+    // --- break / continue (Phase 3.8a) ------------------------------
+    // break in for / while / do-while
+    check_int((char*)"break: for-loop",            (char*)r"let s=0; for (let i=0;i<10;i=i+1) { if (i===5) break; s=s+i }; s", 10);
+    check_int((char*)"break: while-true",          (char*)r"let i=0; while (true) { if (i===7) break; i = i + 1 }; i", 7);
+    check_int((char*)"break: do-while",            (char*)r"let i=0; do { if (i===3) break; i = i + 1 } while (i<10); i", 3);
+    // continue in for / while / do-while
+    check_int((char*)"continue: for-odd-sum",      (char*)r"let s=0; for (let i=0;i<10;i=i+1) { if (i%2===0) continue; s=s+i }; s", 25);
+    check_int((char*)"continue: while",            (char*)r"let i=0; let s=0; while (i<6) { i=i+1; if (i===3) continue; s=s+i }; s", 18);
+    check_int((char*)"continue: do-while",         (char*)r"let i=0; let s=0; do { i=i+1; if (i===3) continue; s=s+i } while (i<5); s", 12);
+    // break / continue in for-of and for-in
+    check_int((char*)"break: for-of",              (char*)r"let s=0; for (let v of [1,2,3,4,5]) { if (v===4) break; s=s+v }; s", 6);
+    check_int((char*)"continue: for-in",           (char*)r"let s=0; for (let k in {a:1,b:2,c:3,d:4}) { if (k==='c') continue; s=s+1 }; s", 3);
+    // Nested loops — break only exits innermost
+    check_int((char*)"break: nested only inner",   (char*)r"let s=0; for (let i=0;i<3;i=i+1) { for (let j=0;j<3;j=j+1) { if (j===2) break; s = s + 1 } }; s", 6);
+    // break inside a function inside a loop must still work
+    check_int((char*)"continue: inside fn body",   (char*)r"function f(n) { let s=0; for (let i=0;i<n;i=i+1) { if (i===1) continue; s=s+i }; return s } f(4)", 5);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");
