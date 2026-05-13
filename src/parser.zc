@@ -522,35 +522,48 @@ fn parse_try(p: Parser*) -> AstNode* {
     let try_block = parse_block(p);
     if try_block == NULL { return NULL; }
 
-    if !match_kind(p, TokenKind::KwCatch) {
-        // MVP requires a catch clause; finally without catch is deferred.
+    // Catch clause (optional in the presence of finally).
+    let catch_block: AstNode* = NULL;
+    let catch_name_start: u32 = 0;
+    let catch_name_length: u32 = 0;
+    if match_kind(p, TokenKind::KwCatch) {
+        if match_kind(p, TokenKind::LParen) {
+            let id = peek(p);
+            if id.kind != TokenKind::Identifier {
+                p.had_error = true; return NULL;
+            }
+            advance(p);
+            catch_name_start = id.start;
+            catch_name_length = id.length;
+            if !expect_kind(p, TokenKind::RParen) { return NULL; }
+        }
+        if peek_kind(p) != TokenKind::LBrace { p.had_error = true; return NULL; }
+        catch_block = parse_block(p);
+        if catch_block == NULL { return NULL; }
+    }
+
+    // Finally clause (optional).
+    let finally_block: AstNode* = NULL;
+    if match_kind(p, TokenKind::KwFinally) {
+        if peek_kind(p) != TokenKind::LBrace { p.had_error = true; return NULL; }
+        finally_block = parse_block(p);
+        if finally_block == NULL { return NULL; }
+    }
+
+    // Must have at least one of catch / finally.
+    if catch_block == NULL && finally_block == NULL {
         p.had_error = true;
         return NULL;
     }
 
-    // Optional parenthesized binding identifier: catch (e) { ... }
-    let catch_name_start: u32 = 0;
-    let catch_name_length: u32 = 0;
-    if match_kind(p, TokenKind::LParen) {
-        let id = peek(p);
-        if id.kind != TokenKind::Identifier {
-            p.had_error = true;
-            return NULL;
-        }
-        advance(p);
-        catch_name_start = id.start;
-        catch_name_length = id.length;
-        if !expect_kind(p, TokenKind::RParen) { return NULL; }
-    }
-
-    if peek_kind(p) != TokenKind::LBrace { p.had_error = true; return NULL; }
-    let catch_block = parse_block(p);
-    if catch_block == NULL { return NULL; }
-
-    let node = new_node(&p.tracker, NodeKind::TryStmt, kw.start, catch_block.end);
-    node.left = try_block;
+    let end_pos = if finally_block != NULL { finally_block.end }
+                  else if catch_block != NULL { catch_block.end }
+                  else { try_block.end };
+    let node = new_node(&p.tracker, NodeKind::TryStmt, kw.start, end_pos);
+    node.left  = try_block;
     node.right = catch_block;
-    node.name_start = catch_name_start;
+    node.third = finally_block;
+    node.name_start  = catch_name_start;
     node.name_length = catch_name_length;
     return node;
 }

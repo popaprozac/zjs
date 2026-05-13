@@ -2284,8 +2284,11 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // scope we allocate it on the spot. Either way we bump
         // fixed_regs so reset_temps between statements doesn't clobber
         // the binding.
+        let has_catch   = node.right != NULL;
+        let has_finally = node.third != NULL;
+
         let catch_reg: u8 = 0;
-        if node.name_length > 0 {
+        if has_catch && node.name_length > 0 {
             let existing = lookup_local(c, c.source + node.name_start, node.name_length);
             if existing >= 0 {
                 catch_reg = (u8)existing;
@@ -2296,25 +2299,64 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             if catch_reg + 1 > c.fixed_regs { c.fixed_regs = catch_reg + 1; }
         }
 
-        // EnterTry: placeholder offset, patched after the catch block start.
-        let enter_idx = emit(c, make_inst_a_i16(Op::EnterTry, catch_reg, 0));
+        if !has_finally {
+            // Phase 3.1c shape: try { ... } catch (e) { ... } — no finally.
+            let enter_idx = emit(c, make_inst_a_i16(Op::EnterTry, catch_reg, 0));
+            compile_stmt(c, node.left);
+            emit(c, make_inst_a(Op::LeaveTry, 0));
+            let skip_idx = emit(c, make_inst_i16(Op::Jmp, 0));
+            patch_jump(c, enter_idx);
+            compile_stmt(c, node.right);
+            patch_jump(c, skip_idx);
+            return;
+        }
 
-        // Try body
-        compile_stmt(c, node.left);
+        // Phase 3.8f: finally clause. Wrap (try [+ catch]) in an outer
+        // try whose catch target stashes the thrown value + flag and
+        // falls into the finally block. After finally, if the flag is
+        // set, re-throw.
+        let pending_reg = alloc_reg(c);
+        let flag_reg    = alloc_reg(c);
+        if flag_reg + 1 > c.fixed_regs { c.fixed_regs = flag_reg + 1; }
+        // Initialize flag = false (covers the no-exception path).
+        emit(c, make_inst_a(Op::LoadFalse, flag_reg));
 
-        // Normal exit from the try block
-        emit(c, make_inst_a(Op::LeaveTry, 0));
+        // Outer try: any uncaught throw from the try/catch body lands
+        // at outer_handler with `thrown` placed in pending_reg.
+        let outer_enter = emit(c, make_inst_a_i16(Op::EnterTry, pending_reg, 0));
 
-        // Skip-over-catch jump (placeholder, patched after catch body)
-        let skip_idx = emit(c, make_inst_i16(Op::Jmp, 0));
+        if has_catch {
+            // Inner try: throws from the try-body land in catch_reg.
+            let inner_enter = emit(c, make_inst_a_i16(Op::EnterTry, catch_reg, 0));
+            compile_stmt(c, node.left);
+            emit(c, make_inst_a(Op::LeaveTry, 0));
+            let skip_catch = emit(c, make_inst_i16(Op::Jmp, 0));
+            patch_jump(c, inner_enter);
+            compile_stmt(c, node.right);
+            patch_jump(c, skip_catch);
+        } else {
+            // No catch — outer try catches throws from the try body
+            // directly and routes them to the finally re-throw path.
+            compile_stmt(c, node.left);
+        }
 
-        // Catch block target — back-patch the EnterTry offset to here
-        patch_jump(c, enter_idx);
+        emit(c, make_inst_a(Op::LeaveTry, 0));   // pop outer
 
-        compile_stmt(c, node.right);
+        // Normal (or post-catch) exit: skip the handler entry.
+        let skip_outer = emit(c, make_inst_i16(Op::Jmp, 0));
+        patch_jump(c, outer_enter);
+        // Outer handler entry — pending_reg holds the thrown value.
+        // Mark the flag so we re-throw after finally.
+        emit(c, make_inst_a(Op::LoadTrue, flag_reg));
+        patch_jump(c, skip_outer);
 
-        // Patch the skip-over-catch jump
-        patch_jump(c, skip_idx);
+        // Finally body runs on both paths.
+        compile_stmt(c, node.third);
+
+        // If we got here via the outer handler, re-throw pending_reg.
+        let after_finally = emit(c, make_inst_a_i16(Op::JmpIfFalse, flag_reg, 0));
+        emit(c, make_inst_a(Op::Throw, pending_reg));
+        patch_jump(c, after_finally);
         return;
     }
 

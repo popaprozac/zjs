@@ -691,6 +691,13 @@ fn run_tests() -> void {
     check_int((char*)"arguments: var shadow",       (char*)r"function f() { var arguments = 99; return arguments } f(1,2,3)", 99);
     check_int((char*)"arguments: nested fn isolates", (char*)r"function outer() { function inner() { return arguments.length }; return inner('a','b') } outer(1,2,3)", 2);
 
+    // --- try / finally (Phase 3.8f) --------------------------------
+    check_string((char*)"finally: try-only normal", (char*)r"let r=''; try { r='try' } finally { r=r+'/fin' }; r", (char*)"try/fin");
+    check_string((char*)"finally: try-catch normal", (char*)r"let r=''; try { r='try' } catch(e) { r='c' } finally { r=r+'/fin' }; r", (char*)"try/fin");
+    check_string((char*)"finally: catch path",       (char*)r"let r=''; try { throw new Error('x') } catch (e) { r='c:'+e.message } finally { r=r+'/fin' }; r", (char*)"c:x/fin");
+    check_int((char*)"finally: rethrow no catch",    (char*)r"let r=0; try { try { throw 7 } finally { r=99 } } catch(e) { r=r+e }; r", 106);
+    check_int((char*)"finally: runs after return",   (char*)r"function f() { let r=0; try { throw 5 } catch(e) { r=e } finally { r=r+1 }; return r } f()", 6);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");
