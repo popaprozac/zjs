@@ -1069,11 +1069,66 @@ fn inner_has_captures_from(c: Compiler*) -> bool {
 }
 
 fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
+    let callee = node.left;
+    let is_method = callee != NULL && (callee.kind == NodeKind::Member || callee.kind == NodeKind::Computed);
+
     let arg_count: u8 = (u8)node.children_count;
 
-    // Reserve consecutive registers for callee + args. compile_expr
-    // calls below may use registers above this reserved block for
-    // their own temps and release them back.
+    if is_method {
+        // Method call: regs[base]=method, regs[base+1]=receiver,
+        // regs[base+2..]=args. Receiver is the member's object; LoadProp
+        // (or LoadElem for computed) reads the method off it.
+        let slots_needed: u8 = 2 + arg_count;
+        let base = c.next_reg;
+        let r: u8 = 0;
+        while r < slots_needed { alloc_reg(c); r = r + 1; }
+
+        // Compile receiver into regs[base+1].
+        let recv_r = compile_expr(c, callee.left);
+        if recv_r != base + 1 {
+            emit(c, make_inst_ab(Op::Mov, base + 1, recv_r));
+            if recv_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        }
+
+        // Load the method into regs[base].
+        if callee.kind == NodeKind::Member {
+            let name_atom = ctx_intern_atom(c.ctx, c.source + callee.name_start, callee.name_length);
+            let ic = alloc_ic_slot(c, name_atom);
+            if ic > 255 {
+                // Out of IC slots: fall back to LoadElem with a name-string key.
+                let key_r = emit_load_name_string(c, c.source + callee.name_start, callee.name_length);
+                emit(c, make_inst_abc(Op::LoadElem, base, base + 1, key_r));
+                if key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            } else {
+                emit(c, make_inst_abc(Op::LoadProp, base, base + 1, (u8)ic));
+            }
+        } else {
+            // Computed: LoadElem regs[base], recv, key.
+            let key_r = compile_expr(c, callee.right);
+            emit(c, make_inst_abc(Op::LoadElem, base, base + 1, key_r));
+            if key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        }
+
+        // Args into regs[base+2..].
+        let j: u8 = 0;
+        while j < arg_count {
+            let arg_r = compile_expr(c, node.children[j]);
+            let target = base + 2 + j;
+            if arg_r != target {
+                emit(c, make_inst_ab(Op::Mov, target, arg_r));
+                if arg_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+            j = j + 1;
+        }
+
+        emit(c, make_inst_abc(Op::MethodInvoke, base, base, arg_count));
+
+        c.next_reg = base + 1;
+        if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+        return base;
+    }
+
+    // Plain call: regs[base] = callee, regs[base+1..] = args.
     let base = c.next_reg;
     let i: u8 = 0;
     while i <= arg_count {
@@ -1081,14 +1136,12 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
         i = i + 1;
     }
 
-    // Callee.
     let r = compile_expr(c, node.left);
     if r != base {
         emit(c, make_inst_ab(Op::Mov, base, r));
         if r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
     }
 
-    // Each argument into base+1+j.
     let j: u8 = 0;
     while j < arg_count {
         let arg_r = compile_expr(c, node.children[j]);
@@ -1100,10 +1153,8 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
         j = j + 1;
     }
 
-    // Emit the Call. Result lands in `base` (reusing the callee slot).
     emit(c, make_inst_abc(Op::Invoke, base, base, arg_count));
 
-    // Release all reserved slots above the result.
     c.next_reg = base + 1;
     if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
     return base;

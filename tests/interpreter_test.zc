@@ -449,6 +449,44 @@ fn run_tests() -> void {
     // typeof on a closure returns "function"
     check_string((char*)"closure: typeof",             (char*)r"function f() { let x = 1; return function() { return x } } typeof f()", (char*)"function");
 
+    // --- Built-ins (Phase 3.5a) -------------------------------------
+    // Array.prototype.push — returns new length, mutates in place
+    check_int((char*)"arr.push: returns length",   (char*)r"let a = [1,2,3]; a.push(4)", 4);
+    check_int((char*)"arr.push: visible length",   (char*)r"let a = [1,2,3]; a.push(4); a.length", 4);
+    check_int((char*)"arr.push: variadic",         (char*)r"let a = []; a.push(1); a.push(2); a.push(3); a.length", 3);
+    check_int((char*)"arr.push: last element",     (char*)r"let a = [1,2]; a.push(99); a[2]", 99);
+    // Array.prototype.pop — returns last, shortens
+    check_int((char*)"arr.pop: returns last",      (char*)r"let a = [10,20,30]; a.pop()", 30);
+    check_int((char*)"arr.pop: shortens",          (char*)r"let a = [10,20,30]; a.pop(); a.length", 2);
+    check_string((char*)"arr.pop: typeof empty",   (char*)r"let a = []; typeof a.pop()", (char*)"undefined");
+    // Array.prototype.indexOf
+    check_int((char*)"arr.indexOf: found",         (char*)r"[1,2,3,4,5].indexOf(3)", 2);
+    check_int((char*)"arr.indexOf: first match",   (char*)r"[1,2,3,2,1].indexOf(2)", 1);
+    check_int((char*)"arr.indexOf: not found",     (char*)r"[1,2,3].indexOf(99)", -1);
+    check_int((char*)"arr.indexOf: strings",       (char*)r"['a','b','c'].indexOf('b')", 1);
+    // Object.keys
+    check_int((char*)"Object.keys: len 3",         (char*)r"Object.keys({a:1,b:2,c:3}).length", 3);
+    check_int((char*)"Object.keys: len 0",         (char*)r"Object.keys({}).length", 0);
+    check_string((char*)"Object.keys: insertion order", (char*)r"Object.keys({a:1,b:2,c:3})[0]", (char*)"a");
+    check_string((char*)"Object.keys: index 1",    (char*)r"Object.keys({a:1,b:2,c:3})[1]", (char*)"b");
+    // String.prototype.indexOf
+    check_int((char*)"str.indexOf: found",         (char*)r"'hello world'.indexOf('world')", 6);
+    check_int((char*)"str.indexOf: not found",     (char*)r"'hello'.indexOf('xyz')", -1);
+    check_int((char*)"str.indexOf: empty needle",  (char*)r"'hello'.indexOf('')", 0);
+    // String.prototype.slice
+    check_string((char*)"str.slice: range",        (char*)r"'hello'.slice(1,4)", (char*)"ell");
+    check_string((char*)"str.slice: open end",     (char*)r"'hello'.slice(1)", (char*)"ello");
+    check_string((char*)"str.slice: negative",     (char*)r"'hello'.slice(-3)", (char*)"llo");
+    check_string((char*)"str.slice: out of range", (char*)r"'hi'.slice(10,20)", (char*)"");
+    // String.prototype.split
+    check_int((char*)"str.split: count",           (char*)r"'a,b,c'.split(',').length", 3);
+    check_string((char*)"str.split: middle",       (char*)r"'a,b,c'.split(',')[1]", (char*)"b");
+    check_string((char*)"str.split: empty middle", (char*)r"'a,,b'.split(',')[1]", (char*)"");
+    check_int((char*)"str.split: chars count",     (char*)r"'abc'.split('').length", 3);
+    check_string((char*)"str.split: char",         (char*)r"'abc'.split('')[1]", (char*)"b");
+    // .length on string primitive still works
+    check_int((char*)"str.length: primitive",      (char*)r"'abc'.length", 3);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

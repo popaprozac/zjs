@@ -58,6 +58,19 @@ struct ZjsContext {
     // LoadEnv reads ctx.current_closure.env.
     current_closure: ZjsClosure*;
 
+    // Implicit `this` for the currently-running host function (Phase 3.5).
+    // Set by Op::MethodInvoke before dispatch and restored after. Host
+    // builtins like Array.prototype.push read it via zjs_get_host_this().
+    host_this: ZjsValue;
+
+    // Cached "prototype" objects for built-in cell types (Phase 3.5).
+    // Lazily populated by ctx_init_builtins. property_get on TAG_ARRAY
+    // falls back to array_proto for unrecognized method names; same for
+    // TAG_STRING / string_proto. Phase 3.6 will replace this with a real
+    // hidden-class-driven proto chain.
+    array_proto:    ZjsObject*;
+    string_proto:   ZjsObject*;
+
     // --- GC state ---
     root_frames:    GcRootFrame*;     // grown geometrically
     root_depth:     u32;              // # of active interpret() frames
@@ -84,6 +97,9 @@ fn zjs_new_context() -> ZjsContext* {
         // GC initial threshold: collect after the first 4096 cell allocations,
         // then adapt to 2× live count after each collection.
         result.gc_threshold = 4096;
+        // calloc gave us {bits: 0}; explicitly initialize the implicit
+        // host receiver to JS `undefined`.
+        result.host_this = zjs_undefined();
 
         // Root empty class — registered as a cell, kept alive via the
         // context pointer itself (we mark it during gc_mark_roots).
@@ -296,6 +312,17 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     if ctx.current_closure != NULL {
         let cur_val = zjs_cell_from_ptr((void*)ctx.current_closure);
         gc_mark_value(cur_val);
+    }
+    // Implicit host receiver for the in-flight host call.
+    gc_mark_value(ctx.host_this);
+    // Built-in prototype objects (kept alive across the whole context).
+    if ctx.array_proto != NULL {
+        let ap_val = zjs_cell_from_ptr((void*)ctx.array_proto);
+        gc_mark_value(ap_val);
+    }
+    if ctx.string_proto != NULL {
+        let sp_val = zjs_cell_from_ptr((void*)ctx.string_proto);
+        gc_mark_value(sp_val);
     }
     // Globals
     let i: u32 = 0;
@@ -738,6 +765,224 @@ fn host_math_min(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_double(best);
 }
 
+// =====================================================================
+// Phase 3.5 — Object / Array / String / JSON built-ins.
+// =====================================================================
+
+// Implicit receiver accessor for host functions. zjs_undefined() if the
+// host was called via plain Invoke; the method-call receiver if via
+// MethodInvoke.
+fn zjs_get_host_this(ctx: ZjsContext*) -> ZjsValue {
+    return ctx.host_this;
+}
+
+// Object.keys(obj) — array of own enumerable string keys, in insertion
+// order. We walk the hidden-class chain bottom-up; each transition_name
+// goes at transition_slot. Non-object inputs return an empty array.
+fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 || zjs_is_object(args[0]) == 0 {
+        return ctx_new_array(ctx, 0);
+    }
+    let o = zjs_as_object(args[0]);
+    let count = o.cls.prop_count;
+    let arr_v = ctx_new_array(ctx, count);
+    let arr = zjs_as_array(arr_v);
+    let cls = o.cls;
+    while cls != NULL && cls.parent != NULL {
+        let name = cls.transition_name;
+        let slot = cls.transition_slot;
+        arr.elements[slot] = zjs_cell_from_ptr((void*)name);
+        cls = cls.parent;
+    }
+    arr.length = count;
+    return arr_v;
+}
+
+// --- Array.prototype helpers ---------------------------------------
+
+fn host_array_push(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_array(this_val) == 0 { return zjs_undefined(); }
+    let arr = zjs_as_array(this_val);
+    let i: u32 = 0;
+    while i < argc {
+        array_set(arr, arr.length, args[i]);
+        i = i + 1;
+    }
+    return zjs_int32((i32)arr.length);
+}
+
+fn host_array_pop(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_array(this_val) == 0 { return zjs_undefined(); }
+    let arr = zjs_as_array(this_val);
+    if arr.length == 0 { return zjs_undefined(); }
+    let last = arr.elements[arr.length - 1];
+    arr.elements[arr.length - 1] = zjs_undefined();
+    arr.length = arr.length - 1;
+    return last;
+}
+
+fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_array(this_val) == 0 { return zjs_int32(-1); }
+    if argc == 0 { return zjs_int32(-1); }
+    let arr = zjs_as_array(this_val);
+    let needle = args[0];
+    let i: u32 = 0;
+    while i < arr.length {
+        if zjs_strict_eq(arr.elements[i], needle) != 0 {
+            return zjs_int32((i32)i);
+        }
+        i = i + 1;
+    }
+    return zjs_int32(-1);
+}
+
+// --- String.prototype helpers ---------------------------------------
+
+fn host_string_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_string(this_val) == 0 { return zjs_int32(-1); }
+    if argc == 0 { return zjs_int32(-1); }
+    let needle_v = args[0];
+    if zjs_is_string(needle_v) == 0 { needle_v = zjs_to_string(ctx, needle_v); }
+    let hay = zjs_as_string(this_val);
+    let nee = zjs_as_string(needle_v);
+    if nee.length == 0 { return zjs_int32(0); }
+    if hay.length < nee.length { return zjs_int32(-1); }
+    let hay_d = hay.data;
+    let hay_n = hay.length;
+    let nee_d = nee.data;
+    let nee_n = nee.length;
+    let result: i32 = -1;
+    raw {
+        for (uint32_t i = 0; i + nee_n <= hay_n; i++) {
+            if (memcmp(hay_d + i, nee_d, nee_n) == 0) {
+                result = (int32_t)i;
+                break;
+            }
+        }
+    }
+    return zjs_int32(result);
+}
+
+// Clamp + normalize a slice endpoint (negatives count from end).
+fn slice_clamp(v: ZjsValue, len: u32, default_val: i32) -> i32 {
+    if zjs_is_undefined(v) != 0 { return default_val; }
+    let n = (i32)zjs_to_double(v);
+    if n < 0 { n = (i32)len + n; }
+    if n < 0 { n = 0; }
+    if n > (i32)len { n = (i32)len; }
+    return n;
+}
+
+fn host_string_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_string(this_val) == 0 {
+        return ctx_intern_string(ctx, (char*)"", 0);
+    }
+    let s = zjs_as_string(this_val);
+    let start = if argc >= 1 { slice_clamp(args[0], s.length, 0) }
+                else         { 0 };
+    let end_default: i32 = (i32)s.length;
+    let end = if argc >= 2 { slice_clamp(args[1], s.length, end_default) }
+              else         { end_default };
+    if end < start { end = start; }
+    let outlen = (u32)(end - start);
+    let buf: char* = NULL;
+    let src = s.data;
+    let src_off = (u32)start;
+    raw {
+        buf = (char*)malloc((size_t)outlen + 1);
+        if (outlen > 0) memcpy(buf, src + src_off, outlen);
+        buf[outlen] = '\0';
+    }
+    return ctx_intern_string_take(ctx, buf, outlen);
+}
+
+fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_string(this_val) == 0 {
+        return ctx_new_array(ctx, 0);
+    }
+    let s = zjs_as_string(this_val);
+    // If no separator, return [s].
+    if argc == 0 || zjs_is_undefined(args[0]) != 0 {
+        let one = ctx_new_array(ctx, 1);
+        let one_arr = zjs_as_array(one);
+        one_arr.elements[0] = this_val;
+        one_arr.length = 1;
+        return one;
+    }
+    let sep_v = args[0];
+    if zjs_is_string(sep_v) == 0 { sep_v = zjs_to_string(ctx, sep_v); }
+    let sep = zjs_as_string(sep_v);
+    let result_v = ctx_new_array(ctx, 0);
+    let result = zjs_as_array(result_v);
+
+    // Empty separator: split into individual characters.
+    if sep.length == 0 {
+        let i: u32 = 0;
+        let sdata = s.data;
+        while i < s.length {
+            let buf: char* = NULL;
+            let off = i;
+            raw {
+                buf = (char*)malloc(2);
+                buf[0] = sdata[off];
+                buf[1] = '\0';
+            }
+            let piece = ctx_intern_string_take(ctx, buf, 1);
+            array_set(result, result.length, piece);
+            i = i + 1;
+        }
+        return result_v;
+    }
+
+    let hay_d  = s.data;
+    let hay_n  = s.length;
+    let nee_d  = sep.data;
+    let nee_n  = sep.length;
+    let cursor: u32 = 0;
+    let i: u32 = 0;
+    while i + nee_n <= hay_n {
+        let matches: int = 0;
+        let off = i;
+        raw { matches = (memcmp(hay_d + off, nee_d, nee_n) == 0) ? 1 : 0; }
+        if matches != 0 {
+            let piece_len = i - cursor;
+            let buf: char* = NULL;
+            let src_off = cursor;
+            let plen = piece_len;
+            raw {
+                buf = (char*)malloc((size_t)plen + 1);
+                if (plen > 0) memcpy(buf, hay_d + src_off, plen);
+                buf[plen] = '\0';
+            }
+            let piece = ctx_intern_string_take(ctx, buf, piece_len);
+            array_set(result, result.length, piece);
+            cursor = i + nee_n;
+            i = cursor;
+        } else {
+            i = i + 1;
+        }
+    }
+    // Trailing remainder
+    let tail_len = hay_n - cursor;
+    let tail_buf: char* = NULL;
+    let tail_src = cursor;
+    let tlen = tail_len;
+    raw {
+        tail_buf = (char*)malloc((size_t)tlen + 1);
+        if (tlen > 0) memcpy(tail_buf, hay_d + tail_src, tlen);
+        tail_buf[tlen] = '\0';
+    }
+    let tail = ctx_intern_string_take(ctx, tail_buf, tail_len);
+    array_set(result, result.length, tail);
+    return result_v;
+}
+
 fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // --- Error ---
     let err_ptr: void* = NULL;
@@ -776,6 +1021,43 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
 
     let math_slot = ctx_intern_global(ctx, (char*)"Math", 4);
     ctx.globals[math_slot].value = math_v;
+
+    // --- Object namespace (Phase 3.5) ---
+    let object_v = ctx_new_object(ctx);
+    let object_o = zjs_as_object(object_v);
+    let keys_ptr: void* = NULL; raw { keys_ptr = (void*)host_object_keys; }
+    object_set(ctx, object_o, ctx_intern_atom(ctx, (char*)"keys", 4),
+               ctx_make_host_function(ctx, (char*)"keys", keys_ptr));
+    let object_slot = ctx_intern_global(ctx, (char*)"Object", 6);
+    ctx.globals[object_slot].value = object_v;
+
+    // --- Array.prototype intercept (Phase 3.5) ---
+    let array_proto_v = ctx_new_object(ctx);
+    let array_proto = zjs_as_object(array_proto_v);
+    let push_ptr:  void* = NULL; raw { push_ptr  = (void*)host_array_push; }
+    let pop_ptr:   void* = NULL; raw { pop_ptr   = (void*)host_array_pop; }
+    let aidx_ptr:  void* = NULL; raw { aidx_ptr  = (void*)host_array_index_of; }
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"push", 4),
+               ctx_make_host_function(ctx, (char*)"push", push_ptr));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"pop", 3),
+               ctx_make_host_function(ctx, (char*)"pop", pop_ptr));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"indexOf", 7),
+               ctx_make_host_function(ctx, (char*)"indexOf", aidx_ptr));
+    ctx.array_proto = array_proto;
+
+    // --- String.prototype intercept (Phase 3.5) ---
+    let string_proto_v = ctx_new_object(ctx);
+    let string_proto = zjs_as_object(string_proto_v);
+    let sidx_ptr:   void* = NULL; raw { sidx_ptr   = (void*)host_string_index_of; }
+    let slice_ptr:  void* = NULL; raw { slice_ptr  = (void*)host_string_slice; }
+    let split_ptr:  void* = NULL; raw { split_ptr  = (void*)host_string_split; }
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"indexOf", 7),
+               ctx_make_host_function(ctx, (char*)"indexOf", sidx_ptr));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"slice", 5),
+               ctx_make_host_function(ctx, (char*)"slice", slice_ptr));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"split", 5),
+               ctx_make_host_function(ctx, (char*)"split", split_ptr));
+    ctx.string_proto = string_proto;
 }
 
 // --- Error inspection (public ABI) ----------------------------------

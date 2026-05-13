@@ -75,6 +75,15 @@ enum Op {
     LoadProp,         // a=dst, b=obj_reg, c=ic_slot (u8)
     StoreProp,        // a=obj_reg, b=ic_slot (u8), c=val_reg
 
+    // Method calls (Phase 3.5).
+    // Same encoding shape as Invoke, but regs[base+1] is the receiver
+    // (`this`) and explicit JS args start at regs[base+2]. arg_count
+    // counts only the explicit args. Used whenever the source is a
+    // member-expression call like `obj.method(args)`. Host functions
+    // see the receiver via ctx.host_this; user Function/Closure callees
+    // ignore it (no `this` binding for user functions yet).
+    MethodInvoke,     // a=dst, b=base, c=arg_count
+
     // Closures (Phase 3.3).
     MakeClosure,      // a=dst, b=fn_reg, c=env_reg
                       //   wraps regs[b] (a function value) with regs[c] (an env object)

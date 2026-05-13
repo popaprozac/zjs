@@ -24,7 +24,7 @@ raw {
 // =====================================================================
 
 fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
-    // Array: integer index OR "length".
+    // Array: integer index OR "length", with prototype-method fallback.
     if zjs_is_array(obj) != 0 {
         let arr = zjs_as_array(obj);
         // Fast int path
@@ -46,11 +46,36 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             // String-coerced numeric index
             let idx = zjs_to_array_index(key);
             if idx >= 0 { return array_get(arr, (u32)idx); }
+            // Fall through to prototype method intercept (Phase 3.5).
+            if ctx.array_proto != NULL {
+                return object_get(ctx.array_proto, ks);
+            }
             return zjs_undefined();
         }
         // Anything else: try ToIndex
         let idx2 = zjs_to_array_index(key);
         if idx2 >= 0 { return array_get(arr, (u32)idx2); }
+        return zjs_undefined();
+    }
+
+    // String primitive: .length + prototype-method intercept.
+    if zjs_is_string(obj) != 0 {
+        if zjs_is_string(key) != 0 {
+            let ks = zjs_as_string(key);
+            let kdata = ks.data;
+            let klen  = ks.length;
+            let is_length: int = 0;
+            raw {
+                is_length = (klen == 6 && memcmp(kdata, "length", 6) == 0) ? 1 : 0;
+            }
+            if is_length != 0 {
+                let s = zjs_as_string(obj);
+                return zjs_int32((i32)s.length);
+            }
+            if ctx.string_proto != NULL {
+                return object_get(ctx.string_proto, ks);
+            }
+        }
         return zjs_undefined();
     }
 
@@ -62,8 +87,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     }
 
     // Primitives: no property access in MVP. Real JS would auto-box;
-    // we just return undefined. Common test262 patterns like
-    // "abc".length will produce undefined — fine for now.
+    // we just return undefined.
     return zjs_undefined();
 }
 
@@ -288,6 +312,57 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
                 let off = inst_bc_i16(inst);
                 ip = (usize)((i32)ip + off);
             }
+        } else if op == Op::MethodInvoke {
+            // Same dispatch as Invoke but regs[base+1] is `this` and
+            // explicit args live at regs[base+2..]. Set ctx.host_this
+            // around the call so host builtins see the receiver.
+            let dst = inst.a;
+            let base = inst.b;
+            let argc = (u32)inst.c;
+            let callee = regs[base];
+            let saved_this = ctx.host_this;
+            ctx.host_this = regs[base + 1];
+            if zjs_is_function(callee) != 0 {
+                let fp = zjs_cell_as_ptr(callee);
+                let target: Function* = NULL;
+                raw { target = (Function*)fp; }
+                let argv_ptr: ZjsValue* = NULL;
+                raw { argv_ptr = &regs[base + 2]; }
+                let r = interpret(ctx, target, argv_ptr, argc);
+                ctx.host_this = saved_this;
+                if r.is_throw { throwing = true; thrown = r.value; continue; }
+                regs[dst] = r.value;
+            } else if zjs_is_closure(callee) != 0 {
+                let cl = zjs_as_closure(callee);
+                let fp2 = cl.function;
+                let target2: Function* = NULL;
+                raw { target2 = (Function*)fp2; }
+                let argv_ptr2: ZjsValue* = NULL;
+                raw { argv_ptr2 = &regs[base + 2]; }
+                let saved_cl = ctx.current_closure;
+                ctx.current_closure = cl;
+                let r2 = interpret(ctx, target2, argv_ptr2, argc);
+                ctx.current_closure = saved_cl;
+                ctx.host_this = saved_this;
+                if r2.is_throw { throwing = true; thrown = r2.value; continue; }
+                regs[dst] = r2.value;
+            } else if zjs_is_host_function(callee) != 0 {
+                let hf_ptr = zjs_cell_as_ptr(callee);
+                let argv_ptr: ZjsValue* = NULL;
+                raw { argv_ptr = &regs[base + 2]; }
+                let r: ZjsValue = zjs_undefined();
+                raw {
+                    ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
+                    typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
+                    HostFn fp = (HostFn)hf->fn_ptr;
+                    r = fp(ctx, argv_ptr, argc);
+                }
+                ctx.host_this = saved_this;
+                regs[dst] = r;
+            } else {
+                ctx.host_this = saved_this;
+                regs[dst] = zjs_undefined();
+            }
         } else if op == Op::Invoke {
             let dst = inst.a;
             let base = inst.b;
@@ -331,12 +406,18 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
                 let argv_ptr: ZjsValue* = NULL;
                 raw { argv_ptr = &regs[base + 1]; }
                 let r: ZjsValue = zjs_undefined();
+                // Plain call — no receiver. Clear ctx.host_this so a host
+                // function can't observe a stale `this` from an outer
+                // method-call frame.
+                let saved_this = ctx.host_this;
+                ctx.host_this = zjs_undefined();
                 raw {
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
                     typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
                     HostFn fp = (HostFn)hf->fn_ptr;
                     r = fp(ctx, argv_ptr, argc);
                 }
+                ctx.host_this = saved_this;
                 regs[dst] = r;
             } else {
                 // Not callable — TypeError in real JS; MVP returns undefined.
