@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-13 16:48 UTC",
+    "when": "2026-05-13 16:51 UTC",
     "total": 4144,
-    "passed": 1731,
-    "failed": 882,
+    "passed": 1736,
+    "failed": 877,
     "skipped": 1531
   },
   "failures": [
@@ -932,18 +932,6 @@
       "reason": "zjs: throw: Test262Error: #1: ({})\\u0009instanceof\\u0009Object === true"
     },
     {
-      "path": "test/language/expressions/instanceof/S11.8.6_A2.1_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: ({}) instanceof Object === true"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A2.4_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: var OBJECT = 0; (OBJECT = Object, {}) instanceof OBJECT === true"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A2.4_T4.js",
-      "reason": "zjs: throw: Test262Error: #1: (OBJECT = Object, {}) instanceof OBJECT !== true"
-    },
-    {
       "path": "test/language/expressions/instanceof/S11.8.6_A3.js",
       "reason": "zjs: throw: Test262Error: #1: true instanceof true throw TypeError"
     },
@@ -969,11 +957,11 @@
     },
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A6_T4.js",
-      "reason": "zjs: throw: Test262Error: #3 Only Function objects implement [[HasInstance]] and consequently can be proper ShiftExpress"
+      "reason": "zjs: throw: Test262Error: #4 Only Function objects implement [[HasInstance]] and consequently can be proper ShiftExpress"
     },
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A7_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: If instanceof returns true then GetValue(RelationalExpression) was constructed with ShiftE"
+      "reason": "zjs: throw: Test262Error: #2: If instanceof returns true then GetValue(RelationalExpression) was constructed with ShiftE"
     },
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A7_T2.js",
@@ -2492,10 +2480,6 @@
       "reason": "zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-2-2.js",
-      "reason": "zjs: throw: Test262Error: newObj instanceof Object !== true"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-10.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
@@ -2678,10 +2662,6 @@
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-19.js",
       "reason": "zjs: throw: Test262Error: newObj.hasOwnProperty(\"prop\") !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-2.js",
-      "reason": "zjs: throw: Test262Error: (newObj instanceof Object) !== true"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-201.js",
