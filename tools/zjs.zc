@@ -280,6 +280,76 @@ fn run_eval(source: char*) -> int {
     return 0;
 }
 
+// `zjs run <path>`: read the file, eval, exit 0 on no-throw / 1 on
+// throw. Used by the test262 conformance runner — it only needs the
+// throw/no-throw signal plus, on throw, a short diagnostic.
+fn run_file(path: char*) -> int {
+    let fh: void* = NULL;
+    raw { fh = (void*)fopen(path, "rb"); }
+    if fh == NULL { eprintln "zjs: cannot open file"; return 2; }
+
+    let len: usize = 0;
+    let buf: char* = NULL;
+    raw {
+        FILE* f = (FILE*)fh;
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        if (sz < 0) sz = 0;
+        len = (size_t)sz;
+        buf = (char*)malloc(len + 1);
+        if (buf) { fread(buf, 1, len, f); buf[len] = '\0'; }
+        fclose(f);
+    }
+    if buf == NULL { eprintln "zjs: out of memory"; return 2; }
+    defer raw { free(buf); }
+
+    let ctx = zjs_new_context();
+    if ctx == NULL { eprintln "zjs: failed to create context"; return 2; }
+    defer zjs_free_context(ctx);
+
+    let _ = zjs_eval(ctx, buf);
+    if zjs_had_error(ctx) != 0 {
+        let err = zjs_get_error(ctx);
+        // Print a one-line summary of the thrown value to stderr for the
+        // conformance runner to scrape.
+        if zjs_is_string(err) != 0 {
+            let s = zjs_as_string(err);
+            let sd = s.data;
+            let sn = s.length;
+            raw { fputs("zjs: throw: ", stderr); fwrite(sd, 1, sn, stderr); fputc('\n', stderr); }
+        } else if zjs_is_object(err) != 0 {
+            // Try .name + ": " + .message
+            let o = zjs_as_object(err);
+            let name_atom = zjs_string_new((char*)"name", 4);
+            let msg_atom  = zjs_string_new((char*)"message", 7);
+            let name_v = object_get(o, name_atom);
+            let msg_v  = object_get(o, msg_atom);
+            raw {
+                fputs("zjs: throw: ", stderr);
+                if (zjs_is_string(name_v)) {
+                    ZjsString* s = zjs_as_string(name_v);
+                    fwrite(s->data, 1, s->length, stderr);
+                } else {
+                    fputs("(unknown)", stderr);
+                }
+                if (zjs_is_string(msg_v)) {
+                    fputs(": ", stderr);
+                    ZjsString* s = zjs_as_string(msg_v);
+                    fwrite(s->data, 1, s->length, stderr);
+                }
+                fputc('\n', stderr);
+                free(name_atom->data); free(name_atom);
+                free(msg_atom->data);  free(msg_atom);
+            }
+        } else {
+            raw { fputs("zjs: throw\n", stderr); }
+        }
+        return 1;
+    }
+    return 0;
+}
+
 fn run_lex(source: char*) -> int {
     let len: usize = 0;
     raw { len = strlen(source); }
@@ -388,7 +458,7 @@ fn run_parse(source: char*) -> int {
 }
 
 fn print_usage() -> int {
-    eprintln "usage: zjs --version | zjs eval <source> | zjs lex <source> | zjs parse <source>";
+    eprintln "usage: zjs --version | zjs eval <source> | zjs run <file> | zjs lex <source> | zjs parse <source>";
     return 1;
 }
 
@@ -413,6 +483,11 @@ fn main(argc: int, argv: char**) -> int {
         let src: char* = (char*)"";
         if argc >= 3 { src = argv[2]; }
         return run_parse(src);
+    }
+
+    if libc_str::strcmp(argv[1], "run") == 0 {
+        if argc < 3 { return print_usage(); }
+        return run_file(argv[2]);
     }
 
     return print_usage();

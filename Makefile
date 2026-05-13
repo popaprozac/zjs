@@ -48,7 +48,7 @@ PARSER_TEST_SRC := tests/parser_test.zc
 INTERP_TEST_SRC := tests/interpreter_test.zc
 T262_RUNNER_SRC := tests/test262_runner.c
 
-.PHONY: all lib cli smoke lexer-test parser-test interp-test test test262-runner test262 clean
+.PHONY: all lib cli smoke lexer-test parser-test interp-test test test262-runner test262 test262-quick clean
 
 all: lib cli smoke lexer-test parser-test interp-test
 
@@ -83,11 +83,17 @@ test262-runner: $(T262_RUNNER)
 $(T262_RUNNER): $(T262_RUNNER_SRC) include/zjs.h $(LIB) | $(BUILD_DIR)
 	$(CLANG) -O2 -Wall -Iinclude $(T262_RUNNER_SRC) -L$(BUILD_DIR) -lzjs $(RPATH_FLAG) -o $@
 
-# Run a subset of test262 (defaults to expressions/). Caller can override
-# the target directory by setting T262_DIR. If test262 isn't cloned, the
-# runner prints clone instructions and exits non-zero.
+# Run the canonical test262 conformance subset via the Python harness
+# (frontmatter-aware, feature-filtered, records history + HTML report).
+# Requires test262 at vendor/test262 (clone with --depth=1 from
+# https://github.com/tc39/test262). Report lands in docs/conformance/.
+test262: cli
+	@python3 scripts/test262/run.py --quiet
+
+# Quick C-based runner — older, harness-light, no recording. Useful for
+# fast sanity checks against a specific subdir.
 T262_DIR ?= vendor/test262/test/language/expressions
-test262: test262-runner
+test262-quick: test262-runner
 	@$(T262_RUNNER) $(T262_DIR)
 
 test: all

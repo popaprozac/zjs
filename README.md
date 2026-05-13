@@ -80,15 +80,34 @@ Try it:
 
 ## test262 conformance
 
-The TC39 test262 suite isn't bundled (large repo). Clone it to `vendor/` and run:
+The TC39 test262 suite isn't bundled (large repo). Clone it once into `vendor/`:
 
 ```bash
-mkdir -p vendor
-git clone --depth 1 https://github.com/tc39/test262 vendor/test262
+git clone --depth=1 https://github.com/tc39/test262 vendor/test262
+```
+
+Then run the canonical conformance subset:
+
+```bash
 make test262
 ```
 
-Caveat for Phase 3.0c: the pass rate is a **biased "didn't crash" measure** until Phase 3.1 lands strings, throw, and object property access — at which point test262's `assert.*` machinery starts producing real signal. See `docs/phases/phase-3-0c-test262.md`.
+`make test262` runs the Python harness in `scripts/test262/` — it
+parses each test's YAML frontmatter, skips tests that need features
+or harness helpers we haven't built yet, classifies negative tests by
+expected throw type, and writes:
+
+- `docs/conformance/last.json` — per-test results for this run
+- `docs/conformance/history.jsonl` — append-only summary
+- `docs/conformance/index.html` — self-contained report with a pass-rate sparkline + first failures (open in any browser)
+
+The included subset (see `scripts/test262/config.json`) covers
+language expressions / statements / iteration plus built-ins we
+support (Object / Array / String / JSON / Math). Expand the
+`include` list as the engine grows.
+
+For a fast harness-light sanity pass against a single subdir, the
+older C-based runner is still available as `make test262-quick`.
 
 ## Embed surface
 

@@ -1,0 +1,459 @@
+#!/usr/bin/env python3
+"""
+test262 conformance runner for zjs.
+
+What this does:
+  1. Walks the configured subset of test262 (see config.json).
+  2. Parses each test's frontmatter; skips tests that need features /
+     harness includes / flags we don't support.
+  3. For each runnable test: concatenates the required harness files +
+     the test source into a temp file and runs `./build/zjs run <tmp>`.
+  4. Compares the engine's outcome (exit 0 vs throw) with the expected
+     outcome (`negative:` frontmatter says "should throw this error
+     type"; absence says "should not throw").
+  5. Writes:
+        docs/conformance/last.json       — per-test status for the run
+        docs/conformance/history.jsonl   — append-only summary row
+        docs/conformance/index.html      — regenerated, with embedded
+                                            history + current results
+
+What this does NOT do:
+  - Run in strict and sloppy mode separately. We treat all tests as
+    strict-by-default; the `noStrict` / `onlyStrict` flags don't gate
+    inclusion. (Tests that fail only in one mode may be misclassified;
+    the numbers are still useful as a coarse trend.)
+  - Verify error MESSAGES — only the thrown type (`SyntaxError`,
+    `TypeError`, etc.) is matched.
+  - Time-out individual tests. zjs has no loop-counter; an infinite
+    loop will hang the runner. Trim aggressively if that happens.
+
+Usage:
+    python3 scripts/test262/run.py
+    python3 scripts/test262/run.py --test262 /path/to/test262
+    python3 scripts/test262/run.py --filter language/expressions/addition
+    python3 scripts/test262/run.py --limit 100
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+REPO_ROOT  = Path(__file__).resolve().parent.parent.parent
+CONFIG     = REPO_ROOT / "scripts" / "test262" / "config.json"
+ZJS_BIN    = REPO_ROOT / "build" / "zjs"
+OUT_DIR    = REPO_ROOT / "docs" / "conformance"
+HISTORY    = OUT_DIR / "history.jsonl"
+LAST_JSON  = OUT_DIR / "last.json"
+HTML_PATH  = OUT_DIR / "index.html"
+
+DEFAULT_TEST262 = REPO_ROOT / "vendor" / "test262"
+
+# -----------------------------------------------------------------------------
+# Frontmatter parsing.
+#
+# Each test262 file starts with a YAML-ish block:
+#   /*---
+#   description: foo
+#   flags: [noStrict]
+#   features: [Array.prototype.flat, class]
+#   includes: [sta.js, assert.js]
+#   negative:
+#     phase: parse
+#     type: SyntaxError
+#   ---*/
+#
+# We don't pull in a YAML library — the format is regular enough to
+# parse with a few regexes for the keys we care about.
+# -----------------------------------------------------------------------------
+
+FRONTMATTER_RE = re.compile(r"/\*---\s*\n(.*?)\n---\*/", re.S)
+
+def parse_frontmatter(src: str):
+    m = FRONTMATTER_RE.search(src)
+    if not m:
+        return {}
+    body = m.group(1)
+    out = {
+        "features": [],
+        "flags":    [],
+        "includes": [],
+        "negative": None,
+    }
+
+    def parse_list(line):
+        # "features: [a, b, c]" or "features: a"
+        rest = line.split(":", 1)[1].strip()
+        if rest.startswith("["):
+            inside = rest.strip("[]")
+            return [t.strip() for t in inside.split(",") if t.strip()]
+        return [t.strip() for t in rest.split(",") if t.strip()]
+
+    in_negative = False
+    for raw_line in body.splitlines():
+        line = raw_line.rstrip()
+        if not line.strip():
+            in_negative = False
+            continue
+        stripped = line.lstrip()
+        # Track "negative:" multi-line block (phase + type sub-keys).
+        if stripped.startswith("negative:"):
+            in_negative = True
+            out["negative"] = {"phase": None, "type": None}
+            tail = stripped.split(":", 1)[1].strip()
+            if tail:
+                # one-line form: "negative: { phase: parse, type: SyntaxError }"
+                t = re.search(r"type:\s*([A-Za-z]+)", tail)
+                p = re.search(r"phase:\s*([A-Za-z]+)", tail)
+                if t: out["negative"]["type"]  = t.group(1)
+                if p: out["negative"]["phase"] = p.group(1)
+            continue
+        if in_negative and line.startswith((" ", "\t")):
+            if "phase:" in stripped:
+                out["negative"]["phase"] = stripped.split(":", 1)[1].strip()
+            elif "type:"  in stripped:
+                out["negative"]["type"]  = stripped.split(":", 1)[1].strip()
+            continue
+        in_negative = False
+        if stripped.startswith("features:"):
+            out["features"] = parse_list(stripped)
+        elif stripped.startswith("flags:"):
+            out["flags"] = parse_list(stripped)
+        elif stripped.startswith("includes:"):
+            out["includes"] = parse_list(stripped)
+    return out
+
+# -----------------------------------------------------------------------------
+# Test runner
+# -----------------------------------------------------------------------------
+
+def load_config():
+    with open(CONFIG) as f:
+        return json.load(f)
+
+def gather_tests(test262_root, cfg, name_filter=None):
+    """Return [(rel_path, abs_path)] sorted, optionally filtered by substring."""
+    found = []
+    for sub in cfg["include"]:
+        root = test262_root / sub
+        if not root.exists():
+            continue
+        for p in sorted(root.rglob("*.js")):
+            rel = p.relative_to(test262_root)
+            if name_filter and name_filter not in str(rel):
+                continue
+            if "_FIXTURE" in p.name:        # fixture files, not tests
+                continue
+            found.append((str(rel), p))
+    return found
+
+def should_skip(meta, cfg):
+    """Return a reason string if the test should be skipped, else None."""
+    skip_features = set(cfg.get("skip_features", []))
+    skip_flags    = set(cfg.get("skip_flags", []))
+    skip_includes = set(cfg.get("skip_includes", []))
+
+    for f in meta.get("features", []):
+        if f in skip_features:
+            return f"feature:{f}"
+    for fl in meta.get("flags", []):
+        if fl in skip_flags:
+            return f"flag:{fl}"
+    for inc in meta.get("includes", []):
+        if inc in skip_includes:
+            return f"include:{inc}"
+    return None
+
+def build_source(test262_root, test_src, meta):
+    """Prepend mandatory + listed harness includes; return the full source."""
+    parts = []
+    harness = test262_root / "harness"
+    # Always include sta.js + assert.js; most tests assume them.
+    for required in ("sta.js", "assert.js"):
+        f = harness / required
+        if f.exists():
+            parts.append(f.read_text())
+    for inc in meta.get("includes", []):
+        if inc in ("sta.js", "assert.js"):
+            continue
+        f = harness / inc
+        if f.exists():
+            parts.append(f.read_text())
+    parts.append(test_src)
+    return "\n".join(parts)
+
+def run_one(zjs_bin, source, timeout_s):
+    """Run zjs on the given source. Returns (exit_code, stderr_text)."""
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+        f.write(source)
+        path = f.name
+    try:
+        r = subprocess.run(
+            [str(zjs_bin), "run", path],
+            capture_output=True, text=True,
+            timeout=timeout_s,
+        )
+        return r.returncode, r.stderr
+    except subprocess.TimeoutExpired:
+        return -1, "TIMEOUT"
+    finally:
+        try: os.unlink(path)
+        except OSError: pass
+
+def classify(meta, exit_code, stderr):
+    """Map (engine outcome, expected outcome) → 'pass' or 'fail (reason)'."""
+    threw = (exit_code != 0)
+    if exit_code == -1:
+        return ("fail", "timeout")
+    if meta.get("negative"):
+        expected_type = (meta["negative"].get("type") or "").strip()
+        if not threw:
+            return ("fail", f"expected throw of {expected_type}, no throw")
+        if expected_type and expected_type not in stderr:
+            return ("fail", f"expected {expected_type}, got {stderr.strip()[:80]}")
+        return ("pass", "")
+    # Positive test: should not throw.
+    if threw:
+        return ("fail", stderr.strip()[:120])
+    return ("pass", "")
+
+# -----------------------------------------------------------------------------
+# HTML report
+# -----------------------------------------------------------------------------
+
+def write_html(out_path, history, last_summary, last_failures):
+    history_json   = json.dumps(history)
+    failures_json  = json.dumps(last_failures[:200])
+    summary_json   = json.dumps(last_summary)
+    html = f"""<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>zjs test262 conformance</title>
+<style>
+  body {{ font: 14px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          max-width: 960px; margin: 2em auto; padding: 0 1em; color: #222; }}
+  h1 {{ font-size: 1.4em; margin-bottom: 0.2em; }}
+  .sub {{ color: #666; margin-bottom: 1.5em; }}
+  .card {{ background: #fafafa; border: 1px solid #eee; border-radius: 6px;
+           padding: 1em 1.25em; margin-bottom: 1.25em; }}
+  .stat {{ display: inline-block; margin-right: 2em; }}
+  .stat .n {{ font-size: 1.8em; font-weight: 600; display: block; }}
+  .stat .l {{ color: #666; font-size: 0.85em; }}
+  .pass {{ color: #2c7; }} .fail {{ color: #c44; }} .skip {{ color: #999; }}
+  svg {{ display: block; }}
+  table {{ border-collapse: collapse; width: 100%; font-size: 12px; }}
+  th, td {{ text-align: left; padding: 4px 8px; border-bottom: 1px solid #eee; }}
+  th {{ background: #f5f5f5; }}
+  td.path {{ font-family: ui-monospace, SFMono-Regular, monospace; }}
+  td.reason {{ color: #888; }}
+  details {{ margin-top: 1em; }}
+</style>
+
+<h1>zjs — test262 conformance</h1>
+<p class="sub">Generated <span id="when"></span>. Curated subset of test262; configuration in
+<code>scripts/test262/config.json</code>. Numbers exclude tests skipped due to
+unsupported features or harness includes.</p>
+
+<div class="card">
+  <div class="stat"><span class="n pass" id="pass">–</span><span class="l">passing</span></div>
+  <div class="stat"><span class="n fail" id="fail">–</span><span class="l">failing</span></div>
+  <div class="stat"><span class="n skip" id="skip">–</span><span class="l">skipped</span></div>
+  <div class="stat"><span class="n" id="rate">–</span><span class="l">pass rate</span></div>
+</div>
+
+<div class="card">
+  <strong>Pass rate over time</strong>
+  <div id="chart"></div>
+</div>
+
+<details>
+  <summary>First failures (up to 200)</summary>
+  <table id="failures-table">
+    <thead><tr><th>Test</th><th>Reason</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</details>
+
+<script id="history-data" type="application/json">{history_json}</script>
+<script id="failures-data" type="application/json">{failures_json}</script>
+<script id="summary-data" type="application/json">{summary_json}</script>
+<script>
+  const history  = JSON.parse(document.getElementById('history-data').textContent);
+  const failures = JSON.parse(document.getElementById('failures-data').textContent);
+  const summary  = JSON.parse(document.getElementById('summary-data').textContent);
+
+  document.getElementById('pass').textContent = summary.passed;
+  document.getElementById('fail').textContent = summary.failed;
+  document.getElementById('skip').textContent = summary.skipped;
+  const denom = summary.passed + summary.failed;
+  document.getElementById('rate').textContent =
+    denom ? ((summary.passed / denom) * 100).toFixed(1) + '%' : '–';
+  document.getElementById('when').textContent = summary.when || '';
+
+  // Tiny SVG line chart of pass-rate over time.
+  const W = 900, H = 220, P = 30;
+  function chart() {{
+    if (!history.length) {{
+      document.getElementById('chart').textContent = '(no history yet)';
+      return;
+    }}
+    const points = history.map(r => {{
+      const d = (r.passed + r.failed) || 1;
+      return {{ x: r.when, y: (r.passed / d) * 100, raw: r }};
+    }});
+    const yMin = 0, yMax = 100;
+    const xs = (i) => P + (i / Math.max(history.length - 1, 1)) * (W - 2*P);
+    const ys = (v) => H - P - ((v - yMin) / (yMax - yMin)) * (H - 2*P);
+    let svg = `<svg viewBox="0 0 ${{W}} ${{H}}" width="100%">`;
+    // axes
+    svg += `<line x1="${{P}}" y1="${{H-P}}" x2="${{W-P}}" y2="${{H-P}}" stroke="#999"/>`;
+    svg += `<line x1="${{P}}" y1="${{P}}"   x2="${{P}}"   y2="${{H-P}}" stroke="#999"/>`;
+    // ticks (0,25,50,75,100)
+    for (let v = 0; v <= 100; v += 25) {{
+      const y = ys(v);
+      svg += `<line x1="${{P}}" y1="${{y}}" x2="${{W-P}}" y2="${{y}}" stroke="#eee"/>`;
+      svg += `<text x="${{P-6}}" y="${{y+3}}" text-anchor="end" fill="#888" font-size="10">${{v}}%</text>`;
+    }}
+    // polyline
+    const d = points.map((p, i) => `${{xs(i)}},${{ys(p.y)}}`).join(' ');
+    svg += `<polyline points="${{d}}" fill="none" stroke="#2c7" stroke-width="2"/>`;
+    // dots + last-value label
+    points.forEach((p, i) => {{
+      svg += `<circle cx="${{xs(i)}}" cy="${{ys(p.y)}}" r="3" fill="#2c7"><title>${{p.x}}: ${{p.y.toFixed(1)}}% (${{p.raw.passed}}/${{p.raw.passed + p.raw.failed}})</title></circle>`;
+    }});
+    const last = points[points.length - 1];
+    svg += `<text x="${{xs(points.length - 1) + 6}}" y="${{ys(last.y) + 4}}" font-size="11" fill="#2c7">${{last.y.toFixed(1)}}%</text>`;
+    svg += '</svg>';
+    document.getElementById('chart').innerHTML = svg;
+  }}
+  chart();
+
+  const tbody = document.querySelector('#failures-table tbody');
+  for (const f of failures) {{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td class="path">${{f.path}}</td><td class="reason">${{f.reason || ''}}</td>`;
+    tbody.appendChild(tr);
+  }}
+</script>
+</html>
+"""
+    out_path.write_text(html)
+
+# -----------------------------------------------------------------------------
+# Main
+# -----------------------------------------------------------------------------
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--test262", type=Path, default=DEFAULT_TEST262,
+                    help="Path to the test262 checkout (default: vendor/test262)")
+    ap.add_argument("--filter", type=str, default=None,
+                    help="Only run tests whose path contains this substring")
+    ap.add_argument("--limit",  type=int, default=0,
+                    help="Limit total tests run (0 = no limit)")
+    ap.add_argument("--timeout", type=float, default=5.0,
+                    help="Per-test timeout in seconds")
+    ap.add_argument("--no-record", action="store_true",
+                    help="Run tests but don't append to history / write HTML")
+    ap.add_argument("--quiet", action="store_true",
+                    help="Don't print per-failure lines")
+    args = ap.parse_args()
+
+    if not ZJS_BIN.exists():
+        print(f"error: {ZJS_BIN} not found — run `make` first", file=sys.stderr)
+        return 2
+    if not args.test262.exists():
+        print(f"error: test262 not found at {args.test262}", file=sys.stderr)
+        print(f"hint: clone it: git clone --depth=1 https://github.com/tc39/test262 {args.test262}", file=sys.stderr)
+        return 2
+
+    cfg = load_config()
+    tests = gather_tests(args.test262, cfg, args.filter)
+    if args.limit > 0:
+        tests = tests[:args.limit]
+
+    passed, failed, skipped = 0, 0, 0
+    failure_log = []
+    skipped_counts = {}
+
+    for i, (rel, abs_path) in enumerate(tests):
+        try:
+            src = abs_path.read_text()
+        except UnicodeDecodeError:
+            skipped += 1
+            skipped_counts["non-utf8"] = skipped_counts.get("non-utf8", 0) + 1
+            continue
+        meta = parse_frontmatter(src)
+        skip_reason = should_skip(meta, cfg)
+        if skip_reason:
+            skipped += 1
+            skipped_counts[skip_reason] = skipped_counts.get(skip_reason, 0) + 1
+            continue
+
+        full = build_source(args.test262, src, meta)
+        exit_code, stderr = run_one(ZJS_BIN, full, args.timeout)
+        verdict, reason = classify(meta, exit_code, stderr)
+        if verdict == "pass":
+            passed += 1
+        else:
+            failed += 1
+            failure_log.append({"path": rel, "reason": reason})
+            if not args.quiet:
+                print(f"FAIL {rel}\n   {reason}")
+
+        if (i + 1) % 100 == 0:
+            print(f"... {i+1}/{len(tests)}  pass={passed} fail={failed} skip={skipped}",
+                  file=sys.stderr)
+
+    when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    summary = {
+        "when":    when,
+        "total":   passed + failed + skipped,
+        "passed":  passed,
+        "failed":  failed,
+        "skipped": skipped,
+    }
+
+    print()
+    print(f"=== test262 summary ({when}) ===")
+    print(f"  passed:  {passed}")
+    print(f"  failed:  {failed}")
+    print(f"  skipped: {skipped}")
+    if passed + failed > 0:
+        print(f"  pass rate: {passed / (passed + failed) * 100:.1f}%")
+
+    if args.no_record:
+        return 0
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Append summary row.
+    with open(HISTORY, "a") as f:
+        f.write(json.dumps(summary) + "\n")
+
+    # Full per-test results (truncate failures to 1000 entries).
+    LAST_JSON.write_text(json.dumps({
+        "summary":  summary,
+        "failures": failure_log[:1000],
+        "skip_counts": skipped_counts,
+    }, indent=2))
+
+    # Regenerate the HTML with embedded history.
+    history = []
+    with open(HISTORY) as f:
+        for line in f:
+            line = line.strip()
+            if not line: continue
+            try: history.append(json.loads(line))
+            except json.JSONDecodeError: pass
+    write_html(HTML_PATH, history, summary, failure_log)
+    print(f"\nReport: {HTML_PATH.relative_to(REPO_ROOT)}")
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
