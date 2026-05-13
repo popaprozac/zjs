@@ -367,6 +367,8 @@ fn zjs_cmp_le(a: ZjsValue, b: ZjsValue) -> int {
 
 def TAG_FUNCTION: u8 = 0;
 def TAG_STRING:   u8 = 1;
+def TAG_OBJECT:   u8 = 2;
+def TAG_ARRAY:    u8 = 3;
 
 struct CellHeader {
     type_tag: u8;
@@ -377,6 +379,25 @@ struct ZjsString {
     header: CellHeader;
     length: u32;
     data:   char*;     // null-terminated, owned (freed in string_free_void)
+}
+
+struct ObjectProp {
+    name:  ZjsString*;     // borrowed (lives in the cell list)
+    value: ZjsValue;
+}
+
+struct ZjsObject {
+    header:     CellHeader;     // { type_tag = TAG_OBJECT }
+    props:      ObjectProp*;     // heap-allocated, owned
+    prop_count: u32;
+    prop_cap:   u32;
+}
+
+struct ZjsArray {
+    header:   CellHeader;       // { type_tag = TAG_ARRAY }
+    elements: ZjsValue*;         // heap-allocated, owned; holes = undefined
+    length:   u32;
+    cap:      u32;
 }
 
 fn zjs_cell_from_ptr(p: void*) -> ZjsValue {
@@ -412,11 +433,35 @@ fn zjs_is_string(v: ZjsValue) -> int {
     return 0;
 }
 
+fn zjs_is_object(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_OBJECT { return 1; }
+    return 0;
+}
+
+fn zjs_is_array(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_ARRAY { return 1; }
+    return 0;
+}
+
 fn zjs_as_string(v: ZjsValue) -> ZjsString* {
     let p = zjs_cell_as_ptr(v);
     let s: ZjsString* = NULL;
     raw { s = (ZjsString*)p; }
     return s;
+}
+
+fn zjs_as_object(v: ZjsValue) -> ZjsObject* {
+    let p = zjs_cell_as_ptr(v);
+    let o: ZjsObject* = NULL;
+    raw { o = (ZjsObject*)p; }
+    return o;
+}
+
+fn zjs_as_array(v: ZjsValue) -> ZjsArray* {
+    let p = zjs_cell_as_ptr(v);
+    let a: ZjsArray* = NULL;
+    raw { a = (ZjsArray*)p; }
+    return a;
 }
 
 // --- String allocation ----------------------------------------------
@@ -451,6 +496,147 @@ fn string_free_void(p: void*) -> void {
     if s == NULL { return; }
     let d = s.data;
     raw { free(d); free(s); }
+}
+
+// Allocate a new empty object cell. Caller must register with the
+// context for cleanup (ctx_register_cell).
+fn zjs_object_new() -> ZjsObject* {
+    let o: ZjsObject* = NULL;
+    raw { o = (ZjsObject*)calloc(1, sizeof(ZjsObject)); }
+    o.header.type_tag = TAG_OBJECT;
+    return o;
+}
+
+fn object_free_void(p: void*) -> void {
+    let o: ZjsObject* = NULL;
+    raw { o = (ZjsObject*)p; }
+    if o == NULL { return; }
+    let props = o.props;
+    raw { free(props); free(o); }
+}
+
+// Allocate a new array with `length` slots, all initialized to undefined.
+fn zjs_array_new(length: u32) -> ZjsArray* {
+    let a: ZjsArray* = NULL;
+    raw { a = (ZjsArray*)calloc(1, sizeof(ZjsArray)); }
+    a.header.type_tag = TAG_ARRAY;
+    a.length = length;
+    let cap: u32 = if length < 4 { 4 } else { length };
+    a.cap = cap;
+    let buf: ZjsValue* = NULL;
+    raw { buf = (ZjsValue*)calloc(cap, sizeof(ZjsValue)); }
+    let und: ZjsValue = zjs_undefined();
+    let i: u32 = 0;
+    while i < cap {
+        buf[i] = und;
+        i = i + 1;
+    }
+    a.elements = buf;
+    return a;
+}
+
+fn array_free_void(p: void*) -> void {
+    let a: ZjsArray* = NULL;
+    raw { a = (ZjsArray*)p; }
+    if a == NULL { return; }
+    let el = a.elements;
+    raw { free(el); free(a); }
+}
+
+// =====================================================================
+// Property + element helpers. Live here (not context.zc) because they
+// don't need ZjsContext — pure operations on the cells.
+// =====================================================================
+
+fn object_get(obj: ZjsObject*, name: ZjsString*) -> ZjsValue {
+    let i: u32 = 0;
+    while i < obj.prop_count {
+        if zjs_string_equals(obj.props[i].name, name) != 0 {
+            return obj.props[i].value;
+        }
+        i = i + 1;
+    }
+    return zjs_undefined();
+}
+
+fn object_set(obj: ZjsObject*, name: ZjsString*, value: ZjsValue) -> void {
+    let i: u32 = 0;
+    while i < obj.prop_count {
+        if zjs_string_equals(obj.props[i].name, name) != 0 {
+            obj.props[i].value = value;
+            return;
+        }
+        i = i + 1;
+    }
+    if obj.prop_count >= obj.prop_cap {
+        let new_cap: u32 = if obj.prop_cap == 0 { 4 } else { obj.prop_cap * 2 };
+        let old = obj.props;
+        let new_arr: ObjectProp* = NULL;
+        raw { new_arr = (ObjectProp*)realloc(old, new_cap * sizeof(ObjectProp)); }
+        obj.props = new_arr;
+        obj.prop_cap = new_cap;
+    }
+    obj.props[obj.prop_count].name = name;
+    obj.props[obj.prop_count].value = value;
+    obj.prop_count = obj.prop_count + 1;
+}
+
+fn array_get(arr: ZjsArray*, idx: u32) -> ZjsValue {
+    if idx >= arr.length { return zjs_undefined(); }
+    return arr.elements[idx];
+}
+
+fn array_set(arr: ZjsArray*, idx: u32, value: ZjsValue) -> void {
+    if idx >= arr.cap {
+        let new_cap: u32 = if arr.cap == 0 { 4 } else { arr.cap };
+        while new_cap <= idx { new_cap = new_cap * 2; }
+        let old = arr.elements;
+        let new_buf: ZjsValue* = NULL;
+        raw { new_buf = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
+        let und: ZjsValue = zjs_undefined();
+        let i = arr.cap;
+        while i < new_cap {
+            new_buf[i] = und;
+            i = i + 1;
+        }
+        arr.elements = new_buf;
+        arr.cap = new_cap;
+    }
+    arr.elements[idx] = value;
+    if idx >= arr.length { arr.length = idx + 1; }
+}
+
+// Convert a key value to a non-negative index. Returns -1 if the key
+// isn't a valid array index for this array (number/integer-string).
+// Note: this does NOT clamp to length — array_get does that.
+fn zjs_to_array_index(v: ZjsValue) -> i32 {
+    if zjs_is_int32(v) != 0 {
+        let i = zjs_as_int32(v);
+        if i >= 0 { return i; }
+        return -1;
+    }
+    if zjs_is_double(v) != 0 {
+        let d = zjs_as_double(v);
+        let i = (i32)d;
+        if (f64)i == d && i >= 0 { return i; }
+        return -1;
+    }
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        let data = s.data;
+        let len  = s.length;
+        let out:   i32 = -1;
+        raw {
+            char* end = NULL;
+            long parsed = strtol(data, &end, 10);
+            // Must consume the whole string and be non-negative.
+            if (end != data && (size_t)(end - data) == len && parsed >= 0 && parsed <= 2147483647L) {
+                out = (int32_t)parsed;
+            }
+        }
+        return out;
+    }
+    return -1;
 }
 
 // Byte-equality for strings. Same length + same bytes.

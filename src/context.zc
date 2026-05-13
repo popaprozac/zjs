@@ -69,6 +69,10 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
             }
         } else if tag == TAG_STRING {
             string_free_void(cp);
+        } else if tag == TAG_OBJECT {
+            object_free_void(cp);
+        } else if tag == TAG_ARRAY {
+            array_free_void(cp);
         }
         j = j + 1;
     }
@@ -109,6 +113,20 @@ fn ctx_intern_string_take(ctx: ZjsContext*, data: char*, length: u32) -> ZjsValu
     let s = zjs_string_new_take(data, length);
     ctx_register_cell(ctx, (void*)s);
     return zjs_cell_from_ptr((void*)s);
+}
+
+// Allocate a fresh empty object and register it on the context.
+fn ctx_new_object(ctx: ZjsContext*) -> ZjsValue {
+    let o = zjs_object_new();
+    ctx_register_cell(ctx, (void*)o);
+    return zjs_cell_from_ptr((void*)o);
+}
+
+// Allocate a fresh array with `length` slots, all undefined.
+fn ctx_new_array(ctx: ZjsContext*, length: u32) -> ZjsValue {
+    let a = zjs_array_new(length);
+    ctx_register_cell(ctx, (void*)a);
+    return zjs_cell_from_ptr((void*)a);
 }
 
 // =====================================================================

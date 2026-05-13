@@ -286,6 +286,48 @@ fn run_tests() -> void {
     check_int((char*)"falsy empty str",   (char*)"if ('') 1; else 2",        2);
     check_bool((char*)"!empty str",       (char*)"!''",                       1);
     check_bool((char*)"!truthy str",      (char*)"!'x'",                      0);
+
+    // --- Objects (Phase 3.1b) ---------------------------------------
+    check_int((char*)"obj prop",          (char*)r"let o = {a: 1, b: 2}; o.a + o.b",       3);
+    check_int((char*)"obj prop reassign", (char*)r"let o = {x: 1}; o.x = 99; o.x",        99);
+    check_int((char*)"obj new prop",      (char*)r"let o = {}; o.x = 5; o.x",              5);
+    check_int((char*)"obj multi assign",  (char*)r"let o = {}; o.a = 1; o.b = 2; o.a + o.b", 3);
+    check_int((char*)"obj computed key",  (char*)r"let o = {foo: 7}; let k = 'foo'; o[k]", 7);
+    check_int((char*)"obj compound +=",   (char*)r"let o = {n: 10}; o.n += 5; o.n",       15);
+    check_string((char*)"obj str val",    (char*)r"let o = {name: 'hi'}; o.name",         (char*)"hi");
+    check_string((char*)"obj str concat", (char*)r"let o = {n: 'Zach'}; 'hi, ' + o.n",    (char*)"hi, Zach");
+    check_undefined((char*)"obj missing", (char*)r"let o = {a: 1}; o.b");
+
+    // Paren'd object literal in expression context
+    check_int((char*)"paren obj lit",     (char*)r"({a: 5}).a",                            5);
+
+    // Nested objects
+    check_int((char*)"nested obj",        (char*)r"let o = {inner: {x: 42}}; o.inner.x",  42);
+
+    // --- Arrays -----------------------------------------------------
+    check_int((char*)"arr empty length", (char*)"[].length",                              0);
+    check_int((char*)"arr 3 length",     (char*)"[1, 2, 3].length",                       3);
+    check_int((char*)"arr index 0",      (char*)"[10, 20, 30][0]",                       10);
+    check_int((char*)"arr index 2",      (char*)"[10, 20, 30][2]",                       30);
+    check_int((char*)"arr via var",      (char*)r"let a = [10, 20]; a[0] + a[1]",        30);
+    check_undefined((char*)"arr oob",    (char*)"[1, 2, 3][9]");
+    check_int((char*)"arr assign",       (char*)r"let a = [1, 2, 3]; a[1] = 99; a[1]",  99);
+    check_int((char*)"arr extend",       (char*)r"let a = []; a[5] = 42; a.length",      6);
+    check_int((char*)"arr str index",    (char*)r"let a = [1, 2, 3]; a['1']",            2);
+    check_int((char*)"arr compound op",  (char*)r"let a = [10]; a[0] += 5; a[0]",       15);
+
+    // Arrays containing computed expressions
+    check_int((char*)"arr with expr",    (char*)r"let n = 5; let a = [n, n*2, n*3]; a[2]", 15);
+
+    // --- Mixed -----------------------------------------------------
+    check_int((char*)"obj of array",     (char*)r"let o = {x: [1, 2, 3]}; o.x[1]",        2);
+    check_int((char*)"array of obj",     (char*)r"let a = [{x: 10}, {x: 20}]; a[0].x + a[1].x", 30);
+    check_int((char*)"deep nest",        (char*)r"let o = {a: {b: {c: 42}}}; o.a.b.c",   42);
+
+    // --- Functions returning objects/arrays ------------------------
+    check_int((char*)"fn returns obj",   (char*)r"function make() { return {x: 7}; } make().x", 7);
+    check_int((char*)"fn returns arr",   (char*)r"function make() { return [1, 2, 3]; } make()[1]", 2);
+    check_int((char*)"obj of fn val",    (char*)r"let o = {f: function(x) { return x + 1; }}; o.f(41)", 42);
 }
 
 // Verify that globals persist across multiple zjs_eval calls on the

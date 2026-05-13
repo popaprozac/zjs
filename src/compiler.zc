@@ -261,6 +261,18 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
     if k == NodeKind::Call {
         return compile_call(c, node);
     }
+    if k == NodeKind::Member {
+        return compile_member(c, node);
+    }
+    if k == NodeKind::Computed {
+        return compile_computed(c, node);
+    }
+    if k == NodeKind::Array {
+        return compile_array_literal(c, node);
+    }
+    if k == NodeKind::Object {
+        return compile_object_literal(c, node);
+    }
     if k == NodeKind::Paren {
         return compile_expr(c, node.left);
     }
@@ -397,7 +409,14 @@ fn compile_logical(c: Compiler*, node: AstNode*) -> u8 {
 fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     let target = node.left;
     let op_tok = node.op;
-    if target == NULL || target.kind != NodeKind::IdentExpr {
+    if target == NULL {
+        c.had_error = true;
+        return alloc_reg(c);
+    }
+    if target.kind == NodeKind::Member || target.kind == NodeKind::Computed {
+        return compile_assignment_to_property(c, target, op_tok, node.right);
+    }
+    if target.kind != NodeKind::IdentExpr {
         c.had_error = true;
         return alloc_reg(c);
     }
@@ -456,6 +475,183 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     release_reg(c, cur);
     if c.next_reg <= dst { c.next_reg = dst + 1; }
     return dst;
+}
+
+// =====================================================================
+// Property access (Phase 3.1b). Member and Computed lower to
+// LoadElem/StoreElem with the key in a register. For `obj.name` the
+// key is a string constant we intern at compile time; for `obj[expr]`
+// it's the result of compiling `expr`.
+// =====================================================================
+
+// Emit a LoadConst that loads `name` as a string into a fresh register.
+// Returns the register holding the string.
+fn emit_load_name_string(c: Compiler*, name: char*, name_len: u32) -> u8 {
+    let s = zjs_string_new(name, name_len);
+    ctx_register_cell(c.ctx, (void*)s);
+    let val = zjs_cell_from_ptr((void*)s);
+    let idx = add_const(c, val);
+    let r = alloc_reg(c);
+    emit(c, make_inst_a_u16(Op::LoadConst, r, idx));
+    return r;
+}
+
+fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
+    let obj_r = compile_expr(c, node.left);
+    let key_r = emit_load_name_string(c, c.source + node.name_start, node.name_length);
+    let dst = alloc_reg(c);
+    emit(c, make_inst_abc(Op::LoadElem, dst, obj_r, key_r));
+    release_reg(c, key_r);
+    release_reg(c, obj_r);
+    if c.next_reg <= dst { c.next_reg = dst + 1; }
+    return dst;
+}
+
+fn compile_computed(c: Compiler*, node: AstNode*) -> u8 {
+    let obj_r = compile_expr(c, node.left);
+    let key_r = compile_expr(c, node.right);
+    let dst = alloc_reg(c);
+    emit(c, make_inst_abc(Op::LoadElem, dst, obj_r, key_r));
+    release_reg(c, key_r);
+    release_reg(c, obj_r);
+    if c.next_reg <= dst { c.next_reg = dst + 1; }
+    return dst;
+}
+
+// Build the obj_reg + key_reg pair for a property-target assignment.
+// Stores the registers via out-pointers (passed as registers below
+// because Zen-c structs are the cleanest way to return two values).
+struct PropTarget {
+    obj_reg: u8;
+    key_reg: u8;
+}
+
+fn compile_property_target(c: Compiler*, target: AstNode*) -> PropTarget {
+    let obj_r = compile_expr(c, target.left);
+    let key_r: u8 = 0;
+    if target.kind == NodeKind::Member {
+        key_r = emit_load_name_string(c, c.source + target.name_start, target.name_length);
+    } else {
+        key_r = compile_expr(c, target.right);
+    }
+    return PropTarget{ obj_reg: obj_r, key_reg: key_r };
+}
+
+fn compile_assignment_to_property(c: Compiler*, target: AstNode*, op_tok: TokenKind, rhs: AstNode*) -> u8 {
+    let pair = compile_property_target(c, target);
+    let obj_r = pair.obj_reg;
+    let key_r = pair.key_reg;
+
+    if op_tok == TokenKind::Eq {
+        let v = compile_expr(c, rhs);
+        emit(c, make_inst_abc(Op::StoreElem, obj_r, key_r, v));
+        return v;
+    }
+
+    // Compound (o.x += rhs): load current, op, store, return new value.
+    let cur = alloc_reg(c);
+    emit(c, make_inst_abc(Op::LoadElem, cur, obj_r, key_r));
+    let rhs_r = compile_expr(c, rhs);
+
+    let op = Op::Halt;
+    if      op_tok == TokenKind::PlusEq    { op = Op::Add; }
+    else if op_tok == TokenKind::MinusEq   { op = Op::Sub; }
+    else if op_tok == TokenKind::StarEq    { op = Op::Mul; }
+    else if op_tok == TokenKind::SlashEq   { op = Op::Div; }
+    else if op_tok == TokenKind::PercentEq { op = Op::Mod; }
+    else if op_tok == TokenKind::StarStarEq{ op = Op::Pow; }
+    else if op_tok == TokenKind::AmpEq     { op = Op::BitAnd; }
+    else if op_tok == TokenKind::PipeEq    { op = Op::BitOr; }
+    else if op_tok == TokenKind::CaretEq   { op = Op::BitXor; }
+    else if op_tok == TokenKind::LtLtEq    { op = Op::Shl; }
+    else if op_tok == TokenKind::GtGtEq    { op = Op::Shr; }
+    else if op_tok == TokenKind::GtGtGtEq  { op = Op::UShr; }
+    else {
+        c.had_error = true;
+        return cur;
+    }
+    let dst = alloc_reg(c);
+    emit(c, make_inst_abc(op, dst, cur, rhs_r));
+    emit(c, make_inst_abc(Op::StoreElem, obj_r, key_r, dst));
+    release_reg(c, rhs_r);
+    release_reg(c, cur);
+    if c.next_reg <= dst { c.next_reg = dst + 1; }
+    return dst;
+}
+
+// --- Object & array literals ----------------------------------------
+
+fn compile_object_literal(c: Compiler*, node: AstNode*) -> u8 {
+    let dst = alloc_reg(c);
+    emit(c, make_inst_a(Op::NewObject, dst));
+
+    let i: u32 = 0;
+    while i < node.children_count {
+        let prop = node.children[i];
+        if prop.kind != NodeKind::ObjectProp {
+            c.had_error = true;
+            i = i + 1;
+            continue;
+        }
+
+        // Key: identifier bytes for now. String-key form (e.g. `"x": v`)
+        // requires escape decoding — defer to a later slice. Detect via
+        // the leading byte: identifiers don't start with a quote.
+        let first_byte = c.source[prop.name_start];
+        if first_byte == 34 || first_byte == 39 {
+            // ASCII " or '
+            c.had_error = true;
+            i = i + 1;
+            continue;
+        }
+
+        let key_r = emit_load_name_string(c,
+                                          c.source + prop.name_start,
+                                          prop.name_length);
+        let val_r = compile_expr(c, prop.left);
+        emit(c, make_inst_abc(Op::StoreElem, dst, key_r, val_r));
+        release_reg(c, val_r);
+        release_reg(c, key_r);
+        i = i + 1;
+    }
+
+    if c.next_reg <= dst { c.next_reg = dst + 1; }
+    return dst;
+}
+
+fn compile_array_literal(c: Compiler*, node: AstNode*) -> u8 {
+    let count: u8 = (u8)node.children_count;
+
+    if count == 0 {
+        let dst = alloc_reg(c);
+        emit(c, make_inst_abc(Op::NewArray, dst, 0, 0));
+        return dst;
+    }
+
+    // Reserve consecutive slots for elements. Result reuses base (the
+    // interpreter copies elements out before writing dst).
+    let base = c.next_reg;
+    let i: u8 = 0;
+    while i < count {
+        alloc_reg(c);
+        i = i + 1;
+    }
+
+    let j: u8 = 0;
+    while j < count {
+        let elem_r = compile_expr(c, node.children[j]);
+        let target = base + j;
+        if elem_r != target {
+            emit(c, make_inst_ab(Op::Mov, target, elem_r));
+            if elem_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        }
+        j = j + 1;
+    }
+
+    emit(c, make_inst_abc(Op::NewArray, base, base, count));
+    c.next_reg = base + 1;
+    if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+    return base;
 }
 
 // =====================================================================

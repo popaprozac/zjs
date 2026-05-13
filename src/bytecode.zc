@@ -66,6 +66,19 @@ enum Op {
     // collision with NodeKind::Call. Zen-c codegen merges variant
     // symbols across enums in the same TU — see reference_zen-c.md.
     Invoke,
+
+    // Heap-cell creation + access (Phase 3.1b).
+    NewObject,        // a=dst. Creates an empty {} object.
+    NewArray,         // a=dst, b=base, c=count.
+                      // Builds an array containing regs[base..base+count).
+                      // Safe even if dst==base — the interpreter copies
+                      // elements out before writing dst.
+    LoadElem,         // a=dst, b=obj_reg, c=key_reg.
+                      // dst = obj[key]. For arrays: numeric/numeric-string
+                      // index, or special-case "length". For objects:
+                      // ToString(key), linear prop lookup.
+    StoreElem,        // a=obj_reg, b=key_reg, c=val_reg.
+                      // obj[key] = val. Auto-grows arrays.
 }
 
 struct Inst {

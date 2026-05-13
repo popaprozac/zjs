@@ -184,25 +184,74 @@ fn run_version() -> int {
     return 0;
 }
 
-fn print_value(v: ZjsValue) -> void {
-    if zjs_is_int32(v) != 0     { println "{zjs_as_int32(v)}"; return; }
-    if zjs_is_double(v) != 0    { println "{zjs_as_double(v)}"; return; }
-    if zjs_is_bool(v) != 0 {
-        if zjs_as_bool(v) != 0 { println "true"; } else { println "false"; }
+// Recursive value printer. `quoted` controls whether top-level strings
+// get surrounded by quotes — top-level eval results print without
+// quotes (JS-shell style), but strings nested inside arrays/objects
+// print with quotes for readability.
+fn write_value(v: ZjsValue, quoted: bool) -> void {
+    if zjs_is_int32(v) != 0 {
+        let n = zjs_as_int32(v);
+        raw { printf("%d", n); }
         return;
     }
-    if zjs_is_null(v) != 0      { println "null"; return; }
-    if zjs_is_undefined(v) != 0 { println "undefined"; return; }
+    if zjs_is_double(v) != 0 {
+        let d = zjs_as_double(v);
+        raw { printf("%g", d); }
+        return;
+    }
+    if zjs_is_bool(v) != 0 {
+        if zjs_as_bool(v) != 0 { raw { fputs("true", stdout); } }
+        else                   { raw { fputs("false", stdout); } }
+        return;
+    }
+    if zjs_is_null(v) != 0      { raw { fputs("null", stdout); }      return; }
+    if zjs_is_undefined(v) != 0 { raw { fputs("undefined", stdout); } return; }
     if zjs_is_string(v) != 0 {
         let s = zjs_as_string(v);
         let data = s.data;
         let len  = s.length;
-        raw { fwrite(data, 1, len, stdout); fputc('\n', stdout); }
+        if quoted {
+            raw { fputc('"', stdout); fwrite(data, 1, len, stdout); fputc('"', stdout); }
+        } else {
+            raw { fwrite(data, 1, len, stdout); }
+        }
         return;
     }
-    if zjs_is_function(v) != 0  { println "[function]"; return; }
-    if zjs_is_cell(v) != 0      { println "[cell]"; return; }
-    println "[unknown value]";
+    if zjs_is_array(v) != 0 {
+        let a = zjs_as_array(v);
+        raw { fputc('[', stdout); }
+        let i: u32 = 0;
+        while i < a.length {
+            if i > 0 { raw { fputs(", ", stdout); } }
+            write_value(a.elements[i], true);
+            i = i + 1;
+        }
+        raw { fputc(']', stdout); }
+        return;
+    }
+    if zjs_is_object(v) != 0 {
+        let o = zjs_as_object(v);
+        raw { fputs("{ ", stdout); }
+        let i: u32 = 0;
+        while i < o.prop_count {
+            if i > 0 { raw { fputs(", ", stdout); } }
+            let name = o.props[i].name;
+            let name_data = name.data;
+            let name_len  = name.length;
+            raw { fwrite(name_data, 1, name_len, stdout); fputs(": ", stdout); }
+            write_value(o.props[i].value, true);
+            i = i + 1;
+        }
+        raw { fputs(" }", stdout); }
+        return;
+    }
+    if zjs_is_function(v) != 0 { raw { fputs("[function]", stdout); } return; }
+    raw { fputs("[unknown value]", stdout); }
+}
+
+fn print_value(v: ZjsValue) -> void {
+    write_value(v, false);
+    raw { fputc('\n', stdout); }
 }
 
 fn run_eval(source: char*) -> int {
