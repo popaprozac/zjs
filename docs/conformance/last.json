@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-13 16:42 UTC",
+    "when": "2026-05-13 16:45 UTC",
     "total": 4144,
-    "passed": 1676,
-    "failed": 937,
+    "passed": 1674,
+    "failed": 939,
     "skipped": 1531
   },
   "failures": [
@@ -1712,8 +1712,20 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/throw/S12.13_A3_T4.js",
-      "reason": "zjs: throw: Test262Error: #1.0: Exception[0]===mycars[0](operation .concat). Actual:  Exception[0]===undefined"
+      "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-grow-before-end.js",
+      "reason": "zjs: throw: Test262Error: TestIterationAndResize: resize condition should have been hit"
+    },
+    {
+      "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-grow-mid-iteration.js",
+      "reason": "zjs: throw: Test262Error: TestIterationAndResize: resize condition should have been hit"
+    },
+    {
+      "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-shrink-mid-iteration.js",
+      "reason": "zjs: throw: Test262Error: TestIterationAndResize: resize condition should have been hit"
+    },
+    {
+      "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-shrink-to-zero-mid-iteration.js",
+      "reason": "zjs: throw: Test262Error: TestIterationAndResize: resize condition should have been hit"
     },
     {
       "path": "test/language/statements/try/12.14-4.js",
@@ -1782,10 +1794,6 @@
     {
       "path": "test/language/statements/try/S12.14_A15.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A18_T7.js",
-      "reason": "zjs: throw: Test262Error: #2.0: Exception[0]===mycars[0]. Actual:  Exception[0]===undefined"
     },
     {
       "path": "test/language/statements/try/S12.14_A19_T1.js",

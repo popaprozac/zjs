@@ -1382,6 +1382,120 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return result_v;
 }
 
+fn host_array_join(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    let len: u32 = read_length_u32(ctx, this_val);
+    let sep_v: ZjsValue = ctx_intern_string(ctx, (char*)",", 1);
+    if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
+        sep_v = args[0];
+        if zjs_is_string(sep_v) == 0 { sep_v = zjs_to_string(ctx, sep_v); }
+    }
+    if len == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    // Build the joined string by repeated zjs_string_concat. O(n^2)
+    // worst case — fine for the test262 inputs we care about.
+    let result: ZjsValue = ctx_intern_string(ctx, (char*)"", 0);
+    let arr: ZjsArray* = NULL;
+    if zjs_is_array(this_val) != 0 { arr = zjs_as_array(this_val); }
+    let i: u32 = 0;
+    while i < len {
+        if i > 0 { result = zjs_string_concat(ctx, result, sep_v); }
+        let elem: ZjsValue = zjs_undefined();
+        if arr != NULL { elem = arr.elements[i]; }
+        else if zjs_is_object(this_val) != 0 { elem = obj_get_indexed(ctx, zjs_as_object(this_val), i); }
+        if zjs_is_undefined(elem) == 0 && zjs_is_null(elem) == 0 {
+            if zjs_is_string(elem) == 0 { elem = zjs_to_string(ctx, elem); }
+            result = zjs_string_concat(ctx, result, elem);
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+fn host_array_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    let len = read_length_u32(ctx, this_val);
+    let start: i32 = 0;
+    let end: i32 = (i32)len;
+    if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
+        start = (i32)zjs_to_double(args[0]);
+        if start < 0 { start = (i32)len + start; if start < 0 { start = 0; } }
+        if start > (i32)len { start = (i32)len; }
+    }
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
+        end = (i32)zjs_to_double(args[1]);
+        if end < 0 { end = (i32)len + end; if end < 0 { end = 0; } }
+        if end > (i32)len { end = (i32)len; }
+    }
+    if end < start { end = start; }
+    let count = (u32)(end - start);
+    let out_v = ctx_new_array(ctx, count);
+    let out = zjs_as_array(out_v);
+    let arr: ZjsArray* = NULL;
+    if zjs_is_array(this_val) != 0 { arr = zjs_as_array(this_val); }
+    let i: u32 = 0;
+    while i < count {
+        let src_idx = (u32)(start) + i;
+        if arr != NULL {
+            if src_idx < arr.length { out.elements[i] = arr.elements[src_idx]; }
+        } else if zjs_is_object(this_val) != 0 {
+            out.elements[i] = obj_get_indexed(ctx, zjs_as_object(this_val), src_idx);
+        }
+        i = i + 1;
+    }
+    out.length = count;
+    return out_v;
+}
+
+fn host_array_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    // First pass: compute total length.
+    let total: u32 = read_length_u32(ctx, this_val);
+    let i: u32 = 0;
+    while i < argc {
+        let a = args[i];
+        if zjs_is_array(a) != 0 { total = total + zjs_as_array(a).length; }
+        else { total = total + 1; }
+        i = i + 1;
+    }
+    let out_v = ctx_new_array(ctx, total);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    let out = zjs_as_array(out_v);
+    let cursor: u32 = 0;
+    // Copy this.
+    if zjs_is_array(this_val) != 0 {
+        let arr = zjs_as_array(this_val);
+        let k: u32 = 0;
+        while k < arr.length { out.elements[cursor + k] = arr.elements[k]; k = k + 1; }
+        cursor = cursor + arr.length;
+    } else if zjs_is_object(this_val) != 0 {
+        let len = read_length_u32(ctx, this_val);
+        let k: u32 = 0;
+        while k < len {
+            out.elements[cursor + k] = obj_get_indexed(ctx, zjs_as_object(this_val), k);
+            k = k + 1;
+        }
+        cursor = cursor + len;
+    }
+    // Then each arg.
+    i = 0;
+    while i < argc {
+        let a = args[i];
+        if zjs_is_array(a) != 0 {
+            let arr = zjs_as_array(a);
+            let k: u32 = 0;
+            while k < arr.length { out.elements[cursor + k] = arr.elements[k]; k = k + 1; }
+            cursor = cursor + arr.length;
+        } else {
+            out.elements[cursor] = a;
+            cursor = cursor + 1;
+        }
+        i = i + 1;
+    }
+    out.length = total;
+    return out_v;
+}
+
 fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = ctx.host_this;
     if zjs_is_array(this_val) == 0 || argc == 0 { return zjs_undefined(); }
@@ -2540,6 +2654,15 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"map", map_ptr));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"forEach", 7),
                ctx_make_host_function(ctx, (char*)"forEach", fe_ptr));
+    let join_ptr:   void* = NULL; raw { join_ptr   = (void*)host_array_join; }
+    let aslice_ptr: void* = NULL; raw { aslice_ptr = (void*)host_array_slice; }
+    let aconc_ptr:  void* = NULL; raw { aconc_ptr  = (void*)host_array_concat; }
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"join", 4),
+               ctx_make_host_function(ctx, (char*)"join", join_ptr));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"slice", 5),
+               ctx_make_host_function(ctx, (char*)"slice", aslice_ptr));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"concat", 6),
+               ctx_make_host_function(ctx, (char*)"concat", aconc_ptr));
     ctx.array_proto = array_proto;
     // Unify with the Array constructor's .prototype (set lazily here so
     // `Array.prototype.push.call(arr, x)` and similar find our method

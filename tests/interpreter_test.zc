@@ -671,6 +671,16 @@ fn run_tests() -> void {
     check_int((char*)"obj literal: string key",       (char*)r"({'a': 1, 'b': 2}).b", 2);
     check_int((char*)"obj literal: numeric key",      (char*)r"({0: 99, 1: 88})[0]", 99);
 
+    // --- Array.prototype extra methods -----------------------------
+    check_string((char*)"arr.join: default sep",   (char*)r"[1,2,3].join()", (char*)"1,2,3");
+    check_string((char*)"arr.join: custom sep",    (char*)r"[1,2,3].join('-')", (char*)"1-2-3");
+    check_string((char*)"arr.join: empty",         (char*)r"[].join(',')", (char*)"");
+    check_int((char*)"arr.slice: basic",           (char*)r"[1,2,3,4,5].slice(1,4)[0]", 2);
+    check_int((char*)"arr.slice: length",          (char*)r"[1,2,3,4,5].slice(1,4).length", 3);
+    check_int((char*)"arr.slice: negative",        (char*)r"[10,20,30,40].slice(-2)[0]", 30);
+    check_int((char*)"arr.concat: arrays",         (char*)r"[1,2,3].concat([4,5]).length", 5);
+    check_int((char*)"arr.concat: scalars",        (char*)r"[1].concat(2, [3,4], 5).length", 5);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");
