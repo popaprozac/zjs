@@ -649,6 +649,16 @@ fn run_tests() -> void {
         else { fail_msg((char*)"strict: let as if-body rejected", (char*)"accepted"); }
     }
 
+    // --- Function.prototype.{call, apply} (Phase 3.8d) -------------
+    check_int((char*)"call: pass args + null this", (char*)r"function f(a,b){return a+b} f.call(null, 3, 4)", 7);
+    check_int((char*)"call: this binding",          (char*)r"function g(){return this.x} let o = {x:42}; g.call(o)", 42);
+    check_int((char*)"apply: array args",           (char*)r"function h(a,b,c){return a+b+c} h.apply(null, [1,2,3])", 6);
+    check_int((char*)"apply: undefined args",       (char*)r"function k(){return 9} k.apply(null, undefined)", 9);
+    check_int((char*)"call: on Math.abs",           (char*)r"Math.abs.call(null, -7)", 7);
+    check_int((char*)"call: ArrayProto.push",       (char*)r"let a = [1,2]; Array.prototype.push.call(a, 3, 4); a.length", 4);
+    check_int((char*)"call: ArrayProto.indexOf",    (char*)r"Array.prototype.indexOf.call([10,20,30], 20)", 1);
+    check_int((char*)"apply: ArrayProto.push",      (char*)r"let a = []; Array.prototype.push.apply(a, [1,2,3]); a.length", 3);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

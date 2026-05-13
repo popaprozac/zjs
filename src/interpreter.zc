@@ -103,13 +103,20 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     }
 
     // Function: .prototype lazy-creates an object on first read.
+    // Also serves .call and .apply via the cached host helpers.
     if zjs_is_function(obj) != 0 {
         if zjs_is_string(key) != 0 {
             let ks = zjs_as_string(key);
-            let is_proto: int = 0;
             let kd = ks.data;
             let kn = ks.length;
-            raw { is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0; }
+            let is_proto: int = 0;
+            let is_call:  int = 0;
+            let is_apply: int = 0;
+            raw {
+                is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0;
+                is_call  = (kn == 4 && memcmp(kd, "call",      4) == 0) ? 1 : 0;
+                is_apply = (kn == 5 && memcmp(kd, "apply",     5) == 0) ? 1 : 0;
+            }
             if is_proto != 0 {
                 let fp = zjs_cell_as_ptr(obj);
                 let f: Function* = NULL;
@@ -120,18 +127,43 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 }
                 return zjs_cell_from_ptr((void*)f.prototype);
             }
+            if is_call  != 0 { return ctx.fn_call_v; }
+            if is_apply != 0 { return ctx.fn_apply_v; }
+        }
+        return zjs_undefined();
+    }
+    // Closure: same .call / .apply behavior.
+    if zjs_is_closure(obj) != 0 {
+        if zjs_is_string(key) != 0 {
+            let ks = zjs_as_string(key);
+            let kd = ks.data;
+            let kn = ks.length;
+            let is_call:  int = 0;
+            let is_apply: int = 0;
+            raw {
+                is_call  = (kn == 4 && memcmp(kd, "call",  4) == 0) ? 1 : 0;
+                is_apply = (kn == 5 && memcmp(kd, "apply", 5) == 0) ? 1 : 0;
+            }
+            if is_call  != 0 { return ctx.fn_call_v; }
+            if is_apply != 0 { return ctx.fn_apply_v; }
         }
         return zjs_undefined();
     }
 
-    // Host function: .prototype (lazy) and arbitrary properties via .props.
+    // Host function: .prototype (lazy), .call / .apply, then .props.
     if zjs_is_host_function(obj) != 0 {
         if zjs_is_string(key) != 0 {
             let ks = zjs_as_string(key);
-            let is_proto: int = 0;
             let kd = ks.data;
             let kn = ks.length;
-            raw { is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0; }
+            let is_proto: int = 0;
+            let is_call:  int = 0;
+            let is_apply: int = 0;
+            raw {
+                is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0;
+                is_call  = (kn == 4 && memcmp(kd, "call",      4) == 0) ? 1 : 0;
+                is_apply = (kn == 5 && memcmp(kd, "apply",     5) == 0) ? 1 : 0;
+            }
             let hf = zjs_as_host_function(obj);
             if is_proto != 0 {
                 if hf.prototype == NULL {
@@ -140,6 +172,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 }
                 return zjs_cell_from_ptr((void*)hf.prototype);
             }
+            if is_call  != 0 { return ctx.fn_call_v; }
+            if is_apply != 0 { return ctx.fn_apply_v; }
             if hf.props != NULL {
                 return object_get(hf.props, ks);
             }
@@ -848,6 +882,44 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
 // to the host — proper throw propagation across the host boundary is a
 // future-work item (would need a ctx.pending_throw flag and a check in
 // Op::MethodInvoke / Op::Invoke after each host call).
+// Like zjs_call_value but explicitly binds `this`. Used by
+// Function.prototype.{call, apply} to pass through a caller-chosen
+// receiver. Unlike the plain helper, this does NOT clear
+// ctx.host_this around host-function dispatch — the explicit
+// `this_val` is the receiver the callee should see.
+fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsValue, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let saved = ctx.host_this;
+    ctx.host_this = this_val;
+    let r: ZjsValue = zjs_undefined();
+    if zjs_is_function(callee) != 0 {
+        let fp = zjs_cell_as_ptr(callee);
+        let target: Function* = NULL;
+        raw { target = (Function*)fp; }
+        let rr = interpret(ctx, target, args, argc);
+        r = rr.value;
+    } else if zjs_is_closure(callee) != 0 {
+        let cl = zjs_as_closure(callee);
+        let fp2 = cl.function;
+        let target2: Function* = NULL;
+        raw { target2 = (Function*)fp2; }
+        let saved_cl = ctx.current_closure;
+        ctx.current_closure = cl;
+        let rr = interpret(ctx, target2, args, argc);
+        ctx.current_closure = saved_cl;
+        r = rr.value;
+    } else if zjs_is_host_function(callee) != 0 {
+        let hf_ptr = zjs_cell_as_ptr(callee);
+        raw {
+            ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
+            typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
+            HostFn fp = (HostFn)hf->fn_ptr;
+            r = fp(ctx, args, argc);
+        }
+    }
+    ctx.host_this = saved;
+    return r;
+}
+
 fn zjs_call_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc: u32) -> ZjsValue {
     if zjs_is_function(callee) != 0 {
         let fp = zjs_cell_as_ptr(callee);

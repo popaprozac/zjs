@@ -79,6 +79,12 @@ struct ZjsContext {
     // ctx_new_object. Carries hasOwnProperty + toString.
     object_proto:   ZjsObject*;
 
+    // Phase 3.8d — cached Function.prototype.{call, apply} host
+    // helpers. property_get on Function/Closure/HostFunction returns
+    // these when key == "call" / "apply" so f.call(thisArg, ...) works.
+    fn_call_v:      ZjsValue;
+    fn_apply_v:     ZjsValue;
+
     // Phase 3.5b — temp-root stack. Host functions that invoke JS
     // callbacks (Array.prototype.map / forEach) need to keep
     // intermediate ZjsValues alive across the inner interpret() call,
@@ -394,6 +400,9 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         let op_val = zjs_cell_from_ptr((void*)ctx.object_proto);
         gc_mark_value(op_val);
     }
+    // Phase 3.8d cached helpers
+    gc_mark_value(ctx.fn_call_v);
+    gc_mark_value(ctx.fn_apply_v);
     // Phase 3.5b temp roots
     let t: u32 = 0;
     while t < ctx.temp_root_count {
@@ -1910,6 +1919,49 @@ fn host_array_is_array(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     return zjs_bool(zjs_is_array(args[0]));
 }
 
+// --- Function.prototype.{call, apply} (Phase 3.8d) -----------------
+//
+// `f.call(thisArg, ...args)` and `f.apply(thisArg, argArray)` are
+// dispatched as MethodInvoke on f. ctx.host_this at entry is `f`
+// itself (the receiver of `.call`/`.apply`). We extract the caller-
+// supplied `this` (args[0]) and dispatch the original `f` with it.
+
+raw {
+    extern ZjsValue zjs_call_value_with_this(ZjsContext* ctx, ZjsValue callee, ZjsValue this_val, ZjsValue* args, uint32_t argc);
+}
+
+fn host_function_call(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let target = ctx.host_this;
+    let new_this: ZjsValue = zjs_undefined();
+    let new_args_ptr: ZjsValue* = NULL;
+    let new_argc: u32 = 0;
+    if argc >= 1 { new_this = args[0]; }
+    if argc >= 2 {
+        raw { new_args_ptr = &args[1]; }
+        new_argc = argc - 1;
+    }
+    let r: ZjsValue = zjs_undefined();
+    raw { r = zjs_call_value_with_this(ctx, target, new_this, new_args_ptr, new_argc); }
+    return r;
+}
+
+fn host_function_apply(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let target = ctx.host_this;
+    let new_this: ZjsValue = zjs_undefined();
+    if argc >= 1 { new_this = args[0]; }
+    // Second arg is an array (or null/undefined for no args).
+    let new_argc: u32 = 0;
+    let new_args_ptr: ZjsValue* = NULL;
+    if argc >= 2 && zjs_is_array(args[1]) != 0 {
+        let a = zjs_as_array(args[1]);
+        new_argc = a.length;
+        new_args_ptr = a.elements;
+    }
+    let r: ZjsValue = zjs_undefined();
+    raw { r = zjs_call_value_with_this(ctx, target, new_this, new_args_ptr, new_argc); }
+    return r;
+}
+
 // --- Coercion-style constructors (Phase 3.8c) ----------------------
 //
 // MVP: `Boolean(x)` / `Number(x)` / `String(x)` perform the standard
@@ -2081,6 +2133,12 @@ fn host_parse_int(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 }
 
 fn ctx_init_builtins(ctx: ZjsContext*) -> void {
+    // --- Function.prototype.{call, apply} cached helpers (Phase 3.8d)
+    let fcall_ptr:  void* = NULL; raw { fcall_ptr  = (void*)host_function_call; }
+    let fapply_ptr: void* = NULL; raw { fapply_ptr = (void*)host_function_apply; }
+    ctx.fn_call_v  = ctx_make_host_function(ctx, (char*)"call",  fcall_ptr);
+    ctx.fn_apply_v = ctx_make_host_function(ctx, (char*)"apply", fapply_ptr);
+
     // --- Object.prototype (Phase 3.8c) ---
     // Bootstrap order: create this FIRST so every later ctx_new_object
     // call gets it as a default proto. ctx_new_object short-circuits
@@ -2137,6 +2195,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let props_v = ctx_new_object(ctx);
     arr_ctor.props = zjs_as_object(props_v);
     object_set(ctx, arr_ctor.props, isarray_atom, is_array_v);
+    // Array.prototype is unified with ctx.array_proto below, after
+    // the prototype object is fully populated.
 
     // --- Coercion-style constructors + Error subtypes (Phase 3.8c) ---
     let bool_ptr:    void* = NULL; raw { bool_ptr    = (void*)host_boolean; }
@@ -2265,6 +2325,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"forEach", 7),
                ctx_make_host_function(ctx, (char*)"forEach", fe_ptr));
     ctx.array_proto = array_proto;
+    // Unify with the Array constructor's .prototype (set lazily here so
+    // `Array.prototype.push.call(arr, x)` and similar find our method
+    // table).
+    arr_ctor.prototype = array_proto;
 
     // --- String.prototype intercept (Phase 3.5) ---
     let string_proto_v = ctx_new_object(ctx);

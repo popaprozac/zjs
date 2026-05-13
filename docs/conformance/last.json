@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-13 16:22 UTC",
+    "when": "2026-05-13 16:32 UTC",
     "total": 4144,
-    "passed": 1555,
-    "failed": 1058,
+    "passed": 1558,
+    "failed": 1055,
     "skipped": 1531
   },
   "failures": [
@@ -2576,24 +2576,12 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-9-11.js",
-      "reason": "zjs: throw: Test262Error: Array.isArray(a) !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-9-12.js",
-      "reason": "zjs: throw: Test262Error: Array.isArray(a) !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-9-3.js",
       "reason": "zjs: throw: Test262Error: Array.isArray(a) !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-9-5.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/create-non-array.js",
-      "reason": "zjs: throw: Test262Error: result is an Array exotic object"
     },
     {
       "path": "test/built-ins/Array/prototype/map/resizable-buffer.js",
@@ -4006,6 +3994,18 @@
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A8.js",
       "reason": "zjs: throw: Test262Error: #0: String.prototype.indexOf.hasOwnProperty('length') return true. Actual: undefined"
+    },
+    {
+      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A9.js",
+      "reason": "zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A11.js",
+      "reason": "zjs: throw: Test262Error: #1: String.prototype.slice.hasOwnProperty(\"length\") return true. Actual: undefined"
+    },
+    {
+      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T1.js",
+      "reason": "zjs: throw: Test262Error: #1: __instance = new Object(true); __instance.slice = String.prototype.slice;  __instance.slic"
     }
   ],
   "skip_counts": {
