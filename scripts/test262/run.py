@@ -270,7 +270,12 @@ unsupported features or harness includes.</p>
 </div>
 
 <div class="card">
-  <strong>Pass rate over time</strong>
+  <strong>Test counts over time</strong>
+  <div class="legend" style="margin: 0.4em 0; font-size: 0.85em; color: #666;">
+    <span style="color:#2c7;">● passing</span> &nbsp;
+    <span style="color:#c44;">● failing</span> &nbsp;
+    <span style="color:#999;">● skipped</span>
+  </div>
   <div id="chart"></div>
 </div>
 
@@ -298,39 +303,57 @@ unsupported features or harness includes.</p>
     denom ? ((summary.passed / denom) * 100).toFixed(1) + '%' : '–';
   document.getElementById('when').textContent = summary.when || '';
 
-  // Tiny SVG line chart of pass-rate over time.
-  const W = 900, H = 220, P = 30;
+  // SVG chart of passing / failing / skipped counts over time.
+  const W = 900, H = 260, P = 40;
   function chart() {{
     if (!history.length) {{
       document.getElementById('chart').textContent = '(no history yet)';
       return;
     }}
-    const points = history.map(r => {{
-      const d = (r.passed + r.failed) || 1;
-      return {{ x: r.when, y: (r.passed / d) * 100, raw: r }};
-    }});
-    const yMin = 0, yMax = 100;
+    // Pick a nice round y-max above the biggest point we plot.
+    let maxCount = 0;
+    for (const r of history) {{
+      maxCount = Math.max(maxCount, r.passed, r.failed, r.skipped);
+    }}
+    // Round up to a clean tick boundary (250, 500, 1000, 2000, ...).
+    const niceSteps = [100, 250, 500, 1000, 2000, 5000];
+    let step = niceSteps[niceSteps.length - 1];
+    for (const s of niceSteps) {{
+      if (Math.ceil(maxCount / s) * s <= s * 6) {{ step = s; break; }}
+    }}
+    const yMax = Math.max(step * 2, Math.ceil(maxCount / step) * step);
+    const yMin = 0;
+
     const xs = (i) => P + (i / Math.max(history.length - 1, 1)) * (W - 2*P);
     const ys = (v) => H - P - ((v - yMin) / (yMax - yMin)) * (H - 2*P);
+
     let svg = `<svg viewBox="0 0 ${{W}} ${{H}}" width="100%">`;
     // axes
     svg += `<line x1="${{P}}" y1="${{H-P}}" x2="${{W-P}}" y2="${{H-P}}" stroke="#999"/>`;
     svg += `<line x1="${{P}}" y1="${{P}}"   x2="${{P}}"   y2="${{H-P}}" stroke="#999"/>`;
-    // ticks (0,25,50,75,100)
-    for (let v = 0; v <= 100; v += 25) {{
+    // gridlines + y labels
+    for (let v = 0; v <= yMax; v += step) {{
       const y = ys(v);
       svg += `<line x1="${{P}}" y1="${{y}}" x2="${{W-P}}" y2="${{y}}" stroke="#eee"/>`;
-      svg += `<text x="${{P-6}}" y="${{y+3}}" text-anchor="end" fill="#888" font-size="10">${{v}}%</text>`;
+      svg += `<text x="${{P-6}}" y="${{y+3}}" text-anchor="end" fill="#888" font-size="10">${{v}}</text>`;
     }}
-    // polyline
-    const d = points.map((p, i) => `${{xs(i)}},${{ys(p.y)}}`).join(' ');
-    svg += `<polyline points="${{d}}" fill="none" stroke="#2c7" stroke-width="2"/>`;
-    // dots + last-value label
-    points.forEach((p, i) => {{
-      svg += `<circle cx="${{xs(i)}}" cy="${{ys(p.y)}}" r="3" fill="#2c7"><title>${{p.x}}: ${{p.y.toFixed(1)}}% (${{p.raw.passed}}/${{p.raw.passed + p.raw.failed}})</title></circle>`;
-    }});
-    const last = points[points.length - 1];
-    svg += `<text x="${{xs(points.length - 1) + 6}}" y="${{ys(last.y) + 4}}" font-size="11" fill="#2c7">${{last.y.toFixed(1)}}%</text>`;
+
+    // One series helper. Plots a polyline + dots + last-value label.
+    function series(key, color) {{
+      const pts = history.map((r, i) => ({{ x: xs(i), y: ys(r[key]), v: r[key], when: r.when }}));
+      const d = pts.map(p => `${{p.x}},${{p.y}}`).join(' ');
+      let out = `<polyline points="${{d}}" fill="none" stroke="${{color}}" stroke-width="2"/>`;
+      for (const p of pts) {{
+        out += `<circle cx="${{p.x}}" cy="${{p.y}}" r="2.5" fill="${{color}}"><title>${{p.when}}: ${{p.v}} ${{key}}</title></circle>`;
+      }}
+      const last = pts[pts.length - 1];
+      out += `<text x="${{last.x + 6}}" y="${{last.y + 4}}" font-size="11" fill="${{color}}">${{last.v}}</text>`;
+      return out;
+    }}
+    svg += series('passed',  '#2c7');
+    svg += series('failed',  '#c44');
+    svg += series('skipped', '#999');
+
     svg += '</svg>';
     document.getElementById('chart').innerHTML = svg;
   }}
