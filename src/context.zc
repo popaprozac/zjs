@@ -969,41 +969,143 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
 // --- Array.prototype helpers ---------------------------------------
 
+// Coerce `.length` to a u32. Most array-like objects have an integer
+// length; ECMA-262 has more rigorous coercion rules we approximate.
+fn read_length_u32(ctx: ZjsContext*, this_val: ZjsValue) -> u32 {
+    if zjs_is_array(this_val) != 0 {
+        return zjs_as_array(this_val).length;
+    }
+    if zjs_is_object(this_val) != 0 {
+        let o = zjs_as_object(this_val);
+        let len_atom = ctx_intern_atom(ctx, (char*)"length", 6);
+        let v = object_get(o, len_atom);
+        if zjs_is_int32(v) != 0 {
+            let n = zjs_as_int32(v);
+            if n > 0 { return (u32)n; }
+            return 0;
+        }
+        if zjs_is_double(v) != 0 {
+            let d = zjs_as_double(v);
+            let is_finite: int = 0;
+            raw { is_finite = isfinite(d) ? 1 : 0; }
+            if is_finite == 0 { return 0; }
+            if d <= 0.0 { return 0; }
+            return (u32)d;
+        }
+        return 0;
+    }
+    return 0;
+}
+
+// Set obj[index] = value where obj is a plain object (generic-this).
+fn obj_set_indexed(ctx: ZjsContext*, o: ZjsObject*, index: u32, value: ZjsValue) -> void {
+    let key_buf: char[16];
+    let key_len: int = 0;
+    raw {
+        key_len = snprintf(&key_buf[0], 16, "%u", (unsigned)index);
+    }
+    let kp: char* = NULL;
+    raw { kp = &key_buf[0]; }
+    let key_atom = ctx_intern_atom(ctx, kp, (u32)key_len);
+    object_set(ctx, o, key_atom, value);
+}
+
+fn obj_get_indexed(ctx: ZjsContext*, o: ZjsObject*, index: u32) -> ZjsValue {
+    let key_buf: char[16];
+    let key_len: int = 0;
+    raw {
+        key_len = snprintf(&key_buf[0], 16, "%u", (unsigned)index);
+    }
+    let kp: char* = NULL;
+    raw { kp = &key_buf[0]; }
+    let key_atom = ctx_intern_atom(ctx, kp, (u32)key_len);
+    return object_get(o, key_atom);
+}
+
 fn host_array_push(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = ctx.host_this;
-    if zjs_is_array(this_val) == 0 { return zjs_undefined(); }
-    let arr = zjs_as_array(this_val);
-    let i: u32 = 0;
-    while i < argc {
-        array_set(arr, arr.length, args[i]);
-        i = i + 1;
+    if zjs_is_array(this_val) != 0 {
+        let arr = zjs_as_array(this_val);
+        let i: u32 = 0;
+        while i < argc {
+            array_set(arr, arr.length, args[i]);
+            i = i + 1;
+        }
+        return zjs_int32((i32)arr.length);
     }
-    return zjs_int32((i32)arr.length);
+    if zjs_is_object(this_val) != 0 {
+        // Generic-this: walk obj.length and assign at indices.
+        let o = zjs_as_object(this_val);
+        let len = read_length_u32(ctx, this_val);
+        let i: u32 = 0;
+        while i < argc {
+            obj_set_indexed(ctx, o, len + i, args[i]);
+            i = i + 1;
+        }
+        let new_len = len + argc;
+        let len_atom = ctx_intern_atom(ctx, (char*)"length", 6);
+        object_set(ctx, o, len_atom, zjs_int32((i32)new_len));
+        return zjs_int32((i32)new_len);
+    }
+    return zjs_undefined();
 }
 
 fn host_array_pop(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = ctx.host_this;
-    if zjs_is_array(this_val) == 0 { return zjs_undefined(); }
-    let arr = zjs_as_array(this_val);
-    if arr.length == 0 { return zjs_undefined(); }
-    let last = arr.elements[arr.length - 1];
-    arr.elements[arr.length - 1] = zjs_undefined();
-    arr.length = arr.length - 1;
-    return last;
+    if zjs_is_array(this_val) != 0 {
+        let arr = zjs_as_array(this_val);
+        if arr.length == 0 { return zjs_undefined(); }
+        let last = arr.elements[arr.length - 1];
+        arr.elements[arr.length - 1] = zjs_undefined();
+        arr.length = arr.length - 1;
+        return last;
+    }
+    if zjs_is_object(this_val) != 0 {
+        let o = zjs_as_object(this_val);
+        let len = read_length_u32(ctx, this_val);
+        let len_atom = ctx_intern_atom(ctx, (char*)"length", 6);
+        if len == 0 {
+            object_set(ctx, o, len_atom, zjs_int32(0));
+            return zjs_undefined();
+        }
+        let last_idx = len - 1;
+        let last_v = obj_get_indexed(ctx, o, last_idx);
+        // Remove the property and update length.
+        // (We don't have a proper delete — leave it as undefined.)
+        obj_set_indexed(ctx, o, last_idx, zjs_undefined());
+        object_set(ctx, o, len_atom, zjs_int32((i32)last_idx));
+        return last_v;
+    }
+    return zjs_undefined();
 }
 
 fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = ctx.host_this;
-    if zjs_is_array(this_val) == 0 { return zjs_int32(-1); }
     if argc == 0 { return zjs_int32(-1); }
-    let arr = zjs_as_array(this_val);
     let needle = args[0];
-    let i: u32 = 0;
-    while i < arr.length {
-        if zjs_strict_eq(arr.elements[i], needle) != 0 {
-            return zjs_int32((i32)i);
+    if zjs_is_array(this_val) != 0 {
+        let arr = zjs_as_array(this_val);
+        let i: u32 = 0;
+        while i < arr.length {
+            if zjs_strict_eq(arr.elements[i], needle) != 0 {
+                return zjs_int32((i32)i);
+            }
+            i = i + 1;
         }
-        i = i + 1;
+        return zjs_int32(-1);
+    }
+    if zjs_is_object(this_val) != 0 {
+        let o = zjs_as_object(this_val);
+        let len = read_length_u32(ctx, this_val);
+        let i: u32 = 0;
+        while i < len {
+            let v = obj_get_indexed(ctx, o, i);
+            if zjs_strict_eq(v, needle) != 0 {
+                return zjs_int32((i32)i);
+            }
+            i = i + 1;
+        }
+        return zjs_int32(-1);
     }
     return zjs_int32(-1);
 }

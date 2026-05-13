@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-13 16:32 UTC",
+    "when": "2026-05-13 16:36 UTC",
     "total": 4144,
-    "passed": 1558,
-    "failed": 1055,
+    "passed": 1563,
+    "failed": 1050,
     "skipped": 1531
   },
   "failures": [
@@ -1900,14 +1900,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A2_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: var obj = {}; obj.push = Array.prototype.push; obj.push(-1) === 1. Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A2_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: var obj = {}; obj.length = NaN; obj.push = Array.prototype.push; obj.push(-1) === 1. Actua"
-    },
-    {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A2_T3.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -1918,10 +1910,6 @@
     {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A4_T2.js",
       "reason": "zjs: throw: Test262Error: #1: var obj = {}; obj.push = Array.prototype.push; obj.length = 4294967295; obj.push(\"x\", \"y\","
-    },
-    {
-      "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A4_T3.js",
-      "reason": "zjs: throw: Test262Error: #1: var obj = {}; obj.push = Array.prototype.push; obj.length = -1; obj.push(\"x\", \"y\", \"z\") =="
     },
     {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A5_T1.js",
@@ -1948,16 +1936,12 @@
       "reason": "zjs: throw: Test262Error: #9: x = []; x[0] = 0; x[3] = 3; x.pop(); x.length = 1; x.pop() === 0. Actual: undefined"
     },
     {
-      "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A2_T1.js",
-      "reason": "zjs: throw: Test262Error: #2: var obj = {}; obj.pop = Array.prototype.pop; obj.pop(); obj.length === 0. Actual: undefine"
-    },
-    {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A2_T2.js",
-      "reason": "zjs: throw: Test262Error: #2: var obj = {}; obj.length = NaN; obj.pop = Array.prototype.pop; obj.pop(); obj.length === 0"
+      "reason": "zjs: throw: Test262Error: #4: var obj = {}; obj.length = Number.POSITIVE_INFINITY; obj.pop = Array.prototype.pop; obj.po"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A2_T3.js",
-      "reason": "zjs: throw: Test262Error: #2: var obj = {}; obj.length = 2.5; obj.pop = Array.prototype.pop; obj.pop(); obj.length === 1"
+      "reason": "zjs: throw: Test262Error: #12: var obj = {}; obj.length = new Number(2); obj.pop = Array.prototype.pop; obj.pop(); obj.l"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A2_T4.js",
@@ -1970,10 +1954,6 @@
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A3_T2.js",
       "reason": "zjs: throw: Test262Error: #1: var obj = {}; obj.pop = Array.prototype.pop; obj[0] = \"x\"; obj[4294967296] = \"y\"; obj.leng"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A3_T3.js",
-      "reason": "zjs: throw: Test262Error: #2: var obj = {}; obj.pop = Array.prototype.pop; obj[4294967294] = \"x\"; obj.length = -1; obj.p"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A4_T1.js",
@@ -4006,6 +3986,26 @@
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T1.js",
       "reason": "zjs: throw: Test262Error: #1: __instance = new Object(true); __instance.slice = String.prototype.slice;  __instance.slic"
+    },
+    {
+      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T10.js",
+      "reason": "zjs: throw: Test262Error: #1: var x; var __obj = {valueOf:function(){return 2;}}; var __str = \"u0035ABBBABAB\"; __str.sli"
+    },
+    {
+      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T11.js",
+      "reason": "zjs: throw: Test262Error: #1.1: Exception === \"instart\". Actual: [object]"
+    },
+    {
+      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T12.js",
+      "reason": "zjs: throw: Test262Error: #1.1: Exception === \"instart\". Actual: [object]"
+    },
+    {
+      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T13.js",
+      "reason": "zjs: throw: Test262Error: #1.1: Exception === \"inend\". Actual: [object]"
+    },
+    {
+      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T15.js",
+      "reason": "zjs: throw: Test262Error: #1: var __num = 11.001002; Number.prototype.slice = String.prototype.slice; __num.slice()===\"1"
     }
   ],
   "skip_counts": {
