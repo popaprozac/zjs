@@ -575,3 +575,45 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
 
     return InterpretResult{ is_throw: false, value: zjs_undefined() };
 }
+
+// Invoke a JS-visible callable (Function | Closure | HostFunction) from
+// host code. Used by Array.prototype.{map, forEach} to fire the user's
+// callback. For MVP, an inner throw is dropped and `undefined` returned
+// to the host — proper throw propagation across the host boundary is a
+// future-work item (would need a ctx.pending_throw flag and a check in
+// Op::MethodInvoke / Op::Invoke after each host call).
+fn zjs_call_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if zjs_is_function(callee) != 0 {
+        let fp = zjs_cell_as_ptr(callee);
+        let target: Function* = NULL;
+        raw { target = (Function*)fp; }
+        let r = interpret(ctx, target, args, argc);
+        return r.value;
+    }
+    if zjs_is_closure(callee) != 0 {
+        let cl = zjs_as_closure(callee);
+        let fp2 = cl.function;
+        let target2: Function* = NULL;
+        raw { target2 = (Function*)fp2; }
+        let saved_cl = ctx.current_closure;
+        ctx.current_closure = cl;
+        let r2 = interpret(ctx, target2, args, argc);
+        ctx.current_closure = saved_cl;
+        return r2.value;
+    }
+    if zjs_is_host_function(callee) != 0 {
+        let hf_ptr = zjs_cell_as_ptr(callee);
+        let r: ZjsValue = zjs_undefined();
+        let saved_this = ctx.host_this;
+        ctx.host_this = zjs_undefined();
+        raw {
+            ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
+            typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
+            HostFn fp = (HostFn)hf->fn_ptr;
+            r = fp(ctx, args, argc);
+        }
+        ctx.host_this = saved_this;
+        return r;
+    }
+    return zjs_undefined();
+}

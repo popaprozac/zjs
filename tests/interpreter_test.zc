@@ -487,6 +487,39 @@ fn run_tests() -> void {
     // .length on string primitive still works
     check_int((char*)"str.length: primitive",      (char*)r"'abc'.length", 3);
 
+    // --- Built-ins (Phase 3.5b) -------------------------------------
+    // Array.prototype.map — element + index + array signature
+    check_int((char*)"arr.map: squares",            (char*)r"[1,2,3].map(function(x){return x*x})[2]", 9);
+    check_int((char*)"arr.map: same length",        (char*)r"[10,20,30].map(function(x){return x}).length", 3);
+    check_int((char*)"arr.map: passes index",       (char*)r"[10,20,30].map(function(x,i){return i})[2]", 2);
+    check_int((char*)"arr.map: closure callback",   (char*)r"let k = 100; [1,2,3].map(function(x){return x+k})[1]", 102);
+    // Array.prototype.forEach
+    check_int((char*)"arr.forEach: sum",            (char*)r"let s=0; [1,2,3,4].forEach(function(x){s = s + x}); s", 10);
+    check_int((char*)"arr.forEach: empty",          (char*)r"let s=42; [].forEach(function(x){s = s + x}); s", 42);
+    check_string((char*)"arr.forEach: typeof rv",   (char*)r"typeof [1].forEach(function(){})", (char*)"undefined");
+    // JSON.stringify
+    check_string((char*)"JSON.stringify: int",      (char*)r"JSON.stringify(42)", (char*)"42");
+    check_string((char*)"JSON.stringify: string",   (char*)r"JSON.stringify('hi')", (char*)"\"hi\"");
+    check_string((char*)"JSON.stringify: array",    (char*)r"JSON.stringify([1,2,3])", (char*)"[1,2,3]");
+    // Object stringify: check via round-trip (literal `{` braces are
+    // awkward to encode in a Zen-c expected-string literal).
+    check_int((char*)"JSON.stringify: object len",  (char*)r"JSON.stringify({a:1,b:2}).length", 13);
+    check_int((char*)"JSON.stringify: nested len",  (char*)r"JSON.stringify({a:[1,2],b:{c:3}}).length", 23);
+    check_string((char*)"JSON.stringify: true",     (char*)r"JSON.stringify(true)", (char*)"true");
+    check_string((char*)"JSON.stringify: null",     (char*)r"JSON.stringify(null)", (char*)"null");
+    check_string((char*)"JSON.stringify: escape",   (char*)r"JSON.stringify('a\nb')", (char*)"\"a\\nb\"");
+    // JSON.parse
+    check_int((char*)"JSON.parse: int",             (char*)r"JSON.parse('42')", 42);
+    check_int((char*)"JSON.parse: array elem",      (char*)r"JSON.parse('[1,2,3]')[1]", 2);
+    check_int((char*)"JSON.parse: object prop",     (char*)r"JSON.parse('{\"x\":42}').x", 42);
+    check_int((char*)"JSON.parse: nested prop",     (char*)r"JSON.parse('{\"a\":{\"b\":7}}').a.b", 7);
+    check_int((char*)"JSON.parse: array length",    (char*)r"JSON.parse('[1,2,3]').length", 3);
+    check_string((char*)"JSON.parse: string",       (char*)r"JSON.parse('\"hi\"')", (char*)"hi");
+    check_string((char*)"JSON.parse: escape",       (char*)r"JSON.parse('\"a\\nb\"')", (char*)"a\nb");
+    // Roundtrip
+    check_int((char*)"JSON: roundtrip int",         (char*)r"JSON.parse(JSON.stringify({n:42})).n", 42);
+    check_int((char*)"JSON: roundtrip array",       (char*)r"JSON.parse(JSON.stringify([1,2,3])).length", 3);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

@@ -71,6 +71,14 @@ struct ZjsContext {
     array_proto:    ZjsObject*;
     string_proto:   ZjsObject*;
 
+    // Phase 3.5b — temp-root stack. Host functions that invoke JS
+    // callbacks (Array.prototype.map / forEach) need to keep
+    // intermediate ZjsValues alive across the inner interpret() call,
+    // which may trigger GC. Use ctx_push_temp_root / ctx_pop_temp_root.
+    temp_roots:      ZjsValue*;
+    temp_root_count: u32;
+    temp_root_cap:   u32;
+
     // --- GC state ---
     root_frames:    GcRootFrame*;     // grown geometrically
     root_depth:     u32;              // # of active interpret() frames
@@ -155,9 +163,34 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
         j = j + 1;
     }
     let cells = ctx.cells;
+    let temp_roots = ctx.temp_roots;
     raw {
         free(cells);
+        free(temp_roots);
         free(ctx);
+    }
+}
+
+// Push a value as a transient GC root. Used by host functions that
+// allocate then invoke a JS callback — the inner interpret() may run
+// GC, and the C-stack ZjsValue isn't otherwise visible. Pair with
+// ctx_pop_temp_root.
+fn ctx_push_temp_root(ctx: ZjsContext*, v: ZjsValue) -> void {
+    if ctx.temp_root_count >= ctx.temp_root_cap {
+        let new_cap: u32 = if ctx.temp_root_cap == 0 { 8 } else { ctx.temp_root_cap * 2 };
+        let old = ctx.temp_roots;
+        let new_arr: ZjsValue* = NULL;
+        raw { new_arr = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
+        ctx.temp_roots = new_arr;
+        ctx.temp_root_cap = new_cap;
+    }
+    ctx.temp_roots[ctx.temp_root_count] = v;
+    ctx.temp_root_count = ctx.temp_root_count + 1;
+}
+
+fn ctx_pop_temp_root(ctx: ZjsContext*) -> void {
+    if ctx.temp_root_count > 0 {
+        ctx.temp_root_count = ctx.temp_root_count - 1;
     }
 }
 
@@ -323,6 +356,12 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     if ctx.string_proto != NULL {
         let sp_val = zjs_cell_from_ptr((void*)ctx.string_proto);
         gc_mark_value(sp_val);
+    }
+    // Phase 3.5b temp roots
+    let t: u32 = 0;
+    while t < ctx.temp_root_count {
+        gc_mark_value(ctx.temp_roots[t]);
+        t = t + 1;
     }
     // Globals
     let i: u32 = 0;
@@ -983,6 +1022,503 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return result_v;
 }
 
+// --- Higher-order array methods (Phase 3.5b) ----------------------
+//
+// These call a user-provided JS callback. We use ctx_push_temp_root to
+// protect the result accumulator across the inner interpret() call,
+// which may GC. The callback receives (element, index, array) — the
+// standard JS prototype-method signature.
+
+raw {
+    extern ZjsValue zjs_call_value(ZjsContext* ctx, ZjsValue callee, ZjsValue* args, uint32_t argc);
+}
+
+fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_array(this_val) == 0 || argc == 0 {
+        return ctx_new_array(ctx, 0);
+    }
+    let arr = zjs_as_array(this_val);
+    let cb = args[0];
+    let result_v = ctx_new_array(ctx, arr.length);
+    ctx_push_temp_root(ctx, result_v);
+    defer ctx_pop_temp_root(ctx);
+    let result = zjs_as_array(result_v);
+    let i: u32 = 0;
+    while i < arr.length {
+        let cb_args: ZjsValue[3];
+        cb_args[0] = arr.elements[i];
+        cb_args[1] = zjs_int32((i32)i);
+        cb_args[2] = this_val;
+        let cb_args_ptr: ZjsValue* = NULL;
+        raw { cb_args_ptr = &cb_args[0]; }
+        let mapped: ZjsValue = zjs_undefined();
+        raw { mapped = zjs_call_value(ctx, cb, cb_args_ptr, 3); }
+        // The array may have grown via array_set internal realloc inside
+        // the callback (rare for map but possible). Re-fetch.
+        array_set(result, i, mapped);
+        i = i + 1;
+    }
+    result.length = arr.length;
+    return result_v;
+}
+
+fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_array(this_val) == 0 || argc == 0 { return zjs_undefined(); }
+    let arr = zjs_as_array(this_val);
+    let cb = args[0];
+    let len = arr.length;       // ECMA-262: length captured before iteration
+    let i: u32 = 0;
+    while i < len {
+        let cb_args: ZjsValue[3];
+        cb_args[0] = arr.elements[i];
+        cb_args[1] = zjs_int32((i32)i);
+        cb_args[2] = this_val;
+        let cb_args_ptr: ZjsValue* = NULL;
+        raw { cb_args_ptr = &cb_args[0]; }
+        raw { (void)zjs_call_value(ctx, cb, cb_args_ptr, 3); }
+        i = i + 1;
+    }
+    return zjs_undefined();
+}
+
+// --- JSON.stringify (Phase 3.5b) -----------------------------------
+//
+// Walks the value and appends JSON to a growable buffer. No `space`,
+// no `replacer`, no `toJSON()`. Cycles overflow the stack — not a
+// concern for the test workloads we care about now.
+
+struct JsonBuf {
+    data: char*;
+    len:  u32;
+    cap:  u32;
+}
+
+fn json_buf_grow(b: JsonBuf*, need: u32) -> void {
+    if b.len + need <= b.cap { return; }
+    let new_cap: u32 = if b.cap == 0 { 64 } else { b.cap * 2 };
+    while new_cap < b.len + need { new_cap = new_cap * 2; }
+    let old = b.data;
+    let new_buf: char* = NULL;
+    raw { new_buf = (char*)realloc(old, new_cap); }
+    b.data = new_buf;
+    b.cap = new_cap;
+}
+
+fn json_buf_putc(b: JsonBuf*, ch: char) -> void {
+    json_buf_grow(b, 1);
+    b.data[b.len] = ch;
+    b.len = b.len + 1;
+}
+
+fn json_buf_puts(b: JsonBuf*, s: char*, n: u32) -> void {
+    json_buf_grow(b, n);
+    let src = s;
+    let dst_base = b.data;
+    let off = b.len;
+    let count = n;
+    raw { memcpy(dst_base + off, src, count); }
+    b.len = b.len + n;
+}
+
+fn json_emit_string(b: JsonBuf*, s: char*, n: u32) -> void {
+    json_buf_putc(b, '"');
+    let i: u32 = 0;
+    while i < n {
+        let c: char = s[i];
+        let cu = (u8)c;
+        if cu == 34 {           // "
+            json_buf_putc(b, '\\'); json_buf_putc(b, '"');
+        } else if cu == 92 {    // \
+            json_buf_putc(b, '\\'); json_buf_putc(b, '\\');
+        } else if cu == 8 {     // \b
+            json_buf_putc(b, '\\'); json_buf_putc(b, 'b');
+        } else if cu == 9 {     // \t
+            json_buf_putc(b, '\\'); json_buf_putc(b, 't');
+        } else if cu == 10 {    // \n
+            json_buf_putc(b, '\\'); json_buf_putc(b, 'n');
+        } else if cu == 12 {    // \f
+            json_buf_putc(b, '\\'); json_buf_putc(b, 'f');
+        } else if cu == 13 {    // \r
+            json_buf_putc(b, '\\'); json_buf_putc(b, 'r');
+        } else if cu < 32 {
+            // \u00XX
+            let hex_lookup: char* = NULL;
+            raw { hex_lookup = (char*)"0123456789abcdef"; }
+            json_buf_putc(b, '\\');
+            json_buf_putc(b, 'u');
+            json_buf_putc(b, '0');
+            json_buf_putc(b, '0');
+            json_buf_putc(b, hex_lookup[(cu >> 4) & 15]);
+            json_buf_putc(b, hex_lookup[cu & 15]);
+        } else {
+            json_buf_putc(b, c);
+        }
+        i = i + 1;
+    }
+    json_buf_putc(b, '"');
+}
+
+fn json_stringify_value(ctx: ZjsContext*, b: JsonBuf*, v: ZjsValue) -> void {
+    if zjs_is_undefined(v) != 0 {
+        // JSON.stringify(undefined) is `undefined` in JS (not a string).
+        // At the top level the caller handles this by returning undefined;
+        // inside an array we'd emit null. For simplicity here, emit null.
+        json_buf_puts(b, (char*)"null", 4);
+        return;
+    }
+    if zjs_is_null(v) != 0 { json_buf_puts(b, (char*)"null", 4); return; }
+    if zjs_is_bool(v) != 0 {
+        if zjs_as_bool(v) != 0 { json_buf_puts(b, (char*)"true", 4); }
+        else                   { json_buf_puts(b, (char*)"false", 5); }
+        return;
+    }
+    if zjs_is_int32(v) != 0 {
+        let n = zjs_as_int32(v);
+        let tmp: char[32];
+        let written: int = 0;
+        let tp: char* = NULL;
+        raw { tp = &tmp[0]; written = snprintf(tp, 32, "%d", (int)n); }
+        json_buf_puts(b, tp, (u32)written);
+        return;
+    }
+    if zjs_is_double(v) != 0 {
+        let d = zjs_as_double(v);
+        // NaN / Infinity become null per ECMA-262.
+        let is_finite: int = 0;
+        raw { is_finite = isfinite(d) ? 1 : 0; }
+        if is_finite == 0 { json_buf_puts(b, (char*)"null", 4); return; }
+        let tmp: char[32];
+        let written: int = 0;
+        let tp: char* = NULL;
+        raw { tp = &tmp[0]; written = snprintf(tp, 32, "%g", d); }
+        json_buf_puts(b, tp, (u32)written);
+        return;
+    }
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        json_emit_string(b, s.data, s.length);
+        return;
+    }
+    if zjs_is_array(v) != 0 {
+        let a = zjs_as_array(v);
+        json_buf_putc(b, '[');
+        let i: u32 = 0;
+        while i < a.length {
+            if i > 0 { json_buf_putc(b, ','); }
+            json_stringify_value(ctx, b, a.elements[i]);
+            i = i + 1;
+        }
+        json_buf_putc(b, ']');
+        return;
+    }
+    if zjs_is_object(v) != 0 {
+        let o = zjs_as_object(v);
+        // Enumerate own property names in insertion order by walking
+        // the hidden-class chain bottom-up (same approach as Object.keys).
+        let count = o.cls.prop_count;
+        json_buf_putc(b, '{');
+        // First gather names by slot.
+        let names: ZjsString*[64];          // MVP: 64-prop cap per object
+        let names_ptr: ZjsString** = NULL;
+        raw { names_ptr = &names[0]; }
+        let limit: u32 = if count > 64 { 64 } else { count };
+        let init_i: u32 = 0;
+        while init_i < limit { names_ptr[init_i] = NULL; init_i = init_i + 1; }
+        let cls = o.cls;
+        while cls != NULL && cls.parent != NULL {
+            let slot = cls.transition_slot;
+            if slot < limit { names_ptr[slot] = cls.transition_name; }
+            cls = cls.parent;
+        }
+        let i: u32 = 0;
+        let emitted: u32 = 0;
+        while i < limit {
+            let n = names_ptr[i];
+            if n != NULL {
+                if emitted > 0 { json_buf_putc(b, ','); }
+                json_emit_string(b, n.data, n.length);
+                json_buf_putc(b, ':');
+                json_stringify_value(ctx, b, o.slots[i]);
+                emitted = emitted + 1;
+            }
+            i = i + 1;
+        }
+        json_buf_putc(b, '}');
+        return;
+    }
+    // Functions, closures, host functions, hidden classes — not
+    // serializable. Real JSON.stringify returns undefined for these at
+    // top level; inside containers it emits null. MVP: emit null.
+    json_buf_puts(b, (char*)"null", 4);
+}
+
+fn host_json_stringify(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_undefined(); }
+    let v = args[0];
+    // Top-level undefined / functions return undefined (per spec).
+    if zjs_is_undefined(v) != 0 { return zjs_undefined(); }
+    let t = zjs_cell_tag(v);
+    if t == TAG_FUNCTION || t == TAG_CLOSURE || t == TAG_HOST_FUNCTION {
+        return zjs_undefined();
+    }
+    let b: JsonBuf;
+    b.data = NULL; b.len = 0; b.cap = 0;
+    json_stringify_value(ctx, &b, v);
+    // Null-terminate for safety; ctx_intern_string_take only reads `len`.
+    json_buf_putc(&b, '\0');
+    b.len = b.len - 1;
+    return ctx_intern_string_take(ctx, b.data, b.len);
+}
+
+// --- JSON.parse (Phase 3.5b) ---------------------------------------
+
+struct JsonParser {
+    src:  char*;
+    len:  u32;
+    pos:  u32;
+    fail: bool;
+}
+
+fn jp_peek(p: JsonParser*) -> char {
+    if p.pos >= p.len { return (char)0; }
+    return p.src[p.pos];
+}
+
+fn jp_skip_ws(p: JsonParser*) -> void {
+    while p.pos < p.len {
+        let c = p.src[p.pos];
+        let cu = (u8)c;
+        if cu == 32 || cu == 9 || cu == 10 || cu == 13 { p.pos = p.pos + 1; }
+        else { return; }
+    }
+}
+
+fn jp_match_word(p: JsonParser*, word: char*, n: u32) -> bool {
+    if p.pos + n > p.len { return false; }
+    let src = p.src;
+    let off = p.pos;
+    let eq: int = 0;
+    raw { eq = (memcmp(src + off, word, n) == 0) ? 1 : 0; }
+    if eq == 0 { return false; }
+    p.pos = p.pos + n;
+    return true;
+}
+
+fn jp_parse_value(ctx: ZjsContext*, p: JsonParser*) -> ZjsValue {
+    jp_skip_ws(p);
+    if p.pos >= p.len { p.fail = true; return zjs_undefined(); }
+    let c = p.src[p.pos];
+    let cu = (u8)c;
+
+    if cu == 110 {              // 'n' — null
+        if jp_match_word(p, (char*)"null", 4) { return zjs_null(); }
+        p.fail = true; return zjs_undefined();
+    }
+    if cu == 116 {              // 't' — true
+        if jp_match_word(p, (char*)"true", 4) { return zjs_bool(1); }
+        p.fail = true; return zjs_undefined();
+    }
+    if cu == 102 {              // 'f' — false
+        if jp_match_word(p, (char*)"false", 5) { return zjs_bool(0); }
+        p.fail = true; return zjs_undefined();
+    }
+    if cu == 34 {               // '"' — string
+        p.pos = p.pos + 1;
+        let buf_cap: u32 = 16;
+        let buf: char* = NULL;
+        let bc = buf_cap;
+        raw { buf = (char*)malloc(bc); }
+        let blen: u32 = 0;
+        let bcap = buf_cap;
+        let ok = true;
+        while p.pos < p.len {
+            let ch = p.src[p.pos];
+            let chu = (u8)ch;
+            if chu == 34 { p.pos = p.pos + 1; break; }
+            if chu == 92 {      // '\'
+                p.pos = p.pos + 1;
+                if p.pos >= p.len { ok = false; break; }
+                let esc = p.src[p.pos];
+                let eu = (u8)esc;
+                let out: u8 = 0;
+                let used_u: bool = false;
+                if eu == 34 { out = 34; }
+                else if eu == 92 { out = 92; }
+                else if eu == 47 { out = 47; }
+                else if eu == 98 { out = 8; }      // \b
+                else if eu == 102 { out = 12; }    // \f
+                else if eu == 110 { out = 10; }    // \n
+                else if eu == 114 { out = 13; }    // \r
+                else if eu == 116 { out = 9; }     // \t
+                else if eu == 117 {                // \uXXXX
+                    used_u = true;
+                    if p.pos + 4 >= p.len { ok = false; break; }
+                    p.pos = p.pos + 1;
+                    let cp: u32 = 0;
+                    let hi: u32 = 0;
+                    while hi < 4 {
+                        let hc = p.src[p.pos + hi];
+                        let hu = (u8)hc;
+                        let digit: u32 = 0;
+                        if hu >= 48 && hu <= 57 { digit = (u32)(hu - 48); }
+                        else if hu >= 97 && hu <= 102 { digit = (u32)(hu - 97) + 10; }
+                        else if hu >= 65 && hu <= 70 { digit = (u32)(hu - 65) + 10; }
+                        else { ok = false; }
+                        cp = (cp << 4) | digit;
+                        hi = hi + 1;
+                    }
+                    if !ok { break; }
+                    p.pos = p.pos + 3;
+                    // MVP: encode as UTF-8 (BMP only, no surrogate joining).
+                    if cp < 128 {
+                        if blen + 1 > bcap { bcap = bcap * 2; let oldp = buf; let bp: char* = NULL; raw { bp = (char*)realloc(oldp, bcap); } buf = bp; }
+                        buf[blen] = (char)cp;
+                        blen = blen + 1;
+                    } else if cp < 2048 {
+                        if blen + 2 > bcap { bcap = bcap * 2; let oldp = buf; let bp: char* = NULL; raw { bp = (char*)realloc(oldp, bcap); } buf = bp; }
+                        buf[blen]     = (char)(192 | (cp >> 6));
+                        buf[blen + 1] = (char)(128 | (cp & 63));
+                        blen = blen + 2;
+                    } else {
+                        if blen + 3 > bcap { bcap = bcap * 2; let oldp = buf; let bp: char* = NULL; raw { bp = (char*)realloc(oldp, bcap); } buf = bp; }
+                        buf[blen]     = (char)(224 | (cp >> 12));
+                        buf[blen + 1] = (char)(128 | ((cp >> 6) & 63));
+                        buf[blen + 2] = (char)(128 | (cp & 63));
+                        blen = blen + 3;
+                    }
+                } else {
+                    ok = false; break;
+                }
+                if !used_u {
+                    if blen + 1 > bcap { bcap = bcap * 2; let oldp = buf; let bp: char* = NULL; raw { bp = (char*)realloc(oldp, bcap); } buf = bp; }
+                    buf[blen] = (char)out;
+                    blen = blen + 1;
+                }
+                p.pos = p.pos + 1;
+            } else {
+                if blen + 1 > bcap { bcap = bcap * 2; let oldp = buf; let bp: char* = NULL; raw { bp = (char*)realloc(oldp, bcap); } buf = bp; }
+                buf[blen] = ch;
+                blen = blen + 1;
+                p.pos = p.pos + 1;
+            }
+        }
+        if !ok { raw { free(buf); } p.fail = true; return zjs_undefined(); }
+        // Ensure null terminator slot.
+        if blen + 1 > bcap { bcap = blen + 1; let oldp = buf; let bp: char* = NULL; raw { bp = (char*)realloc(oldp, bcap); } buf = bp; }
+        buf[blen] = '\0';
+        return ctx_intern_string_take(ctx, buf, blen);
+    }
+    if cu == 91 {               // '[' — array
+        p.pos = p.pos + 1;
+        let arr_v = ctx_new_array(ctx, 0);
+        ctx_push_temp_root(ctx, arr_v);
+        let arr = zjs_as_array(arr_v);
+        jp_skip_ws(p);
+        if jp_peek(p) == ']' { p.pos = p.pos + 1; ctx_pop_temp_root(ctx); return arr_v; }
+        while true {
+            jp_skip_ws(p);
+            let elem = jp_parse_value(ctx, p);
+            if p.fail { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            array_set(arr, arr.length, elem);
+            jp_skip_ws(p);
+            let cc = jp_peek(p);
+            if cc == ',' { p.pos = p.pos + 1; }
+            else if cc == ']' { p.pos = p.pos + 1; break; }
+            else { p.fail = true; ctx_pop_temp_root(ctx); return zjs_undefined(); }
+        }
+        ctx_pop_temp_root(ctx);
+        return arr_v;
+    }
+    if cu == 123 {              // '{' — object
+        p.pos = p.pos + 1;
+        let obj_v = ctx_new_object(ctx);
+        ctx_push_temp_root(ctx, obj_v);
+        let obj = zjs_as_object(obj_v);
+        jp_skip_ws(p);
+        if jp_peek(p) == '}' { p.pos = p.pos + 1; ctx_pop_temp_root(ctx); return obj_v; }
+        while true {
+            jp_skip_ws(p);
+            // Key must be string.
+            if jp_peek(p) != '"' { p.fail = true; ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            let k_v = jp_parse_value(ctx, p);
+            if p.fail { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            jp_skip_ws(p);
+            if jp_peek(p) != ':' { p.fail = true; ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            p.pos = p.pos + 1;
+            jp_skip_ws(p);
+            let val = jp_parse_value(ctx, p);
+            if p.fail { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            // Use atom-interned key for property name (matches the
+            // hidden-class convention).
+            let ks = zjs_as_string(k_v);
+            let key_atom = ctx_intern_atom(ctx, ks.data, ks.length);
+            object_set(ctx, obj, key_atom, val);
+            jp_skip_ws(p);
+            let cc = jp_peek(p);
+            if cc == ',' { p.pos = p.pos + 1; }
+            else if cc == '}' { p.pos = p.pos + 1; break; }
+            else { p.fail = true; ctx_pop_temp_root(ctx); return zjs_undefined(); }
+        }
+        ctx_pop_temp_root(ctx);
+        return obj_v;
+    }
+    // Number — optional '-', integer part, optional fraction, optional exponent.
+    let is_negative = false;
+    if cu == 45 { is_negative = true; p.pos = p.pos + 1; }
+    let num_start = p.pos;
+    let has_dot = false;
+    let has_exp = false;
+    while p.pos < p.len {
+        let nc = p.src[p.pos];
+        let nu = (u8)nc;
+        if nu >= 48 && nu <= 57 { p.pos = p.pos + 1; }
+        else if nu == 46 && !has_dot { has_dot = true; p.pos = p.pos + 1; }
+        else if (nu == 101 || nu == 69) && !has_exp {
+            has_exp = true; p.pos = p.pos + 1;
+            if p.pos < p.len {
+                let sn = (u8)p.src[p.pos];
+                if sn == 43 || sn == 45 { p.pos = p.pos + 1; }
+            }
+        }
+        else { break; }
+    }
+    if p.pos == num_start { p.fail = true; return zjs_undefined(); }
+    // strtod the slice via a stack-buffered C string.
+    let slice_len = p.pos - num_start;
+    let parsed: f64 = 0.0;
+    let src = p.src;
+    let off = num_start;
+    let sl = slice_len;
+    raw {
+        char buf[64];
+        size_t n = sl < 63 ? sl : 63;
+        memcpy(buf, src + off, n);
+        buf[n] = '\0';
+        parsed = strtod(buf, NULL);
+    }
+    if is_negative { parsed = -parsed; }
+    // Prefer int32 representation if it fits.
+    let as_int = (i32)parsed;
+    if (f64)as_int == parsed { return zjs_int32(as_int); }
+    return zjs_double(parsed);
+}
+
+fn host_json_parse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_undefined(); }
+    let v = args[0];
+    if zjs_is_string(v) == 0 { v = zjs_to_string(ctx, v); }
+    let s = zjs_as_string(v);
+    let p: JsonParser;
+    p.src = s.data; p.len = s.length; p.pos = 0; p.fail = false;
+    let result = jp_parse_value(ctx, &p);
+    if p.fail { return zjs_undefined(); }
+    jp_skip_ws(&p);
+    if p.pos != s.length { return zjs_undefined(); }
+    return result;
+}
+
 fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // --- Error ---
     let err_ptr: void* = NULL;
@@ -1037,12 +1573,18 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let push_ptr:  void* = NULL; raw { push_ptr  = (void*)host_array_push; }
     let pop_ptr:   void* = NULL; raw { pop_ptr   = (void*)host_array_pop; }
     let aidx_ptr:  void* = NULL; raw { aidx_ptr  = (void*)host_array_index_of; }
+    let map_ptr:   void* = NULL; raw { map_ptr   = (void*)host_array_map; }
+    let fe_ptr:    void* = NULL; raw { fe_ptr    = (void*)host_array_for_each; }
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"push", 4),
                ctx_make_host_function(ctx, (char*)"push", push_ptr));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"pop", 3),
                ctx_make_host_function(ctx, (char*)"pop", pop_ptr));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"indexOf", 7),
                ctx_make_host_function(ctx, (char*)"indexOf", aidx_ptr));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"map", 3),
+               ctx_make_host_function(ctx, (char*)"map", map_ptr));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"forEach", 7),
+               ctx_make_host_function(ctx, (char*)"forEach", fe_ptr));
     ctx.array_proto = array_proto;
 
     // --- String.prototype intercept (Phase 3.5) ---
@@ -1058,6 +1600,18 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"split", 5),
                ctx_make_host_function(ctx, (char*)"split", split_ptr));
     ctx.string_proto = string_proto;
+
+    // --- JSON namespace (Phase 3.5b) ---
+    let json_v = ctx_new_object(ctx);
+    let json_o = zjs_as_object(json_v);
+    let stringify_ptr: void* = NULL; raw { stringify_ptr = (void*)host_json_stringify; }
+    let parse_ptr:     void* = NULL; raw { parse_ptr     = (void*)host_json_parse; }
+    object_set(ctx, json_o, ctx_intern_atom(ctx, (char*)"stringify", 9),
+               ctx_make_host_function(ctx, (char*)"stringify", stringify_ptr));
+    object_set(ctx, json_o, ctx_intern_atom(ctx, (char*)"parse", 5),
+               ctx_make_host_function(ctx, (char*)"parse", parse_ptr));
+    let json_slot = ctx_intern_global(ctx, (char*)"JSON", 4);
+    ctx.globals[json_slot].value = json_v;
 }
 
 // --- Error inspection (public ABI) ----------------------------------
