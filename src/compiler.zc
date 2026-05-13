@@ -497,11 +497,13 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
 // it's the result of compiling `expr`.
 // =====================================================================
 
-// Emit a LoadConst that loads `name` as a string into a fresh register.
-// Returns the register holding the string.
+// Emit a LoadConst that loads `name` as an *atom* into a fresh
+// register. Property names are deduplicated through the context's
+// atom table — two `obj.foo` accesses in different functions share
+// the same `ZjsString*`, so eventual hidden-class/IC lookups can use
+// pointer-compare.
 fn emit_load_name_string(c: Compiler*, name: char*, name_len: u32) -> u8 {
-    let s = zjs_string_new(name, name_len);
-    ctx_register_cell(c.ctx, (void*)s);
+    let s = ctx_intern_atom(c.ctx, name, name_len);
     let val = zjs_cell_from_ptr((void*)s);
     let idx = add_const(c, val);
     let r = alloc_reg(c);
@@ -710,10 +712,12 @@ fn compile_string_literal(c: Compiler*, node: AstNode*) -> u8 {
     }
     buf[out] = 0;
 
-    // Take ownership: zjs_string_new_take doesn't copy. Register on
-    // the context so it's freed at zjs_free_context.
-    let s = zjs_string_new_take(buf, out);
-    ctx_register_cell(c.ctx, (void*)s);
+    // String literals in source are also deduped through the atom
+    // table — `'hello'` appearing twice in the same program (or
+    // across multiple programs sharing a context) lands on the same
+    // ZjsString*. The take-form adopts our decoded buffer on miss
+    // and frees it on dedup hit, so we never copy.
+    let s = ctx_intern_atom_take(c.ctx, buf, out);
     let val = zjs_cell_from_ptr((void*)s);
     let idx = add_const(c, val);
     let dst = alloc_reg(c);

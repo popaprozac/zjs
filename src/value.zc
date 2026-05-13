@@ -669,10 +669,11 @@ fn zjs_to_array_index(v: ZjsValue) -> i32 {
     return -1;
 }
 
-// Byte-equality for strings. Same length + same bytes.
+// Byte-equality for strings. Hot path on property lookup.
+// Atoms (interned strings) hit the pointer-identity fast path.
 fn zjs_string_equals(a: ZjsString*, b: ZjsString*) -> int {
+    if a == b { return 1; }                // atom or aliased fast path
     if a.length != b.length { return 0; }
-    if a == b { return 1; }
     let len = a.length;
     let ad = a.data;
     let bd = b.data;

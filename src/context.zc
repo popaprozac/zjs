@@ -26,6 +26,13 @@ struct GcRootFrame {
     reg_count: u32;
 }
 
+// Open-addressed hash-table entry. NULL `str` = empty slot.
+// We never delete atoms, so no tombstones needed.
+struct AtomEntry {
+    str:  ZjsString*;
+    hash: u32;
+}
+
 struct ZjsContext {
     globals:        GlobalEntry*;
     global_count:   u32;
@@ -50,6 +57,15 @@ struct ZjsContext {
     root_cap:       u32;
     cells_since_gc: u32;              // allocations since last collection
     gc_threshold:   u32;              // run GC when cells_since_gc >= this
+
+    // --- Atom table (interned strings) ---
+    // Open-addressed hash table, power-of-2 capacity. Used for
+    // property names + source-code string literals. Atoms are GC
+    // roots so they live for the context's lifetime; that's fine for
+    // names/literals that are inherently shared.
+    atoms:          AtomEntry*;
+    atom_count:     u32;
+    atom_cap:       u32;
 }
 
 fn zjs_new_context() -> ZjsContext* {
@@ -70,6 +86,8 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     if ctx == NULL { return; }
     let root_frames = ctx.root_frames;
     raw { free(root_frames); }
+    let atoms = ctx.atoms;
+    raw { free(atoms); }
     // Free every interned global name.
     let i: u32 = 0;
     while i < ctx.global_count {
@@ -219,6 +237,13 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         }
         j = j + 1;
     }
+    // Interned atoms — they live for the context's lifetime.
+    let a: u32 = 0;
+    while a < ctx.atom_cap {
+        let s = ctx.atoms[a].str;
+        if s != NULL { s.header.mark = 1; }
+        a = a + 1;
+    }
 }
 
 fn gc_sweep(ctx: ZjsContext*) -> void {
@@ -274,6 +299,11 @@ fn zjs_cell_count(ctx: ZjsContext*) -> u32 {
 
 // Intern a string by copying the input bytes. The returned ZjsValue
 // is a NaN-boxed cell pointer registered with the context.
+//
+// NOT deduplicated — every call allocates a fresh ZjsString. For
+// dedup, use ctx_intern_atom. This is the right function for ToString
+// results (numeric → "42") and other transient strings that don't
+// benefit from dedup.
 fn ctx_intern_string(ctx: ZjsContext*, data: char*, length: u32) -> ZjsValue {
     let s = zjs_string_new(data, length);
     ctx_register_cell(ctx, (void*)s);
@@ -281,11 +311,120 @@ fn ctx_intern_string(ctx: ZjsContext*, data: char*, length: u32) -> ZjsValue {
 }
 
 // Take ownership of an already-malloc'd buffer. Used by zjs_string_concat
-// which allocates the result buffer itself.
+// which allocates the result buffer itself. Also NOT deduplicated.
 fn ctx_intern_string_take(ctx: ZjsContext*, data: char*, length: u32) -> ZjsValue {
     let s = zjs_string_new_take(data, length);
     ctx_register_cell(ctx, (void*)s);
     return zjs_cell_from_ptr((void*)s);
+}
+
+// =====================================================================
+// Atom table — deduplicated strings. Used for property names and
+// source-code string literals.
+// =====================================================================
+
+fn atom_hash(data: char*, length: u32) -> u32 {
+    // FNV-1a 32-bit
+    let h: u32 = 2166136261;
+    let i: u32 = 0;
+    while i < length {
+        let b: u32 = (u32)(u8)data[i];
+        h = h ^ b;
+        h = h * 16777619;
+        i = i + 1;
+    }
+    return h;
+}
+
+fn atom_table_insert_unchecked(ctx: ZjsContext*, s: ZjsString*, h: u32) -> void {
+    let mask = ctx.atom_cap - 1;
+    let i = h & mask;
+    while ctx.atoms[i].str != NULL {
+        i = (i + 1) & mask;
+    }
+    ctx.atoms[i].str = s;
+    ctx.atoms[i].hash = h;
+    ctx.atom_count = ctx.atom_count + 1;
+}
+
+fn atom_table_grow(ctx: ZjsContext*) -> void {
+    let old_cap = ctx.atom_cap;
+    let old_atoms = ctx.atoms;
+
+    let new_cap: u32 = if old_cap == 0 { 16 } else { old_cap * 2 };
+    let new_atoms: AtomEntry* = NULL;
+    raw {
+        new_atoms = (AtomEntry*)calloc(new_cap, sizeof(AtomEntry));
+    }
+    ctx.atoms = new_atoms;
+    ctx.atom_cap = new_cap;
+    ctx.atom_count = 0;
+
+    if old_cap > 0 {
+        let i: u32 = 0;
+        while i < old_cap {
+            if old_atoms[i].str != NULL {
+                atom_table_insert_unchecked(ctx, old_atoms[i].str, old_atoms[i].hash);
+            }
+            i = i + 1;
+        }
+        raw { free(old_atoms); }
+    }
+}
+
+fn atom_table_lookup(ctx: ZjsContext*, data: char*, length: u32, h: u32) -> ZjsString* {
+    if ctx.atom_cap == 0 { return NULL; }
+    let mask = ctx.atom_cap - 1;
+    let i = h & mask;
+    while ctx.atoms[i].str != NULL {
+        let s = ctx.atoms[i].str;
+        if ctx.atoms[i].hash == h && s.length == length {
+            let s_data = s.data;
+            let eq: int = 0;
+            raw { eq = (memcmp(s_data, data, length) == 0) ? 1 : 0; }
+            if eq != 0 { return s; }
+        }
+        i = (i + 1) & mask;
+    }
+    return NULL;
+}
+
+// Public intern: dedupe by content. Allocates only on cache miss.
+fn ctx_intern_atom(ctx: ZjsContext*, data: char*, length: u32) -> ZjsString* {
+    let h = atom_hash(data, length);
+    let existing = atom_table_lookup(ctx, data, length, h);
+    if existing != NULL { return existing; }
+
+    // Grow first if needed (so insert below doesn't trip a probe through a full table).
+    if ctx.atom_count * 10 >= ctx.atom_cap * 7 {
+        atom_table_grow(ctx);
+    }
+
+    let s = zjs_string_new(data, length);
+    ctx_register_cell(ctx, (void*)s);
+    atom_table_insert_unchecked(ctx, s, h);
+    return s;
+}
+
+// Same as above, but adopts ownership of an already-malloc'd
+// null-terminated buffer. Frees the buffer on dedup hit.
+fn ctx_intern_atom_take(ctx: ZjsContext*, data: char*, length: u32) -> ZjsString* {
+    let h = atom_hash(data, length);
+    let existing = atom_table_lookup(ctx, data, length, h);
+    if existing != NULL {
+        // Caller's buffer is redundant — free it.
+        raw { free(data); }
+        return existing;
+    }
+
+    if ctx.atom_count * 10 >= ctx.atom_cap * 7 {
+        atom_table_grow(ctx);
+    }
+
+    let s = zjs_string_new_take(data, length);
+    ctx_register_cell(ctx, (void*)s);
+    atom_table_insert_unchecked(ctx, s, h);
+    return s;
 }
 
 // Allocate a fresh empty object and register it on the context.
@@ -369,11 +508,15 @@ fn host_error(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc > 0 { msg = args[0]; }
     if zjs_is_string(msg) == 0 { msg = zjs_to_string(ctx, msg); }
 
-    let msg_name = zjs_as_string(ctx_intern_string(ctx, (char*)"message", 7));
+    // Property keys are atoms — interned for dedup across calls.
+    let msg_name  = ctx_intern_atom(ctx, (char*)"message", 7);
+    let name_name = ctx_intern_atom(ctx, (char*)"name", 4);
     object_set(obj, msg_name, msg);
 
-    let name_name = zjs_as_string(ctx_intern_string(ctx, (char*)"name", 4));
-    let name_val  = ctx_intern_string(ctx, (char*)"Error", 5);
+    // The .name value "Error" is also a small string used frequently —
+    // intern it as an atom too.
+    let name_val_str = ctx_intern_atom(ctx, (char*)"Error", 5);
+    let name_val = zjs_cell_from_ptr((void*)name_val_str);
     object_set(obj, name_name, name_val);
 
     return obj_v;
@@ -493,21 +636,21 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let max_ptr:   void* = NULL; raw { max_ptr   = (void*)host_math_max; }
     let min_ptr:   void* = NULL; raw { min_ptr   = (void*)host_math_min; }
 
-    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"abs", 3)),
+    object_set(math, ctx_intern_atom(ctx, (char*)"abs", 3),
                ctx_make_host_function(ctx, (char*)"abs", abs_ptr));
-    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"floor", 5)),
+    object_set(math, ctx_intern_atom(ctx, (char*)"floor", 5),
                ctx_make_host_function(ctx, (char*)"floor", floor_ptr));
-    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"ceil", 4)),
+    object_set(math, ctx_intern_atom(ctx, (char*)"ceil", 4),
                ctx_make_host_function(ctx, (char*)"ceil", ceil_ptr));
-    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"round", 5)),
+    object_set(math, ctx_intern_atom(ctx, (char*)"round", 5),
                ctx_make_host_function(ctx, (char*)"round", round_ptr));
-    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"sqrt", 4)),
+    object_set(math, ctx_intern_atom(ctx, (char*)"sqrt", 4),
                ctx_make_host_function(ctx, (char*)"sqrt", sqrt_ptr));
-    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"pow", 3)),
+    object_set(math, ctx_intern_atom(ctx, (char*)"pow", 3),
                ctx_make_host_function(ctx, (char*)"pow", pow_ptr));
-    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"max", 3)),
+    object_set(math, ctx_intern_atom(ctx, (char*)"max", 3),
                ctx_make_host_function(ctx, (char*)"max", max_ptr));
-    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"min", 3)),
+    object_set(math, ctx_intern_atom(ctx, (char*)"min", 3),
                ctx_make_host_function(ctx, (char*)"min", min_ptr));
 
     let math_slot = ctx_intern_global(ctx, (char*)"Math", 4);

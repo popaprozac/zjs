@@ -263,6 +263,55 @@ static void test_engine_path(void) {
  * Phase 3.1d — mark-sweep GC. Verify cells get freed.
  * --------------------------------------------------------------------- */
 
+/* -----------------------------------------------------------------------
+ * Phase 3.1f — atom interning. Property names + string literals should
+ * dedupe across evaluations, measurably reducing cell allocations.
+ * --------------------------------------------------------------------- */
+
+static void test_atom_interning(void) {
+    ZjsContext* ctx = zjs_new_context();
+
+    /* Baseline after first object literal — installs atoms "foo", "bar". */
+    zjs_eval(ctx, "let o1 = {foo: 1, bar: 2}");
+    unsigned after_first = zjs_cell_count(ctx);
+
+    /* Second object literal with the same property names. Without atom
+     * interning each name would have allocated a fresh string; with
+     * interning the names hit the table. Only the new object cell + 2
+     * value temporaries grow the heap. */
+    zjs_eval(ctx, "let o2 = {foo: 3, bar: 4}");
+    unsigned after_second = zjs_cell_count(ctx);
+    unsigned grew = after_second - after_first;
+
+    /* The exact delta depends on Function constants pool, etc., but it
+     * should be small — definitely smaller than allocating two fresh
+     * "foo" + "bar" strings (which used to be 4 cells minimum). */
+    CHECK(grew <= 3, "second {foo,bar} literal should reuse atoms (grew=%u)", grew);
+
+    /* Property access still works after GC (atoms are pinned). */
+    zjs_gc(ctx);
+    ZjsValue f1 = zjs_eval(ctx, "o1.foo");
+    ZjsValue f2 = zjs_eval(ctx, "o2.foo");
+    CHECK(zjs_is_int32(f1) && zjs_as_int32(f1) == 1, "o1.foo readable post-GC");
+    CHECK(zjs_is_int32(f2) && zjs_as_int32(f2) == 3, "o2.foo readable post-GC");
+
+    /* String literals also intern: the same source-level "shared"
+     * appearing across two evals lands on the same ZjsString*. We can
+     * observe this indirectly — `s1 === s2` is content-equality, but
+     * the cell count between the two evals shouldn't grow by a string. */
+    zjs_eval(ctx, "let s1 = 'shared'");
+    unsigned a = zjs_cell_count(ctx);
+    zjs_eval(ctx, "let s2 = 'shared'");
+    unsigned b = zjs_cell_count(ctx);
+    CHECK(b - a <= 1, "second 'shared' literal should hit the atom table (grew=%u)", b - a);
+
+    /* And `===` between them returns true via the pointer fast path. */
+    ZjsValue eq = zjs_eval(ctx, "s1 === s2");
+    CHECK(zjs_is_bool(eq) && zjs_as_bool(eq) == 1, "atom-equal strings are ===");
+
+    zjs_free_context(ctx);
+}
+
 static void test_gc(void) {
     ZjsContext* ctx = zjs_new_context();
     unsigned baseline = zjs_cell_count(ctx);
@@ -339,6 +388,7 @@ int main(void) {
     test_mutual_exclusion();
     test_engine_path();
     test_throw_abi();
+    test_atom_interning();
     test_gc();
 
     printf("[smoke] %d passed, %d failed\n", g_pass, g_fail);
