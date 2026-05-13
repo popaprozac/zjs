@@ -35,6 +35,10 @@ struct Parser {
     // init slot so that `for (x in obj)` doesn't get eaten as
     // `for ((x in obj))`.
     no_in:         bool;
+    // Depth of enclosing function bodies — incremented on entry to a
+    // function / method body, decremented on exit. Top-level
+    // (function_depth == 0) bare `return` is a SyntaxError.
+    function_depth: u32;
 }
 
 struct ParseResult {
@@ -287,6 +291,26 @@ fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
     return node;
 }
 
+// ECMA-262 grammar split: the body of `if/while/do-while/for/for-in/for-of`
+// is `Statement`, not `Declaration`. So `let`, `const`, `function`, and
+// `class` declarations are illegal as a non-block statement body. The
+// only `var` form that IS allowed is the legacy `var` statement
+// (VarDecl with op=KwVar). Returns true if the node is one of the
+// disallowed declarations.
+fn is_disallowed_statement_body(n: AstNode*) -> bool {
+    if n == NULL { return false; }
+    let k = n.kind;
+    if k == NodeKind::FunctionDecl { return true; }
+    if k == NodeKind::ClassDecl    { return true; }
+    if k == NodeKind::VarDecl {
+        // let/const declarations are disallowed; var is allowed.
+        if n.op == TokenKind::KwLet || n.op == TokenKind::KwConst {
+            return true;
+        }
+    }
+    return false;
+}
+
 fn parse_if(p: Parser*) -> AstNode* {
     let kw = advance(p);   // 'if'
     if !expect_kind(p, TokenKind::LParen) { return NULL; }
@@ -295,12 +319,14 @@ fn parse_if(p: Parser*) -> AstNode* {
     if !expect_kind(p, TokenKind::RParen) { return NULL; }
     let then_stmt = parse_statement(p);
     if then_stmt == NULL { return NULL; }
+    if is_disallowed_statement_body(then_stmt) { p.had_error = true; return NULL; }
 
     let end: u32 = then_stmt.end;
     let else_stmt: AstNode* = NULL;
     if match_kind(p, TokenKind::KwElse) {
         else_stmt = parse_statement(p);
         if else_stmt == NULL { return NULL; }
+        if is_disallowed_statement_body(else_stmt) { p.had_error = true; return NULL; }
         end = else_stmt.end;
     }
 
@@ -312,6 +338,7 @@ fn parse_if(p: Parser*) -> AstNode* {
 }
 
 fn parse_return(p: Parser*) -> AstNode* {
+    if p.function_depth == 0 { p.had_error = true; return NULL; }
     let kw = advance(p);   // 'return'
     let end: u32 = kw.start + kw.length;
     let arg: AstNode* = NULL;
@@ -338,6 +365,7 @@ fn parse_while(p: Parser*) -> AstNode* {
     if !expect_kind(p, TokenKind::RParen) { return NULL; }
     let body = parse_statement(p);
     if body == NULL { return NULL; }
+    if is_disallowed_statement_body(body) { p.had_error = true; return NULL; }
     let node = new_node(&p.tracker, NodeKind::WhileStmt, kw.start, body.end);
     node.left = cond;
     node.right = body;
@@ -348,6 +376,7 @@ fn parse_do_while(p: Parser*) -> AstNode* {
     let kw = advance(p);   // 'do'
     let body = parse_statement(p);
     if body == NULL { return NULL; }
+    if is_disallowed_statement_body(body) { p.had_error = true; return NULL; }
     if !expect_kind(p, TokenKind::KwWhile) { return NULL; }
     if !expect_kind(p, TokenKind::LParen)  { return NULL; }
     let cond = parse_expression(p);
@@ -417,6 +446,7 @@ fn parse_for(p: Parser*) -> AstNode* {
 
     let body = parse_statement(p);
     if body == NULL { return NULL; }
+    if is_disallowed_statement_body(body) { p.had_error = true; return NULL; }
 
     let node = new_node(&p.tracker, NodeKind::ForStmt, kw.start, body.end);
     node.left = init;
@@ -444,6 +474,7 @@ fn finish_for_in_or_of(p: Parser*, kw_tok: Token, binding: AstNode*, op_kind: To
     if !expect_kind(p, TokenKind::RParen) { return NULL; }
     let body = parse_statement(p);
     if body == NULL { return NULL; }
+    if is_disallowed_statement_body(body) { p.had_error = true; return NULL; }
 
     let kind = if op_kind == TokenKind::KwIn { NodeKind::ForInStmt } else { NodeKind::ForOfStmt };
     let node = new_node(&p.tracker, kind, kw_tok.start, body.end);
@@ -588,7 +619,9 @@ fn parse_function_decl(p: Parser*) -> AstNode* {
         p.had_error = true;
         return NULL;
     }
+    p.function_depth = p.function_depth + 1;
     let body = parse_block(p);
+    p.function_depth = p.function_depth - 1;
     if body == NULL { return NULL; }
 
     let node = new_node(&p.tracker, NodeKind::FunctionDecl, kw.start, body.end);
@@ -617,7 +650,9 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     if !expect_kind(p, TokenKind::RParen) { return NULL; }
 
     if peek_kind(p) != TokenKind::LBrace { p.had_error = true; return NULL; }
+    p.function_depth = p.function_depth + 1;
     let body = parse_block(p);
+    p.function_depth = p.function_depth - 1;
     if body == NULL { return NULL; }
 
     let node = new_node(&p.tracker, NodeKind::MethodDef, name_tok.start, body.end);
@@ -715,7 +750,9 @@ fn parse_function_expr(p: Parser*) -> AstNode* {
         p.had_error = true;
         return NULL;
     }
+    p.function_depth = p.function_depth + 1;
     let body = parse_block(p);
+    p.function_depth = p.function_depth - 1;
     if body == NULL { return NULL; }
 
     let node = new_node(&p.tracker, NodeKind::FunctionExpr, kw.start, body.end);
@@ -729,9 +766,17 @@ fn parse_function_expr(p: Parser*) -> AstNode* {
 
 // Arrow function body: a block (preserves explicit return semantics)
 // OR a single AssignmentExpression (concise body — implicit return).
+// Both forms count as entering a function for `return` purposes.
 fn parse_arrow_body(p: Parser*) -> AstNode* {
-    if peek_kind(p) == TokenKind::LBrace { return parse_block(p); }
-    return parse_assignment(p);
+    p.function_depth = p.function_depth + 1;
+    let r: AstNode* = NULL;
+    if peek_kind(p) == TokenKind::LBrace {
+        r = parse_block(p);
+    } else {
+        r = parse_assignment(p);
+    }
+    p.function_depth = p.function_depth - 1;
+    return r;
 }
 
 // Single-identifier arrow: `x => body`

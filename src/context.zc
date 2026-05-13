@@ -1765,11 +1765,128 @@ fn host_console_error(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     return console_emit(ctx, args, argc, true);
 }
 
+// --- Global Number-coercion helpers (Phase 3.8b) -------------------
+
+fn host_is_nan(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_bool(1); }
+    let d = zjs_to_double(args[0]);
+    let is_nan: int = 0;
+    raw { is_nan = (d != d) ? 1 : 0; }
+    return zjs_bool(is_nan);
+}
+
+fn host_is_finite(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_bool(0); }
+    let d = zjs_to_double(args[0]);
+    let is_fin: int = 0;
+    raw { is_fin = isfinite(d) ? 1 : 0; }
+    return zjs_bool(is_fin);
+}
+
+fn host_parse_float(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 {
+        let nan: f64 = 0.0;
+        raw { nan = (double)NAN; }
+        return zjs_double(nan);
+    }
+    let v = args[0];
+    if zjs_is_string(v) == 0 { v = zjs_to_string(ctx, v); }
+    let s = zjs_as_string(v);
+    let sd = s.data;
+    let parsed: f64 = 0.0;
+    let n_consumed: int = 0;
+    raw {
+        char* endp = NULL;
+        parsed = strtod(sd, &endp);
+        n_consumed = (int)(endp - sd);
+    }
+    if n_consumed == 0 {
+        let nan: f64 = 0.0;
+        raw { nan = (double)NAN; }
+        return zjs_double(nan);
+    }
+    let as_int = (i32)parsed;
+    if (f64)as_int == parsed { return zjs_int32(as_int); }
+    return zjs_double(parsed);
+}
+
+fn host_parse_int(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 {
+        let nan: f64 = 0.0;
+        raw { nan = (double)NAN; }
+        return zjs_double(nan);
+    }
+    let v = args[0];
+    if zjs_is_string(v) == 0 { v = zjs_to_string(ctx, v); }
+    let s = zjs_as_string(v);
+    // ECMA-262: if radix is 0/undefined AND the string starts with 0x,
+    // radix is 16; else 10. Start at 0 ("unset") and resolve below.
+    let radix: int = 0;
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
+        let r = (i32)zjs_to_double(args[1]);
+        if r != 0 { radix = (int)r; }
+    }
+    let sd = s.data;
+    let parsed: i64 = 0;
+    let n_consumed: int = 0;
+    raw {
+        char* endp = NULL;
+        // Skip leading whitespace.
+        const char* p = sd;
+        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == '\v' || *p == '\f') p++;
+        // Optional sign.
+        int neg = 0;
+        if (*p == '-') { neg = 1; p++; }
+        else if (*p == '+') p++;
+        // 0x / 0X prefix selects hex.
+        int rdx = radix;
+        if ((rdx == 0 || rdx == 16) && p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
+            p += 2;
+            rdx = 16;
+        }
+        if (rdx == 0) rdx = 10;
+        parsed = strtoll(p, &endp, rdx);
+        n_consumed = (int)(endp - p);
+        if (neg) parsed = -parsed;
+    }
+    if n_consumed == 0 {
+        let nan: f64 = 0.0;
+        raw { nan = (double)NAN; }
+        return zjs_double(nan);
+    }
+    if parsed >= -2147483648 && parsed <= 2147483647 {
+        return zjs_int32((i32)parsed);
+    }
+    return zjs_double((f64)parsed);
+}
+
 fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // --- Error ---
     let err_ptr: void* = NULL;
     raw { err_ptr = (void*)host_error; }
     ctx_register_host_function(ctx, (char*)"Error", err_ptr);
+
+    // --- Numeric global constants (Phase 3.8b) ---
+    let nan_d: f64 = 0.0;
+    raw { nan_d = (double)NAN; }
+    let nan_slot = ctx_intern_global(ctx, (char*)"NaN", 3);
+    ctx.globals[nan_slot].value = zjs_double(nan_d);
+    let inf_d: f64 = 0.0;
+    raw { inf_d = (double)INFINITY; }
+    let inf_slot = ctx_intern_global(ctx, (char*)"Infinity", 8);
+    ctx.globals[inf_slot].value = zjs_double(inf_d);
+    let undef_slot = ctx_intern_global(ctx, (char*)"undefined", 9);
+    ctx.globals[undef_slot].value = zjs_undefined();
+
+    // --- Global Number-coercion functions ---
+    let isnan_ptr:   void* = NULL; raw { isnan_ptr   = (void*)host_is_nan; }
+    let isfin_ptr:   void* = NULL; raw { isfin_ptr   = (void*)host_is_finite; }
+    let pflt_ptr:    void* = NULL; raw { pflt_ptr    = (void*)host_parse_float; }
+    let pint_ptr:    void* = NULL; raw { pint_ptr    = (void*)host_parse_int; }
+    ctx_register_host_function(ctx, (char*)"isNaN",      isnan_ptr);
+    ctx_register_host_function(ctx, (char*)"isFinite",   isfin_ptr);
+    ctx_register_host_function(ctx, (char*)"parseFloat", pflt_ptr);
+    ctx_register_host_function(ctx, (char*)"parseInt",   pint_ptr);
 
     // --- Math object with several method properties ---
     let math_v = ctx_new_object(ctx);

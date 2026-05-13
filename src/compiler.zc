@@ -542,9 +542,26 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
             release_reg(c, src);
             return dst;
         }
-        // void / delete / ++ / -- — defer
+        if op == TokenKind::KwVoid {
+            // void <expr> evaluates expr (already done) and returns undefined.
+            release_reg(c, src);
+            let dst = alloc_reg(c);
+            emit(c, make_inst_a(Op::LoadUndefined, dst));
+            return dst;
+        }
+        if op == TokenKind::PlusPlus || op == TokenKind::MinusMinus {
+            // Prefix ++/--. We compiled `src` above eagerly but didn't
+            // use it — release it and re-compile via compile_inc_dec
+            // (which needs the LHS as an AstNode, not a register).
+            release_reg(c, src);
+            return compile_inc_dec(c, node.left, false, op == TokenKind::PlusPlus);
+        }
+        // delete — defer
         c.had_error = true;
         return src;
+    }
+    if k == NodeKind::Postfix {
+        return compile_inc_dec(c, node.left, true, node.op == TokenKind::PlusPlus);
     }
     if k == NodeKind::Binary {
         // Special-case `in` and `instanceof` — they're keyword tokens, not
@@ -586,6 +603,32 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
     }
     if k == NodeKind::Logical {
         return compile_logical(c, node);
+    }
+    if k == NodeKind::Conditional {
+        // test ? consequent : alternate.
+        // Materialize both branches into the SAME register; JmpIfFalse
+        // skips the consequent.
+        let dst = alloc_reg(c);
+        let test_r = compile_expr(c, node.left);
+        let jmp_else = emit(c, make_inst_a_i16(Op::JmpIfFalse, test_r, 0));
+        release_reg(c, test_r);
+
+        // Consequent into dst.
+        let saved_next = c.next_reg;
+        let cons_r = compile_expr(c, node.right);
+        if cons_r != dst { emit(c, make_inst_ab(Op::Mov, dst, cons_r)); }
+        c.next_reg = saved_next;
+        let jmp_end = emit(c, make_inst_i16(Op::Jmp, 0));
+
+        // Alternate target — patch JmpIfFalse here.
+        patch_jump(c, (u32)jmp_else);
+        let alt_r = compile_expr(c, node.third);
+        if alt_r != dst { emit(c, make_inst_ab(Op::Mov, dst, alt_r)); }
+        c.next_reg = saved_next;
+        patch_jump(c, (u32)jmp_end);
+
+        if c.next_reg <= dst { c.next_reg = dst + 1; }
+        return dst;
     }
     if k == NodeKind::Assignment {
         return compile_assignment(c, node);
@@ -1321,6 +1364,84 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
 
     release_reg(c, proto_reg);
     return ctor_reg;
+}
+
+// Postfix / prefix ++/-- on an identifier target. MVP — only IdentExpr;
+// `obj.x++` and `arr[i]++` are future work.
+fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: bool) -> u8 {
+    if target == NULL || target.kind != NodeKind::IdentExpr {
+        c.had_error = true;
+        return alloc_reg(c);
+    }
+    let name = c.source + target.start;
+    let name_len = target.end - target.start;
+    let local_idx = find_local_index(c, name, name_len);
+    let captured_local = local_idx >= 0 && c.locals[(u32)local_idx].captured;
+    let local_reg: u8 = if local_idx >= 0 { c.locals[(u32)local_idx].reg } else { 0 };
+
+    let outer_idx: i32 = -1;
+    if local_idx < 0 && c.parent != NULL {
+        let oi = find_local_index(c.parent, name, name_len);
+        if oi >= 0 && c.parent.locals[(u32)oi].captured {
+            outer_idx = oi;
+            c.has_outer_refs = true;
+        }
+    }
+
+    let cur = alloc_reg(c);
+    if local_idx >= 0 {
+        if captured_local {
+            let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+            let ic = alloc_ic_slot(c, name_atom);
+            emit(c, make_inst_abc(Op::LoadProp, cur, c.env_reg, (u8)ic));
+        } else {
+            emit(c, make_inst_ab(Op::Mov, cur, local_reg));
+        }
+    } else if outer_idx >= 0 {
+        let env_r = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadEnv, env_r));
+        let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+        let ic = alloc_ic_slot(c, name_atom);
+        emit(c, make_inst_abc(Op::LoadProp, cur, env_r, (u8)ic));
+        release_reg(c, env_r);
+    } else {
+        let slot = ctx_intern_global(c.ctx, name, name_len);
+        emit(c, make_inst_a_u16(Op::LoadGlobal, cur, (u16)slot));
+    }
+
+    let one_reg = alloc_reg(c);
+    emit(c, make_inst_a_i16(Op::LoadInt, one_reg, 1));
+    let new_reg = alloc_reg(c);
+    let op_ = if is_inc { Op::Add } else { Op::Sub };
+    emit(c, make_inst_abc(op_, new_reg, cur, one_reg));
+    release_reg(c, one_reg);
+
+    if local_idx >= 0 {
+        if captured_local {
+            let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+            let ic = alloc_ic_slot(c, name_atom);
+            emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, new_reg));
+        } else {
+            emit(c, make_inst_ab(Op::Mov, local_reg, new_reg));
+        }
+    } else if outer_idx >= 0 {
+        let env_r = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadEnv, env_r));
+        let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+        let ic = alloc_ic_slot(c, name_atom);
+        emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, new_reg));
+        release_reg(c, env_r);
+    } else {
+        let slot = ctx_intern_global(c.ctx, name, name_len);
+        emit(c, make_inst_a_u16(Op::StoreGlobal, new_reg, (u16)slot));
+    }
+
+    if is_postfix {
+        release_reg(c, new_reg);
+        return cur;
+    }
+    release_reg(c, cur);
+    return new_reg;
 }
 
 fn compile_call(c: Compiler*, node: AstNode*) -> u8 {

@@ -364,15 +364,22 @@ fn run_tests() -> void {
         else { pass((char*)"else-if chain"); }
     }
 
-    // --- Return --------------------------------------------------
-    check_kind((char*)"return bare", (char*)"return;",  NodeKind::ReturnStmt);
+    // --- Return (must be inside a function) ----------------------
+    check_kind((char*)"return bare", (char*)r"function f() { return; }",  NodeKind::FunctionDecl);
     {
-        let r = parse_str((char*)"return x;");
+        // Drill into the function body to find ReturnStmt.
+        let r = parse_str((char*)r"function f() { return x; }");
         defer parser_free_result(r);
         let n = first_stmt(r);
-        if n == NULL || n.kind != NodeKind::ReturnStmt { fail((char*)"return value", (char*)"not ReturnStmt"); }
-        else if n.left == NULL { fail((char*)"return value", (char*)"missing arg"); }
-        else { pass((char*)"return value"); }
+        let ok: bool = false;
+        if n != NULL && n.kind == NodeKind::FunctionDecl && n.left != NULL && n.left.children_count > 0 {
+            let inner = n.left.children[0];
+            if inner != NULL && inner.kind == NodeKind::ReturnStmt && inner.left != NULL {
+                ok = true;
+            }
+        }
+        if ok { pass((char*)"return value"); }
+        else  { fail((char*)"return value", (char*)"missing inner ReturnStmt"); }
     }
 
     // --- Loops ---------------------------------------------------
@@ -399,7 +406,9 @@ fn run_tests() -> void {
 
     // --- Multi-statement program ---------------------------------
     {
-        let r = parse_str((char*)"let x = 1; if (x) return x;");
+        // Strict-mode parse: if body is a Statement, not a Declaration —
+        // and bare `return` is illegal at top level. Wrap accordingly.
+        let r = parse_str((char*)r"let x = 1; if (x) { x = x + 1 }");
         defer parser_free_result(r);
         if r.had_error { fail((char*)"compound program", (char*)"parse error"); }
         else if r.root.children_count != 2 { fail((char*)"compound program", (char*)"stmt count != 2"); }

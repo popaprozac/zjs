@@ -596,6 +596,59 @@ fn run_tests() -> void {
     // break inside a function inside a loop must still work
     check_int((char*)"continue: inside fn body",   (char*)r"function f(n) { let s=0; for (let i=0;i<n;i=i+1) { if (i===1) continue; s=s+i }; return s } f(4)", 5);
 
+    // --- Parser strictness + missing features (Phase 3.8b) ---------
+    // Conditional expressions
+    check_int((char*)"cond: true branch",            (char*)r"true ? 1 : 2", 1);
+    check_int((char*)"cond: false branch",           (char*)r"false ? 1 : 2", 2);
+    check_int((char*)"cond: nested",                 (char*)r"1 < 2 ? (3 > 2 ? 10 : 20) : 30", 10);
+    check_string((char*)"cond: in assignment",       (char*)r"let m; m = (5 === 5) ? 'yes' : 'no'; m", (char*)"yes");
+    // Postfix / prefix ++ / --
+    check_int((char*)"postfix++ result",             (char*)r"let i = 5; i++", 5);
+    check_int((char*)"postfix++ updates",            (char*)r"let i = 5; i++; i", 6);
+    check_int((char*)"prefix++ result",              (char*)r"let i = 5; ++i", 6);
+    check_int((char*)"prefix++ updates",             (char*)r"let i = 5; ++i; i", 6);
+    check_int((char*)"postfix-- result",             (char*)r"let i = 5; i--; i", 4);
+    check_int((char*)"prefix-- result",              (char*)r"let i = 5; --i", 4);
+    check_int((char*)"++ in for loop",               (char*)r"let s = 0; for (let i = 0; i < 5; i++) { s = s + i }; s", 10);
+    // void
+    check_string((char*)"void: returns undef",       (char*)r"typeof void 0", (char*)"undefined");
+    check_string((char*)"void: side effect",         (char*)r"let x = 0; void (x = 5); typeof x", (char*)"number");
+    // Global Number-coercion + constants
+    check_int((char*)"isNaN: true",                  (char*)r"if (isNaN(NaN)) 1; else 0", 1);
+    check_int((char*)"isNaN: number false",          (char*)r"if (isNaN(42)) 1; else 0", 0);
+    check_int((char*)"isFinite: true for int",       (char*)r"if (isFinite(42)) 1; else 0", 1);
+    check_int((char*)"isFinite: false for Infinity", (char*)r"if (isFinite(Infinity)) 1; else 0", 0);
+    check_int((char*)"parseInt: decimal",            (char*)r"parseInt('42')", 42);
+    check_int((char*)"parseInt: binary",             (char*)r"parseInt('1010', 2)", 10);
+    check_int((char*)"parseInt: hex prefix",         (char*)r"parseInt('0x10')", 16);
+    check_int((char*)"parseInt: leading ws",         (char*)r"parseInt('   42 abc')", 42);
+    check_string((char*)"typeof undefined",          (char*)r"typeof undefined", (char*)"undefined");
+    check_string((char*)"typeof NaN",                (char*)r"typeof NaN", (char*)"number");
+    check_string((char*)"typeof Infinity",           (char*)r"typeof Infinity", (char*)"number");
+    // Parser strictness: top-level return / this on LHS / declaration-as-body
+    // should produce a thrown SyntaxError. Run via zjs_eval (the public ABI).
+    {
+        let ctx = zjs_new_context();
+        defer zjs_free_context(ctx);
+        let _ = zjs_eval(ctx, (char*)r"this = 1");
+        if zjs_had_error(ctx) != 0 { pass((char*)"strict: this on LHS rejected"); }
+        else { fail_msg((char*)"strict: this on LHS rejected", (char*)"accepted"); }
+    }
+    {
+        let ctx = zjs_new_context();
+        defer zjs_free_context(ctx);
+        let _ = zjs_eval(ctx, (char*)r"return 1");
+        if zjs_had_error(ctx) != 0 { pass((char*)"strict: top-level return rejected"); }
+        else { fail_msg((char*)"strict: top-level return rejected", (char*)"accepted"); }
+    }
+    {
+        let ctx = zjs_new_context();
+        defer zjs_free_context(ctx);
+        let _ = zjs_eval(ctx, (char*)r"if (true) let x = 1");
+        if zjs_had_error(ctx) != 0 { pass((char*)"strict: let as if-body rejected"); }
+        else { fail_msg((char*)"strict: let as if-body rejected", (char*)"accepted"); }
+    }
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

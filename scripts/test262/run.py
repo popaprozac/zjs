@@ -169,15 +169,18 @@ def should_skip(meta, cfg):
             return f"include:{inc}"
     return None
 
+LOCAL_HARNESS = REPO_ROOT / "scripts" / "test262" / "zjs_harness.js"
+
 def build_source(test262_root, test_src, meta):
-    """Prepend mandatory + listed harness includes; return the full source."""
-    parts = []
+    """Prepend our minimal local harness + listed harness includes; return the full source.
+
+    test262's own sta.js / assert.js use features (switch, .call) we
+    don't implement, so we substitute a minimal shim covering the
+    common assertions. Tests that need a richer harness (compareArray,
+    etc.) are skipped via config.json's skip_includes.
+    """
+    parts = [LOCAL_HARNESS.read_text()]
     harness = test262_root / "harness"
-    # Always include sta.js + assert.js; most tests assume them.
-    for required in ("sta.js", "assert.js"):
-        f = harness / required
-        if f.exists():
-            parts.append(f.read_text())
     for inc in meta.get("includes", []):
         if inc in ("sta.js", "assert.js"):
             continue

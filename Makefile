@@ -103,8 +103,8 @@ test: all
 	@$(CLI) eval "1+1"
 	@echo '--- zjs parse "1 + 2 * 3" ---'
 	@$(CLI) parse "1 + 2 * 3"
-	@echo '--- zjs parse "let x = 1; if (x) return x;" ---'
-	@$(CLI) parse "let x = 1; if (x) return x;"
+	@echo '--- zjs parse "let x = 1; if (x) { x = x + 1 }" ---'
+	@$(CLI) parse "let x = 1; if (x) { x = x + 1 }"
 	@echo '--- zjs parse "function add(a, b) { return a + b; }" ---'
 	@$(CLI) parse "function add(a, b) { return a + b; }"
 	@echo '--- zjs parse "let inc = x => x + 1;" ---'
