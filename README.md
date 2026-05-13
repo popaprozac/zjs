@@ -32,9 +32,10 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 | 3.0c  | test262 conformance scaffolding |
 | 3.1a  | Heap infrastructure + strings (cell-header model, escape decoding, `+` concat) |
 | 3.1b  | Objects, arrays, property access (`obj.x`, `obj[i]`, literals, compound assign) |
-| **3.1c** | **`throw` / `try` / `catch`, uncaught-error C ABI, real test262 signal** |
+| 3.1c  | `throw` / `try` / `catch`, uncaught-error C ABI, real test262 signal |
+| **3.1e** | **Host functions, `new`, `typeof`, built-in `Error` + `Math` namespace** |
 
-606 in-tree test assertions pass (smoke + lexer + parser + interpreter). Per-phase plans are in `docs/phases/`.
+635 in-tree test assertions pass (smoke + lexer + parser + interpreter). Per-phase plans are in `docs/phases/`.
 
 **Programs run end-to-end:**
 

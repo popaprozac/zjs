@@ -261,6 +261,13 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
     if k == NodeKind::Call {
         return compile_call(c, node);
     }
+    if k == NodeKind::New {
+        // MVP: `new Foo(args)` compiles the same as a regular call.
+        // Without a prototype chain there's no semantic difference
+        // from the user's point of view yet — host constructors
+        // (like Error) return objects directly.
+        return compile_call(c, node);
+    }
     if k == NodeKind::Member {
         return compile_member(c, node);
     }
@@ -314,7 +321,13 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
             release_reg(c, src);
             return dst;
         }
-        // typeof / void / delete / ++ / -- — defer
+        if op == TokenKind::KwTypeof {
+            let dst = alloc_reg(c);
+            emit(c, make_inst_ab(Op::Typeof, dst, src));
+            release_reg(c, src);
+            return dst;
+        }
+        // void / delete / ++ / -- — defer
         c.had_error = true;
         return src;
     }

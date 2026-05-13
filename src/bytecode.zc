@@ -88,6 +88,12 @@ enum Op {
                       // receives the thrown value.
     LeaveTry,         // No operands. Pop the innermost try frame.
                       // Emitted at the normal end of a try block.
+
+    // Type introspection (Phase 3.1e).
+    Typeof,           // a=dst, b=src.
+                      // dst = a string from ECMA-262 §13.5.3
+                      // (one of: "undefined" "object" "boolean"
+                      // "number" "string" "function").
 }
 
 struct Inst {

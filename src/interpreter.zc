@@ -295,10 +295,43 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
                     continue;       // unwind on next loop iteration
                 }
                 regs[dst] = r.value;
+            } else if zjs_is_host_function(callee) != 0 {
+                let hf_ptr = zjs_cell_as_ptr(callee);
+                let argv_ptr: ZjsValue* = NULL;
+                raw { argv_ptr = &regs[base + 1]; }
+                let r: ZjsValue = zjs_undefined();
+                raw {
+                    ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
+                    typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
+                    HostFn fp = (HostFn)hf->fn_ptr;
+                    r = fp(ctx, argv_ptr, argc);
+                }
+                regs[dst] = r;
             } else {
-                // Not a function — TypeError in real JS; MVP returns undefined.
+                // Not callable — TypeError in real JS; MVP returns undefined.
                 regs[dst] = zjs_undefined();
             }
+        } else if op == Op::Typeof {
+            let v = regs[inst.b];
+            let label: char* = (char*)"undefined";
+            if zjs_is_undefined(v) != 0 {
+                label = (char*)"undefined";
+            } else if zjs_is_null(v) != 0 {
+                label = (char*)"object";
+            } else if zjs_is_bool(v) != 0 {
+                label = (char*)"boolean";
+            } else if zjs_is_number(v) != 0 {
+                label = (char*)"number";
+            } else if zjs_is_string(v) != 0 {
+                label = (char*)"string";
+            } else if zjs_is_function(v) != 0 || zjs_is_host_function(v) != 0 {
+                label = (char*)"function";
+            } else {
+                label = (char*)"object";
+            }
+            let llen: u32 = 0;
+            raw { llen = (uint32_t)strlen(label); }
+            regs[inst.a] = ctx_intern_string(ctx, label, llen);
         } else if op == Op::Throw {
             throwing = true;
             thrown = regs[inst.a];

@@ -365,10 +365,11 @@ fn zjs_cmp_le(a: ZjsValue, b: ZjsValue) -> int {
 // Object / Array.
 // =====================================================================
 
-def TAG_FUNCTION: u8 = 0;
-def TAG_STRING:   u8 = 1;
-def TAG_OBJECT:   u8 = 2;
-def TAG_ARRAY:    u8 = 3;
+def TAG_FUNCTION:      u8 = 0;
+def TAG_STRING:        u8 = 1;
+def TAG_OBJECT:        u8 = 2;
+def TAG_ARRAY:         u8 = 3;
+def TAG_HOST_FUNCTION: u8 = 4;
 
 struct CellHeader {
     type_tag: u8;
@@ -398,6 +399,15 @@ struct ZjsArray {
     elements: ZjsValue*;         // heap-allocated, owned; holes = undefined
     length:   u32;
     cap:      u32;
+}
+
+// Host (C) function exposed to JavaScript code. The fn_ptr is opaque
+// to Zen-c — it's cast back to a function pointer of the canonical
+// signature inside the interpreter's raw{} block.
+struct ZjsHostFunction {
+    header: CellHeader;     // { type_tag = TAG_HOST_FUNCTION }
+    fn_ptr: void*;          // ZjsValue (*)(ZjsContext*, ZjsValue*, uint32_t)
+    name:   char*;          // for debugging — duplicated, owned
 }
 
 fn zjs_cell_from_ptr(p: void*) -> ZjsValue {
@@ -440,6 +450,18 @@ fn zjs_is_object(v: ZjsValue) -> int {
 
 fn zjs_is_array(v: ZjsValue) -> int {
     if zjs_cell_tag(v) == TAG_ARRAY { return 1; }
+    return 0;
+}
+
+fn zjs_is_host_function(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_HOST_FUNCTION { return 1; }
+    return 0;
+}
+
+fn zjs_is_callable(v: ZjsValue) -> int {
+    let t = zjs_cell_tag(v);
+    if t == TAG_FUNCTION { return 1; }
+    if t == TAG_HOST_FUNCTION { return 1; }
     return 0;
 }
 
@@ -541,6 +563,14 @@ fn array_free_void(p: void*) -> void {
     if a == NULL { return; }
     let el = a.elements;
     raw { free(el); free(a); }
+}
+
+fn host_function_free_void(p: void*) -> void {
+    let hf: ZjsHostFunction* = NULL;
+    raw { hf = (ZjsHostFunction*)p; }
+    if hf == NULL { return; }
+    let name = hf.name;
+    raw { free(name); free(hf); }
 }
 
 // =====================================================================

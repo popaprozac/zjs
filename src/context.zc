@@ -46,6 +46,9 @@ fn zjs_new_context() -> ZjsContext* {
     raw {
         result = (ZjsContext*)calloc(1, sizeof(ZjsContext));
     }
+    if result != NULL {
+        ctx_init_builtins(result);
+    }
     return result;
 }
 
@@ -78,6 +81,8 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
             object_free_void(cp);
         } else if tag == TAG_ARRAY {
             array_free_void(cp);
+        } else if tag == TAG_HOST_FUNCTION {
+            host_function_free_void(cp);
         }
         j = j + 1;
     }
@@ -132,6 +137,218 @@ fn ctx_new_array(ctx: ZjsContext*, length: u32) -> ZjsValue {
     let a = zjs_array_new(length);
     ctx_register_cell(ctx, (void*)a);
     return zjs_cell_from_ptr((void*)a);
+}
+
+// =====================================================================
+// Host functions + built-in registry. ctx_init_builtins is called at
+// the end of zjs_new_context so every context starts with Error and
+// Math available globally.
+// =====================================================================
+
+// Register a host function as a global. fn_ptr must point to a C
+// function with signature:
+//     ZjsValue (*)(ZjsContext*, ZjsValue*, uint32_t)
+fn ctx_register_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> ZjsValue {
+    let hf: ZjsHostFunction* = NULL;
+    raw { hf = (ZjsHostFunction*)calloc(1, sizeof(ZjsHostFunction)); }
+    hf.header.type_tag = TAG_HOST_FUNCTION;
+    hf.fn_ptr = fn_ptr;
+
+    let name_len: usize = 0;
+    raw { name_len = strlen(name); }
+    let name_copy: char* = NULL;
+    raw {
+        name_copy = (char*)malloc(name_len + 1);
+        memcpy(name_copy, name, name_len + 1);
+    }
+    hf.name = name_copy;
+
+    ctx_register_cell(ctx, (void*)hf);
+    let val = zjs_cell_from_ptr((void*)hf);
+
+    // Stash in a global slot.
+    let slot = ctx_intern_global(ctx, name, (u32)name_len);
+    ctx.globals[slot].value = val;
+    return val;
+}
+
+// Like ctx_register_host_function but doesn't create a global slot —
+// used when the function is going to be attached as an object property
+// (e.g. Math.abs).
+fn ctx_make_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> ZjsValue {
+    let hf: ZjsHostFunction* = NULL;
+    raw { hf = (ZjsHostFunction*)calloc(1, sizeof(ZjsHostFunction)); }
+    hf.header.type_tag = TAG_HOST_FUNCTION;
+    hf.fn_ptr = fn_ptr;
+
+    let name_len: usize = 0;
+    raw { name_len = strlen(name); }
+    let name_copy: char* = NULL;
+    raw {
+        name_copy = (char*)malloc(name_len + 1);
+        memcpy(name_copy, name, name_len + 1);
+    }
+    hf.name = name_copy;
+
+    ctx_register_cell(ctx, (void*)hf);
+    return zjs_cell_from_ptr((void*)hf);
+}
+
+// --- Built-in implementations ---------------------------------------
+
+// Error("msg") — produces { message: <msg>, name: "Error" }.
+// Same behavior whether called with `new` or as a plain call (MVP).
+fn host_error(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let obj_v = ctx_new_object(ctx);
+    let obj = zjs_as_object(obj_v);
+
+    let msg: ZjsValue = zjs_undefined();
+    if argc > 0 { msg = args[0]; }
+    if zjs_is_string(msg) == 0 { msg = zjs_to_string(ctx, msg); }
+
+    let msg_name = zjs_as_string(ctx_intern_string(ctx, (char*)"message", 7));
+    object_set(obj, msg_name, msg);
+
+    let name_name = zjs_as_string(ctx_intern_string(ctx, (char*)"name", 4));
+    let name_val  = ctx_intern_string(ctx, (char*)"Error", 5);
+    object_set(obj, name_name, name_val);
+
+    return obj_v;
+}
+
+// --- Math.* helpers -------------------------------------------------
+
+raw {
+    #include <math.h>
+}
+
+fn host_math_abs(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_double(0.0); }
+    let v = args[0];
+    if zjs_is_int32(v) != 0 {
+        let i = zjs_as_int32(v);
+        if i >= 0 { return v; }
+        return zjs_arith_neg(v);
+    }
+    let d = zjs_to_double(v);
+    if d < 0.0 { return zjs_double(-d); }
+    return zjs_double(d);
+}
+
+fn host_math_floor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_double(0.0); }
+    let d = zjs_to_double(args[0]);
+    let r: f64 = 0.0;
+    raw { r = floor(d); }
+    return zjs_double(r);
+}
+
+fn host_math_ceil(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_double(0.0); }
+    let d = zjs_to_double(args[0]);
+    let r: f64 = 0.0;
+    raw { r = ceil(d); }
+    return zjs_double(r);
+}
+
+fn host_math_round(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_double(0.0); }
+    let d = zjs_to_double(args[0]);
+    // ECMA-262 Math.round rounds half toward +Infinity (not banker's rounding).
+    let r: f64 = 0.0;
+    raw { r = floor(d + 0.5); }
+    return zjs_double(r);
+}
+
+fn host_math_sqrt(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_double(0.0); }
+    let d = zjs_to_double(args[0]);
+    let r: f64 = 0.0;
+    raw { r = sqrt(d); }
+    return zjs_double(r);
+}
+
+fn host_math_pow(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let base: f64 = 1.0;
+    let exp:  f64 = 1.0;
+    if argc >= 1 { base = zjs_to_double(args[0]); }
+    if argc >= 2 { exp  = zjs_to_double(args[1]); }
+    let r: f64 = 0.0;
+    raw { r = pow(base, exp); }
+    return zjs_double(r);
+}
+
+fn host_math_max(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // ECMA-262: empty args -> -Infinity. MVP: undefined.
+    if argc == 0 {
+        let nan: f64 = 0.0;
+        raw { nan = -INFINITY; }
+        return zjs_double(nan);
+    }
+    let best = zjs_to_double(args[0]);
+    let i: u32 = 1;
+    while i < argc {
+        let d = zjs_to_double(args[i]);
+        if d > best { best = d; }
+        i = i + 1;
+    }
+    return zjs_double(best);
+}
+
+fn host_math_min(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 {
+        let inf: f64 = 0.0;
+        raw { inf = INFINITY; }
+        return zjs_double(inf);
+    }
+    let best = zjs_to_double(args[0]);
+    let i: u32 = 1;
+    while i < argc {
+        let d = zjs_to_double(args[i]);
+        if d < best { best = d; }
+        i = i + 1;
+    }
+    return zjs_double(best);
+}
+
+fn ctx_init_builtins(ctx: ZjsContext*) -> void {
+    // --- Error ---
+    let err_ptr: void* = NULL;
+    raw { err_ptr = (void*)host_error; }
+    ctx_register_host_function(ctx, (char*)"Error", err_ptr);
+
+    // --- Math object with several method properties ---
+    let math_v = ctx_new_object(ctx);
+    let math   = zjs_as_object(math_v);
+
+    let abs_ptr:   void* = NULL; raw { abs_ptr   = (void*)host_math_abs; }
+    let floor_ptr: void* = NULL; raw { floor_ptr = (void*)host_math_floor; }
+    let ceil_ptr:  void* = NULL; raw { ceil_ptr  = (void*)host_math_ceil; }
+    let round_ptr: void* = NULL; raw { round_ptr = (void*)host_math_round; }
+    let sqrt_ptr:  void* = NULL; raw { sqrt_ptr  = (void*)host_math_sqrt; }
+    let pow_ptr:   void* = NULL; raw { pow_ptr   = (void*)host_math_pow; }
+    let max_ptr:   void* = NULL; raw { max_ptr   = (void*)host_math_max; }
+    let min_ptr:   void* = NULL; raw { min_ptr   = (void*)host_math_min; }
+
+    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"abs", 3)),
+               ctx_make_host_function(ctx, (char*)"abs", abs_ptr));
+    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"floor", 5)),
+               ctx_make_host_function(ctx, (char*)"floor", floor_ptr));
+    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"ceil", 4)),
+               ctx_make_host_function(ctx, (char*)"ceil", ceil_ptr));
+    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"round", 5)),
+               ctx_make_host_function(ctx, (char*)"round", round_ptr));
+    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"sqrt", 4)),
+               ctx_make_host_function(ctx, (char*)"sqrt", sqrt_ptr));
+    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"pow", 3)),
+               ctx_make_host_function(ctx, (char*)"pow", pow_ptr));
+    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"max", 3)),
+               ctx_make_host_function(ctx, (char*)"max", max_ptr));
+    object_set(math, zjs_as_string(ctx_intern_string(ctx, (char*)"min", 3)),
+               ctx_make_host_function(ctx, (char*)"min", min_ptr));
+
+    let math_slot = ctx_intern_global(ctx, (char*)"Math", 4);
+    ctx.globals[math_slot].value = math_v;
 }
 
 // --- Error inspection (public ABI) ----------------------------------

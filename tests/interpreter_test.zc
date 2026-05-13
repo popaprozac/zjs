@@ -400,6 +400,43 @@ fn run_tests() -> void {
 
     // Catch can throw, outer catches
     check_int((char*)"catch throws", (char*)r"let r = 0; try { try { throw 1 } catch (e) { throw 99 } } catch (e) { r = e } r", 99);
+
+    // --- typeof (Phase 3.1e) -----------------------------------------
+    check_string((char*)"typeof number",    (char*)"typeof 42",            (char*)"number");
+    check_string((char*)"typeof double",    (char*)"typeof 3.14",          (char*)"number");
+    check_string((char*)"typeof string",    (char*)"typeof 'hi'",          (char*)"string");
+    check_string((char*)"typeof bool",      (char*)"typeof true",          (char*)"boolean");
+    check_string((char*)"typeof undefined", (char*)"typeof undefined",     (char*)"undefined");
+    check_string((char*)"typeof null",      (char*)"typeof null",          (char*)"object");
+    check_string((char*)"typeof object",    (char*)r"typeof {a: 1}",       (char*)"object");
+    check_string((char*)"typeof array",     (char*)"typeof [1, 2, 3]",     (char*)"object");
+    check_string((char*)"typeof fn",        (char*)r"typeof (function() {})", (char*)"function");
+    check_string((char*)"typeof arrow",     (char*)"typeof (x => x)",      (char*)"function");
+    check_string((char*)"typeof host fn",   (char*)"typeof Math.abs",      (char*)"function");
+
+    // --- Math (Phase 3.1e) -------------------------------------------
+    check_int   ((char*)"Math.abs neg",   (char*)"Math.abs(-7)",          7);
+    check_int   ((char*)"Math.abs pos",   (char*)"Math.abs(7)",           7);
+    check_int   ((char*)"Math.floor",     (char*)"Math.floor(3.7)",       3);
+    check_int   ((char*)"Math.ceil",      (char*)"Math.ceil(3.1)",        4);
+    check_int   ((char*)"Math.round up",  (char*)"Math.round(2.5)",       3);
+    check_int   ((char*)"Math.round down",(char*)"Math.round(2.4)",       2);
+    check_int   ((char*)"Math.sqrt 16",   (char*)"Math.sqrt(16)",         4);
+    check_int   ((char*)"Math.pow",       (char*)"Math.pow(2, 10)",    1024);
+    check_int   ((char*)"Math.max",       (char*)"Math.max(1, 5, 3)",     5);
+    check_int   ((char*)"Math.min",       (char*)"Math.min(1, 5, 3)",     1);
+    check_int   ((char*)"Math.max neg",   (char*)"Math.max(-1, -5, -3)", -1);
+
+    // Math composition
+    check_int((char*)"Math composed", (char*)"Math.abs(Math.floor(-3.7))", 4);
+
+    // --- Error + new (Phase 3.1e) -----------------------------------
+    check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
+    check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");
+    check_string((char*)"Error name",        (char*)r"Error('x').name",                          (char*)"Error");
+    check_string((char*)"throw new Error",   (char*)r"try { throw new Error('msg') } catch (e) { e.message }", (char*)"msg");
+    check_string((char*)"throw Error",       (char*)r"try { throw Error('m2') } catch (e) { e.message }",     (char*)"m2");
+    check_string((char*)"throw + name",      (char*)r"try { throw new Error('x') } catch (e) { e.name }",     (char*)"Error");
 }
 
 // Verify that globals persist across multiple zjs_eval calls on the

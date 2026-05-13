@@ -22,13 +22,29 @@
 
 #include "zjs.h"
 
-/* Test262 harness preamble. Concatenated with each test before eval. */
+/* Test262 harness preamble. Concatenated with each test before eval.
+ *
+ * Uses `throw new Error(...)` for assertions so failures carry a
+ * message. Tests that use the bare `assert(condition)` form still
+ * silently pass because our assert is an object, not a callable
+ * (functions-as-objects deferred to a later phase) — but
+ * `assert.sameValue` / `assert.notSameValue` / `assert.throws` work.
+ */
 static const char* HARNESS =
     "var assert = {\n"
-    "  sameValue: function (a, b) { if (a !== b) throw 'sameValue fail'; },\n"
-    "  notSameValue: function (a, b) { if (a === b) throw 'notSameValue fail'; }\n"
+    "  sameValue: function (a, b, msg) {\n"
+    "    if (a !== b) throw new Error(msg || 'sameValue: expected ' + b + ', got ' + a);\n"
+    "  },\n"
+    "  notSameValue: function (a, b, msg) {\n"
+    "    if (a === b) throw new Error(msg || 'notSameValue: both were ' + a);\n"
+    "  },\n"
+    "  throws: function (Ctor, fn) {\n"
+    "    var caught = false;\n"
+    "    try { fn(); } catch (e) { caught = true; }\n"
+    "    if (!caught) throw new Error('expected function to throw');\n"
+    "  }\n"
     "};\n"
-    "function $ERROR(m) { throw m; }\n";
+    "function $ERROR(m) { throw new Error(m); }\n";
 
 static int g_total   = 0;
 static int g_passed  = 0;   /* eval returned with no uncaught throw */
