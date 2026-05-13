@@ -21,9 +21,17 @@ struct GlobalEntry {
 }
 
 struct ZjsContext {
-    globals:     GlobalEntry*;
-    global_count: u32;
-    global_cap:  u32;
+    globals:        GlobalEntry*;
+    global_count:   u32;
+    global_cap:     u32;
+
+    // All compiled functions, owned by the context. Freed on
+    // zjs_free_context. Stored as void* because Function lives in
+    // bytecode.zc (which imports value.zc, which we don't want a
+    // back-edge from).
+    functions:      void**;
+    function_count: u32;
+    function_cap:   u32;
 }
 
 fn zjs_new_context() -> ZjsContext* {
@@ -44,10 +52,41 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
         i = i + 1;
     }
     let globals = ctx.globals;
+    raw { free(globals); }
+
+    // Free all compiled functions registered with this context.
+    let j: u32 = 0;
+    while j < ctx.function_count {
+        let fp = ctx.functions[j];
+        raw {
+            // Each function entry has the shape declared in bytecode.zc;
+            // we use function_free, which casts and releases.
+            // Caller side ensures the void* came from function_new().
+            extern void function_free_void(void* f);
+            function_free_void(fp);
+        }
+        j = j + 1;
+    }
+    let fns = ctx.functions;
     raw {
-        free(globals);
+        free(fns);
         free(ctx);
     }
+}
+
+// Append a function to the context's owned-functions list. Called by
+// the compiler whenever it produces a fresh Function value.
+fn ctx_register_function(ctx: ZjsContext*, f: void*) -> void {
+    if ctx.function_count >= ctx.function_cap {
+        let new_cap: u32 = if ctx.function_cap == 0 { 8 } else { ctx.function_cap * 2 };
+        let old = ctx.functions;
+        let new_arr: void** = NULL;
+        raw { new_arr = (void**)realloc(old, new_cap * sizeof(void*)); }
+        ctx.functions = new_arr;
+        ctx.function_cap = new_cap;
+    }
+    ctx.functions[ctx.function_count] = f;
+    ctx.function_count = ctx.function_count + 1;
 }
 
 // Find an existing global by name. Returns -1 if not found (i32 so we

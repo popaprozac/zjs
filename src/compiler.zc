@@ -16,6 +16,12 @@ raw {
     #include <string.h>
 }
 
+struct Local {
+    name_start:  u32;
+    name_length: u32;
+    reg:         u8;
+}
+
 struct Compiler {
     ctx:           ZjsContext*;
     source:        char*;
@@ -34,6 +40,14 @@ struct Compiler {
     // simple high-water-mark register allocator
     next_reg:      u8;
     max_reg:       u8;
+    fixed_regs:    u8;   // count of regs reserved for params + locals;
+                          // expression temps live above this watermark
+
+    // locals (function-scoped — empty at top level)
+    locals:        Local*;
+    local_count:   u32;
+    local_cap:     u32;
+    is_function:   bool;
 
     // result tracking — the register holding the last evaluated
     // expression-statement value (so we can emit Return at the end).
@@ -59,11 +73,47 @@ fn compiler_free(c: Compiler*) -> void {
     if c == NULL { return; }
     let code = c.code;
     let consts = c.constants;
+    let locals = c.locals;
     raw {
         free(code);
         free(consts);
+        free(locals);
         free(c);
     }
+}
+
+// --- Locals ---------------------------------------------------------
+
+fn add_local(c: Compiler*, name_start: u32, name_length: u32, reg: u8) -> void {
+    if c.local_count >= c.local_cap {
+        let new_cap: u32 = if c.local_cap == 0 { 8 } else { c.local_cap * 2 };
+        let old = c.locals;
+        let new_arr: Local* = NULL;
+        raw { new_arr = (Local*)realloc(old, new_cap * sizeof(Local)); }
+        c.locals = new_arr;
+        c.local_cap = new_cap;
+    }
+    c.locals[c.local_count] = Local{
+        name_start:  name_start,
+        name_length: name_length,
+        reg:         reg,
+    };
+    c.local_count = c.local_count + 1;
+}
+
+// Returns the local's register, or -1 if not found.
+fn lookup_local(c: Compiler*, name: char*, name_len: u32) -> i32 {
+    let i: u32 = 0;
+    while i < c.local_count {
+        if c.locals[i].name_length == name_len {
+            let local_name = c.source + c.locals[i].name_start;
+            let eq: int = 0;
+            raw { eq = (memcmp(local_name, name, name_len) == 0) ? 1 : 0; }
+            if eq != 0 { return (i32)c.locals[i].reg; }
+        }
+        i = i + 1;
+    }
+    return -1;
 }
 
 // --- Emission helpers -----------------------------------------------
@@ -116,7 +166,7 @@ fn release_reg(c: Compiler*, r: u8) -> void {
 }
 
 fn reset_temps(c: Compiler*) -> void {
-    c.next_reg = 0;
+    c.next_reg = c.fixed_regs;
 }
 
 // --- Patching jumps -------------------------------------------------
@@ -190,12 +240,23 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         return dst;
     }
     if k == NodeKind::IdentExpr {
+        let name = c.source + node.start;
+        let name_len = node.end - node.start;
+        let local = lookup_local(c, name, name_len);
         let dst = alloc_reg(c);
-        let slot = ctx_intern_global(c.ctx,
-                                     c.source + node.start,
-                                     node.end - node.start);
-        emit(c, make_inst_a_u16(Op::LoadGlobal, dst, (u16)slot));
+        if local >= 0 {
+            emit(c, make_inst_ab(Op::Mov, dst, (u8)local));
+        } else {
+            let slot = ctx_intern_global(c.ctx, name, name_len);
+            emit(c, make_inst_a_u16(Op::LoadGlobal, dst, (u16)slot));
+        }
         return dst;
+    }
+    if k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
+        return compile_function_value(c, node);
+    }
+    if k == NodeKind::Call {
+        return compile_call(c, node);
     }
     if k == NodeKind::Paren {
         return compile_expr(c, node.left);
@@ -338,19 +399,29 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         return alloc_reg(c);
     }
 
-    let slot = ctx_intern_global(c.ctx,
-                                  c.source + target.start,
-                                  target.end - target.start);
+    let name = c.source + target.start;
+    let name_len = target.end - target.start;
+    let local = lookup_local(c, name, name_len);
 
     if op_tok == TokenKind::Eq {
         let r = compile_expr(c, node.right);
-        emit(c, make_inst_a_u16(Op::StoreGlobal, r, (u16)slot));
+        if local >= 0 {
+            emit(c, make_inst_ab(Op::Mov, (u8)local, r));
+        } else {
+            let slot = ctx_intern_global(c.ctx, name, name_len);
+            emit(c, make_inst_a_u16(Op::StoreGlobal, r, (u16)slot));
+        }
         return r;
     }
 
     // Compound assignment: load, op, store.
     let cur = alloc_reg(c);
-    emit(c, make_inst_a_u16(Op::LoadGlobal, cur, (u16)slot));
+    if local >= 0 {
+        emit(c, make_inst_ab(Op::Mov, cur, (u8)local));
+    } else {
+        let slot = ctx_intern_global(c.ctx, name, name_len);
+        emit(c, make_inst_a_u16(Op::LoadGlobal, cur, (u16)slot));
+    }
     let rhs = compile_expr(c, node.right);
 
     let op = Op::Halt;
@@ -372,11 +443,190 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     }
     let dst = alloc_reg(c);
     emit(c, make_inst_abc(op, dst, cur, rhs));
-    emit(c, make_inst_a_u16(Op::StoreGlobal, dst, (u16)slot));
+    if local >= 0 {
+        emit(c, make_inst_ab(Op::Mov, (u8)local, dst));
+    } else {
+        let slot = ctx_intern_global(c.ctx, name, name_len);
+        emit(c, make_inst_a_u16(Op::StoreGlobal, dst, (u16)slot));
+    }
     release_reg(c, rhs);
     release_reg(c, cur);
     if c.next_reg <= dst { c.next_reg = dst + 1; }
     return dst;
+}
+
+// =====================================================================
+// Function compilation. A FunctionDecl/FunctionExpr/ArrowFunc creates
+// a fresh child Compiler with its own register file and constants.
+// The resulting Function* is registered with the context (for cleanup)
+// and its address becomes a NaN-boxed cell in the parent's constant
+// pool.
+// =====================================================================
+
+fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*) -> Function* {
+    let c = compiler_new(parent_ctx, source);
+    c.is_function = true;
+
+    // 1. Allocate registers for parameters. They sit at the bottom of
+    //    the register file so callers can place args contiguously.
+    let param_count = node.children_count;
+    let i: u32 = 0;
+    while i < param_count {
+        let p = node.children[i];
+        let reg = alloc_reg(c);
+        add_local(c, p.start, p.end - p.start, reg);
+        i = i + 1;
+    }
+
+    // 2. Hoist var/let/const declarations from the body into fixed
+    //    locals, plus nested-FunctionDecl name bindings.
+    if node.left != NULL { collect_locals(c, node.left); }
+
+    // 3. Locals are now fixed; temps live above this watermark.
+    c.fixed_regs = c.next_reg;
+
+    // 4. Compile body. Arrow concise body is an expression; everything
+    //    else is a BlockStmt.
+    if node.left != NULL {
+        if node.left.kind == NodeKind::BlockStmt {
+            compile_stmt(c, node.left);
+        } else {
+            let r = compile_expr(c, node.left);
+            emit(c, make_inst_a(Op::Return, r));
+        }
+    }
+
+    // 5. Ensure the last instruction is a Return.
+    let need_return: bool = true;
+    if c.code_count > 0 {
+        if c.code[c.code_count - 1].op == Op::Return { need_return = false; }
+    }
+    if need_return {
+        let r = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadUndefined, r));
+        emit(c, make_inst_a(Op::Return, r));
+    }
+
+    let had_error = c.had_error;
+
+    // 6. Move ownership into a fresh Function.
+    let f = function_new();
+    f.code = c.code;
+    f.code_len = c.code_count;
+    f.constants = c.constants;
+    f.const_count = c.const_count;
+    f.register_count = (u32)(c.max_reg + 1);
+    if f.register_count < param_count { f.register_count = param_count; }
+    f.param_count = param_count;
+
+    c.code = NULL;
+    c.constants = NULL;
+    compiler_free(c);
+
+    if had_error {
+        function_free(f);
+        return NULL;
+    }
+    return f;
+}
+
+// Compile a FunctionExpr/ArrowFunc in expression context. Returns the
+// register holding the function value.
+fn compile_function_value(c: Compiler*, node: AstNode*) -> u8 {
+    let f = compile_function(c.ctx, c.source, node);
+    if f == NULL { c.had_error = true; return alloc_reg(c); }
+    let fp: void* = NULL;
+    raw { fp = (void*)f; }
+    ctx_register_function(c.ctx, fp);
+
+    let val = zjs_cell_from_ptr(fp);
+    let idx = add_const(c, val);
+    let dst = alloc_reg(c);
+    emit(c, make_inst_a_u16(Op::LoadConst, dst, idx));
+    return dst;
+}
+
+fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
+    let arg_count: u8 = (u8)node.children_count;
+
+    // Reserve consecutive registers for callee + args. compile_expr
+    // calls below may use registers above this reserved block for
+    // their own temps and release them back.
+    let base = c.next_reg;
+    let i: u8 = 0;
+    while i <= arg_count {
+        alloc_reg(c);
+        i = i + 1;
+    }
+
+    // Callee.
+    let r = compile_expr(c, node.left);
+    if r != base {
+        emit(c, make_inst_ab(Op::Mov, base, r));
+        if r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+    }
+
+    // Each argument into base+1+j.
+    let j: u8 = 0;
+    while j < arg_count {
+        let arg_r = compile_expr(c, node.children[j]);
+        let target = base + 1 + j;
+        if arg_r != target {
+            emit(c, make_inst_ab(Op::Mov, target, arg_r));
+            if arg_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        }
+        j = j + 1;
+    }
+
+    // Emit the Call. Result lands in `base` (reusing the callee slot).
+    emit(c, make_inst_abc(Op::Invoke, base, base, arg_count));
+
+    // Release all reserved slots above the result.
+    c.next_reg = base + 1;
+    if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+    return base;
+}
+
+// Hoist var/let/const and nested FunctionDecl name bindings into the
+// current compiler's locals. Does NOT descend into nested function
+// bodies (each has its own compile_function pass).
+fn collect_locals(c: Compiler*, node: AstNode*) -> void {
+    if node == NULL { return; }
+    let k = node.kind;
+
+    if k == NodeKind::FunctionDecl {
+        if c.is_function {
+            // The function's own name binds as a local.
+            let reg = alloc_reg(c);
+            add_local(c, node.name_start, node.name_length, reg);
+        }
+        // Don't descend into the function body.
+        return;
+    }
+    if k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
+        // Anonymous expression forms have no binding to register.
+        return;
+    }
+
+    if k == NodeKind::VarDecl {
+        let i: u32 = 0;
+        while i < node.children_count {
+            let decl = node.children[i];
+            let reg = alloc_reg(c);
+            add_local(c, decl.name_start, decl.name_length, reg);
+            i = i + 1;
+        }
+        return;
+    }
+
+    if node.left  != NULL { collect_locals(c, node.left); }
+    if node.right != NULL { collect_locals(c, node.right); }
+    if node.third != NULL { collect_locals(c, node.third); }
+    let i: u32 = 0;
+    while i < node.children_count {
+        collect_locals(c, node.children[i]);
+        i = i + 1;
+    }
 }
 
 // =====================================================================
@@ -400,17 +650,53 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         let i: u32 = 0;
         while i < node.children_count {
             let decl = node.children[i];
-            let slot = ctx_intern_global(c.ctx,
-                                          c.source + decl.name_start,
-                                          decl.name_length);
-            if decl.left != NULL {
-                let r = compile_expr(c, decl.left);
-                emit(c, make_inst_a_u16(Op::DefineGlobal, r, (u16)slot));
-                release_reg(c, r);
+            let name = c.source + decl.name_start;
+            let name_len = decl.name_length;
+            if c.is_function {
+                // Local — register was pre-allocated by collect_locals.
+                let local = lookup_local(c, name, name_len);
+                if local < 0 { c.had_error = true; return; }
+                if decl.left != NULL {
+                    let r = compile_expr(c, decl.left);
+                    emit(c, make_inst_ab(Op::Mov, (u8)local, r));
+                    release_reg(c, r);
+                }
+                // No initializer: register stays undefined.
+            } else {
+                let slot = ctx_intern_global(c.ctx, name, name_len);
+                if decl.left != NULL {
+                    let r = compile_expr(c, decl.left);
+                    emit(c, make_inst_a_u16(Op::DefineGlobal, r, (u16)slot));
+                    release_reg(c, r);
+                }
             }
-            // No initializer: slot stays at whatever it was (undefined for fresh slots).
             i = i + 1;
         }
+        reset_temps(c);
+        return;
+    }
+    if k == NodeKind::FunctionDecl {
+        let f = compile_function(c.ctx, c.source, node);
+        if f == NULL { c.had_error = true; return; }
+        let fp: void* = NULL;
+        raw { fp = (void*)f; }
+        ctx_register_function(c.ctx, fp);
+        let val = zjs_cell_from_ptr(fp);
+        let idx = add_const(c, val);
+        let r = alloc_reg(c);
+        emit(c, make_inst_a_u16(Op::LoadConst, r, idx));
+
+        if c.is_function {
+            // Bind to the pre-allocated local register.
+            let local = lookup_local(c, c.source + node.name_start, node.name_length);
+            if local >= 0 { emit(c, make_inst_ab(Op::Mov, (u8)local, r)); }
+        } else {
+            let slot = ctx_intern_global(c.ctx,
+                                          c.source + node.name_start,
+                                          node.name_length);
+            emit(c, make_inst_a_u16(Op::DefineGlobal, r, (u16)slot));
+        }
+        release_reg(c, r);
         reset_temps(c);
         return;
     }

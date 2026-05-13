@@ -55,6 +55,17 @@ enum Op {
 
     // Universal return — exits interpret() with regs[a] as the value.
     Return,
+
+    // Function call. a=dst, b=base, c=arg_count.
+    // Convention: regs[base] holds the callee; args are in regs[base+1
+    // ..base+arg_count]. Result is written to regs[dst]; dst can be
+    // the same as base (the caller's "result reg" reuses the callee
+    // slot, which is what the compiler does by default).
+    //
+    // Named `Invoke` (not `Call`) to avoid the cross-enum-variant
+    // collision with NodeKind::Call. Zen-c codegen merges variant
+    // symbols across enums in the same TU — see reference_zen-c.md.
+    Invoke,
 }
 
 struct Inst {
@@ -143,4 +154,13 @@ fn function_free(f: Function*) -> void {
         free(consts);
         free(f);
     }
+}
+
+// C-callable wrapper so context.zc can free functions without depending
+// on bytecode.zc's import path. The forward declaration lives inside
+// context.zc's `zjs_free_context` raw block.
+fn function_free_void(p: void*) -> void {
+    let f: Function* = NULL;
+    raw { f = (Function*)p; }
+    function_free(f);
 }

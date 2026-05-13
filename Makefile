@@ -17,13 +17,14 @@ SHLIB_EXT := so
 RPATH_FLAG := -Wl,-rpath,'$$ORIGIN'
 endif
 
-BUILD_DIR   := build
-LIB         := $(BUILD_DIR)/libzjs.$(SHLIB_EXT)
-CLI         := $(BUILD_DIR)/zjs
-SMOKE       := $(BUILD_DIR)/smoke
-LEXER_TEST  := $(BUILD_DIR)/lexer_test
-PARSER_TEST := $(BUILD_DIR)/parser_test
-INTERP_TEST := $(BUILD_DIR)/interp_test
+BUILD_DIR    := build
+LIB          := $(BUILD_DIR)/libzjs.$(SHLIB_EXT)
+CLI          := $(BUILD_DIR)/zjs
+SMOKE        := $(BUILD_DIR)/smoke
+LEXER_TEST   := $(BUILD_DIR)/lexer_test
+PARSER_TEST  := $(BUILD_DIR)/parser_test
+INTERP_TEST  := $(BUILD_DIR)/interp_test
+T262_RUNNER  := $(BUILD_DIR)/test262_runner
 
 ZC    := zc
 CLANG := clang
@@ -45,8 +46,9 @@ SMOKE_SRC       := tests/embed_smoke.c
 LEXER_TEST_SRC  := tests/lexer_test.zc
 PARSER_TEST_SRC := tests/parser_test.zc
 INTERP_TEST_SRC := tests/interpreter_test.zc
+T262_RUNNER_SRC := tests/test262_runner.c
 
-.PHONY: all lib cli smoke lexer-test parser-test interp-test test clean
+.PHONY: all lib cli smoke lexer-test parser-test interp-test test test262-runner test262 clean
 
 all: lib cli smoke lexer-test parser-test interp-test
 
@@ -76,6 +78,17 @@ $(PARSER_TEST): $(PARSER_TEST_SRC) $(ENGINE_SRC) | $(BUILD_DIR)
 interp-test: $(INTERP_TEST)
 $(INTERP_TEST): $(INTERP_TEST_SRC) $(ENGINE_SRC) | $(BUILD_DIR)
 	$(ZC) build $(ZC_FLAGS) $(INTERP_TEST_SRC) -o $@
+
+test262-runner: $(T262_RUNNER)
+$(T262_RUNNER): $(T262_RUNNER_SRC) include/zjs.h $(LIB) | $(BUILD_DIR)
+	$(CLANG) -O2 -Wall -Iinclude $(T262_RUNNER_SRC) -L$(BUILD_DIR) -lzjs $(RPATH_FLAG) -o $@
+
+# Run a subset of test262 (defaults to expressions/). Caller can override
+# the target directory by setting T262_DIR. If test262 isn't cloned, the
+# runner prints clone instructions and exits non-zero.
+T262_DIR ?= vendor/test262/test/language/expressions
+test262: test262-runner
+	@$(T262_RUNNER) $(T262_DIR)
 
 test: all
 	@echo '--- zjs --version ---'

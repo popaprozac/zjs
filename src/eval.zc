@@ -29,5 +29,5 @@ fn zjs_eval(ctx: ZjsContext*, source: char*) -> ZjsValue {
     if f == NULL { return zjs_undefined(); }
     defer function_free(f);
 
-    return interpret(ctx, f);
+    return interpret(ctx, f, NULL, 0);
 }

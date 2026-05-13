@@ -349,3 +349,27 @@ fn zjs_cmp_le(a: ZjsValue, b: ZjsValue) -> int {
     if af <= bf { return 1; }
     return 0;
 }
+
+// =====================================================================
+// Function values — NaN-boxed cell pointers. For Phase 3.0b every cell
+// is a function (no strings/arrays/objects yet); when those land we'll
+// add a cell header with a type tag and update is_cell to mean
+// "any heap object" while a separate predicate distinguishes functions.
+// =====================================================================
+
+// Note: ZjsValue's bit layout puts pointers in the low 48 bits with
+// high 16 zero. We don't import the Function type here (bytecode.zc
+// imports value.zc, not the other way), so we accept it as void*.
+
+fn zjs_cell_from_ptr(p: void*) -> ZjsValue {
+    let bits: u64 = 0;
+    raw { bits = (uint64_t)(uintptr_t)p; }
+    return ZjsValue{ bits: bits };
+}
+
+fn zjs_cell_as_ptr(v: ZjsValue) -> void* {
+    let p: void* = NULL;
+    let bits = v.bits;
+    raw { p = (void*)(uintptr_t)bits; }
+    return p;
+}

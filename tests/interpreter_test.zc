@@ -181,7 +181,48 @@ fn run_tests() -> void {
     // --- Multi-statement program ----------------------------------
     check_int((char*)"sequence",          (char*)"let a = 1; let b = 2; let c = 3; a + b + c", 6);
 
-    // --- Global persistence (re-eval in same context, exercised manually below)
+    // --- Functions (Phase 3.0b) -----------------------------------
+    check_int((char*)"fn no args",    (char*)r"function f() { return 42; } f()",                42);
+    check_int((char*)"fn one arg",    (char*)r"function id(x) { return x; } id(7)",              7);
+    check_int((char*)"fn two args",   (char*)r"function add(a, b) { return a + b; } add(3, 4)",  7);
+    check_int((char*)"fn three args", (char*)r"function tri(a, b, c) { return a + b + c; } tri(1, 2, 3)", 6);
+    check_int((char*)"fn no return",  (char*)r"function f() {} f(); 99",                        99);
+    check_int((char*)"fn early ret",  (char*)r"function f(x) { if (x > 0) return 1; return -1; } f(5)", 1);
+    check_int((char*)"fn early ret 2",(char*)r"function f(x) { if (x > 0) return 1; return -1; } f(-3)", -1);
+
+    // Local variables
+    check_int((char*)"fn local var",  (char*)r"function f() { let x = 10; return x + 1; } f()", 11);
+    check_int((char*)"fn local + arg",(char*)r"function f(x) { let y = x * 2; return y + 1; } f(5)", 11);
+    check_int((char*)"fn multi local",(char*)r"function f() { let a = 1; let b = 2; let c = 3; return a + b + c; } f()", 6);
+
+    // Function expressions
+    check_int((char*)"fn expr",       (char*)r"let f = function(x) { return x * 2; }; f(21)",   42);
+    check_int((char*)"named fn expr", (char*)r"let f = function inner(x) { return x + 1; }; f(41)", 42);
+
+    // Arrow functions
+    check_int((char*)"arrow concise", (char*)"let inc = x => x + 1; inc(41)",                   42);
+    check_int((char*)"arrow zero",    (char*)"let f = () => 7; f()",                             7);
+    check_int((char*)"arrow paren",   (char*)"let add = (a, b) => a + b; add(10, 32)",          42);
+    check_int((char*)"arrow block",   (char*)r"let f = (x) => { return x * 2; }; f(5)",         10);
+
+    // Recursion
+    check_int((char*)"factorial",     (char*)r"function fact(n) { if (n <= 1) return 1; return n * fact(n - 1); } fact(5)", 120);
+    check_int((char*)"factorial 10",  (char*)r"function fact(n) { if (n <= 1) return 1; return n * fact(n - 1); } fact(10)", 3628800);
+    check_int((char*)"fib 10",        (char*)r"function fib(n) { if (n < 2) return n; return fib(n - 1) + fib(n - 2); } fib(10)", 55);
+    check_int((char*)"fib 15",        (char*)r"function fib(n) { if (n < 2) return n; return fib(n - 1) + fib(n - 2); } fib(15)", 610);
+
+    // Iterative computation inside function
+    check_int((char*)"fn while loop", (char*)r"function sum(n) { let s = 0; let i = 1; while (i <= n) { s = s + i; i = i + 1; } return s; } sum(100)", 5050);
+    check_int((char*)"fn for loop",   (char*)r"function sum(n) { let s = 0; for (let i = 1; i <= n; i = i + 1) s = s + i; return s; } sum(100)", 5050);
+
+    // Multiple functions calling each other
+    check_int((char*)"call other fn", (char*)r"function add(a, b) { return a + b; } function double_(x) { return add(x, x); } double_(21)", 42);
+
+    // Higher-order: returning a function
+    check_int((char*)"return fn",     (char*)r"function maker() { return function(x) { return x + 100; }; } maker()(5)", 105);
+
+    // Calls in expression position
+    check_int((char*)"call in expr",  (char*)r"function f(x) { return x + 1; } f(1) + f(2) + f(3)", 9);
 }
 
 // Verify that globals persist across multiple zjs_eval calls on the

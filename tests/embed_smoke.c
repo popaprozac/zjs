@@ -227,6 +227,15 @@ static void test_engine_path(void) {
         { "let s = 0; let i = 1; while (i <= 10) { s = s + i; i = i + 1; } s",55 },
         { "let s = 0; for (let i = 1; i <= 10; i = i + 1) s = s + i; s",      55 },
         { "let n = 0; do { n = n + 1; } while (n < 5); n",                      5 },
+
+        /* Functions (Phase 3.0b) */
+        { "function f() { return 42; } f()",                                   42 },
+        { "function add(a, b) { return a + b; } add(3, 4)",                     7 },
+        { "function fact(n) { if (n <= 1) return 1; return n * fact(n - 1); } fact(5)", 120 },
+        { "function fib(n) { if (n < 2) return n; return fib(n - 1) + fib(n - 2); } fib(10)", 55 },
+        { "let inc = x => x + 1; inc(41)",                                     42 },
+        { "let f = function(x) { return x * 2; }; f(21)",                      42 },
+        { "function sum(n) { let s = 0; for (let i = 1; i <= n; i = i + 1) s = s + i; return s; } sum(100)", 5050 },
     };
     size_t n = sizeof(cases) / sizeof(cases[0]);
     for (size_t i = 0; i < n; i++) {

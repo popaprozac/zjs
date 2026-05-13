@@ -17,7 +17,7 @@ raw {
     #include <string.h>
 }
 
-fn interpret(ctx: ZjsContext*, f: Function*) -> ZjsValue {
+fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) -> ZjsValue {
     if f == NULL { return zjs_undefined(); }
 
     let reg_count = f.register_count;
@@ -34,6 +34,14 @@ fn interpret(ctx: ZjsContext*, f: Function*) -> ZjsValue {
     while ri < reg_count {
         regs[ri] = init;
         ri = ri + 1;
+    }
+
+    // Copy incoming args into the first param_count registers.
+    let copy_count: u32 = if arg_count < f.param_count { arg_count } else { f.param_count };
+    let ai: u32 = 0;
+    while ai < copy_count {
+        regs[ai] = args[ai];
+        ai = ai + 1;
     }
 
     let ip: usize = 0;
@@ -151,6 +159,22 @@ fn interpret(ctx: ZjsContext*, f: Function*) -> ZjsValue {
             if zjs_to_bool_coerce(regs[inst.a]) == 0 {
                 let off = inst_bc_i16(inst);
                 ip = (usize)((i32)ip + off);
+            }
+        } else if op == Op::Invoke {
+            let dst = inst.a;
+            let base = inst.b;
+            let argc = (u32)inst.c;
+            let callee = regs[base];
+            if zjs_is_cell(callee) != 0 {
+                let fp = zjs_cell_as_ptr(callee);
+                let target: Function* = NULL;
+                raw { target = (Function*)fp; }
+                let argv_ptr: ZjsValue* = NULL;
+                raw { argv_ptr = &regs[base + 1]; }
+                regs[dst] = interpret(ctx, target, argv_ptr, argc);
+            } else {
+                // Not a function — TypeError in real JS; MVP returns undefined.
+                regs[dst] = zjs_undefined();
             }
         }
         // else: unknown opcode — ignore (interpreter is permissive
