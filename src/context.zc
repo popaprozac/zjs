@@ -2083,10 +2083,24 @@ fn host_console_error(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
 }
 
 // Build a synthetic { name, message } error object — used to surface
-// parse / compile / lookup failures as JS-visible throws.
+// parse / compile / lookup failures as JS-visible throws. Also wires
+// the object's proto to the same `<Type>.prototype` the user-callable
+// constructor uses, so `e instanceof ReferenceError` works for our
+// internally-thrown errors.
 fn build_typed_error(ctx: ZjsContext*, type_name: char*, type_len: u32, msg: char*, msg_len: u32) -> ZjsValue {
     let obj_v = ctx_new_object(ctx);
     let obj = zjs_as_object(obj_v);
+    // Set proto from the matching global error constructor's prototype.
+    let ctor_slot = ctx_intern_global(ctx, type_name, type_len);
+    let ctor_v = ctx.globals[ctor_slot].value;
+    if zjs_is_host_function(ctor_v) != 0 {
+        let hf = zjs_as_host_function(ctor_v);
+        if hf.prototype == NULL {
+            let pv = ctx_new_object(ctx);
+            hf.prototype = zjs_as_object(pv);
+        }
+        obj.proto = hf.prototype;
+    }
     let name_atom = ctx_intern_atom(ctx, (char*)"name", 4);
     let msg_atom  = ctx_intern_atom(ctx, (char*)"message", 7);
     let name_val_str = ctx_intern_atom(ctx, type_name, type_len);
