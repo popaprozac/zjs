@@ -245,8 +245,18 @@ fn gc_mark_value(v: ZjsValue) -> void {
     h.mark = 1;
 
     let tag = h.type_tag;
-    if tag == TAG_STRING        { return; }     // leaf
-    if tag == TAG_HOST_FUNCTION { return; }     // leaf
+    if tag == TAG_STRING { return; }            // leaf
+
+    if tag == TAG_HOST_FUNCTION {
+        // Phase 3.6: host functions can carry a .prototype.
+        let hf: ZjsHostFunction* = NULL;
+        raw { hf = (ZjsHostFunction*)p; }
+        if hf.prototype != NULL {
+            let pv = zjs_cell_from_ptr((void*)hf.prototype);
+            gc_mark_value(pv);
+        }
+        return;
+    }
 
     if tag == TAG_OBJECT {
         let o: ZjsObject* = NULL;
@@ -260,6 +270,11 @@ fn gc_mark_value(v: ZjsValue) -> void {
         while i < live {
             gc_mark_value(o.slots[i]);
             i = i + 1;
+        }
+        // Phase 3.6: walk the proto chain so inherited values stay alive.
+        if o.proto != NULL {
+            let pv = zjs_cell_from_ptr((void*)o.proto);
+            gc_mark_value(pv);
         }
         return;
     }
@@ -315,6 +330,11 @@ fn gc_mark_value(v: ZjsValue) -> void {
             let c = f.ics[j].class_;
             if c != NULL { gc_mark_hidden_class(c); }
             j = j + 1;
+        }
+        // Phase 3.6: .prototype.
+        if f.prototype != NULL {
+            let pv = zjs_cell_from_ptr((void*)f.prototype);
+            gc_mark_value(pv);
         }
         return;
     }
@@ -884,6 +904,31 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
 // MethodInvoke.
 fn zjs_get_host_this(ctx: ZjsContext*) -> ZjsValue {
     return ctx.host_this;
+}
+
+// Object.create(proto) — fresh empty object whose [[Prototype]] is proto.
+// Phase 3.6.
+fn host_object_create(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let obj_v = ctx_new_object(ctx);
+    let obj = zjs_as_object(obj_v);
+    if argc > 0 {
+        let p = args[0];
+        if zjs_is_object(p) != 0 { obj.proto = zjs_as_object(p); }
+        // null/undefined proto → top-of-chain object (already NULL).
+    }
+    return obj_v;
+}
+
+// Object.getPrototypeOf(obj) — Phase 3.6.
+fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_null(); }
+    let v = args[0];
+    if zjs_is_object(v) != 0 {
+        let o = zjs_as_object(v);
+        if o.proto == NULL { return zjs_null(); }
+        return zjs_cell_from_ptr((void*)o.proto);
+    }
+    return zjs_null();
 }
 
 // Object.keys(obj) — array of own enumerable string keys, in insertion
@@ -1629,12 +1674,18 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let math_slot = ctx_intern_global(ctx, (char*)"Math", 4);
     ctx.globals[math_slot].value = math_v;
 
-    // --- Object namespace (Phase 3.5) ---
+    // --- Object namespace (Phase 3.5 + 3.6) ---
     let object_v = ctx_new_object(ctx);
     let object_o = zjs_as_object(object_v);
-    let keys_ptr: void* = NULL; raw { keys_ptr = (void*)host_object_keys; }
+    let keys_ptr:   void* = NULL; raw { keys_ptr   = (void*)host_object_keys; }
+    let create_ptr: void* = NULL; raw { create_ptr = (void*)host_object_create; }
+    let gpo_ptr:    void* = NULL; raw { gpo_ptr    = (void*)host_object_get_prototype_of; }
     object_set(ctx, object_o, ctx_intern_atom(ctx, (char*)"keys", 4),
                ctx_make_host_function(ctx, (char*)"keys", keys_ptr));
+    object_set(ctx, object_o, ctx_intern_atom(ctx, (char*)"create", 6),
+               ctx_make_host_function(ctx, (char*)"create", create_ptr));
+    object_set(ctx, object_o, ctx_intern_atom(ctx, (char*)"getPrototypeOf", 14),
+               ctx_make_host_function(ctx, (char*)"getPrototypeOf", gpo_ptr));
     let object_slot = ctx_intern_global(ctx, (char*)"Object", 6);
     ctx.globals[object_slot].value = object_v;
 

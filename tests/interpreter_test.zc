@@ -539,6 +539,30 @@ fn run_tests() -> void {
     // Nested
     check_int((char*)"for-of: nested",              (char*)r"let s=0; for (let a of [[1,2],[3,4]]) { for (let b of a) { s = s + b } }; s", 10);
 
+    // --- Prototype chain + instanceof + this (Phase 3.6) ------------
+    // Object.create + proto-chain property lookup
+    check_string((char*)"Object.create: inherits",  (char*)r"let p = {greet:'hi'}; let o = Object.create(p); o.greet", (char*)"hi");
+    check_int((char*)"Object.create: own + proto",  (char*)r"let p = {x:1}; let o = Object.create(p); o.y = 2; o.x + o.y", 3);
+    check_int((char*)"Object.getPrototypeOf",       (char*)r"let p = {x:1}; let o = Object.create(p); if (Object.getPrototypeOf(o) === p) 1; else 0", 1);
+    // `in` operator
+    check_int((char*)"in: own true",                (char*)r"let o = {a:1}; if ('a' in o) 1; else 0", 1);
+    check_int((char*)"in: own false",               (char*)r"let o = {a:1}; if ('b' in o) 1; else 0", 0);
+    check_int((char*)"in: proto-chain true",        (char*)r"let p = {x:1}; let o = Object.create(p); if ('x' in o) 1; else 0", 1);
+    check_int((char*)"in: array index",             (char*)r"if (0 in [1,2,3]) 1; else 0", 1);
+    check_int((char*)"in: array OOB",               (char*)r"if (5 in [1,2,3]) 1; else 0", 0);
+    check_int((char*)"in: array length",            (char*)r"if ('length' in [1,2,3]) 1; else 0", 1);
+    // Constructor pattern (new + this + prototype)
+    check_int((char*)"new: this.x = x",             (char*)r"function P(x){this.x=x} let p = new P(7); p.x", 7);
+    check_int((char*)"new: arity",                  (char*)r"function P(a,b){this.s=a+b} (new P(3,4)).s", 7);
+    check_int((char*)"new: ctor proto method",      (char*)r"function C(){this.n=0} C.prototype.inc=function(){this.n=this.n+1; return this.n}; let c = new C(); c.inc(); c.inc(); c.inc()", 3);
+    check_int((char*)"new: instanceof",             (char*)r"function F(){} if ((new F()) instanceof F) 1; else 0", 1);
+    check_int((char*)"new: cross-instanceof",       (char*)r"function A(){} function B(){} if ((new A()) instanceof B) 1; else 0", 0);
+    // this inside method calls (without new)
+    check_int((char*)"this: method on plain obj",   (char*)r"let o = {n:5, get_n:function(){return this.n}}; o.get_n()", 5);
+    check_int((char*)"this: shared proto method",   (char*)r"let p = {bump:function(){return this.x+1}}; let o = Object.create(p); o.x = 9; o.bump()", 10);
+    // Plain Function.prototype is a fresh object each time we touch it
+    check_int((char*)"Fn.prototype identity",       (char*)r"function F(){} if (F.prototype === F.prototype) 1; else 0", 1);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

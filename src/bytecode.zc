@@ -127,6 +127,25 @@ enum Op {
     LeaveTry,         // No operands. Pop the innermost try frame.
                       // Emitted at the normal end of a try block.
 
+    // Prototype chain + new (Phase 3.6).
+    //
+    // `In b in c` checks if regs[b] is a key of regs[c] (string key on
+    // an object; integer index on an array). Returns boolean.
+    //
+    // `Instanceof b instanceof c` checks regs[c].prototype is in
+    // regs[b]'s proto chain.
+    //
+    // `LoadThis` reads ctx.host_this (the implicit `this`).
+    //
+    // `NewInvoke` is like Invoke but:
+    //   - allocates a fresh object whose proto is callee.prototype
+    //   - calls callee with that object bound as `this`
+    //   - if callee returns an object, uses that; else uses the new obj
+    In,               // a=dst, b=key_reg, c=obj_reg
+    Instanceof,       // a=dst, b=val_reg, c=ctor_reg
+    LoadThis,         // a=dst
+    NewInvoke,        // a=dst, b=base, c=arg_count
+
     // Type introspection (Phase 3.1e).
     Typeof,           // a=dst, b=src.
                       // dst = a string from ECMA-262 §13.5.3
@@ -223,6 +242,10 @@ struct Function {
     // resolution.
     needs_env:      bool;
     env_reg:        u8;
+
+    // Phase 3.6: `.prototype` for instanceof + constructor-style use.
+    // Lazy — first read auto-creates an empty object.
+    prototype:      ZjsObject*;
 }
 
 fn function_new() -> Function* {

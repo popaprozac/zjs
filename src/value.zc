@@ -412,6 +412,10 @@ struct ZjsObject {
     cls:      ZjsHiddenClass*;
     slots:    ZjsValue*;         // heap-allocated, sized to slot_cap >= cls.prop_count
     slot_cap: u32;
+    // Prototype object (Phase 3.6). NULL = no proto / top of chain.
+    // Property lookups that miss the own-property table walk obj.proto
+    // recursively. Set by `new`, Object.create, or Object.setPrototypeOf.
+    proto:    ZjsObject*;
 }
 
 struct ZjsArray {
@@ -428,6 +432,9 @@ struct ZjsHostFunction {
     header: CellHeader;     // { type_tag = TAG_HOST_FUNCTION }
     fn_ptr: void*;          // ZjsValue (*)(ZjsContext*, ZjsValue*, uint32_t)
     name:   char*;          // for debugging — duplicated, owned
+    // Phase 3.6: `.prototype` for instanceof + constructor-style use.
+    // Lazy — first read auto-creates an empty object.
+    prototype: ZjsObject*;
 }
 
 // Closure: a function template paired with a captured environment.
@@ -532,6 +539,13 @@ fn zjs_as_array(v: ZjsValue) -> ZjsArray* {
     let a: ZjsArray* = NULL;
     raw { a = (ZjsArray*)p; }
     return a;
+}
+
+fn zjs_as_host_function(v: ZjsValue) -> ZjsHostFunction* {
+    let p = zjs_cell_as_ptr(v);
+    let h: ZjsHostFunction* = NULL;
+    raw { h = (ZjsHostFunction*)p; }
+    return h;
 }
 
 // --- String allocation ----------------------------------------------

@@ -79,15 +79,63 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
-    // Object: ToString key, linear lookup.
+    // Object: ToString key, linear lookup, then walk proto chain.
     if zjs_is_object(obj) != 0 {
         let o = zjs_as_object(obj);
         let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
-        return object_get(o, zjs_as_string(key_str_val));
+        let name = zjs_as_string(key_str_val);
+        let cur = o;
+        while cur != NULL {
+            let slot = class_find_slot(cur.cls, name);
+            if slot >= 0 { return cur.slots[(u32)slot]; }
+            cur = cur.proto;
+        }
+        return zjs_undefined();
     }
 
-    // Primitives: no property access in MVP. Real JS would auto-box;
-    // we just return undefined.
+    // Function: .prototype lazy-creates an object on first read.
+    if zjs_is_function(obj) != 0 {
+        if zjs_is_string(key) != 0 {
+            let ks = zjs_as_string(key);
+            let is_proto: int = 0;
+            let kd = ks.data;
+            let kn = ks.length;
+            raw { is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0; }
+            if is_proto != 0 {
+                let fp = zjs_cell_as_ptr(obj);
+                let f: Function* = NULL;
+                raw { f = (Function*)fp; }
+                if f.prototype == NULL {
+                    let proto_v = ctx_new_object(ctx);
+                    f.prototype = zjs_as_object(proto_v);
+                }
+                return zjs_cell_from_ptr((void*)f.prototype);
+            }
+        }
+        return zjs_undefined();
+    }
+
+    // Host function: same .prototype rule.
+    if zjs_is_host_function(obj) != 0 {
+        if zjs_is_string(key) != 0 {
+            let ks = zjs_as_string(key);
+            let is_proto: int = 0;
+            let kd = ks.data;
+            let kn = ks.length;
+            raw { is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0; }
+            if is_proto != 0 {
+                let hf = zjs_as_host_function(obj);
+                if hf.prototype == NULL {
+                    let proto_v = ctx_new_object(ctx);
+                    hf.prototype = zjs_as_object(proto_v);
+                }
+                return zjs_cell_from_ptr((void*)hf.prototype);
+            }
+        }
+        return zjs_undefined();
+    }
+
+    // Primitives: no property access in MVP.
     return zjs_undefined();
 }
 
@@ -108,6 +156,34 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         let o = zjs_as_object(obj);
         let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
         object_set(ctx, o, zjs_as_string(key_str_val), value);
+        return;
+    }
+    // Function.prototype = obj (Phase 3.6). Only the prototype slot is
+    // writable in MVP; other function properties are ignored.
+    if zjs_is_function(obj) != 0 && zjs_is_string(key) != 0 {
+        let ks = zjs_as_string(key);
+        let is_proto: int = 0;
+        let kd = ks.data;
+        let kn = ks.length;
+        raw { is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0; }
+        if is_proto != 0 && zjs_is_object(value) != 0 {
+            let fp = zjs_cell_as_ptr(obj);
+            let f: Function* = NULL;
+            raw { f = (Function*)fp; }
+            f.prototype = zjs_as_object(value);
+        }
+        return;
+    }
+    if zjs_is_host_function(obj) != 0 && zjs_is_string(key) != 0 {
+        let ks = zjs_as_string(key);
+        let is_proto: int = 0;
+        let kd = ks.data;
+        let kn = ks.length;
+        raw { is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0; }
+        if is_proto != 0 && zjs_is_object(value) != 0 {
+            let hf = zjs_as_host_function(obj);
+            hf.prototype = zjs_as_object(value);
+        }
         return;
     }
     // Primitives: silently ignored (real JS throws in strict mode).
@@ -368,6 +444,10 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             let base = inst.b;
             let argc = (u32)inst.c;
             let callee = regs[base];
+            // Plain call: this = undefined. Save & restore so a nested
+            // method call's receiver doesn't leak across.
+            let saved_this_plain = ctx.host_this;
+            ctx.host_this = zjs_undefined();
             if zjs_is_function(callee) != 0 {
                 let fp = zjs_cell_as_ptr(callee);
                 let target: Function* = NULL;
@@ -375,6 +455,7 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
                 let argv_ptr: ZjsValue* = NULL;
                 raw { argv_ptr = &regs[base + 1]; }
                 let r = interpret(ctx, target, argv_ptr, argc);
+                ctx.host_this = saved_this_plain;
                 if r.is_throw {
                     throwing = true;
                     thrown = r.value;
@@ -395,6 +476,7 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
                 ctx.current_closure = cl;
                 let r2 = interpret(ctx, target2, argv_ptr2, argc);
                 ctx.current_closure = saved_cl;
+                ctx.host_this = saved_this_plain;
                 if r2.is_throw {
                     throwing = true;
                     thrown = r2.value;
@@ -406,21 +488,18 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
                 let argv_ptr: ZjsValue* = NULL;
                 raw { argv_ptr = &regs[base + 1]; }
                 let r: ZjsValue = zjs_undefined();
-                // Plain call — no receiver. Clear ctx.host_this so a host
-                // function can't observe a stale `this` from an outer
-                // method-call frame.
-                let saved_this = ctx.host_this;
-                ctx.host_this = zjs_undefined();
+                // ctx.host_this was already cleared above for the plain
+                // Invoke path; restore once after the call.
                 raw {
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
                     typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
                     HostFn fp = (HostFn)hf->fn_ptr;
                     r = fp(ctx, argv_ptr, argc);
                 }
-                ctx.host_this = saved_this;
+                ctx.host_this = saved_this_plain;
                 regs[dst] = r;
             } else {
-                // Not callable — TypeError in real JS; MVP returns undefined.
+                ctx.host_this = saved_this_plain;
                 regs[dst] = zjs_undefined();
             }
         } else if op == Op::Typeof {
@@ -566,6 +645,149 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             regs[inst.a] = property_get(ctx, regs[inst.b], regs[inst.c]);
         } else if op == Op::StoreElem {
             property_set(ctx, regs[inst.a], regs[inst.b], regs[inst.c]);
+        } else if op == Op::LoadThis {
+            regs[inst.a] = ctx.host_this;
+        } else if op == Op::In {
+            // key in obj — own property OR proto-chain hit OR builtin
+            // intercept (length, array/string proto methods).
+            let key = regs[inst.b];
+            let obj = regs[inst.c];
+            let present: int = 0;
+            if zjs_is_array(obj) != 0 {
+                let a = zjs_as_array(obj);
+                let idx = zjs_to_array_index(key);
+                if idx >= 0 && (u32)idx < a.length {
+                    present = 1;
+                } else if zjs_is_string(key) != 0 {
+                    // Falls back through length / array_proto.
+                    let pv = property_get(ctx, obj, key);
+                    if zjs_is_undefined(pv) == 0 { present = 1; }
+                }
+            } else if zjs_is_object(obj) != 0 {
+                let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+                let name = zjs_as_string(key_str_val);
+                let cur = zjs_as_object(obj);
+                while cur != NULL {
+                    if class_find_slot(cur.cls, name) >= 0 { present = 1; cur = NULL; }
+                    else { cur = cur.proto; }
+                }
+            }
+            regs[inst.a] = zjs_bool(present);
+        } else if op == Op::Instanceof {
+            // val instanceof ctor — ctor.prototype must be in val's chain.
+            let val = regs[inst.b];
+            let ctor = regs[inst.c];
+            let proto_obj: ZjsObject* = NULL;
+            if zjs_is_function(ctor) != 0 {
+                let fp = zjs_cell_as_ptr(ctor);
+                let f: Function* = NULL;
+                raw { f = (Function*)fp; }
+                proto_obj = f.prototype;
+            } else if zjs_is_host_function(ctor) != 0 {
+                proto_obj = zjs_as_host_function(ctor).prototype;
+            }
+            let result: int = 0;
+            if proto_obj != NULL && zjs_is_object(val) != 0 {
+                let cur = zjs_as_object(val).proto;
+                while cur != NULL {
+                    if cur == proto_obj { result = 1; cur = NULL; }
+                    else                { cur = cur.proto; }
+                }
+            }
+            regs[inst.a] = zjs_bool(result);
+        } else if op == Op::NewInvoke {
+            // new Ctor(args): allocate {} with proto = Ctor.prototype,
+            // bind `this` to it, call. If callee returns an object,
+            // use that; otherwise use the new object.
+            let dst = inst.a;
+            let base = inst.b;
+            let argc = (u32)inst.c;
+            let callee = regs[base];
+
+            // Lazy-create the constructor's .prototype as we did in
+            // property_get, so even a never-touched ctor.prototype is
+            // a real object after `new` runs.
+            let proto_obj: ZjsObject* = NULL;
+            if zjs_is_function(callee) != 0 {
+                let fp = zjs_cell_as_ptr(callee);
+                let f: Function* = NULL;
+                raw { f = (Function*)fp; }
+                if f.prototype == NULL {
+                    let pv = ctx_new_object(ctx);
+                    f.prototype = zjs_as_object(pv);
+                }
+                proto_obj = f.prototype;
+            } else if zjs_is_closure(callee) != 0 {
+                let cl = zjs_as_closure(callee);
+                let fp2 = cl.function;
+                let f: Function* = NULL;
+                raw { f = (Function*)fp2; }
+                if f.prototype == NULL {
+                    let pv = ctx_new_object(ctx);
+                    f.prototype = zjs_as_object(pv);
+                }
+                proto_obj = f.prototype;
+            } else if zjs_is_host_function(callee) != 0 {
+                let hf = zjs_as_host_function(callee);
+                if hf.prototype == NULL {
+                    let pv = ctx_new_object(ctx);
+                    hf.prototype = zjs_as_object(pv);
+                }
+                proto_obj = hf.prototype;
+            }
+
+            let new_obj_v = ctx_new_object(ctx);
+            let new_obj = zjs_as_object(new_obj_v);
+            new_obj.proto = proto_obj;
+
+            let saved_this = ctx.host_this;
+            ctx.host_this = new_obj_v;
+
+            let call_result: ZjsValue = zjs_undefined();
+            let did_throw: bool = false;
+            if zjs_is_function(callee) != 0 {
+                let fp = zjs_cell_as_ptr(callee);
+                let target: Function* = NULL;
+                raw { target = (Function*)fp; }
+                let argv_ptr: ZjsValue* = NULL;
+                raw { argv_ptr = &regs[base + 1]; }
+                let r = interpret(ctx, target, argv_ptr, argc);
+                if r.is_throw { did_throw = true; call_result = r.value; }
+                else          { call_result = r.value; }
+            } else if zjs_is_closure(callee) != 0 {
+                let cl = zjs_as_closure(callee);
+                let fp2 = cl.function;
+                let target2: Function* = NULL;
+                raw { target2 = (Function*)fp2; }
+                let argv_ptr2: ZjsValue* = NULL;
+                raw { argv_ptr2 = &regs[base + 1]; }
+                let saved_cl = ctx.current_closure;
+                ctx.current_closure = cl;
+                let r2 = interpret(ctx, target2, argv_ptr2, argc);
+                ctx.current_closure = saved_cl;
+                if r2.is_throw { did_throw = true; call_result = r2.value; }
+                else           { call_result = r2.value; }
+            } else if zjs_is_host_function(callee) != 0 {
+                let hf_ptr = zjs_cell_as_ptr(callee);
+                let argv_ptr: ZjsValue* = NULL;
+                raw { argv_ptr = &regs[base + 1]; }
+                raw {
+                    ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
+                    typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
+                    HostFn fp = (HostFn)hf->fn_ptr;
+                    call_result = fp(ctx, argv_ptr, argc);
+                }
+            }
+            ctx.host_this = saved_this;
+            if did_throw {
+                throwing = true; thrown = call_result; continue;
+            }
+            // Use callee's return if it returned an object; else the new one.
+            if zjs_is_object(call_result) != 0 || zjs_is_array(call_result) != 0 {
+                regs[dst] = call_result;
+            } else {
+                regs[dst] = new_obj_v;
+            }
         } else if op == Op::IterPrepare {
             regs[inst.a] = iter_prepare(ctx, regs[inst.b], (u32)inst.c);
         } else if op == Op::ArrayLength {

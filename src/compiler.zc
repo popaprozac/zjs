@@ -356,11 +356,33 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         return compile_call(c, node);
     }
     if k == NodeKind::New {
-        // MVP: `new Foo(args)` compiles the same as a regular call.
-        // Without a prototype chain there's no semantic difference
-        // from the user's point of view yet — host constructors
-        // (like Error) return objects directly.
-        return compile_call(c, node);
+        // `new Foo(args)`: reserve a contiguous slot for callee + args,
+        // then emit Op::NewInvoke (sets up { proto, this } and calls).
+        let arg_count: u8 = (u8)node.children_count;
+        let base = c.next_reg;
+        let i: u8 = 0;
+        while i <= arg_count { alloc_reg(c); i = i + 1; }
+        // Callee — may be a Member (e.g. `new x.y()`); compile_expr
+        // handles both shapes.
+        let r = compile_expr(c, node.left);
+        if r != base {
+            emit(c, make_inst_ab(Op::Mov, base, r));
+            if r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        }
+        let j: u8 = 0;
+        while j < arg_count {
+            let arg_r = compile_expr(c, node.children[j]);
+            let target = base + 1 + j;
+            if arg_r != target {
+                emit(c, make_inst_ab(Op::Mov, target, arg_r));
+                if arg_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+            j = j + 1;
+        }
+        emit(c, make_inst_abc(Op::NewInvoke, base, base, arg_count));
+        c.next_reg = base + 1;
+        if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+        return base;
     }
     if k == NodeKind::Member {
         return compile_member(c, node);
@@ -426,6 +448,19 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         return src;
     }
     if k == NodeKind::Binary {
+        // Special-case `in` and `instanceof` — they're keyword tokens, not
+        // arithmetic ops, but the parser routes them through Binary.
+        if node.op == TokenKind::KwIn || node.op == TokenKind::KwInstanceof {
+            let l = compile_expr(c, node.left);
+            let r = compile_expr(c, node.right);
+            let dst = alloc_reg(c);
+            let op_ = if node.op == TokenKind::KwIn { Op::In } else { Op::Instanceof };
+            emit(c, make_inst_abc(op_, dst, l, r));
+            release_reg(c, r);
+            release_reg(c, l);
+            if c.next_reg <= dst { c.next_reg = dst + 1; }
+            return dst;
+        }
         let op_kind = binary_op(node.op);
         if op_kind == Op::Halt {
             c.had_error = true;
@@ -440,6 +475,11 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         release_reg(c, l);
         // dst was just allocated above release calls; bump back up to it.
         if c.next_reg <= dst { c.next_reg = dst + 1; }
+        return dst;
+    }
+    if k == NodeKind::ThisExpr {
+        let dst = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadThis, dst));
         return dst;
     }
     if k == NodeKind::Logical {
