@@ -217,11 +217,21 @@ fn make_inst_i16(op: Op, v: i32) -> Inst {
 // Inline-cache entry. Allocated per LoadProp/StoreProp site at
 // compile time; `class_` starts NULL (uninitialized) and gets patched
 // on the first execution of the site.
+//
+// Phase 3.8: also tracks miss frequency. A site that's seen too many
+// conflicting shapes (`miss_count >= IC_MEGAMORPHIC_LIMIT`) gets the
+// `megamorphic` flag set — the fast-path stops trying to patch it and
+// every access slow-paths directly. Without this, alternating-shape
+// access patterns waste cycles re-patching the slot every call.
 struct ICEntry {
-    name:   ZjsString*;        // atom; set at compile time, immutable
-    class_: ZjsHiddenClass*;   // last-seen class; NULL = cold
-    slot:   u32;               // slot index in that class
+    name:        ZjsString*;        // atom; set at compile time, immutable
+    class_:      ZjsHiddenClass*;   // last-seen class; NULL = cold or megamorphic (weak ref — see gc_nullify_dead_ics)
+    slot:        u32;               // slot index in that class
+    miss_count:  u8;                // count of slow-path conflicts (saturates)
+    megamorphic: bool;              // once set, fast-path is skipped permanently
 }
+
+def IC_MEGAMORPHIC_LIMIT: u8 = 8;
 
 struct Function {
     header:         CellHeader; // { type_tag = TAG_FUNCTION } — must be first field

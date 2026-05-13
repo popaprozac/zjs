@@ -651,13 +651,31 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             if !took_fast {
                 let key_val = zjs_cell_from_ptr((void*)ic_name);
                 regs[dst] = property_get(ctx, obj_val, key_val);
-                // Patch the IC if obj is now an object that has the prop.
-                if zjs_is_object(obj_val) != 0 {
+                // Patch the IC if obj is now an object that has the prop —
+                // unless the slot has gone megamorphic, in which case we
+                // never patch (and never fast-path) again.
+                if zjs_is_object(obj_val) != 0 && !f.ics[ic_slot].megamorphic {
                     let o = zjs_as_object(obj_val);
                     let s = class_find_slot(o.cls, ic_name);
                     if s >= 0 {
-                        f.ics[ic_slot].class_ = o.cls;
-                        f.ics[ic_slot].slot = (u32)s;
+                        // Real shape conflict (previously seen a different,
+                        // non-NULL class)? Bump the miss counter; flip to
+                        // megamorphic once the threshold is crossed.
+                        if ic_class != NULL && ic_class != o.cls {
+                            let mc = f.ics[ic_slot].miss_count;
+                            if mc < 255 { f.ics[ic_slot].miss_count = mc + 1; }
+                            if f.ics[ic_slot].miss_count >= IC_MEGAMORPHIC_LIMIT {
+                                f.ics[ic_slot].megamorphic = true;
+                                f.ics[ic_slot].class_ = NULL;
+                                f.ics[ic_slot].slot = 0;
+                            } else {
+                                f.ics[ic_slot].class_ = o.cls;
+                                f.ics[ic_slot].slot = (u32)s;
+                            }
+                        } else {
+                            f.ics[ic_slot].class_ = o.cls;
+                            f.ics[ic_slot].slot = (u32)s;
+                        }
                     }
                 }
             }
@@ -684,13 +702,26 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             if !took_fast {
                 let key_val = zjs_cell_from_ptr((void*)ic_name);
                 property_set(ctx, obj_val, key_val, value);
-                // Patch the IC against the (possibly transitioned) class.
-                if zjs_is_object(obj_val) != 0 {
+                // Patch unless megamorphic. Same miss-tracking logic as LoadProp.
+                if zjs_is_object(obj_val) != 0 && !f.ics[ic_slot].megamorphic {
                     let o = zjs_as_object(obj_val);
                     let s = class_find_slot(o.cls, ic_name);
                     if s >= 0 {
-                        f.ics[ic_slot].class_ = o.cls;
-                        f.ics[ic_slot].slot = (u32)s;
+                        if ic_class != NULL && ic_class != o.cls {
+                            let mc = f.ics[ic_slot].miss_count;
+                            if mc < 255 { f.ics[ic_slot].miss_count = mc + 1; }
+                            if f.ics[ic_slot].miss_count >= IC_MEGAMORPHIC_LIMIT {
+                                f.ics[ic_slot].megamorphic = true;
+                                f.ics[ic_slot].class_ = NULL;
+                                f.ics[ic_slot].slot = 0;
+                            } else {
+                                f.ics[ic_slot].class_ = o.cls;
+                                f.ics[ic_slot].slot = (u32)s;
+                            }
+                        } else {
+                            f.ics[ic_slot].class_ = o.cls;
+                            f.ics[ic_slot].slot = (u32)s;
+                        }
                     }
                 }
             }
