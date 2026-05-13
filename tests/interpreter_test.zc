@@ -563,6 +563,22 @@ fn run_tests() -> void {
     // Plain Function.prototype is a fresh object each time we touch it
     check_int((char*)"Fn.prototype identity",       (char*)r"function F(){} if (F.prototype === F.prototype) 1; else 0", 1);
 
+    // --- Classes (Phase 3.7) ---------------------------------------
+    // Basic shape: constructor + method, this binding through both
+    check_int((char*)"class: ctor + method",       (char*)r"class C { constructor() { this.n = 0 } inc() { this.n = this.n + 1; return this.n } } let c = new C(); c.inc(); c.inc(); c.inc()", 3);
+    check_int((char*)"class: ctor args",           (char*)r"class B { constructor(v) { this.value = v } get() { return this.value } } new B(42).get()", 42);
+    check_int((char*)"class: instanceof",          (char*)r"class P {} let p = new P(); if (p instanceof P) 1; else 0", 1);
+    check_int((char*)"class: methodOn(this)",      (char*)r"class A { constructor(b) { this.base = b } add(x) { return this.base + x } } let a = new A(10); a.add(5) + a.add(20)", 45);
+    // Empty class — implicit constructor
+    check_int((char*)"class: implicit ctor",       (char*)r"class E {} let e = new E(); if (e instanceof E) 1; else 0", 1);
+    // ClassExpr in expression context
+    check_int((char*)"class expr: anon",           (char*)r"let C = class { foo() { return 7 } }; new C().foo()", 7);
+    check_int((char*)"class expr: named",          (char*)r"let C = class Named { val() { return 9 } }; new C().val()", 9);
+    // Method on prototype shared across instances
+    check_int((char*)"class: shared proto",        (char*)r"class S { v() { return 11 } } let a = new S(); let b = new S(); a.v() + b.v()", 22);
+    // Two methods, two instances, separate this state
+    check_int((char*)"class: distinct this",       (char*)r"class C { constructor() { this.n = 0 } bump() { this.n = this.n + 1; return this.n } } let x = new C(); let y = new C(); x.bump(); x.bump(); y.bump(); x.bump() + y.bump()", 5);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

@@ -78,6 +78,15 @@ enum NodeKind {
     ThrowStmt,              // left = thrown value expression
     TryStmt,                // left = try-block, right = catch-block,
                             // name_start/length = catch param name (0 if absent)
+
+    // Classes (Phase 3.7)
+    ClassDecl,              // name_start/length = class name, children = MethodDefs
+                            // (the constructor, if any, is one of the children
+                            // — distinguished by its method name being "constructor")
+    ClassExpr,              // same shape as ClassDecl but used in expression position
+    MethodDef,              // name_start/length = method name, children = params,
+                            // left = body (BlockStmt), op = TokenKind::Eq sentinel.
+                            // (No static / getter / setter distinction in MVP.)
 }
 
 struct AstNode {

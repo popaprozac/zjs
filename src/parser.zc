@@ -173,6 +173,7 @@ fn parse_statement(p: Parser*) -> AstNode* {
     if k == TokenKind::KwLet       { return parse_var_decl(p, true); }
     if k == TokenKind::KwConst     { return parse_var_decl(p, true); }
     if k == TokenKind::KwFunction  { return parse_function_decl(p); }
+    if k == TokenKind::KwClass     { return parse_class_decl(p); }
     if k == TokenKind::KwIf        { return parse_if(p); }
     if k == TokenKind::KwReturn    { return parse_return(p); }
     if k == TokenKind::KwWhile     { return parse_while(p); }
@@ -596,6 +597,101 @@ fn parse_function_decl(p: Parser*) -> AstNode* {
     node.left = body;
     node.children = params.arr;
     node.children_count = params.count;
+    return node;
+}
+
+// --- Classes (Phase 3.7) -------------------------------------------
+//
+// Grammar (MVP, no extends / static / get / set):
+//     class X { method() {} otherMethod(a, b) {} constructor(...) {} }
+// `constructor` and other methods share the MethodDef shape. The
+// compiler distinguishes the constructor by name.
+
+fn parse_method_body_pair(p: Parser*) -> AstNode* {
+    let name_tok = peek(p);
+    if name_tok.kind != TokenKind::Identifier { p.had_error = true; return NULL; }
+    advance(p);
+
+    if !expect_kind(p, TokenKind::LParen) { return NULL; }
+    let params = parse_param_list(p);
+    if !expect_kind(p, TokenKind::RParen) { return NULL; }
+
+    if peek_kind(p) != TokenKind::LBrace { p.had_error = true; return NULL; }
+    let body = parse_block(p);
+    if body == NULL { return NULL; }
+
+    let node = new_node(&p.tracker, NodeKind::MethodDef, name_tok.start, body.end);
+    node.name_start  = name_tok.start;
+    node.name_length = name_tok.length;
+    node.left = body;
+    node.children = params.arr;
+    node.children_count = params.count;
+    return node;
+}
+
+fn parse_class_body(p: Parser*) -> ParamList {
+    if !expect_kind(p, TokenKind::LBrace) {
+        return ParamList{ arr: NULL, count: 0 };
+    }
+    let cap: u32 = 4;
+    let count: u32 = 0;
+    let buf: AstNode** = NULL;
+    raw { buf = (AstNode**)calloc(cap, sizeof(AstNode*)); }
+
+    while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
+        // Skip empty `;` separators (allowed inside class bodies).
+        if peek_kind(p) == TokenKind::Semicolon { advance(p); continue; }
+        let m = parse_method_body_pair(p);
+        if m == NULL { p.had_error = true; break; }
+        if count >= cap {
+            cap = cap * 2;
+            let old = buf;
+            raw { buf = (AstNode**)realloc(old, cap * sizeof(AstNode*)); }
+        }
+        buf[count] = m;
+        count = count + 1;
+    }
+    expect_kind(p, TokenKind::RBrace);
+
+    if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
+    else         { raw { free(buf); } buf = NULL; }
+    return ParamList{ arr: buf, count: count };
+}
+
+fn parse_class_decl(p: Parser*) -> AstNode* {
+    let kw = advance(p);   // 'class'
+    let name_tok = peek(p);
+    if name_tok.kind != TokenKind::Identifier { p.had_error = true; return NULL; }
+    advance(p);
+
+    let body = parse_class_body(p);
+    let end_pos = if body.count > 0 { body.arr[body.count - 1].end } else { peek(p).start };
+
+    let node = new_node(&p.tracker, NodeKind::ClassDecl, kw.start, end_pos);
+    node.name_start  = name_tok.start;
+    node.name_length = name_tok.length;
+    node.children = body.arr;
+    node.children_count = body.count;
+    return node;
+}
+
+fn parse_class_expr(p: Parser*) -> AstNode* {
+    let kw = advance(p);   // 'class'
+    let name_start: u32 = 0;
+    let name_length: u32 = 0;
+    if peek_kind(p) == TokenKind::Identifier {
+        let nt = advance(p);
+        name_start  = nt.start;
+        name_length = nt.length;
+    }
+    let body = parse_class_body(p);
+    let end_pos = if body.count > 0 { body.arr[body.count - 1].end } else { peek(p).start };
+
+    let node = new_node(&p.tracker, NodeKind::ClassExpr, kw.start, end_pos);
+    node.name_start  = name_start;
+    node.name_length = name_length;
+    node.children = body.arr;
+    node.children_count = body.count;
     return node;
 }
 
@@ -1230,6 +1326,7 @@ fn parse_primary(p: Parser*) -> AstNode* {
     let k = t.kind;
 
     if k == TokenKind::KwFunction { return parse_function_expr(p); }
+    if k == TokenKind::KwClass    { return parse_class_expr(p); }
 
     if k == TokenKind::NumberLit {
         advance(p);

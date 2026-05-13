@@ -482,6 +482,9 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         emit(c, make_inst_a(Op::LoadThis, dst));
         return dst;
     }
+    if k == NodeKind::ClassExpr {
+        return compile_class_value(c, node);
+    }
     if k == NodeKind::Logical {
         return compile_logical(c, node);
     }
@@ -1108,6 +1111,119 @@ fn inner_has_captures_from(c: Compiler*) -> bool {
     return false;
 }
 
+// Class compilation (Phase 3.7) — desugar to:
+//   function Class(<ctor params>) { <ctor body> }
+//   Class.prototype.m1 = function(<params>) { <body> };
+//   ...
+//
+// `cls_node` is a ClassDecl or ClassExpr. Returns the register holding
+// the resulting constructor function value. Caller decides what to do
+// with it (bind to a local / global for ClassDecl, return as expression
+// value for ClassExpr).
+fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
+    // Find the constructor MethodDef among the children.
+    let ctor_node: AstNode* = NULL;
+    let i: u32 = 0;
+    while i < cls_node.children_count {
+        let m = cls_node.children[i];
+        let mn = c.source + m.name_start;
+        let ml = m.name_length;
+        let is_ctor: int = 0;
+        raw { is_ctor = (ml == 11 && memcmp(mn, "constructor", 11) == 0) ? 1 : 0; }
+        if is_ctor != 0 { ctor_node = m; }
+        i = i + 1;
+    }
+
+    // Compile the constructor function. MethodDef shares the FunctionExpr
+    // shape (children=params, left=body, name=name) so compile_function
+    // accepts it directly. If absent, synthesize an empty node.
+    let ctor_fn: Function* = NULL;
+    if ctor_node != NULL {
+        ctor_fn = compile_function(c.ctx, c.source, ctor_node, c);
+    } else {
+        let empty: AstNode;
+        raw { memset((void*)&empty, 0, sizeof(AstNode)); }
+        empty.kind = NodeKind::FunctionExpr;
+        empty.name_start  = cls_node.name_start;
+        empty.name_length = cls_node.name_length;
+        empty.left = NULL;
+        empty.children = NULL;
+        empty.children_count = 0;
+        let empty_ptr: AstNode* = NULL;
+        raw { empty_ptr = &empty; }
+        ctor_fn = compile_function(c.ctx, c.source, empty_ptr, c);
+    }
+    if ctor_fn == NULL { c.had_error = true; return alloc_reg(c); }
+
+    let ctor_ptr: void* = NULL;
+    raw { ctor_ptr = (void*)ctor_fn; }
+    ctx_register_cell(c.ctx, ctor_ptr);
+    let ctor_val = zjs_cell_from_ptr(ctor_ptr);
+    let ctor_idx = add_const(c, ctor_val);
+    let ctor_reg = alloc_reg(c);
+    emit(c, make_inst_a_u16(Op::LoadConst, ctor_reg, ctor_idx));
+
+    // Closure wrap if the inner captures from us (matches FunctionDecl).
+    if ctor_fn.needs_env || inner_has_captures_from(c) {
+        let cls_reg = alloc_reg(c);
+        let env_reg: u8 = 0;
+        if c.needs_env { env_reg = c.env_reg; }
+        emit(c, make_inst_abc(Op::MakeClosure, cls_reg, ctor_reg, env_reg));
+        release_reg(c, ctor_reg);
+        ctor_reg = cls_reg;
+    }
+
+    // Load `<ctor>.prototype` into a register once for all methods.
+    let proto_atom = ctx_intern_atom(c.ctx, (char*)"prototype", 9);
+    let proto_ic = alloc_ic_slot(c, proto_atom);
+    let proto_reg = alloc_reg(c);
+    if proto_ic > 255 {
+        c.had_error = true; return ctor_reg;
+    }
+    emit(c, make_inst_abc(Op::LoadProp, proto_reg, ctor_reg, (u8)proto_ic));
+
+    // Attach each non-constructor method onto the prototype.
+    let mi: u32 = 0;
+    while mi < cls_node.children_count {
+        let m = cls_node.children[mi];
+        let mn = c.source + m.name_start;
+        let ml = m.name_length;
+        let is_ctor: int = 0;
+        raw { is_ctor = (ml == 11 && memcmp(mn, "constructor", 11) == 0) ? 1 : 0; }
+        if is_ctor == 0 {
+            // Compile method body as a function.
+            let mfn = compile_function(c.ctx, c.source, m, c);
+            if mfn != NULL {
+                let mptr: void* = NULL;
+                raw { mptr = (void*)mfn; }
+                ctx_register_cell(c.ctx, mptr);
+                let mval = zjs_cell_from_ptr(mptr);
+                let midx = add_const(c, mval);
+                let mreg = alloc_reg(c);
+                emit(c, make_inst_a_u16(Op::LoadConst, mreg, midx));
+                if mfn.needs_env || inner_has_captures_from(c) {
+                    let mcls = alloc_reg(c);
+                    let env_reg2: u8 = 0;
+                    if c.needs_env { env_reg2 = c.env_reg; }
+                    emit(c, make_inst_abc(Op::MakeClosure, mcls, mreg, env_reg2));
+                    release_reg(c, mreg);
+                    mreg = mcls;
+                }
+                let m_atom = ctx_intern_atom(c.ctx, mn, ml);
+                let m_ic = alloc_ic_slot(c, m_atom);
+                if m_ic <= 255 {
+                    emit(c, make_inst_abc(Op::StoreProp, proto_reg, (u8)m_ic, mreg));
+                }
+                release_reg(c, mreg);
+            }
+        }
+        mi = mi + 1;
+    }
+
+    release_reg(c, proto_reg);
+    return ctor_reg;
+}
+
 fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
     let callee = node.left;
     let is_method = callee != NULL && (callee.kind == NodeKind::Member || callee.kind == NodeKind::Computed);
@@ -1346,6 +1462,17 @@ fn analyze_captures(c: Compiler*, node: AstNode*) -> void {
         }
         return;
     }
+    if k == NodeKind::ClassDecl || k == NodeKind::ClassExpr {
+        // Each MethodDef child is its own nested function. Scan their
+        // bodies for outer-name refs.
+        let i: u32 = 0;
+        while i < node.children_count {
+            let m = node.children[i];
+            if m.left != NULL { scan_inner_for_captures(c, m, m.left); }
+            i = i + 1;
+        }
+        return;
+    }
 
     if node.left  != NULL { analyze_captures(c, node.left); }
     if node.right != NULL { analyze_captures(c, node.right); }
@@ -1375,6 +1502,16 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
     }
     if k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
         // Anonymous expression forms have no binding to register.
+        return;
+    }
+    if k == NodeKind::ClassDecl {
+        if c.is_function {
+            let reg = alloc_reg(c);
+            add_local(c, node.name_start, node.name_length, reg);
+        }
+        return;
+    }
+    if k == NodeKind::ClassExpr {
         return;
     }
 
@@ -1472,6 +1609,27 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             }
             i = i + 1;
         }
+        reset_temps(c);
+        return;
+    }
+    if k == NodeKind::ClassDecl {
+        let r = compile_class_value(c, node);
+        if c.is_function {
+            let lidx = find_local_index(c, c.source + node.name_start, node.name_length);
+            if lidx >= 0 {
+                if c.locals[(u32)lidx].captured {
+                    let n_atom = ctx_intern_atom(c.ctx, c.source + node.name_start, node.name_length);
+                    let ic = alloc_ic_slot(c, n_atom);
+                    emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, r));
+                } else {
+                    emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, r));
+                }
+            }
+        } else {
+            let slot = ctx_intern_global(c.ctx, c.source + node.name_start, node.name_length);
+            emit(c, make_inst_a_u16(Op::DefineGlobal, r, (u16)slot));
+        }
+        release_reg(c, r);
         reset_temps(c);
         return;
     }
