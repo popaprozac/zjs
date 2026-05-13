@@ -75,6 +75,13 @@ enum Op {
     LoadProp,         // a=dst, b=obj_reg, c=ic_slot (u8)
     StoreProp,        // a=obj_reg, b=ic_slot (u8), c=val_reg
 
+    // Closures (Phase 3.3).
+    MakeClosure,      // a=dst, b=fn_reg, c=env_reg
+                      //   wraps regs[b] (a function value) with regs[c] (an env object)
+                      //   into a fresh closure cell.
+    LoadEnv,          // a=dst
+                      //   dst = current closure's env (or undefined if no closure).
+
     // Heap-cell creation + access (Phase 3.1b).
     NewObject,        // a=dst. Creates an empty {} object.
     NewArray,         // a=dst, b=base, c=count.
@@ -185,6 +192,14 @@ struct Function {
     // Inline-cache table for LoadProp / StoreProp (Phase 3.2b).
     ics:            ICEntry*;
     ic_count:       u32;
+
+    // Closures (Phase 3.3). `needs_env` means this function should
+    // allocate an env object at entry — it has nested functions that
+    // capture its locals. `env_reg` is where that env lives. The
+    // captured-names list drives the inner function's outer-name
+    // resolution.
+    needs_env:      bool;
+    env_reg:        u8;
 }
 
 fn function_new() -> Function* {

@@ -54,6 +54,10 @@ struct ZjsContext {
     had_error:      bool;
     last_error:     ZjsValue;
 
+    // Currently-executing closure (Phase 3.3). Push/pop'd by Invoke;
+    // LoadEnv reads ctx.current_closure.env.
+    current_closure: ZjsClosure*;
+
     // --- GC state ---
     root_frames:    GcRootFrame*;     // grown geometrically
     root_depth:     u32;              // # of active interpret() frames
@@ -129,6 +133,8 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
             host_function_free_void(cp);
         } else if tag == TAG_HIDDEN_CLASS {
             hidden_class_free_void(cp);
+        } else if tag == TAG_CLOSURE {
+            closure_free_void(cp);
         }
         j = j + 1;
     }
@@ -216,6 +222,23 @@ fn gc_mark_value(v: ZjsValue) -> void {
         return;
     }
 
+    if tag == TAG_CLOSURE {
+        let cl: ZjsClosure* = NULL;
+        raw { cl = (ZjsClosure*)p; }
+        // Mark the function template — wraps a Function* cell.
+        if cl.function != NULL {
+            let fn_val = zjs_cell_from_ptr(cl.function);
+            gc_mark_value(fn_val);
+        }
+        // Mark the captured env object — walks its slots transitively
+        // (each captured local is reachable through env).
+        if cl.env != NULL {
+            let env_val = zjs_cell_from_ptr((void*)cl.env);
+            gc_mark_value(env_val);
+        }
+        return;
+    }
+
     if tag == TAG_ARRAY {
         let a: ZjsArray* = NULL;
         raw { a = (ZjsArray*)p; }
@@ -267,6 +290,12 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     // Root empty class
     if ctx.empty_class != NULL {
         gc_mark_hidden_class(ctx.empty_class);
+    }
+    // Current closure — its env must survive the GC even if it isn't
+    // otherwise reachable (e.g., a closure mid-call with no caller-side ref).
+    if ctx.current_closure != NULL {
+        let cur_val = zjs_cell_from_ptr((void*)ctx.current_closure);
+        gc_mark_value(cur_val);
     }
     // Globals
     let i: u32 = 0;

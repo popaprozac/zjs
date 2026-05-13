@@ -20,6 +20,7 @@ struct Local {
     name_start:  u32;
     name_length: u32;
     reg:         u8;
+    captured:    bool;       // true if a nested function captures this local
 }
 
 struct Compiler {
@@ -48,6 +49,18 @@ struct Compiler {
     local_count:   u32;
     local_cap:     u32;
     is_function:   bool;
+
+    // Closure support (Phase 3.3). `parent` points to the enclosing
+    // function's compiler — NULL for the top-level program. The
+    // capture pre-scan flips `needs_env` on if any nested function
+    // references this function's locals.
+    parent:        Compiler*;
+    needs_env:     bool;
+    env_reg:       u8;
+    // `has_outer_refs` is set on the inner compiler whenever its body
+    // references a name resolved in a parent scope. Drives whether
+    // the outer needs to wrap the resulting function in MakeClosure.
+    has_outer_refs: bool;
 
     // result tracking — the register holding the last evaluated
     // expression-statement value (so we can emit Return at the end).
@@ -125,8 +138,30 @@ fn add_local(c: Compiler*, name_start: u32, name_length: u32, reg: u8) -> void {
         name_start:  name_start,
         name_length: name_length,
         reg:         reg,
+        captured:    false,
     };
     c.local_count = c.local_count + 1;
+}
+
+// Returns the index in c.locals (so callers can flip the captured flag).
+// -1 if not found.
+fn find_local_index(c: Compiler*, name: char*, name_len: u32) -> i32 {
+    let i: u32 = 0;
+    while i < c.local_count {
+        if c.locals[i].name_length == name_len {
+            let local_name = c.source + c.locals[i].name_start;
+            let eq: int = 0;
+            raw { eq = (memcmp(local_name, name, name_len) == 0) ? 1 : 0; }
+            if eq != 0 { return (i32)i; }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn local_is_captured_index(c: Compiler*, idx: i32) -> bool {
+    if idx < 0 { return false; }
+    return c.locals[(u32)idx].captured;
 }
 
 // Returns the local's register, or -1 if not found.
@@ -273,14 +308,45 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
     if k == NodeKind::IdentExpr {
         let name = c.source + node.start;
         let name_len = node.end - node.start;
-        let local = lookup_local(c, name, name_len);
-        let dst = alloc_reg(c);
-        if local >= 0 {
-            emit(c, make_inst_ab(Op::Mov, dst, (u8)local));
-        } else {
-            let slot = ctx_intern_global(c.ctx, name, name_len);
-            emit(c, make_inst_a_u16(Op::LoadGlobal, dst, (u16)slot));
+
+        // 1. Try our own locals first.
+        let local_idx = find_local_index(c, name, name_len);
+        if local_idx >= 0 {
+            let dst = alloc_reg(c);
+            if c.locals[(u32)local_idx].captured {
+                // Captured local — read through env via an IC.
+                let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+                let ic = alloc_ic_slot(c, name_atom);
+                emit(c, make_inst_abc(Op::LoadProp, dst, c.env_reg, (u8)ic));
+            } else {
+                emit(c, make_inst_ab(Op::Mov, dst, c.locals[(u32)local_idx].reg));
+            }
+            return dst;
         }
+
+        // 2. If we're in an inner function, check the parent's locals.
+        //    Captured parent-locals live in the parent's env, which is
+        //    available to us as current_closure.env via LoadEnv.
+        if c.parent != NULL {
+            let outer_idx = find_local_index(c.parent, name, name_len);
+            if outer_idx >= 0 && c.parent.locals[(u32)outer_idx].captured {
+                c.has_outer_refs = true;
+                let env_r = alloc_reg(c);
+                emit(c, make_inst_a(Op::LoadEnv, env_r));
+                let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+                let ic = alloc_ic_slot(c, name_atom);
+                let dst = alloc_reg(c);
+                emit(c, make_inst_abc(Op::LoadProp, dst, env_r, (u8)ic));
+                release_reg(c, env_r);
+                if c.next_reg <= dst { c.next_reg = dst + 1; }
+                return dst;
+            }
+        }
+
+        // 3. Fall through to globals.
+        let dst = alloc_reg(c);
+        let slot = ctx_intern_global(c.ctx, name, name_len);
+        emit(c, make_inst_a_u16(Op::LoadGlobal, dst, (u16)slot));
         return dst;
     }
     if k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
@@ -464,12 +530,37 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
 
     let name = c.source + target.start;
     let name_len = target.end - target.start;
-    let local = lookup_local(c, name, name_len);
+    let local_idx = find_local_index(c, name, name_len);
+    let captured_local = local_idx >= 0 && c.locals[(u32)local_idx].captured;
+    let local_reg: u8 = if local_idx >= 0 { c.locals[(u32)local_idx].reg } else { 0 };
+
+    // Resolve to outer-scope captured local if not found locally.
+    let outer_idx: i32 = -1;
+    if local_idx < 0 && c.parent != NULL {
+        let oi = find_local_index(c.parent, name, name_len);
+        if oi >= 0 && c.parent.locals[(u32)oi].captured {
+            outer_idx = oi;
+            c.has_outer_refs = true;
+        }
+    }
 
     if op_tok == TokenKind::Eq {
         let r = compile_expr(c, node.right);
-        if local >= 0 {
-            emit(c, make_inst_ab(Op::Mov, (u8)local, r));
+        if local_idx >= 0 {
+            if captured_local {
+                let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+                let ic = alloc_ic_slot(c, name_atom);
+                emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, r));
+            } else {
+                emit(c, make_inst_ab(Op::Mov, local_reg, r));
+            }
+        } else if outer_idx >= 0 {
+            let env_r = alloc_reg(c);
+            emit(c, make_inst_a(Op::LoadEnv, env_r));
+            let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+            let ic = alloc_ic_slot(c, name_atom);
+            emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, r));
+            release_reg(c, env_r);
         } else {
             let slot = ctx_intern_global(c.ctx, name, name_len);
             emit(c, make_inst_a_u16(Op::StoreGlobal, r, (u16)slot));
@@ -477,10 +568,25 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         return r;
     }
 
-    // Compound assignment: load, op, store.
+    // Compound assignment: load, op, store. (Existing path — for
+    // captured locals it works via the env-property machinery too,
+    // but emits more instructions. Acceptable for MVP.)
     let cur = alloc_reg(c);
-    if local >= 0 {
-        emit(c, make_inst_ab(Op::Mov, cur, (u8)local));
+    if local_idx >= 0 {
+        if captured_local {
+            let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+            let ic = alloc_ic_slot(c, name_atom);
+            emit(c, make_inst_abc(Op::LoadProp, cur, c.env_reg, (u8)ic));
+        } else {
+            emit(c, make_inst_ab(Op::Mov, cur, local_reg));
+        }
+    } else if outer_idx >= 0 {
+        let env_r = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadEnv, env_r));
+        let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+        let ic = alloc_ic_slot(c, name_atom);
+        emit(c, make_inst_abc(Op::LoadProp, cur, env_r, (u8)ic));
+        release_reg(c, env_r);
     } else {
         let slot = ctx_intern_global(c.ctx, name, name_len);
         emit(c, make_inst_a_u16(Op::LoadGlobal, cur, (u16)slot));
@@ -506,8 +612,21 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     }
     let dst = alloc_reg(c);
     emit(c, make_inst_abc(op, dst, cur, rhs));
-    if local >= 0 {
-        emit(c, make_inst_ab(Op::Mov, (u8)local, dst));
+    if local_idx >= 0 {
+        if captured_local {
+            let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+            let ic = alloc_ic_slot(c, name_atom);
+            emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, dst));
+        } else {
+            emit(c, make_inst_ab(Op::Mov, local_reg, dst));
+        }
+    } else if outer_idx >= 0 {
+        let env_r = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadEnv, env_r));
+        let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+        let ic = alloc_ic_slot(c, name_atom);
+        emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, dst));
+        release_reg(c, env_r);
     } else {
         let slot = ctx_intern_global(c.ctx, name, name_len);
         emit(c, make_inst_a_u16(Op::StoreGlobal, dst, (u16)slot));
@@ -795,9 +914,10 @@ fn compile_string_literal(c: Compiler*, node: AstNode*) -> u8 {
 // pool.
 // =====================================================================
 
-fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*) -> Function* {
+fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, parent: Compiler*) -> Function* {
     let c = compiler_new(parent_ctx, source);
     c.is_function = true;
+    c.parent = parent;
 
     // 1. Allocate registers for parameters. They sit at the bottom of
     //    the register file so callers can place args contiguously.
@@ -814,8 +934,40 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*) -> F
     //    locals, plus nested-FunctionDecl name bindings.
     if node.left != NULL { collect_locals(c, node.left); }
 
+    // 2b. Capture analysis — walk the body looking for nested
+    //     functions that reference our locals. Sets c.needs_env and
+    //     marks specific locals as captured.
+    if node.left != NULL { analyze_captures(c, node.left); }
+
+    // 2c. If we'll need an env object, reserve a register for it now
+    //     so it stays out of the temp range.
+    if c.needs_env {
+        c.env_reg = alloc_reg(c);
+    }
+
     // 3. Locals are now fixed; temps live above this watermark.
     c.fixed_regs = c.next_reg;
+
+    // 4a. If captures exist, emit env-construction at the start of the
+    //     function: NewObject env_reg, then store each captured param
+    //     into env with its name as key. Locals declared later in the
+    //     body get stored when their VarDecl executes.
+    if c.needs_env {
+        emit(c, make_inst_a(Op::NewObject, c.env_reg));
+        let j: u32 = 0;
+        while j < c.local_count {
+            // Params first — they all have indices < param_count.
+            // We mirror captured-param values into env at entry.
+            if j < param_count && c.locals[j].captured {
+                let name_atom = ctx_intern_atom(c.ctx,
+                                                c.source + c.locals[j].name_start,
+                                                c.locals[j].name_length);
+                let ic = alloc_ic_slot(c, name_atom);
+                emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, c.locals[j].reg));
+            }
+            j = j + 1;
+        }
+    }
 
     // 4. Compile body. Arrow concise body is an expression; everything
     //    else is a BlockStmt.
@@ -866,9 +1018,9 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*) -> F
 }
 
 // Compile a FunctionExpr/ArrowFunc in expression context. Returns the
-// register holding the function value.
+// register holding the function (or closure) value.
 fn compile_function_value(c: Compiler*, node: AstNode*) -> u8 {
-    let f = compile_function(c.ctx, c.source, node);
+    let f = compile_function(c.ctx, c.source, node, c);
     if f == NULL { c.had_error = true; return alloc_reg(c); }
     let fp: void* = NULL;
     raw { fp = (void*)f; }
@@ -878,7 +1030,42 @@ fn compile_function_value(c: Compiler*, node: AstNode*) -> u8 {
     let idx = add_const(c, val);
     let dst = alloc_reg(c);
     emit(c, make_inst_a_u16(Op::LoadConst, dst, idx));
+
+    // If the inner function referenced any outer-scope name, wrap it
+    // in a closure with the current env. The outer (c) must have
+    // needs_env = true for this to be reachable.
+    if f.needs_env || inner_has_captures_from(c) {
+        // Use c.env_reg as the closure's captured env. If c doesn't
+        // have an env (top-level program creating a closure with no
+        // captures), the env_reg will be 0 and the closure's env is
+        // effectively a stale value — harmless because the inner
+        // wouldn't access it.
+        let cls_reg = alloc_reg(c);
+        let env_reg: u8 = 0;
+        if c.needs_env { env_reg = c.env_reg; }
+        emit(c, make_inst_abc(Op::MakeClosure, cls_reg, dst, env_reg));
+        release_reg(c, dst);
+        if c.next_reg <= cls_reg { c.next_reg = cls_reg + 1; }
+        return cls_reg;
+    }
     return dst;
+}
+
+// Did the inner compile note that it accessed any of our locals?
+// The inner compiler is no longer accessible here (it's been freed),
+// so this is approximated via the function's needs_env flag. A
+// non-needs_env inner that nevertheless captured ONLY through its
+// own ancestors is not currently distinguished — that's a pending
+// multi-level case we don't support yet.
+fn inner_has_captures_from(c: Compiler*) -> bool {
+    // For MVP one-level closures, if we have any captured locals at
+    // all, the inner functions captured from us. Conservative.
+    let i: u32 = 0;
+    while i < c.local_count {
+        if c.locals[i].captured { return true; }
+        i = i + 1;
+    }
+    return false;
 }
 
 fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
@@ -920,6 +1107,163 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
     c.next_reg = base + 1;
     if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
     return base;
+}
+
+// =====================================================================
+// Capture analysis. Walks nested function bodies in this function's
+// body and marks the current function's locals as `captured` whenever
+// any nested function references them.
+//
+// MVP scope: only one level of nesting. Names referenced by a nested
+// function that aren't in its own locals are checked against the
+// CURRENT compiler's locals (not the chain) — so a deeply-nested
+// function only captures from its immediate parent. Multi-level
+// capture is deferred.
+// =====================================================================
+
+// Does the nested function `fn_node` (FunctionDecl/Expr/ArrowFunc)
+// declare `name` as one of its own locals (param or var)?
+fn name_is_local_of_function(fn_node: AstNode*, source: char*, name: char*, name_len: u32) -> bool {
+    // Params
+    let i: u32 = 0;
+    while i < fn_node.children_count {
+        let p = fn_node.children[i];
+        if p.kind == NodeKind::IdentExpr {
+            let p_len = p.end - p.start;
+            if p_len == name_len {
+                let p_name = source + p.start;
+                let eq: int = 0;
+                raw { eq = (memcmp(p_name, name, name_len) == 0) ? 1 : 0; }
+                if eq != 0 { return true; }
+            }
+        }
+        i = i + 1;
+    }
+    // Walk body for var/let/const declarations + the function name itself
+    return body_declares_name(fn_node.left, source, name, name_len);
+}
+
+fn body_declares_name(node: AstNode*, source: char*, name: char*, name_len: u32) -> bool {
+    if node == NULL { return false; }
+    let k = node.kind;
+
+    if k == NodeKind::VarDecl {
+        let i: u32 = 0;
+        while i < node.children_count {
+            let decl = node.children[i];
+            if decl.name_length == name_len {
+                let d_name = source + decl.name_start;
+                let eq: int = 0;
+                raw { eq = (memcmp(d_name, name, name_len) == 0) ? 1 : 0; }
+                if eq != 0 { return true; }
+            }
+            i = i + 1;
+        }
+        return false;
+    }
+    if k == NodeKind::FunctionDecl {
+        if node.name_length == name_len {
+            let n_name = source + node.name_start;
+            let eq: int = 0;
+            raw { eq = (memcmp(n_name, name, name_len) == 0) ? 1 : 0; }
+            if eq != 0 { return true; }
+        }
+        return false;  // don't descend
+    }
+    if k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
+        return false;
+    }
+
+    if node.left  != NULL { if body_declares_name(node.left,  source, name, name_len) { return true; } }
+    if node.right != NULL { if body_declares_name(node.right, source, name, name_len) { return true; } }
+    if node.third != NULL { if body_declares_name(node.third, source, name, name_len) { return true; } }
+    let i: u32 = 0;
+    while i < node.children_count {
+        if body_declares_name(node.children[i], source, name, name_len) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+// Walk a nested function's body. For every IdentExpr / Assignment-target
+// IdentExpr whose name isn't local to the nested function, check
+// whether it matches one of `c`'s locals. If so, mark that local as
+// captured.
+fn scan_inner_for_captures(c: Compiler*, fn_node: AstNode*, body: AstNode*) -> void {
+    if body == NULL { return; }
+    let k = body.kind;
+
+    if k == NodeKind::IdentExpr {
+        let name = c.source + body.start;
+        let name_len = body.end - body.start;
+        if !name_is_local_of_function(fn_node, c.source, name, name_len) {
+            let idx = find_local_index(c, name, name_len);
+            if idx >= 0 {
+                c.locals[(u32)idx].captured = true;
+                c.needs_env = true;
+            }
+        }
+        return;
+    }
+
+    if k == NodeKind::Assignment {
+        // Target might be IdentExpr — same logic
+        let target = body.left;
+        if target != NULL && target.kind == NodeKind::IdentExpr {
+            let name = c.source + target.start;
+            let name_len = target.end - target.start;
+            if !name_is_local_of_function(fn_node, c.source, name, name_len) {
+                let idx = find_local_index(c, name, name_len);
+                if idx >= 0 {
+                    c.locals[(u32)idx].captured = true;
+                    c.needs_env = true;
+                }
+            }
+        } else if target != NULL {
+            scan_inner_for_captures(c, fn_node, target);
+        }
+        if body.right != NULL { scan_inner_for_captures(c, fn_node, body.right); }
+        return;
+    }
+
+    if k == NodeKind::FunctionDecl || k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
+        // Don't descend into deeply-nested function bodies for MVP.
+        // (A proper multi-level analysis would recurse and chain.)
+        return;
+    }
+
+    if body.left  != NULL { scan_inner_for_captures(c, fn_node, body.left); }
+    if body.right != NULL { scan_inner_for_captures(c, fn_node, body.right); }
+    if body.third != NULL { scan_inner_for_captures(c, fn_node, body.third); }
+    let i: u32 = 0;
+    while i < body.children_count {
+        scan_inner_for_captures(c, fn_node, body.children[i]);
+        i = i + 1;
+    }
+}
+
+// Walk the outer function's body looking for nested functions. For
+// each one, scan it for captures of `c`'s locals.
+fn analyze_captures(c: Compiler*, node: AstNode*) -> void {
+    if node == NULL { return; }
+    let k = node.kind;
+
+    if k == NodeKind::FunctionDecl || k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
+        // Found a nested function. Scan its body for outer-name refs.
+        if node.left != NULL {
+            scan_inner_for_captures(c, node, node.left);
+        }
+        return;
+    }
+
+    if node.left  != NULL { analyze_captures(c, node.left); }
+    if node.right != NULL { analyze_captures(c, node.right); }
+    if node.third != NULL { analyze_captures(c, node.third); }
+    let i: u32 = 0;
+    while i < node.children_count {
+        analyze_captures(c, node.children[i]);
+        i = i + 1;
+    }
 }
 
 // Hoist var/let/const and nested FunctionDecl name bindings into the
@@ -1006,14 +1350,27 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             let name_len = decl.name_length;
             if c.is_function {
                 // Local — register was pre-allocated by collect_locals.
-                let local = lookup_local(c, name, name_len);
-                if local < 0 { c.had_error = true; return; }
+                let lidx = find_local_index(c, name, name_len);
+                if lidx < 0 { c.had_error = true; return; }
+                let cap = c.locals[(u32)lidx].captured;
+                let lreg = c.locals[(u32)lidx].reg;
                 if decl.left != NULL {
                     let r = compile_expr(c, decl.left);
-                    emit(c, make_inst_ab(Op::Mov, (u8)local, r));
+                    if cap {
+                        // Captured locals live as properties on the env
+                        // object — outer's reg slot is unused.
+                        let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+                        let ic = alloc_ic_slot(c, name_atom);
+                        emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, r));
+                    } else {
+                        emit(c, make_inst_ab(Op::Mov, lreg, r));
+                    }
                     release_reg(c, r);
                 }
-                // No initializer: register stays undefined.
+                // No initializer: env stays without the prop / reg stays undefined.
+                // Captured-local first reads before any init are observably
+                // undefined either way (LoadProp on a missing prop returns
+                // undefined, matching `let x;` semantics).
             } else {
                 let slot = ctx_intern_global(c.ctx, name, name_len);
                 if decl.left != NULL {
@@ -1028,7 +1385,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::FunctionDecl {
-        let f = compile_function(c.ctx, c.source, node);
+        let f = compile_function(c.ctx, c.source, node, c);
         if f == NULL { c.had_error = true; return; }
         let fp: void* = NULL;
         raw { fp = (void*)f; }
@@ -1038,10 +1395,31 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         let r = alloc_reg(c);
         emit(c, make_inst_a_u16(Op::LoadConst, r, idx));
 
+        // Closure wrap if the inner captures from us.
+        let needs_wrap = f.needs_env || inner_has_captures_from(c);
+        if needs_wrap {
+            let cls_reg = alloc_reg(c);
+            let env_reg: u8 = 0;
+            if c.needs_env { env_reg = c.env_reg; }
+            emit(c, make_inst_abc(Op::MakeClosure, cls_reg, r, env_reg));
+            release_reg(c, r);
+            r = cls_reg;
+        }
+
         if c.is_function {
-            // Bind to the pre-allocated local register.
-            let local = lookup_local(c, c.source + node.name_start, node.name_length);
-            if local >= 0 { emit(c, make_inst_ab(Op::Mov, (u8)local, r)); }
+            // Bind to the pre-allocated local register (or its env entry).
+            let lidx = find_local_index(c, c.source + node.name_start, node.name_length);
+            if lidx >= 0 {
+                if c.locals[(u32)lidx].captured {
+                    let n_atom = ctx_intern_atom(c.ctx,
+                                                 c.source + node.name_start,
+                                                 node.name_length);
+                    let ic = alloc_ic_slot(c, n_atom);
+                    emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, r));
+                } else {
+                    emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, r));
+                }
+            }
         } else {
             let slot = ctx_intern_global(c.ctx,
                                           c.source + node.name_start,

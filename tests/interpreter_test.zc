@@ -430,6 +430,25 @@ fn run_tests() -> void {
     // Math composition
     check_int((char*)"Math composed", (char*)"Math.abs(Math.floor(-3.7))", 4);
 
+    // --- Closures (Phase 3.3) ---------------------------------------
+    // Parameter capture
+    check_int((char*)"closure: param capture",       (char*)r"function adder(a) { return function(b) { return a + b } } adder(10)(5)", 15);
+    // Captured local (let with initializer)
+    check_int((char*)"closure: let with init",       (char*)r"function bar() { let x = 5; return function() { return x } } bar()()", 5);
+    // Captured local declared then assigned (separate paths)
+    check_int((char*)"closure: let then assign",     (char*)r"function bar() { let x; x = 7; return function() { return x } } bar()()", 7);
+    // Captured local with read+write — the classic counter pattern
+    check_int((char*)"closure: makeCounter ()=>3",   (char*)r"function makeCounter() { let count = 0; return function() { count = count + 1; return count } } let c = makeCounter(); c(); c(); c()", 3);
+    // Independent counters: each closure has its own env
+    check_int((char*)"closure: independent envs",    (char*)r"function mk() { let n = 0; return function() { n = n + 1; return n } } let a = mk(); let b = mk(); a(); a(); b(); a()", 3);
+    // Mixed: capturing both param and local
+    check_int((char*)"closure: param + local",       (char*)r"function makeBoth(a) { let b = 0; function add(x) { b = b + x; return a + b } return add } let m = makeBoth(10); m(1); m(2); m(3)", 16);
+    // once(): closure capturing a bool flag + an outer function
+    check_int((char*)"closure: once first call",     (char*)r"function once(fn) { let called = false; return function() { if (!called) { called = true; return fn() } return 0 } } let f = once(function() { return 42 }); f()", 42);
+    check_int((char*)"closure: once second call",    (char*)r"function once(fn) { let called = false; return function() { if (!called) { called = true; return fn() } return 0 } } let f = once(function() { return 42 }); f(); f()", 0);
+    // typeof on a closure returns "function"
+    check_string((char*)"closure: typeof",             (char*)r"function f() { let x = 1; return function() { return x } } typeof f()", (char*)"function");
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

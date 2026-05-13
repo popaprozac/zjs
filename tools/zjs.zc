@@ -261,6 +261,8 @@ fn write_value(v: ZjsValue, quoted: bool) -> void {
         return;
     }
     if zjs_is_function(v) != 0 { raw { fputs("[function]", stdout); } return; }
+    if zjs_is_closure(v) != 0 { raw { fputs("[function]", stdout); } return; }
+    if zjs_is_host_function(v) != 0 { raw { fputs("[function]", stdout); } return; }
     raw { fputs("[unknown value]", stdout); }
 }
 

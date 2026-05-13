@@ -371,6 +371,7 @@ def TAG_OBJECT:        u8 = 2;
 def TAG_ARRAY:         u8 = 3;
 def TAG_HOST_FUNCTION: u8 = 4;
 def TAG_HIDDEN_CLASS:  u8 = 5;
+def TAG_CLOSURE:       u8 = 6;
 
 struct CellHeader {
     type_tag: u8;
@@ -429,6 +430,16 @@ struct ZjsHostFunction {
     name:   char*;          // for debugging — duplicated, owned
 }
 
+// Closure: a function template paired with a captured environment.
+// `env` is a plain ZjsObject whose properties are the captured locals.
+// Multiple closures from the same outer call share the same env object,
+// preserving JS reference semantics for captured variables.
+struct ZjsClosure {
+    header:   CellHeader;        // { type_tag = TAG_CLOSURE }
+    function: void*;              // Function* — opaque to value.zc (defined in bytecode.zc)
+    env:      ZjsObject*;        // captured environment; may be NULL for arity-0 captures
+}
+
 fn zjs_cell_from_ptr(p: void*) -> ZjsValue {
     let bits: u64 = 0;
     raw { bits = (uint64_t)(uintptr_t)p; }
@@ -477,10 +488,23 @@ fn zjs_is_host_function(v: ZjsValue) -> int {
     return 0;
 }
 
+fn zjs_is_closure(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_CLOSURE { return 1; }
+    return 0;
+}
+
+fn zjs_as_closure(v: ZjsValue) -> ZjsClosure* {
+    let p = zjs_cell_as_ptr(v);
+    let cl: ZjsClosure* = NULL;
+    raw { cl = (ZjsClosure*)p; }
+    return cl;
+}
+
 fn zjs_is_callable(v: ZjsValue) -> int {
     let t = zjs_cell_tag(v);
     if t == TAG_FUNCTION { return 1; }
     if t == TAG_HOST_FUNCTION { return 1; }
+    if t == TAG_CLOSURE { return 1; }
     return 0;
 }
 
@@ -618,6 +642,24 @@ fn host_function_free_void(p: void*) -> void {
     if hf == NULL { return; }
     let name = hf.name;
     raw { free(name); free(hf); }
+}
+
+// Allocate a fresh closure. Caller fills function + env and registers
+// it on a context for cleanup.
+fn zjs_closure_new(function: void*, env: ZjsObject*) -> ZjsClosure* {
+    let cl: ZjsClosure* = NULL;
+    raw { cl = (ZjsClosure*)calloc(1, sizeof(ZjsClosure)); }
+    cl.header.type_tag = TAG_CLOSURE;
+    cl.function = function;
+    cl.env = env;
+    return cl;
+}
+
+fn closure_free_void(p: void*) -> void {
+    let cl: ZjsClosure* = NULL;
+    raw { cl = (ZjsClosure*)p; }
+    if cl == NULL { return; }
+    raw { free(cl); }
 }
 
 // =====================================================================
