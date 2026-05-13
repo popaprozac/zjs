@@ -256,6 +256,31 @@ static void test_engine_path(void) {
 }
 
 /* -----------------------------------------------------------------------
+ * Phase 3.1c — uncaught-throw detection through the public C ABI.
+ * --------------------------------------------------------------------- */
+
+static void test_throw_abi(void) {
+    ZjsContext* ctx = zjs_new_context();
+
+    /* Caught: had_error stays false. */
+    ZjsValue r1 = zjs_eval(ctx, "try { throw 42 } catch (e) { e + 1 }");
+    CHECK(!zjs_had_error(ctx), "caught throw should not flag had_error");
+    CHECK(zjs_is_int32(r1) && zjs_as_int32(r1) == 43, "caught throw value chain");
+
+    /* Uncaught: had_error becomes true, get_error returns the thrown value. */
+    zjs_eval(ctx, "throw 99");
+    CHECK(zjs_had_error(ctx), "uncaught throw should flag had_error");
+    ZjsValue err = zjs_get_error(ctx);
+    CHECK(zjs_is_int32(err) && zjs_as_int32(err) == 99, "thrown value readable");
+
+    /* A subsequent successful eval clears had_error. */
+    zjs_eval(ctx, "1 + 1");
+    CHECK(!zjs_had_error(ctx), "had_error should clear after a clean eval");
+
+    zjs_free_context(ctx);
+}
+
+/* -----------------------------------------------------------------------
  * Main.
  * --------------------------------------------------------------------- */
 
@@ -266,6 +291,7 @@ int main(void) {
     test_singletons();
     test_mutual_exclusion();
     test_engine_path();
+    test_throw_abi();
 
     printf("[smoke] %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

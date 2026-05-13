@@ -105,6 +105,43 @@ fn check_undefined(name: char*, source: char*) -> void {
     pass(name);
 }
 
+// Expect: zjs_eval ends with an uncaught throw whose value is the given int.
+fn check_throw_int(name: char*, source: char*, expected: i32) -> void {
+    let ctx = zjs_new_context();
+    defer zjs_free_context(ctx);
+    zjs_eval(ctx, source);
+    if zjs_had_error(ctx) == 0 {
+        fail_msg(name, (char*)"did not throw");
+        return;
+    }
+    let err = zjs_get_error(ctx);
+    if zjs_is_int32(err) == 0 {
+        fail_msg(name, (char*)"thrown value not int32");
+        return;
+    }
+    if zjs_as_int32(err) != expected {
+        g_fail = g_fail + 1;
+        let got = zjs_as_int32(err);
+        raw {
+            fprintf(stderr, "[FAIL] %s — thrown int %d, expected %d (source: \"%s\")\n",
+                    name, got, expected, source);
+        }
+        return;
+    }
+    pass(name);
+}
+
+fn check_no_throw(name: char*, source: char*) -> void {
+    let ctx = zjs_new_context();
+    defer zjs_free_context(ctx);
+    zjs_eval(ctx, source);
+    if zjs_had_error(ctx) != 0 {
+        fail_msg(name, (char*)"unexpected throw");
+        return;
+    }
+    pass(name);
+}
+
 fn check_string(name: char*, source: char*, expected: char*) -> void {
     let ctx = zjs_new_context();
     defer zjs_free_context(ctx);
@@ -328,6 +365,41 @@ fn run_tests() -> void {
     check_int((char*)"fn returns obj",   (char*)r"function make() { return {x: 7}; } make().x", 7);
     check_int((char*)"fn returns arr",   (char*)r"function make() { return [1, 2, 3]; } make()[1]", 2);
     check_int((char*)"obj of fn val",    (char*)r"let o = {f: function(x) { return x + 1; }}; o.f(41)", 42);
+
+    // --- Throw / try / catch (Phase 3.1c) ---------------------------
+    // Basic catch
+    check_string((char*)"catch str",     (char*)r"try { throw 'oops' } catch (e) { e }",     (char*)"oops");
+    check_int((char*)"catch int",        (char*)r"try { throw 42 } catch (e) { e }",          42);
+    check_int((char*)"catch + math",     (char*)r"try { throw 41 } catch (e) { e + 1 }",      42);
+
+    // Catch propagates from inside a function
+    check_int((char*)"throw across fn",  (char*)r"function bad() { throw 42 } try { bad() } catch (e) { e + 1 }", 43);
+    check_int((char*)"early ret guards", (char*)r"function f(n) { if (n < 0) throw 'neg'; return n * 2 } try { f(-1) } catch (e) { 99 }", 99);
+    check_int((char*)"normal ret",       (char*)r"function f(n) { if (n < 0) throw 'neg'; return n * 2 } try { f(5) } catch (e) { 99 }", 10);
+
+    // Nested try
+    check_int((char*)"nested rethrow",   (char*)r"try { try { throw 1 } catch (e) { throw e + 10 } } catch (e) { e }", 11);
+    check_int((char*)"inner catches",    (char*)r"try { try { throw 1 } catch (e) { e + 100 } } catch (e) { 99 }", 101);
+
+    // Catch doesn't run when no throw
+    check_int((char*)"no throw skips catch", (char*)r"let x = 0; try { x = 7 } catch (e) { x = 99 } x", 7);
+
+    // try without throw works
+    check_int((char*)"try value",        (char*)r"let x = 0; try { x = 5 } catch (e) {} x", 5);
+
+    // Recursive: factorial that throws if negative
+    check_int((char*)"fact throws", (char*)r"function fact(n) { if (n < 0) throw 'neg'; if (n <= 1) return 1; return n * fact(n - 1) } try { fact(5) } catch (e) { -1 }", 120);
+    check_int((char*)"fact thrown", (char*)r"function fact(n) { if (n < 0) throw 'neg'; if (n <= 1) return 1; return n * fact(n - 1) } try { fact(-3) } catch (e) { 999 }", 999);
+
+    // Uncaught throw at top level: zjs_had_error == 1, error value == thrown
+    check_throw_int((char*)"uncaught int",   (char*)r"throw 42",                            42);
+    check_throw_int((char*)"uncaught from fn",(char*)r"function f() { throw 7 } f()",        7);
+
+    // No uncaught when wrapped
+    check_no_throw((char*)"caught -> no error", (char*)r"try { throw 1 } catch (e) {}");
+
+    // Catch can throw, outer catches
+    check_int((char*)"catch throws", (char*)r"let r = 0; try { try { throw 1 } catch (e) { throw 99 } } catch (e) { r = e } r", 99);
 }
 
 // Verify that globals persist across multiple zjs_eval calls on the

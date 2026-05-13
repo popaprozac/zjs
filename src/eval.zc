@@ -29,5 +29,13 @@ fn zjs_eval(ctx: ZjsContext*, source: char*) -> ZjsValue {
     if f == NULL { return zjs_undefined(); }
     defer function_free(f);
 
-    return interpret(ctx, f, NULL, 0);
+    let r = interpret(ctx, f, NULL, 0);
+    if r.is_throw {
+        ctx.had_error = true;
+        ctx.last_error = r.value;
+        return r.value;
+    }
+    ctx.had_error = false;
+    ctx.last_error = zjs_undefined();
+    return r.value;
 }

@@ -180,6 +180,8 @@ fn parse_statement(p: Parser*) -> AstNode* {
     if k == TokenKind::KwFor       { return parse_for(p); }
     if k == TokenKind::KwBreak     { return parse_break(p); }
     if k == TokenKind::KwContinue  { return parse_continue(p); }
+    if k == TokenKind::KwThrow     { return parse_throw(p); }
+    if k == TokenKind::KwTry       { return parse_try(p); }
     if k == TokenKind::Semicolon {
         let semi = advance(p);
         return new_node(&p.tracker, NodeKind::EmptyStmt, semi.start, semi.start + semi.length);
@@ -468,6 +470,56 @@ fn parse_continue(p: Parser*) -> AstNode* {
     let kw = advance(p);
     let node = new_node(&p.tracker, NodeKind::ContinueStmt, kw.start, kw.start + kw.length);
     match_terminator(p);
+    return node;
+}
+
+fn parse_throw(p: Parser*) -> AstNode* {
+    let kw = advance(p);   // 'throw'
+    let arg = parse_expression(p);
+    if arg == NULL { return NULL; }
+    let node = new_node(&p.tracker, NodeKind::ThrowStmt, kw.start, arg.end);
+    node.left = arg;
+    match_terminator(p);
+    return node;
+}
+
+fn parse_try(p: Parser*) -> AstNode* {
+    let kw = advance(p);   // 'try'
+
+    if peek_kind(p) != TokenKind::LBrace { p.had_error = true; return NULL; }
+    let try_block = parse_block(p);
+    if try_block == NULL { return NULL; }
+
+    if !match_kind(p, TokenKind::KwCatch) {
+        // MVP requires a catch clause; finally without catch is deferred.
+        p.had_error = true;
+        return NULL;
+    }
+
+    // Optional parenthesized binding identifier: catch (e) { ... }
+    let catch_name_start: u32 = 0;
+    let catch_name_length: u32 = 0;
+    if match_kind(p, TokenKind::LParen) {
+        let id = peek(p);
+        if id.kind != TokenKind::Identifier {
+            p.had_error = true;
+            return NULL;
+        }
+        advance(p);
+        catch_name_start = id.start;
+        catch_name_length = id.length;
+        if !expect_kind(p, TokenKind::RParen) { return NULL; }
+    }
+
+    if peek_kind(p) != TokenKind::LBrace { p.had_error = true; return NULL; }
+    let catch_block = parse_block(p);
+    if catch_block == NULL { return NULL; }
+
+    let node = new_node(&p.tracker, NodeKind::TryStmt, kw.start, catch_block.end);
+    node.left = try_block;
+    node.right = catch_block;
+    node.name_start = catch_name_start;
+    node.name_length = catch_name_length;
     return node;
 }
 

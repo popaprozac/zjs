@@ -1,14 +1,17 @@
-/* test262 conformance runner.
+/* test262 conformance runner — Phase 3.1c.
  *
- * Walks a directory tree, runs every .js file through zjs_eval, and
- * tallies results. Skips files using features we don't support yet.
+ * Walks a directory tree, prepends a tiny harness to every .js file,
+ * runs the combined source through zjs_eval, and reports pass/fail
+ * based on whether an uncaught throw escaped.
  *
- * Phase 3.0c MVP: distinguishes "crashed/parser-rejected" from
- * "ran to completion." Doesn't yet load test262's standard harness
- * (needs strings + throw + objects, which arrive in Phase 3.1), so
- * "completion" tests don't actually verify their assertions yet.
- * That's OK — the framework's in place and the number improves
- * automatically as features land.
+ * The harness is intentionally minimal: it defines `assert` as an
+ * object with `sameValue` / `notSameValue` methods that throw on
+ * mismatch, plus `$ERROR`. That covers the largest class of test262
+ * tests. Tests that use `assert(condition)` directly call our
+ * object-shaped assert as a function — currently a no-op since
+ * functions-as-callable on non-function cells returns undefined.
+ * Phase 3.1d/e will extend the harness as more language features
+ * land (callable assert, Error constructors, etc.).
  */
 
 #include <dirent.h>
@@ -19,10 +22,18 @@
 
 #include "zjs.h"
 
-static int g_total = 0;
-static int g_ran    = 0;   /* eval returned (we don't check the value yet) */
-static int g_failed = 0;   /* parse error / produced an explicit non-undefined we expected to be ok */
-static int g_skipped = 0;
+/* Test262 harness preamble. Concatenated with each test before eval. */
+static const char* HARNESS =
+    "var assert = {\n"
+    "  sameValue: function (a, b) { if (a !== b) throw 'sameValue fail'; },\n"
+    "  notSameValue: function (a, b) { if (a === b) throw 'notSameValue fail'; }\n"
+    "};\n"
+    "function $ERROR(m) { throw m; }\n";
+
+static int g_total   = 0;
+static int g_passed  = 0;   /* eval returned with no uncaught throw */
+static int g_failed  = 0;   /* uncaught throw -> assertion or runtime failure */
+static int g_skipped = 0;   /* feature not supported yet */
 
 /* --- File I/O ------------------------------------------------------ */
 
@@ -42,19 +53,14 @@ static char* read_file(const char* path) {
 }
 
 /* --- Feature filter ------------------------------------------------- */
-/* Tests using unsupported constructs are skipped rather than failed —
- * they'd give noisy parse errors that aren't really conformance gaps,
- * they're just features we haven't shipped yet.
- */
 
 static int has_unsupported_feature(const char* source) {
-    /* Lookups are pessimistic (matching substring anywhere in the file).
-     * Refine when we add features and need finer granularity. */
+    /* Pessimistic substring checks. Tests touching these features
+     * would produce noisy false-failures unrelated to spec conformance.
+     */
     if (strstr(source, "class ")     != NULL) return 1;
     if (strstr(source, "import ")    != NULL) return 1;
     if (strstr(source, "export ")    != NULL) return 1;
-    if (strstr(source, "throw ")     != NULL) return 1;
-    if (strstr(source, "try ")       != NULL) return 1;
     if (strstr(source, "BigInt")     != NULL) return 1;
     if (strstr(source, "Symbol")     != NULL) return 1;
     if (strstr(source, "Promise")    != NULL) return 1;
@@ -63,10 +69,18 @@ static int has_unsupported_feature(const char* source) {
     if (strstr(source, "yield")      != NULL) return 1;
     if (strstr(source, "function*")  != NULL) return 1;
     if (strstr(source, "`")          != NULL) return 1;
+    /* Skip tests that use methods we haven't implemented as built-ins
+     * yet — they'd fail for boring reasons unrelated to language correctness. */
+    if (strstr(source, "Math.")      != NULL) return 1;
+    if (strstr(source, "JSON.")      != NULL) return 1;
+    if (strstr(source, "Number.")    != NULL) return 1;
+    if (strstr(source, "Object.")    != NULL) return 1;
+    if (strstr(source, "Array.")     != NULL) return 1;
+    if (strstr(source, "String.")    != NULL) return 1;
+    if (strstr(source, "new Error")  != NULL) return 1;
+    if (strstr(source, ".prototype") != NULL) return 1;
     return 0;
 }
-
-/* --- Path helpers --------------------------------------------------- */
 
 static int ends_with(const char* s, const char* suffix) {
     size_t ls = strlen(s), lf = strlen(suffix);
@@ -78,10 +92,7 @@ static int ends_with(const char* s, const char* suffix) {
 
 static void run_test_file(const char* path) {
     char* source = read_file(path);
-    if (!source) {
-        g_failed++;
-        return;
-    }
+    if (!source) { g_failed++; return; }
     g_total++;
 
     if (has_unsupported_feature(source)) {
@@ -90,20 +101,28 @@ static void run_test_file(const char* path) {
         return;
     }
 
-    ZjsContext* ctx = zjs_new_context();
-    if (!ctx) {
-        g_failed++;
-        free(source);
-        return;
-    }
+    /* Build harness + source. */
+    size_t hlen = strlen(HARNESS);
+    size_t slen = strlen(source);
+    char* combined = (char*)malloc(hlen + slen + 1);
+    if (!combined) { g_failed++; free(source); return; }
+    memcpy(combined, HARNESS, hlen);
+    memcpy(combined + hlen, source, slen);
+    combined[hlen + slen] = 0;
 
-    ZjsValue result = zjs_eval(ctx, source);
-    /* The biased measure: did eval return without crashing? */
-    g_ran++;
-    (void)result;
+    ZjsContext* ctx = zjs_new_context();
+    if (!ctx) { g_failed++; free(source); free(combined); return; }
+
+    zjs_eval(ctx, combined);
+    if (zjs_had_error(ctx)) {
+        g_failed++;
+    } else {
+        g_passed++;
+    }
 
     zjs_free_context(ctx);
     free(source);
+    free(combined);
 }
 
 static void walk_dir(const char* path) {
@@ -122,8 +141,6 @@ static void walk_dir(const char* path) {
         if (S_ISDIR(st.st_mode)) {
             walk_dir(buf);
         } else if (S_ISREG(st.st_mode) && ends_with(entry->d_name, ".js")) {
-            /* test262 splits "name.js" (sloppy) and "name_FIXTURE.js"
-             * (helper, not a test itself). Skip fixtures. */
             if (strstr(entry->d_name, "_FIXTURE")) continue;
             run_test_file(buf);
         }
@@ -147,22 +164,23 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    printf("test262 conformance — Phase 3.0c (biased measure: 'didn't crash')\n");
+    printf("test262 conformance — Phase 3.1c (real signal, biased harness)\n");
     printf("target: %s\n\n", dir);
 
     walk_dir(dir);
 
     int eligible = g_total - g_skipped;
-    int pct = eligible > 0 ? (g_ran * 100) / eligible : 0;
+    int pct = eligible > 0 ? (g_passed * 100) / eligible : 0;
     printf("results:\n");
     printf("  eligible    %d   (total %d, skipped %d for unsupported features)\n",
            eligible, g_total, g_skipped);
-    printf("  ran         %d   (%d%% of eligible)\n", g_ran, pct);
+    printf("  passed      %d   (%d%% of eligible)\n", g_passed, pct);
     printf("  failed      %d\n", g_failed);
-    printf("\nNote: 'ran' is the biased measure — it counts tests that\n");
-    printf("eval'd without crashing but doesn't yet verify assertions.\n");
-    printf("Real conformance signal arrives in Phase 3.1 with strings +\n");
-    printf("throw + objects (so test262's assert.sameValue can do its job).\n");
+    printf("\nThe harness defines `assert.sameValue`, `assert.notSameValue`,\n");
+    printf("and `$ERROR` — all throw on assertion failure. Tests pass iff\n");
+    printf("no uncaught throw escapes. Tests that use `assert(condition)`\n");
+    printf("directly (a callable assert) still silently pass because we\n");
+    printf("treat non-function callees as no-ops — will tighten in 3.1d+.\n");
 
     return g_failed > 0 ? 1 : 0;
 }

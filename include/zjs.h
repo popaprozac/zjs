@@ -67,6 +67,15 @@ int     zjs_as_bool(ZjsValue v);
 ZjsValue    zjs_eval(ZjsContext* ctx, const char* source);
 const char* zjs_version(void);
 
+/* Uncaught-throw detection. After zjs_eval, the host can check
+ * zjs_had_error to determine whether the program ended with an
+ * uncaught throw, and zjs_get_error to read the thrown value.
+ *
+ * When zjs_eval returns normally, zjs_had_error returns 0.
+ */
+int         zjs_had_error(ZjsContext* ctx);
+ZjsValue    zjs_get_error(ZjsContext* ctx);
+
 #ifdef __cplusplus
 }
 #endif

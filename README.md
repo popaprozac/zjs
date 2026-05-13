@@ -27,11 +27,14 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 | 2.3   | Parser — expressions |
 | 2.4   | Parser — statements |
 | 2.5   | Parser — functions, arrow functions, for-in/of |
-| **3.0a** | **Bytecode compiler + register-machine interpreter — arithmetic, variables, control flow** |
-| **3.0b** | **Functions, calls, recursion, locals** |
-| **3.0c** | **test262 conformance scaffolding** |
+| 3.0a  | Bytecode compiler + register-machine interpreter — arithmetic, variables, control flow |
+| 3.0b  | Functions, calls, recursion, locals |
+| 3.0c  | test262 conformance scaffolding |
+| 3.1a  | Heap infrastructure + strings (cell-header model, escape decoding, `+` concat) |
+| 3.1b  | Objects, arrays, property access (`obj.x`, `obj[i]`, literals, compound assign) |
+| **3.1c** | **`throw` / `try` / `catch`, uncaught-error C ABI, real test262 signal** |
 
-530 in-tree test assertions pass (lexer + parser + interpreter + embed smoke). Per-phase plans are in `docs/phases/`.
+606 in-tree test assertions pass (smoke + lexer + parser + interpreter). Per-phase plans are in `docs/phases/`.
 
 **Programs run end-to-end:**
 
@@ -90,8 +93,17 @@ See `include/zjs.h`. QuickJS-style: opaque `ZjsContext*` handle, opaque NaN-boxe
 #include "zjs.h"
 
 ZjsContext* ctx = zjs_new_context();
-ZjsValue    v   = zjs_eval(ctx, "let x = 10; let y = 20; x + y");
-int         n   = zjs_is_int32(v) ? zjs_as_int32(v) : 0;   // 30
+
+ZjsValue v = zjs_eval(ctx, "let x = 10; let y = 20; x + y");
+int      n = zjs_is_int32(v) ? zjs_as_int32(v) : 0;        // 30
+
+/* Detect uncaught throws */
+zjs_eval(ctx, "throw 'boom'");
+if (zjs_had_error(ctx)) {
+    ZjsValue err = zjs_get_error(ctx);
+    /* err is the thrown value */
+}
+
 zjs_free_context(ctx);
 ```
 

@@ -73,6 +73,11 @@ enum NodeKind {
     ArrowFunc,              // children=params, left=body (BlockStmt or expression)
     ForInStmt,              // left=binding, right=iterable, children[0]=body
     ForOfStmt,              // same shape as ForInStmt
+
+    // Exceptions (Phase 3.1c)
+    ThrowStmt,              // left = thrown value expression
+    TryStmt,                // left = try-block, right = catch-block,
+                            // name_start/length = catch param name (0 if absent)
 }
 
 struct AstNode {

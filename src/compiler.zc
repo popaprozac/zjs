@@ -872,6 +872,23 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
         return;
     }
 
+    if k == NodeKind::TryStmt {
+        // Try/catch: the catch parameter binds as a local. We still
+        // descend into both blocks to pick up nested var/let declarations.
+        if c.is_function && node.name_length > 0 {
+            // Only allocate if not already present (loops can re-enter
+            // try blocks but the name is fixed).
+            let existing = lookup_local(c, c.source + node.name_start, node.name_length);
+            if existing < 0 {
+                let reg = alloc_reg(c);
+                add_local(c, node.name_start, node.name_length, reg);
+            }
+        }
+        if node.left  != NULL { collect_locals(c, node.left); }
+        if node.right != NULL { collect_locals(c, node.right); }
+        return;
+    }
+
     if node.left  != NULL { collect_locals(c, node.left); }
     if node.right != NULL { collect_locals(c, node.right); }
     if node.third != NULL { collect_locals(c, node.third); }
@@ -1036,10 +1053,73 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     if k == NodeKind::BreakStmt   { c.had_error = true; return; }       // labels would land here; MVP errors
     if k == NodeKind::ContinueStmt{ c.had_error = true; return; }
 
-    // Default: an expression statement. Track its result register so we
-    // can emit a final Return at the end of the program.
+    if k == NodeKind::ThrowStmt {
+        let r = compile_expr(c, node.left);
+        emit(c, make_inst_a(Op::Throw, r));
+        release_reg(c, r);
+        reset_temps(c);
+        return;
+    }
+
+    if k == NodeKind::TryStmt {
+        // Catch parameter is a local register. At function scope it's
+        // already allocated by collect_locals; at program (top-level)
+        // scope we allocate it on the spot. Either way we bump
+        // fixed_regs so reset_temps between statements doesn't clobber
+        // the binding.
+        let catch_reg: u8 = 0;
+        if node.name_length > 0 {
+            let existing = lookup_local(c, c.source + node.name_start, node.name_length);
+            if existing >= 0 {
+                catch_reg = (u8)existing;
+            } else {
+                catch_reg = alloc_reg(c);
+                add_local(c, node.name_start, node.name_length, catch_reg);
+            }
+            if catch_reg + 1 > c.fixed_regs { c.fixed_regs = catch_reg + 1; }
+        }
+
+        // EnterTry: placeholder offset, patched after the catch block start.
+        let enter_idx = emit(c, make_inst_a_i16(Op::EnterTry, catch_reg, 0));
+
+        // Try body
+        compile_stmt(c, node.left);
+
+        // Normal exit from the try block
+        emit(c, make_inst_a(Op::LeaveTry, 0));
+
+        // Skip-over-catch jump (placeholder, patched after catch body)
+        let skip_idx = emit(c, make_inst_i16(Op::Jmp, 0));
+
+        // Catch block target — back-patch the EnterTry offset to here
+        patch_jump(c, enter_idx);
+
+        compile_stmt(c, node.right);
+
+        // Patch the skip-over-catch jump
+        patch_jump(c, skip_idx);
+        return;
+    }
+
+    // Default: an expression statement.
+    //
+    // At top level, the program needs a stable register to return at
+    // the end — but try/catch makes the runtime flow non-static (the
+    // catch body's expression might not actually execute). So we
+    // reserve a `result_reg` in compile_program, and every top-level
+    // expression statement Movs into that fixed register. Whichever
+    // path runs, the final Return reads from the same slot.
+    //
+    // In a function, an explicit `return` statement is what produces
+    // the call's result, so we just remember the last register for
+    // diagnostic purposes.
     let r = compile_expr(c, node);
-    c.last_expr_reg = (i32)r;
+    if !c.is_function && c.last_expr_reg >= 0 {
+        let dst = (u8)c.last_expr_reg;
+        if r != dst { emit(c, make_inst_ab(Op::Mov, dst, r)); }
+    } else {
+        c.last_expr_reg = (i32)r;
+    }
     reset_temps(c);
 }
 
@@ -1058,6 +1138,15 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     let c = compiler_new(ctx, source);
     defer compiler_free(c);
 
+    // Reserve a stable program-result register. Every top-level
+    // expression statement Movs into it; the final Return reads from
+    // it. This makes the program's return value deterministic even
+    // when try/catch creates branchy runtime flow.
+    let result_reg = alloc_reg(c);
+    emit(c, make_inst_a(Op::LoadUndefined, result_reg));
+    c.fixed_regs = result_reg + 1;
+    c.last_expr_reg = (i32)result_reg;
+
     if root != NULL && root.kind == NodeKind::Program {
         let i: u32 = 0;
         while i < root.children_count && !c.had_error {
@@ -1068,14 +1157,8 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
         c.had_error = true;
     }
 
-    // Emit final Return.
-    if c.last_expr_reg >= 0 {
-        emit(c, make_inst_a(Op::Return, (u8)c.last_expr_reg));
-    } else {
-        let r = alloc_reg(c);
-        emit(c, make_inst_a(Op::LoadUndefined, r));
-        emit(c, make_inst_a(Op::Return, r));
-    }
+    // Emit final Return — always from the stable result_reg.
+    emit(c, make_inst_a(Op::Return, result_reg));
 
     if c.had_error { return NULL; }
 

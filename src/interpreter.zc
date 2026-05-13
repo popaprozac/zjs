@@ -89,8 +89,25 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
     // Primitives: silently ignored (real JS throws in strict mode).
 }
 
-fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) -> ZjsValue {
-    if f == NULL { return zjs_undefined(); }
+// Result of an interpret() call. `is_throw=true` means an exception
+// escaped this function — the caller (a Phase 3.1c+ try frame in the
+// outer function, or zjs_eval) decides whether to catch or propagate.
+struct InterpretResult {
+    is_throw: bool;
+    value:    ZjsValue;
+}
+
+impl Copy for InterpretResult {}
+
+struct TryFrame {
+    catch_ip:  usize;
+    catch_reg: u8;
+}
+
+def MAX_TRY_DEPTH: usize = 32;
+
+fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) -> InterpretResult {
+    if f == NULL { return InterpretResult{ is_throw: false, value: zjs_undefined() }; }
 
     let reg_count = f.register_count;
     let regs: ZjsValue* = NULL;
@@ -116,19 +133,38 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
         ai = ai + 1;
     }
 
+    // Per-call try stack. Each frame stores where to jump on throw and
+    // which register receives the thrown value.
+    let try_stack: TryFrame[MAX_TRY_DEPTH];
+    let try_depth: usize = 0;
+    let throwing: bool = false;
+    let thrown:   ZjsValue = zjs_undefined();
+
     let ip: usize = 0;
-    let result: ZjsValue = zjs_undefined();
 
     while ip < f.code_len {
+        // Unwind before fetching the next instruction.
+        if throwing {
+            if try_depth > 0 {
+                try_depth = try_depth - 1;
+                let frame = try_stack[try_depth];
+                ip = frame.catch_ip;
+                regs[frame.catch_reg] = thrown;
+                throwing = false;
+                continue;
+            }
+            // No catch in this function — propagate to caller.
+            return InterpretResult{ is_throw: true, value: thrown };
+        }
+
         let inst = f.code[ip];
         let op = inst.op;
 
         if op == Op::Return {
-            result = regs[inst.a];
-            return result;
+            return InterpretResult{ is_throw: false, value: regs[inst.a] };
         }
         if op == Op::Halt {
-            return result;
+            return InterpretResult{ is_throw: false, value: zjs_undefined() };
         }
 
         if op == Op::LoadInt {
@@ -252,11 +288,35 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
                 raw { target = (Function*)fp; }
                 let argv_ptr: ZjsValue* = NULL;
                 raw { argv_ptr = &regs[base + 1]; }
-                regs[dst] = interpret(ctx, target, argv_ptr, argc);
+                let r = interpret(ctx, target, argv_ptr, argc);
+                if r.is_throw {
+                    throwing = true;
+                    thrown = r.value;
+                    continue;       // unwind on next loop iteration
+                }
+                regs[dst] = r.value;
             } else {
                 // Not a function — TypeError in real JS; MVP returns undefined.
                 regs[dst] = zjs_undefined();
             }
+        } else if op == Op::Throw {
+            throwing = true;
+            thrown = regs[inst.a];
+            continue;
+        } else if op == Op::EnterTry {
+            if try_depth >= MAX_TRY_DEPTH {
+                // Out of try slots — surface as an uncaught throw.
+                throwing = true;
+                thrown = zjs_undefined();
+                continue;
+            }
+            let off = inst_bc_i16(inst);
+            let target: usize = (usize)((i32)ip + 1 + off);
+            try_stack[try_depth].catch_ip = target;
+            try_stack[try_depth].catch_reg = inst.a;
+            try_depth = try_depth + 1;
+        } else if op == Op::LeaveTry {
+            if try_depth > 0 { try_depth = try_depth - 1; }
         } else if op == Op::NewObject {
             regs[inst.a] = ctx_new_object(ctx);
         } else if op == Op::NewArray {
@@ -283,5 +343,5 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
         ip = ip + 1;
     }
 
-    return result;
+    return InterpretResult{ is_throw: false, value: zjs_undefined() };
 }

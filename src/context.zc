@@ -34,6 +34,11 @@ struct ZjsContext {
     cells:          void**;
     cell_count:     u32;
     cell_cap:       u32;
+
+    // Set by zjs_eval when the program ends with an uncaught throw.
+    // Public ABI: zjs_had_error / zjs_get_error.
+    had_error:      bool;
+    last_error:     ZjsValue;
 }
 
 fn zjs_new_context() -> ZjsContext* {
@@ -127,6 +132,19 @@ fn ctx_new_array(ctx: ZjsContext*, length: u32) -> ZjsValue {
     let a = zjs_array_new(length);
     ctx_register_cell(ctx, (void*)a);
     return zjs_cell_from_ptr((void*)a);
+}
+
+// --- Error inspection (public ABI) ----------------------------------
+
+fn zjs_had_error(ctx: ZjsContext*) -> int {
+    if ctx == NULL { return 0; }
+    if ctx.had_error { return 1; }
+    return 0;
+}
+
+fn zjs_get_error(ctx: ZjsContext*) -> ZjsValue {
+    if ctx == NULL { return zjs_undefined(); }
+    return ctx.last_error;
 }
 
 // =====================================================================

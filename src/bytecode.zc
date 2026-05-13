@@ -79,6 +79,15 @@ enum Op {
                       // ToString(key), linear prop lookup.
     StoreElem,        // a=obj_reg, b=key_reg, c=val_reg.
                       // obj[key] = val. Auto-grows arrays.
+
+    // Exceptions (Phase 3.1c).
+    Throw,            // a=src. Raises regs[src] as the thrown value.
+    EnterTry,         // a=catch_reg, bc=offset (i16).
+                      // Push a try frame. On throw, ip jumps to
+                      // (this_inst + 1 + offset) and regs[catch_reg]
+                      // receives the thrown value.
+    LeaveTry,         // No operands. Pop the innermost try frame.
+                      // Emitted at the normal end of a try block.
 }
 
 struct Inst {
