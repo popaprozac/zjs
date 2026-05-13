@@ -1,0 +1,169 @@
+// AST — emitted by the parser, consumed by the bytecode compiler (Phase 3).
+//
+// Flat tagged struct: one universal AstNode shape with every possible
+// field. Only the fields relevant to each kind are meaningful. Trades
+// memory for simplicity; the AST is transient (lifetime = one compile).
+//
+// All allocations are tracked on the owning Parser's free-list so the
+// caller can release the whole tree with one parser_free_result call.
+
+import "./token.zc";
+
+raw {
+    #include <stdlib.h>
+    #include <string.h>
+}
+
+enum NodeKind {
+    // Root
+    Program,                // children = expression-statements
+
+    // Atoms — *Expr suffix to avoid name collisions with TokenKind
+    // variants like NumberLit/StringLit/Identifier (Zen-c codegen
+    // gets confused if two enums in the same TU share variant names).
+    NumberExpr,             // num
+    StringExpr,             // (start..end is the slice including quotes)
+    BoolExpr,               // bool_value
+    NullExpr,
+    UndefinedExpr,
+    ThisExpr,
+    IdentExpr,              // (start..end is the identifier text)
+
+    // Operators
+    Binary,                 // op, left, right
+    Logical,                // op (&&, ||, ??), left, right
+    Unary,                  // op (prefix), left = operand
+    Postfix,                // op (++ or --), left = operand
+    Conditional,            // left = test, right = consequent, third = alternate
+    Assignment,             // op, left = target, right = value
+
+    // Access
+    Call,                   // left = callee, children = args
+    OptionalCall,           // left = callee, children = args (?.())
+    New,                    // left = callee, children = args (may be empty)
+    Member,                 // left = object, name_start/length = property name
+    OptionalMember,         // left = object, name_start/length (?.name)
+    Computed,               // left = object, right = property expression (a[expr])
+    OptionalComputed,       // left = object, right = property expression (a?.[expr])
+
+    // Aggregates
+    Sequence,               // children = a, b, c
+    Array,                  // children = elements
+    Object,                 // children = ObjectProp nodes
+    ObjectProp,             // name_start/length = key, left = value
+    Paren,                  // left = inner (mostly for debugging clarity)
+
+    // Statements (Phase 2.4)
+    BlockStmt,              // children = stmts
+    VarDecl,                // op = KwVar | KwLet | KwConst, children = Declarators
+    Declarator,             // name_start/length, left = init (NULL if absent)
+    IfStmt,                 // left = test, right = then, third = else (NULL)
+    ReturnStmt,             // left = argument (NULL for bare return)
+    WhileStmt,              // left = test, right = body
+    DoWhileStmt,            // left = body, right = test
+    ForStmt,                // left = init, right = test, third = update,
+                            // children[0] = body
+    BreakStmt,
+    ContinueStmt,
+    EmptyStmt,
+
+    // Functions + iteration (Phase 2.5)
+    FunctionDecl,           // name_start/length, children=params, left=body (BlockStmt)
+    FunctionExpr,           // name_start/length (0 if anon), children=params, left=body
+    ArrowFunc,              // children=params, left=body (BlockStmt or expression)
+    ForInStmt,              // left=binding, right=iterable, children[0]=body
+    ForOfStmt,              // same shape as ForInStmt
+}
+
+struct AstNode {
+    kind:           NodeKind;
+    start:          u32;
+    end:            u32;
+
+    op:             TokenKind;
+    num:            f64;
+    bool_value:     bool;
+
+    left:           AstNode*;
+    right:          AstNode*;
+    third:          AstNode*;
+
+    children:       AstNode**;
+    children_count: u32;
+
+    name_start:     u32;
+    name_length:    u32;
+}
+
+// --- Allocation tracking --------------------------------------------
+//
+// Every node and every children-array allocated by the parser is
+// registered in an AllocList. parser_free_result walks the list and
+// releases everything in one shot.
+
+struct AllocList {
+    items: void**;
+    count: usize;
+    cap:   usize;
+}
+
+fn alloc_list_new() -> AllocList {
+    return AllocList{ items: NULL, count: 0, cap: 0 };
+}
+
+fn alloc_list_push(list: AllocList*, ptr: void*) -> void {
+    if list.count >= list.cap {
+        let new_cap: usize = if list.cap == 0 { 16 } else { list.cap * 2 };
+        let old_items = list.items;          // pull into Zen-c local for raw{}
+        let new_items: void** = NULL;
+        raw {
+            new_items = (void**)realloc(old_items, new_cap * sizeof(void*));
+        }
+        list.items = new_items;
+        list.cap = new_cap;
+    }
+    list.items[list.count] = ptr;
+    list.count = list.count + 1;
+}
+
+fn alloc_list_free_all(list: AllocList*) -> void {
+    let i: usize = 0;
+    while i < list.count {
+        let p = list.items[i];
+        raw { free(p); }
+        i = i + 1;
+    }
+    let items = list.items;
+    raw { free(items); }
+    list.items = NULL;
+    list.count = 0;
+    list.cap = 0;
+}
+
+// --- Node factory ---------------------------------------------------
+//
+// Allocates a zero-initialized node and registers it on `tracker`.
+// Subsequent fields are filled in by the parser after this returns.
+
+fn new_node(tracker: AllocList*, kind: NodeKind, start: u32, end: u32) -> AstNode* {
+    let node: AstNode* = NULL;
+    raw {
+        node = (AstNode*)calloc(1, sizeof(AstNode));
+    }
+    node.kind = kind;
+    node.start = start;
+    node.end = end;
+    alloc_list_push(tracker, (void*)node);
+    return node;
+}
+
+// Allocates a children array of the requested size. Caller fills it.
+fn new_children(tracker: AllocList*, count: u32) -> AstNode** {
+    if count == 0 { return NULL; }
+    let arr: AstNode** = NULL;
+    raw {
+        arr = (AstNode**)calloc(count, sizeof(AstNode*));
+    }
+    alloc_list_push(tracker, (void*)arr);
+    return arr;
+}

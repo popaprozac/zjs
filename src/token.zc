@@ -1,0 +1,80 @@
+// Token types — emitted by the lexer, consumed by the parser.
+//
+// A Token is a slice into the source plus a kind tag. No decoded
+// value lives in a Token — numeric values get parsed when the
+// bytecode compiler emits constants; string contents get unescaped
+// at the same point. Keeping tokens flat (12 bytes) is the cheapest
+// way to feed a hand-written recursive-descent parser.
+
+enum TokenKind {
+    // --- Special -----------------------------------------------------
+    Eof,
+    Invalid,                // emitted on a recoverable lex error
+
+    // --- Literals ----------------------------------------------------
+    Identifier,
+    NumberLit,
+    StringLit,
+
+    // --- Keywords (full ES2023 set — parser uses what it needs) ------
+    KwVar, KwLet, KwConst,
+    KwFunction, KwReturn,
+    KwIf, KwElse,
+    KwFor, KwWhile, KwDo,
+    KwBreak, KwContinue,
+    KwClass, KwExtends, KwSuper, KwNew, KwThis,
+    KwTrue, KwFalse, KwNull, KwUndefined,
+    KwTypeof, KwDelete, KwVoid, KwIn, KwOf, KwInstanceof,
+    KwThrow, KwTry, KwCatch, KwFinally,
+    KwSwitch, KwCase, KwDefault,
+    KwAsync, KwAwait, KwYield,
+    KwImport, KwExport, KwFrom, KwAs,
+
+    // --- Punctuators (ECMA-262 §12.7) --------------------------------
+    LParen, RParen,                  // ( )
+    LBracket, RBracket,              // [ ]
+    LBrace, RBrace,                  // { }
+    Comma, Semicolon, Colon,         // , ; :
+    Dot, Ellipsis,                   // . ...
+    Arrow,                           // =>
+    Tilde,                           // ~
+
+    Question, QuestionDot,           // ? ?.
+    QuestionQuestion, QuestionQuestionEq,  // ?? ??=
+
+    Bang, BangEq, BangEqEq,          // ! != !==
+    Eq, EqEq, EqEqEq,                // = == ===
+
+    Lt, LtEq, LtLt, LtLtEq,          // < <= << <<=
+    Gt, GtEq, GtGt, GtGtEq,          // > >= >> >>=
+    GtGtGt, GtGtGtEq,                // >>> >>>=
+
+    Plus, PlusEq, PlusPlus,          // + += ++
+    Minus, MinusEq, MinusMinus,      // - -= --
+    Star, StarEq, StarStar, StarStarEq,    // * *= ** **=
+    Slash, SlashEq,                  // / /=
+    Percent, PercentEq,              // % %=
+
+    Amp, AmpAmp, AmpEq, AmpAmpEq,    // & && &= &&=
+    Pipe, PipePipe, PipeEq, PipePipeEq,    // | || |= ||=
+    Caret, CaretEq,                  // ^ ^=
+}
+
+struct Token {
+    kind:   TokenKind;
+    start:  u32;
+    length: u32;
+}
+
+// Tokens are pure value types — no resources. Opt into Copy so they
+// flow through arrays and across function boundaries without move
+// pain.
+impl Copy for Token {}
+
+fn token_eof(at: u32) -> Token {
+    return Token{ kind: TokenKind::Eof, start: at, length: 0 };
+}
+
+fn token_invalid(at: u32) -> Token {
+    return Token{ kind: TokenKind::Invalid, start: at, length: 1 };
+}

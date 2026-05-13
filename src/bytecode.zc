@@ -1,0 +1,146 @@
+// Bytecode types — emitted by the compiler, consumed by the interpreter.
+//
+// Uniform 4-byte instruction format: { op:u8, a:u8, b:u8, c:u8 }.
+// Operands are reinterpreted per opcode. The encoding favors simplicity
+// over density at this stage; Hermes-style packed-struct-per-opcode is
+// the direction (see docs/jitless-design-study.md §2-3), and we can
+// migrate later — the lookup-by-tag-then-decode pattern is the same.
+//
+// One `Function` per compiled function. The top-level program is also
+// a Function. Each Function owns its bytecode, its constant pool, and
+// its register count.
+
+import "./value.zc";
+
+raw {
+    #include <stdlib.h>
+    #include <string.h>
+}
+
+enum Op {
+    Halt,             // safety net; interpreter never expects to hit this
+
+    // Loads & moves
+    LoadConst,        // a=dst, bc=const_idx (u16)
+    LoadInt,          // a=dst, bc=imm (i16) — small-int fast path
+    LoadUndefined,    // a=dst
+    LoadNull,         // a=dst
+    LoadTrue,         // a=dst
+    LoadFalse,        // a=dst
+    Mov,              // a=dst, b=src
+
+    // Globals (program-scope variables)
+    DefineGlobal,     // a=src, bc=slot (u16)   — initialize globals[slot] = regs[a]
+    LoadGlobal,       // a=dst, bc=slot (u16)
+    StoreGlobal,      // a=src, bc=slot (u16)
+
+    // Binary arithmetic
+    Add, Sub, Mul, Div, Mod, Pow,
+    BitAnd, BitOr, BitXor,
+    Shl, Shr, UShr,
+
+    // Comparison — prefix with Cmp to avoid collisions with TokenKind
+    // variants of the same name (Zen-c codegen merges variant symbols
+    // across enums in the same TU). See reference_zen-c.md gotcha #11.
+    CmpEq, CmpNe, CmpStrictEq, CmpStrictNe,
+    CmpLt, CmpLe, CmpGt, CmpGe,
+
+    // Unary
+    Neg, BitNot, LogicalNot,
+
+    // Control flow
+    Jmp,              // bc = signed offset in instructions
+    JmpIfTrue,        // a=src, bc=offset
+    JmpIfFalse,       // a=src, bc=offset
+
+    // Universal return — exits interpret() with regs[a] as the value.
+    Return,
+}
+
+struct Inst {
+    op: Op;
+    a:  u8;
+    b:  u8;
+    c:  u8;
+}
+
+impl Copy for Inst {}
+
+// --- Operand encode / decode ----------------------------------------
+
+fn inst_bc_u16(i: Inst) -> u16 {
+    return (u16)i.b | ((u16)i.c << 8);
+}
+
+fn inst_bc_i16(i: Inst) -> i32 {
+    // Sign-extend the 16-bit operand into a wider signed type so callers
+    // can do arithmetic on it cleanly. Zen-c doesn't expose an explicit
+    // i16 sign-extension cast, so we do it via shift.
+    let v = (u32)((u32)i.b | ((u32)i.c << 8));
+    if v & 0x8000 != 0 { return (i32)(v | 0xffff0000); }
+    return (i32)v;
+}
+
+fn make_inst_a(op: Op, a: u8) -> Inst {
+    return Inst{op: op, a: a, b: 0, c: 0};
+}
+
+fn make_inst_ab(op: Op, a: u8, b: u8) -> Inst {
+    return Inst{op: op, a: a, b: b, c: 0};
+}
+
+fn make_inst_abc(op: Op, a: u8, b: u8, c: u8) -> Inst {
+    return Inst{op: op, a: a, b: b, c: c};
+}
+
+fn make_inst_a_u16(op: Op, a: u8, v: u16) -> Inst {
+    return Inst{op: op, a: a, b: (u8)(v & 0xff), c: (u8)((v >> 8) & 0xff)};
+}
+
+fn make_inst_a_i16(op: Op, a: u8, v: i32) -> Inst {
+    let u: u16 = (u16)((u32)v & 0xffff);
+    return Inst{op: op, a: a, b: (u8)(u & 0xff), c: (u8)((u >> 8) & 0xff)};
+}
+
+fn make_inst_u16(op: Op, v: u16) -> Inst {
+    return Inst{op: op, a: 0, b: (u8)(v & 0xff), c: (u8)((v >> 8) & 0xff)};
+}
+
+fn make_inst_i16(op: Op, v: i32) -> Inst {
+    let u: u16 = (u16)((u32)v & 0xffff);
+    return Inst{op: op, a: 0, b: (u8)(u & 0xff), c: (u8)((u >> 8) & 0xff)};
+}
+
+// --- Function ----------------------------------------------------
+//
+// A compiled function. For Phase 3.0a there's only ever one — the
+// top-level "program" function. Phase 3.0b adds first-class user
+// functions and stores them on the context.
+
+struct Function {
+    code:           Inst*;     // bytecode (heap-allocated)
+    code_len:       usize;
+    constants:      ZjsValue*; // constant pool
+    const_count:    u32;
+    register_count: u32;       // size of the register file the interpreter must allocate
+    param_count:    u32;       // 0 for the top-level program
+}
+
+fn function_new() -> Function* {
+    let f: Function* = NULL;
+    raw {
+        f = (Function*)calloc(1, sizeof(Function));
+    }
+    return f;
+}
+
+fn function_free(f: Function*) -> void {
+    if f == NULL { return; }
+    let code = f.code;
+    let consts = f.constants;
+    raw {
+        free(code);
+        free(consts);
+        free(f);
+    }
+}

@@ -1,0 +1,557 @@
+// Compiler — walks the AST and emits bytecode into a Function.
+//
+// Single-function compiler for Phase 3.0a: every program is compiled
+// as one top-level "main" function. All declarations land in globals
+// on the context. Phase 3.0b will extend this with first-class user
+// functions, locals, and a scope chain.
+
+import "./token.zc";
+import "./ast.zc";
+import "./value.zc";
+import "./bytecode.zc";
+import "./context.zc";
+
+raw {
+    #include <stdlib.h>
+    #include <string.h>
+}
+
+struct Compiler {
+    ctx:           ZjsContext*;
+    source:        char*;
+    function:      Function*;
+
+    // bytecode buffer (heap-grown)
+    code:          Inst*;
+    code_count:    usize;
+    code_cap:      usize;
+
+    // constant pool (heap-grown)
+    constants:     ZjsValue*;
+    const_count:   u32;
+    const_cap:     u32;
+
+    // simple high-water-mark register allocator
+    next_reg:      u8;
+    max_reg:       u8;
+
+    // result tracking — the register holding the last evaluated
+    // expression-statement value (so we can emit Return at the end).
+    last_expr_reg: i32;     // -1 if no expression yet
+
+    had_error:     bool;
+}
+
+// --- Lifecycle ------------------------------------------------------
+
+fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
+    let c: Compiler* = NULL;
+    raw {
+        c = (Compiler*)calloc(1, sizeof(Compiler));
+    }
+    c.ctx = ctx;
+    c.source = source;
+    c.last_expr_reg = -1;
+    return c;
+}
+
+fn compiler_free(c: Compiler*) -> void {
+    if c == NULL { return; }
+    let code = c.code;
+    let consts = c.constants;
+    raw {
+        free(code);
+        free(consts);
+        free(c);
+    }
+}
+
+// --- Emission helpers -----------------------------------------------
+
+fn emit(c: Compiler*, inst: Inst) -> u32 {
+    if c.code_count >= c.code_cap {
+        let new_cap: usize = if c.code_cap == 0 { 64 } else { c.code_cap * 2 };
+        let old = c.code;
+        let new_code: Inst* = NULL;
+        raw { new_code = (Inst*)realloc(old, new_cap * sizeof(Inst)); }
+        c.code = new_code;
+        c.code_cap = new_cap;
+    }
+    c.code[c.code_count] = inst;
+    let idx = (u32)c.code_count;
+    c.code_count = c.code_count + 1;
+    return idx;
+}
+
+// Add a value to the constant pool; returns its index. No deduping yet.
+fn add_const(c: Compiler*, v: ZjsValue) -> u16 {
+    if c.const_count >= c.const_cap {
+        let new_cap: u32 = if c.const_cap == 0 { 8 } else { c.const_cap * 2 };
+        let old = c.constants;
+        let new_consts: ZjsValue* = NULL;
+        raw { new_consts = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
+        c.constants = new_consts;
+        c.const_cap = new_cap;
+    }
+    let idx = c.const_count;
+    c.constants[idx] = v;
+    c.const_count = c.const_count + 1;
+    return (u16)idx;
+}
+
+// --- Register allocator (high-water-mark) ---------------------------
+
+fn alloc_reg(c: Compiler*) -> u8 {
+    let r = c.next_reg;
+    c.next_reg = c.next_reg + 1;
+    if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+    return r;
+}
+
+fn release_reg(c: Compiler*, r: u8) -> void {
+    // High-water-mark allocator: only release if it's the top register.
+    // Otherwise the temp is part of a holding expression — we'll release
+    // it when its containing expression finishes.
+    if r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+}
+
+fn reset_temps(c: Compiler*) -> void {
+    c.next_reg = 0;
+}
+
+// --- Patching jumps -------------------------------------------------
+//
+// Forward jumps emit a placeholder offset (0) and remember the
+// instruction index so we can fix the offset once the target is known.
+
+fn patch_jump(c: Compiler*, jmp_idx: u32) -> void {
+    // Offset is target - (jmp_idx + 1) — we set the offset relative to
+    // the instruction *after* the jump, since the interpreter increments
+    // ip after each instruction and *then* adds the offset.
+    let here: i32 = (i32)c.code_count;
+    let from: i32 = (i32)jmp_idx + 1;
+    let off: i32 = here - from;
+    let inst = c.code[jmp_idx];
+    let patched: Inst = make_inst_a_i16(inst.op, inst.a, off);
+    c.code[jmp_idx] = patched;
+}
+
+fn emit_jump_back(c: Compiler*, op_: Op, target_idx: u32) -> void {
+    // Backward jump to a known target. Offset = target - (here + 1).
+    let here: i32 = (i32)c.code_count;
+    let off: i32 = (i32)target_idx - (here + 1);
+    emit(c, make_inst_i16(op_, off));
+}
+
+fn emit_jump_back_if(c: Compiler*, op_: Op, src: u8, target_idx: u32) -> void {
+    let here: i32 = (i32)c.code_count;
+    let off: i32 = (i32)target_idx - (here + 1);
+    emit(c, make_inst_a_i16(op_, src, off));
+}
+
+// =====================================================================
+// Expression compilation. Each function returns the register holding
+// the result (in the function-relative register file).
+// =====================================================================
+
+fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
+    if node == NULL { return 0; }
+    let k = node.kind;
+
+    if k == NodeKind::NumberExpr {
+        let dst = alloc_reg(c);
+        let v = node.num;
+        let i = (i32)v;
+        if (f64)i == v && i >= -32768 && i <= 32767 {
+            emit(c, make_inst_a_i16(Op::LoadInt, dst, i));
+        } else if (f64)i == v {
+            let idx = add_const(c, zjs_int32(i));
+            emit(c, make_inst_a_u16(Op::LoadConst, dst, idx));
+        } else {
+            let idx = add_const(c, zjs_double(v));
+            emit(c, make_inst_a_u16(Op::LoadConst, dst, idx));
+        }
+        return dst;
+    }
+    if k == NodeKind::BoolExpr {
+        let dst = alloc_reg(c);
+        if node.bool_value { emit(c, make_inst_a(Op::LoadTrue, dst)); }
+        else                { emit(c, make_inst_a(Op::LoadFalse, dst)); }
+        return dst;
+    }
+    if k == NodeKind::NullExpr {
+        let dst = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadNull, dst));
+        return dst;
+    }
+    if k == NodeKind::UndefinedExpr {
+        let dst = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadUndefined, dst));
+        return dst;
+    }
+    if k == NodeKind::IdentExpr {
+        let dst = alloc_reg(c);
+        let slot = ctx_intern_global(c.ctx,
+                                     c.source + node.start,
+                                     node.end - node.start);
+        emit(c, make_inst_a_u16(Op::LoadGlobal, dst, (u16)slot));
+        return dst;
+    }
+    if k == NodeKind::Paren {
+        return compile_expr(c, node.left);
+    }
+    if k == NodeKind::Sequence {
+        let i: u32 = 0;
+        let last: u8 = 0;
+        while i < node.children_count {
+            // Release the previous result before evaluating the next.
+            if i > 0 { release_reg(c, last); }
+            last = compile_expr(c, node.children[i]);
+            i = i + 1;
+        }
+        return last;
+    }
+    if k == NodeKind::Unary {
+        let src = compile_expr(c, node.left);
+        let op = node.op;
+        if op == TokenKind::Minus {
+            let dst = alloc_reg(c);
+            emit(c, make_inst_ab(Op::Neg, dst, src));
+            release_reg(c, src);
+            // dst is now top — but alloc_reg already bumped next_reg past it.
+            return dst;
+        }
+        if op == TokenKind::Plus {
+            // Unary plus: coerce to number. For numeric inputs, identity;
+            // for non-numbers, conversion. MVP: just Mov.
+            return src;
+        }
+        if op == TokenKind::Bang {
+            let dst = alloc_reg(c);
+            emit(c, make_inst_ab(Op::LogicalNot, dst, src));
+            release_reg(c, src);
+            return dst;
+        }
+        if op == TokenKind::Tilde {
+            let dst = alloc_reg(c);
+            emit(c, make_inst_ab(Op::BitNot, dst, src));
+            release_reg(c, src);
+            return dst;
+        }
+        // typeof / void / delete / ++ / -- — defer
+        c.had_error = true;
+        return src;
+    }
+    if k == NodeKind::Binary {
+        let op_kind = binary_op(node.op);
+        if op_kind == Op::Halt {
+            c.had_error = true;
+            return alloc_reg(c);
+        }
+        let l = compile_expr(c, node.left);
+        let r = compile_expr(c, node.right);
+        let dst = alloc_reg(c);
+        emit(c, make_inst_abc(op_kind, dst, l, r));
+        // Clean up temps once we've emitted; conservative dst placement.
+        release_reg(c, r);
+        release_reg(c, l);
+        // dst was just allocated above release calls; bump back up to it.
+        if c.next_reg <= dst { c.next_reg = dst + 1; }
+        return dst;
+    }
+    if k == NodeKind::Logical {
+        return compile_logical(c, node);
+    }
+    if k == NodeKind::Assignment {
+        return compile_assignment(c, node);
+    }
+
+    // Unsupported in 3.0a.
+    c.had_error = true;
+    let dst = alloc_reg(c);
+    emit(c, make_inst_a(Op::LoadUndefined, dst));
+    return dst;
+}
+
+fn binary_op(tk: TokenKind) -> Op {
+    if tk == TokenKind::Plus      { return Op::Add; }
+    if tk == TokenKind::Minus     { return Op::Sub; }
+    if tk == TokenKind::Star      { return Op::Mul; }
+    if tk == TokenKind::Slash     { return Op::Div; }
+    if tk == TokenKind::Percent   { return Op::Mod; }
+    if tk == TokenKind::StarStar  { return Op::Pow; }
+    if tk == TokenKind::EqEq      { return Op::CmpEq; }
+    if tk == TokenKind::BangEq    { return Op::CmpNe; }
+    if tk == TokenKind::EqEqEq    { return Op::CmpStrictEq; }
+    if tk == TokenKind::BangEqEq  { return Op::CmpStrictNe; }
+    if tk == TokenKind::Lt        { return Op::CmpLt; }
+    if tk == TokenKind::LtEq      { return Op::CmpLe; }
+    if tk == TokenKind::Gt        { return Op::CmpGt; }
+    if tk == TokenKind::GtEq      { return Op::CmpGe; }
+    if tk == TokenKind::Amp       { return Op::BitAnd; }
+    if tk == TokenKind::Pipe      { return Op::BitOr; }
+    if tk == TokenKind::Caret     { return Op::BitXor; }
+    if tk == TokenKind::LtLt      { return Op::Shl; }
+    if tk == TokenKind::GtGt      { return Op::Shr; }
+    if tk == TokenKind::GtGtGt    { return Op::UShr; }
+    return Op::Halt;     // sentinel "unsupported"
+}
+
+fn compile_logical(c: Compiler*, node: AstNode*) -> u8 {
+    // Short-circuiting: compute left into dst. For && jump past right if
+    // dst is falsy; for || jump past right if dst is truthy; for ??
+    // jump past right if dst is non-null-or-undefined (we approximate
+    // as truthy for MVP — Strictly should be neither null nor undef).
+    let dst = compile_expr(c, node.left);
+    let op_tok = node.op;
+
+    // Emit a placeholder jump that we'll patch.
+    let jmp_op = Op::JmpIfFalse;
+    if op_tok == TokenKind::PipePipe       { jmp_op = Op::JmpIfTrue; }
+    else if op_tok == TokenKind::AmpAmp    { jmp_op = Op::JmpIfFalse; }
+    else if op_tok == TokenKind::QuestionQuestion {
+        // ?? coalesces null/undefined to RHS; for MVP we treat all
+        // non-null-or-undefined as the LHS result. We don't have a
+        // dedicated "JmpIfNotNullish" op, so we synthesize: assume
+        // LHS sticks when truthy. (Wrong for `0 ?? x` but acceptable
+        // for the 3.0a milestone — fix in 3.1.)
+        jmp_op = Op::JmpIfTrue;
+    }
+    let jmp_idx = emit(c, make_inst_a_i16(jmp_op, dst, 0));
+
+    // Compile RHS into the same dst register (overwrite).
+    // Save next_reg, evaluate RHS into a fresh reg, Mov into dst.
+    let saved_next = c.next_reg;
+    let rhs = compile_expr(c, node.right);
+    emit(c, make_inst_ab(Op::Mov, dst, rhs));
+    c.next_reg = saved_next;
+
+    patch_jump(c, jmp_idx);
+    return dst;
+}
+
+fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
+    let target = node.left;
+    let op_tok = node.op;
+    if target == NULL || target.kind != NodeKind::IdentExpr {
+        c.had_error = true;
+        return alloc_reg(c);
+    }
+
+    let slot = ctx_intern_global(c.ctx,
+                                  c.source + target.start,
+                                  target.end - target.start);
+
+    if op_tok == TokenKind::Eq {
+        let r = compile_expr(c, node.right);
+        emit(c, make_inst_a_u16(Op::StoreGlobal, r, (u16)slot));
+        return r;
+    }
+
+    // Compound assignment: load, op, store.
+    let cur = alloc_reg(c);
+    emit(c, make_inst_a_u16(Op::LoadGlobal, cur, (u16)slot));
+    let rhs = compile_expr(c, node.right);
+
+    let op = Op::Halt;
+    if      op_tok == TokenKind::PlusEq    { op = Op::Add; }
+    else if op_tok == TokenKind::MinusEq   { op = Op::Sub; }
+    else if op_tok == TokenKind::StarEq    { op = Op::Mul; }
+    else if op_tok == TokenKind::SlashEq   { op = Op::Div; }
+    else if op_tok == TokenKind::PercentEq { op = Op::Mod; }
+    else if op_tok == TokenKind::StarStarEq{ op = Op::Pow; }
+    else if op_tok == TokenKind::AmpEq     { op = Op::BitAnd; }
+    else if op_tok == TokenKind::PipeEq    { op = Op::BitOr; }
+    else if op_tok == TokenKind::CaretEq   { op = Op::BitXor; }
+    else if op_tok == TokenKind::LtLtEq    { op = Op::Shl; }
+    else if op_tok == TokenKind::GtGtEq    { op = Op::Shr; }
+    else if op_tok == TokenKind::GtGtGtEq  { op = Op::UShr; }
+    else {
+        c.had_error = true;
+        return cur;
+    }
+    let dst = alloc_reg(c);
+    emit(c, make_inst_abc(op, dst, cur, rhs));
+    emit(c, make_inst_a_u16(Op::StoreGlobal, dst, (u16)slot));
+    release_reg(c, rhs);
+    release_reg(c, cur);
+    if c.next_reg <= dst { c.next_reg = dst + 1; }
+    return dst;
+}
+
+// =====================================================================
+// Statement compilation. Statements have no result register; they
+// update `last_expr_reg` when they're expression-statements.
+// =====================================================================
+
+fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
+    if node == NULL { return; }
+    let k = node.kind;
+
+    if k == NodeKind::BlockStmt {
+        let i: u32 = 0;
+        while i < node.children_count {
+            compile_stmt(c, node.children[i]);
+            i = i + 1;
+        }
+        return;
+    }
+    if k == NodeKind::VarDecl {
+        let i: u32 = 0;
+        while i < node.children_count {
+            let decl = node.children[i];
+            let slot = ctx_intern_global(c.ctx,
+                                          c.source + decl.name_start,
+                                          decl.name_length);
+            if decl.left != NULL {
+                let r = compile_expr(c, decl.left);
+                emit(c, make_inst_a_u16(Op::DefineGlobal, r, (u16)slot));
+                release_reg(c, r);
+            }
+            // No initializer: slot stays at whatever it was (undefined for fresh slots).
+            i = i + 1;
+        }
+        reset_temps(c);
+        return;
+    }
+    if k == NodeKind::IfStmt {
+        let cond_reg = compile_expr(c, node.left);
+        let jmp_else = emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_reg, 0));
+        release_reg(c, cond_reg);
+        reset_temps(c);
+
+        compile_stmt(c, node.right);   // then branch
+
+        if node.third != NULL {
+            let jmp_end = emit(c, make_inst_i16(Op::Jmp, 0));
+            patch_jump(c, jmp_else);
+            compile_stmt(c, node.third);
+            patch_jump(c, jmp_end);
+        } else {
+            patch_jump(c, jmp_else);
+        }
+        return;
+    }
+    if k == NodeKind::WhileStmt {
+        let loop_top = (u32)c.code_count;
+        let cond_reg = compile_expr(c, node.left);
+        let jmp_exit = emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_reg, 0));
+        release_reg(c, cond_reg);
+        reset_temps(c);
+
+        compile_stmt(c, node.right);    // body
+        emit_jump_back(c, Op::Jmp, loop_top);
+        patch_jump(c, jmp_exit);
+        return;
+    }
+    if k == NodeKind::DoWhileStmt {
+        let loop_top = (u32)c.code_count;
+        compile_stmt(c, node.left);     // body
+        let cond_reg = compile_expr(c, node.right);
+        emit_jump_back_if(c, Op::JmpIfTrue, cond_reg, loop_top);
+        release_reg(c, cond_reg);
+        reset_temps(c);
+        return;
+    }
+    if k == NodeKind::ForStmt {
+        // init
+        if node.left != NULL { compile_stmt_or_expr(c, node.left); }
+        let loop_top = (u32)c.code_count;
+        // test
+        let jmp_exit_idx: i32 = -1;
+        if node.right != NULL {
+            let cond_reg = compile_expr(c, node.right);
+            jmp_exit_idx = (i32)emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_reg, 0));
+            release_reg(c, cond_reg);
+            reset_temps(c);
+        }
+        // body
+        if node.children_count > 0 {
+            compile_stmt(c, node.children[0]);
+        }
+        // update
+        if node.third != NULL {
+            let r = compile_expr(c, node.third);
+            release_reg(c, r);
+            reset_temps(c);
+        }
+        emit_jump_back(c, Op::Jmp, loop_top);
+        if jmp_exit_idx >= 0 { patch_jump(c, (u32)jmp_exit_idx); }
+        return;
+    }
+    if k == NodeKind::ReturnStmt {
+        if node.left != NULL {
+            let r = compile_expr(c, node.left);
+            emit(c, make_inst_a(Op::Return, r));
+            c.last_expr_reg = (i32)r;
+        } else {
+            let r = alloc_reg(c);
+            emit(c, make_inst_a(Op::LoadUndefined, r));
+            emit(c, make_inst_a(Op::Return, r));
+            c.last_expr_reg = (i32)r;
+        }
+        reset_temps(c);
+        return;
+    }
+    if k == NodeKind::EmptyStmt   { return; }
+    if k == NodeKind::BreakStmt   { c.had_error = true; return; }       // labels would land here; MVP errors
+    if k == NodeKind::ContinueStmt{ c.had_error = true; return; }
+
+    // Default: an expression statement. Track its result register so we
+    // can emit a final Return at the end of the program.
+    let r = compile_expr(c, node);
+    c.last_expr_reg = (i32)r;
+    reset_temps(c);
+}
+
+// Helper for ForStmt's init slot, which can be either a VarDecl
+// (statement-shaped) or an expression. compile_stmt handles both.
+fn compile_stmt_or_expr(c: Compiler*, node: AstNode*) -> void {
+    compile_stmt(c, node);
+}
+
+// =====================================================================
+// Top-level compile entry. Walks the Program node, returns a finished
+// Function.
+// =====================================================================
+
+fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function* {
+    let c = compiler_new(ctx, source);
+    defer compiler_free(c);
+
+    if root != NULL && root.kind == NodeKind::Program {
+        let i: u32 = 0;
+        while i < root.children_count && !c.had_error {
+            compile_stmt(c, root.children[i]);
+            i = i + 1;
+        }
+    } else {
+        c.had_error = true;
+    }
+
+    // Emit final Return.
+    if c.last_expr_reg >= 0 {
+        emit(c, make_inst_a(Op::Return, (u8)c.last_expr_reg));
+    } else {
+        let r = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadUndefined, r));
+        emit(c, make_inst_a(Op::Return, r));
+    }
+
+    if c.had_error { return NULL; }
+
+    // Transfer ownership of code + constants to a fresh Function.
+    let f = function_new();
+    f.code = c.code;
+    f.code_len = c.code_count;
+    f.constants = c.constants;
+    f.const_count = c.const_count;
+    f.register_count = (u32)(c.max_reg + 1);
+    if f.register_count == 0 { f.register_count = 1; }
+    f.param_count = 0;
+
+    // Steal the buffers from the compiler so its destructor doesn't free them.
+    c.code = NULL;
+    c.constants = NULL;
+    return f;
+}

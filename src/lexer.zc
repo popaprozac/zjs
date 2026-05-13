@@ -1,0 +1,459 @@
+// Lexer — converts source bytes into a token stream.
+//
+// Single-pass, hand-written, no allocation. Tokens slice into the
+// caller-owned `source` buffer; the lexer borrows that pointer for
+// its lifetime. Whitespace and comments are silently skipped between
+// real tokens. EOF is returned indefinitely past end-of-input — the
+// parser tolerates that better than a special "no more tokens" sentinel.
+//
+// ASCII-only identifiers for now (Unicode IdentifierStart deferred).
+// Numeric values and string contents are NOT decoded here — the
+// emitted token is a source slice; the bytecode compiler will parse
+// the digits / unescape the characters when it materializes constants.
+
+import "./token.zc";
+
+struct Lexer {
+    source: char*;
+    pos:    usize;
+    len:    usize;
+    line:   u32;
+}
+
+impl Lexer {
+    fn new(source: char*, len: usize) -> Self {
+        return Lexer{
+            source: source,
+            pos:    0,
+            len:    len,
+            line:   1,
+        };
+    }
+
+    // --- Cursor primitives ------------------------------------------
+
+    fn at_end(self) -> bool {
+        return self.pos >= self.len;
+    }
+
+    fn peek(self) -> u8 {
+        if self.pos >= self.len { return 0; }
+        return (u8)self.source[self.pos];
+    }
+
+    fn peek_at(self, offset: usize) -> u8 {
+        let p = self.pos + offset;
+        if p >= self.len { return 0; }
+        return (u8)self.source[p];
+    }
+
+    fn advance(self) -> u8 {
+        let c = self.peek();
+        self.pos = self.pos + 1;
+        if c == (u8)'\n' { self.line = self.line + 1; }
+        return c;
+    }
+
+    fn match_char(self, expected: u8) -> bool {
+        if self.peek() != expected { return false; }
+        self.advance();
+        return true;
+    }
+
+    // --- Whitespace + comments --------------------------------------
+
+    fn skip_trivia(self) -> void {
+        while !self.at_end() {
+            let c = self.peek();
+            if c == (u8)' ' || c == (u8)'\t' || c == (u8)'\r' || c == (u8)'\n' {
+                self.advance();
+            } else if c == (u8)'/' && self.peek_at(1) == (u8)'/' {
+                // line comment: consume until newline (don't eat the newline itself —
+                // advance() will count it next pass through the loop)
+                self.advance();
+                self.advance();
+                while !self.at_end() && self.peek() != (u8)'\n' {
+                    self.advance();
+                }
+            } else if c == (u8)'/' && self.peek_at(1) == (u8)'*' {
+                // block comment: consume until "*/"
+                self.advance();
+                self.advance();
+                while !self.at_end() {
+                    if self.peek() == (u8)'*' && self.peek_at(1) == (u8)'/' {
+                        self.advance();
+                        self.advance();
+                        break;
+                    }
+                    self.advance();
+                }
+            } else {
+                return;
+            }
+        }
+    }
+
+    // --- Top-level entry --------------------------------------------
+
+    fn next_token(self) -> Token {
+        self.skip_trivia();
+        if self.at_end() {
+            return token_eof((u32)self.pos);
+        }
+
+        let start: u32 = (u32)self.pos;
+        let c = self.peek();
+
+        if is_id_start(c) {
+            return self.scan_identifier_or_keyword(start);
+        }
+        if is_digit(c) {
+            return self.scan_number(start);
+        }
+        if c == (u8)'"' || c == (u8)'\'' {
+            return self.scan_string(start, c);
+        }
+        // '.' is special: it may be a NumberLit (`.5`), an Ellipsis (`...`),
+        // or just `Dot`.
+        if c == (u8)'.' {
+            if is_digit(self.peek_at(1)) {
+                return self.scan_number(start);
+            }
+            if self.peek_at(1) == (u8)'.' && self.peek_at(2) == (u8)'.' {
+                self.advance(); self.advance(); self.advance();
+                return Token{kind: TokenKind::Ellipsis, start: start, length: 3};
+            }
+            self.advance();
+            return Token{kind: TokenKind::Dot, start: start, length: 1};
+        }
+
+        return self.scan_punctuator(start);
+    }
+
+    // --- Identifier / keyword ---------------------------------------
+
+    fn scan_identifier_or_keyword(self, start: u32) -> Token {
+        // First char already known to be is_id_start (peek confirmed).
+        self.advance();
+        while !self.at_end() && is_id_part(self.peek()) {
+            self.advance();
+        }
+        let length: u32 = (u32)self.pos - start;
+        let kind = lookup_keyword(self.source + start, (usize)length);
+        return Token{kind: kind, start: start, length: length};
+    }
+
+    // --- Number -----------------------------------------------------
+
+    fn scan_number(self, start: u32) -> Token {
+        let c0 = self.peek();
+        let c1 = self.peek_at(1);
+
+        if c0 == (u8)'0' && (c1 == (u8)'x' || c1 == (u8)'X') {
+            self.advance(); self.advance();
+            while !self.at_end() && is_hex_digit(self.peek()) { self.advance(); }
+            return Token{kind: TokenKind::NumberLit, start: start, length: (u32)self.pos - start};
+        }
+        if c0 == (u8)'0' && (c1 == (u8)'b' || c1 == (u8)'B') {
+            self.advance(); self.advance();
+            while !self.at_end() && (self.peek() == (u8)'0' || self.peek() == (u8)'1') { self.advance(); }
+            return Token{kind: TokenKind::NumberLit, start: start, length: (u32)self.pos - start};
+        }
+        if c0 == (u8)'0' && (c1 == (u8)'o' || c1 == (u8)'O') {
+            self.advance(); self.advance();
+            while !self.at_end() && self.peek() >= (u8)'0' && self.peek() <= (u8)'7' { self.advance(); }
+            return Token{kind: TokenKind::NumberLit, start: start, length: (u32)self.pos - start};
+        }
+
+        // Decimal integer part (may be empty if we started on '.').
+        while !self.at_end() && is_digit(self.peek()) { self.advance(); }
+
+        // Optional fractional part.
+        if self.peek() == (u8)'.' {
+            self.advance();
+            while !self.at_end() && is_digit(self.peek()) { self.advance(); }
+        }
+
+        // Optional exponent.
+        if self.peek() == (u8)'e' || self.peek() == (u8)'E' {
+            self.advance();
+            if self.peek() == (u8)'+' || self.peek() == (u8)'-' { self.advance(); }
+            while !self.at_end() && is_digit(self.peek()) { self.advance(); }
+        }
+
+        return Token{kind: TokenKind::NumberLit, start: start, length: (u32)self.pos - start};
+    }
+
+    // --- String -----------------------------------------------------
+
+    fn scan_string(self, start: u32, quote: u8) -> Token {
+        self.advance(); // consume opening quote
+        while !self.at_end() {
+            let c = self.peek();
+            if c == quote {
+                self.advance();
+                return Token{kind: TokenKind::StringLit, start: start, length: (u32)self.pos - start};
+            }
+            if c == (u8)'\n' {
+                // unterminated string at end of line
+                return Token{kind: TokenKind::Invalid, start: start, length: (u32)self.pos - start};
+            }
+            if c == (u8)'\\' {
+                self.advance();
+                if !self.at_end() { self.advance(); }
+            } else {
+                self.advance();
+            }
+        }
+        // ran off the end without a closing quote
+        return Token{kind: TokenKind::Invalid, start: start, length: (u32)self.pos - start};
+    }
+
+    // --- Punctuators ------------------------------------------------
+    //
+    // Single-char dispatch, with longest-match for multi-char operators
+    // built up explicitly. ECMA-262 §12.7 surface coverage.
+
+    fn scan_punctuator(self, start: u32) -> Token {
+        let c = self.advance();
+
+        if c == (u8)'(' { return self.tok1(TokenKind::LParen, start); }
+        if c == (u8)')' { return self.tok1(TokenKind::RParen, start); }
+        if c == (u8)'[' { return self.tok1(TokenKind::LBracket, start); }
+        if c == (u8)']' { return self.tok1(TokenKind::RBracket, start); }
+        if c == (u8)'{' { return self.tok1(TokenKind::LBrace, start); }
+        if c == (u8)'}' { return self.tok1(TokenKind::RBrace, start); }
+        if c == (u8)',' { return self.tok1(TokenKind::Comma, start); }
+        if c == (u8)';' { return self.tok1(TokenKind::Semicolon, start); }
+        if c == (u8)':' { return self.tok1(TokenKind::Colon, start); }
+        if c == (u8)'~' { return self.tok1(TokenKind::Tilde, start); }
+
+        if c == (u8)'?' {
+            if self.match_char((u8)'?') {
+                if self.match_char((u8)'=') { return self.tok_n(TokenKind::QuestionQuestionEq, start); }
+                return self.tok_n(TokenKind::QuestionQuestion, start);
+            }
+            if self.match_char((u8)'.') { return self.tok_n(TokenKind::QuestionDot, start); }
+            return self.tok1(TokenKind::Question, start);
+        }
+
+        if c == (u8)'!' {
+            if self.match_char((u8)'=') {
+                if self.match_char((u8)'=') { return self.tok_n(TokenKind::BangEqEq, start); }
+                return self.tok_n(TokenKind::BangEq, start);
+            }
+            return self.tok1(TokenKind::Bang, start);
+        }
+
+        if c == (u8)'=' {
+            if self.match_char((u8)'=') {
+                if self.match_char((u8)'=') { return self.tok_n(TokenKind::EqEqEq, start); }
+                return self.tok_n(TokenKind::EqEq, start);
+            }
+            if self.match_char((u8)'>') { return self.tok_n(TokenKind::Arrow, start); }
+            return self.tok1(TokenKind::Eq, start);
+        }
+
+        if c == (u8)'<' {
+            if self.match_char((u8)'=') { return self.tok_n(TokenKind::LtEq, start); }
+            if self.match_char((u8)'<') {
+                if self.match_char((u8)'=') { return self.tok_n(TokenKind::LtLtEq, start); }
+                return self.tok_n(TokenKind::LtLt, start);
+            }
+            return self.tok1(TokenKind::Lt, start);
+        }
+
+        if c == (u8)'>' {
+            if self.match_char((u8)'=') { return self.tok_n(TokenKind::GtEq, start); }
+            if self.match_char((u8)'>') {
+                if self.match_char((u8)'>') {
+                    if self.match_char((u8)'=') { return self.tok_n(TokenKind::GtGtGtEq, start); }
+                    return self.tok_n(TokenKind::GtGtGt, start);
+                }
+                if self.match_char((u8)'=') { return self.tok_n(TokenKind::GtGtEq, start); }
+                return self.tok_n(TokenKind::GtGt, start);
+            }
+            return self.tok1(TokenKind::Gt, start);
+        }
+
+        if c == (u8)'+' {
+            if self.match_char((u8)'+') { return self.tok_n(TokenKind::PlusPlus, start); }
+            if self.match_char((u8)'=') { return self.tok_n(TokenKind::PlusEq, start); }
+            return self.tok1(TokenKind::Plus, start);
+        }
+
+        if c == (u8)'-' {
+            if self.match_char((u8)'-') { return self.tok_n(TokenKind::MinusMinus, start); }
+            if self.match_char((u8)'=') { return self.tok_n(TokenKind::MinusEq, start); }
+            return self.tok1(TokenKind::Minus, start);
+        }
+
+        if c == (u8)'*' {
+            if self.match_char((u8)'*') {
+                if self.match_char((u8)'=') { return self.tok_n(TokenKind::StarStarEq, start); }
+                return self.tok_n(TokenKind::StarStar, start);
+            }
+            if self.match_char((u8)'=') { return self.tok_n(TokenKind::StarEq, start); }
+            return self.tok1(TokenKind::Star, start);
+        }
+
+        if c == (u8)'/' {
+            if self.match_char((u8)'=') { return self.tok_n(TokenKind::SlashEq, start); }
+            return self.tok1(TokenKind::Slash, start);
+        }
+
+        if c == (u8)'%' {
+            if self.match_char((u8)'=') { return self.tok_n(TokenKind::PercentEq, start); }
+            return self.tok1(TokenKind::Percent, start);
+        }
+
+        if c == (u8)'&' {
+            if self.match_char((u8)'&') {
+                if self.match_char((u8)'=') { return self.tok_n(TokenKind::AmpAmpEq, start); }
+                return self.tok_n(TokenKind::AmpAmp, start);
+            }
+            if self.match_char((u8)'=') { return self.tok_n(TokenKind::AmpEq, start); }
+            return self.tok1(TokenKind::Amp, start);
+        }
+
+        if c == (u8)'|' {
+            if self.match_char((u8)'|') {
+                if self.match_char((u8)'=') { return self.tok_n(TokenKind::PipePipeEq, start); }
+                return self.tok_n(TokenKind::PipePipe, start);
+            }
+            if self.match_char((u8)'=') { return self.tok_n(TokenKind::PipeEq, start); }
+            return self.tok1(TokenKind::Pipe, start);
+        }
+
+        if c == (u8)'^' {
+            if self.match_char((u8)'=') { return self.tok_n(TokenKind::CaretEq, start); }
+            return self.tok1(TokenKind::Caret, start);
+        }
+
+        return token_invalid(start);
+    }
+
+    // --- Token constructors (after the cursor has advanced) ---------
+
+    fn tok1(self, kind: TokenKind, start: u32) -> Token {
+        return Token{kind: kind, start: start, length: 1};
+    }
+
+    fn tok_n(self, kind: TokenKind, start: u32) -> Token {
+        return Token{kind: kind, start: start, length: (u32)self.pos - start};
+    }
+}
+
+// =====================================================================
+// Eager helper — fills a caller-owned buffer with tokens. Returns the
+// count emitted (always includes a trailing Eof). Stops if buf would
+// overflow; caller can detect by comparing returned count to capacity.
+// =====================================================================
+
+fn tokenize_into(source: char*, len: usize, out: Token*, cap: usize) -> usize {
+    let lex = Lexer::new(source, len);
+    let n: usize = 0;
+    while n < cap {
+        let t = lex.next_token();
+        out[n] = t;
+        n = n + 1;
+        if t.kind == TokenKind::Eof { return n; }
+    }
+    return n;
+}
+
+// =====================================================================
+// Character classification (ASCII fast paths).
+// =====================================================================
+
+fn is_digit(c: u8) -> bool {
+    return c >= (u8)'0' && c <= (u8)'9';
+}
+
+fn is_hex_digit(c: u8) -> bool {
+    if is_digit(c) { return true; }
+    if c >= (u8)'a' && c <= (u8)'f' { return true; }
+    if c >= (u8)'A' && c <= (u8)'F' { return true; }
+    return false;
+}
+
+fn is_alpha(c: u8) -> bool {
+    if c >= (u8)'a' && c <= (u8)'z' { return true; }
+    if c >= (u8)'A' && c <= (u8)'Z' { return true; }
+    return false;
+}
+
+fn is_id_start(c: u8) -> bool {
+    if is_alpha(c) { return true; }
+    if c == (u8)'_' { return true; }
+    if c == (u8)'$' { return true; }
+    return false;
+}
+
+fn is_id_part(c: u8) -> bool {
+    if is_id_start(c) { return true; }
+    if is_digit(c) { return true; }
+    return false;
+}
+
+// =====================================================================
+// Keyword recognition. Linear walk for now — ~40 entries, only runs
+// after a full identifier has already been scanned. Profile first if
+// this ever shows up hot; then swap in length-bucketed dispatch or
+// gperf.
+// =====================================================================
+
+fn streq_n(a: char*, alen: usize, b: char*, blen: usize) -> bool {
+    if alen != blen { return false; }
+    let i: usize = 0;
+    while i < alen {
+        if a[i] != b[i] { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn lookup_keyword(text: char*, len: usize) -> TokenKind {
+    if streq_n(text, len, "var", 3)         { return TokenKind::KwVar; }
+    if streq_n(text, len, "let", 3)         { return TokenKind::KwLet; }
+    if streq_n(text, len, "const", 5)       { return TokenKind::KwConst; }
+    if streq_n(text, len, "function", 8)    { return TokenKind::KwFunction; }
+    if streq_n(text, len, "return", 6)      { return TokenKind::KwReturn; }
+    if streq_n(text, len, "if", 2)          { return TokenKind::KwIf; }
+    if streq_n(text, len, "else", 4)        { return TokenKind::KwElse; }
+    if streq_n(text, len, "for", 3)         { return TokenKind::KwFor; }
+    if streq_n(text, len, "while", 5)       { return TokenKind::KwWhile; }
+    if streq_n(text, len, "do", 2)          { return TokenKind::KwDo; }
+    if streq_n(text, len, "break", 5)       { return TokenKind::KwBreak; }
+    if streq_n(text, len, "continue", 8)    { return TokenKind::KwContinue; }
+    if streq_n(text, len, "class", 5)       { return TokenKind::KwClass; }
+    if streq_n(text, len, "extends", 7)     { return TokenKind::KwExtends; }
+    if streq_n(text, len, "super", 5)       { return TokenKind::KwSuper; }
+    if streq_n(text, len, "new", 3)         { return TokenKind::KwNew; }
+    if streq_n(text, len, "this", 4)        { return TokenKind::KwThis; }
+    if streq_n(text, len, "true", 4)        { return TokenKind::KwTrue; }
+    if streq_n(text, len, "false", 5)       { return TokenKind::KwFalse; }
+    if streq_n(text, len, "null", 4)        { return TokenKind::KwNull; }
+    if streq_n(text, len, "undefined", 9)   { return TokenKind::KwUndefined; }
+    if streq_n(text, len, "typeof", 6)      { return TokenKind::KwTypeof; }
+    if streq_n(text, len, "delete", 6)      { return TokenKind::KwDelete; }
+    if streq_n(text, len, "void", 4)        { return TokenKind::KwVoid; }
+    if streq_n(text, len, "in", 2)          { return TokenKind::KwIn; }
+    if streq_n(text, len, "of", 2)          { return TokenKind::KwOf; }
+    if streq_n(text, len, "instanceof", 10) { return TokenKind::KwInstanceof; }
+    if streq_n(text, len, "throw", 5)       { return TokenKind::KwThrow; }
+    if streq_n(text, len, "try", 3)         { return TokenKind::KwTry; }
+    if streq_n(text, len, "catch", 5)       { return TokenKind::KwCatch; }
+    if streq_n(text, len, "finally", 7)     { return TokenKind::KwFinally; }
+    if streq_n(text, len, "switch", 6)      { return TokenKind::KwSwitch; }
+    if streq_n(text, len, "case", 4)        { return TokenKind::KwCase; }
+    if streq_n(text, len, "default", 7)     { return TokenKind::KwDefault; }
+    if streq_n(text, len, "async", 5)       { return TokenKind::KwAsync; }
+    if streq_n(text, len, "await", 5)       { return TokenKind::KwAwait; }
+    if streq_n(text, len, "yield", 5)       { return TokenKind::KwYield; }
+    if streq_n(text, len, "import", 6)      { return TokenKind::KwImport; }
+    if streq_n(text, len, "export", 6)      { return TokenKind::KwExport; }
+    if streq_n(text, len, "from", 4)        { return TokenKind::KwFrom; }
+    if streq_n(text, len, "as", 2)          { return TokenKind::KwAs; }
+    return TokenKind::Identifier;
+}

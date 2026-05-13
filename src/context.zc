@@ -1,0 +1,103 @@
+// Engine context — Phase 3.0a.
+//
+// One context = one isolated JS world. Holds the global variable table
+// and (later) the heap + GC + symbol table. Globals are referenced by
+// integer slot index in compiled bytecode; the compiler and the runtime
+// share the same context so slot indices match up by construction.
+
+import "stdlib.h" as libc;
+import "string.h" as libc_str;
+import "./value.zc";
+
+raw {
+    #include <stdlib.h>
+    #include <string.h>
+}
+
+struct GlobalEntry {
+    name:     char*;    // owned (calloc'd, copied from source); freed on ctx free
+    name_len: u32;
+    value:    ZjsValue;
+}
+
+struct ZjsContext {
+    globals:     GlobalEntry*;
+    global_count: u32;
+    global_cap:  u32;
+}
+
+fn zjs_new_context() -> ZjsContext* {
+    let result: ZjsContext* = NULL;
+    raw {
+        result = (ZjsContext*)calloc(1, sizeof(ZjsContext));
+    }
+    return result;
+}
+
+fn zjs_free_context(ctx: ZjsContext*) -> void {
+    if ctx == NULL { return; }
+    // Free every interned global name.
+    let i: u32 = 0;
+    while i < ctx.global_count {
+        let name_ptr = ctx.globals[i].name;
+        raw { free(name_ptr); }
+        i = i + 1;
+    }
+    let globals = ctx.globals;
+    raw {
+        free(globals);
+        free(ctx);
+    }
+}
+
+// Find an existing global by name. Returns -1 if not found (i32 so we
+// can use a sentinel).
+fn ctx_find_global(ctx: ZjsContext*, name: char*, name_len: u32) -> i32 {
+    let i: u32 = 0;
+    while i < ctx.global_count {
+        if ctx.globals[i].name_len == name_len {
+            let ent_name = ctx.globals[i].name;
+            let eq: int = 0;
+            raw { eq = (memcmp(ent_name, name, name_len) == 0) ? 1 : 0; }
+            if eq != 0 { return (i32)i; }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+// Intern a global name: return its slot index, creating a fresh slot
+// (with value = undefined) if it doesn't exist yet.
+fn ctx_intern_global(ctx: ZjsContext*, name: char*, name_len: u32) -> u32 {
+    let existing = ctx_find_global(ctx, name, name_len);
+    if existing >= 0 { return (u32)existing; }
+
+    // Grow the table if needed.
+    if ctx.global_count >= ctx.global_cap {
+        let new_cap: u32 = if ctx.global_cap == 0 { 16 } else { ctx.global_cap * 2 };
+        let old_g = ctx.globals;
+        let new_g: GlobalEntry* = NULL;
+        raw {
+            new_g = (GlobalEntry*)realloc(old_g, new_cap * sizeof(GlobalEntry));
+            // Zero the new tail so we have a defined starting state.
+            memset(&new_g[ctx->global_cap], 0, (new_cap - ctx->global_cap) * sizeof(GlobalEntry));
+        }
+        ctx.globals = new_g;
+        ctx.global_cap = new_cap;
+    }
+
+    // Allocate + copy the name (it's a slice of caller's source).
+    let name_copy: char* = NULL;
+    raw {
+        name_copy = (char*)malloc(name_len + 1);
+        memcpy(name_copy, name, name_len);
+        name_copy[name_len] = 0;
+    }
+
+    let idx = ctx.global_count;
+    ctx.globals[idx].name = name_copy;
+    ctx.globals[idx].name_len = name_len;
+    ctx.globals[idx].value = zjs_undefined();
+    ctx.global_count = ctx.global_count + 1;
+    return idx;
+}

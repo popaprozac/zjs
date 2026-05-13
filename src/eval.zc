@@ -1,0 +1,33 @@
+// Top-level evaluation entry — Phase 3.0a.
+//
+// Lex → parse → compile → interpret → return result. The compiled
+// Function is freed after execution; globals live on the context and
+// persist across calls.
+
+import "./context.zc";
+import "./value.zc";
+import "./parser.zc";
+import "./bytecode.zc";
+import "./compiler.zc";
+import "./interpreter.zc";
+
+raw {
+    #include <string.h>
+}
+
+fn zjs_eval(ctx: ZjsContext*, source: char*) -> ZjsValue {
+    if ctx == NULL || source == NULL { return zjs_undefined(); }
+
+    let len: usize = 0;
+    raw { len = strlen(source); }
+
+    let parse = parse_program(source, len);
+    defer parser_free_result(parse);
+    if parse.had_error { return zjs_undefined(); }
+
+    let f = compile_program(ctx, source, parse.root);
+    if f == NULL { return zjs_undefined(); }
+    defer function_free(f);
+
+    return interpret(ctx, f);
+}

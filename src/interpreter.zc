@@ -1,0 +1,163 @@
+// Interpreter — executes a compiled Function and returns its result.
+//
+// Phase 3.0a: simple `while` + per-op `if` chain. Hermes-style
+// computed-goto dispatch is the eventual target (see design study),
+// but the per-op handlers are small and the bottleneck for a non-JIT
+// engine isn't the dispatch primitive itself — it's value-rep,
+// inline caches, hidden classes. Those are bigger lifts we'll attack
+// later. The structure here is intentionally trivial to keep
+// debugging the FIRST end-to-end execution path easy.
+
+import "./value.zc";
+import "./bytecode.zc";
+import "./context.zc";
+
+raw {
+    #include <stdlib.h>
+    #include <string.h>
+}
+
+fn interpret(ctx: ZjsContext*, f: Function*) -> ZjsValue {
+    if f == NULL { return zjs_undefined(); }
+
+    let reg_count = f.register_count;
+    let regs: ZjsValue* = NULL;
+    raw {
+        regs = (ZjsValue*)calloc(reg_count, sizeof(ZjsValue));
+    }
+    defer raw { free(regs); }
+
+    // Initialize register file to undefined so a bug doesn't crash with
+    // a stray NaN-boxed garbage value.
+    let init: ZjsValue = zjs_undefined();
+    let ri: u32 = 0;
+    while ri < reg_count {
+        regs[ri] = init;
+        ri = ri + 1;
+    }
+
+    let ip: usize = 0;
+    let result: ZjsValue = zjs_undefined();
+
+    while ip < f.code_len {
+        let inst = f.code[ip];
+        let op = inst.op;
+
+        if op == Op::Return {
+            result = regs[inst.a];
+            return result;
+        }
+        if op == Op::Halt {
+            return result;
+        }
+
+        if op == Op::LoadInt {
+            regs[inst.a] = zjs_int32((i32)inst_bc_i16(inst));
+        } else if op == Op::LoadConst {
+            regs[inst.a] = f.constants[inst_bc_u16(inst)];
+        } else if op == Op::LoadUndefined {
+            regs[inst.a] = zjs_undefined();
+        } else if op == Op::LoadNull {
+            regs[inst.a] = zjs_null();
+        } else if op == Op::LoadTrue {
+            regs[inst.a] = zjs_bool(1);
+        } else if op == Op::LoadFalse {
+            regs[inst.a] = zjs_bool(0);
+        } else if op == Op::Mov {
+            regs[inst.a] = regs[inst.b];
+
+        // --- globals --------------------------------------------
+        } else if op == Op::DefineGlobal {
+            let slot = inst_bc_u16(inst);
+            ctx.globals[slot].value = regs[inst.a];
+        } else if op == Op::LoadGlobal {
+            let slot = inst_bc_u16(inst);
+            regs[inst.a] = ctx.globals[slot].value;
+        } else if op == Op::StoreGlobal {
+            let slot = inst_bc_u16(inst);
+            ctx.globals[slot].value = regs[inst.a];
+
+        // --- arithmetic -----------------------------------------
+        } else if op == Op::Add {
+            regs[inst.a] = zjs_arith_add(regs[inst.b], regs[inst.c]);
+        } else if op == Op::Sub {
+            regs[inst.a] = zjs_arith_sub(regs[inst.b], regs[inst.c]);
+        } else if op == Op::Mul {
+            regs[inst.a] = zjs_arith_mul(regs[inst.b], regs[inst.c]);
+        } else if op == Op::Div {
+            regs[inst.a] = zjs_arith_div(regs[inst.b], regs[inst.c]);
+        } else if op == Op::Mod {
+            regs[inst.a] = zjs_arith_mod(regs[inst.b], regs[inst.c]);
+        } else if op == Op::Pow {
+            regs[inst.a] = zjs_arith_pow(regs[inst.b], regs[inst.c]);
+
+        // --- bitwise --------------------------------------------
+        } else if op == Op::BitAnd {
+            regs[inst.a] = zjs_bit_and(regs[inst.b], regs[inst.c]);
+        } else if op == Op::BitOr {
+            regs[inst.a] = zjs_bit_or(regs[inst.b], regs[inst.c]);
+        } else if op == Op::BitXor {
+            regs[inst.a] = zjs_bit_xor(regs[inst.b], regs[inst.c]);
+        } else if op == Op::Shl {
+            regs[inst.a] = zjs_shl(regs[inst.b], regs[inst.c]);
+        } else if op == Op::Shr {
+            regs[inst.a] = zjs_shr(regs[inst.b], regs[inst.c]);
+        } else if op == Op::UShr {
+            regs[inst.a] = zjs_ushr(regs[inst.b], regs[inst.c]);
+
+        // --- comparison -----------------------------------------
+        } else if op == Op::CmpEq {
+            regs[inst.a] = zjs_bool(zjs_loose_eq(regs[inst.b], regs[inst.c]));
+        } else if op == Op::CmpNe {
+            let eq = zjs_loose_eq(regs[inst.b], regs[inst.c]);
+            regs[inst.a] = zjs_bool(if eq != 0 { 0 } else { 1 });
+        } else if op == Op::CmpStrictEq {
+            regs[inst.a] = zjs_bool(zjs_strict_eq(regs[inst.b], regs[inst.c]));
+        } else if op == Op::CmpStrictNe {
+            let eq = zjs_strict_eq(regs[inst.b], regs[inst.c]);
+            regs[inst.a] = zjs_bool(if eq != 0 { 0 } else { 1 });
+        } else if op == Op::CmpLt {
+            regs[inst.a] = zjs_bool(zjs_cmp_lt(regs[inst.b], regs[inst.c]));
+        } else if op == Op::CmpLe {
+            regs[inst.a] = zjs_bool(zjs_cmp_le(regs[inst.b], regs[inst.c]));
+        } else if op == Op::CmpGt {
+            regs[inst.a] = zjs_bool(zjs_cmp_lt(regs[inst.c], regs[inst.b]));
+        } else if op == Op::CmpGe {
+            regs[inst.a] = zjs_bool(zjs_cmp_le(regs[inst.c], regs[inst.b]));
+
+        // --- unary ----------------------------------------------
+        } else if op == Op::Neg {
+            regs[inst.a] = zjs_arith_neg(regs[inst.b]);
+        } else if op == Op::BitNot {
+            regs[inst.a] = zjs_bit_not(regs[inst.b]);
+        } else if op == Op::LogicalNot {
+            let b = zjs_to_bool_coerce(regs[inst.b]);
+            regs[inst.a] = zjs_bool(if b != 0 { 0 } else { 1 });
+
+        // --- control flow ---------------------------------------
+        } else if op == Op::Jmp {
+            let off = inst_bc_i16(inst);
+            ip = (usize)((i32)ip + off);
+            // The ip += 1 below would still happen, but we deliberately
+            // structured Jmp's offset as "relative to ip + 1", so the
+            // normal increment is what we want. Same for the conditional
+            // jumps below.
+        } else if op == Op::JmpIfTrue {
+            if zjs_to_bool_coerce(regs[inst.a]) != 0 {
+                let off = inst_bc_i16(inst);
+                ip = (usize)((i32)ip + off);
+            }
+        } else if op == Op::JmpIfFalse {
+            if zjs_to_bool_coerce(regs[inst.a]) == 0 {
+                let off = inst_bc_i16(inst);
+                ip = (usize)((i32)ip + off);
+            }
+        }
+        // else: unknown opcode — ignore (interpreter is permissive
+        // during MVP; the compiler shouldn't emit such ops).
+
+        ip = ip + 1;
+    }
+
+    return result;
+}

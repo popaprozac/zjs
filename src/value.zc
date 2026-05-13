@@ -1,0 +1,351 @@
+// NaN-boxed value representation (JSC layout).
+//
+// 64-bit immediate values packed into one struct field. The struct
+// layout MUST match the typedef in include/zjs.h byte-for-byte — it's
+// part of the public C ABI.
+//
+// Layout summary (see docs/phases/phase-2-1-value-representation.md
+// for the bit-level reference):
+//
+//   int32          NumberTag | (uint32_t)i
+//   double         u64_bits(d) + DoubleEncodeOffset
+//   cell (ptr)     low 48 bits, high 16 zero
+//   null           0x...0002
+//   undefined      0x...000a
+//   false          0x...0006
+//   true           0x...0007
+
+struct ZjsValue {
+    bits: u64;
+}
+
+// ZjsValue is a pure value type. Opt into Copy so it flows freely
+// across the C ABI (and across opcode handlers later) without tripping
+// move semantics.
+impl Copy for ZjsValue {}
+
+// --- NaN-box constants -----------------------------------------------
+//
+// Zen-c's `int` is 32-bit (per docs §2 "Primitive Types"), so a literal
+// like `0xfffe000000000000` is parsed as int32 and silently truncates
+// before any `: u64` annotation on the `def` takes effect. We construct
+// the wide constants via shift-from-small-value so every intermediate
+// fits comfortably in 32 bits and the `(u64)` cast widens *before* the
+// shift.
+
+def NUMBER_TAG: u64           = (u64)0xfffe << 48;
+def OTHER_TAG: u64            = 2;
+def BOOL_TAG: u64             = 4;
+def UNDEFINED_TAG: u64        = 8;
+def NOT_CELL_MASK: u64        = ((u64)0xfffe << 48) | (u64)2;
+def DOUBLE_ENCODE_OFFSET: u64 = (u64)1 << 49;
+
+def VALUE_NULL: u64           = 2;   // OTHER_TAG
+def VALUE_UNDEFINED: u64      = 10;  // OTHER_TAG | UNDEFINED_TAG (2 | 8)
+def VALUE_FALSE: u64          = 6;   // OTHER_TAG | BOOL_TAG     (2 | 4)
+def VALUE_TRUE: u64           = 7;   // OTHER_TAG | BOOL_TAG | 1 (2 | 4 | 1)
+
+// --- Bit-reinterpret between f64 and u64 -----------------------------
+//
+// Zen-c has no language-level type-pun intrinsic; `(u64)d` would be a
+// value-preserving cast (truncation/rounding), not a bit reinterpret.
+// memcpy is the standard portable type-pun in C and the right tool
+// here. This is the legitimate raw{} case.
+
+fn double_to_bits(d: f64) -> u64 {
+    let bits: u64 = 0;
+    raw {
+        // Inside raw{}, Zen-c type names aren't visible — use C types.
+        libc_memcpy(&bits, &d, sizeof(double));
+    }
+    return bits;
+}
+
+fn bits_to_double(b: u64) -> f64 {
+    let d: f64 = 0.0;
+    raw {
+        libc_memcpy(&d, &b, sizeof(double));
+    }
+    return d;
+}
+
+// Bridge the `libc::memcpy` symbol into the raw-block scope above.
+// (Inside `raw {}` we can't name Zen-c imports; we resolve it through
+// a tiny wrapper that the C compiler will inline.)
+raw {
+    #include <string.h>
+    static inline void libc_memcpy(void* dst, const void* src, unsigned long n) {
+        memcpy(dst, src, n);
+    }
+}
+
+// --- Constructors -----------------------------------------------------
+
+fn zjs_int32(i: i32) -> ZjsValue {
+    // Sign-extend then mask to 32 bits before OR-ing with NumberTag.
+    // `(u32)i` is well-defined modulo 2^32; cast widens to u64 with
+    // zero extension.
+    return ZjsValue{ bits: NUMBER_TAG | (u64)(u32)i };
+}
+
+fn zjs_double(d: f64) -> ZjsValue {
+    return ZjsValue{ bits: double_to_bits(d) + DOUBLE_ENCODE_OFFSET };
+}
+
+fn zjs_bool(b: int) -> ZjsValue {
+    if b != 0 {
+        return ZjsValue{ bits: VALUE_TRUE };
+    }
+    return ZjsValue{ bits: VALUE_FALSE };
+}
+
+fn zjs_null() -> ZjsValue {
+    return ZjsValue{ bits: VALUE_NULL };
+}
+
+fn zjs_undefined() -> ZjsValue {
+    return ZjsValue{ bits: VALUE_UNDEFINED };
+}
+
+// --- Type predicates --------------------------------------------------
+
+fn zjs_is_int32(v: ZjsValue) -> int {
+    if (v.bits & NUMBER_TAG) == NUMBER_TAG { return 1; }
+    return 0;
+}
+
+fn zjs_is_number(v: ZjsValue) -> int {
+    if (v.bits & NUMBER_TAG) != 0 { return 1; }
+    return 0;
+}
+
+fn zjs_is_double(v: ZjsValue) -> int {
+    // Number AND NOT int32. Equivalent to: the high 16 bits are in
+    // 0x0002…0xfffd inclusive, but we route through the cheaper
+    // two-test form so the compiler keeps NUMBER_TAG in a register.
+    if zjs_is_number(v) == 0 { return 0; }
+    if zjs_is_int32(v) != 0  { return 0; }
+    return 1;
+}
+
+fn zjs_is_bool(v: ZjsValue) -> int {
+    // ValueFalse = 0x6, ValueTrue = 0x7 — clearing the low bit yields 0x6
+    // for both. One mask, one compare.
+    if (v.bits & ~(u64)1) == VALUE_FALSE { return 1; }
+    return 0;
+}
+
+fn zjs_is_null(v: ZjsValue) -> int {
+    if v.bits == VALUE_NULL { return 1; }
+    return 0;
+}
+
+fn zjs_is_undefined(v: ZjsValue) -> int {
+    if v.bits == VALUE_UNDEFINED { return 1; }
+    return 0;
+}
+
+fn zjs_is_cell(v: ZjsValue) -> int {
+    // Pointers have high 16 = 0 and the OTHER_TAG bit clear. The
+    // ValueEmpty sentinel (0) would technically pass this test, but
+    // the engine never hands out an Empty to consumers.
+    if (v.bits & NOT_CELL_MASK) == 0 { return 1; }
+    return 0;
+}
+
+// --- Unboxers — UB if the matching predicate is false ----------------
+
+fn zjs_as_int32(v: ZjsValue) -> i32 {
+    return (i32)(u32)v.bits;
+}
+
+fn zjs_as_double(v: ZjsValue) -> f64 {
+    return bits_to_double(v.bits - DOUBLE_ENCODE_OFFSET);
+}
+
+fn zjs_as_bool(v: ZjsValue) -> int {
+    // Low bit of ValueFalse/ValueTrue is the boolean payload.
+    return (int)(v.bits & 1);
+}
+
+// =====================================================================
+// Arithmetic + ToBoolean helpers. Used by the interpreter (Phase 3+).
+// Number ops follow ECMA-262 semantics: int32 fast path with promotion
+// to double on overflow; doubles propagate. Non-number operands map to
+// NaN (with the exception of bool, which we treat as 0/1 numerically).
+// =====================================================================
+
+raw {
+    #include <math.h>
+    #include <stdint.h>
+    #include <limits.h>
+}
+
+fn zjs_to_double(v: ZjsValue) -> f64 {
+    if zjs_is_int32(v) != 0     { return (f64)zjs_as_int32(v); }
+    if zjs_is_double(v) != 0    { return zjs_as_double(v); }
+    if zjs_is_bool(v) != 0      { return (f64)zjs_as_bool(v); }
+    if zjs_is_null(v) != 0      { return 0.0; }
+    if zjs_is_undefined(v) != 0 {
+        let nan: f64 = 0.0;
+        raw { nan = (double)NAN; }
+        return nan;
+    }
+    let nan: f64 = 0.0;
+    raw { nan = (double)NAN; }
+    return nan;
+}
+
+// ECMA-262 ToBoolean.
+fn zjs_to_bool_coerce(v: ZjsValue) -> int {
+    if zjs_is_bool(v) != 0      { return zjs_as_bool(v); }
+    if zjs_is_int32(v) != 0     { if zjs_as_int32(v) != 0 { return 1; } return 0; }
+    if zjs_is_double(v) != 0 {
+        let d = zjs_as_double(v);
+        let is_nan: int = 0;
+        raw { is_nan = isnan(d) ? 1 : 0; }
+        if is_nan != 0 { return 0; }
+        if d != 0.0 { return 1; }
+        return 0;
+    }
+    if zjs_is_null(v) != 0      { return 0; }
+    if zjs_is_undefined(v) != 0 { return 0; }
+    if zjs_is_cell(v) != 0      { return 1; }   // objects/strings are truthy (strings: TBD)
+    return 0;
+}
+
+fn zjs_arith_add(a: ZjsValue, b: ZjsValue) -> ZjsValue {
+    if zjs_is_int32(a) != 0 && zjs_is_int32(b) != 0 {
+        let ai: i64 = (i64)zjs_as_int32(a);
+        let bi: i64 = (i64)zjs_as_int32(b);
+        let sum: i64 = ai + bi;
+        let fits: int = 0;
+        raw { fits = (sum >= INT32_MIN && sum <= INT32_MAX) ? 1 : 0; }
+        if fits != 0 { return zjs_int32((i32)sum); }
+        return zjs_double((f64)sum);
+    }
+    return zjs_double(zjs_to_double(a) + zjs_to_double(b));
+}
+
+fn zjs_arith_sub(a: ZjsValue, b: ZjsValue) -> ZjsValue {
+    if zjs_is_int32(a) != 0 && zjs_is_int32(b) != 0 {
+        let ai: i64 = (i64)zjs_as_int32(a);
+        let bi: i64 = (i64)zjs_as_int32(b);
+        let diff: i64 = ai - bi;
+        let fits: int = 0;
+        raw { fits = (diff >= INT32_MIN && diff <= INT32_MAX) ? 1 : 0; }
+        if fits != 0 { return zjs_int32((i32)diff); }
+        return zjs_double((f64)diff);
+    }
+    return zjs_double(zjs_to_double(a) - zjs_to_double(b));
+}
+
+fn zjs_arith_mul(a: ZjsValue, b: ZjsValue) -> ZjsValue {
+    if zjs_is_int32(a) != 0 && zjs_is_int32(b) != 0 {
+        let ai: i64 = (i64)zjs_as_int32(a);
+        let bi: i64 = (i64)zjs_as_int32(b);
+        let prod: i64 = ai * bi;
+        let fits: int = 0;
+        raw { fits = (prod >= INT32_MIN && prod <= INT32_MAX) ? 1 : 0; }
+        if fits != 0 { return zjs_int32((i32)prod); }
+        return zjs_double((f64)prod);
+    }
+    return zjs_double(zjs_to_double(a) * zjs_to_double(b));
+}
+
+fn zjs_arith_div(a: ZjsValue, b: ZjsValue) -> ZjsValue {
+    // JS division always yields a double — never int32 (e.g. 5/2 = 2.5).
+    return zjs_double(zjs_to_double(a) / zjs_to_double(b));
+}
+
+fn zjs_arith_mod(a: ZjsValue, b: ZjsValue) -> ZjsValue {
+    let af = zjs_to_double(a);
+    let bf = zjs_to_double(b);
+    let r: f64 = 0.0;
+    raw { r = fmod(af, bf); }
+    return zjs_double(r);
+}
+
+fn zjs_arith_pow(a: ZjsValue, b: ZjsValue) -> ZjsValue {
+    let af = zjs_to_double(a);
+    let bf = zjs_to_double(b);
+    let r: f64 = 0.0;
+    raw { r = pow(af, bf); }
+    return zjs_double(r);
+}
+
+fn zjs_arith_neg(a: ZjsValue) -> ZjsValue {
+    if zjs_is_int32(a) != 0 {
+        let i = zjs_as_int32(a);
+        let is_min: int = 0;
+        raw { is_min = (i == INT32_MIN) ? 1 : 0; }
+        if is_min == 0 { return zjs_int32(-i); }
+        return zjs_double(-(f64)i);
+    }
+    return zjs_double(-zjs_to_double(a));
+}
+
+fn zjs_to_int32(v: ZjsValue) -> i32 {
+    if zjs_is_int32(v) != 0 { return zjs_as_int32(v); }
+    let d = zjs_to_double(v);
+    // ECMA-262 ToInt32 is more complex; this is a reasonable MVP.
+    return (i32)d;
+}
+
+fn zjs_to_uint32(v: ZjsValue) -> u32 {
+    return (u32)zjs_to_int32(v);
+}
+
+fn zjs_bit_and(a: ZjsValue, b: ZjsValue) -> ZjsValue { return zjs_int32(zjs_to_int32(a) & zjs_to_int32(b)); }
+fn zjs_bit_or (a: ZjsValue, b: ZjsValue) -> ZjsValue { return zjs_int32(zjs_to_int32(a) | zjs_to_int32(b)); }
+fn zjs_bit_xor(a: ZjsValue, b: ZjsValue) -> ZjsValue { return zjs_int32(zjs_to_int32(a) ^ zjs_to_int32(b)); }
+fn zjs_bit_not(a: ZjsValue) -> ZjsValue { return zjs_int32(~zjs_to_int32(a)); }
+
+fn zjs_shl (a: ZjsValue, b: ZjsValue) -> ZjsValue { return zjs_int32(zjs_to_int32(a) << (zjs_to_uint32(b) & 31)); }
+fn zjs_shr (a: ZjsValue, b: ZjsValue) -> ZjsValue { return zjs_int32(zjs_to_int32(a) >> (zjs_to_uint32(b) & 31)); }
+fn zjs_ushr(a: ZjsValue, b: ZjsValue) -> ZjsValue { return zjs_int32((i32)(zjs_to_uint32(a) >> (zjs_to_uint32(b) & 31))); }
+
+// Strict equality — same type + same value (NaN != NaN).
+fn zjs_strict_eq(a: ZjsValue, b: ZjsValue) -> int {
+    if zjs_is_int32(a) != 0 && zjs_is_int32(b) != 0 {
+        if zjs_as_int32(a) == zjs_as_int32(b) { return 1; }
+        return 0;
+    }
+    if zjs_is_number(a) != 0 && zjs_is_number(b) != 0 {
+        let af = zjs_to_double(a);
+        let bf = zjs_to_double(b);
+        if af == bf { return 1; }   // NaN != NaN by IEEE, correct
+        return 0;
+    }
+    // Different categories — equal only if bit-equal AND not a NaN double.
+    if a.bits == b.bits { return 1; }
+    return 0;
+}
+
+fn zjs_loose_eq(a: ZjsValue, b: ZjsValue) -> int {
+    // Simplified: same as strict for the value kinds we support, plus
+    // null == undefined. (Real ECMA-262 §7.2.13 is hairier.)
+    if zjs_is_null(a) != 0 && zjs_is_undefined(b) != 0 { return 1; }
+    if zjs_is_undefined(a) != 0 && zjs_is_null(b) != 0 { return 1; }
+    return zjs_strict_eq(a, b);
+}
+
+fn zjs_cmp_lt(a: ZjsValue, b: ZjsValue) -> int {
+    let af = zjs_to_double(a);
+    let bf = zjs_to_double(b);
+    let is_nan: int = 0;
+    raw { is_nan = (isnan(af) || isnan(bf)) ? 1 : 0; }
+    if is_nan != 0 { return 0; }
+    if af < bf { return 1; }
+    return 0;
+}
+
+fn zjs_cmp_le(a: ZjsValue, b: ZjsValue) -> int {
+    let af = zjs_to_double(a);
+    let bf = zjs_to_double(b);
+    let is_nan: int = 0;
+    raw { is_nan = (isnan(af) || isnan(bf)) ? 1 : 0; }
+    if is_nan != 0 { return 0; }
+    if af <= bf { return 1; }
+    return 0;
+}

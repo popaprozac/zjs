@@ -1,0 +1,384 @@
+// Zen-c lexer test runner. Builds as its own binary; `make test-lex`
+// runs it and exits 0 / 1 based on pass count.
+//
+// We can't (yet) share Zen-c types across a C-ABI boundary, so the
+// lexer is tested in-process from Zen-c. Test cases describe an input
+// + an expected sequence of TokenKinds. The harness compares those to
+// what the lexer emits.
+
+import "../src/lib.zc";
+
+raw {
+    #include <stdio.h>
+    #include <string.h>
+}
+
+def MAX_TOKENS: usize = 256;
+def MAX_EXPECTED: usize = 64;
+
+let g_pass: int = 0;
+let g_fail: int = 0;
+
+// --- Pretty names for diagnostic output ------------------------------
+
+fn kind_name(k: TokenKind) -> char* {
+    match k {
+        TokenKind::Eof                => { return (char*)"Eof"; },
+        TokenKind::Invalid            => { return (char*)"Invalid"; },
+        TokenKind::Identifier         => { return (char*)"Identifier"; },
+        TokenKind::NumberLit          => { return (char*)"NumberLit"; },
+        TokenKind::StringLit          => { return (char*)"StringLit"; },
+
+        TokenKind::KwVar              => { return (char*)"KwVar"; },
+        TokenKind::KwLet              => { return (char*)"KwLet"; },
+        TokenKind::KwConst            => { return (char*)"KwConst"; },
+        TokenKind::KwFunction         => { return (char*)"KwFunction"; },
+        TokenKind::KwReturn           => { return (char*)"KwReturn"; },
+        TokenKind::KwIf               => { return (char*)"KwIf"; },
+        TokenKind::KwElse             => { return (char*)"KwElse"; },
+        TokenKind::KwFor              => { return (char*)"KwFor"; },
+        TokenKind::KwWhile            => { return (char*)"KwWhile"; },
+        TokenKind::KwDo               => { return (char*)"KwDo"; },
+        TokenKind::KwBreak            => { return (char*)"KwBreak"; },
+        TokenKind::KwContinue         => { return (char*)"KwContinue"; },
+        TokenKind::KwClass            => { return (char*)"KwClass"; },
+        TokenKind::KwExtends          => { return (char*)"KwExtends"; },
+        TokenKind::KwSuper            => { return (char*)"KwSuper"; },
+        TokenKind::KwNew              => { return (char*)"KwNew"; },
+        TokenKind::KwThis             => { return (char*)"KwThis"; },
+        TokenKind::KwTrue             => { return (char*)"KwTrue"; },
+        TokenKind::KwFalse            => { return (char*)"KwFalse"; },
+        TokenKind::KwNull             => { return (char*)"KwNull"; },
+        TokenKind::KwUndefined        => { return (char*)"KwUndefined"; },
+        TokenKind::KwTypeof           => { return (char*)"KwTypeof"; },
+        TokenKind::KwDelete           => { return (char*)"KwDelete"; },
+        TokenKind::KwVoid             => { return (char*)"KwVoid"; },
+        TokenKind::KwIn               => { return (char*)"KwIn"; },
+        TokenKind::KwOf               => { return (char*)"KwOf"; },
+        TokenKind::KwInstanceof       => { return (char*)"KwInstanceof"; },
+        TokenKind::KwThrow            => { return (char*)"KwThrow"; },
+        TokenKind::KwTry              => { return (char*)"KwTry"; },
+        TokenKind::KwCatch            => { return (char*)"KwCatch"; },
+        TokenKind::KwFinally          => { return (char*)"KwFinally"; },
+        TokenKind::KwSwitch           => { return (char*)"KwSwitch"; },
+        TokenKind::KwCase             => { return (char*)"KwCase"; },
+        TokenKind::KwDefault          => { return (char*)"KwDefault"; },
+        TokenKind::KwAsync            => { return (char*)"KwAsync"; },
+        TokenKind::KwAwait            => { return (char*)"KwAwait"; },
+        TokenKind::KwYield            => { return (char*)"KwYield"; },
+        TokenKind::KwImport           => { return (char*)"KwImport"; },
+        TokenKind::KwExport           => { return (char*)"KwExport"; },
+        TokenKind::KwFrom             => { return (char*)"KwFrom"; },
+        TokenKind::KwAs               => { return (char*)"KwAs"; },
+
+        TokenKind::LParen             => { return (char*)"LParen"; },
+        TokenKind::RParen             => { return (char*)"RParen"; },
+        TokenKind::LBracket           => { return (char*)"LBracket"; },
+        TokenKind::RBracket           => { return (char*)"RBracket"; },
+        TokenKind::LBrace             => { return (char*)"LBrace"; },
+        TokenKind::RBrace             => { return (char*)"RBrace"; },
+        TokenKind::Comma              => { return (char*)"Comma"; },
+        TokenKind::Semicolon          => { return (char*)"Semicolon"; },
+        TokenKind::Colon              => { return (char*)"Colon"; },
+        TokenKind::Dot                => { return (char*)"Dot"; },
+        TokenKind::Ellipsis           => { return (char*)"Ellipsis"; },
+        TokenKind::Arrow              => { return (char*)"Arrow"; },
+        TokenKind::Tilde              => { return (char*)"Tilde"; },
+        TokenKind::Question           => { return (char*)"Question"; },
+        TokenKind::QuestionDot        => { return (char*)"QuestionDot"; },
+        TokenKind::QuestionQuestion   => { return (char*)"QuestionQuestion"; },
+        TokenKind::QuestionQuestionEq => { return (char*)"QuestionQuestionEq"; },
+        TokenKind::Bang               => { return (char*)"Bang"; },
+        TokenKind::BangEq             => { return (char*)"BangEq"; },
+        TokenKind::BangEqEq           => { return (char*)"BangEqEq"; },
+        TokenKind::Eq                 => { return (char*)"Eq"; },
+        TokenKind::EqEq               => { return (char*)"EqEq"; },
+        TokenKind::EqEqEq             => { return (char*)"EqEqEq"; },
+        TokenKind::Lt                 => { return (char*)"Lt"; },
+        TokenKind::LtEq               => { return (char*)"LtEq"; },
+        TokenKind::LtLt               => { return (char*)"LtLt"; },
+        TokenKind::LtLtEq             => { return (char*)"LtLtEq"; },
+        TokenKind::Gt                 => { return (char*)"Gt"; },
+        TokenKind::GtEq               => { return (char*)"GtEq"; },
+        TokenKind::GtGt               => { return (char*)"GtGt"; },
+        TokenKind::GtGtEq             => { return (char*)"GtGtEq"; },
+        TokenKind::GtGtGt             => { return (char*)"GtGtGt"; },
+        TokenKind::GtGtGtEq           => { return (char*)"GtGtGtEq"; },
+        TokenKind::Plus               => { return (char*)"Plus"; },
+        TokenKind::PlusEq             => { return (char*)"PlusEq"; },
+        TokenKind::PlusPlus           => { return (char*)"PlusPlus"; },
+        TokenKind::Minus              => { return (char*)"Minus"; },
+        TokenKind::MinusEq            => { return (char*)"MinusEq"; },
+        TokenKind::MinusMinus         => { return (char*)"MinusMinus"; },
+        TokenKind::Star               => { return (char*)"Star"; },
+        TokenKind::StarEq             => { return (char*)"StarEq"; },
+        TokenKind::StarStar           => { return (char*)"StarStar"; },
+        TokenKind::StarStarEq         => { return (char*)"StarStarEq"; },
+        TokenKind::Slash              => { return (char*)"Slash"; },
+        TokenKind::SlashEq            => { return (char*)"SlashEq"; },
+        TokenKind::Percent            => { return (char*)"Percent"; },
+        TokenKind::PercentEq          => { return (char*)"PercentEq"; },
+        TokenKind::Amp                => { return (char*)"Amp"; },
+        TokenKind::AmpAmp             => { return (char*)"AmpAmp"; },
+        TokenKind::AmpEq              => { return (char*)"AmpEq"; },
+        TokenKind::AmpAmpEq           => { return (char*)"AmpAmpEq"; },
+        TokenKind::Pipe               => { return (char*)"Pipe"; },
+        TokenKind::PipePipe           => { return (char*)"PipePipe"; },
+        TokenKind::PipeEq             => { return (char*)"PipeEq"; },
+        TokenKind::PipePipeEq         => { return (char*)"PipePipeEq"; },
+        TokenKind::Caret              => { return (char*)"Caret"; },
+        TokenKind::CaretEq            => { return (char*)"CaretEq"; },
+    }
+    return (char*)"???";
+}
+
+// --- Assertion harness ----------------------------------------------
+
+fn check_sequence(name: char*, source: char*, expected: TokenKind*, expected_count: usize) -> void {
+    let len: usize = 0;
+    raw { len = strlen(source); }
+
+    let actual: Token[MAX_TOKENS];
+    let actual_count = tokenize_into(source, len, &actual[0], MAX_TOKENS);
+
+    // First failure short-circuits the comparison so the diagnostic
+    // shows the *first* divergence rather than every cascade after it.
+    let i: usize = 0;
+    let ok: bool = true;
+
+    if actual_count != expected_count {
+        ok = false;
+    } else {
+        while i < expected_count {
+            if actual[i].kind != expected[i] {
+                ok = false;
+                break;
+            }
+            i = i + 1;
+        }
+    }
+
+    if ok {
+        g_pass = g_pass + 1;
+        return;
+    }
+
+    g_fail = g_fail + 1;
+    raw {
+        fprintf(stderr, "[FAIL] %s\n", name);
+        fprintf(stderr, "       input:    %s\n", source);
+        fprintf(stderr, "       expected: %zu tokens\n", expected_count);
+        fprintf(stderr, "       actual:   %zu tokens\n", actual_count);
+    }
+    let j: usize = 0;
+    let n: usize = if actual_count > expected_count { actual_count } else { expected_count };
+    while j < n {
+        let exp_name: char* = (char*)"<missing>";
+        let act_name: char* = (char*)"<missing>";
+        if j < expected_count { exp_name = kind_name(expected[j]); }
+        if j < actual_count   { act_name = kind_name(actual[j].kind); }
+        let marker: char* = (char*)"  ";
+        if j >= expected_count || j >= actual_count || expected[j] != actual[j].kind {
+            marker = (char*)"!!";
+        }
+        raw {
+            fprintf(stderr, "       [%zu] %s expected=%s actual=%s\n",
+                    j, marker, exp_name, act_name);
+        }
+        j = j + 1;
+    }
+}
+
+// --- Test cases ------------------------------------------------------
+
+fn run_tests() -> void {
+    // Empty / whitespace
+    {
+        let exp: TokenKind[1] = [TokenKind::Eof];
+        check_sequence((char*)"empty",       (char*)"",       &exp[0], 1);
+        check_sequence((char*)"spaces only", (char*)"   ",    &exp[0], 1);
+        check_sequence((char*)"newlines",    (char*)"\n\n\n", &exp[0], 1);
+        check_sequence((char*)"tabs",        (char*)"\t\t",   &exp[0], 1);
+    }
+
+    // Comments
+    {
+        let exp: TokenKind[1] = [TokenKind::Eof];
+        check_sequence((char*)"line comment",   (char*)"// hello world", &exp[0], 1);
+        check_sequence((char*)"block comment",  (char*)"/* a * b */",    &exp[0], 1);
+        check_sequence((char*)"mixed trivia",   (char*)" // x\n /* y */ \t", &exp[0], 1);
+    }
+
+    // Identifiers + simple keywords
+    {
+        let exp: TokenKind[2] = [TokenKind::Identifier, TokenKind::Eof];
+        check_sequence((char*)"ident bare",     (char*)"foo",       &exp[0], 2);
+        check_sequence((char*)"ident dollar",   (char*)"$bar",      &exp[0], 2);
+        check_sequence((char*)"ident underscore",(char*)"_baz",     &exp[0], 2);
+        check_sequence((char*)"ident with digits",(char*)"a1b2c3",  &exp[0], 2);
+    }
+
+    {
+        let exp: TokenKind[2] = [TokenKind::KwLet, TokenKind::Eof];
+        check_sequence((char*)"kw let", (char*)"let", &exp[0], 2);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::KwConst, TokenKind::Eof];
+        check_sequence((char*)"kw const", (char*)"const", &exp[0], 2);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::KwFunction, TokenKind::Eof];
+        check_sequence((char*)"kw function", (char*)"function", &exp[0], 2);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::KwReturn, TokenKind::Eof];
+        check_sequence((char*)"kw return", (char*)"return", &exp[0], 2);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::KwTrue, TokenKind::Eof];
+        check_sequence((char*)"kw true", (char*)"true", &exp[0], 2);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::KwInstanceof, TokenKind::Eof];
+        check_sequence((char*)"kw instanceof", (char*)"instanceof", &exp[0], 2);
+    }
+    // Keyword-prefix identifier should be Identifier, not the keyword.
+    {
+        let exp: TokenKind[2] = [TokenKind::Identifier, TokenKind::Eof];
+        check_sequence((char*)"ident letx",   (char*)"letx",   &exp[0], 2);
+        check_sequence((char*)"ident return2",(char*)"return2",&exp[0], 2);
+    }
+
+    // Numbers
+    {
+        let exp: TokenKind[2] = [TokenKind::NumberLit, TokenKind::Eof];
+        check_sequence((char*)"num 0",           (char*)"0",        &exp[0], 2);
+        check_sequence((char*)"num 42",          (char*)"42",       &exp[0], 2);
+        check_sequence((char*)"num 1.5",         (char*)"1.5",      &exp[0], 2);
+        check_sequence((char*)"num .5",          (char*)".5",       &exp[0], 2);
+        check_sequence((char*)"num 1e10",        (char*)"1e10",     &exp[0], 2);
+        check_sequence((char*)"num 1.5E-3",      (char*)"1.5E-3",   &exp[0], 2);
+        check_sequence((char*)"num hex",         (char*)"0xDEADbeef",&exp[0], 2);
+        check_sequence((char*)"num binary",      (char*)"0b1010",   &exp[0], 2);
+        check_sequence((char*)"num octal",       (char*)"0o755",    &exp[0], 2);
+    }
+
+    // Strings
+    {
+        let exp: TokenKind[2] = [TokenKind::StringLit, TokenKind::Eof];
+        check_sequence((char*)"str dq",         (char*)"\"hello\"",    &exp[0], 2);
+        check_sequence((char*)"str sq",         (char*)"'world'",      &exp[0], 2);
+        check_sequence((char*)"str empty",      (char*)"\"\"",         &exp[0], 2);
+        check_sequence((char*)"str escapes",    (char*)"\"a\\nb\\tc\"",&exp[0], 2);
+        check_sequence((char*)"str quote esc",  (char*)"\"\\\"\"",     &exp[0], 2);
+    }
+
+    // Unterminated string → Invalid
+    {
+        let exp: TokenKind[2] = [TokenKind::Invalid, TokenKind::Eof];
+        check_sequence((char*)"str unterminated", (char*)"\"abc", &exp[0], 2);
+    }
+
+    // Single-char punctuators
+    {
+        let exp: TokenKind[8] = [
+            TokenKind::LParen, TokenKind::RParen,
+            TokenKind::LBracket, TokenKind::RBracket,
+            TokenKind::LBrace, TokenKind::RBrace,
+            TokenKind::Comma, TokenKind::Eof,
+        ];
+        check_sequence((char*)"punct brackets",  (char*)r"()[]{},", &exp[0], 8);
+    }
+    {
+        let exp: TokenKind[4] = [TokenKind::Semicolon, TokenKind::Colon, TokenKind::Tilde, TokenKind::Eof];
+        check_sequence((char*)"punct ;:~", (char*)";:~", &exp[0], 4);
+    }
+
+    // Multi-char operators (longest match)
+    {
+        let exp: TokenKind[2] = [TokenKind::EqEqEq, TokenKind::Eof];
+        check_sequence((char*)"op ===", (char*)"===", &exp[0], 2);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::BangEqEq, TokenKind::Eof];
+        check_sequence((char*)"op !==", (char*)"!==", &exp[0], 2);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::Arrow, TokenKind::Eof];
+        check_sequence((char*)"op =>", (char*)"=>", &exp[0], 2);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::QuestionDot, TokenKind::Eof];
+        check_sequence((char*)"op ?.", (char*)"?.", &exp[0], 2);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::QuestionQuestionEq, TokenKind::Eof];
+        check_sequence((char*)"op ??=", (char*)"??=", &exp[0], 2);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::GtGtGtEq, TokenKind::Eof];
+        check_sequence((char*)"op >>>=", (char*)">>>=", &exp[0], 2);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::Ellipsis, TokenKind::Eof];
+        check_sequence((char*)"op ...", (char*)"...", &exp[0], 2);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::StarStarEq, TokenKind::Eof];
+        check_sequence((char*)"op **=", (char*)"**=", &exp[0], 2);
+    }
+
+    // Dot disambiguation
+    {
+        let exp: TokenKind[4] = [TokenKind::Identifier, TokenKind::Dot, TokenKind::Identifier, TokenKind::Eof];
+        check_sequence((char*)"member access", (char*)"foo.bar", &exp[0], 4);
+    }
+    {
+        let exp: TokenKind[2] = [TokenKind::NumberLit, TokenKind::Eof];
+        check_sequence((char*)"leading-dot number", (char*)".5", &exp[0], 2);
+    }
+
+    // Small expression
+    {
+        let exp: TokenKind[8] = [
+            TokenKind::KwLet,
+            TokenKind::Identifier,
+            TokenKind::Eq,
+            TokenKind::NumberLit,
+            TokenKind::Plus,
+            TokenKind::NumberLit,
+            TokenKind::Semicolon,
+            TokenKind::Eof,
+        ];
+        check_sequence((char*)"let x = 1 + 2;", (char*)"let x = 1 + 2;", &exp[0], 8);
+    }
+
+    // Function decl shape
+    {
+        let exp: TokenKind[11] = [
+            TokenKind::KwFunction,
+            TokenKind::Identifier,
+            TokenKind::LParen,
+            TokenKind::Identifier,
+            TokenKind::RParen,
+            TokenKind::LBrace,
+            TokenKind::KwReturn,
+            TokenKind::Identifier,
+            TokenKind::Semicolon,
+            TokenKind::RBrace,
+            TokenKind::Eof,
+        ];
+        check_sequence((char*)"function decl",
+                       (char*)r"function f(x) { return x; }",
+                       &exp[0], 11);
+    }
+}
+
+fn main() -> int {
+    run_tests();
+    raw {
+        printf("[lexer] %d passed, %d failed\n", g_pass, g_fail);
+    }
+    if g_fail > 0 { return 1; }
+    return 0;
+}

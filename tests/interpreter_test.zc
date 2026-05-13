@@ -1,0 +1,208 @@
+// Interpreter test runner. Drives the full pipeline (lex → parse →
+// compile → interpret) for a battery of JS programs and asserts the
+// returned ZjsValue matches expected.
+
+import "../src/lib.zc";
+
+raw {
+    #include <stdio.h>
+    #include <string.h>
+    #include <math.h>
+}
+
+let g_pass: int = 0;
+let g_fail: int = 0;
+
+fn pass(name: char*) -> void { g_pass = g_pass + 1; }
+
+fn fail_msg(name: char*, msg: char*) -> void {
+    g_fail = g_fail + 1;
+    raw { fprintf(stderr, "[FAIL] %s — %s\n", name, msg); }
+}
+
+// Accept either an int32 result OR a double that's bit-equal to the
+// expected integer. (Operations like `/`, `%`, `**` always return a
+// double per JS spec, even when the result is integer-valued.)
+fn check_int(name: char*, source: char*, expected: i32) -> void {
+    let ctx = zjs_new_context();
+    defer zjs_free_context(ctx);
+    let v = zjs_eval(ctx, source);
+    if zjs_is_int32(v) != 0 {
+        let got = zjs_as_int32(v);
+        if got == expected { pass(name); return; }
+        g_fail = g_fail + 1;
+        raw { fprintf(stderr, "[FAIL] %s — got int32 %d, expected %d (\"%s\")\n",
+                      name, got, expected, source); }
+        return;
+    }
+    if zjs_is_double(v) != 0 {
+        let got = zjs_as_double(v);
+        if got == (f64)expected { pass(name); return; }
+        g_fail = g_fail + 1;
+        raw { fprintf(stderr, "[FAIL] %s — got double %g, expected %d (\"%s\")\n",
+                      name, got, expected, source); }
+        return;
+    }
+    fail_msg(name, (char*)"result not a number");
+}
+
+fn check_double(name: char*, source: char*, expected: f64) -> void {
+    let ctx = zjs_new_context();
+    defer zjs_free_context(ctx);
+    let v = zjs_eval(ctx, source);
+    let got: f64 = 0.0;
+    if zjs_is_int32(v) != 0       { got = (f64)zjs_as_int32(v); }
+    else if zjs_is_double(v) != 0 { got = zjs_as_double(v); }
+    else {
+        fail_msg(name, (char*)"result not a number");
+        return;
+    }
+    let near: int = 0;
+    raw { near = (fabs(got - expected) < 1e-9) ? 1 : 0; }
+    if near == 0 {
+        g_fail = g_fail + 1;
+        raw { fprintf(stderr, "[FAIL] %s — got %g, expected %g (source: \"%s\")\n",
+                      name, got, expected, source); }
+        return;
+    }
+    pass(name);
+}
+
+fn check_bool(name: char*, source: char*, expected: int) -> void {
+    let ctx = zjs_new_context();
+    defer zjs_free_context(ctx);
+    let v = zjs_eval(ctx, source);
+    if zjs_is_bool(v) == 0 {
+        fail_msg(name, (char*)"result not bool");
+        return;
+    }
+    if zjs_as_bool(v) != expected {
+        fail_msg(name, (char*)"bool mismatch");
+        return;
+    }
+    pass(name);
+}
+
+fn check_null(name: char*, source: char*) -> void {
+    let ctx = zjs_new_context();
+    defer zjs_free_context(ctx);
+    let v = zjs_eval(ctx, source);
+    if zjs_is_null(v) == 0 {
+        fail_msg(name, (char*)"result not null");
+        return;
+    }
+    pass(name);
+}
+
+fn check_undefined(name: char*, source: char*) -> void {
+    let ctx = zjs_new_context();
+    defer zjs_free_context(ctx);
+    let v = zjs_eval(ctx, source);
+    if zjs_is_undefined(v) == 0 {
+        fail_msg(name, (char*)"result not undefined");
+        return;
+    }
+    pass(name);
+}
+
+fn run_tests() -> void {
+    // --- Literals --------------------------------------------------
+    check_int   ((char*)"int literal",     (char*)"42",         42);
+    check_int   ((char*)"int zero",        (char*)"0",           0);
+    check_int   ((char*)"negative int",    (char*)"-7",         -7);
+    check_double((char*)"float literal",   (char*)"3.5",        3.5);
+    check_double((char*)"scientific",      (char*)"1e2",      100.0);
+    check_int   ((char*)"hex",             (char*)"0xff",      255);
+    check_int   ((char*)"binary",          (char*)"0b1010",     10);
+    check_int   ((char*)"octal",           (char*)"0o17",       15);
+    check_bool  ((char*)"true",            (char*)"true",        1);
+    check_bool  ((char*)"false",           (char*)"false",       0);
+    check_null  ((char*)"null",            (char*)"null");
+    check_undefined((char*)"undefined",    (char*)"undefined");
+
+    // --- Arithmetic ------------------------------------------------
+    check_int((char*)"add",             (char*)"3 + 4",          7);
+    check_int((char*)"sub",             (char*)"10 - 4",         6);
+    check_int((char*)"mul",             (char*)"6 * 7",         42);
+    check_int((char*)"div integer",     (char*)"20 / 4",         5);
+    check_int((char*)"mod",             (char*)"17 % 5",         2);
+    check_int((char*)"pow",             (char*)"2 ** 10",     1024);
+    check_int((char*)"unary minus",     (char*)"-(2 + 3)",      -5);
+    check_int((char*)"precedence + *",  (char*)"1 + 2 * 3",      7);
+    check_int((char*)"precedence ()",   (char*)"(1 + 2) * 3",    9);
+    check_int((char*)"left-assoc -",    (char*)"10 - 4 - 3",     3);
+    check_int((char*)"right-assoc **",  (char*)"2 ** 3 ** 2",  512);
+    check_double((char*)"div double",   (char*)"5 / 2",        2.5);
+
+    // --- Bitwise ---------------------------------------------------
+    check_int((char*)"bit and", (char*)"6 & 3",     2);
+    check_int((char*)"bit or",  (char*)"6 | 3",     7);
+    check_int((char*)"bit xor", (char*)"6 ^ 3",     5);
+    check_int((char*)"bit not", (char*)"~0",       -1);
+    check_int((char*)"shl",     (char*)"1 << 8",  256);
+    check_int((char*)"shr",     (char*)"256 >> 2", 64);
+
+    // --- Comparison & logical -------------------------------------
+    check_bool((char*)"lt true",    (char*)"3 < 5",   1);
+    check_bool((char*)"lt false",   (char*)"5 < 3",   0);
+    check_bool((char*)"le eq",      (char*)"5 <= 5",  1);
+    check_bool((char*)"gt true",    (char*)"7 > 2",   1);
+    check_bool((char*)"ge eq",      (char*)"7 >= 7",  1);
+    check_bool((char*)"loose eq",   (char*)"3 == 3",  1);
+    check_bool((char*)"strict eq",  (char*)"3 === 3", 1);
+    check_bool((char*)"strict ne",  (char*)"3 !== 4", 1);
+    check_bool((char*)"logical not",(char*)"!0",      1);
+    check_bool((char*)"logical not2",(char*)"!1",     0);
+
+    // --- Short-circuit --------------------------------------------
+    check_int((char*)"&&  true",  (char*)"1 && 7",    7);
+    check_int((char*)"&&  false", (char*)"0 && 7",    0);
+    check_int((char*)"|| left",   (char*)"42 || 99", 42);
+    check_int((char*)"|| right",  (char*)"0 || 99",  99);
+
+    // --- Variables ------------------------------------------------
+    check_int((char*)"let basic",         (char*)"let x = 5; x",                       5);
+    check_int((char*)"let + arith",       (char*)"let x = 3; let y = 4; x * y",       12);
+    check_int((char*)"reassignment",      (char*)"let x = 1; x = 99; x",              99);
+    check_int((char*)"compound +=",       (char*)"let x = 10; x += 5; x",             15);
+    check_int((char*)"compound -=",       (char*)"let x = 10; x -= 3; x",              7);
+    check_int((char*)"compound *=",       (char*)"let x = 3; x *= 4; x",              12);
+
+    // --- Control flow ---------------------------------------------
+    check_int((char*)"if branch true",    (char*)"if (1) 7; else 99",                  7);
+    check_int((char*)"if branch false",   (char*)"if (0) 7; else 99",                 99);
+    check_int((char*)"if-elseif",         (char*)"let x = 0; if (1) x = 1; else if (1) x = 2; x", 1);
+    check_int((char*)"while sum",         (char*)r"let s = 0; let i = 1; while (i <= 10) { s = s + i; i = i + 1; } s", 55);
+    check_int((char*)"do-while",          (char*)r"let n = 0; do { n = n + 1; } while (n < 5); n", 5);
+    check_int((char*)"for sum",           (char*)"let s = 0; for (let i = 1; i <= 10; i = i + 1) s = s + i; s", 55);
+    check_int((char*)"for empty parts",   (char*)"let n = 0; for (; n < 3; n = n + 1) ; n", 3);
+    check_int((char*)"nested if",         (char*)"let x = 5; let r = 0; if (x > 0) if (x > 3) r = 1; else r = 2; r", 1);
+
+    // --- Multi-statement program ----------------------------------
+    check_int((char*)"sequence",          (char*)"let a = 1; let b = 2; let c = 3; a + b + c", 6);
+
+    // --- Global persistence (re-eval in same context, exercised manually below)
+}
+
+// Verify that globals persist across multiple zjs_eval calls on the
+// same context. This proves the context isn't recreated per call.
+fn test_global_persistence() -> void {
+    let ctx = zjs_new_context();
+    defer zjs_free_context(ctx);
+
+    let _ = zjs_eval(ctx, (char*)"let x = 100");
+    let v = zjs_eval(ctx, (char*)"x + 1");
+    if zjs_is_int32(v) != 0 && zjs_as_int32(v) == 101 {
+        pass((char*)"globals persist across eval");
+    } else {
+        fail_msg((char*)"globals persist across eval", (char*)"x not visible in second eval");
+    }
+}
+
+fn main() -> int {
+    run_tests();
+    test_global_persistence();
+    raw { printf("[interp] %d passed, %d failed\n", g_pass, g_fail); }
+    if g_fail > 0 { return 1; }
+    return 0;
+}

@@ -1,0 +1,345 @@
+// zjs CLI — a thin embedder for libzjs plus dev helpers.
+//
+// Subcommands:
+//   --version              print the engine version
+//   eval <source>          evaluate source, print the result value
+//   lex <source>           tokenize source, dump the token stream
+//   parse <source>         parse source, dump the AST as an indented tree
+
+import "../src/lib.zc";
+import "string.h" as libc_str;
+
+raw {
+    #include <stdio.h>
+    #include <string.h>
+}
+
+// =====================================================================
+// Token-kind label table — used by `lex`.
+// =====================================================================
+
+fn tk_label(k: TokenKind) -> char* {
+    match k {
+        TokenKind::Eof => { return (char*)"Eof"; },
+        TokenKind::Invalid => { return (char*)"Invalid"; },
+        TokenKind::Identifier => { return (char*)"Identifier"; },
+        TokenKind::NumberLit => { return (char*)"NumberLit"; },
+        TokenKind::StringLit => { return (char*)"StringLit"; },
+        TokenKind::KwVar => { return (char*)"KwVar"; },
+        TokenKind::KwLet => { return (char*)"KwLet"; },
+        TokenKind::KwConst => { return (char*)"KwConst"; },
+        TokenKind::KwFunction => { return (char*)"KwFunction"; },
+        TokenKind::KwReturn => { return (char*)"KwReturn"; },
+        TokenKind::KwIf => { return (char*)"KwIf"; },
+        TokenKind::KwElse => { return (char*)"KwElse"; },
+        TokenKind::KwFor => { return (char*)"KwFor"; },
+        TokenKind::KwWhile => { return (char*)"KwWhile"; },
+        TokenKind::KwDo => { return (char*)"KwDo"; },
+        TokenKind::KwBreak => { return (char*)"KwBreak"; },
+        TokenKind::KwContinue => { return (char*)"KwContinue"; },
+        TokenKind::KwClass => { return (char*)"KwClass"; },
+        TokenKind::KwExtends => { return (char*)"KwExtends"; },
+        TokenKind::KwSuper => { return (char*)"KwSuper"; },
+        TokenKind::KwNew => { return (char*)"KwNew"; },
+        TokenKind::KwThis => { return (char*)"KwThis"; },
+        TokenKind::KwTrue => { return (char*)"KwTrue"; },
+        TokenKind::KwFalse => { return (char*)"KwFalse"; },
+        TokenKind::KwNull => { return (char*)"KwNull"; },
+        TokenKind::KwUndefined => { return (char*)"KwUndefined"; },
+        TokenKind::KwTypeof => { return (char*)"KwTypeof"; },
+        TokenKind::KwDelete => { return (char*)"KwDelete"; },
+        TokenKind::KwVoid => { return (char*)"KwVoid"; },
+        TokenKind::KwIn => { return (char*)"KwIn"; },
+        TokenKind::KwOf => { return (char*)"KwOf"; },
+        TokenKind::KwInstanceof => { return (char*)"KwInstanceof"; },
+        TokenKind::KwThrow => { return (char*)"KwThrow"; },
+        TokenKind::KwTry => { return (char*)"KwTry"; },
+        TokenKind::KwCatch => { return (char*)"KwCatch"; },
+        TokenKind::KwFinally => { return (char*)"KwFinally"; },
+        TokenKind::KwSwitch => { return (char*)"KwSwitch"; },
+        TokenKind::KwCase => { return (char*)"KwCase"; },
+        TokenKind::KwDefault => { return (char*)"KwDefault"; },
+        TokenKind::KwAsync => { return (char*)"KwAsync"; },
+        TokenKind::KwAwait => { return (char*)"KwAwait"; },
+        TokenKind::KwYield => { return (char*)"KwYield"; },
+        TokenKind::KwImport => { return (char*)"KwImport"; },
+        TokenKind::KwExport => { return (char*)"KwExport"; },
+        TokenKind::KwFrom => { return (char*)"KwFrom"; },
+        TokenKind::KwAs => { return (char*)"KwAs"; },
+        TokenKind::LParen => { return (char*)"LParen"; },
+        TokenKind::RParen => { return (char*)"RParen"; },
+        TokenKind::LBracket => { return (char*)"LBracket"; },
+        TokenKind::RBracket => { return (char*)"RBracket"; },
+        TokenKind::LBrace => { return (char*)"LBrace"; },
+        TokenKind::RBrace => { return (char*)"RBrace"; },
+        TokenKind::Comma => { return (char*)"Comma"; },
+        TokenKind::Semicolon => { return (char*)"Semicolon"; },
+        TokenKind::Colon => { return (char*)"Colon"; },
+        TokenKind::Dot => { return (char*)"Dot"; },
+        TokenKind::Ellipsis => { return (char*)"Ellipsis"; },
+        TokenKind::Arrow => { return (char*)"Arrow"; },
+        TokenKind::Tilde => { return (char*)"Tilde"; },
+        TokenKind::Question => { return (char*)"Question"; },
+        TokenKind::QuestionDot => { return (char*)"QuestionDot"; },
+        TokenKind::QuestionQuestion => { return (char*)"QuestionQuestion"; },
+        TokenKind::QuestionQuestionEq => { return (char*)"QuestionQuestionEq"; },
+        TokenKind::Bang => { return (char*)"Bang"; },
+        TokenKind::BangEq => { return (char*)"BangEq"; },
+        TokenKind::BangEqEq => { return (char*)"BangEqEq"; },
+        TokenKind::Eq => { return (char*)"Eq"; },
+        TokenKind::EqEq => { return (char*)"EqEq"; },
+        TokenKind::EqEqEq => { return (char*)"EqEqEq"; },
+        TokenKind::Lt => { return (char*)"Lt"; },
+        TokenKind::LtEq => { return (char*)"LtEq"; },
+        TokenKind::LtLt => { return (char*)"LtLt"; },
+        TokenKind::LtLtEq => { return (char*)"LtLtEq"; },
+        TokenKind::Gt => { return (char*)"Gt"; },
+        TokenKind::GtEq => { return (char*)"GtEq"; },
+        TokenKind::GtGt => { return (char*)"GtGt"; },
+        TokenKind::GtGtEq => { return (char*)"GtGtEq"; },
+        TokenKind::GtGtGt => { return (char*)"GtGtGt"; },
+        TokenKind::GtGtGtEq => { return (char*)"GtGtGtEq"; },
+        TokenKind::Plus => { return (char*)"Plus"; },
+        TokenKind::PlusEq => { return (char*)"PlusEq"; },
+        TokenKind::PlusPlus => { return (char*)"PlusPlus"; },
+        TokenKind::Minus => { return (char*)"Minus"; },
+        TokenKind::MinusEq => { return (char*)"MinusEq"; },
+        TokenKind::MinusMinus => { return (char*)"MinusMinus"; },
+        TokenKind::Star => { return (char*)"Star"; },
+        TokenKind::StarEq => { return (char*)"StarEq"; },
+        TokenKind::StarStar => { return (char*)"StarStar"; },
+        TokenKind::StarStarEq => { return (char*)"StarStarEq"; },
+        TokenKind::Slash => { return (char*)"Slash"; },
+        TokenKind::SlashEq => { return (char*)"SlashEq"; },
+        TokenKind::Percent => { return (char*)"Percent"; },
+        TokenKind::PercentEq => { return (char*)"PercentEq"; },
+        TokenKind::Amp => { return (char*)"Amp"; },
+        TokenKind::AmpAmp => { return (char*)"AmpAmp"; },
+        TokenKind::AmpEq => { return (char*)"AmpEq"; },
+        TokenKind::AmpAmpEq => { return (char*)"AmpAmpEq"; },
+        TokenKind::Pipe => { return (char*)"Pipe"; },
+        TokenKind::PipePipe => { return (char*)"PipePipe"; },
+        TokenKind::PipeEq => { return (char*)"PipeEq"; },
+        TokenKind::PipePipeEq => { return (char*)"PipePipeEq"; },
+        TokenKind::Caret => { return (char*)"Caret"; },
+        TokenKind::CaretEq => { return (char*)"CaretEq"; },
+    }
+    return (char*)"?";
+}
+
+fn nk_label(k: NodeKind) -> char* {
+    match k {
+        NodeKind::Program          => { return (char*)"Program"; },
+        NodeKind::NumberExpr       => { return (char*)"NumberExpr"; },
+        NodeKind::StringExpr       => { return (char*)"StringExpr"; },
+        NodeKind::BoolExpr         => { return (char*)"BoolExpr"; },
+        NodeKind::NullExpr         => { return (char*)"NullExpr"; },
+        NodeKind::UndefinedExpr    => { return (char*)"UndefinedExpr"; },
+        NodeKind::ThisExpr         => { return (char*)"ThisExpr"; },
+        NodeKind::IdentExpr        => { return (char*)"IdentExpr"; },
+        NodeKind::Binary           => { return (char*)"Binary"; },
+        NodeKind::Logical          => { return (char*)"Logical"; },
+        NodeKind::Unary            => { return (char*)"Unary"; },
+        NodeKind::Postfix          => { return (char*)"Postfix"; },
+        NodeKind::Conditional      => { return (char*)"Conditional"; },
+        NodeKind::Assignment       => { return (char*)"Assignment"; },
+        NodeKind::Call             => { return (char*)"Call"; },
+        NodeKind::OptionalCall     => { return (char*)"OptionalCall"; },
+        NodeKind::New              => { return (char*)"New"; },
+        NodeKind::Member           => { return (char*)"Member"; },
+        NodeKind::OptionalMember   => { return (char*)"OptionalMember"; },
+        NodeKind::Computed         => { return (char*)"Computed"; },
+        NodeKind::OptionalComputed => { return (char*)"OptionalComputed"; },
+        NodeKind::Sequence         => { return (char*)"Sequence"; },
+        NodeKind::Array            => { return (char*)"Array"; },
+        NodeKind::Object           => { return (char*)"Object"; },
+        NodeKind::ObjectProp       => { return (char*)"ObjectProp"; },
+        NodeKind::Paren            => { return (char*)"Paren"; },
+        NodeKind::BlockStmt        => { return (char*)"BlockStmt"; },
+        NodeKind::VarDecl          => { return (char*)"VarDecl"; },
+        NodeKind::Declarator       => { return (char*)"Declarator"; },
+        NodeKind::IfStmt           => { return (char*)"IfStmt"; },
+        NodeKind::ReturnStmt       => { return (char*)"ReturnStmt"; },
+        NodeKind::WhileStmt        => { return (char*)"WhileStmt"; },
+        NodeKind::DoWhileStmt      => { return (char*)"DoWhileStmt"; },
+        NodeKind::ForStmt          => { return (char*)"ForStmt"; },
+        NodeKind::BreakStmt        => { return (char*)"BreakStmt"; },
+        NodeKind::ContinueStmt     => { return (char*)"ContinueStmt"; },
+        NodeKind::EmptyStmt        => { return (char*)"EmptyStmt"; },
+        NodeKind::FunctionDecl     => { return (char*)"FunctionDecl"; },
+        NodeKind::FunctionExpr     => { return (char*)"FunctionExpr"; },
+        NodeKind::ArrowFunc        => { return (char*)"ArrowFunc"; },
+        NodeKind::ForInStmt        => { return (char*)"ForInStmt"; },
+        NodeKind::ForOfStmt        => { return (char*)"ForOfStmt"; },
+    }
+    return (char*)"?";
+}
+
+// =====================================================================
+// Subcommand bodies.
+// =====================================================================
+
+fn run_version() -> int {
+    println "zjs {zjs_version()}";
+    return 0;
+}
+
+fn print_value(v: ZjsValue) -> void {
+    if zjs_is_int32(v) != 0     { println "{zjs_as_int32(v)}"; return; }
+    if zjs_is_double(v) != 0    { println "{zjs_as_double(v)}"; return; }
+    if zjs_is_bool(v) != 0 {
+        if zjs_as_bool(v) != 0 { println "true"; } else { println "false"; }
+        return;
+    }
+    if zjs_is_null(v) != 0      { println "null"; return; }
+    if zjs_is_undefined(v) != 0 { println "undefined"; return; }
+    if zjs_is_cell(v) != 0      { println "[cell]"; return; }
+    println "[unknown value]";
+}
+
+fn run_eval(source: char*) -> int {
+    let ctx = zjs_new_context();
+    if ctx == NULL { eprintln "zjs: failed to create context"; return 1; }
+    defer zjs_free_context(ctx);
+    let result = zjs_eval(ctx, source);
+    print_value(result);
+    return 0;
+}
+
+fn run_lex(source: char*) -> int {
+    let len: usize = 0;
+    raw { len = strlen(source); }
+    let lex = Lexer::new(source, len);
+    while true {
+        let tok = lex.next_token();
+        raw {
+            fprintf(stdout, "%-12s  start=%-4u  length=%-4u  text=\"%.*s\"\n",
+                    tk_label(tok.kind),
+                    (unsigned)tok.start,
+                    (unsigned)tok.length,
+                    (int)tok.length,
+                    source + tok.start);
+        }
+        if tok.kind == TokenKind::Eof { return 0; }
+    }
+    return 0;
+}
+
+// --- AST tree printer -----------------------------------------------
+
+fn print_indent(depth: int) -> void {
+    let i: int = 0;
+    while i < depth {
+        raw { fputs("  ", stdout); }
+        i = i + 1;
+    }
+}
+
+fn dump_ast(node: AstNode*, source: char*, depth: int) -> void {
+    if node == NULL {
+        print_indent(depth);
+        raw { puts("(null)"); }
+        return;
+    }
+    print_indent(depth);
+    let label = nk_label(node.kind);
+    // Pull fields into Zen-c locals before crossing into raw {} — raw
+    // blocks are pure C and won't auto-deref `node->field`.
+    let n_num         = node.num;
+    let n_bool        = node.bool_value;
+    let n_op_label    = tk_label(node.op);
+    let n_start       = node.start;
+    let n_end         = node.end;
+    let n_name_start  = node.name_start;
+    let n_name_length = node.name_length;
+
+    if node.kind == NodeKind::NumberExpr {
+        raw { fprintf(stdout, "%s %g\n", label, n_num); }
+    } else if node.kind == NodeKind::BoolExpr {
+        raw { fprintf(stdout, "%s %s\n", label, n_bool ? "true" : "false"); }
+    } else if node.kind == NodeKind::IdentExpr || node.kind == NodeKind::StringExpr {
+        raw {
+            fprintf(stdout, "%s \"%.*s\"\n", label,
+                    (int)(n_end - n_start),
+                    source + n_start);
+        }
+    } else if node.kind == NodeKind::Binary || node.kind == NodeKind::Logical ||
+              node.kind == NodeKind::Unary  || node.kind == NodeKind::Postfix ||
+              node.kind == NodeKind::Assignment || node.kind == NodeKind::VarDecl {
+        raw { fprintf(stdout, "%s op=%s\n", label, n_op_label); }
+    } else if node.kind == NodeKind::Member || node.kind == NodeKind::OptionalMember ||
+              node.kind == NodeKind::ObjectProp || node.kind == NodeKind::Declarator {
+        raw {
+            fprintf(stdout, "%s name=\"%.*s\"\n", label,
+                    (int)n_name_length,
+                    source + n_name_start);
+        }
+    } else if node.kind == NodeKind::FunctionDecl || node.kind == NodeKind::FunctionExpr {
+        if n_name_length > 0 {
+            raw {
+                fprintf(stdout, "%s name=\"%.*s\"\n", label,
+                        (int)n_name_length, source + n_name_start);
+            }
+        } else {
+            raw { fprintf(stdout, "%s (anonymous)\n", label); }
+        }
+    } else {
+        raw { fprintf(stdout, "%s\n", label); }
+    }
+
+    // Recurse into named children, then variadic.
+    if node.left != NULL  { dump_ast(node.left,  source, depth + 1); }
+    if node.right != NULL { dump_ast(node.right, source, depth + 1); }
+    if node.third != NULL { dump_ast(node.third, source, depth + 1); }
+
+    let i: u32 = 0;
+    while i < node.children_count {
+        dump_ast(node.children[i], source, depth + 1);
+        i = i + 1;
+    }
+}
+
+fn run_parse(source: char*) -> int {
+    let len: usize = 0;
+    raw { len = strlen(source); }
+    let result = parse_program(source, len);
+    if result.had_error {
+        eprintln "zjs: parse error";
+        parser_free_result(result);
+        return 1;
+    }
+    dump_ast(result.root, source, 0);
+    parser_free_result(result);
+    return 0;
+}
+
+fn print_usage() -> int {
+    eprintln "usage: zjs --version | zjs eval <source> | zjs lex <source> | zjs parse <source>";
+    return 1;
+}
+
+fn main(argc: int, argv: char**) -> int {
+    if argc < 2 { return print_usage(); }
+
+    if libc_str::strcmp(argv[1], "--version") == 0 { return run_version(); }
+
+    if libc_str::strcmp(argv[1], "eval") == 0 {
+        let src: char* = (char*)"";
+        if argc >= 3 { src = argv[2]; }
+        return run_eval(src);
+    }
+
+    if libc_str::strcmp(argv[1], "lex") == 0 {
+        let src: char* = (char*)"";
+        if argc >= 3 { src = argv[2]; }
+        return run_lex(src);
+    }
+
+    if libc_str::strcmp(argv[1], "parse") == 0 {
+        let src: char* = (char*)"";
+        if argc >= 3 { src = argv[2]; }
+        return run_parse(src);
+    }
+
+    return print_usage();
+}

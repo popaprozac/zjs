@@ -1,0 +1,552 @@
+// Parser test runner. Each test parses a source string, then asserts
+// shape properties of the resulting AST (root kind, operator precedence,
+// associativity, child counts). Tests don't pretty-print and string-
+// compare; they navigate the tree directly so failures point at exact
+// node offsets.
+
+import "../src/lib.zc";
+
+raw {
+    #include <stdio.h>
+    #include <string.h>
+}
+
+let g_pass: int = 0;
+let g_fail: int = 0;
+
+// --- Helpers --------------------------------------------------------
+
+fn parse_str(source: char*) -> ParseResult {
+    let len: usize = 0;
+    raw { len = strlen(source); }
+    return parse_program(source, len);
+}
+
+fn fail(name: char*, msg: char*) -> void {
+    g_fail = g_fail + 1;
+    raw { fprintf(stderr, "[FAIL] %s — %s\n", name, msg); }
+}
+
+fn pass(name: char*) -> void {
+    g_pass = g_pass + 1;
+}
+
+// First top-level expression statement (everything we test is a
+// single expression in this phase).
+fn first_stmt(r: ParseResult) -> AstNode* {
+    if r.root == NULL { return NULL; }
+    if r.root.children_count == 0 { return NULL; }
+    return r.root.children[0];
+}
+
+// --- Assertion helpers ----------------------------------------------
+
+fn check_kind(name: char*, source: char*, expected: NodeKind) -> void {
+    let r = parse_str(source);
+    defer parser_free_result(r);
+    if r.had_error { fail(name, (char*)"parse error"); return; }
+    let n = first_stmt(r);
+    if n == NULL { fail(name, (char*)"no statement"); return; }
+    if n.kind != expected {
+        let got_kind = (int)n.kind;
+        let want_kind = (int)expected;
+        raw { fprintf(stderr, "[FAIL] %s — kind mismatch (got=%d expected=%d) source=\"%s\"\n",
+                      name, got_kind, want_kind, source); }
+        g_fail = g_fail + 1;
+        return;
+    }
+    pass(name);
+}
+
+fn check_root_op(name: char*, source: char*, expected_kind: NodeKind, expected_op: TokenKind) -> void {
+    let r = parse_str(source);
+    defer parser_free_result(r);
+    if r.had_error { fail(name, (char*)"parse error"); return; }
+    let n = first_stmt(r);
+    if n == NULL { fail(name, (char*)"no statement"); return; }
+    if n.kind != expected_kind { fail(name, (char*)"wrong root kind"); return; }
+    if n.op != expected_op { fail(name, (char*)"wrong root op"); return; }
+    pass(name);
+}
+
+fn check_number(name: char*, source: char*, expected: f64) -> void {
+    let r = parse_str(source);
+    defer parser_free_result(r);
+    if r.had_error { fail(name, (char*)"parse error"); return; }
+    let n = first_stmt(r);
+    if n == NULL { fail(name, (char*)"no statement"); return; }
+    if n.kind != NodeKind::NumberExpr { fail(name, (char*)"not NumberLit"); return; }
+    // Tolerance-free compare — we expect exact bit-equal for integers
+    // and round-trippable doubles. Hex / binary / octal must hit exact
+    // integers.
+    let got = n.num;
+    if got != expected {
+        raw { fprintf(stderr, "[FAIL] %s — number got=%g expected=%g\n", name, got, expected); }
+        g_fail = g_fail + 1;
+        return;
+    }
+    pass(name);
+}
+
+// --- Test cases -----------------------------------------------------
+
+fn run_tests() -> void {
+    // --- Primary literals ----------------------------------------
+    check_kind((char*)"NumberLit",      (char*)"42",        NodeKind::NumberExpr);
+    check_kind((char*)"StringLit",      (char*)"\"hi\"",    NodeKind::StringExpr);
+    check_kind((char*)"BoolLit true",   (char*)"true",      NodeKind::BoolExpr);
+    check_kind((char*)"BoolLit false",  (char*)"false",     NodeKind::BoolExpr);
+    check_kind((char*)"NullLit",        (char*)"null",      NodeKind::NullExpr);
+    check_kind((char*)"UndefinedLit",   (char*)"undefined", NodeKind::UndefinedExpr);
+    check_kind((char*)"ThisExpr",       (char*)"this",      NodeKind::ThisExpr);
+    check_kind((char*)"Identifier",     (char*)"foo",       NodeKind::IdentExpr);
+
+    // --- Number decoding -----------------------------------------
+    check_number((char*)"num decimal",  (char*)"42",     42.0);
+    check_number((char*)"num zero",     (char*)"0",      0.0);
+    check_number((char*)"num float",    (char*)"3.14",   3.14);
+    check_number((char*)"num sci",      (char*)"1e3",    1000.0);
+    check_number((char*)"num hex",      (char*)"0xff",   255.0);
+    check_number((char*)"num bin",      (char*)"0b1010", 10.0);
+    check_number((char*)"num oct",      (char*)"0o17",   15.0);
+
+    // --- Parentheses ---------------------------------------------
+    check_kind((char*)"Paren",          (char*)"(1)", NodeKind::Paren);
+
+    // --- Unary / Postfix -----------------------------------------
+    check_root_op((char*)"unary minus", (char*)"-x",      NodeKind::Unary,   TokenKind::Minus);
+    check_root_op((char*)"unary bang",  (char*)"!x",      NodeKind::Unary,   TokenKind::Bang);
+    check_root_op((char*)"unary typeof",(char*)"typeof x",NodeKind::Unary,   TokenKind::KwTypeof);
+    check_root_op((char*)"prefix ++",   (char*)"++x",     NodeKind::Unary,   TokenKind::PlusPlus);
+    check_root_op((char*)"postfix ++",  (char*)"x++",     NodeKind::Postfix, TokenKind::PlusPlus);
+
+    // --- Simple binaries -----------------------------------------
+    check_root_op((char*)"add",  (char*)"1+2", NodeKind::Binary, TokenKind::Plus);
+    check_root_op((char*)"mul",  (char*)"3*4", NodeKind::Binary, TokenKind::Star);
+    check_root_op((char*)"shl",  (char*)"a<<b",NodeKind::Binary, TokenKind::LtLt);
+    check_root_op((char*)"strict eq", (char*)"a===b", NodeKind::Binary, TokenKind::EqEqEq);
+
+    // --- Logical / nullish ---------------------------------------
+    check_root_op((char*)"&&",   (char*)"a&&b", NodeKind::Logical, TokenKind::AmpAmp);
+    check_root_op((char*)"||",   (char*)"a||b", NodeKind::Logical, TokenKind::PipePipe);
+    check_root_op((char*)"??",   (char*)"a??b", NodeKind::Logical, TokenKind::QuestionQuestion);
+
+    // --- Precedence ----------------------------------------------
+    // `1 + 2 * 3` → Binary(+,  1,  Binary(*, 2, 3))
+    {
+        let r = parse_str((char*)"1 + 2 * 3");
+        defer parser_free_result(r);
+        if r.had_error { fail((char*)"prec +*", (char*)"parse error"); }
+        else {
+            let n = first_stmt(r);
+            if n == NULL || n.kind != NodeKind::Binary || n.op != TokenKind::Plus {
+                fail((char*)"prec +*", (char*)"root not Binary+");
+            } else if n.right == NULL || n.right.kind != NodeKind::Binary || n.right.op != TokenKind::Star {
+                fail((char*)"prec +*", (char*)"right not Binary*");
+            } else {
+                pass((char*)"prec +*");
+            }
+        }
+    }
+
+    // `2 * 3 + 1` → Binary(+, Binary(*, 2, 3), 1)
+    {
+        let r = parse_str((char*)"2 * 3 + 1");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.op != TokenKind::Plus { fail((char*)"prec *+", (char*)"root not +"); }
+        else if n.left == NULL || n.left.op != TokenKind::Star { fail((char*)"prec *+", (char*)"left not *"); }
+        else { pass((char*)"prec *+"); }
+    }
+
+    // --- Associativity -------------------------------------------
+    // `a - b - c` → Binary(-, Binary(-, a, b), c)
+    {
+        let r = parse_str((char*)"a - b - c");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.op != TokenKind::Minus { fail((char*)"left-assoc -", (char*)"root not -"); }
+        else if n.left == NULL || n.left.op != TokenKind::Minus { fail((char*)"left-assoc -", (char*)"left not -"); }
+        else if n.right == NULL || n.right.kind != NodeKind::IdentExpr { fail((char*)"left-assoc -", (char*)"right not Identifier"); }
+        else { pass((char*)"left-assoc -"); }
+    }
+
+    // `a ** b ** c` → Binary(**, a, Binary(**, b, c))   right-assoc
+    {
+        let r = parse_str((char*)"a ** b ** c");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.op != TokenKind::StarStar { fail((char*)"right-assoc **", (char*)"root not **"); }
+        else if n.right == NULL || n.right.op != TokenKind::StarStar { fail((char*)"right-assoc **", (char*)"right not **"); }
+        else if n.left == NULL || n.left.kind != NodeKind::IdentExpr { fail((char*)"right-assoc **", (char*)"left not Identifier"); }
+        else { pass((char*)"right-assoc **"); }
+    }
+
+    // --- Conditional ---------------------------------------------
+    {
+        let r = parse_str((char*)"a ? b : c");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::Conditional { fail((char*)"ternary", (char*)"not Conditional"); }
+        else if n.third == NULL { fail((char*)"ternary", (char*)"no alt"); }
+        else { pass((char*)"ternary"); }
+    }
+
+    // --- Assignment (right-assoc) -------------------------------
+    {
+        let r = parse_str((char*)"a = b = c");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::Assignment { fail((char*)"assign right-assoc", (char*)"not Assignment"); }
+        else if n.right == NULL || n.right.kind != NodeKind::Assignment { fail((char*)"assign right-assoc", (char*)"right not Assignment"); }
+        else { pass((char*)"assign right-assoc"); }
+    }
+    check_root_op((char*)"compound +=", (char*)"a += b", NodeKind::Assignment, TokenKind::PlusEq);
+
+    // --- Member access -------------------------------------------
+    {
+        let r = parse_str((char*)"a.b");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::Member { fail((char*)"member .", (char*)"not Member"); }
+        else if n.name_length != 1 { fail((char*)"member .", (char*)"name_length != 1"); }
+        else { pass((char*)"member ."); }
+    }
+    check_kind((char*)"member []",        (char*)"a[b]", NodeKind::Computed);
+    check_kind((char*)"opt member",       (char*)"a?.b", NodeKind::OptionalMember);
+
+    // --- Call ----------------------------------------------------
+    check_kind((char*)"call",             (char*)"f()",        NodeKind::Call);
+    check_kind((char*)"call with args",   (char*)"f(1, 2, 3)", NodeKind::Call);
+    check_kind((char*)"new",              (char*)"new Foo()",  NodeKind::New);
+    check_kind((char*)"opt call",         (char*)"f?.()",      NodeKind::OptionalCall);
+
+    // Member-call chain left-associativity: `a.b(c).d`
+    {
+        let r = parse_str((char*)"a.b(c).d");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::Member { fail((char*)"chain a.b(c).d", (char*)"root not Member"); }
+        else if n.left == NULL || n.left.kind != NodeKind::Call { fail((char*)"chain a.b(c).d", (char*)"inner not Call"); }
+        else { pass((char*)"chain a.b(c).d"); }
+    }
+
+    // --- Aggregates ----------------------------------------------
+    {
+        let r = parse_str((char*)"[1, 2, 3]");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::Array { fail((char*)"array", (char*)"not Array"); }
+        else if n.children_count != 3 { fail((char*)"array", (char*)"wrong count"); }
+        else { pass((char*)"array"); }
+    }
+    // Object literal — wrapped in parens because `{` at statement-start
+    // is a BlockStmt (the same disambiguation real JS engines do).
+    {
+        let r = parse_str((char*)r"({ a: 1, b: 2 })");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::Paren { fail((char*)"object", (char*)"not Paren"); }
+        else if n.left == NULL || n.left.kind != NodeKind::Object { fail((char*)"object", (char*)"inner not Object"); }
+        else if n.left.children_count != 2 { fail((char*)"object", (char*)"wrong prop count"); }
+        else { pass((char*)"object"); }
+    }
+    // Identifier shorthand: { x } = { x: x }
+    {
+        let r = parse_str((char*)r"({ x })");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::Paren { fail((char*)"object shorthand", (char*)"not Paren"); }
+        else if n.left == NULL || n.left.kind != NodeKind::Object { fail((char*)"object shorthand", (char*)"inner not Object"); }
+        else if n.left.children_count != 1 { fail((char*)"object shorthand", (char*)"prop count != 1"); }
+        else if n.left.children[0].left == NULL || n.left.children[0].left.kind != NodeKind::IdentExpr {
+            fail((char*)"object shorthand", (char*)"value not Identifier");
+        }
+        else { pass((char*)"object shorthand"); }
+    }
+
+    // --- Comma sequence ------------------------------------------
+    {
+        let r = parse_str((char*)"a, b, c");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::Sequence { fail((char*)"sequence", (char*)"not Sequence"); }
+        else if n.children_count != 3 { fail((char*)"sequence", (char*)"wrong count"); }
+        else { pass((char*)"sequence"); }
+    }
+
+    // --- Multi-statement program ---------------------------------
+    {
+        let r = parse_str((char*)"1; 2; 3;");
+        defer parser_free_result(r);
+        if r.root.children_count != 3 { fail((char*)"multi-stmt", (char*)"wrong stmt count"); }
+        else { pass((char*)"multi-stmt"); }
+    }
+
+    // --- A more complex expression -------------------------------
+    // `f(a + 1).b ?? c.d || e`  should parse without error.
+    {
+        let r = parse_str((char*)"f(a + 1).b ?? c.d || e");
+        defer parser_free_result(r);
+        if r.had_error { fail((char*)"complex expr", (char*)"parse error"); }
+        else {
+            let n = first_stmt(r);
+            if n == NULL || n.kind != NodeKind::Logical { fail((char*)"complex expr", (char*)"root not Logical"); }
+            else { pass((char*)"complex expr"); }
+        }
+    }
+
+    // =================================================================
+    // Statements (Phase 2.4)
+    // =================================================================
+
+    // --- Block ---------------------------------------------------
+    check_kind((char*)"empty block",    (char*)r"{}",            NodeKind::BlockStmt);
+    check_kind((char*)"block with stmts", (char*)r"{ a; b; }",   NodeKind::BlockStmt);
+    {
+        let r = parse_str((char*)r"{ a; b; c; }");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::BlockStmt { fail((char*)"block count", (char*)"not BlockStmt"); }
+        else if n.children_count != 3 { fail((char*)"block count", (char*)"wrong stmt count"); }
+        else { pass((char*)"block count"); }
+    }
+
+    // --- Var decl ------------------------------------------------
+    check_root_op((char*)"var",   (char*)"var x;",   NodeKind::VarDecl, TokenKind::KwVar);
+    check_root_op((char*)"let",   (char*)"let x;",   NodeKind::VarDecl, TokenKind::KwLet);
+    check_root_op((char*)"const", (char*)"const x = 1;", NodeKind::VarDecl, TokenKind::KwConst);
+
+    {
+        let r = parse_str((char*)"let x = 1;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::VarDecl { fail((char*)"let init", (char*)"not VarDecl"); }
+        else if n.children_count != 1 { fail((char*)"let init", (char*)"decl count != 1"); }
+        else if n.children[0].left == NULL { fail((char*)"let init", (char*)"no initializer"); }
+        else if n.children[0].left.kind != NodeKind::NumberExpr { fail((char*)"let init", (char*)"init not Number"); }
+        else { pass((char*)"let init"); }
+    }
+    {
+        let r = parse_str((char*)"let x = 1, y = 2, z;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::VarDecl { fail((char*)"multi declarator", (char*)"not VarDecl"); }
+        else if n.children_count != 3 { fail((char*)"multi declarator", (char*)"count != 3"); }
+        else if n.children[2].left != NULL { fail((char*)"multi declarator", (char*)"z should have no init"); }
+        else { pass((char*)"multi declarator"); }
+    }
+
+    // --- If/else -------------------------------------------------
+    {
+        let r = parse_str((char*)"if (x) y;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::IfStmt { fail((char*)"if", (char*)"not IfStmt"); }
+        else if n.third != NULL { fail((char*)"if", (char*)"unexpected else"); }
+        else { pass((char*)"if"); }
+    }
+    {
+        let r = parse_str((char*)"if (x) y; else z;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::IfStmt { fail((char*)"if-else", (char*)"not IfStmt"); }
+        else if n.third == NULL { fail((char*)"if-else", (char*)"missing else"); }
+        else { pass((char*)"if-else"); }
+    }
+    // else-if chain
+    {
+        let r = parse_str((char*)"if (a) x; else if (b) y; else z;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::IfStmt { fail((char*)"else-if chain", (char*)"not IfStmt"); }
+        else if n.third == NULL || n.third.kind != NodeKind::IfStmt { fail((char*)"else-if chain", (char*)"else not IfStmt"); }
+        else { pass((char*)"else-if chain"); }
+    }
+
+    // --- Return --------------------------------------------------
+    check_kind((char*)"return bare", (char*)"return;",  NodeKind::ReturnStmt);
+    {
+        let r = parse_str((char*)"return x;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::ReturnStmt { fail((char*)"return value", (char*)"not ReturnStmt"); }
+        else if n.left == NULL { fail((char*)"return value", (char*)"missing arg"); }
+        else { pass((char*)"return value"); }
+    }
+
+    // --- Loops ---------------------------------------------------
+    check_kind((char*)"while",        (char*)"while (x) y;",         NodeKind::WhileStmt);
+    check_kind((char*)"do-while",     (char*)"do x; while (y);",     NodeKind::DoWhileStmt);
+    check_kind((char*)"for full",     (char*)"for (i = 0; i < 10; i++) body;", NodeKind::ForStmt);
+    check_kind((char*)"for let init", (char*)"for (let i = 0; i < 10; i++) body;", NodeKind::ForStmt);
+    check_kind((char*)"for empty",    (char*)"for (;;) body;", NodeKind::ForStmt);
+    {
+        let r = parse_str((char*)"for (;;) body;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::ForStmt { fail((char*)"for empty slots", (char*)"not ForStmt"); }
+        else if n.left != NULL || n.right != NULL || n.third != NULL {
+            fail((char*)"for empty slots", (char*)"slot should be NULL");
+        }
+        else { pass((char*)"for empty slots"); }
+    }
+
+    // --- Break / continue / empty --------------------------------
+    check_kind((char*)"break",     (char*)"break;",    NodeKind::BreakStmt);
+    check_kind((char*)"continue",  (char*)"continue;", NodeKind::ContinueStmt);
+    check_kind((char*)"empty",     (char*)";",         NodeKind::EmptyStmt);
+
+    // --- Multi-statement program ---------------------------------
+    {
+        let r = parse_str((char*)"let x = 1; if (x) return x;");
+        defer parser_free_result(r);
+        if r.had_error { fail((char*)"compound program", (char*)"parse error"); }
+        else if r.root.children_count != 2 { fail((char*)"compound program", (char*)"stmt count != 2"); }
+        else if r.root.children[0].kind != NodeKind::VarDecl { fail((char*)"compound program", (char*)"stmt 0 not VarDecl"); }
+        else if r.root.children[1].kind != NodeKind::IfStmt { fail((char*)"compound program", (char*)"stmt 1 not IfStmt"); }
+        else { pass((char*)"compound program"); }
+    }
+
+    // =================================================================
+    // Functions & arrows (Phase 2.5)
+    // =================================================================
+
+    // --- Function declarations -----------------------------------
+    {
+        let r = parse_str((char*)r"function f() {}");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::FunctionDecl { fail((char*)"function decl", (char*)"not FunctionDecl"); }
+        else if n.name_length != 1 { fail((char*)"function decl", (char*)"name_length != 1"); }
+        else if n.children_count != 0 { fail((char*)"function decl", (char*)"params != 0"); }
+        else if n.left == NULL || n.left.kind != NodeKind::BlockStmt { fail((char*)"function decl", (char*)"body not BlockStmt"); }
+        else { pass((char*)"function decl"); }
+    }
+    {
+        let r = parse_str((char*)r"function add(a, b) { return a + b; }");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::FunctionDecl { fail((char*)"function with params", (char*)"not FunctionDecl"); }
+        else if n.children_count != 2 { fail((char*)"function with params", (char*)"params != 2"); }
+        else if n.children[0].kind != NodeKind::IdentExpr { fail((char*)"function with params", (char*)"param 0 not IdentExpr"); }
+        else { pass((char*)"function with params"); }
+    }
+
+    // --- Function expression in init -----------------------------
+    {
+        let r = parse_str((char*)r"let f = function() { return 1; };");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::VarDecl { fail((char*)"function expr", (char*)"not VarDecl"); }
+        else if n.children[0].left == NULL || n.children[0].left.kind != NodeKind::FunctionExpr {
+            fail((char*)"function expr", (char*)"init not FunctionExpr");
+        }
+        else if n.children[0].left.name_length != 0 {
+            fail((char*)"function expr", (char*)"anonymous expected");
+        }
+        else { pass((char*)"function expr"); }
+    }
+    {
+        let r = parse_str((char*)r"let f = function named() {};");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL { fail((char*)"named function expr", (char*)"no stmt"); }
+        else if n.children[0].left == NULL || n.children[0].left.kind != NodeKind::FunctionExpr {
+            fail((char*)"named function expr", (char*)"not FunctionExpr");
+        }
+        else if n.children[0].left.name_length != 5 {
+            fail((char*)"named function expr", (char*)"name_length != 5");
+        }
+        else { pass((char*)"named function expr"); }
+    }
+
+    // --- Arrow functions -----------------------------------------
+    // Single-identifier arrow: x => x + 1
+    {
+        let r = parse_str((char*)"let f = x => x + 1;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        let init: AstNode* = NULL;
+        if n != NULL && n.children_count > 0 { init = n.children[0].left; }
+        if init == NULL || init.kind != NodeKind::ArrowFunc { fail((char*)"arrow single", (char*)"not ArrowFunc"); }
+        else if init.children_count != 1 { fail((char*)"arrow single", (char*)"params != 1"); }
+        else if init.left == NULL || init.left.kind != NodeKind::Binary { fail((char*)"arrow single", (char*)"body not Binary"); }
+        else { pass((char*)"arrow single"); }
+    }
+    // Zero-param: () => 1
+    {
+        let r = parse_str((char*)"let f = () => 1;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        let init: AstNode* = NULL;
+        if n != NULL && n.children_count > 0 { init = n.children[0].left; }
+        if init == NULL || init.kind != NodeKind::ArrowFunc { fail((char*)"arrow zero", (char*)"not ArrowFunc"); }
+        else if init.children_count != 0 { fail((char*)"arrow zero", (char*)"params != 0"); }
+        else { pass((char*)"arrow zero"); }
+    }
+    // Multi-param: (a, b) => a + b
+    {
+        let r = parse_str((char*)"let f = (a, b) => a + b;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        let init: AstNode* = NULL;
+        if n != NULL && n.children_count > 0 { init = n.children[0].left; }
+        if init == NULL || init.kind != NodeKind::ArrowFunc { fail((char*)"arrow multi", (char*)"not ArrowFunc"); }
+        else if init.children_count != 2 { fail((char*)"arrow multi", (char*)"params != 2"); }
+        else { pass((char*)"arrow multi"); }
+    }
+    // Block body: (x) => { return x; }
+    {
+        let r = parse_str((char*)r"let f = (x) => { return x; };");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        let init: AstNode* = NULL;
+        if n != NULL && n.children_count > 0 { init = n.children[0].left; }
+        if init == NULL || init.kind != NodeKind::ArrowFunc { fail((char*)"arrow block", (char*)"not ArrowFunc"); }
+        else if init.left == NULL || init.left.kind != NodeKind::BlockStmt { fail((char*)"arrow block", (char*)"body not BlockStmt"); }
+        else { pass((char*)"arrow block"); }
+    }
+    // Parenthesized expression should still parse normally when not followed by =>.
+    {
+        let r = parse_str((char*)"(1 + 2);");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::Paren { fail((char*)"plain parens", (char*)"not Paren"); }
+        else { pass((char*)"plain parens"); }
+    }
+
+    // --- for-in / for-of -----------------------------------------
+    {
+        let r = parse_str((char*)"for (x in obj) body;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::ForInStmt { fail((char*)"for-in", (char*)"not ForInStmt"); }
+        else if n.left == NULL || n.left.kind != NodeKind::IdentExpr { fail((char*)"for-in", (char*)"binding not IdentExpr"); }
+        else if n.right == NULL { fail((char*)"for-in", (char*)"no iterable"); }
+        else { pass((char*)"for-in"); }
+    }
+    {
+        let r = parse_str((char*)"for (let x in obj) body;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::ForInStmt { fail((char*)"for-in let", (char*)"not ForInStmt"); }
+        else if n.left == NULL || n.left.kind != NodeKind::VarDecl { fail((char*)"for-in let", (char*)"binding not VarDecl"); }
+        else { pass((char*)"for-in let"); }
+    }
+    {
+        let r = parse_str((char*)"for (const x of arr) body;");
+        defer parser_free_result(r);
+        let n = first_stmt(r);
+        if n == NULL || n.kind != NodeKind::ForOfStmt { fail((char*)"for-of const", (char*)"not ForOfStmt"); }
+        else if n.left == NULL || n.left.kind != NodeKind::VarDecl { fail((char*)"for-of const", (char*)"binding not VarDecl"); }
+        else { pass((char*)"for-of const"); }
+    }
+}
+
+fn main() -> int {
+    run_tests();
+    raw { printf("[parser] %d passed, %d failed\n", g_pass, g_fail); }
+    if g_fail > 0 { return 1; }
+    return 0;
+}

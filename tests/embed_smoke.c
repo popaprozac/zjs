@@ -1,0 +1,263 @@
+/* Pure-C embed smoke test for the NaN-boxed value API.
+ *
+ * Validates that the C-ABI surface declared in include/zjs.h faithfully
+ * round-trips every immediate value kind, including edge cases (INT_MIN,
+ * INT_MAX, ±0.0, NaN, infinity, subnormals). If this passes, the binary
+ * layout of ZjsValue matches the documented JSC NaN-box convention and
+ * any host that talks to zjs through the header gets correct values.
+ */
+
+#include <float.h>
+#include <limits.h>
+#include <math.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "zjs.h"
+
+/* -----------------------------------------------------------------------
+ * Tiny test harness — no deps.
+ * --------------------------------------------------------------------- */
+
+static int g_pass = 0;
+static int g_fail = 0;
+
+#define CHECK(cond, fmt, ...)                                                  \
+    do {                                                                       \
+        if (cond) {                                                            \
+            g_pass++;                                                          \
+        } else {                                                               \
+            g_fail++;                                                          \
+            fprintf(stderr, "[FAIL] %s:%d  " fmt "\n",                         \
+                    __FILE__, __LINE__, ##__VA_ARGS__);                        \
+        }                                                                     \
+    } while (0)
+
+/* -----------------------------------------------------------------------
+ * Layout sanity.
+ * --------------------------------------------------------------------- */
+
+static void test_layout(void) {
+    CHECK(sizeof(ZjsValue) == 8, "ZjsValue is %zu bytes, expected 8",
+          sizeof(ZjsValue));
+
+    /* Singletons must match the documented constants byte-for-byte. */
+    CHECK(zjs_null().bits      == 0x0000000000000002ull, "null bits");
+    CHECK(zjs_undefined().bits == 0x000000000000000aull, "undefined bits");
+    CHECK(zjs_bool(0).bits     == 0x0000000000000006ull, "false bits");
+    CHECK(zjs_bool(1).bits     == 0x0000000000000007ull, "true bits");
+    CHECK(zjs_bool(42).bits    == 0x0000000000000007ull, "true bits (nonzero)");
+}
+
+/* -----------------------------------------------------------------------
+ * Int32 roundtrip — including signed-range edges.
+ * --------------------------------------------------------------------- */
+
+static void test_int32(void) {
+    int32_t cases[] = {
+        0, 1, -1, 2, -2, 42, -42, 1234567, -1234567,
+        INT32_MAX, INT32_MIN, INT32_MAX - 1, INT32_MIN + 1,
+    };
+    size_t n = sizeof(cases) / sizeof(cases[0]);
+    for (size_t i = 0; i < n; i++) {
+        int32_t want = cases[i];
+        ZjsValue v = zjs_int32(want);
+        CHECK(zjs_is_int32(v),     "int32(%d) not int32", want);
+        CHECK(zjs_is_number(v),    "int32(%d) not number", want);
+        CHECK(!zjs_is_double(v),   "int32(%d) reported as double", want);
+        CHECK(!zjs_is_bool(v),     "int32(%d) reported as bool", want);
+        CHECK(!zjs_is_null(v),     "int32(%d) reported as null", want);
+        CHECK(!zjs_is_undefined(v),"int32(%d) reported as undefined", want);
+        CHECK(!zjs_is_cell(v),     "int32(%d) reported as cell", want);
+
+        int32_t got = zjs_as_int32(v);
+        CHECK(got == want, "int32 roundtrip: want=%d got=%d", want, got);
+
+        /* Bit-level: top 32 bits must be NumberTag's top 32. */
+        CHECK((v.bits >> 32) == 0xfffe0000u,
+              "int32(%d) bits=0x%016llx has wrong high tag",
+              want, (unsigned long long)v.bits);
+    }
+}
+
+/* -----------------------------------------------------------------------
+ * Double roundtrip — including all the weird floating-point edges.
+ * --------------------------------------------------------------------- */
+
+static int doubles_equal(double a, double b) {
+    /* Bit-equal — distinguishes +0.0 from -0.0, accepts NaN==NaN if
+     * the bit patterns match. */
+    uint64_t ua, ub;
+    memcpy(&ua, &a, sizeof(ua));
+    memcpy(&ub, &b, sizeof(ub));
+    return ua == ub;
+}
+
+static void test_double(void) {
+    double cases[] = {
+        0.0, -0.0, 1.0, -1.0, 1.5, -1.5, 3.141592653589793,
+        DBL_MIN, DBL_MAX, -DBL_MAX,
+        DBL_EPSILON, DBL_MIN / 2.0,  /* subnormal */
+        INFINITY, -INFINITY,
+        NAN,
+    };
+    size_t n = sizeof(cases) / sizeof(cases[0]);
+    for (size_t i = 0; i < n; i++) {
+        double want = cases[i];
+        ZjsValue v = zjs_double(want);
+        CHECK(zjs_is_double(v),    "double(%g) not double", want);
+        CHECK(zjs_is_number(v),    "double(%g) not number", want);
+        CHECK(!zjs_is_int32(v),    "double(%g) reported as int32", want);
+        CHECK(!zjs_is_bool(v),     "double(%g) reported as bool", want);
+        CHECK(!zjs_is_null(v),     "double(%g) reported as null", want);
+        CHECK(!zjs_is_undefined(v),"double(%g) reported as undefined", want);
+        CHECK(!zjs_is_cell(v),     "double(%g) reported as cell", want);
+
+        double got = zjs_as_double(v);
+        CHECK(doubles_equal(got, want),
+              "double roundtrip: want=%g got=%g", want, got);
+    }
+}
+
+/* -----------------------------------------------------------------------
+ * Singletons (null, undefined, true, false).
+ * --------------------------------------------------------------------- */
+
+static void test_singletons(void) {
+    ZjsValue n = zjs_null();
+    CHECK(zjs_is_null(n),       "null not null");
+    CHECK(!zjs_is_undefined(n), "null reported as undefined");
+    CHECK(!zjs_is_bool(n),      "null reported as bool");
+    CHECK(!zjs_is_number(n),    "null reported as number");
+    CHECK(!zjs_is_cell(n),      "null reported as cell");
+
+    ZjsValue u = zjs_undefined();
+    CHECK(zjs_is_undefined(u),  "undefined not undefined");
+    CHECK(!zjs_is_null(u),      "undefined reported as null");
+    CHECK(!zjs_is_bool(u),      "undefined reported as bool");
+    CHECK(!zjs_is_number(u),    "undefined reported as number");
+    CHECK(!zjs_is_cell(u),      "undefined reported as cell");
+
+    ZjsValue t = zjs_bool(1);
+    CHECK(zjs_is_bool(t),       "true not bool");
+    CHECK(zjs_as_bool(t) == 1,  "true unboxes to %d", zjs_as_bool(t));
+    CHECK(!zjs_is_int32(t),     "true reported as int32");
+
+    ZjsValue f = zjs_bool(0);
+    CHECK(zjs_is_bool(f),       "false not bool");
+    CHECK(zjs_as_bool(f) == 0,  "false unboxes to %d", zjs_as_bool(f));
+}
+
+/* -----------------------------------------------------------------------
+ * Mutual exclusion — every value is exactly one kind.
+ * --------------------------------------------------------------------- */
+
+static int kind_count(ZjsValue v) {
+    return (zjs_is_int32(v)     ? 1 : 0)
+         + (zjs_is_double(v)    ? 1 : 0)
+         + (zjs_is_bool(v)      ? 1 : 0)
+         + (zjs_is_null(v)      ? 1 : 0)
+         + (zjs_is_undefined(v) ? 1 : 0)
+         + (zjs_is_cell(v)      ? 1 : 0);
+}
+
+static void test_mutual_exclusion(void) {
+    ZjsValue samples[] = {
+        zjs_int32(0),    zjs_int32(INT32_MAX),  zjs_int32(INT32_MIN),
+        zjs_double(0.0), zjs_double(NAN),       zjs_double(INFINITY),
+        zjs_bool(0),     zjs_bool(1),
+        zjs_null(),      zjs_undefined(),
+    };
+    size_t n = sizeof(samples) / sizeof(samples[0]);
+    for (size_t i = 0; i < n; i++) {
+        int k = kind_count(samples[i]);
+        CHECK(k == 1,
+              "sample %zu has %d kinds (bits=0x%016llx)",
+              i, k, (unsigned long long)samples[i].bits);
+        /* is_number must be exactly is_int32 || is_double. */
+        int composite = zjs_is_int32(samples[i]) || zjs_is_double(samples[i]);
+        CHECK(zjs_is_number(samples[i]) == composite,
+              "is_number disagrees with int32||double for sample %zu", i);
+    }
+}
+
+/* -----------------------------------------------------------------------
+ * End-to-end through the engine — the original Phase 0 smoke check,
+ * but now exercising the real value path.
+ * --------------------------------------------------------------------- */
+
+static void test_engine_path(void) {
+    printf("[smoke] zjs version: %s\n", zjs_version());
+
+    ZjsContext* ctx = zjs_new_context();
+    CHECK(ctx != NULL, "zjs_new_context returned NULL");
+    if (!ctx) return;
+
+    /* Now that Phase 3.0a is live, zjs_eval actually evaluates. */
+    struct {
+        const char* source;
+        int expected;
+    } cases[] = {
+        { "1 + 1",                                                              2 },
+        { "1 + 2 * 3",                                                          7 },
+        { "(1 + 2) * 3",                                                        9 },
+        { "10 - 4 - 3",                                                         3 },
+        { "2 ** 8",                                                           256 },
+        { "100 / 4",                                                           25 },
+        { "10 % 3",                                                             1 },
+        { "-5 + 10",                                                            5 },
+        { "!0",                                                                 1 },
+        { "!1",                                                                 0 },
+        { "1 < 2",                                                              1 },
+        { "2 < 1",                                                              0 },
+        { "3 === 3",                                                            1 },
+        { "3 === 4",                                                            0 },
+        { "1 & 3",                                                              1 },
+        { "1 | 2",                                                              3 },
+        { "5 ^ 3",                                                              6 },
+        { "1 << 4",                                                            16 },
+        { "16 >> 2",                                                            4 },
+        { "let a = 5; let b = 7; a + b",                                       12 },
+        { "let x = 1; x = x + 41; x",                                          42 },
+        { "let x = 10; x += 5; x",                                             15 },
+        { "if (1) 7; else 99",                                                  7 },
+        { "if (0) 7; else 99",                                                 99 },
+        { "let s = 0; let i = 1; while (i <= 10) { s = s + i; i = i + 1; } s",55 },
+        { "let s = 0; for (let i = 1; i <= 10; i = i + 1) s = s + i; s",      55 },
+        { "let n = 0; do { n = n + 1; } while (n < 5); n",                      5 },
+    };
+    size_t n = sizeof(cases) / sizeof(cases[0]);
+    for (size_t i = 0; i < n; i++) {
+        ZjsValue v = zjs_eval(ctx, cases[i].source);
+        int got = zjs_is_int32(v) ? zjs_as_int32(v) :
+                  zjs_is_double(v) ? (int)zjs_as_double(v) :
+                  zjs_is_bool(v) ? zjs_as_bool(v) : -1;
+        if (got != cases[i].expected) {
+            g_fail++;
+            fprintf(stderr, "[eval FAIL] %-60s expected %d, got %d\n",
+                    cases[i].source, cases[i].expected, got);
+        } else {
+            g_pass++;
+        }
+    }
+
+    zjs_free_context(ctx);
+}
+
+/* -----------------------------------------------------------------------
+ * Main.
+ * --------------------------------------------------------------------- */
+
+int main(void) {
+    test_layout();
+    test_int32();
+    test_double();
+    test_singletons();
+    test_mutual_exclusion();
+    test_engine_path();
+
+    printf("[smoke] %d passed, %d failed\n", g_pass, g_fail);
+    return g_fail == 0 ? 0 : 1;
+}
