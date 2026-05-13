@@ -31,8 +31,9 @@ enum Op {
 
     // Globals (program-scope variables)
     DefineGlobal,     // a=src, bc=slot (u16)   — initialize globals[slot] = regs[a]
-    LoadGlobal,       // a=dst, bc=slot (u16)
-    StoreGlobal,      // a=src, bc=slot (u16)
+    LoadGlobal,       // a=dst, bc=slot (u16)  — throws ReferenceError if undeclared
+    StoreGlobal,      // a=src, bc=slot (u16)  — also defines the global (sloppy semantics)
+    LoadGlobalOrUndefined,  // a=dst, bc=slot (u16) — typeof's special-case load: undefined if undeclared
 
     // Binary arithmetic
     Add, Sub, Mul, Div, Mod, Pow,

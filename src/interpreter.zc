@@ -46,9 +46,13 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             // String-coerced numeric index
             let idx = zjs_to_array_index(key);
             if idx >= 0 { return array_get(arr, (u32)idx); }
-            // Fall through to prototype method intercept (Phase 3.5).
-            if ctx.array_proto != NULL {
-                return object_get(ctx.array_proto, ks);
+            // Walk array_proto then its chain (so hasOwnProperty from
+            // object_proto is reachable).
+            let cur = ctx.array_proto;
+            while cur != NULL {
+                let slot = class_find_slot(cur.cls, ks);
+                if slot >= 0 { return cur.slots[(u32)slot]; }
+                cur = cur.proto;
             }
             return zjs_undefined();
         }
@@ -72,8 +76,13 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 let s = zjs_as_string(obj);
                 return zjs_int32((i32)s.length);
             }
-            if ctx.string_proto != NULL {
-                return object_get(ctx.string_proto, ks);
+            // Walk string_proto + chain (for object_proto methods like
+            // hasOwnProperty).
+            let cur = ctx.string_proto;
+            while cur != NULL {
+                let slot = class_find_slot(cur.cls, ks);
+                if slot >= 0 { return cur.slots[(u32)slot]; }
+                cur = cur.proto;
             }
         }
         return zjs_undefined();
@@ -115,7 +124,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
-    // Host function: same .prototype rule.
+    // Host function: .prototype (lazy) and arbitrary properties via .props.
     if zjs_is_host_function(obj) != 0 {
         if zjs_is_string(key) != 0 {
             let ks = zjs_as_string(key);
@@ -123,13 +132,16 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             let kd = ks.data;
             let kn = ks.length;
             raw { is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0; }
+            let hf = zjs_as_host_function(obj);
             if is_proto != 0 {
-                let hf = zjs_as_host_function(obj);
                 if hf.prototype == NULL {
                     let proto_v = ctx_new_object(ctx);
                     hf.prototype = zjs_as_object(proto_v);
                 }
                 return zjs_cell_from_ptr((void*)hf.prototype);
+            }
+            if hf.props != NULL {
+                return object_get(hf.props, ks);
             }
         }
         return zjs_undefined();
@@ -180,10 +192,17 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         let kd = ks.data;
         let kn = ks.length;
         raw { is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0; }
+        let hf = zjs_as_host_function(obj);
         if is_proto != 0 && zjs_is_object(value) != 0 {
-            let hf = zjs_as_host_function(obj);
             hf.prototype = zjs_as_object(value);
+            return;
         }
+        // Arbitrary property — lazily create the props object.
+        if hf.props == NULL {
+            let pv = ctx_new_object(ctx);
+            hf.props = zjs_as_object(pv);
+        }
+        object_set(ctx, hf.props, ks, value);
         return;
     }
     // Primitives: silently ignored (real JS throws in strict mode).
@@ -297,12 +316,27 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
         } else if op == Op::DefineGlobal {
             let slot = inst_bc_u16(inst);
             ctx.globals[slot].value = regs[inst.a];
+            ctx.globals[slot].defined = true;
         } else if op == Op::LoadGlobal {
             let slot = inst_bc_u16(inst);
+            if !ctx.globals[slot].defined {
+                let nm = ctx.globals[slot].name;
+                let nl = ctx.globals[slot].name_len;
+                let err = build_reference_error(ctx, nm, nl);
+                throwing = true; thrown = err; continue;
+            }
             regs[inst.a] = ctx.globals[slot].value;
+        } else if op == Op::LoadGlobalOrUndefined {
+            let slot = inst_bc_u16(inst);
+            if !ctx.globals[slot].defined {
+                regs[inst.a] = zjs_undefined();
+            } else {
+                regs[inst.a] = ctx.globals[slot].value;
+            }
         } else if op == Op::StoreGlobal {
             let slot = inst_bc_u16(inst);
             ctx.globals[slot].value = regs[inst.a];
+            ctx.globals[slot].defined = true;
 
         // --- arithmetic -----------------------------------------
         } else if op == Op::Add {

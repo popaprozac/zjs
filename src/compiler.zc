@@ -510,6 +510,30 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         return last;
     }
     if k == NodeKind::Unary {
+        // typeof must NOT throw ReferenceError for an undeclared
+        // identifier. Detect this case BEFORE compiling the operand
+        // (which would emit a throwing LoadGlobal) and substitute
+        // LoadGlobalOrUndefined.
+        if node.op == TokenKind::KwTypeof && node.left != NULL && node.left.kind == NodeKind::IdentExpr {
+            let operand = node.left;
+            let nm = c.source + operand.start;
+            let nl = operand.end - operand.start;
+            let local_idx = find_local_index(c, nm, nl);
+            let outer_idx: i32 = -1;
+            if local_idx < 0 && c.parent != NULL {
+                let oi = find_local_index(c.parent, nm, nl);
+                if oi >= 0 && c.parent.locals[(u32)oi].captured { outer_idx = oi; }
+            }
+            if local_idx < 0 && outer_idx < 0 {
+                let slot = ctx_intern_global(c.ctx, nm, nl);
+                let src_g = alloc_reg(c);
+                emit(c, make_inst_a_u16(Op::LoadGlobalOrUndefined, src_g, (u16)slot));
+                let dst_g = alloc_reg(c);
+                emit(c, make_inst_ab(Op::Typeof, dst_g, src_g));
+                release_reg(c, src_g);
+                return dst_g;
+            }
+        }
         let src = compile_expr(c, node.left);
         let op = node.op;
         if op == TokenKind::Minus {
@@ -537,6 +561,8 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
             return dst;
         }
         if op == TokenKind::KwTypeof {
+            // IdentExpr globals were handled above (no-throw path).
+            // This handles non-Ident operands (typeof expr).
             let dst = alloc_reg(c);
             emit(c, make_inst_ab(Op::Typeof, dst, src));
             release_reg(c, src);
@@ -2258,10 +2284,41 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     c.last_expr_reg = (i32)result_reg;
 
     if root != NULL && root.kind == NodeKind::Program {
+        // Hoist: pre-declare every top-level var/let/const declarator,
+        // FunctionDecl, ClassDecl name as a global so subsequent reads
+        // see `defined=true`. The values start as undefined; the
+        // statement-order DefineGlobal / StoreGlobal will overwrite
+        // with the real initializer when reached. (Spec deviation: real
+        // let/const has TDZ — accessing before the line throws.
+        // We're permissive and just hoist them all.)
         let i: u32 = 0;
-        while i < root.children_count && !c.had_error {
-            compile_stmt(c, root.children[i]);
+        while i < root.children_count {
+            let stmt = root.children[i];
+            if stmt != NULL {
+                let sk = stmt.kind;
+                if sk == NodeKind::VarDecl {
+                    let j: u32 = 0;
+                    while j < stmt.children_count {
+                        let decl = stmt.children[j];
+                        let nm = c.source + decl.name_start;
+                        let nl = decl.name_length;
+                        let slot = ctx_intern_global(c.ctx, nm, nl);
+                        ctx.globals[slot].defined = true;
+                        j = j + 1;
+                    }
+                } else if sk == NodeKind::FunctionDecl || sk == NodeKind::ClassDecl {
+                    let nm = c.source + stmt.name_start;
+                    let nl = stmt.name_length;
+                    let slot = ctx_intern_global(c.ctx, nm, nl);
+                    ctx.globals[slot].defined = true;
+                }
+            }
             i = i + 1;
+        }
+        let i2: u32 = 0;
+        while i2 < root.children_count && !c.had_error {
+            compile_stmt(c, root.children[i2]);
+            i2 = i2 + 1;
         }
     } else {
         c.had_error = true;

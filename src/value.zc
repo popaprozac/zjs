@@ -179,6 +179,7 @@ raw {
     #include <math.h>
     #include <stdint.h>
     #include <limits.h>
+    #include <stdlib.h>
 }
 
 fn zjs_to_double(v: ZjsValue) -> f64 {
@@ -187,6 +188,32 @@ fn zjs_to_double(v: ZjsValue) -> f64 {
     if zjs_is_bool(v) != 0      { return (f64)zjs_as_bool(v); }
     if zjs_is_null(v) != 0      { return 0.0; }
     if zjs_is_undefined(v) != 0 {
+        let nan: f64 = 0.0;
+        raw { nan = (double)NAN; }
+        return nan;
+    }
+    if zjs_is_string(v) != 0 {
+        // String → number via strtod, skipping whitespace. Empty / all-
+        // whitespace strings coerce to 0 per ECMA-262, not NaN.
+        let s = zjs_as_string(v);
+        let sd = s.data;
+        let sn = s.length;
+        let parsed: f64 = 0.0;
+        let ok: int = 0;
+        raw {
+            const char* p = sd;
+            const char* end = sd + sn;
+            while (p < end && (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == '\v' || *p == '\f')) p++;
+            if (p == end) { parsed = 0.0; ok = 1; }
+            else {
+                char* ep = NULL;
+                parsed = strtod(p, &ep);
+                // Skip trailing whitespace.
+                while (ep < end && (*ep == ' ' || *ep == '\t' || *ep == '\n' || *ep == '\r' || *ep == '\v' || *ep == '\f')) ep++;
+                ok = (ep == end && ep != p) ? 1 : 0;
+            }
+        }
+        if ok != 0 { return parsed; }
         let nan: f64 = 0.0;
         raw { nan = (double)NAN; }
         return nan;
@@ -435,6 +462,9 @@ struct ZjsHostFunction {
     // Phase 3.6: `.prototype` for instanceof + constructor-style use.
     // Lazy — first read auto-creates an empty object.
     prototype: ZjsObject*;
+    // Phase 3.8c: arbitrary properties (e.g. `Array.isArray`). Lazy.
+    // property_get/set on a host function falls through to this object.
+    props:     ZjsObject*;
 }
 
 // Closure: a function template paired with a captured environment.

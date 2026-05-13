@@ -15,22 +15,8 @@ raw {
     #include <string.h>
 }
 
-// Build a synthetic { name: "SyntaxError", message } error object — used
-// to surface parse / compile failures as JS-visible throws. test262's
-// negative parse tests look for this type.
-fn build_syntax_error(ctx: ZjsContext*, msg: char*) -> ZjsValue {
-    let obj_v = ctx_new_object(ctx);
-    let obj = zjs_as_object(obj_v);
-    let name_atom = ctx_intern_atom(ctx, (char*)"name", 4);
-    let msg_atom  = ctx_intern_atom(ctx, (char*)"message", 7);
-    let name_val_str = ctx_intern_atom(ctx, (char*)"SyntaxError", 11);
-    object_set(ctx, obj, name_atom, zjs_cell_from_ptr((void*)name_val_str));
-    let msg_len: u32 = 0;
-    raw { msg_len = (uint32_t)strlen(msg); }
-    let msg_str = ctx_intern_string(ctx, msg, msg_len);
-    object_set(ctx, obj, msg_atom, msg_str);
-    return obj_v;
-}
+// build_typed_error / build_syntax_error / build_reference_error
+// live in context.zc so the interpreter can use them too.
 
 fn zjs_eval(ctx: ZjsContext*, source: char*) -> ZjsValue {
     if ctx == NULL || source == NULL { return zjs_undefined(); }
