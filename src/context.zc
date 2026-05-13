@@ -235,6 +235,15 @@ fn gc_mark_value(v: ZjsValue) -> void {
             gc_mark_value(f.constants[i]);
             i = i + 1;
         }
+        // Walk inline-cache entries — each carries a HiddenClass* that
+        // must stay alive while this Function is reachable. Atom names
+        // are pinned via the atom-table root, so we don't re-mark them.
+        let j: u32 = 0;
+        while j < f.ic_count {
+            let c = f.ics[j].class_;
+            if c != NULL { gc_mark_hidden_class(c); }
+            j = j + 1;
+        }
         return;
     }
 }

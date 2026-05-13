@@ -67,6 +67,14 @@ enum Op {
     // symbols across enums in the same TU — see reference_zen-c.md.
     Invoke,
 
+    // Inline-cached property access (Phase 3.2b).
+    // ic_slot indexes into f.ics[] — a per-Function side-table of
+    // {atom_name, last-seen HiddenClass, slot} entries patched in
+    // place on cache miss. Fast path: pointer-compare the cached
+    // class against obj.cls, then indexed slots[] read or write.
+    LoadProp,         // a=dst, b=obj_reg, c=ic_slot (u8)
+    StoreProp,        // a=obj_reg, b=ic_slot (u8), c=val_reg
+
     // Heap-cell creation + access (Phase 3.1b).
     NewObject,        // a=dst. Creates an empty {} object.
     NewArray,         // a=dst, b=base, c=count.
@@ -156,6 +164,15 @@ fn make_inst_i16(op: Op, v: i32) -> Inst {
 // top-level "program" function. Phase 3.0b adds first-class user
 // functions and stores them on the context.
 
+// Inline-cache entry. Allocated per LoadProp/StoreProp site at
+// compile time; `class_` starts NULL (uninitialized) and gets patched
+// on the first execution of the site.
+struct ICEntry {
+    name:   ZjsString*;        // atom; set at compile time, immutable
+    class_: ZjsHiddenClass*;   // last-seen class; NULL = cold
+    slot:   u32;               // slot index in that class
+}
+
 struct Function {
     header:         CellHeader; // { type_tag = TAG_FUNCTION } — must be first field
     code:           Inst*;     // bytecode (heap-allocated)
@@ -164,6 +181,10 @@ struct Function {
     const_count:    u32;
     register_count: u32;       // size of the register file the interpreter must allocate
     param_count:    u32;       // 0 for the top-level program
+
+    // Inline-cache table for LoadProp / StoreProp (Phase 3.2b).
+    ics:            ICEntry*;
+    ic_count:       u32;
 }
 
 fn function_new() -> Function* {
@@ -179,9 +200,11 @@ fn function_free(f: Function*) -> void {
     if f == NULL { return; }
     let code = f.code;
     let consts = f.constants;
+    let ics = f.ics;
     raw {
         free(code);
         free(consts);
+        free(ics);
         free(f);
     }
 }

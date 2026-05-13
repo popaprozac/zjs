@@ -363,6 +363,70 @@ static void test_hidden_class_sharing(void) {
     zjs_free_context(ctx);
 }
 
+/* -----------------------------------------------------------------------
+ * Phase 3.2b — inline caches. Behavioral checks only (perf is not
+ * directly observable from C without timing). We verify that:
+ *   - hot loops over a same-shape property work
+ *   - bouncing between two shapes through the same site still works
+ *     (cache thrashes but stays correct)
+ *   - GC keeps cached classes alive
+ * --------------------------------------------------------------------- */
+
+static void test_inline_caches(void) {
+    ZjsContext* ctx = zjs_new_context();
+
+    /* Hot loop: thousands of accesses through the same `p.x` site.
+     * After the first iteration the IC is warm and every subsequent
+     * access takes the fast path. Result is the sum 1..1000. */
+    ZjsValue sum = zjs_eval(ctx,
+        "let p = {x: 0}; "
+        "for (let i = 1; i <= 1000; i = i + 1) p.x = p.x + i; "
+        "p.x");
+    CHECK(zjs_is_int32(sum) && zjs_as_int32(sum) == 500500,
+          "hot-loop property sum 1..1000 == 500500");
+
+    /* Polymorphic site — same source line `p.v` seeing two different
+     * shapes. Each miss patches the cache; we just want correctness. */
+    ZjsValue poly = zjs_eval(ctx,
+        "function read(p) { return p.v } "
+        "let a = {v: 7}; "
+        "let b = {q: 1, v: 11}; "          /* different shape than `a` */
+        "read(a) + read(b) + read(a) + read(b)");
+    CHECK(zjs_is_int32(poly) && zjs_as_int32(poly) == 36,
+          "polymorphic site stays correct under shape bounce (got %d)",
+          zjs_as_int32(poly));
+
+    /* StoreProp IC path on existing property — repeated writes through
+     * the same site warm the cache and exercise the fast write path. */
+    ZjsValue stored = zjs_eval(ctx,
+        "let o = {n: 0}; "
+        "function bump() { o.n = o.n + 1 } "
+        "for (let i = 0; i < 100; i = i + 1) bump(); "
+        "o.n");
+    CHECK(zjs_is_int32(stored) && zjs_as_int32(stored) == 100,
+          "store-prop hot loop reaches 100");
+
+    /* New-property path through a StoreProp site. First write
+     * transitions the class; subsequent writes (same shape) hit the
+     * IC fast path. */
+    ZjsValue trans = zjs_eval(ctx,
+        "let a = {}; let b = {}; let c = {}; "
+        "function mark(o) { o.tag = 'set' } "
+        "mark(a); mark(b); mark(c); "
+        "a.tag + b.tag + c.tag");
+    CHECK(zjs_is_string(trans), "store-prop transition path produces strings");
+
+    /* GC across an IC. After GC, the cached class must still be
+     * reachable through the function's IC table — so the next access
+     * either hits the cache or repopulates it correctly. */
+    zjs_eval(ctx, "let q = {a: 1, b: 2}; q.a; q.b");
+    zjs_gc(ctx);
+    ZjsValue after = zjs_eval(ctx, "q.a + q.b");
+    CHECK(zjs_is_int32(after) && zjs_as_int32(after) == 3, "IC survives GC");
+
+    zjs_free_context(ctx);
+}
+
 static void test_gc(void) {
     ZjsContext* ctx = zjs_new_context();
     unsigned baseline = zjs_cell_count(ctx);
@@ -441,6 +505,7 @@ int main(void) {
     test_throw_abi();
     test_atom_interning();
     test_hidden_class_sharing();
+    test_inline_caches();
     test_gc();
 
     printf("[smoke] %d passed, %d failed\n", g_pass, g_fail);

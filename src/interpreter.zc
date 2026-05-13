@@ -361,6 +361,71 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             try_depth = try_depth + 1;
         } else if op == Op::LeaveTry {
             if try_depth > 0 { try_depth = try_depth - 1; }
+        } else if op == Op::LoadProp {
+            let dst = inst.a;
+            let obj_reg = inst.b;
+            let ic_slot = inst.c;
+            let obj_val = regs[obj_reg];
+
+            // Capture IC fields into locals — read-only on fast path.
+            let ic_class:  ZjsHiddenClass* = f.ics[ic_slot].class_;
+            let ic_slot_n: u32             = f.ics[ic_slot].slot;
+            let ic_name:   ZjsString*      = f.ics[ic_slot].name;
+
+            let took_fast: bool = false;
+            if zjs_is_object(obj_val) != 0 {
+                let o = zjs_as_object(obj_val);
+                if o.cls == ic_class && ic_class != NULL {
+                    regs[dst] = o.slots[ic_slot_n];
+                    took_fast = true;
+                }
+            }
+            if !took_fast {
+                let key_val = zjs_cell_from_ptr((void*)ic_name);
+                regs[dst] = property_get(ctx, obj_val, key_val);
+                // Patch the IC if obj is now an object that has the prop.
+                if zjs_is_object(obj_val) != 0 {
+                    let o = zjs_as_object(obj_val);
+                    let s = class_find_slot(o.cls, ic_name);
+                    if s >= 0 {
+                        f.ics[ic_slot].class_ = o.cls;
+                        f.ics[ic_slot].slot = (u32)s;
+                    }
+                }
+            }
+        } else if op == Op::StoreProp {
+            let obj_reg = inst.a;
+            let ic_slot = inst.b;
+            let val_reg = inst.c;
+            let obj_val = regs[obj_reg];
+            let value   = regs[val_reg];
+
+            let ic_class: ZjsHiddenClass* = f.ics[ic_slot].class_;
+            let ic_slot_n: u32            = f.ics[ic_slot].slot;
+            let ic_name:  ZjsString*      = f.ics[ic_slot].name;
+
+            let took_fast: bool = false;
+            if zjs_is_object(obj_val) != 0 {
+                let o = zjs_as_object(obj_val);
+                if o.cls == ic_class && ic_class != NULL {
+                    // Existing-slot write — no transition, no GC implication.
+                    o.slots[ic_slot_n] = value;
+                    took_fast = true;
+                }
+            }
+            if !took_fast {
+                let key_val = zjs_cell_from_ptr((void*)ic_name);
+                property_set(ctx, obj_val, key_val, value);
+                // Patch the IC against the (possibly transitioned) class.
+                if zjs_is_object(obj_val) != 0 {
+                    let o = zjs_as_object(obj_val);
+                    let s = class_find_slot(o.cls, ic_name);
+                    if s >= 0 {
+                        f.ics[ic_slot].class_ = o.cls;
+                        f.ics[ic_slot].slot = (u32)s;
+                    }
+                }
+            }
         } else if op == Op::NewObject {
             regs[inst.a] = ctx_new_object(ctx);
         } else if op == Op::NewArray {

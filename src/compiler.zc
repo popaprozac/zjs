@@ -53,6 +53,13 @@ struct Compiler {
     // expression-statement value (so we can emit Return at the end).
     last_expr_reg: i32;     // -1 if no expression yet
 
+    // Inline-cache slots reserved at compile time (one per LoadProp /
+    // StoreProp site). Transferred to Function.ics at the end of
+    // compile_program / compile_function.
+    ics:           ICEntry*;
+    ic_count:      u32;
+    ic_cap:        u32;
+
     had_error:     bool;
 }
 
@@ -74,12 +81,33 @@ fn compiler_free(c: Compiler*) -> void {
     let code = c.code;
     let consts = c.constants;
     let locals = c.locals;
+    let ics = c.ics;
     raw {
         free(code);
         free(consts);
         free(locals);
+        free(ics);
         free(c);
     }
+}
+
+// Allocate a fresh IC slot for the current function. Initializes name
+// and leaves class_/slot at zero (cold cache; first execution warms it).
+fn alloc_ic_slot(c: Compiler*, name: ZjsString*) -> u32 {
+    if c.ic_count >= c.ic_cap {
+        let new_cap: u32 = if c.ic_cap == 0 { 8 } else { c.ic_cap * 2 };
+        let old = c.ics;
+        let new_arr: ICEntry* = NULL;
+        raw { new_arr = (ICEntry*)realloc(old, new_cap * sizeof(ICEntry)); }
+        c.ics = new_arr;
+        c.ic_cap = new_cap;
+    }
+    let idx = c.ic_count;
+    c.ics[idx].name = name;
+    c.ics[idx].class_ = NULL;
+    c.ics[idx].slot = 0;
+    c.ic_count = c.ic_count + 1;
+    return idx;
 }
 
 // --- Locals ---------------------------------------------------------
@@ -512,11 +540,27 @@ fn emit_load_name_string(c: Compiler*, name: char*, name_len: u32) -> u8 {
 }
 
 fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
+    // Intern the property name as an atom and reserve an IC slot for
+    // this access site. The interpreter's LoadProp handler uses the
+    // IC to skip the property_get walk when the object's class
+    // matches the cached one.
+    let name_atom = ctx_intern_atom(c.ctx, c.source + node.name_start, node.name_length);
+    let ic = alloc_ic_slot(c, name_atom);
+    if ic > 255 {
+        // Out of IC slots — fall back to the LoadElem path.
+        let obj_r = compile_expr(c, node.left);
+        let key_r = emit_load_name_string(c, c.source + node.name_start, node.name_length);
+        let dst = alloc_reg(c);
+        emit(c, make_inst_abc(Op::LoadElem, dst, obj_r, key_r));
+        release_reg(c, key_r);
+        release_reg(c, obj_r);
+        if c.next_reg <= dst { c.next_reg = dst + 1; }
+        return dst;
+    }
+
     let obj_r = compile_expr(c, node.left);
-    let key_r = emit_load_name_string(c, c.source + node.name_start, node.name_length);
     let dst = alloc_reg(c);
-    emit(c, make_inst_abc(Op::LoadElem, dst, obj_r, key_r));
-    release_reg(c, key_r);
+    emit(c, make_inst_abc(Op::LoadProp, dst, obj_r, (u8)ic));
     release_reg(c, obj_r);
     if c.next_reg <= dst { c.next_reg = dst + 1; }
     return dst;
@@ -553,6 +597,24 @@ fn compile_property_target(c: Compiler*, target: AstNode*) -> PropTarget {
 }
 
 fn compile_assignment_to_property(c: Compiler*, target: AstNode*, op_tok: TokenKind, rhs: AstNode*) -> u8 {
+    // Fast path for Member-target simple assignment (`obj.name = rhs`):
+    // emit StoreProp with an IC slot. Computed targets and compound
+    // operators (`+=` etc.) still go through the LoadElem/StoreElem
+    // path.
+    if target.kind == NodeKind::Member && op_tok == TokenKind::Eq {
+        let name_atom = ctx_intern_atom(c.ctx,
+                                        c.source + target.name_start,
+                                        target.name_length);
+        let ic = alloc_ic_slot(c, name_atom);
+        if ic <= 255 {
+            let obj_r = compile_expr(c, target.left);
+            let v = compile_expr(c, rhs);
+            emit(c, make_inst_abc(Op::StoreProp, obj_r, (u8)ic, v));
+            return v;
+        }
+        // Out of IC slots — fall through to the generic path.
+    }
+
     let pair = compile_property_target(c, target);
     let obj_r = pair.obj_reg;
     let key_r = pair.key_reg;
@@ -788,9 +850,12 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*) -> F
     f.register_count = (u32)(c.max_reg + 1);
     if f.register_count < param_count { f.register_count = param_count; }
     f.param_count = param_count;
+    f.ics = c.ics;
+    f.ic_count = c.ic_count;
 
     c.code = NULL;
     c.constants = NULL;
+    c.ics = NULL;
     compiler_free(c);
 
     if had_error {
@@ -1179,7 +1244,7 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
 
     if c.had_error { return NULL; }
 
-    // Transfer ownership of code + constants to a fresh Function.
+    // Transfer ownership of code + constants + ICs to a fresh Function.
     let f = function_new();
     f.code = c.code;
     f.code_len = c.code_count;
@@ -1188,9 +1253,12 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     f.register_count = (u32)(c.max_reg + 1);
     if f.register_count == 0 { f.register_count = 1; }
     f.param_count = 0;
+    f.ics = c.ics;
+    f.ic_count = c.ic_count;
 
     // Steal the buffers from the compiler so its destructor doesn't free them.
     c.code = NULL;
     c.constants = NULL;
+    c.ics = NULL;
     return f;
 }

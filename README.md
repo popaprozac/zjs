@@ -36,9 +36,10 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 | 3.1e  | Host functions, `new`, `typeof`, built-in `Error` + `Math` namespace |
 | 3.1d  | Mark-sweep GC; cell-tag predicates on the public ABI |
 | 3.1f  | Atom interning for property names + string literals |
-| **3.2a** | **Hidden classes (transition trees) — shape-sharing across objects** |
+| 3.2a  | Hidden classes (transition trees) — shape-sharing across objects |
+| **3.2b** | **Inline caches — `LoadProp`/`StoreProp` with `{HiddenClass*, slot}` metadata; the jitless-first perf payoff** |
 
-651 in-tree test assertions pass (smoke + lexer + parser + interpreter). Per-phase plans are in `docs/phases/`.
+656 in-tree test assertions pass (smoke + lexer + parser + interpreter). Per-phase plans are in `docs/phases/`.
 
 **Programs run end-to-end:**
 
