@@ -370,6 +370,7 @@ def TAG_STRING:        u8 = 1;
 def TAG_OBJECT:        u8 = 2;
 def TAG_ARRAY:         u8 = 3;
 def TAG_HOST_FUNCTION: u8 = 4;
+def TAG_HIDDEN_CLASS:  u8 = 5;
 
 struct CellHeader {
     type_tag: u8;
@@ -382,16 +383,34 @@ struct ZjsString {
     data:   char*;     // null-terminated, owned (freed in string_free_void)
 }
 
-struct ObjectProp {
-    name:  ZjsString*;     // borrowed (lives in the cell list)
-    value: ZjsValue;
+// Hidden class — the transition-tree shape model from the design
+// study (Phase 1 Decision 6). Every object holds a HiddenClass*; two
+// objects with the same property-add sequence share the same class.
+//
+// Self-referential through parent and trans_children — Zen-c handles
+// struct self-references for pointer-typed fields, so this works
+// without a separate forward declaration.
+struct ZjsHiddenClass {
+    header:          CellHeader;         // { type_tag = TAG_HIDDEN_CLASS }
+    parent:          ZjsHiddenClass*;    // NULL for the root empty class
+    transition_name: ZjsString*;         // atom added going parent->this; NULL for root
+    transition_slot: u32;                // slot index for transition_name; 0 for root
+    prop_count:      u32;                // = parent.prop_count + 1 (or 0 for root)
+
+    // Outgoing transition edges. Parallel arrays for cache locality
+    // on the name-search hot path. trans_count <= trans_cap; both
+    // start at 0/0 (no allocation until first transition).
+    trans_names:     ZjsString**;
+    trans_children:  ZjsHiddenClass**;
+    trans_count:     u32;
+    trans_cap:       u32;
 }
 
 struct ZjsObject {
-    header:     CellHeader;     // { type_tag = TAG_OBJECT }
-    props:      ObjectProp*;     // heap-allocated, owned
-    prop_count: u32;
-    prop_cap:   u32;
+    header:   CellHeader;       // { type_tag = TAG_OBJECT }
+    cls:      ZjsHiddenClass*;
+    slots:    ZjsValue*;         // heap-allocated, sized to slot_cap >= cls.prop_count
+    slot_cap: u32;
 }
 
 struct ZjsArray {
@@ -479,6 +498,11 @@ fn zjs_as_object(v: ZjsValue) -> ZjsObject* {
     return o;
 }
 
+fn zjs_is_hidden_class(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_HIDDEN_CLASS { return 1; }
+    return 0;
+}
+
 fn zjs_as_array(v: ZjsValue) -> ZjsArray* {
     let p = zjs_cell_as_ptr(v);
     let a: ZjsArray* = NULL;
@@ -520,8 +544,9 @@ fn string_free_void(p: void*) -> void {
     raw { free(d); free(s); }
 }
 
-// Allocate a new empty object cell. Caller must register with the
-// context for cleanup (ctx_register_cell).
+// Allocate a new empty object cell. The caller is responsible for
+// setting `cls` to a valid HiddenClass (typically the context's root
+// empty class) and registering the cell on the context.
 fn zjs_object_new() -> ZjsObject* {
     let o: ZjsObject* = NULL;
     raw { o = (ZjsObject*)calloc(1, sizeof(ZjsObject)); }
@@ -533,8 +558,30 @@ fn object_free_void(p: void*) -> void {
     let o: ZjsObject* = NULL;
     raw { o = (ZjsObject*)p; }
     if o == NULL { return; }
-    let props = o.props;
-    raw { free(props); free(o); }
+    let slots = o.slots;
+    raw { free(slots); free(o); }
+}
+
+// Allocate a new HiddenClass cell. Parent / transition_name are set
+// by the caller. The transitions arrays start empty.
+fn zjs_hidden_class_new(parent: ZjsHiddenClass*, transition_name: ZjsString*, slot: u32, prop_count: u32) -> ZjsHiddenClass* {
+    let c: ZjsHiddenClass* = NULL;
+    raw { c = (ZjsHiddenClass*)calloc(1, sizeof(ZjsHiddenClass)); }
+    c.header.type_tag = TAG_HIDDEN_CLASS;
+    c.parent = parent;
+    c.transition_name = transition_name;
+    c.transition_slot = slot;
+    c.prop_count = prop_count;
+    return c;
+}
+
+fn hidden_class_free_void(p: void*) -> void {
+    let c: ZjsHiddenClass* = NULL;
+    raw { c = (ZjsHiddenClass*)p; }
+    if c == NULL { return; }
+    let names = c.trans_names;
+    let kids  = c.trans_children;
+    raw { free(names); free(kids); free(c); }
 }
 
 // Allocate a new array with `length` slots, all initialized to undefined.
@@ -578,37 +625,73 @@ fn host_function_free_void(p: void*) -> void {
 // don't need ZjsContext — pure operations on the cells.
 // =====================================================================
 
-fn object_get(obj: ZjsObject*, name: ZjsString*) -> ZjsValue {
-    let i: u32 = 0;
-    while i < obj.prop_count {
-        if zjs_string_equals(obj.props[i].name, name) != 0 {
-            return obj.props[i].value;
+// Walk the parent chain looking for `name`. Returns -1 if not found.
+// Atom-pointer compare is the hot path; if both names are atoms (the
+// usual case for property names), this is one pointer compare per
+// link in the chain.
+fn class_find_slot(cls: ZjsHiddenClass*, name: ZjsString*) -> i32 {
+    let c = cls;
+    while c != NULL && c.parent != NULL {
+        if zjs_string_equals(c.transition_name, name) != 0 {
+            return (i32)c.transition_slot;
         }
-        i = i + 1;
+        c = c.parent;
     }
-    return zjs_undefined();
+    return -1;
 }
 
-fn object_set(obj: ZjsObject*, name: ZjsString*, value: ZjsValue) -> void {
+// Find an existing transition from `cls` on `name`. Returns NULL if
+// no such edge exists yet.
+fn class_find_transition(cls: ZjsHiddenClass*, name: ZjsString*) -> ZjsHiddenClass* {
     let i: u32 = 0;
-    while i < obj.prop_count {
-        if zjs_string_equals(obj.props[i].name, name) != 0 {
-            obj.props[i].value = value;
-            return;
+    while i < cls.trans_count {
+        if zjs_string_equals(cls.trans_names[i], name) != 0 {
+            return cls.trans_children[i];
         }
         i = i + 1;
     }
-    if obj.prop_count >= obj.prop_cap {
-        let new_cap: u32 = if obj.prop_cap == 0 { 4 } else { obj.prop_cap * 2 };
-        let old = obj.props;
-        let new_arr: ObjectProp* = NULL;
-        raw { new_arr = (ObjectProp*)realloc(old, new_cap * sizeof(ObjectProp)); }
-        obj.props = new_arr;
-        obj.prop_cap = new_cap;
+    return NULL;
+}
+
+// Append a transition edge to `parent`. Caller is responsible for
+// allocating + linking the child class.
+fn class_add_transition(parent: ZjsHiddenClass*, name: ZjsString*, child: ZjsHiddenClass*) -> void {
+    if parent.trans_count >= parent.trans_cap {
+        let new_cap: u32 = if parent.trans_cap == 0 { 4 } else { parent.trans_cap * 2 };
+        let old_names = parent.trans_names;
+        let old_kids  = parent.trans_children;
+        let new_names: ZjsString** = NULL;
+        let new_kids:  ZjsHiddenClass** = NULL;
+        raw {
+            new_names = (ZjsString**)realloc(old_names, new_cap * sizeof(ZjsString*));
+            new_kids  = (ZjsHiddenClass**)realloc(old_kids, new_cap * sizeof(ZjsHiddenClass*));
+        }
+        parent.trans_names = new_names;
+        parent.trans_children = new_kids;
+        parent.trans_cap = new_cap;
     }
-    obj.props[obj.prop_count].name = name;
-    obj.props[obj.prop_count].value = value;
-    obj.prop_count = obj.prop_count + 1;
+    parent.trans_names[parent.trans_count] = name;
+    parent.trans_children[parent.trans_count] = child;
+    parent.trans_count = parent.trans_count + 1;
+}
+
+// Get a property by name. Returns undefined if not found.
+fn object_get(obj: ZjsObject*, name: ZjsString*) -> ZjsValue {
+    let slot = class_find_slot(obj.cls, name);
+    if slot < 0 { return zjs_undefined(); }
+    return obj.slots[(u32)slot];
+}
+
+// Write to an EXISTING property only. Returns 1 if the property
+// existed and was updated; 0 if not (caller must take the new-transition
+// path via object_set_full in context.zc).
+fn object_set_existing(obj: ZjsObject*, name: ZjsString*, value: ZjsValue) -> int {
+    let existing = class_find_slot(obj.cls, name);
+    if existing >= 0 {
+        obj.slots[(u32)existing] = value;
+        return 1;
+    }
+    return 0;
 }
 
 fn array_get(arr: ZjsArray*, idx: u32) -> ZjsValue {

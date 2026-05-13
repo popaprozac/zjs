@@ -83,7 +83,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
     if zjs_is_object(obj) != 0 {
         let o = zjs_as_object(obj);
         let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
-        object_set(o, zjs_as_string(key_str_val), value);
+        object_set(ctx, o, zjs_as_string(key_str_val), value);
         return;
     }
     // Primitives: silently ignored (real JS throws in strict mode).

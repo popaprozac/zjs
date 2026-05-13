@@ -312,6 +312,57 @@ static void test_atom_interning(void) {
     zjs_free_context(ctx);
 }
 
+/* -----------------------------------------------------------------------
+ * Phase 3.2a — hidden classes. Two objects with the same property-add
+ * sequence should share their HiddenClass (observable: second object
+ * adds fewer cells because the classes were already created).
+ * --------------------------------------------------------------------- */
+
+static void test_hidden_class_sharing(void) {
+    ZjsContext* ctx = zjs_new_context();
+
+    unsigned before_first = zjs_cell_count(ctx);
+    zjs_eval(ctx, "let p1 = {x: 1, y: 2}");
+    unsigned after_first = zjs_cell_count(ctx);
+
+    zjs_eval(ctx, "let p2 = {x: 3, y: 4}");
+    unsigned after_second = zjs_cell_count(ctx);
+
+    unsigned first_delta  = after_first  - before_first;
+    unsigned second_delta = after_second - after_first;
+
+    /* The first {x,y} allocates: a Function for the program, atoms
+     * "p1"/"x"/"y", the object itself, and two HiddenClass cells
+     * (after-x, after-x-y).
+     *
+     * The second {x,y} allocates: a Function for the program, the
+     * "p2" atom, the object itself. The two hidden classes are
+     * reused.
+     *
+     * So the second delta should be strictly less than the first. */
+    CHECK(second_delta < first_delta,
+          "shape-shared second object adds fewer cells (first=%u, second=%u)",
+          first_delta, second_delta);
+
+    /* Properties are still correctly readable on both. */
+    ZjsValue v1 = zjs_eval(ctx, "p1.x + p1.y");
+    ZjsValue v2 = zjs_eval(ctx, "p2.x + p2.y");
+    CHECK(zjs_is_int32(v1) && zjs_as_int32(v1) == 3, "p1.x+p1.y == 3");
+    CHECK(zjs_is_int32(v2) && zjs_as_int32(v2) == 7, "p2.x+p2.y == 7");
+
+    /* Reassignment doesn't churn classes (existing slot, just writes value). */
+    zjs_eval(ctx, "p1.x = 100");
+    ZjsValue v3 = zjs_eval(ctx, "p1.x");
+    CHECK(zjs_is_int32(v3) && zjs_as_int32(v3) == 100, "p1.x updated to 100");
+
+    /* GC keeps the shared class alive while objects reference it. */
+    zjs_gc(ctx);
+    ZjsValue v4 = zjs_eval(ctx, "p2.y");
+    CHECK(zjs_is_int32(v4) && zjs_as_int32(v4) == 4, "p2.y still 4 after GC");
+
+    zjs_free_context(ctx);
+}
+
 static void test_gc(void) {
     ZjsContext* ctx = zjs_new_context();
     unsigned baseline = zjs_cell_count(ctx);
@@ -389,6 +440,7 @@ int main(void) {
     test_engine_path();
     test_throw_abi();
     test_atom_interning();
+    test_hidden_class_sharing();
     test_gc();
 
     printf("[smoke] %d passed, %d failed\n", g_pass, g_fail);

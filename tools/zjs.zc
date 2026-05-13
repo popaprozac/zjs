@@ -232,14 +232,29 @@ fn write_value(v: ZjsValue, quoted: bool) -> void {
     if zjs_is_object(v) != 0 {
         let o = zjs_as_object(v);
         raw { fputs("{ ", stdout); }
+        // Hidden-class chain walks leaf->root, which yields reverse-
+        // insertion order. Collect into a small stack array, then
+        // iterate in reverse to print in insertion order.
+        let names:  ZjsString*[32];
+        let slots:  u32[32];
+        let depth: u32 = 0;
+        let c = o.cls;
+        while c != NULL && c.parent != NULL && depth < 32 {
+            names[depth] = c.transition_name;
+            slots[depth] = c.transition_slot;
+            depth = depth + 1;
+            c = c.parent;
+        }
+        // Walk in reverse for insertion order.
+        let count = depth;
         let i: u32 = 0;
-        while i < o.prop_count {
+        while i < count {
+            let idx = count - 1 - i;
             if i > 0 { raw { fputs(", ", stdout); } }
-            let name = o.props[i].name;
-            let name_data = name.data;
-            let name_len  = name.length;
+            let name_data = names[idx].data;
+            let name_len  = names[idx].length;
             raw { fwrite(name_data, 1, name_len, stdout); fputs(": ", stdout); }
-            write_value(o.props[i].value, true);
+            write_value(o.slots[slots[idx]], true);
             i = i + 1;
         }
         raw { fputs(" }", stdout); }

@@ -35,9 +35,10 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 | 3.1c  | `throw` / `try` / `catch`, uncaught-error C ABI, real test262 signal |
 | 3.1e  | Host functions, `new`, `typeof`, built-in `Error` + `Math` namespace |
 | 3.1d  | Mark-sweep GC; cell-tag predicates on the public ABI |
-| **3.1f** | **Atom interning for property names + string literals** |
+| 3.1f  | Atom interning for property names + string literals |
+| **3.2a** | **Hidden classes (transition trees) — shape-sharing across objects** |
 
-646 in-tree test assertions pass (smoke + lexer + parser + interpreter). Per-phase plans are in `docs/phases/`.
+651 in-tree test assertions pass (smoke + lexer + parser + interpreter). Per-phase plans are in `docs/phases/`.
 
 **Programs run end-to-end:**
 

@@ -34,6 +34,9 @@ struct AtomEntry {
 }
 
 struct ZjsContext {
+    // Root empty hidden class — every fresh {} starts here.
+    empty_class:    ZjsHiddenClass*;
+
     globals:        GlobalEntry*;
     global_count:   u32;
     global_cap:     u32;
@@ -77,6 +80,13 @@ fn zjs_new_context() -> ZjsContext* {
         // GC initial threshold: collect after the first 4096 cell allocations,
         // then adapt to 2× live count after each collection.
         result.gc_threshold = 4096;
+
+        // Root empty class — registered as a cell, kept alive via the
+        // context pointer itself (we mark it during gc_mark_roots).
+        let empty = zjs_hidden_class_new(NULL, NULL, 0, 0);
+        ctx_register_cell(result, (void*)empty);
+        result.empty_class = empty;
+
         ctx_init_builtins(result);
     }
     return result;
@@ -117,6 +127,8 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
             array_free_void(cp);
         } else if tag == TAG_HOST_FUNCTION {
             host_function_free_void(cp);
+        } else if tag == TAG_HIDDEN_CLASS {
+            hidden_class_free_void(cp);
         }
         j = j + 1;
     }
@@ -184,13 +196,23 @@ fn gc_mark_value(v: ZjsValue) -> void {
     if tag == TAG_OBJECT {
         let o: ZjsObject* = NULL;
         raw { o = (ZjsObject*)p; }
+        // Mark the object's class — its parent chain + transition map
+        // are walked transitively.
+        gc_mark_hidden_class(o.cls);
+        // Mark all live slots.
+        let live = if o.cls != NULL { o.cls.prop_count } else { 0 };
         let i: u32 = 0;
-        while i < o.prop_count {
-            let name_str = o.props[i].name;
-            if name_str != NULL { name_str.header.mark = 1; }
-            gc_mark_value(o.props[i].value);
+        while i < live {
+            gc_mark_value(o.slots[i]);
             i = i + 1;
         }
+        return;
+    }
+
+    if tag == TAG_HIDDEN_CLASS {
+        let c: ZjsHiddenClass* = NULL;
+        raw { c = (ZjsHiddenClass*)p; }
+        gc_mark_hidden_class(c);
         return;
     }
 
@@ -217,7 +239,26 @@ fn gc_mark_value(v: ZjsValue) -> void {
     }
 }
 
+// Mark a hidden class transitively: parent (chain back to root) and
+// every child transition. Idempotent.
+fn gc_mark_hidden_class(c: ZjsHiddenClass*) -> void {
+    if c == NULL { return; }
+    if c.header.mark != 0 { return; }
+    c.header.mark = 1;
+    // Names are atoms; they're already pinned via the atom-table root.
+    if c.parent != NULL { gc_mark_hidden_class(c.parent); }
+    let i: u32 = 0;
+    while i < c.trans_count {
+        gc_mark_hidden_class(c.trans_children[i]);
+        i = i + 1;
+    }
+}
+
 fn gc_mark_roots(ctx: ZjsContext*) -> void {
+    // Root empty class
+    if ctx.empty_class != NULL {
+        gc_mark_hidden_class(ctx.empty_class);
+    }
     // Globals
     let i: u32 = 0;
     while i < ctx.global_count {
@@ -428,10 +469,52 @@ fn ctx_intern_atom_take(ctx: ZjsContext*, data: char*, length: u32) -> ZjsString
 }
 
 // Allocate a fresh empty object and register it on the context.
+// Initializes with the root empty class — fresh property additions
+// will spawn transitions on first write.
 fn ctx_new_object(ctx: ZjsContext*) -> ZjsValue {
     let o = zjs_object_new();
+    o.cls = ctx.empty_class;
     ctx_register_cell(ctx, (void*)o);
     return zjs_cell_from_ptr((void*)o);
+}
+
+// Full object_set with hidden-class transition logic. Updates an
+// existing property if present; otherwise follows or creates a
+// transition edge.
+fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsValue) -> void {
+    if object_set_existing(obj, name, value) != 0 { return; }
+
+    // Property is new. Find or create a transition.
+    let parent_cls = obj.cls;
+    let child = class_find_transition(parent_cls, name);
+    if child == NULL {
+        child = zjs_hidden_class_new(parent_cls, name,
+                                      parent_cls.prop_count,
+                                      parent_cls.prop_count + 1);
+        ctx_register_cell(ctx, (void*)child);
+        class_add_transition(parent_cls, name, child);
+    }
+
+    // Grow slots to accommodate the new property.
+    let needed = child.prop_count;
+    if obj.slot_cap < needed {
+        let new_cap: u32 = if obj.slot_cap == 0 { 4 } else { obj.slot_cap * 2 };
+        while new_cap < needed { new_cap = new_cap * 2; }
+        let old = obj.slots;
+        let new_slots: ZjsValue* = NULL;
+        raw { new_slots = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
+        let und: ZjsValue = zjs_undefined();
+        let i = obj.slot_cap;
+        while i < new_cap {
+            new_slots[i] = und;
+            i = i + 1;
+        }
+        obj.slots = new_slots;
+        obj.slot_cap = new_cap;
+    }
+
+    obj.slots[child.transition_slot] = value;
+    obj.cls = child;
 }
 
 // Allocate a fresh array with `length` slots, all undefined.
@@ -511,13 +594,13 @@ fn host_error(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // Property keys are atoms — interned for dedup across calls.
     let msg_name  = ctx_intern_atom(ctx, (char*)"message", 7);
     let name_name = ctx_intern_atom(ctx, (char*)"name", 4);
-    object_set(obj, msg_name, msg);
+    object_set(ctx, obj, msg_name, msg);
 
     // The .name value "Error" is also a small string used frequently —
     // intern it as an atom too.
     let name_val_str = ctx_intern_atom(ctx, (char*)"Error", 5);
     let name_val = zjs_cell_from_ptr((void*)name_val_str);
-    object_set(obj, name_name, name_val);
+    object_set(ctx, obj, name_name, name_val);
 
     return obj_v;
 }
@@ -636,21 +719,21 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let max_ptr:   void* = NULL; raw { max_ptr   = (void*)host_math_max; }
     let min_ptr:   void* = NULL; raw { min_ptr   = (void*)host_math_min; }
 
-    object_set(math, ctx_intern_atom(ctx, (char*)"abs", 3),
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"abs", 3),
                ctx_make_host_function(ctx, (char*)"abs", abs_ptr));
-    object_set(math, ctx_intern_atom(ctx, (char*)"floor", 5),
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"floor", 5),
                ctx_make_host_function(ctx, (char*)"floor", floor_ptr));
-    object_set(math, ctx_intern_atom(ctx, (char*)"ceil", 4),
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"ceil", 4),
                ctx_make_host_function(ctx, (char*)"ceil", ceil_ptr));
-    object_set(math, ctx_intern_atom(ctx, (char*)"round", 5),
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"round", 5),
                ctx_make_host_function(ctx, (char*)"round", round_ptr));
-    object_set(math, ctx_intern_atom(ctx, (char*)"sqrt", 4),
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"sqrt", 4),
                ctx_make_host_function(ctx, (char*)"sqrt", sqrt_ptr));
-    object_set(math, ctx_intern_atom(ctx, (char*)"pow", 3),
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"pow", 3),
                ctx_make_host_function(ctx, (char*)"pow", pow_ptr));
-    object_set(math, ctx_intern_atom(ctx, (char*)"max", 3),
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"max", 3),
                ctx_make_host_function(ctx, (char*)"max", max_ptr));
-    object_set(math, ctx_intern_atom(ctx, (char*)"min", 3),
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"min", 3),
                ctx_make_host_function(ctx, (char*)"min", min_ptr));
 
     let math_slot = ctx_intern_global(ctx, (char*)"Math", 4);
