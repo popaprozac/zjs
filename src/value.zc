@@ -593,6 +593,10 @@ struct ZjsArray {
     elements: ZjsValue*;         // heap-allocated, owned; holes = undefined
     length:   u32;
     cap:      u32;
+    // Lazy expando bag — `[].foo = 1` lands here so Object.keys / for-in
+    // / Object.create's property descriptors find named keys alongside
+    // the integer-indexed entries. NULL until the first non-index store.
+    props:    ZjsObject*;
 }
 
 // Host (C) function exposed to JavaScript code. The fn_ptr is opaque

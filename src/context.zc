@@ -650,6 +650,9 @@ fn gc_mark_value(v: ZjsValue) -> void {
             gc_mark_value(a.elements[i]);
             i = i + 1;
         }
+        if a.props != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)a.props));
+        }
         return;
     }
 
@@ -1470,18 +1473,27 @@ fn host_object_create(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
         if zjs_is_object(p) != 0 { obj.proto = zjs_as_object(p); }
         // null/undefined proto → top-of-chain object (already NULL).
     }
-    // Phase 3.9a: second arg is a descriptor map.
-    if argc >= 2 && zjs_is_object(args[1]) != 0 {
-        // Protect obj_v across the descriptor walk (it's the receiver
-        // of each defineProperty call which may allocate).
-        ctx_push_temp_root(ctx, obj_v);
-        let dp_args: ZjsValue[2];
-        dp_args[0] = obj_v;
-        dp_args[1] = args[1];
-        let p: ZjsValue* = NULL;
-        raw { p = &dp_args[0]; }
-        raw { (void)host_object_define_properties(ctx, p, 2); }
-        ctx_pop_temp_root(ctx);
+    // Phase 3.9a: second arg is a descriptor map. Accept any object-y
+    // value (plain object, array with expandos, host/user function
+    // with .props) — host_object_define_properties knows how to walk
+    // each shape.
+    if argc >= 2 {
+        let p1 = args[1];
+        let p1_objlike: bool =
+               zjs_is_object(p1) != 0
+            || zjs_is_array(p1) != 0
+            || zjs_is_function(p1) != 0
+            || zjs_is_host_function(p1) != 0;
+        if p1_objlike {
+            ctx_push_temp_root(ctx, obj_v);
+            let dp_args: ZjsValue[2];
+            dp_args[0] = obj_v;
+            dp_args[1] = p1;
+            let p: ZjsValue* = NULL;
+            raw { p = &dp_args[0]; }
+            raw { (void)host_object_define_properties(ctx, p, 2); }
+            ctx_pop_temp_root(ctx);
+        }
     }
     return obj_v;
 }
@@ -1544,14 +1556,30 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
     let obj_v = args[0];
     if zjs_is_object(obj_v) == 0 { return obj_v; }
     let props_v = args[1];
-    if zjs_is_object(props_v) == 0 { return obj_v; }
-    let po = zjs_as_object(props_v);
+    // ECMA-262 §19.1.2.3 step 2: props is ToObject'd. For an array we
+    // walk its expando bag (numeric indices alone aren't useful here).
+    // Plain objects use their own hidden class. Other cell types
+    // (function / host function) carry their props elsewhere — handled
+    // below by special-casing.
+    let cls_root: ZjsHiddenClass* = NULL;
+    let cls_owner_v: ZjsValue = zjs_undefined();
+    if zjs_is_array(props_v) != 0 {
+        let pa = zjs_as_array(props_v);
+        if pa.props == NULL { return obj_v; }
+        cls_root = pa.props.cls;
+        cls_owner_v = zjs_cell_from_ptr((void*)pa.props);
+    } else if zjs_is_object(props_v) != 0 {
+        cls_root = zjs_as_object(props_v).cls;
+        cls_owner_v = props_v;
+    } else {
+        return obj_v;
+    }
 
     // Walk props's own properties via the hidden-class chain. For each
     // enumerable property, read its value via property_get so accessor
     // getters fire (with `this = props_v`) — required by ECMA-262
     // §20.1.2.3.1 step 5.b.
-    let cls = po.cls;
+    let cls = cls_root;
     while cls != NULL && cls.parent != NULL {
         let name = cls.transition_name;
         let slot = cls.transition_slot;
@@ -1563,8 +1591,10 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
         }
         if !is_internal {
             let key_v = zjs_cell_from_ptr((void*)name);
-            // Use property_get to invoke any getter with this=props_v.
-            let desc_value = property_get(ctx, props_v, key_v);
+            // Read through cls_owner so accessor getters fire on the
+            // right receiver. For an array-backed props bag this is
+            // the array's expando object (a real ZjsObject).
+            let desc_value = property_get(ctx, cls_owner_v, key_v);
             // defineProperty needs an actual descriptor object.
             if zjs_is_object(desc_value) != 0 {
                 let dp_args: ZjsValue[3];
@@ -3964,6 +3994,11 @@ fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
             let is_length: int = 0;
             raw { is_length = (kn == 6 && memcmp(kd, "length", 6) == 0) ? 1 : 0; }
             if is_length != 0 { return zjs_bool(1); }
+            // Expando bag (e.g. `let a = []; a.foo = 1;`).
+            if a.props != NULL {
+                let slot = class_find_slot(a.props.cls, ks);
+                if slot >= 0 && zjs_is_deleted(a.props.slots[(u32)slot]) == 0 { return zjs_bool(1); }
+            }
         }
         return zjs_bool(0);
     }

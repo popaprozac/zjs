@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:47 UTC",
+    "when": "2026-05-14 19:08 UTC",
     "total": 4821,
-    "passed": 2518,
-    "failed": 277,
+    "passed": 2520,
+    "failed": 275,
     "skipped": 2026
   },
   "failures": [
@@ -792,16 +792,8 @@
       "reason": "zjs: throw: Test262Error: hasProperty !== true"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-29.js",
-      "reason": "zjs: throw: Test262Error: newObj.hasOwnProperty(\"prop\") !== true"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-291.js",
       "reason": "zjs: throw: Test262Error: hasProperty !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-38.js",
-      "reason": "zjs: throw: Test262Error: newObj.hasOwnProperty(\"prop\") !== true"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-5.js",

@@ -46,6 +46,15 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             // String-coerced numeric index
             let idx = zjs_to_array_index(key);
             if idx >= 0 { return array_get(arr, (u32)idx); }
+            // Expando bag (e.g. `let a = []; a.foo = 1;`) before
+            // falling through to Array.prototype methods.
+            if arr.props != NULL {
+                let slot_p = class_find_slot(arr.props.cls, ks);
+                if slot_p >= 0 {
+                    let v = arr.props.slots[(u32)slot_p];
+                    if zjs_is_deleted(v) == 0 { return v; }
+                }
+            }
             // Walk array_proto then its chain (so hasOwnProperty from
             // object_proto is reachable).
             let cur = ctx.array_proto;
@@ -323,7 +332,16 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
                 return;
             }
         }
-        // Other string-keyed properties on an array — not supported. Drop.
+        // Other string-keyed properties: stash on the lazy expando bag
+        // so `[].foo = 1` is visible to property_get, Object.keys-like
+        // walks, and Object.create's descriptor walk.
+        if zjs_is_string(key) != 0 {
+            if arr.props == NULL {
+                let pv = ctx_new_object(ctx);
+                arr.props = zjs_as_object(pv);
+            }
+            object_set(ctx, arr.props, zjs_as_string(key), value);
+        }
         return;
     }
     if zjs_is_object(obj) != 0 {
