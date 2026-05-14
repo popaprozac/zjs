@@ -29,6 +29,12 @@ enum TokenKind {
     KwSwitch, KwCase, KwDefault,
     KwAsync, KwAwait, KwYield,
     KwImport, KwExport, KwFrom, KwAs,
+    // Sentinel TokenKind values used internally to mark accessor
+    // shorthand in object literals (`get foo() {}` / `set foo(v) {}`).
+    // The lexer never produces these directly — `get`/`set` are
+    // lexed as regular identifiers and only re-interpreted by the
+    // object-literal parser.
+    KwGet, KwSet,
 
     // --- Punctuators (ECMA-262 §12.7) --------------------------------
     LParen, RParen,                  // ( )

@@ -143,6 +143,14 @@ enum Op {
     TailMethodInvoke, // b=base, c=arg_count
 
     // Closures (Phase 3.3).
+    // Object-literal accessor shorthand (`{ get foo() {}, set foo(v) {} }`).
+    // Installs / merges a ZjsAccessor cell at obj[name].
+    //   a = obj_reg
+    //   b = name_const_reg (LoadConst loaded the atom-ZjsValue here)
+    //   c = fn_reg
+    DefineGetter,
+    DefineSetter,
+
     MakeClosure,      // a=dst, b=fn_reg, c=env_reg
                       //   wraps regs[b] (a function value) with regs[c] (an env object)
                       //   into a fresh closure cell.

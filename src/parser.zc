@@ -1602,10 +1602,84 @@ fn parse_object(p: Parser*) -> AstNode* {
             p.had_error = true;
             break;
         }
+
+        // Accessor shorthand: `get foo() {...}` / `set foo(v) {...}`.
+        // Detected when key is the identifier `get` or `set` AND the
+        // next token is an identifier (the property name) rather than
+        // `:` / `(` / `,` / `}`. Compiles into the existing accessor
+        // path via a synthetic Object.defineProperty-shaped node.
+        let is_accessor: bool = false;
+        let is_setter: bool = false;
+        if key_tok.kind == TokenKind::Identifier && key_tok.length == 3 {
+            let kd = p.source + key_tok.start;
+            let g_match: int = 0;
+            let s_match: int = 0;
+            raw {
+                g_match = (memcmp(kd, "get", 3) == 0) ? 1 : 0;
+                s_match = (memcmp(kd, "set", 3) == 0) ? 1 : 0;
+            }
+            if (g_match != 0 || s_match != 0) {
+                let after = peek_kind2(p);
+                if after == TokenKind::Identifier
+                    || after == TokenKind::StringLit
+                    || after == TokenKind::NumberLit {
+                    is_accessor = true;
+                    is_setter = s_match != 0;
+                }
+            }
+        }
+
         advance(p);
 
         let prop_start = key_tok.start;
         let prop_end = key_tok.start + key_tok.length;
+
+        // Handle accessor first — replaces key_tok-as-name with the
+        // real property name following `get`/`set`, and parses the
+        // getter/setter function shape.
+        if is_accessor {
+            let real_name_tok = peek(p);
+            advance(p);
+            if !expect_kind(p, TokenKind::LParen) { break; }
+            let params = parse_param_list(p);
+            if !expect_kind(p, TokenKind::RParen) { break; }
+            if peek_kind(p) != TokenKind::LBrace { p.had_error = true; break; }
+            p.function_depth = p.function_depth + 1;
+            let body = parse_block(p);
+            p.function_depth = p.function_depth - 1;
+            if body == NULL { break; }
+
+            let accessor_fn = new_node(&p.tracker, NodeKind::FunctionExpr,
+                                       real_name_tok.start, body.end);
+            accessor_fn.name_start  = real_name_tok.start;
+            accessor_fn.name_length = real_name_tok.length;
+            accessor_fn.left = body;
+            accessor_fn.children = params.arr;
+            accessor_fn.children_count = params.count;
+
+            let prop = new_node(&p.tracker, NodeKind::ObjectProp,
+                                key_tok.start, body.end);
+            prop.name_start = real_name_tok.start;
+            prop.name_length = real_name_tok.length;
+            prop.left = accessor_fn;
+            // op carries the accessor kind so compile_object can wire
+            // it through Op::SetGet / Op::SetSet (or whatever path).
+            // We reuse TokenKind::KwGet / KwSet if available, else the
+            // simpler boolean stashing below.
+            if is_setter { prop.op = TokenKind::KwSet; }
+            else         { prop.op = TokenKind::KwGet; }
+
+            if count >= cap {
+                cap = cap * 2;
+                let old_buf = buf;
+                raw { buf = (AstNode**)realloc(old_buf, cap * sizeof(AstNode*)); }
+            }
+            buf[count] = prop;
+            count = count + 1;
+
+            if !match_kind(p, TokenKind::Comma) { break; }
+            continue;
+        }
 
         let value: AstNode* = NULL;
         if match_kind(p, TokenKind::Colon) {

@@ -1214,7 +1214,13 @@ fn compile_object_literal(c: Compiler*, node: AstNode*) -> u8 {
                                           c.source + name_start,
                                           name_len);
         let val_r = compile_expr(c, prop.left);
-        emit(c, make_inst_abc(Op::StoreElem, dst, key_r, val_r));
+        if prop.op == TokenKind::KwGet {
+            emit(c, make_inst_abc(Op::DefineGetter, dst, key_r, val_r));
+        } else if prop.op == TokenKind::KwSet {
+            emit(c, make_inst_abc(Op::DefineSetter, dst, key_r, val_r));
+        } else {
+            emit(c, make_inst_abc(Op::StoreElem, dst, key_r, val_r));
+        }
         release_reg(c, val_r);
         release_reg(c, key_r);
         i = i + 1;
