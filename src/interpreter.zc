@@ -1216,11 +1216,29 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 throwing = true; thrown = err; exit_reason = 3; break;
             }
             let result: int = 0;
-            if proto_obj != NULL && zjs_is_object(val) != 0 {
-                let cur = zjs_as_object(val).proto;
-                while cur != NULL {
-                    if cur == proto_obj { result = 1; cur = NULL; }
-                    else                { cur = cur.proto; }
+            if proto_obj != NULL {
+                if zjs_is_object(val) != 0 {
+                    let cur = zjs_as_object(val).proto;
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
+                } else if zjs_is_array(val) != 0 {
+                    // All arrays implicitly delegate to ctx.array_proto.
+                    // Walk from there in case array_proto itself has
+                    // been re-prototyped (rare in practice; mostly
+                    // matches when proto_obj == ctx.array_proto).
+                    let cur = ctx.array_proto;
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
+                } else if zjs_is_string(val) != 0 {
+                    let cur = ctx.string_proto;
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
                 }
             }
             regs[inst.a] = zjs_bool(result);

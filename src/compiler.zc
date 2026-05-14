@@ -705,9 +705,15 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
             return dst;
         }
         if op == TokenKind::Plus {
-            // Unary plus: coerce to number. For numeric inputs, identity;
-            // for non-numbers, conversion. MVP: just Mov.
-            return src;
+            // Unary plus: ToNumber(x). Emit `x - 0` via SubImm, which
+            // already has the right int32 fast path AND falls through
+            // to zjs_arith_sub for general coercion (true → 1, "5" → 5,
+            // ToPrimitive on objects, etc.).
+            let dst = alloc_reg(c);
+            emit(c, make_inst_abc(Op::SubImm, dst, src, (u8)0));
+            release_reg(c, src);
+            if c.next_reg <= dst { c.next_reg = dst + 1; }
+            return dst;
         }
         if op == TokenKind::Bang {
             let dst = alloc_reg(c);
@@ -2530,14 +2536,21 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         let has_catch   = node.right != NULL;
         let has_finally = node.third != NULL;
 
+        // Catch parameter is scoped to the catch block per ECMA-262
+        // §14.15.3. We allocate a register up front (needed by EnterTry)
+        // but only register it as a name-resolvable local while
+        // compiling the catch body — snapshot/restore c.local_count so
+        // outer code can't see it.
         let catch_reg: u8 = 0;
+        let added_catch_local: bool = false;
+        let saved_local_count: u32 = c.local_count;
         if has_catch && node.name_length > 0 {
             let existing = lookup_local(c, c.source + node.name_start, node.name_length);
             if existing >= 0 {
                 catch_reg = (u8)existing;
             } else {
                 catch_reg = alloc_reg(c);
-                add_local(c, node.name_start, node.name_length, catch_reg);
+                added_catch_local = true;
             }
             if catch_reg + 1 > c.fixed_regs { c.fixed_regs = catch_reg + 1; }
         }
@@ -2549,7 +2562,12 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             emit(c, make_inst_a(Op::LeaveTry, 0));
             let skip_idx = emit(c, make_inst_i16(Op::Jmp, 0));
             patch_jump(c, enter_idx);
+            // Bind the catch parameter for the catch body only.
+            if added_catch_local {
+                add_local(c, node.name_start, node.name_length, catch_reg);
+            }
             compile_stmt(c, node.right);
+            if added_catch_local { c.local_count = saved_local_count; }
             patch_jump(c, skip_idx);
             return;
         }
@@ -2579,7 +2597,12 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             emit(c, make_inst_a(Op::LeaveTry, 0));
             let skip_catch = emit(c, make_inst_i16(Op::Jmp, 0));
             patch_jump(c, inner_enter);
+            // Catch parameter bound for the catch body only.
+            if added_catch_local {
+                add_local(c, node.name_start, node.name_length, catch_reg);
+            }
             compile_stmt(c, node.right);
+            if added_catch_local { c.local_count = saved_local_count; }
             patch_jump(c, skip_catch);
         } else {
             // No catch — outer try catches throws from the try body

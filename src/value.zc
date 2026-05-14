@@ -411,8 +411,48 @@ fn zjs_loose_eq(a: ZjsValue, b: ZjsValue) -> int {
         return zjs_loose_eq(a, bn);
     }
 
-    // Object ↔ primitive coercion is deferred — falls through to strict.
+    // Object ↔ primitive: ToPrimitive(object) and retry. Only fires
+    // when ONE side is an object and the other is a number / string /
+    // boolean. Calling zjs_to_primitive on a non-object returns the
+    // value unchanged so a tail-recursive call would loop — gate
+    // carefully.
+    let a_obj = zjs_is_object(a) != 0 || zjs_is_array(a) != 0;
+    let b_obj = zjs_is_object(b) != 0 || zjs_is_array(b) != 0;
+    if a_obj && (b_num || b_str) {
+        return zjs_loose_eq(zjs_to_primitive_for_eq(a), b);
+    }
+    if b_obj && (a_num || a_str) {
+        return zjs_loose_eq(a, zjs_to_primitive_for_eq(b));
+    }
     return zjs_strict_eq(a, b);
+}
+
+// Lightweight ToPrimitive used by loose-eq. Real ToPrimitive lives
+// in interpreter.zc (it has ctx access for invoking valueOf/toString
+// hooks). Here we can only handle the wrapper objects — Number /
+// Boolean / String wrappers carry their primitive at the
+// `__zjs_primitive__` hidden key. For plain objects we return them
+// unchanged; the caller will fall through to strict-eq → false.
+fn zjs_to_primitive_for_eq(v: ZjsValue) -> ZjsValue {
+    if zjs_is_object(v) != 0 {
+        let o = zjs_as_object(v);
+        // Walk the hidden-class transition chain looking for the
+        // wrapper's hidden key. Each non-root class records one
+        // transition (a name added going parent->this). If we find
+        // it, we know the corresponding slot index.
+        let cur: ZjsHiddenClass* = o.cls;
+        while cur != NULL {
+            let n = cur.transition_name;
+            if n != NULL && n.length == WRAPPER_VALUE_KEY_LEN {
+                let nd = n.data;
+                let eq: int = 0;
+                raw { eq = (memcmp(nd, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN) == 0) ? 1 : 0; }
+                if eq != 0 { return o.slots[cur.transition_slot]; }
+            }
+            cur = cur.parent;
+        }
+    }
+    return v;
 }
 
 fn zjs_cmp_lt(a: ZjsValue, b: ZjsValue) -> int {
