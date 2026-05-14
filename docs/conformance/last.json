@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 16:27 UTC",
+    "when": "2026-05-14 16:34 UTC",
     "total": 4821,
-    "passed": 2414,
-    "failed": 381,
+    "passed": 2420,
+    "failed": 375,
     "skipped": 2026
   },
   "failures": [
@@ -108,28 +108,12 @@
       "reason": "zjs: throw: Test262Error: #1: (true\\u0009==\\u00091) === true"
     },
     {
-      "path": "test/language/expressions/equals/S11.9.1_A4.1_T1.js",
-      "reason": "timeout"
-    },
-    {
-      "path": "test/language/expressions/equals/S11.9.1_A4.1_T2.js",
-      "reason": "timeout"
-    },
-    {
       "path": "test/language/expressions/equals/S11.9.1_A7.8.js",
-      "reason": "timeout"
+      "reason": "zjs: throw: Test262Error: #1: ({valueOf: function() {return 1}} == true) === true"
     },
     {
       "path": "test/language/expressions/equals/S11.9.1_A7.9.js",
-      "reason": "timeout"
-    },
-    {
-      "path": "test/language/expressions/equals/coerce-symbol-to-prim-invocation.js",
-      "reason": "timeout"
-    },
-    {
-      "path": "test/language/expressions/equals/coerce-symbol-to-prim-return-prim.js",
-      "reason": "timeout"
+      "reason": "zjs: throw: Test262Error: #1: (true == {valueOf: function() {return 1}}) === true"
     },
     {
       "path": "test/language/expressions/equals/to-prim-hint.js",
@@ -141,27 +125,19 @@
     },
     {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A3.2.js",
-      "reason": "timeout"
+      "reason": "zjs: throw: Test262Error: #4: (true != {valueOf: function () {return 1}}) === false"
     },
     {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A3.3.js",
-      "reason": "timeout"
-    },
-    {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A4.1_T1.js",
-      "reason": "timeout"
-    },
-    {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A4.1_T2.js",
-      "reason": "timeout"
+      "reason": "zjs: throw: Test262Error: #4: ({valueOf: function () {return \"0\"}} != false) === false"
     },
     {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A7.8.js",
-      "reason": "timeout"
+      "reason": "zjs: throw: Test262Error: #1: (true != {valueOf: function() {return 1}}) === false"
     },
     {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A7.9.js",
-      "reason": "timeout"
+      "reason": "zjs: throw: Test262Error: #1: ({valueOf: function() {return 1}} != true) === false"
     },
     {
       "path": "test/language/expressions/strict-equals/S11.9.4_A1.js",

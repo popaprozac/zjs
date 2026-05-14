@@ -419,10 +419,22 @@ fn zjs_loose_eq(a: ZjsValue, b: ZjsValue) -> int {
     let a_obj = zjs_is_object(a) != 0 || zjs_is_array(a) != 0;
     let b_obj = zjs_is_object(b) != 0 || zjs_is_array(b) != 0;
     if a_obj && (b_num || b_str) {
-        return zjs_loose_eq(zjs_to_primitive_for_eq(a), b);
+        let coerced = zjs_to_primitive_for_eq(a);
+        // Guard against infinite recursion: only recurse if we
+        // actually got a primitive. Plain objects (no wrapper hidden
+        // key) come back unchanged — fall through to strict-eq, which
+        // returns false (object != primitive).
+        if zjs_is_object(coerced) == 0 && zjs_is_array(coerced) == 0 {
+            return zjs_loose_eq(coerced, b);
+        }
+        return 0;
     }
     if b_obj && (a_num || a_str) {
-        return zjs_loose_eq(a, zjs_to_primitive_for_eq(b));
+        let coerced = zjs_to_primitive_for_eq(b);
+        if zjs_is_object(coerced) == 0 && zjs_is_array(coerced) == 0 {
+            return zjs_loose_eq(a, coerced);
+        }
+        return 0;
     }
     return zjs_strict_eq(a, b);
 }
