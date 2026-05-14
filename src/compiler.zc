@@ -769,6 +769,44 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
             c.had_error = true;
             return alloc_reg(c);
         }
+        // Fused-immediate fast path for `x + N` / `x - N` / `N + x` when
+        // N is a small integer literal that fits in an i8. Saves a
+        // LoadInt + a dispatch per occurrence. Most tight numeric loops
+        // and recursive arithmetic (fib, sieve, int_loop) benefit.
+        let fusable: bool =
+            op_kind == Op::Add || op_kind == Op::Sub ||
+            op_kind == Op::CmpLt || op_kind == Op::CmpLe ||
+            op_kind == Op::CmpGt || op_kind == Op::CmpGe;
+        if fusable {
+            // Only fuse when the immediate is on the RHS — Add looks
+            // commutative for numerics but `1 + 'b'` vs `'b' + 1`
+            // produce different strings (ECMA-262 §13.15: concat is
+            // order-sensitive), and we can't prove LHS is non-string
+            // at compile time. Comparisons also have order-sensitive
+            // ToPrimitive (LHS first), so RHS-imm-only stays safe.
+            if node.right != NULL && node.right.kind == NodeKind::NumberExpr {
+                let v = node.right.num;
+                let iv = (i32)v;
+                let is_int: bool = false;
+                raw { is_int = ((double)iv == v) ? true : false; }
+                if is_int && iv >= -128 && iv <= 127 {
+                    let imm_byte: u8 = (u8)(i8)iv;
+                    let fused_op = Op::Halt;
+                    if      op_kind == Op::Add   { fused_op = Op::AddImm; }
+                    else if op_kind == Op::Sub   { fused_op = Op::SubImm; }
+                    else if op_kind == Op::CmpLt { fused_op = Op::CmpLtImm; }
+                    else if op_kind == Op::CmpLe { fused_op = Op::CmpLeImm; }
+                    else if op_kind == Op::CmpGt { fused_op = Op::CmpGtImm; }
+                    else if op_kind == Op::CmpGe { fused_op = Op::CmpGeImm; }
+                    let src = compile_expr(c, node.left);
+                    let dst = alloc_reg(c);
+                    emit(c, make_inst_abc(fused_op, dst, src, imm_byte));
+                    release_reg(c, src);
+                    if c.next_reg <= dst { c.next_reg = dst + 1; }
+                    return dst;
+                }
+            }
+        }
         let l = compile_expr(c, node.left);
         let r = compile_expr(c, node.right);
         let dst = alloc_reg(c);
@@ -1657,12 +1695,11 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
         emit(c, make_inst_a_u16(Op::LoadGlobal, cur, (u16)slot));
     }
 
-    let one_reg = alloc_reg(c);
-    emit(c, make_inst_a_i16(Op::LoadInt, one_reg, 1));
+    // Fused: `cur ± 1` collapses to AddImm/SubImm — saves a LoadInt
+    // and a dispatch per ++/--.
     let new_reg = alloc_reg(c);
-    let op_ = if is_inc { Op::Add } else { Op::Sub };
-    emit(c, make_inst_abc(op_, new_reg, cur, one_reg));
-    release_reg(c, one_reg);
+    let op_ = if is_inc { Op::AddImm } else { Op::SubImm };
+    emit(c, make_inst_abc(op_, new_reg, cur, (u8)1));
 
     if local_idx >= 0 {
         if captured_local {

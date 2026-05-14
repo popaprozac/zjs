@@ -37,6 +37,23 @@ enum Op {
 
     // Binary arithmetic
     Add, Sub, Mul, Div, Mod, Pow,
+
+    // Fused arithmetic-with-immediate (Phase 3.9g). Hot path: int32 +/-
+    // small constant. Folds LoadInt + Add/Sub into a single dispatch.
+    // c is the immediate, reinterpreted as i8 (range -128..127). The
+    // interpreter still falls through to general numeric coercion if
+    // the source register isn't int32.
+    AddImm,           // a=dst, b=src_reg, c=imm (i8)
+    SubImm,           // a=dst, b=src_reg, c=imm (i8)
+
+    // Fused comparison-with-immediate. RHS-only (LHS-imm version is
+    // ambiguous under ToPrimitive when LHS could be an object). Same
+    // i8 immediate range as AddImm/SubImm. Falls through to general
+    // comparison if the source reg isn't int32.
+    CmpLtImm,         // a=dst (bool), b=src_reg, c=imm (i8)
+    CmpLeImm,         // a=dst (bool), b=src_reg, c=imm (i8)
+    CmpGtImm,         // a=dst (bool), b=src_reg, c=imm (i8)
+    CmpGeImm,         // a=dst (bool), b=src_reg, c=imm (i8)
     BitAnd, BitOr, BitXor,
     Shl, Shr, UShr,
 

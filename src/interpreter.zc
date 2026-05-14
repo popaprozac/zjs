@@ -459,6 +459,91 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
             if zjs_is_object(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
             regs[inst.a] = zjs_arith_sub(av, bv);
+        } else if op == Op::AddImm {
+            // Fused int32 + i8 fast path; falls back to full Add semantics
+            // (object → ToPrimitive, string concat) on cold paths.
+            let av = regs[inst.b];
+            let imm: i32 = (i32)(i8)inst.c;
+            if zjs_is_int32(av) != 0 {
+                let ai: i64 = (i64)zjs_as_int32(av);
+                let sum: i64 = ai + (i64)imm;
+                let fits: int = 0;
+                raw { fits = (sum >= INT32_MIN && sum <= INT32_MAX) ? 1 : 0; }
+                if fits != 0 {
+                    regs[inst.a] = zjs_int32((i32)sum);
+                } else {
+                    regs[inst.a] = zjs_double((f64)sum);
+                }
+            } else {
+                // Slow fallback: re-do as a real Add (handles strings,
+                // objects, doubles, etc.).
+                let bv = zjs_int32(imm);
+                if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if zjs_is_string(av) != 0 {
+                    regs[inst.a] = zjs_string_concat(ctx, av, bv);
+                } else {
+                    regs[inst.a] = zjs_arith_add(av, bv);
+                }
+            }
+        } else if op == Op::SubImm {
+            let av = regs[inst.b];
+            let imm: i32 = (i32)(i8)inst.c;
+            if zjs_is_int32(av) != 0 {
+                let ai: i64 = (i64)zjs_as_int32(av);
+                let diff: i64 = ai - (i64)imm;
+                let fits: int = 0;
+                raw { fits = (diff >= INT32_MIN && diff <= INT32_MAX) ? 1 : 0; }
+                if fits != 0 {
+                    regs[inst.a] = zjs_int32((i32)diff);
+                } else {
+                    regs[inst.a] = zjs_double((f64)diff);
+                }
+            } else {
+                let bv = zjs_int32(imm);
+                if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                regs[inst.a] = zjs_arith_sub(av, bv);
+            }
+        } else if op == Op::CmpLtImm {
+            let av = regs[inst.b];
+            let imm: i32 = (i32)(i8)inst.c;
+            if zjs_is_int32(av) != 0 {
+                regs[inst.a] = zjs_bool(if zjs_as_int32(av) < imm { 1 } else { 0 });
+            } else {
+                let bv = zjs_int32(imm);
+                if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                regs[inst.a] = zjs_bool(zjs_cmp_lt(av, bv));
+            }
+        } else if op == Op::CmpLeImm {
+            let av = regs[inst.b];
+            let imm: i32 = (i32)(i8)inst.c;
+            if zjs_is_int32(av) != 0 {
+                regs[inst.a] = zjs_bool(if zjs_as_int32(av) <= imm { 1 } else { 0 });
+            } else {
+                let bv = zjs_int32(imm);
+                if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                regs[inst.a] = zjs_bool(zjs_cmp_le(av, bv));
+            }
+        } else if op == Op::CmpGtImm {
+            let av = regs[inst.b];
+            let imm: i32 = (i32)(i8)inst.c;
+            if zjs_is_int32(av) != 0 {
+                regs[inst.a] = zjs_bool(if zjs_as_int32(av) > imm { 1 } else { 0 });
+            } else {
+                let bv = zjs_int32(imm);
+                if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                // a > b is `b < a` (CmpGt's actual semantics — order swap).
+                regs[inst.a] = zjs_bool(zjs_cmp_lt(bv, av));
+            }
+        } else if op == Op::CmpGeImm {
+            let av = regs[inst.b];
+            let imm: i32 = (i32)(i8)inst.c;
+            if zjs_is_int32(av) != 0 {
+                regs[inst.a] = zjs_bool(if zjs_as_int32(av) >= imm { 1 } else { 0 });
+            } else {
+                let bv = zjs_int32(imm);
+                if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                regs[inst.a] = zjs_bool(zjs_cmp_le(bv, av));
+            }
         } else if op == Op::Mul {
             let av = regs[inst.b]; let bv = regs[inst.c];
             if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
