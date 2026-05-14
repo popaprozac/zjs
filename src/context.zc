@@ -1984,6 +1984,7 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = ctx.host_this;
     if argc == 0 { return ctx_new_array(ctx, 0); }
     let cb = args[0];
+    let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
 
     // Determine length and source-element accessor.
     let len: u32 = 0;
@@ -2011,7 +2012,7 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         let cb_args_ptr: ZjsValue* = NULL;
         raw { cb_args_ptr = &cb_args[0]; }
         let mapped: ZjsValue = zjs_undefined();
-        raw { mapped = zjs_call_value(ctx, cb, cb_args_ptr, 3); }
+        raw { mapped = zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
         if ctx.had_error { return result_v; }
         array_set(result, i, mapped);
         i = i + 1;
@@ -2152,6 +2153,9 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     let this_val = ctx.host_this;
     if argc == 0 { return zjs_undefined(); }
     let cb = args[0];
+    // ECMA-262 §22.1.3.12: forEach(callbackfn, thisArg). Second arg
+    // becomes `this` in the callback. Pass undefined when absent.
+    let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
 
     // Fast path: real array — direct .elements[] access.
     if zjs_is_array(this_val) != 0 {
@@ -2165,7 +2169,7 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
             cb_args[2] = this_val;
             let cb_args_ptr: ZjsValue* = NULL;
             raw { cb_args_ptr = &cb_args[0]; }
-            raw { (void)zjs_call_value(ctx, cb, cb_args_ptr, 3); }
+            raw { (void)zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
             if ctx.had_error { return zjs_undefined(); }
             i = i + 1;
         }
@@ -2191,7 +2195,7 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
             cb_args[2] = obj_val;
             let cb_args_ptr: ZjsValue* = NULL;
             raw { cb_args_ptr = &cb_args[0]; }
-            raw { (void)zjs_call_value(ctx, cb, cb_args_ptr, 3); }
+            raw { (void)zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
             if ctx.had_error { return zjs_undefined(); }
             i = i + 1;
         }
