@@ -48,7 +48,7 @@ PARSER_TEST_SRC := tests/parser_test.zc
 INTERP_TEST_SRC := tests/interpreter_test.zc
 T262_RUNNER_SRC := tests/test262_runner.c
 
-.PHONY: all lib cli smoke lexer-test parser-test interp-test test test262-runner test262 test262-quick bench clean
+.PHONY: all lib cli smoke lexer-test parser-test interp-test test test262-runner test262 test262-quick bench bench-compare clean
 
 all: lib cli smoke lexer-test parser-test interp-test
 
@@ -95,6 +95,11 @@ test262: cli
 # regenerates docs/perf/index.html.
 bench: cli
 	@python3 scripts/bench/run.py
+
+# Cross-engine comparison: also runs each bench under qjs (jitless,
+# our closest peer), node (V8), and bun (JSC). Writes docs/perf/compare.html.
+bench-compare: cli
+	@python3 scripts/bench/run.py --compare
 
 # Quick C-based runner — older, harness-light, no recording. Useful for
 # fast sanity checks against a specific subdir.

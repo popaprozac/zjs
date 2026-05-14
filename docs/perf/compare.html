@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>zjs vs other engines</title>
+<style>
+  body { font: 14px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          max-width: 1100px; margin: 2em auto; padding: 0 1em; color: #222; }
+  h1 { font-size: 1.4em; margin-bottom: 0.2em; }
+  .sub { color: #666; margin-bottom: 1.5em; }
+  .card { background: #fafafa; border: 1px solid #eee; border-radius: 6px;
+           padding: 1em 1.25em; margin-bottom: 1.25em; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }
+  th { background: #f5f5f5; }
+  td.bench { font-family: ui-monospace, SFMono-Regular, monospace; }
+  td.ms { text-align: right; font-variant-numeric: tabular-nums; }
+  td.ratio { text-align: right; font-variant-numeric: tabular-nums; color: #888; }
+</style>
+
+<h1>zjs vs other engines</h1>
+<p class="sub">Snapshot of <span id="when"></span> @ <code id="sha"></code>.
+Median wall-clock per script (lower is better). Includes engine startup —
+JIT-heavy engines have small absolute numbers because the iterations
+in our scripts are too short to repay JIT cost.</p>
+
+<div class="card">
+  <table id="compare-table">
+    <thead><tr id="thead-row"></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<script id="data" type="application/json">{"when": "2026-05-14 01:14 UTC", "sha": "b6306dac77", "results": [{"name": "array_iterate", "engines": {"zjs": 0.03185966704040766, "qjs": 0.004705708008259535, "node": 0.018483666703104973, "bun": 0.008997791912406683}}, {"name": "closure_call", "engines": {"zjs": 0.1317492090165615, "qjs": 0.007495959289371967, "node": 0.017377375159412622, "bun": 0.009172916878014803}}, {"name": "double_loop", "engines": {"zjs": 0.13659995794296265, "qjs": 0.009590459056198597, "node": 0.017489958088845015, "bun": 0.00835370784625411}}, {"name": "int_loop", "engines": {"zjs": 0.2741549592465162, "qjs": 0.021515540778636932, "node": 0.0180590832605958, "bun": 0.011940749827772379}}, {"name": "method_call", "engines": {"zjs": 0.15803566575050354, "qjs": 0.008714541792869568, "node": 0.01748125022277236, "bun": 0.008533000014722347}}, {"name": "object_alloc", "engines": {"zjs": 0.10166129190474749, "qjs": 0.022613040637224913, "node": 0.017647957894951105, "bun": 0.008567958138883114}}, {"name": "property_mono", "engines": {"zjs": 0.20797133399173617, "qjs": 0.013982666190713644, "node": 0.017933416180312634, "bun": 0.0106609589420259}}, {"name": "property_poly", "engines": {"zjs": 0.1402840418741107, "qjs": 0.009298124816268682, "node": 0.017536667175590992, "bun": 0.009395875036716461}}, {"name": "string_concat", "engines": {"zjs": 0.0035590827465057373, "qjs": 0.0027145412750542164, "node": 0.016132208053022623, "bun": 0.007672957610338926}}, {"name": "try_overhead", "engines": {"zjs": 0.08232175000011921, "qjs": 0.0064919996075332165, "node": 0.017748083919286728, "bun": 0.008817041758447886}}]}</script>
+<script id="benches" type="application/json">["array_iterate", "closure_call", "double_loop", "int_loop", "method_call", "object_alloc", "property_mono", "property_poly", "string_concat", "try_overhead"]</script>
+<script id="engines" type="application/json">["zjs", "qjs", "node", "bun"]</script>
+<script>
+  const data    = JSON.parse(document.getElementById('data').textContent);
+  const benches = JSON.parse(document.getElementById('benches').textContent);
+  const engines = JSON.parse(document.getElementById('engines').textContent);
+
+  document.getElementById('when').textContent = data.when || '';
+  document.getElementById('sha').textContent  = data.sha  || '';
+
+  const thead = document.getElementById('thead-row');
+  thead.innerHTML = '<th>Benchmark</th>' + engines.map(e => `<th class="ms">${e} ms</th>`).join('') +
+    engines.filter(e => e !== 'zjs').map(e => `<th class="ratio">zjs / ${e}</th>`).join('');
+
+  const tbody = document.querySelector('#compare-table tbody');
+  for (const name of benches) {
+    const row = data.results.find(r => r.name === name) || {name, engines: {}};
+    let html = `<td class="bench">${name}</td>`;
+    for (const e of engines) {
+      const v = row.engines[e];
+      html += `<td class="ms">${v == null ? '—' : (v * 1000).toFixed(2)}</td>`;
+    }
+    const zjs_v = row.engines["zjs"];
+    for (const e of engines.filter(x => x !== 'zjs')) {
+      const o = row.engines[e];
+      if (zjs_v && o) {
+        const ratio = zjs_v / o;
+        html += `<td class="ratio">${ratio.toFixed(1)}×</td>`;
+      } else {
+        html += `<td class="ratio">—</td>`;
+      }
+    }
+    const tr = document.createElement('tr');
+    tr.innerHTML = html;
+    tbody.appendChild(tr);
+  }
+</script>
+</html>

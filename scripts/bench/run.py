@@ -201,11 +201,122 @@ zjs-vs-zjs over time. Numbers are median of N iterations.</p>
 """
     out_path.write_text(html)
 
+DEFAULT_OTHER_ENGINES = [
+    # name,  binary (resolved via PATH),  extra args before script
+    ("qjs",  "qjs",   []),
+    ("node", "node",  []),
+    ("bun",  "bun",   []),
+]
+
+def time_engine(label, bin_path, extra_args, script_path, iters):
+    """Time `<bin> <args...> <script>` N times. Returns dict like time_one()."""
+    samples = []
+    for _ in range(iters):
+        t0 = time.perf_counter()
+        try:
+            r = subprocess.run(
+                [bin_path] + list(extra_args) + [str(script_path)],
+                capture_output=True, text=True, timeout=30.0,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return None
+        t1 = time.perf_counter()
+        if r.returncode != 0:
+            return None
+        samples.append(t1 - t0)
+    samples.sort()
+    return {
+        "min":    samples[0],
+        "median": samples[len(samples) // 2],
+        "max":    samples[-1],
+        "iters":  iters,
+    }
+
+def write_compare_html(out_path, summary, bench_names, engine_names):
+    summary_json = json.dumps(summary)
+    benches_json = json.dumps(bench_names)
+    engines_json = json.dumps(engine_names)
+    html = f"""<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>zjs vs other engines</title>
+<style>
+  body {{ font: 14px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          max-width: 1100px; margin: 2em auto; padding: 0 1em; color: #222; }}
+  h1 {{ font-size: 1.4em; margin-bottom: 0.2em; }}
+  .sub {{ color: #666; margin-bottom: 1.5em; }}
+  .card {{ background: #fafafa; border: 1px solid #eee; border-radius: 6px;
+           padding: 1em 1.25em; margin-bottom: 1.25em; }}
+  table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
+  th, td {{ text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }}
+  th {{ background: #f5f5f5; }}
+  td.bench {{ font-family: ui-monospace, SFMono-Regular, monospace; }}
+  td.ms {{ text-align: right; font-variant-numeric: tabular-nums; }}
+  td.ratio {{ text-align: right; font-variant-numeric: tabular-nums; color: #888; }}
+</style>
+
+<h1>zjs vs other engines</h1>
+<p class="sub">Snapshot of <span id="when"></span> @ <code id="sha"></code>.
+Median wall-clock per script (lower is better). Includes engine startup —
+JIT-heavy engines have small absolute numbers because the iterations
+in our scripts are too short to repay JIT cost.</p>
+
+<div class="card">
+  <table id="compare-table">
+    <thead><tr id="thead-row"></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<script id="data" type="application/json">{summary_json}</script>
+<script id="benches" type="application/json">{benches_json}</script>
+<script id="engines" type="application/json">{engines_json}</script>
+<script>
+  const data    = JSON.parse(document.getElementById('data').textContent);
+  const benches = JSON.parse(document.getElementById('benches').textContent);
+  const engines = JSON.parse(document.getElementById('engines').textContent);
+
+  document.getElementById('when').textContent = data.when || '';
+  document.getElementById('sha').textContent  = data.sha  || '';
+
+  const thead = document.getElementById('thead-row');
+  thead.innerHTML = '<th>Benchmark</th>' + engines.map(e => `<th class="ms">${{e}} ms</th>`).join('') +
+    engines.filter(e => e !== 'zjs').map(e => `<th class="ratio">zjs / ${{e}}</th>`).join('');
+
+  const tbody = document.querySelector('#compare-table tbody');
+  for (const name of benches) {{
+    const row = data.results.find(r => r.name === name) || {{name, engines: {{}}}};
+    let html = `<td class="bench">${{name}}</td>`;
+    for (const e of engines) {{
+      const v = row.engines[e];
+      html += `<td class="ms">${{v == null ? '—' : (v * 1000).toFixed(2)}}</td>`;
+    }}
+    const zjs_v = row.engines["zjs"];
+    for (const e of engines.filter(x => x !== 'zjs')) {{
+      const o = row.engines[e];
+      if (zjs_v && o) {{
+        const ratio = zjs_v / o;
+        html += `<td class="ratio">${{ratio.toFixed(1)}}×</td>`;
+      }} else {{
+        html += `<td class="ratio">—</td>`;
+      }}
+    }}
+    const tr = document.createElement('tr');
+    tr.innerHTML = html;
+    tbody.appendChild(tr);
+  }}
+</script>
+</html>
+"""
+    out_path.write_text(html)
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--iters",  type=int, default=5)
     ap.add_argument("--filter", type=str, default=None)
     ap.add_argument("--no-record", action="store_true")
+    ap.add_argument("--compare", action="store_true",
+                    help="also run benches under qjs/node/bun; write docs/perf/compare.html")
     args = ap.parse_args()
 
     if not ZJS_BIN.exists():
@@ -257,23 +368,51 @@ def main():
     sha  = commit_short_sha()
     summary = {"when": when, "sha": sha, "results": results}
 
-    if args.no_record:
-        return 0
+    if not args.no_record:
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        with open(HISTORY, "a") as f:
+            f.write(json.dumps(summary) + "\n")
+        LAST_JSON.write_text(json.dumps(summary, indent=2))
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(HISTORY, "a") as f:
-        f.write(json.dumps(summary) + "\n")
-    LAST_JSON.write_text(json.dumps(summary, indent=2))
+        history = []
+        with open(HISTORY) as f:
+            for line in f:
+                line = line.strip()
+                if not line: continue
+                try: history.append(json.loads(line))
+                except json.JSONDecodeError: pass
+        write_html(HTML_PATH, history, summary)
+        print(f"\nReport: {HTML_PATH.relative_to(REPO_ROOT)}")
 
-    history = []
-    with open(HISTORY) as f:
-        for line in f:
-            line = line.strip()
-            if not line: continue
-            try: history.append(json.loads(line))
-            except json.JSONDecodeError: pass
-    write_html(HTML_PATH, history, summary)
-    print(f"\nReport: {HTML_PATH.relative_to(REPO_ROOT)}")
+    if args.compare:
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        # Run each bench under every available reference engine, write
+        # a separate one-shot comparison HTML.
+        engine_names = ["zjs"]
+        compare_results = []
+        for name, path in benches:
+            engines_data = {"zjs": next((r["median"] for r in results if r["name"] == name), None)}
+            for ename, ebin, eargs in DEFAULT_OTHER_ENGINES:
+                stats = time_engine(ename, ebin, eargs, path, args.iters)
+                if stats is not None:
+                    engines_data[ename] = stats["median"]
+                    if ename not in engine_names:
+                        engine_names.append(ename)
+            compare_results.append({"name": name, "engines": engines_data})
+            engine_str = "  ".join(
+                f"{e}={engines_data[e]*1000:7.2f}ms" if e in engines_data else f"{e}=    -   "
+                for e in engine_names
+            )
+            print(f"{name:20s}  {engine_str}")
+        compare_summary = {
+            "when": when, "sha": sha,
+            "results": compare_results,
+        }
+        compare_path = OUT_DIR / "compare.html"
+        write_compare_html(compare_path, compare_summary,
+                           [r["name"] for r in compare_results], engine_names)
+        (OUT_DIR / "compare.json").write_text(json.dumps(compare_summary, indent=2))
+        print(f"Cross-engine report: {compare_path.relative_to(REPO_ROOT)}")
     return 0
 
 if __name__ == "__main__":
