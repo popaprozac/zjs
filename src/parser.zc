@@ -277,6 +277,21 @@ fn parse_block(p: Parser*) -> AstNode* {
 
 // `consume_semi` controls whether we consume the trailing `;`. For-init
 // uses `false` because the for-loop owns the `;` between init/cond.
+// Some keywords are contextual — they're reserved in specific syntactic
+// positions but legal identifiers elsewhere. ECMA-262 §13.1: at minimum,
+// `of`, `let`, `static`, `async`, `yield`, `await` can be binding
+// identifiers in sloppy mode. We accept them broadly; strict-mode tests
+// for these would need a separate gate (not implemented yet).
+fn is_binding_ident(k: TokenKind) -> bool {
+    if k == TokenKind::Identifier { return true; }
+    if k == TokenKind::KwOf       { return true; }
+    if k == TokenKind::KwLet      { return true; }
+    if k == TokenKind::KwYield    { return true; }
+    if k == TokenKind::KwAwait    { return true; }
+    if k == TokenKind::KwAsync    { return true; }
+    return false;
+}
+
 fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
     let kw = advance(p);   // var / let / const
 
@@ -290,7 +305,7 @@ fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
     let last_end: u32 = kw.start + kw.length;
     while true {
         let name_tok = peek(p);
-        if name_tok.kind != TokenKind::Identifier {
+        if !is_binding_ident(name_tok.kind) {
             p.had_error = true;
             break;
         }
@@ -1494,7 +1509,10 @@ fn parse_primary(p: Parser*) -> AstNode* {
         advance(p);
         return new_node(&p.tracker, NodeKind::ThisExpr, t.start, t.start + t.length);
     }
-    if k == TokenKind::Identifier {
+    if is_binding_ident(k) {
+        // Identifier OR a contextual keyword being used as a reference
+        // (`of`, `let`, `yield`, `await`, `async` in non-keyword
+        // positions). See is_binding_ident.
         advance(p);
         return new_node(&p.tracker, NodeKind::IdentExpr, t.start, t.start + t.length);
     }
