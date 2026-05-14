@@ -2642,6 +2642,57 @@ fn compile_stmt_or_expr(c: Compiler*, node: AstNode*) -> void {
 // Function.
 // =====================================================================
 
+// Recurse into the AST and hoist every `var` declaration + top-level
+// function/class declaration into the global table. Stops at function,
+// class, and arrow boundaries — those introduce their own scope.
+fn hoist_program_decls(c: Compiler*, node: AstNode*) -> void {
+    if node == NULL { return; }
+    let k = node.kind;
+    if k == NodeKind::FunctionDecl {
+        // Hoist the function name. Its BODY has its own scope, so don't
+        // recurse further (the inner-function compiler does its own pass).
+        let nm = c.source + node.name_start;
+        let nl = node.name_length;
+        let slot = ctx_intern_global(c.ctx, nm, nl);
+        c.ctx.globals[slot].defined = true;
+        return;
+    }
+    if k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc { return; }
+    if k == NodeKind::ClassDecl {
+        let nm = c.source + node.name_start;
+        let nl = node.name_length;
+        let slot = ctx_intern_global(c.ctx, nm, nl);
+        c.ctx.globals[slot].defined = true;
+        return;   // class body is not hoisted
+    }
+    if k == NodeKind::ClassExpr { return; }
+    if k == NodeKind::VarDecl {
+        // Hoist every declarator under this binding. We treat var/let/const
+        // alike for hoisting purposes — see comment in compile_program.
+        let j: u32 = 0;
+        while j < node.children_count {
+            let decl = node.children[j];
+            if decl != NULL && decl.name_length > 0 {
+                let nm = c.source + decl.name_start;
+                let nl = decl.name_length;
+                let slot = ctx_intern_global(c.ctx, nm, nl);
+                c.ctx.globals[slot].defined = true;
+            }
+            j = j + 1;
+        }
+        return;
+    }
+    // Generic recursion through this node's children.
+    if node.left  != NULL { hoist_program_decls(c, node.left); }
+    if node.right != NULL { hoist_program_decls(c, node.right); }
+    if node.third != NULL { hoist_program_decls(c, node.third); }
+    let i: u32 = 0;
+    while i < node.children_count {
+        hoist_program_decls(c, node.children[i]);
+        i = i + 1;
+    }
+}
+
 fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function* {
     let c = compiler_new(ctx, source);
     defer compiler_free(c);
@@ -2656,37 +2707,18 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     c.last_expr_reg = (i32)result_reg;
 
     if root != NULL && root.kind == NodeKind::Program {
-        // Hoist: pre-declare every top-level var/let/const declarator,
-        // FunctionDecl, ClassDecl name as a global so subsequent reads
-        // see `defined=true`. The values start as undefined; the
-        // statement-order DefineGlobal / StoreGlobal will overwrite
-        // with the real initializer when reached. (Spec deviation: real
-        // let/const has TDZ — accessing before the line throws.
-        // We're permissive and just hoist them all.)
-        let i: u32 = 0;
-        while i < root.children_count {
-            let stmt = root.children[i];
-            if stmt != NULL {
-                let sk = stmt.kind;
-                if sk == NodeKind::VarDecl {
-                    let j: u32 = 0;
-                    while j < stmt.children_count {
-                        let decl = stmt.children[j];
-                        let nm = c.source + decl.name_start;
-                        let nl = decl.name_length;
-                        let slot = ctx_intern_global(c.ctx, nm, nl);
-                        ctx.globals[slot].defined = true;
-                        j = j + 1;
-                    }
-                } else if sk == NodeKind::FunctionDecl || sk == NodeKind::ClassDecl {
-                    let nm = c.source + stmt.name_start;
-                    let nl = stmt.name_length;
-                    let slot = ctx_intern_global(c.ctx, nm, nl);
-                    ctx.globals[slot].defined = true;
-                }
-            }
-            i = i + 1;
-        }
+        // Hoist top-level declarations into globals so forward references
+        // and "defined-via-conditional-branch" var declarations resolve
+        // without ReferenceError. We recurse through the whole tree but
+        // stop at function/class bodies — those have their own scope.
+        //
+        // ECMA-262: `var` declarations hoist to function-or-program scope
+        // regardless of textual placement (inside if/try/catch/loops are
+        // still program-scoped). `let`/`const` are block-scoped, but our
+        // current model conflates them with globals at the top level —
+        // good enough for the test262 cases that fail right now (we'll
+        // tighten TDZ later).
+        hoist_program_decls(c, root);
         let i2: u32 = 0;
         while i2 < root.children_count && !c.had_error {
             compile_stmt(c, root.children[i2]);

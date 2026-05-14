@@ -212,7 +212,43 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         }
         let idx = zjs_to_array_index(key);
         if idx >= 0 { array_set(arr, (u32)idx, value); return; }
-        // String-keyed property on an array — not supported in MVP. Drop.
+        // `arr.length = n` truncates / extends the array. ECMA-262
+        // §22.1.4.1: assigning a non-integer or non-finite value throws
+        // RangeError; we coerce-to-int and silently accept for MVP. The
+        // important behavioral piece is that subsequent reads of length
+        // and indexed slots reflect the new length.
+        if zjs_is_string(key) != 0 {
+            let ks = zjs_as_string(key);
+            let is_length: int = 0;
+            let kdata = ks.data;
+            let klen  = ks.length;
+            raw { is_length = (klen == 6 && memcmp(kdata, "length", 6) == 0) ? 1 : 0; }
+            if is_length != 0 {
+                let new_len: u32 = 0;
+                if zjs_is_int32(value) != 0 {
+                    let n = zjs_as_int32(value);
+                    if n >= 0 { new_len = (u32)n; }
+                } else if zjs_is_double(value) != 0 {
+                    let d = zjs_as_double(value);
+                    let ok: int = 0;
+                    raw { ok = (isfinite(d) && d >= 0.0) ? 1 : 0; }
+                    if ok != 0 { new_len = (u32)d; }
+                }
+                // Clear elements above the new length so they don't
+                // leak when length is extended again later.
+                let old_len = arr.length;
+                if new_len < old_len {
+                    let i: u32 = new_len;
+                    while i < old_len {
+                        arr.elements[i] = zjs_undefined();
+                        i = i + 1;
+                    }
+                }
+                arr.length = new_len;
+                return;
+            }
+        }
+        // Other string-keyed properties on an array — not supported. Drop.
         return;
     }
     if zjs_is_object(obj) != 0 {

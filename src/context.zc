@@ -1878,31 +1878,41 @@ raw {
 
 fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = ctx.host_this;
-    if zjs_is_array(this_val) == 0 || argc == 0 {
-        return ctx_new_array(ctx, 0);
-    }
-    let arr = zjs_as_array(this_val);
+    if argc == 0 { return ctx_new_array(ctx, 0); }
     let cb = args[0];
-    let result_v = ctx_new_array(ctx, arr.length);
+
+    // Determine length and source-element accessor.
+    let len: u32 = 0;
+    if zjs_is_array(this_val) != 0 { len = zjs_as_array(this_val).length; }
+    else if zjs_is_object(this_val) != 0 { len = read_length_u32(ctx, this_val); }
+    else { return ctx_new_array(ctx, 0); }
+
+    let result_v = ctx_new_array(ctx, len);
     ctx_push_temp_root(ctx, result_v);
     defer ctx_pop_temp_root(ctx);
     let result = zjs_as_array(result_v);
+
     let i: u32 = 0;
-    while i < arr.length {
+    while i < len {
+        let src: ZjsValue = zjs_undefined();
+        if zjs_is_array(this_val) != 0 {
+            src = zjs_as_array(this_val).elements[i];
+        } else {
+            src = obj_get_indexed(ctx, zjs_as_object(this_val), i);
+        }
         let cb_args: ZjsValue[3];
-        cb_args[0] = arr.elements[i];
+        cb_args[0] = src;
         cb_args[1] = zjs_int32((i32)i);
         cb_args[2] = this_val;
         let cb_args_ptr: ZjsValue* = NULL;
         raw { cb_args_ptr = &cb_args[0]; }
         let mapped: ZjsValue = zjs_undefined();
         raw { mapped = zjs_call_value(ctx, cb, cb_args_ptr, 3); }
-        // The array may have grown via array_set internal realloc inside
-        // the callback (rare for map but possible). Re-fetch.
+        if ctx.had_error { return result_v; }
         array_set(result, i, mapped);
         i = i + 1;
     }
-    result.length = arr.length;
+    result.length = len;
     return result_v;
 }
 
@@ -2036,20 +2046,50 @@ fn host_array_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
 fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = ctx.host_this;
-    if zjs_is_array(this_val) == 0 || argc == 0 { return zjs_undefined(); }
-    let arr = zjs_as_array(this_val);
+    if argc == 0 { return zjs_undefined(); }
     let cb = args[0];
-    let len = arr.length;       // ECMA-262: length captured before iteration
-    let i: u32 = 0;
-    while i < len {
-        let cb_args: ZjsValue[3];
-        cb_args[0] = arr.elements[i];
-        cb_args[1] = zjs_int32((i32)i);
-        cb_args[2] = this_val;
-        let cb_args_ptr: ZjsValue* = NULL;
-        raw { cb_args_ptr = &cb_args[0]; }
-        raw { (void)zjs_call_value(ctx, cb, cb_args_ptr, 3); }
-        i = i + 1;
+
+    // Fast path: real array — direct .elements[] access.
+    if zjs_is_array(this_val) != 0 {
+        let arr = zjs_as_array(this_val);
+        let len = arr.length;
+        let i: u32 = 0;
+        while i < len {
+            let cb_args: ZjsValue[3];
+            cb_args[0] = arr.elements[i];
+            cb_args[1] = zjs_int32((i32)i);
+            cb_args[2] = this_val;
+            let cb_args_ptr: ZjsValue* = NULL;
+            raw { cb_args_ptr = &cb_args[0]; }
+            raw { (void)zjs_call_value(ctx, cb, cb_args_ptr, 3); }
+            if ctx.had_error { return zjs_undefined(); }
+            i = i + 1;
+        }
+        return zjs_undefined();
+    }
+
+    // Generic-this path: any object with a `length` property.
+    // ECMA-262 §22.1.3.12: O = ToObject(this); len = ToLength(O.length).
+    // For primitives (boolean / number / string / undefined / null)
+    // we'd need a real ToObject — for now bail silently. That covers
+    // the test262 cases of forEach.call(Math, ...), .call(obj, ...),
+    // .call(new String(...), ...), etc., which are the bulk of fails.
+    if zjs_is_object(this_val) != 0 {
+        let o = zjs_as_object(this_val);
+        let len = read_length_u32(ctx, this_val);
+        let i: u32 = 0;
+        while i < len {
+            let v = obj_get_indexed(ctx, o, i);
+            let cb_args: ZjsValue[3];
+            cb_args[0] = v;
+            cb_args[1] = zjs_int32((i32)i);
+            cb_args[2] = this_val;
+            let cb_args_ptr: ZjsValue* = NULL;
+            raw { cb_args_ptr = &cb_args[0]; }
+            raw { (void)zjs_call_value(ctx, cb, cb_args_ptr, 3); }
+            if ctx.had_error { return zjs_undefined(); }
+            i = i + 1;
+        }
     }
     return zjs_undefined();
 }
@@ -3419,7 +3459,25 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
         raw { len = (size_t)snprintf(buf, 64, "%d", (int)n); }
     } else if zjs_is_double(v) != 0 {
         let d = zjs_as_double(v);
-        raw { len = (size_t)snprintf(buf, 64, "%g", d); }
+        // ECMA-262 §7.1.17 Number::toString: NaN -> "NaN",
+        // ±Infinity -> "Infinity" / "-Infinity"; integral doubles in
+        // range get printed without a decimal point. printf("%g") would
+        // emit lowercase "nan" / "inf" — wrong tag for JS observers.
+        raw {
+            if (isnan(d)) {
+                len = (size_t)snprintf(buf, 64, "NaN");
+            } else if (isinf(d)) {
+                len = (size_t)snprintf(buf, 64, d > 0 ? "Infinity" : "-Infinity");
+            } else if (d == (double)(int64_t)d && d >= -1e15 && d <= 1e15) {
+                // Integral path — no trailing ".0".
+                len = (size_t)snprintf(buf, 64, "%lld", (long long)d);
+            } else {
+                // %g default (6 sig figs) — matches common JS toString
+                // for typical decimals. Not the spec's shortest-round-
+                // trip algorithm, but close enough for most workloads.
+                len = (size_t)snprintf(buf, 64, "%g", d);
+            }
+        }
     } else if zjs_is_bool(v) != 0 {
         if zjs_as_bool(v) != 0 { raw { len = (size_t)snprintf(buf, 64, "true"); } }
         else                    { raw { len = (size_t)snprintf(buf, 64, "false"); } }

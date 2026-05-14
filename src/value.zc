@@ -372,10 +372,46 @@ fn zjs_strict_eq(a: ZjsValue, b: ZjsValue) -> int {
 }
 
 fn zjs_loose_eq(a: ZjsValue, b: ZjsValue) -> int {
-    // Simplified: same as strict for the value kinds we support, plus
-    // null == undefined. (Real ECMA-262 §7.2.13 is hairier.)
+    // ECMA-262 §7.2.13 IsLooselyEqual. The bracket sequence here mirrors
+    // the spec steps: same-type strict-eq, null-undefined, cross-type
+    // numeric/string coercion, boolean→number on either side, primitive
+    // ↔ object via ToPrimitive (object-to-primitive coercion is the
+    // remaining gap — we treat object operands as not-equal for now;
+    // covered separately when we add ToPrimitive in this path).
+
+    // Same-type: defer to strict.
+    let a_num = (zjs_is_int32(a) != 0 || zjs_is_double(a) != 0);
+    let b_num = (zjs_is_int32(b) != 0 || zjs_is_double(b) != 0);
+    let a_str = zjs_is_string(a) != 0;
+    let b_str = zjs_is_string(b) != 0;
+    let a_bool = zjs_is_bool(a) != 0;
+    let b_bool = zjs_is_bool(b) != 0;
+
+    if a_num && b_num { return zjs_strict_eq(a, b); }
+    if a_str && b_str { return zjs_strict_eq(a, b); }
+    if a_bool && b_bool { return zjs_strict_eq(a, b); }
+    if zjs_is_undefined(a) != 0 && zjs_is_undefined(b) != 0 { return 1; }
+    if zjs_is_null(a) != 0 && zjs_is_null(b) != 0 { return 1; }
+
+    // null == undefined.
     if zjs_is_null(a) != 0 && zjs_is_undefined(b) != 0 { return 1; }
     if zjs_is_undefined(a) != 0 && zjs_is_null(b) != 0 { return 1; }
+
+    // Number ↔ String: convert string to number, retry.
+    if a_num && b_str { return zjs_strict_eq(a, zjs_double(zjs_to_double(b))); }
+    if a_str && b_num { return zjs_strict_eq(zjs_double(zjs_to_double(a)), b); }
+
+    // Boolean on either side: convert boolean to number, retry.
+    if a_bool {
+        let an = if zjs_as_bool(a) != 0 { zjs_int32(1) } else { zjs_int32(0) };
+        return zjs_loose_eq(an, b);
+    }
+    if b_bool {
+        let bn = if zjs_as_bool(b) != 0 { zjs_int32(1) } else { zjs_int32(0) };
+        return zjs_loose_eq(a, bn);
+    }
+
+    // Object ↔ primitive coercion is deferred — falls through to strict.
     return zjs_strict_eq(a, b);
 }
 

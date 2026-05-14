@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 04:20 UTC",
+    "when": "2026-05-14 04:52 UTC",
     "total": 4144,
-    "passed": 2017,
-    "failed": 596,
+    "passed": 2059,
+    "failed": 554,
     "skipped": 1531
   },
   "failures": [
@@ -29,11 +29,11 @@
     },
     {
       "path": "test/language/expressions/addition/S11.6.1_A4_T3.js",
-      "reason": "zjs: throw: Test262Error: #1: Infinity + Infinity === Infinity. Actual: inf"
+      "reason": "zjs: throw: Test262Error: #1: Infinity + Infinity === Infinity. Actual: Infinity"
     },
     {
       "path": "test/language/expressions/addition/S11.6.1_A4_T4.js",
-      "reason": "zjs: throw: Test262Error: #1: Infinity + 1 === Infinity. Actual: inf"
+      "reason": "zjs: throw: Test262Error: #1: Infinity + 1 === Infinity. Actual: Infinity"
     },
     {
       "path": "test/language/expressions/addition/S11.6.1_A4_T5.js",
@@ -41,15 +41,15 @@
     },
     {
       "path": "test/language/expressions/addition/S11.6.1_A4_T6.js",
-      "reason": "zjs: throw: Test262Error: #5: Number.MAX_VALUE + -0 === Number.MAX_VALUE. Actual: nan"
+      "reason": "zjs: throw: Test262Error: #5: Number.MAX_VALUE + -0 === Number.MAX_VALUE. Actual: NaN"
     },
     {
       "path": "test/language/expressions/addition/S11.6.1_A4_T7.js",
-      "reason": "zjs: throw: Test262Error: #1.1: -Number.MIN_VALUE + Number.MIN_VALUE === 0. Actual: nan"
+      "reason": "zjs: throw: Test262Error: #1.1: -Number.MIN_VALUE + Number.MIN_VALUE === 0. Actual: NaN"
     },
     {
       "path": "test/language/expressions/addition/S11.6.1_A4_T8.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE + Number.MAX_VALUE === Number.POSITIVE_INFINITY. Actual: nan"
+      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE + Number.MAX_VALUE === Number.POSITIVE_INFINITY. Actual: NaN"
     },
     {
       "path": "test/language/expressions/addition/S11.6.1_A4_T9.js",
@@ -69,11 +69,11 @@
     },
     {
       "path": "test/language/expressions/subtraction/S11.6.2_A4_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: Infinity - -Infinity === Infinity. Actual: inf"
+      "reason": "zjs: throw: Test262Error: #1: Infinity - -Infinity === Infinity. Actual: Infinity"
     },
     {
       "path": "test/language/expressions/subtraction/S11.6.2_A4_T4.js",
-      "reason": "zjs: throw: Test262Error: #1: Infinity - 1 === Infinity. Actual: inf"
+      "reason": "zjs: throw: Test262Error: #1: Infinity - 1 === Infinity. Actual: Infinity"
     },
     {
       "path": "test/language/expressions/subtraction/S11.6.2_A4_T5.js",
@@ -81,15 +81,15 @@
     },
     {
       "path": "test/language/expressions/subtraction/S11.6.2_A4_T6.js",
-      "reason": "zjs: throw: Test262Error: #5: Number.MAX_VALUE - -0 === Number.MAX_VALUE. Actual: nan"
+      "reason": "zjs: throw: Test262Error: #5: Number.MAX_VALUE - -0 === Number.MAX_VALUE. Actual: NaN"
     },
     {
       "path": "test/language/expressions/subtraction/S11.6.2_A4_T7.js",
-      "reason": "zjs: throw: Test262Error: #1.1: Number.MIN_VALUE - Number.MIN_VALUE === 0. Actual: nan"
+      "reason": "zjs: throw: Test262Error: #1.1: Number.MIN_VALUE - Number.MIN_VALUE === 0. Actual: NaN"
     },
     {
       "path": "test/language/expressions/subtraction/S11.6.2_A4_T8.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE - -Number.MAX_VALUE === Number.POSITIVE_INFINITY. Actual: nan"
+      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE - -Number.MAX_VALUE === Number.POSITIVE_INFINITY. Actual: NaN"
     },
     {
       "path": "test/language/expressions/multiplication/S11.5.1_A1.js",
@@ -109,23 +109,23 @@
     },
     {
       "path": "test/language/expressions/multiplication/S11.5.1_A4_T4.js",
-      "reason": "zjs: throw: Test262Error: #1: -Infinity * -Infinity === Infinity. Actual: inf"
+      "reason": "zjs: throw: Test262Error: #1: -Infinity * -Infinity === Infinity. Actual: Infinity"
     },
     {
       "path": "test/language/expressions/multiplication/S11.5.1_A4_T5.js",
-      "reason": "zjs: throw: Test262Error: #1: -Infinity * -1 === Infinity. Actual: inf"
+      "reason": "zjs: throw: Test262Error: #1: -Infinity * -1 === Infinity. Actual: Infinity"
     },
     {
       "path": "test/language/expressions/multiplication/S11.5.1_A4_T6.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE * 1.1 === Number.POSITIVE_INFINITY. Actual: nan"
+      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE * 1.1 === Number.POSITIVE_INFINITY. Actual: NaN"
     },
     {
       "path": "test/language/expressions/multiplication/S11.5.1_A4_T7.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MIN_VALUE * 0.1 === 0. Actual: nan"
+      "reason": "zjs: throw: Test262Error: #1: Number.MIN_VALUE * 0.1 === 0. Actual: NaN"
     },
     {
       "path": "test/language/expressions/multiplication/S11.5.1_A4_T8.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE * 1.1 * 0.9 === (Number.MAX_VALUE * 1.1) * 0.9. Actual: nan"
+      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE * 1.1 * 0.9 === (Number.MAX_VALUE * 1.1) * 0.9. Actual: NaN"
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A1.js",
@@ -141,31 +141,31 @@
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A3_T2.3.js",
-      "reason": "zjs: throw: Test262Error: #1: 1 / null === +Infinity. Actual: inf"
+      "reason": "zjs: throw: Test262Error: #1: 1 / null === +Infinity. Actual: Infinity"
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A3_T2.7.js",
-      "reason": "zjs: throw: Test262Error: #1: \"1\" / null === +Infinity. Actual: inf"
+      "reason": "zjs: throw: Test262Error: #1: \"1\" / null === +Infinity. Actual: Infinity"
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A3_T2.9.js",
-      "reason": "zjs: throw: Test262Error: #1: true / null === +Infinity. Actual: inf"
+      "reason": "zjs: throw: Test262Error: #1: true / null === +Infinity. Actual: Infinity"
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A4_T10.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MIN_VALUE / 2.1 === 0. Actual: nan"
+      "reason": "zjs: throw: Test262Error: #1: Number.MIN_VALUE / 2.1 === 0. Actual: NaN"
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A4_T3.js",
-      "reason": "zjs: throw: Test262Error: #1: Infinity / 0 === Infinity. Actual: inf"
+      "reason": "zjs: throw: Test262Error: #1: Infinity / 0 === Infinity. Actual: Infinity"
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A4_T5.js",
-      "reason": "zjs: throw: Test262Error: #1: -Infinity / 1 === -Infinity. Actual: -inf"
+      "reason": "zjs: throw: Test262Error: #1: -Infinity / 1 === -Infinity. Actual: -Infinity"
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A4_T6.js",
-      "reason": "zjs: throw: Test262Error: #1.1: 1 / -Infinity === 0. Actual: -0"
+      "reason": "zjs: throw: Test262Error: #1.1: 1 / -Infinity === 0. Actual: 0"
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A4_T8.js",
@@ -173,7 +173,7 @@
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A4_T9.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE / 0.9 === Number.POSITIVE_INFINITY. Actual: nan"
+      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE / 0.9 === Number.POSITIVE_INFINITY. Actual: NaN"
     },
     {
       "path": "test/language/expressions/division/no-magic-asi-from-block-eval.js",
@@ -212,14 +212,6 @@
       "reason": "zjs: throw: Test262Error: #1: (true\\u0009==\\u00091) === true"
     },
     {
-      "path": "test/language/expressions/equals/S11.9.1_A3.2.js",
-      "reason": "zjs: throw: Test262Error: #1: (true == 1) === true"
-    },
-    {
-      "path": "test/language/expressions/equals/S11.9.1_A3.3.js",
-      "reason": "zjs: throw: Test262Error: #1: (0 == false) === true"
-    },
-    {
       "path": "test/language/expressions/equals/S11.9.1_A4.1_T1.js",
       "reason": "zjs: throw: Test262Error: #3: (NaN == NaN) === false"
     },
@@ -230,14 +222,6 @@
     {
       "path": "test/language/expressions/equals/S11.9.1_A4.3.js",
       "reason": "zjs: throw: Test262Error: #3: (+Infinity == -(-Infinity)) === true"
-    },
-    {
-      "path": "test/language/expressions/equals/S11.9.1_A5.2.js",
-      "reason": "zjs: throw: Test262Error: #1: (1 == \"1\") === true"
-    },
-    {
-      "path": "test/language/expressions/equals/S11.9.1_A5.3.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"-1\" == -1) === true"
     },
     {
       "path": "test/language/expressions/equals/S11.9.1_A6.2_T2.js",
@@ -285,11 +269,11 @@
     },
     {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A3.2.js",
-      "reason": "zjs: throw: Test262Error: #1: (true != 1) === false"
+      "reason": "zjs: throw: Test262Error: #3: (true != new Boolean(true)) === false"
     },
     {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A3.3.js",
-      "reason": "zjs: throw: Test262Error: #1: (0 != false) === false"
+      "reason": "zjs: throw: Test262Error: #3: (new Boolean(false) != false) === false"
     },
     {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A4.1_T1.js",
@@ -302,14 +286,6 @@
     {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A4.3.js",
       "reason": "zjs: throw: Test262Error: #3: (+Infinity != -(-Infinity)) === false"
-    },
-    {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A5.2.js",
-      "reason": "zjs: throw: Test262Error: #1: (1 != \"1\") === false"
-    },
-    {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A5.3.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"-1\" != -1) === false"
     },
     {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A6.2_T2.js",
@@ -732,10 +708,6 @@
       "reason": "zjs: throw: Test262Error: #1: \"toString\" in true throw TypeError"
     },
     {
-      "path": "test/language/expressions/in/S11.8.7_A4.js",
-      "reason": "zjs: throw: Test262Error: #2: \"var object = {}; object.Infinity = 1; Infinity in object === \"Infinity\" in object"
-    },
-    {
       "path": "test/language/expressions/in/S8.12.6_A2_T1.js",
       "reason": "zjs: throw: Test262Error: #1: var __obj={}; \"valueOf\" in __obj"
     },
@@ -776,18 +748,6 @@
       "reason": "zjs: throw: ReferenceError: f is not defined"
     },
     {
-      "path": "test/language/statements/while/S12.6.2_A4_T2.js",
-      "reason": "zjs: throw: ReferenceError: __in__do__before__break is not defined"
-    },
-    {
-      "path": "test/language/statements/while/S12.6.2_A4_T3.js",
-      "reason": "zjs: throw: ReferenceError: __in__do__before__break is not defined"
-    },
-    {
-      "path": "test/language/statements/while/S12.6.2_A4_T4.js",
-      "reason": "zjs: throw: ReferenceError: __in__do__before__break is not defined"
-    },
-    {
       "path": "test/language/statements/while/S12.6.2_A4_T5.js",
       "reason": "zjs: throw: Test262Error: This code should be unreacheable"
     },
@@ -802,10 +762,6 @@
     {
       "path": "test/language/statements/while/S12.6.2_A8.js",
       "reason": "zjs: throw: Test262Error: #1: __odds === 5. Actual:  __odds ===0"
-    },
-    {
-      "path": "test/language/statements/while/S12.6.2_A9.js",
-      "reason": "zjs: throw: ReferenceError: x is not defined"
     },
     {
       "path": "test/language/statements/while/let-block-with-newline.js",
@@ -824,18 +780,6 @@
       "reason": "zjs: throw: Test262Error: #1: __in__do === 1. Actual:  __in__do ===undefined"
     },
     {
-      "path": "test/language/statements/do-while/S12.6.1_A4_T2.js",
-      "reason": "zjs: throw: ReferenceError: __in__do__IN__after__break is not defined"
-    },
-    {
-      "path": "test/language/statements/do-while/S12.6.1_A4_T3.js",
-      "reason": "zjs: throw: ReferenceError: __in__do__IN__after__break is not defined"
-    },
-    {
-      "path": "test/language/statements/do-while/S12.6.1_A4_T4.js",
-      "reason": "zjs: throw: ReferenceError: __in__do__IN__after__break is not defined"
-    },
-    {
       "path": "test/language/statements/do-while/S12.6.1_A4_T5.js",
       "reason": "zjs: throw: Test262Error: This code should be unreacheable"
     },
@@ -850,30 +794,6 @@
     {
       "path": "test/language/statements/do-while/S12.6.1_A8.js",
       "reason": "zjs: throw: Test262Error: #1: __odds === 5. Actual:  __odds ===0"
-    },
-    {
-      "path": "test/language/statements/for/S12.6.3_A10.1_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: \"__in__deepest__loop=__in__deepest__loop\" does not lead to throwing exception"
-    },
-    {
-      "path": "test/language/statements/for/S12.6.3_A10.1_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: \"__in__deepest__loop=__in__deepest__loop\" does not lead to throwing exception"
-    },
-    {
-      "path": "test/language/statements/for/S12.6.3_A10_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: \"__in__deepest__loop=__in__deepest__loop\" does not lead to throwing exception"
-    },
-    {
-      "path": "test/language/statements/for/S12.6.3_A10_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: \"__in__deepest__loop=__in__deepest__loop\" does not lead to throwing exception"
-    },
-    {
-      "path": "test/language/statements/for/S12.6.3_A13.js",
-      "reason": "zjs: throw: Test262Error: #1: VariableDeclaration in \"var VariableDeclarationListNoIn\" of for IterationStatement is allo"
-    },
-    {
-      "path": "test/language/statements/for/S12.6.3_A2.js",
-      "reason": "zjs: throw: ReferenceError: in_for is not defined"
     },
     {
       "path": "test/language/statements/for/head-const-bound-names-in-stmt.js",
@@ -902,14 +822,6 @@
     {
       "path": "test/language/statements/for/let-identifier-with-newline.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-in/S12.6.4_A1.js",
-      "reason": "zjs: throw: ReferenceError: key is not defined"
-    },
-    {
-      "path": "test/language/statements/for-in/S12.6.4_A2.js",
-      "reason": "zjs: throw: ReferenceError: key is not defined"
     },
     {
       "path": "test/language/statements/for-in/S12.6.4_A3.1.js",
@@ -1160,10 +1072,6 @@
       "reason": "zjs: throw: Test262Error: TestIterationAndResize: resize condition should have been hit"
     },
     {
-      "path": "test/language/statements/try/12.14-4.js",
-      "reason": "zjs: throw: ReferenceError: foo is not defined"
-    },
-    {
       "path": "test/language/statements/try/12.14-7.js",
       "reason": "zjs: throw: Test262Error: e instanceof ReferenceError"
     },
@@ -1264,6 +1172,10 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A3.js",
+      "reason": "timeout"
+    },
+    {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A4_T1.js",
       "reason": "zjs: throw: Test262Error: #1: var obj = {}; obj.push = Array.prototype.push; obj.length = 4294967296; obj.push(\"x\", \"y\","
     },
@@ -1282,14 +1194,6 @@
     {
       "path": "test/built-ins/Array/prototype/push/set-length-array-length-is-non-writable.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A1.1_T1.js",
-      "reason": "zjs: throw: Test262Error: #2: var x = Array(1,2,3); x.length = 0; x.pop() === undefined. Actual: 3"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A1.2_T1.js",
-      "reason": "zjs: throw: Test262Error: #9: x = []; x[0] = 0; x[3] = 3; x.pop(); x.length = 1; x.pop() === 0. Actual: undefined"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A2_T2.js",
@@ -1313,7 +1217,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A4_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: Array.prototype[1] = 1; x = [0]; x.length = 2; x.pop() === 1. Actual: 0"
+      "reason": "zjs: throw: Test262Error: #1: Array.prototype[1] = 1; x = [0]; x.length = 2; x.pop() === 1. Actual: undefined"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A4_T2.js",
@@ -1370,6 +1274,10 @@
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-14.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
+      "reason": ""
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-8.js",
@@ -1476,19 +1384,7 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-11.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-12.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-13.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-14.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
@@ -1500,15 +1396,7 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-4.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-5.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-6.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
@@ -1521,10 +1409,6 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-9.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-1.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
@@ -1541,14 +1425,6 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-19.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-3.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-5.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
@@ -1606,14 +1482,6 @@
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-23.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-24.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-6.js",
-      "reason": "zjs: throw: Test262Error: testResult1 !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-15.js",
@@ -1701,7 +1569,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-10.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
+      "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-11.js",
@@ -1753,14 +1621,10 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-8.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-9.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-1.js",
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-9.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
@@ -1808,10 +1672,6 @@
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-21.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-22.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -1821,14 +1681,6 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-29.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-3.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-5.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
@@ -1852,31 +1704,11 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-19.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-20.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-21.js",
-      "reason": "zjs: throw: Test262Error: resultOne !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-22.js",
-      "reason": "zjs: throw: Test262Error: resultOne !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-23.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-6.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-8.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
@@ -2377,7 +2209,7 @@
     },
     {
       "path": "test/built-ins/Math/pow/applying-the-exp-operator_A14.js",
-      "reason": "zjs: throw: Test262Error: #1: Math.pow(-inf, undefined) !== +Infinity"
+      "reason": "zjs: throw: Test262Error: #1: Math.pow(-Infinity, undefined) !== +Infinity"
     },
     {
       "path": "test/built-ins/Math/pow/applying-the-exp-operator_A21.js",
@@ -2385,7 +2217,7 @@
     },
     {
       "path": "test/built-ins/Math/pow/applying-the-exp-operator_A22.js",
-      "reason": "zjs: throw: Test262Error: #1: Math.pow(0, nan) !== +Infinity"
+      "reason": "zjs: throw: Test262Error: #1: Math.pow(0, NaN) !== +Infinity"
     },
     {
       "path": "test/built-ins/Math/sumPrecise/throws-on-non-number.js",
