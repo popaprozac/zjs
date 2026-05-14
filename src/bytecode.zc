@@ -85,6 +85,14 @@ enum Op {
     // symbols across enums in the same TU — see reference_zen-c.md.
     Invoke,
 
+    // Phase 3.9h-C — tail-call optimization. Encoded like Invoke but
+    // the caller's CallFrame is REPLACED in-place rather than a new
+    // frame pushed: the callee returns directly to *our* original
+    // caller. Used when a function ends with `return f(...)` with no
+    // pending finallies. inst.a is unused (the return_dst comes from
+    // the current frame's stored value).
+    TailInvoke,       // b=base, c=arg_count
+
     // Inline-cached property access (Phase 3.2b).
     // ic_slot indexes into f.ics[] — a per-Function side-table of
     // {atom_name, last-seen HiddenClass, slot} entries patched in
@@ -128,6 +136,11 @@ enum Op {
     // see the receiver via ctx.host_this; user Function/Closure callees
     // ignore it (no `this` binding for user functions yet).
     MethodInvoke,     // a=dst, b=base, c=arg_count
+
+    // Tail variant of MethodInvoke; same semantics as TailInvoke but
+    // also sets ctx.host_this = regs[base+1] for the duration of the
+    // callee's execution.
+    TailMethodInvoke, // b=base, c=arg_count
 
     // Closures (Phase 3.3).
     MakeClosure,      // a=dst, b=fn_reg, c=env_reg

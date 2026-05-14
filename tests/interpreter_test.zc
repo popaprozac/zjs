@@ -765,6 +765,26 @@ fn run_tests() -> void {
     check_string((char*)"delete: typeof after",     (char*)r"let o = {x:1}; delete o.x; typeof o.x", (char*)"undefined");
     check_int((char*)"delete: array hole",          (char*)r"let a=[1,2,3]; delete a[1]; if (typeof a[1] === 'undefined') 1; else 0", 1);
 
+    // --- Tail-call optimization (Phase 3.9h-C) ---------------------
+    // Correctness: deep tail recursion should NOT stack-overflow. The
+    // pre-TCO interpreter would crash at a few thousand frames.
+    check_int((char*)"TCO: deep recursion 100k",
+              (char*)r"function f(n,a){ if (n===0) return a; return f(n-1, a+1) } f(100000,0)",
+              100000);
+    check_int((char*)"TCO: mutual recursion",
+              (char*)r"function even(n){ if (n===0) return 1; return odd(n-1) } function odd(n){ if (n===0) return 0; return even(n-1) } even(10000)",
+              1);
+    // TCO must NOT fire when the call isn't in tail position (the +1
+    // wraps the call, so the call returns to us, not to our caller).
+    check_int((char*)"TCO: not tail when wrapped",
+              (char*)r"function f(n){ if (n===0) return 0; return 1 + f(n-1) } f(100)",
+              100);
+    // TCO must NOT fire across a pending finally — the finally has to
+    // run before this function leaves the stack.
+    check_int((char*)"TCO: finally still runs",
+              (char*)r"let log=0; function inner(){ return 7 } function outer(){ try { return inner() } finally { log=42 } } let r=outer(); log",
+              42);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

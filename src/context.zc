@@ -449,6 +449,50 @@ fn pop_call_frames_to(ctx: ZjsContext*, target: u32) -> void {
     }
 }
 
+// Phase 3.9h-C — replace the top CallFrame in-place with a tail call.
+// The new function returns DIRECTLY to the original caller (we
+// preserve return_dst / saved_host_this / saved_current_closure /
+// try_depth_at_entry from the outgoing frame). Releases the old
+// frame's reg_stack slots and reserves the new function's window.
+fn tail_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32) -> void {
+    if ctx.frame_count == 0 { return; }
+    let idx = ctx.frame_count - 1;
+    let old_total: u32 = ctx.frames[idx].argc + ctx.frames[idx].reg_count;
+    reg_stack_release(ctx, old_total);
+
+    let reg_count: u32 = f.register_count;
+    let new_total: u32 = argc + reg_count;
+    let args_base = reg_stack_reserve(ctx, new_total);
+    let regs_base = args_base + argc;
+
+    let a: u32 = 0;
+    while a < argc {
+        ctx.reg_stack[args_base + a] = args[a];
+        a = a + 1;
+    }
+    let copy_count: u32 = if argc < f.param_count { argc } else { f.param_count };
+    let i: u32 = 0;
+    while i < copy_count {
+        ctx.reg_stack[regs_base + i] = args[i];
+        i = i + 1;
+    }
+    let undef: ZjsValue = zjs_undefined();
+    let j: u32 = i;
+    while j < reg_count {
+        ctx.reg_stack[regs_base + j] = undef;
+        j = j + 1;
+    }
+
+    ctx.frames[idx].f = f;
+    ctx.frames[idx].ip = 0;
+    ctx.frames[idx].args_base = args_base;
+    ctx.frames[idx].argc = argc;
+    ctx.frames[idx].regs_base = regs_base;
+    ctx.frames[idx].reg_count = reg_count;
+    // return_dst, saved_host_this, saved_current_closure,
+    // try_depth_at_entry: unchanged — inherited from the outgoing frame.
+}
+
 // Push a try frame on the shared context try stack. Lazily allocates.
 fn ctx_try_push(ctx: ZjsContext*, catch_ip: usize, catch_reg: u8) -> bool {
     if ctx.ctx_try_depth >= CTX_MAX_TRY_DEPTH { return false; }
