@@ -969,6 +969,11 @@ fn host_object_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
 // Object.create(proto) — fresh empty object whose [[Prototype]] is proto.
 // Phase 3.6.
+// Forward — defined below.
+raw {
+    extern ZjsValue host_object_define_properties(ZjsContext* ctx, ZjsValue* args, uint32_t argc);
+}
+
 fn host_object_create(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let obj_v = ctx_new_object(ctx);
     let obj = zjs_as_object(obj_v);
@@ -977,7 +982,114 @@ fn host_object_create(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
         if zjs_is_object(p) != 0 { obj.proto = zjs_as_object(p); }
         // null/undefined proto → top-of-chain object (already NULL).
     }
+    // Phase 3.9a: second arg is a descriptor map.
+    if argc >= 2 && zjs_is_object(args[1]) != 0 {
+        // Protect obj_v across the descriptor walk (it's the receiver
+        // of each defineProperty call which may allocate).
+        ctx_push_temp_root(ctx, obj_v);
+        let dp_args: ZjsValue[2];
+        dp_args[0] = obj_v;
+        dp_args[1] = args[1];
+        let p: ZjsValue* = NULL;
+        raw { p = &dp_args[0]; }
+        raw { (void)host_object_define_properties(ctx, p, 2); }
+        ctx_pop_temp_root(ctx);
+    }
     return obj_v;
+}
+
+// Object.defineProperty(obj, key, descriptor) — Phase 3.9a.
+//
+// MVP: handles DATA descriptors (the `value` field). The
+// writable/enumerable/configurable attributes are accepted but not
+// enforced — every property is effectively configurable. Accessor
+// descriptors (get/set) are recognized as "absent value" and the
+// property is created with value = undefined; calling the
+// accessor isn't wired up yet (Phase 3.9b).
+fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 3 { return zjs_undefined(); }
+    let obj_v = args[0];
+    if zjs_is_object(obj_v) == 0 { return obj_v; }
+    let o = zjs_as_object(obj_v);
+
+    let key_v = args[1];
+    if zjs_is_string(key_v) == 0 { key_v = zjs_to_string(ctx, key_v); }
+    let key_str = zjs_as_string(key_v);
+    let key_atom = ctx_intern_atom(ctx, key_str.data, key_str.length);
+
+    let desc_v = args[2];
+    if zjs_is_object(desc_v) == 0 { return obj_v; }
+    let desc = zjs_as_object(desc_v);
+
+    // Extract `value` if present on the descriptor; default undefined.
+    let value_key = ctx_intern_atom(ctx, (char*)"value", 5);
+    let value: ZjsValue = zjs_undefined();
+    if class_find_slot(desc.cls, value_key) >= 0 {
+        value = object_get(desc, value_key);
+    }
+    // (Accessor descriptors: TODO — for now their `value` is absent
+    // so we set the property to undefined. Real impl needs to call
+    // the getter on access.)
+
+    object_set(ctx, o, key_atom, value);
+    return obj_v;
+}
+
+// Object.defineProperties(obj, props) — Phase 3.9a.
+// Walks props's own keys (via the hidden-class chain) and calls
+// defineProperty for each.
+fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 2 { return if argc > 0 { args[0] } else { zjs_undefined() }; }
+    let obj_v = args[0];
+    if zjs_is_object(obj_v) == 0 { return obj_v; }
+    let props_v = args[1];
+    if zjs_is_object(props_v) == 0 { return obj_v; }
+    let po = zjs_as_object(props_v);
+
+    // Walk props's own properties via the hidden-class chain.
+    let cls = po.cls;
+    while cls != NULL && cls.parent != NULL {
+        let name = cls.transition_name;
+        let slot = cls.transition_slot;
+        let desc_value = po.slots[slot];
+        let dp_args: ZjsValue[3];
+        dp_args[0] = obj_v;
+        dp_args[1] = zjs_cell_from_ptr((void*)name);
+        dp_args[2] = desc_value;
+        let dp_p: ZjsValue* = NULL;
+        raw { dp_p = &dp_args[0]; }
+        host_object_define_property(ctx, dp_p, 3);
+        cls = cls.parent;
+    }
+    return obj_v;
+}
+
+// Object.getOwnPropertyDescriptor(obj, key) — Phase 3.9a.
+// Returns a fresh descriptor object. MVP: all properties report as
+// data descriptors with all three attribute bits set to true.
+fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 2 { return zjs_undefined(); }
+    let obj_v = args[0];
+    if zjs_is_object(obj_v) == 0 { return zjs_undefined(); }
+    let o = zjs_as_object(obj_v);
+    let key_v = args[1];
+    if zjs_is_string(key_v) == 0 { key_v = zjs_to_string(ctx, key_v); }
+    let key_str = zjs_as_string(key_v);
+    let key_atom = ctx_intern_atom(ctx, key_str.data, key_str.length);
+
+    let slot = class_find_slot(o.cls, key_atom);
+    if slot < 0 { return zjs_undefined(); }
+    let value = o.slots[(u32)slot];
+
+    let result_v = ctx_new_object(ctx);
+    ctx_push_temp_root(ctx, result_v);
+    defer ctx_pop_temp_root(ctx);
+    let result = zjs_as_object(result_v);
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"value", 5), value);
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(1));
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(1));
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(1));
+    return result_v;
 }
 
 // Object.getPrototypeOf(obj) — Phase 3.6.
@@ -2812,6 +2924,17 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"create", create_ptr));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getPrototypeOf", 14),
                ctx_make_host_function(ctx, (char*)"getPrototypeOf", gpo_ptr));
+    // Phase 3.9a — Object.defineProperty / defineProperties /
+    // getOwnPropertyDescriptor.
+    let dp_ptr:   void* = NULL; raw { dp_ptr   = (void*)host_object_define_property; }
+    let dps_ptr:  void* = NULL; raw { dps_ptr  = (void*)host_object_define_properties; }
+    let gopd_ptr: void* = NULL; raw { gopd_ptr = (void*)host_object_get_own_property_descriptor; }
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"defineProperty", 14),
+               ctx_make_host_function(ctx, (char*)"defineProperty", dp_ptr));
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"defineProperties", 16),
+               ctx_make_host_function(ctx, (char*)"defineProperties", dps_ptr));
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getOwnPropertyDescriptor", 24),
+               ctx_make_host_function(ctx, (char*)"getOwnPropertyDescriptor", gopd_ptr));
 
     // --- Array.prototype intercept (Phase 3.5) ---
     let array_proto_v = ctx_new_object(ctx);

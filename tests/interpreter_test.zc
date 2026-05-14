@@ -725,6 +725,17 @@ fn run_tests() -> void {
     check_string((char*)"typeof new Number",         (char*)r"typeof new Number(1)", (char*)"object");
     check_string((char*)"typeof plain Number(1)",    (char*)r"typeof Number(1)", (char*)"number");
 
+    // --- Property descriptors (Phase 3.9a) -------------------------
+    check_int((char*)"defineProperty: basic value", (char*)r"let o = {}; Object.defineProperty(o, 'a', {value: 42}); o.a", 42);
+    check_int((char*)"defineProperty: has own",     (char*)r"let o = {}; Object.defineProperty(o, 'p', {value: 7}); if (o.hasOwnProperty('p')) 1; else 0", 1);
+    check_string((char*)"defineProperty: no value", (char*)r"let o = {}; Object.defineProperty(o, 'x', {}); typeof o.x", (char*)"undefined");
+    check_int((char*)"create + props",              (char*)r"let o = Object.create({}, {x: {value: 1}, y: {value: 2}}); o.x + o.y", 3);
+    check_int((char*)"create + props: hasOwn",      (char*)r"let o = Object.create({}, {prop: {}}); if (o.hasOwnProperty('prop')) 1; else 0", 1);
+    check_int((char*)"create + props: empty value", (char*)r"let o = Object.create({}, {prop: {}}); if (typeof o.prop === 'undefined') 1; else 0", 1);
+    check_int((char*)"getOwnPropertyDescriptor: value", (char*)r"let o = {x: 5}; Object.getOwnPropertyDescriptor(o, 'x').value", 5);
+    check_int((char*)"getOwnPropertyDescriptor: missing", (char*)r"let o = {}; if (typeof Object.getOwnPropertyDescriptor(o, 'x') === 'undefined') 1; else 0", 1);
+    check_int((char*)"defineProperty preserves proto", (char*)r"let p = {x: 99}; let o = Object.create(p); Object.defineProperty(o, 'y', {value: 1}); o.x + o.y", 100);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");
