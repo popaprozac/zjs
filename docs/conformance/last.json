@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 06:42 UTC",
+    "when": "2026-05-14 06:50 UTC",
     "total": 4144,
-    "passed": 2195,
-    "failed": 418,
+    "passed": 2210,
+    "failed": 403,
     "skipped": 1531
   },
   "failures": [
@@ -350,6 +350,10 @@
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A1.js",
       "reason": "zjs: throw: Test262Error: #1: ({})\\u0009instanceof\\u0009Object === true"
+    },
+    {
+      "path": "test/language/expressions/instanceof/S11.8.6_A4_T3.js",
+      "reason": "zjs: throw: Test262Error: #1: \"\" is not instanceof String"
     },
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A6_T3.js",
@@ -1388,16 +1392,12 @@
       "reason": "zjs: throw: Test262Error: #1: __instance = new Object(true); __instance.indexOf = String.prototype.indexOf;  __instance."
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T10.js",
-      "reason": "zjs: throw: Test262Error: #1: var x; var __obj = {toString:function(){return \"u0041B\";}}; var __obj2 = {valueOf:function"
-    },
-    {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T2.js",
       "reason": "zjs: throw: Test262Error: #1: __instance = new Boolean; __instance.indexOf = String.prototype.indexOf;  __instance.index"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T6.js",
-      "reason": "zjs: throw: Test262Error: #1: var x; new String(\"undefined\").indexOf(x) === 0. Actual: undefined"
+      "reason": "zjs: throw: Test262Error: #1: var x; new String(\"undefined\").indexOf(x) === 0. Actual: -1"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T8.js",
@@ -1416,10 +1416,6 @@
       "reason": "zjs: throw: Test262Error: #1.1: Exception === \"intointeger\". Actual: [object Object]"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T3.js",
-      "reason": "zjs: throw: Test262Error: #1: var __obj = {toString:function(){return \"u0041B\";}}; var __obj2 = {valueOf:function(){retu"
-    },
-    {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T4.js",
       "reason": "zjs: throw: Test262Error: #1.1: Exception === \"intostr\". Actual: [object Object]"
     },
@@ -1429,15 +1425,11 @@
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T1.js",
-      "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( String.fromCharCode(32), 0 )===0. Actual: undefined"
+      "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( String.fromCharCode(32), 0 )===0. Actual: -1"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T2.js",
-      "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( String.fromCharCode(32), 0 )===0. Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T3.js",
-      "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( String.fromCharCode(32), 1 )===-1. Actual: undefined"
+      "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( String.fromCharCode(32), 0 )===0. Actual: -1"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T4.js",
@@ -1448,8 +1440,8 @@
       "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( (String.fromCharCode(32)+ String.fromCharCode(33) + String.fromCharCo"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T6.js",
-      "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( (String.fromCharCode(32)+ String.fromCharCode(33) + String.fromCharCo"
+      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A6.js",
+      "reason": "zjs: throw: Test262Error: #1: String.prototype.indexOf.prototype === undefined. Actual: [object Object]"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A7.js",
@@ -1492,76 +1484,24 @@
       "reason": "zjs: throw: Test262Error: #1: var __num = 11.001002; Number.prototype.slice = String.prototype.slice; __num.slice()===\"1"
     },
     {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: var x; __instance = new Boolean; __instance.slice = String.prototype.slice;  __instance.sl"
-    },
-    {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",
       "reason": "zjs: throw: Test262Error: #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T6.js",
-      "reason": "zjs: throw: Test262Error: #1: var x; new String(\"undefined\").slice(x,3) === \"und\". Actual: undefined"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T8.js",
       "reason": "zjs: throw: Test262Error: #1: __obj = {toString:function(){}}; String(__obj).slice(-4,void 0) === \"ined\". Actual: ect]"
     },
     {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T9.js",
-      "reason": "zjs: throw: Test262Error: #1: __obj = {valueOf:function(){}, toString:void 0}; new String(__obj).slice(//*(function(){})"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A2_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: __string = new String(\"this is a string object\"); typeof __string.slice() === \"string\". Ac"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A2_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: __string = new String('this is a string object'); __string.slice(NaN, Infinity) === \"this "
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A2_T3.js",
-      "reason": "zjs: throw: Test262Error: #1: __string = new String(\"\"); __string.slice(1,0) === \"\". Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A2_T4.js",
-      "reason": "zjs: throw: Test262Error: #1: __string = new String(\"this is a string object\"); __string.slice(Infinity, NaN) === \"\". Ac"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A2_T5.js",
-      "reason": "zjs: throw: Test262Error: #1: __string = new String(\"this is a string object\"); __string.slice(Infinity, Infinity) === \""
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A2_T6.js",
-      "reason": "zjs: throw: Test262Error: #1: __string = new String(\"this is a string object\"); __string.slice(-0.01,0) === \"\". Actual: "
-    },
-    {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A2_T7.js",
       "reason": "zjs: throw: Test262Error: #1: __string = new String(\"this is a string object\"); __string.slice(__string.length, __string"
     },
     {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A2_T8.js",
-      "reason": "zjs: throw: Test262Error: #1: __string = new String(\"this is a string object\"); __string.slice(__string.length+1, 0) ==="
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A2_T9.js",
-      "reason": "zjs: throw: Test262Error: #1: __string = new String(\"this is a string object\"); __string.slice(-Infinity, -Infinity) ==="
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A3_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: __instance = new Object(); __instance.slice = String.prototype.slice; __instance.slice(0,8"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A3_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: __instance = new Object(); __instance.slice = String.prototype.slice; __instance.slice(8,_"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A3_T3.js",
-      "reason": "zjs: throw: Test262Error: #1: __instance = function(){}; __instance.slice = String.prototype.slice; __instance.slice(-In"
-    },
-    {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A3_T4.js",
       "reason": "zjs: throw: Test262Error: #1: __instance.slice(0,100) === \"undefined\". Actual: undefined"
+    },
+    {
+      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A6.js",
+      "reason": "zjs: throw: Test262Error: #1: String.prototype.slice.prototype === undefined. Actual: [object Object]"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A8.js",
