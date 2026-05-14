@@ -263,6 +263,21 @@ fn write_value(v: ZjsValue, quoted: bool) -> void {
     if zjs_is_function(v) != 0 { raw { fputs("[function]", stdout); } return; }
     if zjs_is_closure(v) != 0 { raw { fputs("[function]", stdout); } return; }
     if zjs_is_host_function(v) != 0 { raw { fputs("[function]", stdout); } return; }
+    if zjs_is_promise(v) != 0 {
+        let p = zjs_as_promise(v);
+        if p.state == PROMISE_PENDING {
+            raw { fputs("Promise { <pending> }", stdout); }
+        } else if p.state == PROMISE_FULFILLED {
+            raw { fputs("Promise { ", stdout); }
+            write_value(p.value, true);
+            raw { fputs(" }", stdout); }
+        } else {
+            raw { fputs("Promise { <rejected> ", stdout); }
+            write_value(p.value, true);
+            raw { fputs(" }", stdout); }
+        }
+        return;
+    }
     raw { fputs("[unknown value]", stdout); }
 }
 
