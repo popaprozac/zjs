@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 17:18 UTC",
+    "when": "2026-05-14 17:28 UTC",
     "total": 4821,
-    "passed": 2441,
-    "failed": 354,
+    "passed": 2443,
+    "failed": 352,
     "skipped": 2026
   },
   "failures": [
@@ -654,14 +654,6 @@
     {
       "path": "test/language/statements/try/S12.14_A5.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A7_T1.js",
-      "reason": "zjs: throw: Test262Error: #2.3: Exception === \"ex1\". Actual:  Exception ===ex2"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A7_T3.js",
-      "reason": "zjs: throw: Test262Error: #2.3: Exception === \"ex1\". Actual:  Exception ===ex2"
     },
     {
       "path": "test/language/statements/try/catch-parameter-boundnames-restriction-arguments-negative-early.js",

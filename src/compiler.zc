@@ -359,17 +359,21 @@ fn add_local(c: Compiler*, name_start: u32, name_length: u32, reg: u8) -> void {
 }
 
 // Returns the index in c.locals (so callers can flip the captured flag).
-// -1 if not found.
+// -1 if not found. Walks top-down so a more recently added binding
+// (e.g. a nested catch parameter) wins over an earlier one with the
+// same name.
 fn find_local_index(c: Compiler*, name: char*, name_len: u32) -> i32 {
-    let i: u32 = 0;
-    while i < c.local_count {
-        if c.locals[i].name_length == name_len {
-            let local_name = c.source + c.locals[i].name_start;
+    if c.local_count == 0 { return -1; }
+    let i: i32 = (i32)c.local_count - 1;
+    while i >= 0 {
+        let idx = (u32)i;
+        if c.locals[idx].name_length == name_len {
+            let local_name = c.source + c.locals[idx].name_start;
             let eq: int = 0;
             raw { eq = (memcmp(local_name, name, name_len) == 0) ? 1 : 0; }
-            if eq != 0 { return (i32)i; }
+            if eq != 0 { return (i32)idx; }
         }
-        i = i + 1;
+        i = i - 1;
     }
     return -1;
 }
@@ -379,17 +383,21 @@ fn local_is_captured_index(c: Compiler*, idx: i32) -> bool {
     return c.locals[(u32)idx].captured;
 }
 
-// Returns the local's register, or -1 if not found.
+// Returns the local's register, or -1 if not found. Walks top-down
+// so a more recently added binding (e.g. a nested catch parameter)
+// shadows an outer one with the same name.
 fn lookup_local(c: Compiler*, name: char*, name_len: u32) -> i32 {
-    let i: u32 = 0;
-    while i < c.local_count {
-        if c.locals[i].name_length == name_len {
-            let local_name = c.source + c.locals[i].name_start;
+    if c.local_count == 0 { return -1; }
+    let i: i32 = (i32)c.local_count - 1;
+    while i >= 0 {
+        let idx = (u32)i;
+        if c.locals[idx].name_length == name_len {
+            let local_name = c.source + c.locals[idx].name_start;
             let eq: int = 0;
             raw { eq = (memcmp(local_name, name, name_len) == 0) ? 1 : 0; }
-            if eq != 0 { return (i32)c.locals[i].reg; }
+            if eq != 0 { return (i32)c.locals[idx].reg; }
         }
-        i = i + 1;
+        i = i - 1;
     }
     return -1;
 }
@@ -2814,13 +2822,13 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         let added_catch_local: bool = false;
         let saved_local_count: u32 = c.local_count;
         if has_catch && node.name_length > 0 {
-            let existing = lookup_local(c, c.source + node.name_start, node.name_length);
-            if existing >= 0 {
-                catch_reg = (u8)existing;
-            } else {
-                catch_reg = alloc_reg(c);
-                added_catch_local = true;
-            }
+            // Catch parameter is a fresh binding (ECMA-262 §14.15) that
+            // shadows any outer same-named local. Always allocate a new
+            // register — never reuse an existing local — so nested
+            // try/catch (e.g. `catch(e){ try{}catch(e){} ...e... }`)
+            // doesn't clobber the outer binding through register aliasing.
+            catch_reg = alloc_reg(c);
+            added_catch_local = true;
             if catch_reg + 1 > c.fixed_regs { c.fixed_regs = catch_reg + 1; }
         }
 
