@@ -1698,13 +1698,31 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
 
 // --- String.prototype helpers ---------------------------------------
 
-fn host_string_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+// Apply ECMA-262 `O = RequireObjectCoercible(this); S = ToString(O)`
+// to the calling-host's `this`. Returns undefined and sets had_error
+// if `this` is null/undefined; returns a string-typed ZjsValue
+// otherwise. Caller should bail on undefined.
+fn coerce_string_this(ctx: ZjsContext*) -> ZjsValue {
     let this_val = ctx.host_this;
-    if zjs_is_string(this_val) == 0 { return zjs_int32(-1); }
+    if zjs_is_undefined(this_val) != 0 || zjs_is_null(this_val) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Cannot convert null or undefined to object", 43);
+        ctx.had_error = true;
+        ctx.last_error = err;
+        return zjs_undefined();
+    }
+    if zjs_is_string(this_val) != 0 { return this_val; }
+    return zjs_to_string(ctx, this_val);
+}
+
+fn host_string_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if zjs_is_string(str_v) == 0 { return zjs_int32(-1); }
     if argc == 0 { return zjs_int32(-1); }
     let needle_v = args[0];
     if zjs_is_string(needle_v) == 0 { needle_v = zjs_to_string(ctx, needle_v); }
-    let hay = zjs_as_string(this_val);
+    let hay = zjs_as_string(str_v);
+    if zjs_is_string(needle_v) == 0 { return zjs_int32(-1); }
     let nee = zjs_as_string(needle_v);
     if nee.length == 0 { return zjs_int32(0); }
     if hay.length < nee.length { return zjs_int32(-1); }
@@ -1735,16 +1753,7 @@ fn slice_clamp(v: ZjsValue, len: u32, default_val: i32) -> i32 {
 }
 
 fn host_string_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let this_val = ctx.host_this;
-    // ECMA-262 §22.1.3.20: O = RequireObjectCoercible(this); S = ToString(O).
-    if zjs_is_undefined(this_val) != 0 || zjs_is_null(this_val) != 0 {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Cannot convert null or undefined to object", 43);
-        ctx.had_error = true;
-        ctx.last_error = err;
-        return zjs_undefined();
-    }
-    let str_v = if zjs_is_string(this_val) != 0 { this_val } else { zjs_to_string(ctx, this_val) };
+    let str_v = coerce_string_this(ctx);
     if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
     let s = zjs_as_string(str_v);
     let start = if argc >= 1 { slice_clamp(args[0], s.length, 0) }
@@ -1766,9 +1775,9 @@ fn host_string_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 }
 
 fn host_string_char_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let this_val = ctx.host_this;
-    if zjs_is_string(this_val) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
-    let s = zjs_as_string(this_val);
+    let str_v = coerce_string_this(ctx);
+    if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let s = zjs_as_string(str_v);
     let idx: i32 = 0;
     if argc >= 1 { idx = (i32)zjs_to_double(args[0]); }
     if idx < 0 || (u32)idx >= s.length {
@@ -1786,12 +1795,12 @@ fn host_string_char_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
 }
 
 fn host_string_char_code_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let this_val = ctx.host_this;
-    if zjs_is_string(this_val) == 0 {
+    let str_v = coerce_string_this(ctx);
+    if zjs_is_string(str_v) == 0 {
         let nan: f64 = 0.0; raw { nan = (double)NAN; }
         return zjs_double(nan);
     }
-    let s = zjs_as_string(this_val);
+    let s = zjs_as_string(str_v);
     let idx: i32 = 0;
     if argc >= 1 { idx = (i32)zjs_to_double(args[0]); }
     if idx < 0 || (u32)idx >= s.length {
@@ -1803,9 +1812,9 @@ fn host_string_char_code_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
 }
 
 fn host_string_to_upper_case(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let this_val = ctx.host_this;
-    if zjs_is_string(this_val) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
-    let s = zjs_as_string(this_val);
+    let str_v = coerce_string_this(ctx);
+    if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let s = zjs_as_string(str_v);
     let buf: char* = NULL;
     let n = s.length;
     let sd = s.data;
@@ -1821,9 +1830,9 @@ fn host_string_to_upper_case(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zj
 }
 
 fn host_string_to_lower_case(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let this_val = ctx.host_this;
-    if zjs_is_string(this_val) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
-    let s = zjs_as_string(this_val);
+    let str_v = coerce_string_this(ctx);
+    if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let s = zjs_as_string(str_v);
     let buf: char* = NULL;
     let n = s.length;
     let sd = s.data;
@@ -1839,8 +1848,8 @@ fn host_string_to_lower_case(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zj
 }
 
 fn host_string_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let this_val = ctx.host_this;
-    if zjs_is_string(this_val) == 0 { this_val = zjs_to_string(ctx, this_val); }
+    let this_val = coerce_string_this(ctx);
+    if zjs_is_string(this_val) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
     let result = this_val;
     // Defensive rooting: `result` is held across loop iterations of
     // zjs_string_concat (which allocates). `other` is also briefly
@@ -1861,10 +1870,8 @@ fn host_string_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
 }
 
 fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let this_val = ctx.host_this;
-    if zjs_is_string(this_val) == 0 {
-        return ctx_new_array(ctx, 0);
-    }
+    let this_val = coerce_string_this(ctx);
+    if zjs_is_string(this_val) == 0 { return ctx_new_array(ctx, 0); }
     let s = zjs_as_string(this_val);
     // If no separator, return [s].
     if argc == 0 || zjs_is_undefined(args[0]) != 0 {

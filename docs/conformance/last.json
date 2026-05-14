@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 06:50 UTC",
+    "when": "2026-05-14 06:57 UTC",
     "total": 4144,
-    "passed": 2210,
-    "failed": 403,
+    "passed": 2214,
+    "failed": 399,
     "skipped": 1531
   },
   "failures": [
@@ -1396,16 +1396,8 @@
       "reason": "zjs: throw: Test262Error: #1: __instance = new Boolean; __instance.indexOf = String.prototype.indexOf;  __instance.index"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T6.js",
-      "reason": "zjs: throw: Test262Error: #1: var x; new String(\"undefined\").indexOf(x) === 0. Actual: -1"
-    },
-    {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T8.js",
       "reason": "zjs: throw: Test262Error: #1: __obj = {toString:function(){}}; String(__obj).indexOf(void 0) === 0. Actual: -1"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T9.js",
-      "reason": "zjs: throw: Test262Error: #1: __obj = {valueOf:function(){}, toString:void 0}; new String(__obj).indexOf(function(){}())"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T1.js",
@@ -1424,19 +1416,11 @@
       "reason": "zjs: throw: Test262Error: #1.1: Exception === \"intostr\". Actual: [object Object]"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T1.js",
-      "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( String.fromCharCode(32), 0 )===0. Actual: -1"
+      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T3.js",
+      "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( String.fromCharCode(32), 1 )===-1. Actual: 0"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T2.js",
-      "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( String.fromCharCode(32), 0 )===0. Actual: -1"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T4.js",
-      "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( (String.fromCharCode(32)+ String.fromCharCode(33) + String.fromCharCo"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T5.js",
+      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T6.js",
       "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( (String.fromCharCode(32)+ String.fromCharCode(33) + String.fromCharCo"
     },
     {
