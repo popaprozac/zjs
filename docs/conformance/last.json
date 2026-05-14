@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 04:52 UTC",
+    "when": "2026-05-14 04:58 UTC",
     "total": 4144,
-    "passed": 2059,
-    "failed": 554,
+    "passed": 2110,
+    "failed": 503,
     "skipped": 1531
   },
   "failures": [
@@ -28,32 +28,8 @@
       "reason": "zjs: throw: Test262Error: #1: ({} + function(){return 1}) === ({}.toString() + function(){return 1}.toString()). Actual:"
     },
     {
-      "path": "test/language/expressions/addition/S11.6.1_A4_T3.js",
-      "reason": "zjs: throw: Test262Error: #1: Infinity + Infinity === Infinity. Actual: Infinity"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A4_T4.js",
-      "reason": "zjs: throw: Test262Error: #1: Infinity + 1 === Infinity. Actual: Infinity"
-    },
-    {
       "path": "test/language/expressions/addition/S11.6.1_A4_T5.js",
       "reason": "zjs: throw: Test262Error: #1.1: -0 + -0 === - 0. Actual: +0"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A4_T6.js",
-      "reason": "zjs: throw: Test262Error: #5: Number.MAX_VALUE + -0 === Number.MAX_VALUE. Actual: NaN"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A4_T7.js",
-      "reason": "zjs: throw: Test262Error: #1.1: -Number.MIN_VALUE + Number.MIN_VALUE === 0. Actual: NaN"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A4_T8.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE + Number.MAX_VALUE === Number.POSITIVE_INFINITY. Actual: NaN"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A4_T9.js",
-      "reason": "zjs: throw: Test262Error: #1: -Number.MAX_VALUE + Number.MAX_VALUE + Number.MAX_VALUE === (-Number.MAX_VALUE + Number.MA"
     },
     {
       "path": "test/language/expressions/subtraction/S11.6.2_A1.js",
@@ -68,28 +44,8 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/subtraction/S11.6.2_A4_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: Infinity - -Infinity === Infinity. Actual: Infinity"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A4_T4.js",
-      "reason": "zjs: throw: Test262Error: #1: Infinity - 1 === Infinity. Actual: Infinity"
-    },
-    {
       "path": "test/language/expressions/subtraction/S11.6.2_A4_T5.js",
-      "reason": "zjs: throw: Test262Error: #1.2: -0 - -0 === + 0. Actual: -0"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A4_T6.js",
-      "reason": "zjs: throw: Test262Error: #5: Number.MAX_VALUE - -0 === Number.MAX_VALUE. Actual: NaN"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A4_T7.js",
-      "reason": "zjs: throw: Test262Error: #1.1: Number.MIN_VALUE - Number.MIN_VALUE === 0. Actual: NaN"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A4_T8.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE - -Number.MAX_VALUE === Number.POSITIVE_INFINITY. Actual: NaN"
+      "reason": "zjs: throw: Test262Error: #3.2: -0 - 0 === - 0. Actual: +0"
     },
     {
       "path": "test/language/expressions/multiplication/S11.5.1_A1.js",
@@ -105,27 +61,7 @@
     },
     {
       "path": "test/language/expressions/multiplication/S11.5.1_A4_T2.js",
-      "reason": "zjs: throw: Test262Error: #5.2: 0 * 0 === + 0. Actual: -0"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A4_T4.js",
-      "reason": "zjs: throw: Test262Error: #1: -Infinity * -Infinity === Infinity. Actual: Infinity"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A4_T5.js",
-      "reason": "zjs: throw: Test262Error: #1: -Infinity * -1 === Infinity. Actual: Infinity"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A4_T6.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE * 1.1 === Number.POSITIVE_INFINITY. Actual: NaN"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A4_T7.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MIN_VALUE * 0.1 === 0. Actual: NaN"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A4_T8.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE * 1.1 * 0.9 === (Number.MAX_VALUE * 1.1) * 0.9. Actual: NaN"
+      "reason": "zjs: throw: Test262Error: #6.2: 0 * -0 === - 0. Actual: +0"
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A1.js",
@@ -140,40 +76,12 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/division/S11.5.2_A3_T2.3.js",
-      "reason": "zjs: throw: Test262Error: #1: 1 / null === +Infinity. Actual: Infinity"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A3_T2.7.js",
-      "reason": "zjs: throw: Test262Error: #1: \"1\" / null === +Infinity. Actual: Infinity"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A3_T2.9.js",
-      "reason": "zjs: throw: Test262Error: #1: true / null === +Infinity. Actual: Infinity"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A4_T10.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MIN_VALUE / 2.1 === 0. Actual: NaN"
-    },
-    {
       "path": "test/language/expressions/division/S11.5.2_A4_T3.js",
-      "reason": "zjs: throw: Test262Error: #1: Infinity / 0 === Infinity. Actual: Infinity"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A4_T5.js",
-      "reason": "zjs: throw: Test262Error: #1: -Infinity / 1 === -Infinity. Actual: -Infinity"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A4_T6.js",
-      "reason": "zjs: throw: Test262Error: #1.1: 1 / -Infinity === 0. Actual: 0"
+      "reason": "zjs: throw: Test262Error: #2: -Infinity / -0 === Infinity. Actual: -Infinity"
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A4_T8.js",
       "reason": "zjs: throw: Test262Error: #1.2: -0 / 1 === - 0. Actual: +0"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A4_T9.js",
-      "reason": "zjs: throw: Test262Error: #1: Number.MAX_VALUE / 0.9 === Number.POSITIVE_INFINITY. Actual: NaN"
     },
     {
       "path": "test/language/expressions/division/no-magic-asi-from-block-eval.js",
@@ -196,36 +104,16 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/modulus/S11.5.3_A4_T2.js",
-      "reason": "zjs: throw: Test262Error: #1.2: 1 % 1 === + 0. Actual: -0"
-    },
-    {
       "path": "test/language/expressions/modulus/S11.5.3_A4_T5.js",
-      "reason": "zjs: throw: Test262Error: #1: 1 % -Infinity === 1. Actual: 1"
+      "reason": "zjs: throw: Test262Error: #7.2: -0 % Infinity === - 0. Actual: +0"
     },
     {
       "path": "test/language/expressions/modulus/S11.5.3_A4_T6.js",
-      "reason": "zjs: throw: Test262Error: #1.2: 0 % 1 === + 0. Actual: -0"
+      "reason": "zjs: throw: Test262Error: #3.2: -0 % 1 === - 0. Actual: +0"
     },
     {
       "path": "test/language/expressions/equals/S11.9.1_A1.js",
       "reason": "zjs: throw: Test262Error: #1: (true\\u0009==\\u00091) === true"
-    },
-    {
-      "path": "test/language/expressions/equals/S11.9.1_A4.1_T1.js",
-      "reason": "zjs: throw: Test262Error: #3: (NaN == NaN) === false"
-    },
-    {
-      "path": "test/language/expressions/equals/S11.9.1_A4.1_T2.js",
-      "reason": "zjs: throw: Test262Error: #3: (NaN == NaN) === false"
-    },
-    {
-      "path": "test/language/expressions/equals/S11.9.1_A4.3.js",
-      "reason": "zjs: throw: Test262Error: #3: (+Infinity == -(-Infinity)) === true"
-    },
-    {
-      "path": "test/language/expressions/equals/S11.9.1_A6.2_T2.js",
-      "reason": "zjs: throw: Test262Error: #2: (Number.NaN == undefined) === false"
     },
     {
       "path": "test/language/expressions/equals/S11.9.1_A7.2.js",
@@ -276,22 +164,6 @@
       "reason": "zjs: throw: Test262Error: #3: (new Boolean(false) != false) === false"
     },
     {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A4.1_T1.js",
-      "reason": "zjs: throw: Test262Error: #3: (NaN != NaN) === true"
-    },
-    {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A4.1_T2.js",
-      "reason": "zjs: throw: Test262Error: #3: (NaN != NaN) === true"
-    },
-    {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A4.3.js",
-      "reason": "zjs: throw: Test262Error: #3: (+Infinity != -(-Infinity)) === false"
-    },
-    {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A6.2_T2.js",
-      "reason": "zjs: throw: Test262Error: #2: (Number.NaN != undefined) === true"
-    },
-    {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A7.2.js",
       "reason": "zjs: throw: Test262Error: #1: (new Boolean(true) != true) === false"
     },
@@ -328,30 +200,6 @@
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009===\\u00091"
     },
     {
-      "path": "test/language/expressions/strict-equals/S11.9.4_A4.1_T1.js",
-      "reason": "zjs: throw: Test262Error: #3: NaN !== NaN"
-    },
-    {
-      "path": "test/language/expressions/strict-equals/S11.9.4_A4.1_T2.js",
-      "reason": "zjs: throw: Test262Error: #3: NaN !== NaN"
-    },
-    {
-      "path": "test/language/expressions/strict-equals/S11.9.4_A4.3.js",
-      "reason": "zjs: throw: Test262Error: #7: +Infinity === -(-Infinity)"
-    },
-    {
-      "path": "test/language/expressions/strict-does-not-equals/S11.9.5_A4.1_T1.js",
-      "reason": "zjs: throw: Test262Error: #3: NaN !== NaN"
-    },
-    {
-      "path": "test/language/expressions/strict-does-not-equals/S11.9.5_A4.1_T2.js",
-      "reason": "zjs: throw: Test262Error: #3: NaN !== NaN"
-    },
-    {
-      "path": "test/language/expressions/strict-does-not-equals/S11.9.5_A4.3.js",
-      "reason": "zjs: throw: Test262Error: #7: +Infinity === -(-Infinity)"
-    },
-    {
       "path": "test/language/expressions/less-than/S11.8.1_A1.js",
       "reason": "zjs: throw: Test262Error: #1: (0\\u0009<\\u00091) === true"
     },
@@ -380,18 +228,6 @@
       "reason": "zjs: throw: Test262Error: #1: (\"0\" < \"x\") !== true"
     },
     {
-      "path": "test/language/expressions/less-than/S11.8.1_A4.6.js",
-      "reason": "zjs: throw: Test262Error: #1: (0 < +Infinity) === true"
-    },
-    {
-      "path": "test/language/expressions/less-than/S11.8.1_A4.7.js",
-      "reason": "zjs: throw: Test262Error: #1: (-Infinity < 0) === true"
-    },
-    {
-      "path": "test/language/expressions/less-than/S11.8.1_A4.9.js",
-      "reason": "zjs: throw: Test262Error: #7: (Number.MAX_VALUE/2 < Number.MAX_VALUE) === true"
-    },
-    {
       "path": "test/language/expressions/greater-than/S11.8.2_A1.js",
       "reason": "zjs: throw: Test262Error: #1: 0\\u0009>\\u00091) === false"
     },
@@ -418,18 +254,6 @@
     {
       "path": "test/language/expressions/greater-than/S11.8.2_A4.12_T2.js",
       "reason": "zjs: throw: Test262Error: #1: (\"x\" > \"0\") !== true"
-    },
-    {
-      "path": "test/language/expressions/greater-than/S11.8.2_A4.5.js",
-      "reason": "zjs: throw: Test262Error: #1: (+Infinity > 0) === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than/S11.8.2_A4.8.js",
-      "reason": "zjs: throw: Test262Error: #1: (0 > -Infinity) === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than/S11.8.2_A4.9.js",
-      "reason": "zjs: throw: Test262Error: #7: (Number.MAX_VALUE > Number.MAX_VALUE/2) === true"
     },
     {
       "path": "test/language/expressions/less-than-or-equal/S11.8.3_A1.js",
@@ -464,22 +288,6 @@
       "reason": "zjs: throw: Test262Error: #1: (\"0\" <= \"x\") !== true"
     },
     {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.3.js",
-      "reason": "zjs: throw: Test262Error: #4: (-Infinity <= -Infinity) === true"
-    },
-    {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.6.js",
-      "reason": "zjs: throw: Test262Error: #1: (0 <= +Infinity) === true"
-    },
-    {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.7.js",
-      "reason": "zjs: throw: Test262Error: #1: (-Infinity <= 0) === true"
-    },
-    {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.9.js",
-      "reason": "zjs: throw: Test262Error: #7: (Number.MAX_VALUE/2 <= Number.MAX_VALUE) === true"
-    },
-    {
       "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A1.js",
       "reason": "zjs: throw: Test262Error: #1: (1\\u0009>=\\u00091) === true"
     },
@@ -512,22 +320,6 @@
       "reason": "zjs: throw: Test262Error: #1: (\"x\" >= \"0\") !== true"
     },
     {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.3.js",
-      "reason": "zjs: throw: Test262Error: #4: (-Infinity >= -Infinity) === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.5.js",
-      "reason": "zjs: throw: Test262Error: #1: (+Infinity >= 0) === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.8.js",
-      "reason": "zjs: throw: Test262Error: #1: (0 >= -Infinity) === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.9.js",
-      "reason": "zjs: throw: Test262Error: #7: (Number.MAX_VALUE >= Number.MAX_VALUE/2) === true"
-    },
-    {
       "path": "test/language/expressions/logical-and/S11.11.1_A1.js",
       "reason": "zjs: throw: Test262Error: #1: (true\\u0009&&\\u0009true) === true"
     },
@@ -550,10 +342,6 @@
     {
       "path": "test/language/expressions/logical-not/S11.4.9_A1.js",
       "reason": "zjs: throw: Test262Error: #true: !\\u0009true === false"
-    },
-    {
-      "path": "test/language/expressions/logical-not/S9.2_A4_T4.js",
-      "reason": "zjs: throw: Test262Error: #1: !(+Infinity) === false. Actual: false"
     },
     {
       "path": "test/language/expressions/unary-minus/S11.4.7_A1.js",
@@ -601,7 +389,7 @@
     },
     {
       "path": "test/language/expressions/unary-plus/S9.3_A4.2_T2.js",
-      "reason": "zjs: throw: Test262Error: #2.2: +(+0) === +0. Actual: -0"
+      "reason": "zjs: throw: Test262Error: #3.2: +(-0) === -0. Actual: +0"
     },
     {
       "path": "test/language/expressions/unary-plus/S9.3_A5_T2.js",
@@ -624,10 +412,6 @@
       "reason": "zjs: throw: Test262Error: #1: ({})\\u0009instanceof\\u0009Object === true"
     },
     {
-      "path": "test/language/expressions/instanceof/S11.8.6_A3.js",
-      "reason": "zjs: throw: Test262Error: #1: true instanceof true throw TypeError"
-    },
-    {
       "path": "test/language/expressions/instanceof/S11.8.6_A5_T1.js",
       "reason": "zjs: throw: Test262Error: #3: TypeError is subclass of Error from instanceof operator point of view"
     },
@@ -636,20 +420,8 @@
       "reason": "zjs: throw: Test262Error: #1: TypeError is subclass of Error from instanceof operator point of view"
     },
     {
-      "path": "test/language/expressions/instanceof/S11.8.6_A6_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: Only Function objects implement [[HasInstance]] and consequently can be proper ShiftExpres"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A6_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: 1 instanceof Math throw TypeError"
-    },
-    {
       "path": "test/language/expressions/instanceof/S11.8.6_A6_T3.js",
       "reason": "zjs: throw: Test262Error: #2 function MyFunct(){return 0}; MyFunct instanceof Function === true"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A6_T4.js",
-      "reason": "zjs: throw: Test262Error: #4 Only Function objects implement [[HasInstance]] and consequently can be proper ShiftExpress"
     },
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A7_T1.js",
@@ -664,48 +436,68 @@
       "reason": "zjs: throw: Test262Error: #2: If instanceof returns true then GetValue(RelationalExpression) was constructed with ShiftE"
     },
     {
-      "path": "test/language/expressions/instanceof/S15.3.5.3_A2_T2.js",
-      "reason": "zjs: throw: Test262Error: #1.1: O is not an object, throw a TypeError exception"
+      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T1.js",
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+    },
+    {
+      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T2.js",
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+    },
+    {
+      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T3.js",
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+    },
+    {
+      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T4.js",
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+    },
+    {
+      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T5.js",
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+    },
+    {
+      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T6.js",
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+    },
+    {
+      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T7.js",
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+    },
+    {
+      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T8.js",
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
     },
     {
       "path": "test/language/expressions/instanceof/S15.3.5.3_A2_T5.js",
-      "reason": "zjs: throw: Test262Error: #1.1: O is not an object, throw a TypeError exception"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S15.3.5.3_A2_T6.js",
-      "reason": "zjs: throw: Test262Error: #1.1: O is not an object, throw a TypeError exception"
+      "reason": "zjs: throw: Test262Error: #2: instance.constructor === FACTORY"
     },
     {
       "path": "test/language/expressions/instanceof/S15.3.5.3_A3_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: If O and V refer to the same object or if they refer to objects joined to each other (13.1"
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
     },
     {
       "path": "test/language/expressions/instanceof/S15.3.5.3_A3_T2.js",
-      "reason": "zjs: throw: Test262Error: #2: If O and V refer to the same object or if they refer to objects joined to each other (13.1"
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+    },
+    {
+      "path": "test/language/expressions/instanceof/primitive-prototype-with-primitive.js",
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
     },
     {
       "path": "test/language/expressions/instanceof/prototype-getter-with-object.js",
-      "reason": "zjs: throw: Test262Error: [] should be instance of Function.prototype"
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+    },
+    {
+      "path": "test/language/expressions/instanceof/prototype-getter-with-primitive.js",
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+    },
+    {
+      "path": "test/language/expressions/instanceof/symbol-hasinstance-invocation.js",
+      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
     },
     {
       "path": "test/language/expressions/in/S11.8.7_A1.js",
       "reason": "zjs: throw: Test262Error: #1: \"MAX_VALUE\"\\u0009in\\u0009Number === true"
-    },
-    {
-      "path": "test/language/expressions/in/S11.8.7_A2.1_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: \"MAX_VALUE\" in Number === true"
-    },
-    {
-      "path": "test/language/expressions/in/S11.8.7_A2.4_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: var NUMBER = 0; (NUMBER = Number, \"MAX_VALUE\") in NUMBER === true"
-    },
-    {
-      "path": "test/language/expressions/in/S11.8.7_A2.4_T4.js",
-      "reason": "zjs: throw: Test262Error: #1: (NUMBER = Number, \"MAX_VALUE\") in NUMBER !== true"
-    },
-    {
-      "path": "test/language/expressions/in/S11.8.7_A3.js",
-      "reason": "zjs: throw: Test262Error: #1: \"toString\" in true throw TypeError"
     },
     {
       "path": "test/language/expressions/in/S8.12.6_A2_T1.js",
@@ -1306,6 +1098,10 @@
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-iii-2.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/length-near-integer-limit.js",
+      "reason": "timeout"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-3-21.js",

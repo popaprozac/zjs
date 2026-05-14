@@ -3213,6 +3213,27 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
     object_set(ctx, num_hf.prototype, tostring_atom,
                ctx_make_host_function(ctx, (char*)"toString", wt_ptr));
+    // Number.* static constants (ECMA-262 §21.1.2).
+    if num_hf.props == NULL {
+        let pv = ctx_new_object(ctx);
+        num_hf.props = zjs_as_object(pv);
+    }
+    object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"MAX_VALUE",         9),
+               zjs_double(1.7976931348623157e+308));
+    object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"MIN_VALUE",         9),
+               zjs_double(5e-324));
+    object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"POSITIVE_INFINITY", 17),
+               zjs_double(1.0 / 0.0));
+    object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"NEGATIVE_INFINITY", 17),
+               zjs_double(-1.0 / 0.0));
+    object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"NaN",                3),
+               zjs_double(0.0 / 0.0));
+    object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"EPSILON",            7),
+               zjs_double(2.220446049250313e-16));
+    object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"MAX_SAFE_INTEGER",  16),
+               zjs_double(9007199254740991.0));
+    object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"MIN_SAFE_INTEGER",  16),
+               zjs_double(-9007199254740991.0));
     // String.prototype (existing one — keep its methods, add valueOf/toString)
     if strv_hf.prototype == NULL {
         let sp = ctx_new_object(ctx);
