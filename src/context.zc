@@ -390,11 +390,31 @@ fn gc_nullify_dead_ics(ctx: ZjsContext*) -> void {
             raw { f = (Function*)p; }
             let j: u32 = 0;
             while j < f.ic_count {
-                let cls = f.ics[j].class_;
-                if cls != NULL && cls.header.mark == 0 {
-                    f.ics[j].class_ = NULL;
-                    f.ics[j].slot = 0;
+                // Compact: nuke dead-class entries, slide live ones down.
+                // The order doesn't matter for correctness (we linearly
+                // probe), only for cache locality — leading slots stay hot.
+                let write_k: u32 = 0;
+                let read_k:  u32 = 0;
+                let count = (u32)f.ics[j].entry_count;
+                while read_k < count {
+                    let cls: ZjsHiddenClass* = f.ics[j].classes[read_k];
+                    if cls != NULL && cls.header.mark != 0 {
+                        if write_k != read_k {
+                            f.ics[j].classes[write_k] = cls;
+                            f.ics[j].slots[write_k] = f.ics[j].slots[read_k];
+                        }
+                        write_k = write_k + 1;
+                    }
+                    read_k = read_k + 1;
                 }
+                // Zero out the freed tail.
+                let zk: u32 = write_k;
+                while zk < count {
+                    f.ics[j].classes[zk] = NULL;
+                    f.ics[j].slots[zk] = 0;
+                    zk = zk + 1;
+                }
+                f.ics[j].entry_count = (u8)write_k;
                 j = j + 1;
             }
         }

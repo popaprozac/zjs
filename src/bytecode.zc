@@ -228,23 +228,30 @@ fn make_inst_i16(op: Op, v: i32) -> Inst {
 // functions and stores them on the context.
 
 // Inline-cache entry. Allocated per LoadProp/StoreProp site at
-// compile time; `class_` starts NULL (uninitialized) and gets patched
-// on the first execution of the site.
+// compile time; cold (all classes NULL) until the first execution
+// warms it.
 //
-// Phase 3.8: also tracks miss frequency. A site that's seen too many
-// conflicting shapes (`miss_count >= IC_MEGAMORPHIC_LIMIT`) gets the
-// `megamorphic` flag set — the fast-path stops trying to patch it and
-// every access slow-paths directly. Without this, alternating-shape
-// access patterns waste cycles re-patching the slot every call.
+// Phase 3.9f: polymorphic — caches up to IC_POLY_SIZE distinct
+// (class, slot) pairs. Fast path linearly probes classes[0..count].
+// When all slots are full and a new shape appears, the entry flips
+// to `megamorphic` and the fast path is skipped from then on.
+//
+// The class_ pointers are WEAK refs (see gc_nullify_dead_ics): if
+// the cached class is unreachable, we null it out during sweep.
+def IC_POLY_SIZE: u32 = 4;
+
 struct ICEntry {
-    name:        ZjsString*;        // atom; set at compile time, immutable
-    class_:      ZjsHiddenClass*;   // last-seen class; NULL = cold or megamorphic (weak ref — see gc_nullify_dead_ics)
-    slot:        u32;               // slot index in that class
-    miss_count:  u8;                // count of slow-path conflicts (saturates)
-    megamorphic: bool;              // once set, fast-path is skipped permanently
+    name:        ZjsString*;            // atom; set at compile time, immutable
+    classes:     ZjsHiddenClass*[4];    // cached shapes (NULL = empty slot)
+    slots:       u32[4];                // slot index per cached class
+    entry_count: u8;                    // # of populated entries (0..IC_POLY_SIZE)
+    megamorphic: bool;                  // once set, fast-path is skipped permanently
 }
 
-def IC_MEGAMORPHIC_LIMIT: u8 = 8;
+// Kept for compile-time clarity; once we have IC_POLY_SIZE entries and
+// still miss, we go megamorphic immediately (no separate miss-count
+// threshold needed — the polymorphic cache absorbs ordinary churn).
+def IC_MEGAMORPHIC_LIMIT: u32 = IC_POLY_SIZE;
 
 struct Function {
     header:         CellHeader; // { type_tag = TAG_FUNCTION } — must be first field

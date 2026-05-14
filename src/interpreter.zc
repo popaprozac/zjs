@@ -745,18 +745,24 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             let ic_slot = inst.c;
             let obj_val = regs[obj_reg];
 
-            // Capture IC fields into locals — read-only on fast path.
-            let ic_class:  ZjsHiddenClass* = f.ics[ic_slot].class_;
-            let ic_slot_n: u32             = f.ics[ic_slot].slot;
-            let ic_name:   ZjsString*      = f.ics[ic_slot].name;
-
             let took_fast: bool = false;
             if zjs_is_object(obj_val) != 0 {
                 let o = zjs_as_object(obj_val);
-                if o.cls == ic_class && ic_class != NULL {
-                    let raw_v = o.slots[ic_slot_n];
-                    // Accessor or deleted slot (Phase 3.9b/c): bail to
-                    // the slow path which handles both shapes correctly.
+                let cls: ZjsHiddenClass* = o.cls;
+                // Unrolled polymorphic probe (IC_POLY_SIZE = 4). A loop
+                // here costs ~12% on monomorphic-hot sites; the unrolled
+                // form keeps the predictor happy and lets clang fold the
+                // bounds. Most-frequently-seen shape sits at index 0.
+                let hit_slot: i32 = -1;
+                let ic_ptr: ICEntry* = NULL;
+                raw { ic_ptr = &f->ics[ic_slot]; }
+                let n = (u32)ic_ptr.entry_count;
+                if n > 0 && ic_ptr.classes[0] == cls { hit_slot = (i32)ic_ptr.slots[0]; }
+                else if n > 1 && ic_ptr.classes[1] == cls { hit_slot = (i32)ic_ptr.slots[1]; }
+                else if n > 2 && ic_ptr.classes[2] == cls { hit_slot = (i32)ic_ptr.slots[2]; }
+                else if n > 3 && ic_ptr.classes[3] == cls { hit_slot = (i32)ic_ptr.slots[3]; }
+                if hit_slot >= 0 {
+                    let raw_v = o.slots[(u32)hit_slot];
                     if zjs_is_accessor(raw_v) == 0 && zjs_is_deleted(raw_v) == 0 {
                         regs[dst] = raw_v;
                         took_fast = true;
@@ -764,32 +770,37 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
                 }
             }
             if !took_fast {
+                let ic_name: ZjsString* = f.ics[ic_slot].name;
                 let key_val = zjs_cell_from_ptr((void*)ic_name);
                 regs[dst] = property_get(ctx, obj_val, key_val);
-                // Patch the IC if obj is now an object that has the prop —
-                // unless the slot has gone megamorphic, in which case we
-                // never patch (and never fast-path) again.
+                // Patch the IC if obj is an object that has the prop
+                // and the cache isn't already full+megamorphic.
                 if zjs_is_object(obj_val) != 0 && !f.ics[ic_slot].megamorphic {
                     let o = zjs_as_object(obj_val);
                     let s = class_find_slot(o.cls, ic_name);
                     if s >= 0 {
-                        // Real shape conflict (previously seen a different,
-                        // non-NULL class)? Bump the miss counter; flip to
-                        // megamorphic once the threshold is crossed.
-                        if ic_class != NULL && ic_class != o.cls {
-                            let mc = f.ics[ic_slot].miss_count;
-                            if mc < 255 { f.ics[ic_slot].miss_count = mc + 1; }
-                            if f.ics[ic_slot].miss_count >= IC_MEGAMORPHIC_LIMIT {
-                                f.ics[ic_slot].megamorphic = true;
-                                f.ics[ic_slot].class_ = NULL;
-                                f.ics[ic_slot].slot = 0;
+                        // Already cached? (Reachable when slow-path was
+                        // taken due to accessor/deleted, not shape miss.)
+                        let already: bool = false;
+                        let n2 = (u32)f.ics[ic_slot].entry_count;
+                        let k2: u32 = 0;
+                        while k2 < n2 {
+                            if f.ics[ic_slot].classes[k2] == o.cls { already = true; break; }
+                            k2 = k2 + 1;
+                        }
+                        if !already {
+                            if n2 < IC_POLY_SIZE {
+                                f.ics[ic_slot].classes[n2] = o.cls;
+                                f.ics[ic_slot].slots[n2] = (u32)s;
+                                f.ics[ic_slot].entry_count = (u8)(n2 + 1);
                             } else {
-                                f.ics[ic_slot].class_ = o.cls;
-                                f.ics[ic_slot].slot = (u32)s;
+                                // Cache full and a new shape appeared —
+                                // flip megamorphic. Don't bother evicting:
+                                // a true poly site has stabilized within
+                                // 4 shapes, and a churny site won't
+                                // benefit from LRU either.
+                                f.ics[ic_slot].megamorphic = true;
                             }
-                        } else {
-                            f.ics[ic_slot].class_ = o.cls;
-                            f.ics[ic_slot].slot = (u32)s;
                         }
                     }
                 }
@@ -801,46 +812,50 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             let obj_val = regs[obj_reg];
             let value   = regs[val_reg];
 
-            let ic_class: ZjsHiddenClass* = f.ics[ic_slot].class_;
-            let ic_slot_n: u32            = f.ics[ic_slot].slot;
-            let ic_name:  ZjsString*      = f.ics[ic_slot].name;
-
             let took_fast: bool = false;
             if zjs_is_object(obj_val) != 0 {
                 let o = zjs_as_object(obj_val);
-                if o.cls == ic_class && ic_class != NULL {
-                    let raw_v = o.slots[ic_slot_n];
-                    // Accessor or deleted slot — slow-path so we run
-                    // the setter (or un-delete via object_set).
+                let cls: ZjsHiddenClass* = o.cls;
+                let hit_slot: i32 = -1;
+                let ic_ptr: ICEntry* = NULL;
+                raw { ic_ptr = &f->ics[ic_slot]; }
+                let n = (u32)ic_ptr.entry_count;
+                if n > 0 && ic_ptr.classes[0] == cls { hit_slot = (i32)ic_ptr.slots[0]; }
+                else if n > 1 && ic_ptr.classes[1] == cls { hit_slot = (i32)ic_ptr.slots[1]; }
+                else if n > 2 && ic_ptr.classes[2] == cls { hit_slot = (i32)ic_ptr.slots[2]; }
+                else if n > 3 && ic_ptr.classes[3] == cls { hit_slot = (i32)ic_ptr.slots[3]; }
+                if hit_slot >= 0 {
+                    let slot_n = (u32)hit_slot;
+                    let raw_v = o.slots[slot_n];
                     if zjs_is_accessor(raw_v) == 0 && zjs_is_deleted(raw_v) == 0 {
-                        // Existing-slot write — no transition, no GC implication.
-                        o.slots[ic_slot_n] = value;
+                        o.slots[slot_n] = value;
                         took_fast = true;
                     }
                 }
             }
             if !took_fast {
+                let ic_name: ZjsString* = f.ics[ic_slot].name;
                 let key_val = zjs_cell_from_ptr((void*)ic_name);
                 property_set(ctx, obj_val, key_val, value);
-                // Patch unless megamorphic. Same miss-tracking logic as LoadProp.
                 if zjs_is_object(obj_val) != 0 && !f.ics[ic_slot].megamorphic {
                     let o = zjs_as_object(obj_val);
                     let s = class_find_slot(o.cls, ic_name);
                     if s >= 0 {
-                        if ic_class != NULL && ic_class != o.cls {
-                            let mc = f.ics[ic_slot].miss_count;
-                            if mc < 255 { f.ics[ic_slot].miss_count = mc + 1; }
-                            if f.ics[ic_slot].miss_count >= IC_MEGAMORPHIC_LIMIT {
-                                f.ics[ic_slot].megamorphic = true;
-                                f.ics[ic_slot].class_ = NULL;
-                                f.ics[ic_slot].slot = 0;
+                        let already: bool = false;
+                        let n2 = (u32)f.ics[ic_slot].entry_count;
+                        let k2: u32 = 0;
+                        while k2 < n2 {
+                            if f.ics[ic_slot].classes[k2] == o.cls { already = true; break; }
+                            k2 = k2 + 1;
+                        }
+                        if !already {
+                            if n2 < IC_POLY_SIZE {
+                                f.ics[ic_slot].classes[n2] = o.cls;
+                                f.ics[ic_slot].slots[n2] = (u32)s;
+                                f.ics[ic_slot].entry_count = (u8)(n2 + 1);
                             } else {
-                                f.ics[ic_slot].class_ = o.cls;
-                                f.ics[ic_slot].slot = (u32)s;
+                                f.ics[ic_slot].megamorphic = true;
                             }
-                        } else {
-                            f.ics[ic_slot].class_ = o.cls;
-                            f.ics[ic_slot].slot = (u32)s;
                         }
                     }
                 }

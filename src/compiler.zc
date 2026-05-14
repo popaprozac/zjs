@@ -324,8 +324,16 @@ fn alloc_ic_slot(c: Compiler*, name: ZjsString*) -> u32 {
     }
     let idx = c.ic_count;
     c.ics[idx].name = name;
-    c.ics[idx].class_ = NULL;
-    c.ics[idx].slot = 0;
+    // Cold cache: all polymorphic slots empty. entry_count == 0 makes
+    // the fast path skip the probe loop on first execution.
+    let k: u32 = 0;
+    while k < IC_POLY_SIZE {
+        c.ics[idx].classes[k] = NULL;
+        c.ics[idx].slots[k] = 0;
+        k = k + 1;
+    }
+    c.ics[idx].entry_count = 0;
+    c.ics[idx].megamorphic = false;
     c.ic_count = c.ic_count + 1;
     return idx;
 }
