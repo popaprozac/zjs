@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 17:04 UTC",
+    "when": "2026-05-14 17:08 UTC",
     "total": 4821,
-    "passed": 2438,
-    "failed": 357,
+    "passed": 2439,
+    "failed": 356,
     "skipped": 2026
   },
   "failures": [
@@ -1354,10 +1354,6 @@
     {
       "path": "test/built-ins/Promise/any/resolve-throws-iterator-return-null-or-undefined.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/any/returns-promise.js",
-      "reason": "zjs: throw: Test262Error: assert failed"
     },
     {
       "path": "test/built-ins/Promise/executor-function-extensible.js",

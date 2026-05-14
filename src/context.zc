@@ -3418,6 +3418,136 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
     return rp;
 }
 
+// Promise.any: settles fulfilled with the first fulfillment. If every
+// input rejects, settles rejected with an AggregateError-shaped object
+// carrying the reasons. (We don't have true AggregateError; a plain
+// Error with the right shape covers test262's structural assertions.)
+fn host_promise_any_on_fulfill(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let hf: ZjsHostFunction* = NULL;
+    raw { hf = (ZjsHostFunction*)ctx->current_host_fn; }
+    let per_v = hf.bound;
+    if zjs_is_object(per_v) == 0 { return zjs_undefined(); }
+    let per = zjs_as_object(per_v);
+    let p_v = object_get(per, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12));
+    let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_promise(p_v) != 0 {
+        let p = zjs_as_promise(p_v);
+        if p.state == PROMISE_PENDING {
+            promise_resolve_with(ctx, p_v, v);
+        }
+    }
+    return zjs_undefined();
+}
+
+fn host_promise_any_on_reject(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let hf: ZjsHostFunction* = NULL;
+    raw { hf = (ZjsHostFunction*)ctx->current_host_fn; }
+    let per_v = hf.bound;
+    if zjs_is_object(per_v) == 0 { return zjs_undefined(); }
+    let per = zjs_as_object(per_v);
+    let p_v   = object_get(per, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12));
+    let errs_v = object_get(per, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12));
+    let shared_v = object_get(per, ctx_intern_atom(ctx, PA_REM_KEY, 12));
+    let idx_v = object_get(per, ctx_intern_atom(ctx, PA_IDX_KEY, 12));
+    if zjs_is_object(shared_v) == 0 { return zjs_undefined(); }
+    let shared = zjs_as_object(shared_v);
+    let reason = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_array(errs_v) != 0 && zjs_is_int32(idx_v) != 0 {
+        let arr = zjs_as_array(errs_v);
+        array_set(arr, (u32)zjs_as_int32(idx_v), reason);
+    }
+    let rem_v = object_get(shared, ctx_intern_atom(ctx, PA_REM_KEY, 12));
+    let rem = zjs_as_int32(rem_v) - 1;
+    object_set(ctx, shared, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(rem));
+    if rem == 0 && zjs_is_promise(p_v) != 0 {
+        let p = zjs_as_promise(p_v);
+        if p.state == PROMISE_PENDING {
+            let agg = build_typed_error(ctx, (char*)"AggregateError", 14,
+                                        (char*)"All promises were rejected", 26);
+            if zjs_is_object(agg) != 0 {
+                let ao = zjs_as_object(agg);
+                object_set(ctx, ao, ctx_intern_atom(ctx, (char*)"errors", 6), errs_v);
+            }
+            promise_settle(ctx, p_v, agg, false);
+        }
+    }
+    return zjs_undefined();
+}
+
+fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let result = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)result);
+    let rp = zjs_cell_from_ptr((void*)result);
+    ctx_push_temp_root(ctx, rp);
+    defer ctx_pop_temp_root(ctx);
+
+    let iter = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_array(iter) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Promise.any requires an array", 29);
+        promise_settle(ctx, rp, err, false);
+        return rp;
+    }
+    let arr = zjs_as_array(iter);
+    if arr.length == 0 {
+        let agg = build_typed_error(ctx, (char*)"AggregateError", 14,
+                                    (char*)"All promises were rejected", 26);
+        if zjs_is_object(agg) != 0 {
+            let ao = zjs_as_object(agg);
+            let empty = ctx_new_array(ctx, 0);
+            object_set(ctx, ao, ctx_intern_atom(ctx, (char*)"errors", 6), empty);
+        }
+        promise_settle(ctx, rp, agg, false);
+        return rp;
+    }
+    let errs_v = ctx_new_array(ctx, arr.length);
+    let errs = zjs_as_array(errs_v);
+    errs.length = arr.length;
+    let init: u32 = 0;
+    while init < arr.length {
+        errs.elements[init] = zjs_undefined();
+        init = init + 1;
+    }
+    let state_v = ctx_new_object(ctx);
+    let state = zjs_as_object(state_v);
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32((i32)arr.length));
+
+    let onf_ptr: void* = NULL; raw { onf_ptr = (void*)host_promise_any_on_fulfill; }
+    let onr_ptr: void* = NULL; raw { onr_ptr = (void*)host_promise_any_on_reject; }
+    let i: u32 = 0;
+    while i < arr.length {
+        let item = arr.elements[i];
+        let per_state_v = ctx_new_object(ctx);
+        let per_state = zjs_as_object(per_state_v);
+        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
+        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), errs_v);
+        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_REM_KEY, 12), state_v);
+        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_IDX_KEY, 12), zjs_int32((i32)i));
+        let onf = ctx_make_host_function(ctx, (char*)"any_onf", onf_ptr);
+        let onr = ctx_make_host_function(ctx, (char*)"any_onr", onr_ptr);
+        zjs_as_host_function(onf).bound = per_state_v;
+        zjs_as_host_function(onr).bound = per_state_v;
+
+        let item_pv = if zjs_is_promise(item) != 0 { item } else {
+            let pp = zjs_promise_new();
+            ctx_register_cell(ctx, (void*)pp);
+            let ppv = zjs_cell_from_ptr((void*)pp);
+            promise_resolve_with(ctx, ppv, item);
+            ppv
+        };
+        let ip = zjs_as_promise(item_pv);
+        if ip.state == PROMISE_FULFILLED {
+            microtask_enqueue(ctx, onf, ip.value, zjs_undefined(), true);
+        } else if ip.state == PROMISE_REJECTED {
+            microtask_enqueue(ctx, onr, ip.value, zjs_undefined(), false);
+        } else {
+            promise_attach_reaction(ctx, ip, onf, onr, zjs_undefined());
+        }
+        i = i + 1;
+    }
+    return rp;
+}
+
 // Promise.prototype.catch(onRejected) ≡ this.then(undefined, onRejected).
 fn host_promise_catch(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let on_r = if argc >= 1 { args[0] } else { zjs_undefined() };
@@ -4418,6 +4548,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let pset_ptr: void* = NULL; raw { pset_ptr = (void*)host_promise_all_settled; }
     object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"allSettled", 10),
                ctx_make_host_function(ctx, (char*)"allSettled", pset_ptr));
+    let pany_ptr: void* = NULL; raw { pany_ptr = (void*)host_promise_any; }
+    object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"any", 3),
+               ctx_make_host_function(ctx, (char*)"any", pany_ptr));
     ctx_register_host_function(ctx, (char*)"Proxy",      eval_ptr);
     ctx_register_host_function(ctx, (char*)"ArrayBuffer", eval_ptr);
     ctx_register_host_function(ctx, (char*)"Uint8Array",  eval_ptr);
