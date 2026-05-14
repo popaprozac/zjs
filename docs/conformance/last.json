@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 19:15 UTC",
+    "when": "2026-05-14 19:23 UTC",
     "total": 4821,
-    "passed": 2521,
-    "failed": 274,
+    "passed": 2523,
+    "failed": 272,
     "skipped": 2026
   },
   "failures": [
@@ -840,10 +840,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A11.js",
-      "reason": "zjs: throw: Test262Error: #2: String.prototype.indexOf.length === 1. Actual: 0"
-    },
-    {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T5.js",
       "reason": "zjs: throw: Test262Error: #1.1: Exception === \"intostr\". Actual: [object Object]"
     },
@@ -858,10 +854,6 @@
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A9.js",
       "reason": "zjs: throw: Test262Error: #2: delete String.prototype.indexOf.length; String.prototype.indexOf.hasOwnProperty('length') "
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A11.js",
-      "reason": "zjs: throw: Test262Error: #2: String.prototype.slice.length === 2. Actual: 0"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T15.js",

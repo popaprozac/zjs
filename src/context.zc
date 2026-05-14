@@ -1132,6 +1132,16 @@ fn ctx_make_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> ZjsVa
     return zjs_cell_from_ptr((void*)hf);
 }
 
+// Variant that lets the caller set the spec-mandated arity for the
+// host function's `.length` property. Used when registering built-ins
+// whose formal-parameter counts matter to test262 ("the length
+// property of Array.prototype.push is 1", etc.).
+fn ctx_make_host_function_arity(ctx: ZjsContext*, name: char*, fn_ptr: void*, arity: u32) -> ZjsValue {
+    let v = ctx_make_host_function(ctx, name, fn_ptr);
+    zjs_as_host_function(v).arity = arity;
+    return v;
+}
+
 // --- Built-in implementations ---------------------------------------
 
 // Error("msg") — produces { message, name: "Error" }. Decorates the
@@ -4752,6 +4762,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let promise_ptr: void* = NULL; raw { promise_ptr = (void*)host_promise_ctor; }
     let promise_v = ctx_register_host_function(ctx, (char*)"Promise", promise_ptr);
     let promise_hf = zjs_as_host_function(promise_v);
+    promise_hf.arity = 1;
     // Promise.prototype — instance methods.
     let pp_v = ctx_new_object(ctx);
     promise_hf.prototype = zjs_as_object(pp_v);
@@ -4760,12 +4771,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let pthen_ptr:  void* = NULL; raw { pthen_ptr  = (void*)host_promise_then; }
     let pcatch_ptr: void* = NULL; raw { pcatch_ptr = (void*)host_promise_catch; }
     object_set(ctx, promise_hf.prototype, ctx_intern_atom(ctx, (char*)"then", 4),
-               ctx_make_host_function(ctx, (char*)"then", pthen_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"then", pthen_ptr, 2));
     object_set(ctx, promise_hf.prototype, ctx_intern_atom(ctx, (char*)"catch", 5),
-               ctx_make_host_function(ctx, (char*)"catch", pcatch_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"catch", pcatch_ptr, 1));
     let pfin_ptr: void* = NULL; raw { pfin_ptr = (void*)host_promise_finally; }
     object_set(ctx, promise_hf.prototype, ctx_intern_atom(ctx, (char*)"finally", 7),
-               ctx_make_host_function(ctx, (char*)"finally", pfin_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"finally", pfin_ptr, 1));
     // Promise.resolve / Promise.reject statics on .props.
     let presolve_ptr: void* = NULL; raw { presolve_ptr = (void*)host_promise_resolve_static; }
     let preject_ptr:  void* = NULL; raw { preject_ptr  = (void*)host_promise_reject_static; }
@@ -4774,21 +4785,21 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         promise_hf.props = zjs_as_object(pr_v);
     }
     object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"resolve", 7),
-               ctx_make_host_function(ctx, (char*)"resolve", presolve_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"resolve", presolve_ptr, 1));
     object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"reject", 6),
-               ctx_make_host_function(ctx, (char*)"reject", preject_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"reject", preject_ptr, 1));
     let pall_ptr:  void* = NULL; raw { pall_ptr  = (void*)host_promise_all; }
     let prace_ptr: void* = NULL; raw { prace_ptr = (void*)host_promise_race; }
     object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"all", 3),
-               ctx_make_host_function(ctx, (char*)"all", pall_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"all", pall_ptr, 1));
     object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"race", 4),
-               ctx_make_host_function(ctx, (char*)"race", prace_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"race", prace_ptr, 1));
     let pset_ptr: void* = NULL; raw { pset_ptr = (void*)host_promise_all_settled; }
     object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"allSettled", 10),
-               ctx_make_host_function(ctx, (char*)"allSettled", pset_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"allSettled", pset_ptr, 1));
     let pany_ptr: void* = NULL; raw { pany_ptr = (void*)host_promise_any; }
     object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"any", 3),
-               ctx_make_host_function(ctx, (char*)"any", pany_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"any", pany_ptr, 1));
     ctx_register_host_function(ctx, (char*)"Proxy",      eval_ptr);
     ctx_register_host_function(ctx, (char*)"ArrayBuffer", eval_ptr);
     ctx_register_host_function(ctx, (char*)"Uint8Array",  eval_ptr);
@@ -4977,24 +4988,24 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let map_ptr:   void* = NULL; raw { map_ptr   = (void*)host_array_map; }
     let fe_ptr:    void* = NULL; raw { fe_ptr    = (void*)host_array_for_each; }
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"push", 4),
-               ctx_make_host_function(ctx, (char*)"push", push_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"push", push_ptr, 1));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"pop", 3),
-               ctx_make_host_function(ctx, (char*)"pop", pop_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"pop", pop_ptr, 0));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"indexOf", 7),
-               ctx_make_host_function(ctx, (char*)"indexOf", aidx_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"indexOf", aidx_ptr, 1));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"map", 3),
-               ctx_make_host_function(ctx, (char*)"map", map_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"map", map_ptr, 1));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"forEach", 7),
-               ctx_make_host_function(ctx, (char*)"forEach", fe_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"forEach", fe_ptr, 1));
     let join_ptr:   void* = NULL; raw { join_ptr   = (void*)host_array_join; }
     let aslice_ptr: void* = NULL; raw { aslice_ptr = (void*)host_array_slice; }
     let aconc_ptr:  void* = NULL; raw { aconc_ptr  = (void*)host_array_concat; }
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"join", 4),
-               ctx_make_host_function(ctx, (char*)"join", join_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"join", join_ptr, 1));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"slice", 5),
-               ctx_make_host_function(ctx, (char*)"slice", aslice_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"slice", aslice_ptr, 2));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"concat", 6),
-               ctx_make_host_function(ctx, (char*)"concat", aconc_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"concat", aconc_ptr, 1));
     ctx.array_proto = array_proto;
     // Unify with the Array constructor's .prototype (set lazily here so
     // `Array.prototype.push.call(arr, x)` and similar find our method
@@ -5011,26 +5022,26 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let slice_ptr:  void* = NULL; raw { slice_ptr  = (void*)host_string_slice; }
     let split_ptr:  void* = NULL; raw { split_ptr  = (void*)host_string_split; }
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"indexOf", 7),
-               ctx_make_host_function(ctx, (char*)"indexOf", sidx_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"indexOf", sidx_ptr, 1));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"slice", 5),
-               ctx_make_host_function(ctx, (char*)"slice", slice_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"slice", slice_ptr, 2));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"split", 5),
-               ctx_make_host_function(ctx, (char*)"split", split_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"split", split_ptr, 2));
     let scat_ptr:   void* = NULL; raw { scat_ptr   = (void*)host_string_concat; }
     let scha_ptr:   void* = NULL; raw { scha_ptr   = (void*)host_string_char_at; }
     let scca_ptr:   void* = NULL; raw { scca_ptr   = (void*)host_string_char_code_at; }
     let suc_ptr:    void* = NULL; raw { suc_ptr    = (void*)host_string_to_upper_case; }
     let slc_ptr:    void* = NULL; raw { slc_ptr    = (void*)host_string_to_lower_case; }
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"concat", 6),
-               ctx_make_host_function(ctx, (char*)"concat", scat_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"concat", scat_ptr, 1));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"charAt", 6),
-               ctx_make_host_function(ctx, (char*)"charAt", scha_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"charAt", scha_ptr, 1));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"charCodeAt", 10),
-               ctx_make_host_function(ctx, (char*)"charCodeAt", scca_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"charCodeAt", scca_ptr, 1));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"toUpperCase", 11),
-               ctx_make_host_function(ctx, (char*)"toUpperCase", suc_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"toUpperCase", suc_ptr, 0));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"toLowerCase", 11),
-               ctx_make_host_function(ctx, (char*)"toLowerCase", slc_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"toLowerCase", slc_ptr, 0));
     ctx.string_proto = string_proto;
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), strv_full);
     // Unify with the String constructor's .prototype so

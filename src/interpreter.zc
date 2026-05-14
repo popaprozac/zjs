@@ -241,7 +241,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             // `length` (param count). We don't track the C function's
             // arity yet, so report 0 — enough to satisfy "the property
             // exists" tests. `name` echoes the host fn's display name.
-            if is_length != 0 { return zjs_int32(0); }
+            if is_length != 0 { return zjs_int32((i32)hf.arity); }
             if is_name != 0 {
                 if hf.name == NULL { return ctx_intern_string(ctx, (char*)"", 0); }
                 let n_len: usize = 0;

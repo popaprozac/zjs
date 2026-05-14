@@ -637,6 +637,11 @@ struct ZjsHostFunction {
     // Phase 3.8c: arbitrary properties (e.g. `Array.isArray`). Lazy.
     // property_get/set on a host function falls through to this object.
     props:     ZjsObject*;
+    // Spec-mandated `.length` (formal-parameter count). Defaults to 0
+    // for the no-explicit-arity registrations; callers can update via
+    // hf->arity = N. Read by property_get when the user asks for
+    // host_fn.length.
+    arity:     u32;
 }
 
 // Closure: a function template paired with a captured environment.
