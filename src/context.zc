@@ -1189,35 +1189,66 @@ fn host_math_min(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
 fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
     if kind == 0 {
-        // for-in: enumerate own string keys of an object, skipping
-        // deleted slots. Same scratch-then-compact pattern as Object.keys.
+        // for-in: enumerate own + inherited string keys, in insertion
+        // order at each prototype level, skipping names already seen
+        // at a more-specific level (own shadows inherited) and skipping
+        // DELETED slots.
+        //
+        // We stop at ctx.object_proto so the global Object.prototype's
+        // built-in methods (toString/hasOwnProperty) don't appear in
+        // for-in output — those are non-enumerable per spec, and we
+        // don't track enumerable flags yet. Plain objects' own props
+        // are surfaced normally because their cls chain stops above
+        // object_proto.
         if zjs_is_object(src) != 0 {
-            let o = zjs_as_object(src);
-            let cap = o.cls.prop_count;
-            let arr_v = ctx_new_array(ctx, cap);
+            let arr_v = ctx_new_array(ctx, 0);
+            ctx_push_temp_root(ctx, arr_v);
+            defer ctx_pop_temp_root(ctx);
             let arr = zjs_as_array(arr_v);
-            let scratch: ZjsString*[64];
-            let limit: u32 = if cap > 64 { 64 } else { cap };
-            let init_i: u32 = 0;
-            while init_i < limit { scratch[init_i] = NULL; init_i = init_i + 1; }
-            let cls = o.cls;
-            while cls != NULL && cls.parent != NULL {
-                let slot = cls.transition_slot;
-                if slot < limit && zjs_is_deleted(o.slots[slot]) == 0 {
-                    scratch[slot] = cls.transition_name;
+            let cur: ZjsObject* = zjs_as_object(src);
+            while cur != NULL && cur != ctx.object_proto {
+                // Collect this level's own names in insertion order
+                // (= slot index order). Then append to the result,
+                // skipping shadowed names.
+                let prop_count = cur.cls.prop_count;
+                let scratch: ZjsString*[64];
+                let scratch_del: bool[64];
+                let limit: u32 = if prop_count > 64 { 64 } else { prop_count };
+                let init_i: u32 = 0;
+                while init_i < limit {
+                    scratch[init_i] = NULL;
+                    scratch_del[init_i] = false;
+                    init_i = init_i + 1;
                 }
-                cls = cls.parent;
-            }
-            let out: u32 = 0;
-            let i: u32 = 0;
-            while i < limit {
-                if scratch[i] != NULL {
-                    arr.elements[out] = zjs_cell_from_ptr((void*)scratch[i]);
-                    out = out + 1;
+                let cls = cur.cls;
+                while cls != NULL && cls.parent != NULL {
+                    let slot = cls.transition_slot;
+                    if slot < limit {
+                        scratch[slot] = cls.transition_name;
+                        scratch_del[slot] = zjs_is_deleted(cur.slots[slot]) != 0;
+                    }
+                    cls = cls.parent;
                 }
-                i = i + 1;
+                let i: u32 = 0;
+                while i < limit {
+                    let nm = scratch[i];
+                    if nm != NULL {
+                        // Already seen at a more-specific level?
+                        let seen: bool = false;
+                        let j: u32 = 0;
+                        while j < arr.length {
+                            if zjs_as_string(arr.elements[j]) == nm {
+                                seen = true; j = arr.length;
+                            } else { j = j + 1; }
+                        }
+                        if !seen && !scratch_del[i] {
+                            array_set(arr, arr.length, zjs_cell_from_ptr((void*)nm));
+                        }
+                    }
+                    i = i + 1;
+                }
+                cur = cur.proto;
             }
-            arr.length = out;
             return arr_v;
         }
         return ctx_new_array(ctx, 0);

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 06:08 UTC",
+    "when": "2026-05-14 06:17 UTC",
     "total": 4144,
-    "passed": 2162,
-    "failed": 451,
+    "passed": 2164,
+    "failed": 449,
     "skipped": 1531
   },
   "failures": [
@@ -570,14 +570,6 @@
     {
       "path": "test/language/statements/for-in/S12.6.4_A4.js",
       "reason": "zjs: throw: Test262Error: #2: __str === __evaluated. Actual:  __str ==="
-    },
-    {
-      "path": "test/language/statements/for-in/S12.6.4_A6.1.js",
-      "reason": "zjs: throw: Test262Error: #1: (__accum.indexOf(\"prop1\")!==-1)&&(__accum.indexOf(\"feat2\")!==-1)&&(__accum.indexOf(\"hinthi"
-    },
-    {
-      "path": "test/language/statements/for-in/S12.6.4_A6.js",
-      "reason": "zjs: throw: Test262Error: #1: (__accum.indexOf(\"prop1\")!==-1)&&(__accum.indexOf(\"feat2\")!==-1)&&(__accum.indexOf(\"hinthi"
     },
     {
       "path": "test/language/statements/for-in/S12.6.4_A7_T1.js",
