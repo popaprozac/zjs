@@ -667,9 +667,22 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
                 if c.next_reg <= dst { c.next_reg = dst + 1; }
                 return dst;
             }
-            // delete <anything else> — per spec, true for non-references
-            // (and SyntaxError in strict mode for a bare ident; MVP just
-            // returns true).
+            // `delete bareIdent`: in sloppy mode this returns false for
+            // any non-configurable lexical binding (catch param, let,
+            // const, function param, hoisted var) and true otherwise.
+            // We don't know configurability of arbitrary globals, but a
+            // local/catch param resolving here is always non-deletable —
+            // emit false in that case. Anything else (unresolved name,
+            // non-reference expression) still gets the old "true".
+            if operand != NULL && operand.kind == NodeKind::IdentExpr {
+                let nm = c.source + operand.start;
+                let nl = operand.end - operand.start;
+                if find_local_index(c, nm, nl) >= 0 {
+                    let dst = alloc_reg(c);
+                    emit(c, make_inst_a(Op::LoadFalse, dst));
+                    return dst;
+                }
+            }
             let dst = alloc_reg(c);
             emit(c, make_inst_a(Op::LoadTrue, dst));
             return dst;
