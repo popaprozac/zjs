@@ -1200,6 +1200,26 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
         // don't track enumerable flags yet. Plain objects' own props
         // are surfaced normally because their cls chain stops above
         // object_proto.
+        if zjs_is_array(src) != 0 {
+            // Arrays: enumerate the index keys as strings "0", "1", ...
+            // Doesn't include array prototype methods (non-enumerable).
+            let a = zjs_as_array(src);
+            let arr_v = ctx_new_array(ctx, 0);
+            ctx_push_temp_root(ctx, arr_v);
+            defer ctx_pop_temp_root(ctx);
+            let arr = zjs_as_array(arr_v);
+            let i: u32 = 0;
+            while i < a.length {
+                let buf: char[16];
+                let key_len: int = 0;
+                raw { key_len = snprintf(&buf[0], 16, "%u", (unsigned)i); }
+                let kp: char* = NULL;
+                raw { kp = &buf[0]; }
+                array_set(arr, i, ctx_intern_string(ctx, kp, (u32)key_len));
+                i = i + 1;
+            }
+            return arr_v;
+        }
         if zjs_is_object(src) != 0 {
             let arr_v = ctx_new_array(ctx, 0);
             ctx_push_temp_root(ctx, arr_v);

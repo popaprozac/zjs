@@ -535,7 +535,8 @@ fn run_tests() -> void {
     check_string((char*)"for-in: insertion order",  (char*)r"let keys=''; for (let k in {a:1,b:2,c:3}) { keys = keys + k }; keys", (char*)"abc");
     check_int((char*)"for-in: sum values",          (char*)r"let o={a:10,b:20,c:30}; let s=0; for (let k in o) { s = s + o[k] }; s", 60);
     // for-in on non-object yields zero iterations
-    check_int((char*)"for-in: array no iter",       (char*)r"let n=0; for (let k in [1,2,3]) { n = n + 1 }; n", 0);
+    check_int((char*)"for-in: array yields indices", (char*)r"let n=0; for (let k in [1,2,3]) { n = n + 1 }; n", 3);
+    check_string((char*)"for-in: array index keys",   (char*)r"let s=''; for (let k in [10,20]) s = s + k; s", (char*)"01");
     // Nested
     check_int((char*)"for-of: nested",              (char*)r"let s=0; for (let a of [[1,2],[3,4]]) { for (let b of a) { s = s + b } }; s", 10);
 

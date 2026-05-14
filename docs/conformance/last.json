@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 06:57 UTC",
+    "when": "2026-05-14 07:02 UTC",
     "total": 4144,
-    "passed": 2214,
-    "failed": 399,
+    "passed": 2218,
+    "failed": 395,
     "skipped": 1531
   },
   "failures": [
@@ -792,18 +792,6 @@
       "reason": "zjs: throw: Test262Error: TestIterationAndResize: resize condition should have been hit"
     },
     {
-      "path": "test/language/statements/try/S12.14_A12_T2.js",
-      "reason": "zjs: throw: Test262Error: #1.1: \"finally\" block must be evaluated"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A12_T3.js",
-      "reason": "zjs: throw: Test262Error: #1.1: \"finally\" block must be evaluated"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A12_T4.js",
-      "reason": "zjs: throw: Test262Error: #1.1: \"finally\" block must be evaluated"
-    },
-    {
       "path": "test/language/statements/try/S12.14_A14.js",
       "reason": "zjs: throw: Test262Error: #1: Exception ===\"ex\". Actual:  Exception ===[object Object]"
     },
@@ -986,10 +974,6 @@
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-1-s.js",
       "reason": "zjs: throw: Test262Error: innerThisCorrect !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-iii-4.js",
-      "reason": "zjs: throw: Test262Error: enumerable !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-9-3.js",
@@ -1241,7 +1225,7 @@
     },
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-a-3.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
+      "reason": "zjs: throw: Test262Error: desc.hasOwnProperty(\"enumerable\") !== true"
     },
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-a-4.js",
