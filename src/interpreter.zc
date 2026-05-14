@@ -98,17 +98,21 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             let slot = class_find_slot(cur.cls, name);
             if slot >= 0 {
                 let v = cur.slots[(u32)slot];
-                // Accessor (Phase 3.9b)? Invoke the getter with this=obj.
-                if zjs_is_accessor(v) != 0 {
-                    let acc = zjs_as_accessor(v);
-                    let g = acc.get;
-                    if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
-                        let nullp: ZjsValue* = NULL;
-                        return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                // A DELETED-sentinel slot acts like the property
+                // doesn't exist — keep walking the proto chain.
+                if zjs_is_deleted(v) == 0 {
+                    // Accessor (Phase 3.9b)? Invoke get with this=obj.
+                    if zjs_is_accessor(v) != 0 {
+                        let acc = zjs_as_accessor(v);
+                        let g = acc.get;
+                        if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
+                            let nullp: ZjsValue* = NULL;
+                            return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                        }
+                        return zjs_undefined();
                     }
-                    return zjs_undefined();
+                    return v;
                 }
-                return v;
             }
             cur = cur.proto;
         }
@@ -217,25 +221,29 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         let name = zjs_as_string(key_str_val);
         // Walk the proto chain looking for an accessor whose setter
         // should fire (Phase 3.9b). A data property on the proto means
-        // we'll shadow via an own write.
+        // we'll shadow via an own write. A DELETED slot is invisible.
         let cur = o;
         while cur != NULL {
             let slot = class_find_slot(cur.cls, name);
             if slot >= 0 {
                 let v = cur.slots[(u32)slot];
-                if zjs_is_accessor(v) != 0 {
-                    let acc = zjs_as_accessor(v);
-                    let s = acc.set;
-                    if zjs_is_function(s) != 0 || zjs_is_closure(s) != 0 || zjs_is_host_function(s) != 0 {
-                        let arr: ZjsValue[1];
-                        arr[0] = value;
-                        let argp: ZjsValue* = NULL;
-                        raw { argp = &arr[0]; }
-                        let _ = zjs_call_value_with_this(ctx, s, obj, argp, 1);
+                if zjs_is_deleted(v) == 0 {
+                    if zjs_is_accessor(v) != 0 {
+                        let acc = zjs_as_accessor(v);
+                        let s = acc.set;
+                        if zjs_is_function(s) != 0 || zjs_is_closure(s) != 0 || zjs_is_host_function(s) != 0 {
+                            let arr: ZjsValue[1];
+                            arr[0] = value;
+                            let argp: ZjsValue* = NULL;
+                            raw { argp = &arr[0]; }
+                            let _ = zjs_call_value_with_this(ctx, s, obj, argp, 1);
+                        }
+                        return;
                     }
-                    return;
+                    cur = NULL;     // data property — fall through and write our own
+                } else {
+                    cur = cur.proto;
                 }
-                cur = NULL;     // data property — fall through and write our own
             } else {
                 cur = cur.proto;
             }
@@ -715,9 +723,9 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
                 let o = zjs_as_object(obj_val);
                 if o.cls == ic_class && ic_class != NULL {
                     let raw_v = o.slots[ic_slot_n];
-                    // Accessor slot (Phase 3.9b): bail to the slow path
-                    // which invokes the getter with the right `this`.
-                    if zjs_is_accessor(raw_v) == 0 {
+                    // Accessor or deleted slot (Phase 3.9b/c): bail to
+                    // the slow path which handles both shapes correctly.
+                    if zjs_is_accessor(raw_v) == 0 && zjs_is_deleted(raw_v) == 0 {
                         regs[dst] = raw_v;
                         took_fast = true;
                     }
@@ -770,9 +778,9 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
                 let o = zjs_as_object(obj_val);
                 if o.cls == ic_class && ic_class != NULL {
                     let raw_v = o.slots[ic_slot_n];
-                    // Accessor slot (Phase 3.9b): bail to the slow path
-                    // which invokes the setter with `this = obj`.
-                    if zjs_is_accessor(raw_v) == 0 {
+                    // Accessor or deleted slot — slow-path so we run
+                    // the setter (or un-delete via object_set).
+                    if zjs_is_accessor(raw_v) == 0 && zjs_is_deleted(raw_v) == 0 {
                         // Existing-slot write — no transition, no GC implication.
                         o.slots[ic_slot_n] = value;
                         took_fast = true;
@@ -967,6 +975,31 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             } else {
                 regs[dst] = new_obj_v;
             }
+        } else if op == Op::DeleteElem {
+            // Mark the property's slot DELETED (sentinel). For arrays:
+            // clear the element (set to undefined; the spec calls this
+            // an "array hole"). Returns boolean true on success.
+            let dst = inst.a;
+            let obj_v = regs[inst.b];
+            let key   = regs[inst.c];
+            let ok: bool = true;
+            if zjs_is_object(obj_v) != 0 {
+                let o = zjs_as_object(obj_v);
+                let key_str = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+                let name = zjs_as_string(key_str);
+                let slot = class_find_slot(o.cls, name);
+                if slot >= 0 {
+                    o.slots[(u32)slot] = zjs_deleted();
+                }
+                // Property not present → spec returns true.
+            } else if zjs_is_array(obj_v) != 0 {
+                let a = zjs_as_array(obj_v);
+                let idx = zjs_to_array_index(key);
+                if idx >= 0 && (u32)idx < a.length {
+                    a.elements[(u32)idx] = zjs_undefined();
+                }
+            }
+            regs[dst] = zjs_bool(ok);
         } else if op == Op::BuildArguments {
             // Build a fresh array from the call's args + arg_count and
             // stash it in regs[a]. Emitted at function entry when the

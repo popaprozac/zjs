@@ -631,6 +631,38 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         return last;
     }
     if k == NodeKind::Unary {
+        // `delete` needs the receiver + key broken out (not the
+        // loaded property value). Special-case BEFORE the normal
+        // compile_expr of the operand.
+        if node.op == TokenKind::KwDelete {
+            let operand = node.left;
+            if operand != NULL && operand.kind == NodeKind::Member {
+                let obj_r = compile_expr(c, operand.left);
+                let key_r = emit_load_name_string(c, c.source + operand.name_start, operand.name_length);
+                let dst = alloc_reg(c);
+                emit(c, make_inst_abc(Op::DeleteElem, dst, obj_r, key_r));
+                if key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                if obj_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                if c.next_reg <= dst { c.next_reg = dst + 1; }
+                return dst;
+            }
+            if operand != NULL && operand.kind == NodeKind::Computed {
+                let obj_r = compile_expr(c, operand.left);
+                let key_r = compile_expr(c, operand.right);
+                let dst = alloc_reg(c);
+                emit(c, make_inst_abc(Op::DeleteElem, dst, obj_r, key_r));
+                if key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                if obj_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                if c.next_reg <= dst { c.next_reg = dst + 1; }
+                return dst;
+            }
+            // delete <anything else> — per spec, true for non-references
+            // (and SyntaxError in strict mode for a bare ident; MVP just
+            // returns true).
+            let dst = alloc_reg(c);
+            emit(c, make_inst_a(Op::LoadTrue, dst));
+            return dst;
+        }
         // typeof must NOT throw ReferenceError for an undeclared
         // identifier. Detect this case BEFORE compiling the operand
         // (which would emit a throwing LoadGlobal) and substitute

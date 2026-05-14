@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 00:48 UTC",
+    "when": "2026-05-14 01:06 UTC",
     "total": 4144,
-    "passed": 1958,
-    "failed": 655,
+    "passed": 2017,
+    "failed": 596,
     "skipped": 1531
   },
   "failures": [
@@ -937,11 +937,11 @@
     },
     {
       "path": "test/language/statements/for-in/S12.6.4_A7_T1.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: #2: __accum.indexOf(\"ba2\") === -1. Actual:  __accum.indexOf(\"ba2\") ===3"
     },
     {
       "path": "test/language/statements/for-in/S12.6.4_A7_T2.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: Unexpected value: 'aa1ba2ca3'"
     },
     {
       "path": "test/language/statements/for-in/head-const-bound-names-in-stmt.js",
@@ -986,10 +986,6 @@
     {
       "path": "test/language/statements/for-in/let-identifier-with-newline.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-in/order-simple-object.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/statements/for-in/scope-body-lex-close.js",
@@ -1201,7 +1197,7 @@
     },
     {
       "path": "test/language/statements/try/S12.14_A4.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: #1.2: Exception has DontDelete property"
     },
     {
       "path": "test/language/statements/try/S12.14_A5.js",
@@ -1277,7 +1273,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A5_T1.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: #1: Object.prototype[1] = 1; Object.prototype.length = -1; Object.prototype.push = Array.proto"
     },
     {
       "path": "test/built-ins/Array/prototype/push/set-length-array-is-frozen.js",
@@ -1317,11 +1313,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A4_T1.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: #1: Array.prototype[1] = 1; x = [0]; x.length = 2; x.pop() === 1. Actual: 0"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A4_T2.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: #2: Array.prototype[1] = -1; x = [0,1]; x.length = 2; x.pop(); x[1] === -1. Actual: undefined"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/set-length-array-is-frozen.js",
@@ -1372,40 +1368,8 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-11.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-12.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-13.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-14.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-15.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-16.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-4.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-5.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-6.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-8.js",
@@ -1468,40 +1432,12 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-3.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-6.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-7.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-9.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-10.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-11.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-12.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-13.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-3.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-5.js",
@@ -1510,14 +1446,6 @@
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-7.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-8.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-9.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-16.js",
@@ -1534,10 +1462,6 @@
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-iii-4.js",
       "reason": "zjs: throw: Test262Error: enumerable !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-iii-5.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-9-3.js",
@@ -1776,16 +1700,8 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-2.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-5.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-10.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-11.js",
@@ -1793,11 +1709,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-12.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-13.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-14.js",
@@ -1817,7 +1733,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-3.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-4.js",
@@ -1837,11 +1753,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-8.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-9.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-1.js",
@@ -1997,171 +1913,35 @@
     },
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-a-4.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: desc.hasOwnProperty(\"configurable\") !== true"
     },
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-6-2.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Object/keys/return-order.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-10.js",
       "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-102.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-105.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-106.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-11.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-112.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-113.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-114.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-115.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-116.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-117.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-118.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-119.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-12.js",
       "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-120.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-121.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-122.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-124.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-127.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-13.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-133.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-134.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-136.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-137.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-138.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-139.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-14.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-140.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-141.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-142.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-143.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-144.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-145.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-146.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-147.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-149.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-15.js",
       "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-150.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-151.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-19.js",
@@ -2244,16 +2024,8 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-99.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/JSON/parse/builtin.js",
       "reason": "zjs: throw: Test262Error: Object.isExtensible(parse) must return true"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/reviver-array-get-prop-from-prototype.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-call-args-after-forward-modification.js",
@@ -2264,20 +2036,12 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/JSON/parse/reviver-object-get-prop-from-prototype.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/JSON/parse/text-object-abrupt.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/JSON/stringify/builtin.js",
       "reason": "zjs: throw: Test262Error: Object.isExtensible(JSON.stringify) must return true"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/property-order.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/built-ins/JSON/stringify/replacer-array-duplicates.js",
@@ -2397,7 +2161,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A9.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: #0: String.prototype.indexOf.hasOwnProperty('length') return true. Actual: undefined"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A11.js",
@@ -2505,7 +2269,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A9.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: #0: String.prototype.slice.hasOwnProperty('length') return true. Actual: undefined"
     },
     {
       "path": "test/built-ins/String/prototype/split/argument-is-regexp-a-z-and-instance-is-string-abc.js",
@@ -2573,7 +2337,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/split/checking-if-deleting-the-string-prototype-split-length-property-fails.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
+      "reason": "zjs: throw: Test262Error: String.prototype.split.hasOwnProperty('length') must return true"
     },
     {
       "path": "test/built-ins/String/prototype/split/checking-if-enumerating-the-string-prototype-split-length-property-fails.js",

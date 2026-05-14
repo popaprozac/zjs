@@ -894,20 +894,35 @@ fn host_math_min(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
 fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
     if kind == 0 {
-        // for-in: enumerate own string keys of an object.
+        // for-in: enumerate own string keys of an object, skipping
+        // deleted slots. Same scratch-then-compact pattern as Object.keys.
         if zjs_is_object(src) != 0 {
             let o = zjs_as_object(src);
-            let count = o.cls.prop_count;
-            let arr_v = ctx_new_array(ctx, count);
+            let cap = o.cls.prop_count;
+            let arr_v = ctx_new_array(ctx, cap);
             let arr = zjs_as_array(arr_v);
+            let scratch: ZjsString*[64];
+            let limit: u32 = if cap > 64 { 64 } else { cap };
+            let init_i: u32 = 0;
+            while init_i < limit { scratch[init_i] = NULL; init_i = init_i + 1; }
             let cls = o.cls;
             while cls != NULL && cls.parent != NULL {
-                let name = cls.transition_name;
                 let slot = cls.transition_slot;
-                arr.elements[slot] = zjs_cell_from_ptr((void*)name);
+                if slot < limit && zjs_is_deleted(o.slots[slot]) == 0 {
+                    scratch[slot] = cls.transition_name;
+                }
                 cls = cls.parent;
             }
-            arr.length = count;
+            let out: u32 = 0;
+            let i: u32 = 0;
+            while i < limit {
+                if scratch[i] != NULL {
+                    arr.elements[out] = zjs_cell_from_ptr((void*)scratch[i]);
+                    out = out + 1;
+                }
+                i = i + 1;
+            }
+            arr.length = out;
             return arr_v;
         }
         return ctx_new_array(ctx, 0);
@@ -1143,17 +1158,33 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         return ctx_new_array(ctx, 0);
     }
     let o = zjs_as_object(args[0]);
-    let count = o.cls.prop_count;
-    let arr_v = ctx_new_array(ctx, count);
+    let cap = o.cls.prop_count;
+    let arr_v = ctx_new_array(ctx, cap);
     let arr = zjs_as_array(arr_v);
+    // Build a name-by-slot scratch first, then compact down to only
+    // the present (non-deleted) ones in insertion order.
+    let scratch: ZjsString*[64];
+    let limit: u32 = if cap > 64 { 64 } else { cap };
+    let init_i: u32 = 0;
+    while init_i < limit { scratch[init_i] = NULL; init_i = init_i + 1; }
     let cls = o.cls;
     while cls != NULL && cls.parent != NULL {
-        let name = cls.transition_name;
         let slot = cls.transition_slot;
-        arr.elements[slot] = zjs_cell_from_ptr((void*)name);
+        if slot < limit && zjs_is_deleted(o.slots[slot]) == 0 {
+            scratch[slot] = cls.transition_name;
+        }
         cls = cls.parent;
     }
-    arr.length = count;
+    let out: u32 = 0;
+    let i: u32 = 0;
+    while i < limit {
+        if scratch[i] != NULL {
+            arr.elements[out] = zjs_cell_from_ptr((void*)scratch[i]);
+            out = out + 1;
+        }
+        i = i + 1;
+    }
+    arr.length = out;
     return arr_v;
 }
 
@@ -2366,7 +2397,8 @@ fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
         let o = zjs_as_object(this_val);
         let name = if zjs_is_string(key) != 0 { zjs_as_string(key) }
                    else                       { zjs_as_string(zjs_to_string(ctx, key)) };
-        if class_find_slot(o.cls, name) >= 0 { return zjs_bool(1); }
+        let slot = class_find_slot(o.cls, name);
+        if slot >= 0 && zjs_is_deleted(o.slots[(u32)slot]) == 0 { return zjs_bool(1); }
         return zjs_bool(0);
     }
     if zjs_is_array(this_val) != 0 {

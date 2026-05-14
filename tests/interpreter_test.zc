@@ -753,6 +753,18 @@ fn run_tests() -> void {
     check_string((char*)"break runs finally",       (char*)r"let s=''; for (let i=0;i<3;i++) { try { s = s + i; if (i===1) break } finally { s = s + 'f' } }; s", (char*)"0f1f");
     check_string((char*)"continue runs finally",    (char*)r"let s=''; for (let i=0;i<3;i++) { try { if (i===1) continue; s = s + i } finally { s = s + 'f' } }; s", (char*)"0ff2f");
 
+    // --- delete operator (Phase 3.9c) ------------------------------
+    check_int((char*)"delete: hasOwn false",        (char*)r"let o = {a:1, b:2}; delete o.a; if (o.hasOwnProperty('a')) 0; else 1", 1);
+    check_int((char*)"delete: keys filtered",       (char*)r"let o = {a:1, b:2}; delete o.a; Object.keys(o).length", 1);
+    check_string((char*)"delete: keys leftover",    (char*)r"let o = {a:1, b:2}; delete o.a; Object.keys(o)[0]", (char*)"b");
+    check_int((char*)"delete: still readable other",(char*)r"let o = {a:1, b:2}; delete o.a; o.b", 2);
+    check_int((char*)"delete: deleted then set",    (char*)r"let o = {a:1}; delete o.a; o.a = 99; o.a", 99);
+    check_int((char*)"delete: return true",         (char*)r"let o = {a:1}; if (delete o.a) 1; else 0", 1);
+    check_int((char*)"delete: nonexistent true",    (char*)r"let o = {}; if (delete o.x) 1; else 0", 1);
+    check_int((char*)"delete: for-in skips",        (char*)r"let o = {a:1, b:2, c:3}; delete o.b; let n=0; for (let k in o) n=n+1; n", 2);
+    check_string((char*)"delete: typeof after",     (char*)r"let o = {x:1}; delete o.x; typeof o.x", (char*)"undefined");
+    check_int((char*)"delete: array hole",          (char*)r"let a=[1,2,3]; delete a[1]; if (typeof a[1] === 'undefined') 1; else 0", 1);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

@@ -44,6 +44,11 @@ def VALUE_NULL: u64           = 2;   // OTHER_TAG
 def VALUE_UNDEFINED: u64      = 10;  // OTHER_TAG | UNDEFINED_TAG (2 | 8)
 def VALUE_FALSE: u64          = 6;   // OTHER_TAG | BOOL_TAG     (2 | 4)
 def VALUE_TRUE: u64           = 7;   // OTHER_TAG | BOOL_TAG | 1 (2 | 4 | 1)
+// Sentinel for "this slot was deleted" — distinguishable from
+// undefined/null/bool. Same OTHER_TAG bit but uses bit 16 (above the
+// boolean payload bits) as the marker. Stored in object slots after
+// `delete obj.prop`; class_find_slot returns -1 when it lands on one.
+def VALUE_DELETED: u64        = 0x10002;   // OTHER_TAG | (1 << 16)
 
 // --- Bit-reinterpret between f64 and u64 -----------------------------
 //
@@ -105,6 +110,15 @@ fn zjs_null() -> ZjsValue {
 
 fn zjs_undefined() -> ZjsValue {
     return ZjsValue{ bits: VALUE_UNDEFINED };
+}
+
+fn zjs_deleted() -> ZjsValue {
+    return ZjsValue{ bits: VALUE_DELETED };
+}
+
+fn zjs_is_deleted(v: ZjsValue) -> int {
+    if v.bits == VALUE_DELETED { return 1; }
+    return 0;
 }
 
 // --- Type predicates --------------------------------------------------

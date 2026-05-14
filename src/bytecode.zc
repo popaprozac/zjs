@@ -90,6 +90,13 @@ enum Op {
     // for-in/of loop bound. Returns 0 for non-arrays.
     ArrayLength,      // a=dst, b=src
 
+    // `delete obj[key]` / `delete obj.name` (Phase 3.9c).
+    // Marks the slot DELETED (sentinel value), so subsequent lookups
+    // walk the proto chain as if the property is absent. Returns
+    // boolean to regs[a] (always true in MVP — no non-configurable
+    // enforcement yet).
+    DeleteElem,       // a=dst (bool), b=obj_reg, c=key_reg
+
     // `arguments` (Phase 3.8e).
     // Emitted at function entry when the body references `arguments`.
     // Builds a fresh array containing all call args and stores it in
