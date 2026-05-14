@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 16:37 UTC",
+    "when": "2026-05-14 16:43 UTC",
     "total": 4821,
-    "passed": 2433,
-    "failed": 362,
+    "passed": 2436,
+    "failed": 359,
     "skipped": 2026
   },
   "failures": [
@@ -128,10 +128,6 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/less-than/S11.8.1_A4.11.js",
-      "reason": "zjs: throw: Test262Error: #4: (\"abcd\" < abc\\u0064\") === false"
-    },
-    {
       "path": "test/language/expressions/less-than/S11.8.1_A4.12_T1.js",
       "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" < \"\\uFFFF\") === true"
     },
@@ -146,10 +142,6 @@
     {
       "path": "test/language/expressions/greater-than/S11.8.2_A2.3_T1.js",
       "reason": "zjs: throw: Test262Error: #1.3: Failed with: [object Object]"
-    },
-    {
-      "path": "test/language/expressions/greater-than/S11.8.2_A4.11.js",
-      "reason": "zjs: throw: Test262Error: #4: (\"abc\\u0064\" > abc\") === false"
     },
     {
       "path": "test/language/expressions/greater-than/S11.8.2_A4.12_T1.js",
@@ -168,10 +160,6 @@
       "reason": "zjs: throw: Test262Error: #1.3: Failed with: [object Object]"
     },
     {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.10.js",
-      "reason": "zjs: throw: Test262Error: #4: (\"abc\\u0064\" <= abcd\") === true"
-    },
-    {
       "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.12_T1.js",
       "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" <= \"\\uFFFF\") === true"
     },
@@ -186,10 +174,6 @@
     {
       "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A2.3_T1.js",
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.10.js",
-      "reason": "zjs: throw: Test262Error: #4: (\"abcd\" >= abc\\u0064\") === true"
     },
     {
       "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.12_T1.js",
@@ -1096,8 +1080,8 @@
       "reason": "zjs: throw: Test262Error: #1: String.prototype.indexOf.hasOwnProperty(\"length\") return true. Actual: undefined"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: __instance = new Boolean; __instance.indexOf = String.prototype.indexOf;  __instance.index"
+      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T10.js",
+      "reason": "zjs: throw: Test262Error: #1: var x; var __obj = {toString:function(){return \"AB\";}}; var __obj2 = {valueOf:function(){r"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T8.js",
@@ -1110,6 +1094,10 @@
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T2.js",
       "reason": "zjs: throw: Test262Error: #1.1: Exception === \"intointeger\". Actual: [object Object]"
+    },
+    {
+      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T3.js",
+      "reason": "zjs: throw: Test262Error: #1: var __obj = {toString:function(){return \"AB\";}}; var __obj2 = {valueOf:function(){return {"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T4.js",
@@ -1149,7 +1137,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T10.js",
-      "reason": "zjs: throw: Test262Error: #1: var x; var __obj = {valueOf:function(){return 2;}}; var __str = \"u0035ABBBABAB\"; __str.sli"
+      "reason": "zjs: throw: Test262Error: #1: var x; var __obj = {valueOf:function(){return 2;}}; var __str = \"5ABBBABAB\"; __str.slice(_"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T11.js",
