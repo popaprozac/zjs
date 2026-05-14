@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:44 UTC",
+    "when": "2026-05-14 18:47 UTC",
     "total": 4821,
-    "passed": 2514,
-    "failed": 281,
+    "passed": 2518,
+    "failed": 277,
     "skipped": 2026
   },
   "failures": [
@@ -652,24 +652,12 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-7.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-8.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-9.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-17.js",
       "reason": "zjs: throw: Test262Error: func(12, 11) !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-18.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-19.js",
@@ -894,10 +882,6 @@
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",
       "reason": "zjs: throw: Test262Error: #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A2_T7.js",
-      "reason": "zjs: throw: Test262Error: #1: __string = new String(\"this is a string object\"); __string.slice(__string.length, __string"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A3_T4.js",

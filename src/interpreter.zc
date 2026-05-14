@@ -62,8 +62,19 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
-    // String primitive: .length + prototype-method intercept.
+    // String primitive: .length + indexed chars + prototype-method intercept.
     if zjs_is_string(obj) != 0 {
+        // Integer index → single-char string. Out-of-range → undefined.
+        if zjs_is_int32(key) != 0 {
+            let s = zjs_as_string(obj);
+            let i = zjs_as_int32(key);
+            if i >= 0 && (u32)i < s.length {
+                let sd = s.data;
+                let off = (u32)i;
+                return ctx_intern_string(ctx, sd + off, 1);
+            }
+            return zjs_undefined();
+        }
         if zjs_is_string(key) != 0 {
             let ks = zjs_as_string(key);
             let kdata = ks.data;
@@ -115,6 +126,28 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 }
             }
             cur = cur.proto;
+        }
+        // Primitive-wrapper fallback: if `o` carries a hidden
+        // WRAPPER_VALUE_KEY pointing to a wrapped primitive, route
+        // indexed reads and "length" to that primitive. Makes
+        // `Array.prototype.forEach.call("abc", ...)` see length=3
+        // and obj[i] = "a"/"b"/"c" after the implicit ToObject.
+        let wclass: ZjsHiddenClass* = o.cls;
+        while wclass != NULL {
+            let wn = wclass.transition_name;
+            if wn != NULL && wn.length == WRAPPER_VALUE_KEY_LEN {
+                let wnd = wn.data;
+                let weq: int = 0;
+                raw { weq = (memcmp(wnd, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN) == 0) ? 1 : 0; }
+                if weq != 0 {
+                    let prim = o.slots[wclass.transition_slot];
+                    if zjs_is_string(prim) != 0 {
+                        return property_get(ctx, prim, key);
+                    }
+                    break;
+                }
+            }
+            wclass = wclass.parent;
         }
         return zjs_undefined();
     }
