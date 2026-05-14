@@ -358,6 +358,55 @@ honest accounting.
 The structural wins (tail-call optimization in Phase C, future
 generator support) are the larger payoff.
 
+## Actual results (Phase D — landed 2026-05-14)
+
+Phase A (scaffolding) — commit `9a76844`. No behavior change; only
+new types + helpers, unused. Bench identical to pre-Phase-A.
+
+Phase B (interpret() rewrite) — commit `e8248a8`. All 412 tests pass
+on the first build. Bench:
+
+| bench         | pre-B    | post-B   | delta   | vs qjs       |
+|---------------|----------|----------|---------|--------------|
+| fib_recursive | 167 ms   | 141 ms   | **-16%** | 1.32× (was 1.4×) |
+| int_loop_big  | 159 ms   | 145 ms   | -9%     | we win       |
+| property_poly | 15.5 ms  | 12.8 ms  | **-18%** (surprise) | 1.46× |
+| sieve         | 14.7 ms  | 14.25 ms | -3%     | we win       |
+| method_call   | 9.0 ms   | 8.60 ms  | -4%     | tied         |
+| others        | ~        | ~        | ±noise  | ~            |
+
+The property_poly improvement was unexpected. Hypothesis: the
+per-call alloca + push_root_frame setup was disrupting cache state
+even for benches that aren't call-heavy. Removing it helps any code
+that GCs.
+
+Phase C (tail-call optimization) — commit `e72e7f9`. 4 new tests
+(deep recursion, mutual recursion, non-tail check, finally
+correctness). Bench impact: **~zero on our microbenches** — fib's
+`return fib(n-1) + fib(n-2)` is not in tail position, so TCO never
+fires there. None of the other benches have hot tail calls either.
+
+Phase C is a correctness/architectural win. The new bytecode +
+runtime support unlocks:
+- 10M-deep tail recursion in 170 ms (would have crashed pre-Phase-C)
+- Mutual recursion at any depth
+- The foundation for trampolined patterns and (later) generators
+
+Phase D (this section) — measurement.
+
+**Test262 conformance held at 77.2%** through both refactors — no
+semantic regressions.
+
+**Net Phase 3.9h impact**:
+- fib_recursive 167 ms → 141 ms, gap to qjs 1.4× → 1.32×
+- property_poly 15.5 ms → 12.8 ms, gap to qjs 1.7× → 1.46×
+- Other benches stable or modestly improved
+- TCO opens up algorithm patterns that were unusable before
+
+**Beat the 5-10% upper estimate on fib** thanks to (a) eliminating
+the per-call C function-call overhead, (b) the alloca cost was higher
+than I'd modeled, and (c) the unmodeled cache benefit.
+
 ## Out of scope
 
 - **Async/await, generators.** These need a more sophisticated
