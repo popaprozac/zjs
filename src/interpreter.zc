@@ -1301,12 +1301,6 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
-                } else if zjs_is_string(val) != 0 {
-                    let cur = ctx.string_proto;
-                    while cur != NULL {
-                        if cur == proto_obj { result = 1; cur = NULL; }
-                        else                { cur = cur.proto; }
-                    }
                 } else if zjs_is_promise(val) != 0 {
                     let cur = ctx.promise_ctor_proto;
                     while cur != NULL {

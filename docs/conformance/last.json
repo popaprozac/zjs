@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 15:26 UTC",
+    "when": "2026-05-14 16:06 UTC",
     "total": 4821,
-    "passed": 2402,
-    "failed": 393,
+    "passed": 2403,
+    "failed": 392,
     "skipped": 2026
   },
   "failures": [
@@ -310,10 +310,6 @@
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A1.js",
       "reason": "zjs: throw: Test262Error: #1: ({})\\u0009instanceof\\u0009Object === true"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A4_T3.js",
-      "reason": "zjs: throw: Test262Error: #1: \"\" is not instanceof String"
     },
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A6_T3.js",
