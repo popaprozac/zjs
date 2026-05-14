@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 00:16 UTC",
+    "when": "2026-05-14 00:20 UTC",
     "total": 4144,
-    "passed": 1778,
-    "failed": 835,
+    "passed": 1846,
+    "failed": 767,
     "skipped": 1531
   },
   "failures": [
@@ -24,48 +24,8 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/addition/S11.6.1_A3.1_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #2: new Boolean(true) + true === 2. Actual: [object Object]true"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A3.1_T1.2.js",
-      "reason": "zjs: throw: Test262Error: #2: new Number(1) + 1 === 2. Actual: [object Object]1"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A3.1_T2.1.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) + 1 === 2. Actual: [object Object]1"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A3.1_T2.2.js",
-      "reason": "zjs: throw: Test262Error: #3: new Number(1) + null === 1. Actual: [object Object]null"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A3.1_T2.5.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) + null === 1. Actual: [object Object]null"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A3.2_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #2: new String(\"1\") + \"1\" === \"11\". Actual: [object Object]1"
-    },
-    {
       "path": "test/language/expressions/addition/S11.6.1_A3.2_T1.2.js",
       "reason": "zjs: throw: Test262Error: #1: ({} + function(){return 1}) === ({}.toString() + function(){return 1}.toString()). Actual:"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A3.2_T2.1.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") + 1 === \"11\". Actual: [object Object]1"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A3.2_T2.2.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) + \"1\" === \"true1\". Actual: [object Object]1"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A3.2_T2.3.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") + undefined === \"1undefined\". Actual: [object Object]undefined"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A3.2_T2.4.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") + null === \"1null\". Actual: [object Object]null"
     },
     {
       "path": "test/language/expressions/addition/S11.6.1_A4_T3.js",
@@ -108,42 +68,6 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/subtraction/S11.6.2_A3_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #2: new Boolean(true) - true === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A3_T1.2.js",
-      "reason": "zjs: throw: Test262Error: #2: new Number(1) - 1 === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A3_T1.3.js",
-      "reason": "zjs: throw: Test262Error: #2: new String(\"1\") - \"1\" === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A3_T2.1.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) - 1 === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A3_T2.2.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") - 1 === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A3_T2.3.js",
-      "reason": "zjs: throw: Test262Error: #3: new Number(1) - null === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A3_T2.5.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) - \"1\" === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A3_T2.7.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") - null === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A3_T2.9.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) - null === 1. Actual: nan"
-    },
-    {
       "path": "test/language/expressions/subtraction/S11.6.2_A4_T2.js",
       "reason": "zjs: throw: Test262Error: #1: Infinity - -Infinity === Infinity. Actual: inf"
     },
@@ -178,42 +102,6 @@
     {
       "path": "test/language/expressions/multiplication/S11.5.1_A2.3_T1.js",
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A3_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #2: new Boolean(true) * true === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A3_T1.2.js",
-      "reason": "zjs: throw: Test262Error: #2: new Number(1) * 1 === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A3_T1.3.js",
-      "reason": "zjs: throw: Test262Error: #2: new String(\"1\") * \"1\" === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A3_T2.1.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) * 1 === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A3_T2.2.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") * 1 === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A3_T2.3.js",
-      "reason": "zjs: throw: Test262Error: #3: new Number(1) * null === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A3_T2.5.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) * \"1\" === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A3_T2.7.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") * null === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A3_T2.9.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) * null === 0. Actual: nan"
     },
     {
       "path": "test/language/expressions/multiplication/S11.5.1_A4_T2.js",
@@ -252,32 +140,8 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/division/S11.5.2_A3_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #2: new Boolean(true) / true === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A3_T1.2.js",
-      "reason": "zjs: throw: Test262Error: #2: new Number(1) / 1 === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A3_T1.3.js",
-      "reason": "zjs: throw: Test262Error: #2: new String(\"1\") / \"1\" === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A3_T2.1.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) / 1 === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A3_T2.2.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") / 1 === 1. Actual: nan"
-    },
-    {
       "path": "test/language/expressions/division/S11.5.2_A3_T2.3.js",
       "reason": "zjs: throw: Test262Error: #1: 1 / null === +Infinity. Actual: inf"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A3_T2.5.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) / \"1\" === 1. Actual: nan"
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A3_T2.7.js",
@@ -330,42 +194,6 @@
     {
       "path": "test/language/expressions/modulus/S11.5.3_A2.3_T1.js",
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
-    },
-    {
-      "path": "test/language/expressions/modulus/S11.5.3_A3_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #2: new Boolean(true) % true === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/modulus/S11.5.3_A3_T1.2.js",
-      "reason": "zjs: throw: Test262Error: #2: new Number(1) % 1 === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/modulus/S11.5.3_A3_T1.3.js",
-      "reason": "zjs: throw: Test262Error: #2: new String(\"1\") % \"1\" === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/modulus/S11.5.3_A3_T2.1.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) % 1 === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/modulus/S11.5.3_A3_T2.2.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") % 1 === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/modulus/S11.5.3_A3_T2.3.js",
-      "reason": "zjs: throw: Test262Error: #4: null % new Number(1) === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/modulus/S11.5.3_A3_T2.5.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) % \"1\" === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/modulus/S11.5.3_A3_T2.7.js",
-      "reason": "zjs: throw: Test262Error: #4: null % new String(\"1\") === 0. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/modulus/S11.5.3_A3_T2.9.js",
-      "reason": "zjs: throw: Test262Error: #4: null % new Boolean(true) === 0. Actual: nan"
     },
     {
       "path": "test/language/expressions/modulus/S11.5.3_A4_T2.js",
@@ -560,18 +388,6 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/less-than/S11.8.1_A3.1_T2.3.js",
-      "reason": "zjs: throw: Test262Error: #4: null < new Number(1) === true"
-    },
-    {
-      "path": "test/language/expressions/less-than/S11.8.1_A3.1_T2.7.js",
-      "reason": "zjs: throw: Test262Error: #4: null < new String(\"1\") === true"
-    },
-    {
-      "path": "test/language/expressions/less-than/S11.8.1_A3.1_T2.9.js",
-      "reason": "zjs: throw: Test262Error: #4: null < new Boolean(true) === true"
-    },
-    {
       "path": "test/language/expressions/less-than/S11.8.1_A3.2_T1.1.js",
       "reason": "zjs: throw: Test262Error: #6: \"1\" < \"x\" === true"
     },
@@ -610,18 +426,6 @@
     {
       "path": "test/language/expressions/greater-than/S11.8.2_A2.3_T1.js",
       "reason": "zjs: throw: Test262Error: #1.3: Failed with: [object Object]"
-    },
-    {
-      "path": "test/language/expressions/greater-than/S11.8.2_A3.1_T2.3.js",
-      "reason": "zjs: throw: Test262Error: #3: new Number(1) > null === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than/S11.8.2_A3.1_T2.7.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") > null === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than/S11.8.2_A3.1_T2.9.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) > null === true"
     },
     {
       "path": "test/language/expressions/greater-than/S11.8.2_A3.2_T1.1.js",
@@ -664,40 +468,8 @@
       "reason": "zjs: throw: Test262Error: #1.3: Failed with: [object Object]"
     },
     {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A3.1_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #2: new Boolean(true) <= true === true"
-    },
-    {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A3.1_T1.2.js",
-      "reason": "zjs: throw: Test262Error: #2: new Number(1) <= 1 === true"
-    },
-    {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A3.1_T2.1.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) <= 1 === true"
-    },
-    {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A3.1_T2.2.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") <= 1 === true"
-    },
-    {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A3.1_T2.3.js",
-      "reason": "zjs: throw: Test262Error: #4: null <= new Number(1) === true"
-    },
-    {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A3.1_T2.5.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) <= \"1\" === true"
-    },
-    {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A3.1_T2.7.js",
-      "reason": "zjs: throw: Test262Error: #4: null <= new String(\"1\") === true"
-    },
-    {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A3.1_T2.9.js",
-      "reason": "zjs: throw: Test262Error: #4: null <= new Boolean(true) === true"
-    },
-    {
       "path": "test/language/expressions/less-than-or-equal/S11.8.3_A3.2_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #2: new String(\"1\") <= \"1\" === true"
+      "reason": "zjs: throw: Test262Error: #6: \"1\" <= \"x\" === true"
     },
     {
       "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.10.js",
@@ -744,40 +516,8 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A3.1_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #2: new Boolean(true) >= true === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A3.1_T1.2.js",
-      "reason": "zjs: throw: Test262Error: #2: new Number(1) >= 1 === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A3.1_T2.1.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) >= 1 === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A3.1_T2.2.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") >= 1 === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A3.1_T2.3.js",
-      "reason": "zjs: throw: Test262Error: #3: new Number(1) >= null === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A3.1_T2.5.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) >= \"1\" === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A3.1_T2.7.js",
-      "reason": "zjs: throw: Test262Error: #3: new String(\"1\") >= null === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A3.1_T2.9.js",
-      "reason": "zjs: throw: Test262Error: #3: new Boolean(true) >= null === true"
-    },
-    {
       "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A3.2_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #2: new String(\"1\") >= \"1\" === true"
+      "reason": "zjs: throw: Test262Error: #5: \"x\" >= \"1\" === true"
     },
     {
       "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.10.js",
@@ -848,18 +588,6 @@
       "reason": "zjs: throw: Test262Error: #7.2: var object = {valueOf: function() {throw \"error\"}, toString: function() {return -1}}; -o"
     },
     {
-      "path": "test/language/expressions/unary-minus/S11.4.7_A3_T1.js",
-      "reason": "zjs: throw: Test262Error: #2: -new Boolean(true) === -1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/unary-minus/S11.4.7_A3_T2.js",
-      "reason": "zjs: throw: Test262Error: #2: -new Number(-1) === 1. Actual: nan"
-    },
-    {
-      "path": "test/language/expressions/unary-minus/S11.4.7_A3_T3.js",
-      "reason": "zjs: throw: Test262Error: #3: -new String(\"-1\") === 1. Actual: nan"
-    },
-    {
       "path": "test/language/expressions/unary-minus/S11.4.7_A4.2.js",
       "reason": "zjs: throw: Test262Error: #1.2: var x = 0; x = -x; x === - 0. Actual: +0"
     },
@@ -877,7 +605,7 @@
     },
     {
       "path": "test/language/expressions/unary-plus/S11.4.6_A3_T2.js",
-      "reason": "zjs: throw: Test262Error: #2: +new Number(-1.1) === -1.1. Actual: [object Object]"
+      "reason": "zjs: throw: Test262Error: #2: +new Number(-1.1) === -1.1. Actual: -1.1"
     },
     {
       "path": "test/language/expressions/unary-plus/S11.4.6_A3_T3.js",
@@ -901,7 +629,7 @@
     },
     {
       "path": "test/language/expressions/unary-plus/S9.3_A5_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: +(new Number()) === 0. Actual: [object Object]"
+      "reason": "zjs: throw: Test262Error: #1: +(new Number()) === 0. Actual: 0"
     },
     {
       "path": "test/language/expressions/typeof/get-value.js",

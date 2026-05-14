@@ -2363,23 +2363,66 @@ fn host_function_apply(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
 // object; we don't model wrapper objects and return the primitive
 // instead — close enough for the conformance tests that call them.
 
+// Hidden slot used by the wrapper-object form (`new Number(x)` etc.)
+// to stash the primitive value behind a property name that user code
+// won't bump into. Read by the prototype's valueOf / toString.
+def WRAPPER_VALUE_KEY: char* = (char*)"__zjs_primitive__";
+def WRAPPER_VALUE_KEY_LEN: u32 = 17;
+
+fn wrap_primitive_if_new(ctx: ZjsContext*, primitive: ZjsValue) -> ZjsValue {
+    // If invoked via `new`, NewInvoke set ctx.host_this to a fresh
+    // object with proto = ctor.prototype. Attach the primitive as a
+    // hidden own property and return the wrapper. Otherwise return
+    // the primitive directly (plain call).
+    if zjs_is_object(ctx.host_this) != 0 {
+        let obj = zjs_as_object(ctx.host_this);
+        let key = ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN);
+        object_set(ctx, obj, key, primitive);
+        return ctx.host_this;
+    }
+    return primitive;
+}
+
 fn host_boolean(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if argc == 0 { return zjs_bool(0); }
-    let b = zjs_to_bool_coerce(args[0]);
-    return zjs_bool(b);
+    let v = if argc == 0 { zjs_bool(0) } else { zjs_bool(zjs_to_bool_coerce(args[0])) };
+    return wrap_primitive_if_new(ctx, v);
 }
 
 fn host_number(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if argc == 0 { return zjs_int32(0); }
-    let d = zjs_to_double(args[0]);
-    let as_int = (i32)d;
-    if (f64)as_int == d { return zjs_int32(as_int); }
-    return zjs_double(d);
+    let n: ZjsValue = zjs_int32(0);
+    if argc > 0 {
+        let d = zjs_to_double(args[0]);
+        let as_int = (i32)d;
+        if (f64)as_int == d { n = zjs_int32(as_int); }
+        else { n = zjs_double(d); }
+    }
+    return wrap_primitive_if_new(ctx, n);
 }
 
 fn host_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if argc == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
-    return zjs_to_string(ctx, args[0]);
+    let s: ZjsValue = if argc == 0 { ctx_intern_string(ctx, (char*)"", 0) }
+                      else         { zjs_to_string(ctx, args[0]) };
+    return wrap_primitive_if_new(ctx, s);
+}
+
+// Prototype methods that unwrap the boxed primitive. Read host_this's
+// hidden slot if it's a wrapper object; otherwise return host_this as-is
+// (so e.g. `(123).valueOf()` would also work once we auto-box later).
+fn host_wrapper_value_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_object(this_val) != 0 {
+        let o = zjs_as_object(this_val);
+        let key = ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN);
+        let v = object_get(o, key);
+        if zjs_is_undefined(v) == 0 { return v; }
+    }
+    return this_val;
+}
+
+fn host_wrapper_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = host_wrapper_value_of(ctx, args, argc);
+    if zjs_is_string(v) != 0 { return v; }
+    return zjs_to_string(ctx, v);
 }
 
 // String.fromCharCode(...codes) — build a string from numeric char codes.
@@ -2623,9 +2666,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let typerr_ptr:  void* = NULL; raw { typerr_ptr  = (void*)host_type_error; }
     let rngerr_ptr:  void* = NULL; raw { rngerr_ptr  = (void*)host_range_error; }
     let eval_ptr:    void* = NULL; raw { eval_ptr    = (void*)host_eval_stub; }
-    ctx_register_host_function(ctx, (char*)"Boolean",        bool_ptr);
-    ctx_register_host_function(ctx, (char*)"Number",         num_ptr);
-    let strv_full = ctx_register_host_function(ctx, (char*)"String", str_ptr);
+    let bool_full = ctx_register_host_function(ctx, (char*)"Boolean", bool_ptr);
+    let num_full  = ctx_register_host_function(ctx, (char*)"Number",  num_ptr);
+    let strv_full = ctx_register_host_function(ctx, (char*)"String",  str_ptr);
     // Attach String.fromCharCode via .props on the constructor.
     let strv_hf = zjs_as_host_function(strv_full);
     let fcc_ptr: void* = NULL; raw { fcc_ptr = (void*)host_string_from_char_code; }
@@ -2636,6 +2679,39 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     }
     object_set(ctx, strv_hf.props,
                ctx_intern_atom(ctx, (char*)"fromCharCode", 12), fcc_v);
+    // Phase 3.8i — wrapper-object prototypes.
+    //   new Number(x)  → { __zjs_primitive__: x } with proto = Number.prototype.
+    // The prototype carries valueOf / toString that unwrap the slot,
+    // so `new Number(1) + 1` triggers ToPrimitive → valueOf → 1 → 2.
+    let wv_ptr: void* = NULL; raw { wv_ptr = (void*)host_wrapper_value_of; }
+    let wt_ptr: void* = NULL; raw { wt_ptr = (void*)host_wrapper_to_string; }
+    let bool_hf = zjs_as_host_function(bool_full);
+    let num_hf  = zjs_as_host_function(num_full);
+    let valueof_atom  = ctx_intern_atom(ctx, (char*)"valueOf",  7);
+    let tostring_atom = ctx_intern_atom(ctx, (char*)"toString", 8);
+    // Boolean.prototype
+    let bp = ctx_new_object(ctx);
+    bool_hf.prototype = zjs_as_object(bp);
+    object_set(ctx, bool_hf.prototype, valueof_atom,
+               ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
+    object_set(ctx, bool_hf.prototype, tostring_atom,
+               ctx_make_host_function(ctx, (char*)"toString", wt_ptr));
+    // Number.prototype
+    let np = ctx_new_object(ctx);
+    num_hf.prototype = zjs_as_object(np);
+    object_set(ctx, num_hf.prototype, valueof_atom,
+               ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
+    object_set(ctx, num_hf.prototype, tostring_atom,
+               ctx_make_host_function(ctx, (char*)"toString", wt_ptr));
+    // String.prototype (existing one — keep its methods, add valueOf/toString)
+    if strv_hf.prototype == NULL {
+        let sp = ctx_new_object(ctx);
+        strv_hf.prototype = zjs_as_object(sp);
+    }
+    object_set(ctx, strv_hf.prototype, valueof_atom,
+               ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
+    object_set(ctx, strv_hf.prototype, tostring_atom,
+               ctx_make_host_function(ctx, (char*)"toString", wt_ptr));
     ctx_register_host_function(ctx, (char*)"ReferenceError", referr_ptr);
     ctx_register_host_function(ctx, (char*)"TypeError",      typerr_ptr);
     ctx_register_host_function(ctx, (char*)"RangeError",     rngerr_ptr);

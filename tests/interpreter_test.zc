@@ -714,6 +714,17 @@ fn run_tests() -> void {
     check_int((char*)"valueOf in <",                (char*)r"if (({valueOf: function() { return 3 }}) < 5) 1; else 0", 1);
     check_int((char*)"unary - via valueOf",         (char*)r"-({valueOf: function() { return 4 }})", -4);
 
+    // --- Wrapper objects: new Number/Boolean/String (Phase 3.8i) ---
+    check_int((char*)"new Number + primitive",       (char*)r"new Number(1) + 1", 2);
+    check_int((char*)"new Number - primitive",       (char*)r"new Number(10) - 3", 7);
+    check_int((char*)"new Number(0) falsy?",         (char*)r"if (new Number(0)) 1; else 0", 1);
+    check_int((char*)"new Boolean(true) + 1",        (char*)r"new Boolean(true) + 1", 2);
+    check_string((char*)"new String + str",          (char*)r"new String('1') + '1'", (char*)"11");
+    check_int((char*)"new Number.valueOf()",         (char*)r"new Number(7).valueOf()", 7);
+    check_string((char*)"new Number(5).toString()",  (char*)r"new Number(5).toString()", (char*)"5");
+    check_string((char*)"typeof new Number",         (char*)r"typeof new Number(1)", (char*)"object");
+    check_string((char*)"typeof plain Number(1)",    (char*)r"typeof Number(1)", (char*)"number");
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");
