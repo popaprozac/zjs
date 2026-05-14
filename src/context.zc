@@ -1827,6 +1827,10 @@ fn read_length_u32(ctx: ZjsContext*, this_val: ZjsValue) -> u32 {
             if d <= 0.0 { return 0; }
             return (u32)d;
         }
+        if zjs_is_bool(v) != 0 {
+            if zjs_as_bool(v) != 0 { return 1; }
+            return 0;
+        }
         return 0;
     }
     return 0;
