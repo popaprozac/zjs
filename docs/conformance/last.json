@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:16 UTC",
+    "when": "2026-05-14 18:19 UTC",
     "total": 4821,
-    "passed": 2489,
-    "failed": 306,
+    "passed": 2491,
+    "failed": 304,
     "skipped": 2026
   },
   "failures": [
@@ -902,14 +902,6 @@
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T5.js",
       "reason": "zjs: throw: Test262Error: #1.1: Exception === \"intostr\". Actual: [object Object]"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T3.js",
-      "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( String.fromCharCode(32), 1 )===-1. Actual: 0"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A5_T6.js",
-      "reason": "zjs: throw: Test262Error: #0: TEST_STRING.indexOf( (String.fromCharCode(32)+ String.fromCharCode(33) + String.fromCharCo"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A6.js",

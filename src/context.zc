@@ -1942,15 +1942,24 @@ fn host_string_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     let hay = zjs_as_string(str_v);
     if zjs_is_string(needle_v) == 0 { return zjs_int32(-1); }
     let nee = zjs_as_string(needle_v);
-    if nee.length == 0 { return zjs_int32(0); }
-    if hay.length < nee.length { return zjs_int32(-1); }
     let hay_d = hay.data;
     let hay_n = hay.length;
     let nee_d = nee.data;
     let nee_n = nee.length;
+    // Optional fromIndex (clamped to [0, hay_n]).
+    let from: u32 = 0;
+    if argc >= 2 {
+        let fi = zjs_to_double(args[1]);
+        raw { if (isnan(fi)) fi = 0; }
+        if fi < 0.0 { fi = 0.0; }
+        if fi > (f64)hay_n { fi = (f64)hay_n; }
+        from = (u32)fi;
+    }
+    if nee.length == 0 { return zjs_int32((i32)from); }
+    if hay_n < nee_n { return zjs_int32(-1); }
     let result: i32 = -1;
     raw {
-        for (uint32_t i = 0; i + nee_n <= hay_n; i++) {
+        for (uint32_t i = from; i + nee_n <= hay_n; i++) {
             if (memcmp(hay_d + i, nee_d, nee_n) == 0) {
                 result = (int32_t)i;
                 break;
