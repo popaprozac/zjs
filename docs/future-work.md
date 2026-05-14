@@ -78,6 +78,22 @@ These are noted in phase docs but worth restating in one place:
   design study targets this. Trigger: once the bytecode shape is
   stable and we want measurable jitless throughput gains.
 
+  *2026-05-13 microbenchmark*: a focused C test of switch-dispatch vs
+  computed-goto on a tight numeric loop, compiled `-O3` on Apple
+  Silicon, showed **~5% threaded-faster** — much smaller than the
+  20-50% commonly cited for older x86. Apple's branch predictor
+  handles central indirect-branch dispatch nearly as well as
+  per-handler. Our interpreter's per-opcode handler body is also
+  substantial (object dispatch, IC probe, GC awareness), which
+  further dilutes the dispatch share. Conclusion: threading is real
+  but not the lever it once was. The work cost (rewriting ~900 lines
+  of dispatch in raw C inside one Zen-c function, or splitting into
+  N tail-called handlers) is high vs the expected ~5% ceiling.
+  Reconsider only after (a) frame-reuse / non-recursive interpreter
+  closes the fib-style call gap, OR (b) we move to a 4-byte
+  packed-per-opcode encoding (Hermes-style) where dispatch becomes
+  a larger share again.
+
 - **AOT bytecode bundles** (`.zbc` files, Hermes-style). Already on
   the roadmap. Trigger: iOS cold-start workloads where parse cost is
   visible.
