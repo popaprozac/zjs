@@ -8,6 +8,7 @@
 import "./token.zc";
 import "./lexer.zc";
 import "./ast.zc";
+import "std/mem.zc"
 
 raw {
     #include <stdlib.h>
@@ -50,22 +51,15 @@ struct ParseResult {
 // --- Top-level entry ------------------------------------------------
 
 fn parse_program(source: char*, source_len: usize) -> ParseResult {
-    let p: Parser* = NULL;
-    raw {
-        p = (Parser*)calloc(1, sizeof(Parser));
-    }
+    let p = alloc<Parser>();
     p.source = source;
     p.source_len = source_len;
     p.tracker = alloc_list_new();
     p.had_error = false;
 
     // Lex everything into a buffer.
-    let tokens: Token* = NULL;
-    raw {
-        tokens = (Token*)calloc(MAX_TOKENS, sizeof(Token));
-    }
-    p.tokens = tokens;
-    p.token_count = tokenize_into(source, source_len, tokens, MAX_TOKENS);
+    p.tokens = alloc_n<Token>(MAX_TOKENS);
+    p.token_count = tokenize_into(source, source_len, p.tokens, MAX_TOKENS);
     p.pos = 0;
 
     // Parse a sequence of expression statements terminated by `;` or EOF.
@@ -73,23 +67,18 @@ fn parse_program(source: char*, source_len: usize) -> ParseResult {
 
     // Reserve a temporary children buffer on the parser's tracker.
     // We don't know the exact count up front, so grow into a Vec-style
-    // pattern: malloc/realloc as we go.
+    // pattern as we go.
     let cap: u32 = 8;
     let count: u32 = 0;
-    let buf: AstNode** = NULL;
-    raw {
-        buf = (AstNode**)calloc(cap, sizeof(AstNode*));
-    }
+    let buf = alloc_n<AstNode*>((usize)cap);
 
     while peek_kind(p) != TokenKind::Eof && !p.had_error {
         let stmt = parse_statement(p);
         if stmt == NULL { break; }
         if count >= cap {
+            let old_cap = cap;
             cap = cap * 2;
-            let old_buf = buf;
-            raw {
-                buf = (AstNode**)realloc(old_buf, cap * sizeof(AstNode*));
-            }
+            buf = realloc_n<AstNode*>(buf, (usize)old_cap, (usize)cap);
         }
         buf[count] = stmt;
         count = count + 1;
@@ -105,12 +94,8 @@ fn parse_program(source: char*, source_len: usize) -> ParseResult {
 
 fn parser_free_result(r: ParseResult) -> void {
     alloc_list_free_all(&r.parser.tracker);
-    let tokens = r.parser.tokens;
-    let parser = r.parser;
-    raw {
-        free(tokens);
-        free(parser);
-    }
+    dealloc(r.parser.tokens);
+    dealloc(r.parser);
 }
 
 // --- Cursor primitives ----------------------------------------------
@@ -246,18 +231,15 @@ fn parse_block(p: Parser*) -> AstNode* {
 
     let cap: u32 = 8;
     let count: u32 = 0;
-    let buf: AstNode** = NULL;
-    raw {
-        buf = (AstNode**)calloc(cap, sizeof(AstNode*));
-    }
+    let buf = alloc_n<AstNode*>((usize)cap);
 
     while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof && !p.had_error {
         let stmt = parse_statement(p);
         if stmt == NULL { break; }
         if count >= cap {
+            let old_cap = cap;
             cap = cap * 2;
-            let old_buf = buf;
-            raw { buf = (AstNode**)realloc(old_buf, cap * sizeof(AstNode*)); }
+            buf = realloc_n<AstNode*>(buf, (usize)old_cap, (usize)cap);
         }
         buf[count] = stmt;
         count = count + 1;
@@ -267,7 +249,7 @@ fn parse_block(p: Parser*) -> AstNode* {
     expect_kind(p, TokenKind::RBrace);
 
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
-    else         { raw { free(buf); } buf = NULL; }
+    else         { dealloc(buf); buf = NULL; }
 
     let node = new_node(&p.tracker, NodeKind::BlockStmt, lbrace.start, close.start + close.length);
     node.children = buf;
@@ -325,10 +307,7 @@ fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
 
     let cap: u32 = 2;
     let count: u32 = 0;
-    let buf: AstNode** = NULL;
-    raw {
-        buf = (AstNode**)calloc(cap, sizeof(AstNode*));
-    }
+    let buf = alloc_n<AstNode*>((usize)cap);
 
     let last_end: u32 = kw.start + kw.length;
     while true {
@@ -352,9 +331,9 @@ fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
         }
 
         if count >= cap {
+            let old_cap = cap;
             cap = cap * 2;
-            let old_buf = buf;
-            raw { buf = (AstNode**)realloc(old_buf, cap * sizeof(AstNode*)); }
+            buf = realloc_n<AstNode*>(buf, (usize)old_cap, (usize)cap);
         }
         buf[count] = decl;
         count = count + 1;
@@ -364,7 +343,7 @@ fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
     }
 
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
-    else         { raw { free(buf); } buf = NULL; }
+    else         { dealloc(buf); buf = NULL; }
 
     let node = new_node(&p.tracker, NodeKind::VarDecl, kw.start, last_end);
     node.op = kw.kind;
@@ -539,7 +518,7 @@ fn parse_for(p: Parser*) -> AstNode* {
 
     // Body lives in children[0] (the variadic slot — left/right/third are taken).
     let body_arr: AstNode** = NULL;
-    raw { body_arr = (AstNode**)calloc(1, sizeof(AstNode*)); }
+    body_arr = alloc_n<AstNode*>(1);
     body_arr[0] = body;
     alloc_list_push(&p.tracker, (void*)body_arr);
     node.children = body_arr;
@@ -566,7 +545,7 @@ fn finish_for_in_or_of(p: Parser*, kw_tok: Token, binding: AstNode*, op_kind: To
     node.right = iter_expr;
 
     let body_arr: AstNode** = NULL;
-    raw { body_arr = (AstNode**)calloc(1, sizeof(AstNode*)); }
+    body_arr = alloc_n<AstNode*>(1);
     body_arr[0] = body;
     alloc_list_push(&p.tracker, (void*)body_arr);
     node.children = body_arr;
@@ -699,10 +678,7 @@ struct ParamList {
 fn parse_param_list(p: Parser*) -> ParamList {
     let cap: u32 = 4;
     let count: u32 = 0;
-    let buf: AstNode** = NULL;
-    raw {
-        buf = (AstNode**)calloc(cap, sizeof(AstNode*));
-    }
+    let buf = alloc_n<AstNode*>((usize)cap);
 
     while peek_kind(p) != TokenKind::RParen && peek_kind(p) != TokenKind::Eof {
         let name_tok = peek(p);
@@ -716,9 +692,9 @@ fn parse_param_list(p: Parser*) -> ParamList {
                              name_tok.start, name_tok.start + name_tok.length);
 
         if count >= cap {
+            let old_cap = cap;
             cap = cap * 2;
-            let old_buf = buf;
-            raw { buf = (AstNode**)realloc(old_buf, cap * sizeof(AstNode*)); }
+            buf = realloc_n<AstNode*>(buf, (usize)old_cap, (usize)cap);
         }
         buf[count] = param;
         count = count + 1;
@@ -727,7 +703,7 @@ fn parse_param_list(p: Parser*) -> ParamList {
     }
 
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
-    else         { raw { free(buf); } buf = NULL; }
+    else         { dealloc(buf); buf = NULL; }
     return ParamList{ arr: buf, count: count };
 }
 
@@ -801,7 +777,7 @@ fn parse_class_body(p: Parser*) -> ParamList {
     let cap: u32 = 4;
     let count: u32 = 0;
     let buf: AstNode** = NULL;
-    raw { buf = (AstNode**)calloc(cap, sizeof(AstNode*)); }
+    buf = alloc_n<AstNode*>((usize)cap);
 
     while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
         // Skip empty `;` separators (allowed inside class bodies).
@@ -809,9 +785,9 @@ fn parse_class_body(p: Parser*) -> ParamList {
         let m = parse_method_body_pair(p);
         if m == NULL { p.had_error = true; break; }
         if count >= cap {
+            let old_cap = cap;
             cap = cap * 2;
-            let old = buf;
-            raw { buf = (AstNode**)realloc(old, cap * sizeof(AstNode*)); }
+            buf = realloc_n<AstNode*>(buf, (usize)old_cap, (usize)cap);
         }
         buf[count] = m;
         count = count + 1;
@@ -819,7 +795,7 @@ fn parse_class_body(p: Parser*) -> ParamList {
     expect_kind(p, TokenKind::RBrace);
 
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
-    else         { raw { free(buf); } buf = NULL; }
+    else         { dealloc(buf); buf = NULL; }
     return ParamList{ arr: buf, count: count };
 }
 
@@ -917,7 +893,7 @@ fn parse_arrow_single(p: Parser*) -> AstNode* {
     let param = new_node(&p.tracker, NodeKind::IdentExpr,
                          name_tok.start, name_tok.start + name_tok.length);
     let arr: AstNode** = NULL;
-    raw { arr = (AstNode**)calloc(1, sizeof(AstNode*)); }
+    arr = alloc_n<AstNode*>(1);
     arr[0] = param;
     alloc_list_push(&p.tracker, (void*)arr);
 
@@ -982,10 +958,7 @@ fn parse_expression(p: Parser*) -> AstNode* {
     // Build a Sequence node.
     let cap: u32 = 4;
     let count: u32 = 1;
-    let buf: AstNode** = NULL;
-    raw {
-        buf = (AstNode**)calloc(cap, sizeof(AstNode*));
-    }
+    let buf = alloc_n<AstNode*>((usize)cap);
     buf[0] = first;
     while match_kind(p, TokenKind::Comma) {
         let next = parse_assignment(p);
@@ -1462,10 +1435,7 @@ fn parse_arguments(p: Parser*) -> ArgsResult {
     let lparen = advance(p);     // consume '('
     let cap: u32 = 4;
     let count: u32 = 0;
-    let buf: AstNode** = NULL;
-    raw {
-        buf = (AstNode**)calloc(cap, sizeof(AstNode*));
-    }
+    let buf = alloc_n<AstNode*>((usize)cap);
 
     if peek_kind(p) != TokenKind::RParen {
         while true {
@@ -1487,7 +1457,7 @@ fn parse_arguments(p: Parser*) -> ArgsResult {
     expect_kind(p, TokenKind::RParen);
 
     if count == 0 {
-        raw { free(buf); }
+        dealloc(buf);
         buf = NULL;
     } else {
         alloc_list_push(&p.tracker, (void*)buf);
@@ -1571,10 +1541,7 @@ fn parse_array(p: Parser*) -> AstNode* {
     let lbrack = advance(p);        // consume '['
     let cap: u32 = 4;
     let count: u32 = 0;
-    let buf: AstNode** = NULL;
-    raw {
-        buf = (AstNode**)calloc(cap, sizeof(AstNode*));
-    }
+    let buf = alloc_n<AstNode*>((usize)cap);
 
     while peek_kind(p) != TokenKind::RBracket && peek_kind(p) != TokenKind::Eof {
         // Elision: `,` in place of an element means an empty slot
@@ -1590,9 +1557,9 @@ fn parse_array(p: Parser*) -> AstNode* {
             if elem == NULL { break; }
         }
         if count >= cap {
+            let old_cap = cap;
             cap = cap * 2;
-            let old_buf = buf;
-            raw { buf = (AstNode**)realloc(old_buf, cap * sizeof(AstNode*)); }
+            buf = realloc_n<AstNode*>(buf, (usize)old_cap, (usize)cap);
         }
         buf[count] = elem;
         count = count + 1;
@@ -1603,7 +1570,7 @@ fn parse_array(p: Parser*) -> AstNode* {
     expect_kind(p, TokenKind::RBracket);
 
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
-    else         { raw { free(buf); } buf = NULL; }
+    else         { dealloc(buf); buf = NULL; }
 
     let node = new_node(&p.tracker, NodeKind::Array, lbrack.start, close.start + close.length);
     node.children = buf;
@@ -1615,10 +1582,7 @@ fn parse_object(p: Parser*) -> AstNode* {
     let lbrace = advance(p);        // consume '{'
     let cap: u32 = 4;
     let count: u32 = 0;
-    let buf: AstNode** = NULL;
-    raw {
-        buf = (AstNode**)calloc(cap, sizeof(AstNode*));
-    }
+    let buf = alloc_n<AstNode*>((usize)cap);
 
     while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
         let key_tok = peek(p);
@@ -1697,9 +1661,9 @@ fn parse_object(p: Parser*) -> AstNode* {
             else         { prop.op = TokenKind::KwGet; }
 
             if count >= cap {
+                let old_cap = cap;
                 cap = cap * 2;
-                let old_buf = buf;
-                raw { buf = (AstNode**)realloc(old_buf, cap * sizeof(AstNode*)); }
+                buf = realloc_n<AstNode*>(buf, (usize)old_cap, (usize)cap);
             }
             buf[count] = prop;
             count = count + 1;
@@ -1762,7 +1726,7 @@ fn parse_object(p: Parser*) -> AstNode* {
     expect_kind(p, TokenKind::RBrace);
 
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
-    else         { raw { free(buf); } buf = NULL; }
+    else         { dealloc(buf); buf = NULL; }
 
     let node = new_node(&p.tracker, NodeKind::Object, lbrace.start, close.start + close.length);
     node.children = buf;

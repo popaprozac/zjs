@@ -8,6 +8,7 @@
 // caller can release the whole tree with one parser_free_result call.
 
 import "./token.zc";
+import "std/mem.zc"
 
 raw {
     #include <stdlib.h>
@@ -129,12 +130,7 @@ fn alloc_list_new() -> AllocList {
 fn alloc_list_push(list: AllocList*, ptr: void*) -> void {
     if list.count >= list.cap {
         let new_cap: usize = if list.cap == 0 { 16 } else { list.cap * 2 };
-        let old_items = list.items;          // pull into Zen-c local for raw{}
-        let new_items: void** = NULL;
-        raw {
-            new_items = (void**)realloc(old_items, new_cap * sizeof(void*));
-        }
-        list.items = new_items;
+        list.items = realloc_n<void*>(list.items, list.cap, new_cap);
         list.cap = new_cap;
     }
     list.items[list.count] = ptr;
@@ -144,12 +140,10 @@ fn alloc_list_push(list: AllocList*, ptr: void*) -> void {
 fn alloc_list_free_all(list: AllocList*) -> void {
     let i: usize = 0;
     while i < list.count {
-        let p = list.items[i];
-        raw { free(p); }
+        dealloc(list.items[i]);
         i = i + 1;
     }
-    let items = list.items;
-    raw { free(items); }
+    dealloc(list.items);
     list.items = NULL;
     list.count = 0;
     list.cap = 0;
@@ -161,10 +155,7 @@ fn alloc_list_free_all(list: AllocList*) -> void {
 // Subsequent fields are filled in by the parser after this returns.
 
 fn new_node(tracker: AllocList*, kind: NodeKind, start: u32, end: u32) -> AstNode* {
-    let node: AstNode* = NULL;
-    raw {
-        node = (AstNode*)calloc(1, sizeof(AstNode));
-    }
+    let node = alloc<AstNode>();
     node.kind = kind;
     node.start = start;
     node.end = end;
@@ -175,10 +166,7 @@ fn new_node(tracker: AllocList*, kind: NodeKind, start: u32, end: u32) -> AstNod
 // Allocates a children array of the requested size. Caller fills it.
 fn new_children(tracker: AllocList*, count: u32) -> AstNode** {
     if count == 0 { return NULL; }
-    let arr: AstNode** = NULL;
-    raw {
-        arr = (AstNode**)calloc(count, sizeof(AstNode*));
-    }
+    let arr = alloc_n<AstNode*>((usize)count);
     alloc_list_push(tracker, (void*)arr);
     return arr;
 }
