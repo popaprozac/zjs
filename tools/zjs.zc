@@ -196,7 +196,11 @@ fn write_value(v: ZjsValue, quoted: bool) -> void {
     }
     if zjs_is_double(v) != 0 {
         let d = zjs_as_double(v);
-        raw { printf("%g", d); }
+        raw {
+            if (isnan(d)) { fputs("NaN", stdout); }
+            else if (isinf(d)) { fputs(d > 0 ? "Infinity" : "-Infinity", stdout); }
+            else { printf("%g", d); }
+        }
         return;
     }
     if zjs_is_bool(v) != 0 {

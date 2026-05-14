@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 16:34 UTC",
+    "when": "2026-05-14 16:37 UTC",
     "total": 4821,
-    "passed": 2420,
-    "failed": 375,
+    "passed": 2433,
+    "failed": 362,
     "skipped": 2026
   },
   "failures": [
@@ -28,10 +28,6 @@
       "reason": "zjs: throw: Test262Error: #1: ({} + function(){return 1}) === ({}.toString() + function(){return 1}.toString()). Actual:"
     },
     {
-      "path": "test/language/expressions/addition/S11.6.1_A4_T5.js",
-      "reason": "zjs: throw: Test262Error: #1.1: -0 + -0 === - 0. Actual: +0"
-    },
-    {
       "path": "test/language/expressions/subtraction/S11.6.2_A1.js",
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009-\\u00091 === 0"
     },
@@ -42,10 +38,6 @@
     {
       "path": "test/language/expressions/subtraction/S11.6.2_A2.3_T1.js",
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A4_T5.js",
-      "reason": "zjs: throw: Test262Error: #3.2: -0 - 0 === - 0. Actual: +0"
     },
     {
       "path": "test/language/expressions/multiplication/S11.5.1_A1.js",
@@ -60,10 +52,6 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/multiplication/S11.5.1_A4_T2.js",
-      "reason": "zjs: throw: Test262Error: #6.2: 0 * -0 === - 0. Actual: +0"
-    },
-    {
       "path": "test/language/expressions/division/S11.5.2_A1.js",
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009/\\u00091 === 1"
     },
@@ -76,14 +64,6 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/division/S11.5.2_A4_T3.js",
-      "reason": "zjs: throw: Test262Error: #2: -Infinity / -0 === Infinity. Actual: -Infinity"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A4_T8.js",
-      "reason": "zjs: throw: Test262Error: #1.2: -0 / 1 === - 0. Actual: +0"
-    },
-    {
       "path": "test/language/expressions/modulus/S11.5.3_A1.js",
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009%\\u00091 === 0"
     },
@@ -94,14 +74,6 @@
     {
       "path": "test/language/expressions/modulus/S11.5.3_A2.3_T1.js",
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
-    },
-    {
-      "path": "test/language/expressions/modulus/S11.5.3_A4_T5.js",
-      "reason": "zjs: throw: Test262Error: #7.2: -0 % Infinity === - 0. Actual: +0"
-    },
-    {
-      "path": "test/language/expressions/modulus/S11.5.3_A4_T6.js",
-      "reason": "zjs: throw: Test262Error: #3.2: -0 % 1 === - 0. Actual: +0"
     },
     {
       "path": "test/language/expressions/equals/S11.9.1_A1.js",
@@ -228,20 +200,8 @@
       "reason": "zjs: throw: Test262Error: #1: (true\\u0009&&\\u0009true) === true"
     },
     {
-      "path": "test/language/expressions/logical-and/S11.11.1_A3_T2.js",
-      "reason": "zjs: throw: Test262Error: #1.2: (-0 && -1) === -0"
-    },
-    {
-      "path": "test/language/expressions/logical-and/S11.11.1_A4_T2.js",
-      "reason": "zjs: throw: Test262Error: #1.2: (-1 && -0) === -0"
-    },
-    {
       "path": "test/language/expressions/logical-or/S11.11.2_A1.js",
       "reason": "zjs: throw: Test262Error: #1: (false\\u0009||\\u0009true) === true"
-    },
-    {
-      "path": "test/language/expressions/logical-or/S11.11.2_A3_T2.js",
-      "reason": "zjs: throw: Test262Error: #1.2: (0 || -0) === -0"
     },
     {
       "path": "test/language/expressions/logical-not/S11.4.9_A1.js",
@@ -256,10 +216,6 @@
       "reason": "zjs: throw: Test262Error: #7.2: var object = {valueOf: function() {throw \"error\"}, toString: function() {return -1}}; -o"
     },
     {
-      "path": "test/language/expressions/unary-minus/S11.4.7_A4.2.js",
-      "reason": "zjs: throw: Test262Error: #1.2: var x = 0; x = -x; x === - 0. Actual: +0"
-    },
-    {
       "path": "test/language/expressions/unary-plus/S11.4.6_A1.js",
       "reason": "zjs: throw: Test262Error: #1: +\\u00091 === 1"
     },
@@ -270,10 +226,6 @@
     {
       "path": "test/language/expressions/unary-plus/S11.4.6_A3_T3.js",
       "reason": "zjs: throw: Test262Error: #4: +\"INFINITY\" === Not-a-Number. Actual: Infinity"
-    },
-    {
-      "path": "test/language/expressions/unary-plus/S9.3_A4.2_T2.js",
-      "reason": "zjs: throw: Test262Error: #3.2: +(-0) === -0. Actual: +0"
     },
     {
       "path": "test/language/expressions/conditional/S11.12_A1.js",
@@ -1338,10 +1290,6 @@
     {
       "path": "test/built-ins/Math/pow/applying-the-exp-operator_A14.js",
       "reason": "zjs: throw: Test262Error: #1: Math.pow(-Infinity, undefined) !== +Infinity"
-    },
-    {
-      "path": "test/built-ins/Math/pow/applying-the-exp-operator_A21.js",
-      "reason": "zjs: throw: Test262Error: #1: Math.pow(0, -111111) !== -Infinity"
     },
     {
       "path": "test/built-ins/Math/pow/applying-the-exp-operator_A22.js",
