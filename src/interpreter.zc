@@ -306,60 +306,85 @@ struct TryFrame {
 
 def MAX_TRY_DEPTH: usize = 32;
 
-fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) -> InterpretResult {
-    if f == NULL { return InterpretResult{ is_throw: false, value: zjs_undefined() }; }
+fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u32) -> InterpretResult {
+    if entry_f == NULL { return InterpretResult{ is_throw: false, value: zjs_undefined() }; }
 
-    let reg_count = f.register_count;
-    let regs: ZjsValue* = NULL;
-    // Fast path: small register files live on the C stack via alloca —
-    // no per-call malloc/free. fib's body wants ~5 regs; the vast
-    // majority of functions fit well under our cap. The cap is also a
-    // soft guard against deep recursion blowing the stack: for very
-    // wide register files we fall back to the heap.
-    let regs_on_heap: bool = false;
-    raw {
-        if (reg_count <= 256) {
-            regs = (ZjsValue*)alloca(reg_count * sizeof(ZjsValue));
-        } else {
-            regs = (ZjsValue*)malloc(reg_count * sizeof(ZjsValue));
-            regs_on_heap = true;
+    // Phase 3.9h: non-recursive JS-to-JS calls. We push an initial
+    // CallFrame for the entry function, then the outer loop runs as
+    // long as there are frames above the entry depth. Op::Invoke
+    // pushes a new frame (instead of recursing into interpret), and
+    // Op::Return pops + writes the return value into the caller's
+    // register slot.
+    //
+    // Host functions still call interpret() recursively (via
+    // zjs_call_value). Each recursive entry captures its own
+    // `entry_frame` so its outer loop only walks the frames it
+    // pushed — frames from a host caller's outer interpret() are
+    // invisible to this one.
+    let entry_frame: u32 = ctx.frame_count;
+    push_call_frame(ctx, entry_f, args, arg_count, 0);
+    defer pop_call_frames_to(ctx, entry_frame);
+
+    let throwing:    bool     = false;
+    let thrown:      ZjsValue = zjs_undefined();
+    let final_result: ZjsValue = zjs_undefined();
+
+    // ---------- Outer loop ----------
+    while ctx.frame_count > entry_frame {
+        // Throw unwinding runs BEFORE we re-enter the inner loop for a
+        // frame. If the current top frame has a matching try-handler we
+        // jump to its catch site; otherwise we pop the top frame and
+        // loop again (eventually returning is_throw to the caller if no
+        // frame catches).
+        if throwing {
+            // Discard try frames that belong to already-popped frames
+            // (defensive; pop_call_frame should have done this already
+            // via try_depth_at_entry).
+            while ctx.ctx_try_depth > 0
+                && ctx.ctx_try_stack[ctx.ctx_try_depth - 1].frame_index >= ctx.frame_count {
+                ctx.ctx_try_depth = ctx.ctx_try_depth - 1;
+            }
+            let top_idx: u32 = ctx.frame_count - 1;
+            let caught: bool = false;
+            if ctx.ctx_try_depth > 0 {
+                let td = ctx.ctx_try_depth - 1;
+                if ctx.ctx_try_stack[td].frame_index == top_idx {
+                    let regs_base_c = ctx.frames[top_idx].regs_base;
+                    let catch_reg_c = (u32)ctx.ctx_try_stack[td].catch_reg;
+                    ctx.frames[top_idx].ip = ctx.ctx_try_stack[td].catch_ip;
+                    ctx.reg_stack[regs_base_c + catch_reg_c] = thrown;
+                    ctx.ctx_try_depth = td;
+                    throwing = false;
+                    caught = true;
+                }
+            }
+            if !caught {
+                pop_call_frame(ctx);
+                continue;
+            }
         }
-    }
-    defer raw { if (regs_on_heap) free(regs); }
 
-    // Copy incoming args into the first param_count slots first, then
-    // initialize the remaining slots to undefined. The init is
-    // load-bearing for GC safety — gc_mark_roots walks the whole
-    // root_frames.regs array, so an uninit slot would be marked as a
-    // bogus cell pointer.
-    let copy_count: u32 = if arg_count < f.param_count { arg_count } else { f.param_count };
-    let ai: u32 = 0;
-    while ai < copy_count {
-        regs[ai] = args[ai];
-        ai = ai + 1;
-    }
-    let init: ZjsValue = zjs_undefined();
-    let ri: u32 = ai;
-    while ri < reg_count {
-        regs[ri] = init;
-        ri = ri + 1;
-    }
+        // Hoist top-frame fields into locals for the inner loop. After
+        // any frame push/pop the cached `regs` / `frame_ptr` would
+        // dangle, so we always invalidate by breaking out of the inner
+        // loop on Invoke/Return/Throw.
+        let cur_idx: u32 = ctx.frame_count - 1;
+        let f: Function* = ctx.frames[cur_idx].f;
+        let code = f.code;
+        let code_len = f.code_len;
+        let regs_base = ctx.frames[cur_idx].regs_base;
+        let regs: ZjsValue* = NULL;
+        raw { regs = &ctx->reg_stack[regs_base]; }
+        let ip: usize = ctx.frames[cur_idx].ip;
 
-    // Per-call try stack. Each frame stores where to jump on throw and
-    // which register receives the thrown value.
-    let try_stack: TryFrame[MAX_TRY_DEPTH];
-    let try_depth: usize = 0;
-    let throwing: bool = false;
-    let thrown:   ZjsValue = zjs_undefined();
+        // Inner-loop exit reason:
+        //   0 = ran off code_len (implicit return undefined)
+        //   1 = Op::Return / Op::Halt (frame already popped + return value written)
+        //   2 = Invoke pushed a new frame (frame.ip saved before push)
+        //   3 = throw raised (throwing/thrown set; outer loop handles)
+        let exit_reason: int = 0;
 
-    // Register this call frame's register file with the GC so the
-    // collector can see all our temporaries + locals as roots.
-    ctx_push_root_frame(ctx, regs, reg_count);
-    defer ctx_pop_root_frame(ctx);
-
-    let ip: usize = 0;
-
-    while ip < f.code_len {
+        while ip < code_len {
         // GC safe-points are NOT at every instruction (the load+compare
         // alone costs 15-25% on hot loops). Instead we poll at:
         //   - backward Op::Jmp (loop heads), below
@@ -370,33 +395,37 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
         // Straight-line arithmetic never allocates, so skipping the
         // poll there is safe.
 
-        // Unwind before fetching the next instruction.
-        if throwing {
-            if try_depth > 0 {
-                try_depth = try_depth - 1;
-                let frame = try_stack[try_depth];
-                ip = frame.catch_ip;
-                regs[frame.catch_reg] = thrown;
-                throwing = false;
-                continue;
-            }
-            // No catch in this function — propagate to caller.
-            return InterpretResult{ is_throw: true, value: thrown };
-        }
+        // Throw unwinding now happens in the OUTER loop, before
+        // re-entering this inner loop — see the top of the outer while.
 
-        let inst = f.code[ip];
+        let inst = code[ip];
         let op = inst.op;
 
         if op == Op::Return {
-            // GC safe-point on the way out — the only live value is the
-            // return value, and regs/temp_roots will be torn down.
-            // Keeps deeply-recursive allocator-heavy code from
-            // accumulating garbage between loop-head polls.
+            // GC safe-point on the way out — only the return value
+            // survives the frame.
             if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
-            return InterpretResult{ is_throw: false, value: regs[inst.a] };
+            let rv = regs[inst.a];
+            let ret_dst = pop_call_frame(ctx);
+            if ctx.frame_count <= entry_frame {
+                final_result = rv;
+            } else {
+                // Write into the caller's reg via index (regs/frame_ptr
+                // are now invalidated by the pop).
+                let cidx = ctx.frame_count - 1;
+                let cb = ctx.frames[cidx].regs_base;
+                ctx.reg_stack[cb + (u32)ret_dst] = rv;
+            }
+            exit_reason = 1;
+            break;
         }
         if op == Op::Halt {
-            return InterpretResult{ is_throw: false, value: zjs_undefined() };
+            // Halt aborts the entire interpret() entry — pop everything
+            // back to entry depth, return undefined.
+            pop_call_frames_to(ctx, entry_frame);
+            final_result = zjs_undefined();
+            exit_reason = 1;
+            break;
         }
 
         if op == Op::LoadInt {
@@ -425,7 +454,7 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
                 let nm = ctx.globals[slot].name;
                 let nl = ctx.globals[slot].name_len;
                 let err = build_reference_error(ctx, nm, nl);
-                throwing = true; thrown = err; continue;
+                throwing = true; thrown = err; exit_reason = 3; break;
             }
             regs[inst.a] = ctx.globals[slot].value;
         } else if op == Op::LoadGlobalOrUndefined {
@@ -653,42 +682,62 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             }
         } else if op == Op::MethodInvoke {
             // Same dispatch as Invoke but regs[base+1] is `this` and
-            // explicit args live at regs[base+2..]. Set ctx.host_this
-            // around the call so host builtins see the receiver.
+            // explicit args live at regs[base+2..]. JS callees push a
+            // new CallFrame; host callees stay synchronous.
             let dst = inst.a;
             let base = inst.b;
             let argc = (u32)inst.c;
             let callee = regs[base];
-            let saved_this = ctx.host_this;
-            ctx.host_this = regs[base + 1];
+            let new_this = regs[base + 1];
+
             if zjs_is_function(callee) != 0 {
                 let fp = zjs_cell_as_ptr(callee);
                 let target: Function* = NULL;
                 raw { target = (Function*)fp; }
-                let argv_ptr: ZjsValue* = NULL;
-                raw { argv_ptr = &regs[base + 2]; }
-                let r = interpret(ctx, target, argv_ptr, argc);
-                ctx.host_this = saved_this;
-                if r.is_throw { throwing = true; thrown = r.value; continue; }
-                regs[dst] = r.value;
+                // Snapshot args into a C-stack buffer before push (the
+                // push may realloc reg_stack, invalidating `regs`).
+                // Use the context's reusable arg buffer instead of
+                // alloca — alloca inside a loop accumulates across
+                // iterations (no per-iteration free).
+                if ctx.invoke_arg_buffer == NULL {
+                    raw { ctx->invoke_arg_buffer = (ZjsValue*)malloc(CTX_INVOKE_ARG_CAP * sizeof(ZjsValue)); }
+                    ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
+                }
+                let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
+                let ai: u32 = 0;
+                while ai < argc { argv_buf[ai] = regs[base + 2 + (u8)ai]; ai = ai + 1; }
+                ctx.frames[cur_idx].ip = ip + 1;
+                ctx.host_this = new_this;
+                push_call_frame(ctx, target, argv_buf, argc, dst);
+                exit_reason = 2;
+                break;
             } else if zjs_is_closure(callee) != 0 {
                 let cl = zjs_as_closure(callee);
                 let fp2 = cl.function;
                 let target2: Function* = NULL;
                 raw { target2 = (Function*)fp2; }
-                let argv_ptr2: ZjsValue* = NULL;
-                raw { argv_ptr2 = &regs[base + 2]; }
-                let saved_cl = ctx.current_closure;
+                // Use the context's reusable arg buffer instead of
+                // alloca — alloca inside a loop accumulates across
+                // iterations (no per-iteration free).
+                if ctx.invoke_arg_buffer == NULL {
+                    raw { ctx->invoke_arg_buffer = (ZjsValue*)malloc(CTX_INVOKE_ARG_CAP * sizeof(ZjsValue)); }
+                    ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
+                }
+                let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
+                let ai: u32 = 0;
+                while ai < argc { argv_buf[ai] = regs[base + 2 + (u8)ai]; ai = ai + 1; }
+                ctx.frames[cur_idx].ip = ip + 1;
+                ctx.host_this = new_this;
                 ctx.current_closure = cl;
-                let r2 = interpret(ctx, target2, argv_ptr2, argc);
-                ctx.current_closure = saved_cl;
-                ctx.host_this = saved_this;
-                if r2.is_throw { throwing = true; thrown = r2.value; continue; }
-                regs[dst] = r2.value;
+                push_call_frame(ctx, target2, argv_buf, argc, dst);
+                exit_reason = 2;
+                break;
             } else if zjs_is_host_function(callee) != 0 {
                 let hf_ptr = zjs_cell_as_ptr(callee);
                 let argv_ptr: ZjsValue* = NULL;
                 raw { argv_ptr = &regs[base + 2]; }
+                let saved_this = ctx.host_this;
+                ctx.host_this = new_this;
                 let r: ZjsValue = zjs_undefined();
                 raw {
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
@@ -699,70 +748,72 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
                 ctx.host_this = saved_this;
                 regs[dst] = r;
             } else {
-                ctx.host_this = saved_this;
                 regs[dst] = zjs_undefined();
             }
         } else if op == Op::Invoke {
+            // Plain call: this = undefined for the callee. JS callees
+            // push a frame; host callees stay synchronous.
             let dst = inst.a;
             let base = inst.b;
             let argc = (u32)inst.c;
             let callee = regs[base];
-            // Plain call: this = undefined. Save & restore so a nested
-            // method call's receiver doesn't leak across.
-            let saved_this_plain = ctx.host_this;
-            ctx.host_this = zjs_undefined();
+
             if zjs_is_function(callee) != 0 {
                 let fp = zjs_cell_as_ptr(callee);
                 let target: Function* = NULL;
                 raw { target = (Function*)fp; }
-                let argv_ptr: ZjsValue* = NULL;
-                raw { argv_ptr = &regs[base + 1]; }
-                let r = interpret(ctx, target, argv_ptr, argc);
-                ctx.host_this = saved_this_plain;
-                if r.is_throw {
-                    throwing = true;
-                    thrown = r.value;
-                    continue;       // unwind on next loop iteration
+                // Use the context's reusable arg buffer instead of
+                // alloca — alloca inside a loop accumulates across
+                // iterations (no per-iteration free).
+                if ctx.invoke_arg_buffer == NULL {
+                    raw { ctx->invoke_arg_buffer = (ZjsValue*)malloc(CTX_INVOKE_ARG_CAP * sizeof(ZjsValue)); }
+                    ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
                 }
-                regs[dst] = r.value;
+                let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
+                let ai: u32 = 0;
+                while ai < argc { argv_buf[ai] = regs[base + 1 + (u8)ai]; ai = ai + 1; }
+                ctx.frames[cur_idx].ip = ip + 1;
+                ctx.host_this = zjs_undefined();
+                push_call_frame(ctx, target, argv_buf, argc, dst);
+                exit_reason = 2;
+                break;
             } else if zjs_is_closure(callee) != 0 {
-                // Closure: like Function, but we swap ctx.current_closure
-                // around the call so LoadEnv inside the callee reads
-                // OUR env, not the caller's.
                 let cl = zjs_as_closure(callee);
                 let fp2 = cl.function;
                 let target2: Function* = NULL;
                 raw { target2 = (Function*)fp2; }
-                let argv_ptr2: ZjsValue* = NULL;
-                raw { argv_ptr2 = &regs[base + 1]; }
-                let saved_cl = ctx.current_closure;
-                ctx.current_closure = cl;
-                let r2 = interpret(ctx, target2, argv_ptr2, argc);
-                ctx.current_closure = saved_cl;
-                ctx.host_this = saved_this_plain;
-                if r2.is_throw {
-                    throwing = true;
-                    thrown = r2.value;
-                    continue;
+                // Use the context's reusable arg buffer instead of
+                // alloca — alloca inside a loop accumulates across
+                // iterations (no per-iteration free).
+                if ctx.invoke_arg_buffer == NULL {
+                    raw { ctx->invoke_arg_buffer = (ZjsValue*)malloc(CTX_INVOKE_ARG_CAP * sizeof(ZjsValue)); }
+                    ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
                 }
-                regs[dst] = r2.value;
+                let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
+                let ai: u32 = 0;
+                while ai < argc { argv_buf[ai] = regs[base + 1 + (u8)ai]; ai = ai + 1; }
+                ctx.frames[cur_idx].ip = ip + 1;
+                ctx.host_this = zjs_undefined();
+                ctx.current_closure = cl;
+                push_call_frame(ctx, target2, argv_buf, argc, dst);
+                exit_reason = 2;
+                break;
             } else if zjs_is_host_function(callee) != 0 {
                 let hf_ptr = zjs_cell_as_ptr(callee);
                 let argv_ptr: ZjsValue* = NULL;
                 raw { argv_ptr = &regs[base + 1]; }
+                let saved_this = ctx.host_this;
+                ctx.host_this = zjs_undefined();
                 let r: ZjsValue = zjs_undefined();
-                // ctx.host_this was already cleared above for the plain
-                // Invoke path; restore once after the call.
                 raw {
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
                     typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
                     HostFn fp = (HostFn)hf->fn_ptr;
                     r = fp(ctx, argv_ptr, argc);
                 }
-                ctx.host_this = saved_this_plain;
+                ctx.host_this = saved_this;
                 regs[dst] = r;
             } else {
-                ctx.host_this = saved_this_plain;
                 regs[dst] = zjs_undefined();
             }
         } else if op == Op::Typeof {
@@ -789,21 +840,20 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
         } else if op == Op::Throw {
             throwing = true;
             thrown = regs[inst.a];
-            continue;
+            exit_reason = 3;
+            break;
         } else if op == Op::EnterTry {
-            if try_depth >= MAX_TRY_DEPTH {
+            let off = inst_bc_i16(inst);
+            let target: usize = (usize)((i32)ip + 1 + off);
+            if !ctx_try_push(ctx, target, inst.a) {
                 // Out of try slots — surface as an uncaught throw.
                 throwing = true;
                 thrown = zjs_undefined();
-                continue;
+                exit_reason = 3;
+                break;
             }
-            let off = inst_bc_i16(inst);
-            let target: usize = (usize)((i32)ip + 1 + off);
-            try_stack[try_depth].catch_ip = target;
-            try_stack[try_depth].catch_reg = inst.a;
-            try_depth = try_depth + 1;
         } else if op == Op::LeaveTry {
-            if try_depth > 0 { try_depth = try_depth - 1; }
+            ctx_try_pop(ctx);
         } else if op == Op::MakeClosure {
             // a = dst, b = function-value reg, c = env-object reg
             let fn_val = regs[inst.b];
@@ -1099,7 +1149,7 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             }
             ctx.host_this = saved_this;
             if did_throw {
-                throwing = true; thrown = call_result; continue;
+                throwing = true; thrown = call_result; exit_reason = 3; break;
             }
             // Use callee's return if it returned an object; else the new one.
             if zjs_is_object(call_result) != 0 || zjs_is_array(call_result) != 0 {
@@ -1133,17 +1183,19 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             }
             regs[dst] = zjs_bool(ok);
         } else if op == Op::BuildArguments {
-            // Build a fresh array from the call's args + arg_count and
-            // stash it in regs[a]. Emitted at function entry when the
-            // body references `arguments`.
-            let arr_v = ctx_new_array(ctx, arg_count);
+            // Build a fresh array from the call's full passed-args list.
+            // Args live on the reg_stack at frame.args_base, length
+            // frame.argc (covers the case where argc > param_count).
+            let frame_argc = ctx.frames[cur_idx].argc;
+            let frame_args_base = ctx.frames[cur_idx].args_base;
+            let arr_v = ctx_new_array(ctx, frame_argc);
             let arr = zjs_as_array(arr_v);
             let i: u32 = 0;
-            while i < arg_count {
-                arr.elements[i] = args[i];
+            while i < frame_argc {
+                arr.elements[i] = ctx.reg_stack[frame_args_base + i];
                 i = i + 1;
             }
-            arr.length = arg_count;
+            arr.length = frame_argc;
             regs[inst.a] = arr_v;
         } else if op == Op::IterPrepare {
             regs[inst.a] = iter_prepare(ctx, regs[inst.b], (u32)inst.c);
@@ -1160,9 +1212,29 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
         // during MVP; the compiler shouldn't emit such ops).
 
         ip = ip + 1;
-    }
+        }   // end inner while ip < code_len
 
-    return InterpretResult{ is_throw: false, value: zjs_undefined() };
+        // Inner loop exited. Decide why and how to handle.
+        if exit_reason == 0 {
+            // Ran off end of code — implicit return undefined.
+            let ret_dst = pop_call_frame(ctx);
+            if ctx.frame_count <= entry_frame {
+                final_result = zjs_undefined();
+            } else {
+                let cidx = ctx.frame_count - 1;
+                let cb = ctx.frames[cidx].regs_base;
+                ctx.reg_stack[cb + (u32)ret_dst] = zjs_undefined();
+            }
+        }
+        // exit_reason == 1: Return/Halt already popped + wrote return value
+        // exit_reason == 2: Invoke pushed a new frame — frame.ip saved before push
+        // exit_reason == 3: throwing/thrown set — outer loop unwinds next iter
+    }   // end outer while ctx.frame_count > entry_frame
+
+    if throwing {
+        return InterpretResult{ is_throw: true, value: thrown };
+    }
+    return InterpretResult{ is_throw: false, value: final_result };
 }
 
 // Invoke a JS-visible callable (Function | Closure | HostFunction) from

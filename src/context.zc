@@ -31,14 +31,17 @@ struct GcRootFrame {
     reg_count: u32;
 }
 
-// Phase 3.9h scaffolding. The non-recursive-interpreter path doesn't
-// use these yet (only the helpers below populate them), but having
-// them in the struct lets the next phase swap in usage without
-// changing layout. See docs/phases/phase-3-9h-non-recursive-interpreter.md
+// Phase 3.9h scaffolding. Each CallFrame owns a slice of reg_stack
+// laid out as [args | regs]: args[0..argc] then regs[0..reg_count].
+// Storing args separately (rather than just copying into regs[0..]) so
+// `arguments[k]` for k >= param_count still works when more args are
+// passed than declared.
 struct CallFrame {
     f:                      Function*;
     ip:                     usize;
-    regs_base:              u32;   // offset into ctx.reg_stack
+    args_base:              u32;   // offset into ctx.reg_stack
+    argc:                   u32;   // how many slots at args_base hold passed args
+    regs_base:              u32;   // = args_base + argc
     reg_count:              u32;
     return_dst:             u8;
     saved_host_this:        ZjsValue;
@@ -55,7 +58,8 @@ struct CtxTryFrame {
     catch_reg:   u8;
 }
 
-def CTX_MAX_TRY_DEPTH: u32 = 256;
+def CTX_MAX_TRY_DEPTH:  u32 = 256;
+def CTX_INVOKE_ARG_CAP: u32 = 256;   // matches u8 argc range
 
 // Open-addressed hash-table entry. NULL `str` = empty slot.
 // We never delete atoms, so no tombstones needed.
@@ -142,6 +146,14 @@ struct ZjsContext {
     ctx_try_depth:    u32;
     ctx_try_cap:      u32;
 
+    // Scratch buffer for arg-copy on Op::Invoke. The interpreter copies
+    // args from the caller's regs into this buffer BEFORE calling
+    // push_call_frame (which may realloc reg_stack and invalidate
+    // caller-reg pointers). Reused across Invokes — overwritten each
+    // call. Lazily sized to CTX_INVOKE_ARG_CAP at first use.
+    invoke_arg_buffer:     ZjsValue*;
+    invoke_arg_buffer_cap: u32;
+
     // --- Atom table (interned strings) ---
     // Open-addressed hash table, power-of-2 capacity. Used for
     // property names + source-code string literals. Atoms are GC
@@ -225,12 +237,14 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     let reg_stack = ctx.reg_stack;
     let frames = ctx.frames;
     let ctx_try_stack = ctx.ctx_try_stack;
+    let invoke_arg_buffer = ctx.invoke_arg_buffer;
     raw {
         free(cells);
         free(temp_roots);
         free(reg_stack);
         free(frames);
         free(ctx_try_stack);
+        free(invoke_arg_buffer);
         free(ctx);
     }
 }
@@ -346,10 +360,12 @@ fn reg_stack_release(ctx: ZjsContext*, n: u32) -> void {
     }
 }
 
-// Push a CallFrame for `f`. Reserves `f.register_count` slots on the
-// register stack and copies the first `argc` args into them; remaining
-// slots are initialized to undefined (load-bearing — GC walks the
-// whole window). Returns the new frame's index.
+// Push a CallFrame for `f`. Reserves `argc + f.register_count` slots
+// on the register stack: args_base[0..argc] holds the full passed-args
+// list (for `arguments`), regs_base[0..register_count] is the function's
+// register window. The first min(argc, param_count) args are also
+// copied into regs[0..param_count]; remaining regs init to undefined
+// (load-bearing — GC walks the whole window).
 fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, ret_dst: u8) -> u32 {
     if ctx.frame_count >= ctx.frame_cap {
         let new_cap: u32 = if ctx.frame_cap == 0 { 64 } else { ctx.frame_cap * 2 };
@@ -360,26 +376,38 @@ fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, r
         ctx.frame_cap = new_cap;
     }
     let reg_count: u32 = f.register_count;
-    let base = reg_stack_reserve(ctx, reg_count);
+    let total: u32 = argc + reg_count;
+    let args_base = reg_stack_reserve(ctx, total);
+    let regs_base = args_base + argc;
 
-    // Copy args, init the rest to undefined.
+    // Copy the FULL passed args list into the args slot.
+    let a: u32 = 0;
+    while a < argc {
+        ctx.reg_stack[args_base + a] = args[a];
+        a = a + 1;
+    }
+
+    // Copy the first min(argc, param_count) args into regs[0..]; init
+    // remaining regs to undefined.
     let copy_count: u32 = if argc < f.param_count { argc } else { f.param_count };
     let i: u32 = 0;
     while i < copy_count {
-        ctx.reg_stack[base + i] = args[i];
+        ctx.reg_stack[regs_base + i] = args[i];
         i = i + 1;
     }
     let undef: ZjsValue = zjs_undefined();
     let j: u32 = i;
     while j < reg_count {
-        ctx.reg_stack[base + j] = undef;
+        ctx.reg_stack[regs_base + j] = undef;
         j = j + 1;
     }
 
     let idx = ctx.frame_count;
     ctx.frames[idx].f = f;
     ctx.frames[idx].ip = 0;
-    ctx.frames[idx].regs_base = base;
+    ctx.frames[idx].args_base = args_base;
+    ctx.frames[idx].argc = argc;
+    ctx.frames[idx].regs_base = regs_base;
     ctx.frames[idx].reg_count = reg_count;
     ctx.frames[idx].return_dst = ret_dst;
     ctx.frames[idx].saved_host_this = ctx.host_this;
@@ -398,7 +426,7 @@ fn pop_call_frame(ctx: ZjsContext*) -> u8 {
     if ctx.frame_count == 0 { return 0; }
     let idx = ctx.frame_count - 1;
     let ret_dst = ctx.frames[idx].return_dst;
-    let reg_count = ctx.frames[idx].reg_count;
+    let total = ctx.frames[idx].argc + ctx.frames[idx].reg_count;
     let saved_this = ctx.frames[idx].saved_host_this;
     let saved_cl   = ctx.frames[idx].saved_current_closure;
     let try_at_entry = ctx.frames[idx].try_depth_at_entry;
@@ -408,7 +436,7 @@ fn pop_call_frame(ctx: ZjsContext*) -> u8 {
     if ctx.ctx_try_depth > try_at_entry {
         ctx.ctx_try_depth = try_at_entry;
     }
-    reg_stack_release(ctx, reg_count);
+    reg_stack_release(ctx, total);
     ctx.frame_count = idx;
     return ret_dst;
 }
@@ -677,11 +705,23 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         }
         j = j + 1;
     }
-    // Phase 3.9h: shared reg_stack + per-frame saved values. Wired
-    // into gc_mark_roots in Phase B once interpret() starts using
-    // them. For now (Phase A scaffolding), reg_stack_top and
-    // frame_count are always 0 — the helpers exist but no caller
-    // populates them. Skip the loop overhead per GC cycle.
+    // Phase 3.9h: shared reg_stack + per-frame saved host_this /
+    // current_closure. Covers everything any active CallFrame might
+    // reference (args + regs are contiguous on reg_stack).
+    let r: u32 = 0;
+    while r < ctx.reg_stack_top {
+        gc_mark_value(ctx.reg_stack[r]);
+        r = r + 1;
+    }
+    let fi: u32 = 0;
+    while fi < ctx.frame_count {
+        gc_mark_value(ctx.frames[fi].saved_host_this);
+        if ctx.frames[fi].saved_current_closure != NULL {
+            let cv = zjs_cell_from_ptr((void*)ctx.frames[fi].saved_current_closure);
+            gc_mark_value(cv);
+        }
+        fi = fi + 1;
+    }
     // Interned atoms — they live for the context's lifetime.
     let a: u32 = 0;
     while a < ctx.atom_cap {
