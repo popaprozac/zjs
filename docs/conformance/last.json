@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:21 UTC",
+    "when": "2026-05-14 18:23 UTC",
     "total": 4821,
-    "passed": 2495,
-    "failed": 300,
+    "passed": 2499,
+    "failed": 296,
     "skipped": 2026
   },
   "failures": [
@@ -906,22 +906,6 @@
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A11.js",
       "reason": "zjs: throw: Test262Error: #1: String.prototype.slice.hasOwnProperty(\"length\") return true. Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T10.js",
-      "reason": "zjs: throw: Test262Error: #1: var x; var __obj = {valueOf:function(){return 2;}}; var __str = \"5ABBBABAB\"; __str.slice(_"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T11.js",
-      "reason": "zjs: throw: Test262Error: #1.1: Exception === \"instart\". Actual: [object Object]"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T12.js",
-      "reason": "zjs: throw: Test262Error: #1.1: Exception === \"instart\". Actual: [object Object]"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T13.js",
-      "reason": "zjs: throw: Test262Error: #1.1: Exception === \"inend\". Actual: [object Object]"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T15.js",

@@ -1978,8 +1978,14 @@ fn host_string_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
 }
 
 // Clamp + normalize a slice endpoint (negatives count from end).
-fn slice_clamp(v: ZjsValue, len: u32, default_val: i32) -> i32 {
+// Runs ToNumber via ToPrimitive("number") so objects with custom
+// valueOf throw or coerce as the spec requires.
+fn slice_clamp(ctx: ZjsContext*, v: ZjsValue, len: u32, default_val: i32) -> i32 {
     if zjs_is_undefined(v) != 0 { return default_val; }
+    if zjs_is_object(v) != 0 || zjs_is_array(v) != 0 {
+        v = zjs_to_primitive(ctx, v, false);
+        if ctx.pending_throw_active { return 0; }
+    }
     let n = (i32)zjs_to_double(v);
     if n < 0 { n = (i32)len + n; }
     if n < 0 { n = 0; }
@@ -1991,11 +1997,13 @@ fn host_string_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let str_v = coerce_string_this(ctx);
     if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
     let s = zjs_as_string(str_v);
-    let start = if argc >= 1 { slice_clamp(args[0], s.length, 0) }
+    let start = if argc >= 1 { slice_clamp(ctx, args[0], s.length, 0) }
                 else         { 0 };
+    if ctx.pending_throw_active { return ctx_intern_string(ctx, (char*)"", 0); }
     let end_default: i32 = (i32)s.length;
-    let end = if argc >= 2 { slice_clamp(args[1], s.length, end_default) }
+    let end = if argc >= 2 { slice_clamp(ctx, args[1], s.length, end_default) }
               else         { end_default };
+    if ctx.pending_throw_active { return ctx_intern_string(ctx, (char*)"", 0); }
     if end < start { end = start; }
     let outlen = (u32)(end - start);
     let buf: char* = NULL;
