@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 19:08 UTC",
+    "when": "2026-05-14 19:15 UTC",
     "total": 4821,
-    "passed": 2520,
-    "failed": 275,
+    "passed": 2521,
+    "failed": 274,
     "skipped": 2026
   },
   "failures": [
@@ -102,10 +102,6 @@
     {
       "path": "test/language/expressions/unary-plus/S11.4.6_A1.js",
       "reason": "zjs: throw: Test262Error: #1: +\\u00091 === 1"
-    },
-    {
-      "path": "test/language/expressions/unary-plus/S11.4.6_A3_T3.js",
-      "reason": "zjs: throw: Test262Error: #4: +\"INFINITY\" === Not-a-Number. Actual: Infinity"
     },
     {
       "path": "test/language/expressions/conditional/S11.12_A1.js",

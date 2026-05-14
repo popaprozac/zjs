@@ -209,6 +209,12 @@ fn zjs_to_double(v: ZjsValue) -> f64 {
     if zjs_is_string(v) != 0 {
         // String → number via strtod, skipping whitespace. Empty / all-
         // whitespace strings coerce to 0 per ECMA-262, not NaN.
+        //
+        // strtod also accepts case-insensitive "inf" / "infinity" /
+        // "nan" forms — but the spec's StringNumericLiteral grammar
+        // only accepts exactly "Infinity" (optionally signed). If
+        // strtod produced infinity, verify the consumed substring
+        // matches the spec form; if not, return NaN.
         let s = zjs_as_string(v);
         let sd = s.data;
         let sn = s.length;
@@ -225,6 +231,21 @@ fn zjs_to_double(v: ZjsValue) -> f64 {
                 // Skip trailing whitespace.
                 while (ep < end && (*ep == ' ' || *ep == '\t' || *ep == '\n' || *ep == '\r' || *ep == '\v' || *ep == '\f')) ep++;
                 ok = (ep == end && ep != p) ? 1 : 0;
+                if (ok && isinf(parsed)) {
+                    // The consumed substring is [p, last_non_ws). The
+                    // accepted spec forms are "Infinity", "+Infinity",
+                    // "-Infinity" — case-sensitive, no surrounding chars.
+                    const char* q = p;
+                    if (q < end && (*q == '+' || *q == '-')) q++;
+                    if (!(end - q >= 8 &&
+                          q[0] == 'I' && q[1] == 'n' && q[2] == 'f' &&
+                          q[3] == 'i' && q[4] == 'n' && q[5] == 'i' &&
+                          q[6] == 't' && q[7] == 'y' &&
+                          (q + 8 == end || (q[8] == ' ' || q[8] == '\t' || q[8] == '\n' ||
+                                            q[8] == '\r' || q[8] == '\v' || q[8] == '\f')))) {
+                        ok = 0;
+                    }
+                }
             }
         }
         if ok != 0 { return parsed; }
