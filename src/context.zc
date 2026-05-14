@@ -3860,6 +3860,18 @@ fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     return zjs_bool(0);
 }
 
+// Object.prototype.valueOf() — returns the boxed receiver per spec.
+// ToObject(this) would be more correct, but ctx.host_this is already
+// the object form for non-primitive receivers; primitive receivers
+// reach here only through wrappers, which the existing host_wrapper_*
+// helpers handle directly.
+fn host_object_value_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let _u = ctx;
+    let _u2 = args;
+    let _u3 = argc;
+    return ctx.host_this;
+}
+
 // Object.prototype.toString() — returns "[object Object]" for most
 // receivers. Cheap implementation.
 fn host_object_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -4340,12 +4352,16 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ctx.object_proto = zjs_as_object(obj_proto_v);
     let hop_ptr: void* = NULL; raw { hop_ptr = (void*)host_has_own_property; }
     let ots_ptr: void* = NULL; raw { ots_ptr = (void*)host_object_to_string; }
+    let ovo_ptr: void* = NULL; raw { ovo_ptr = (void*)host_object_value_of; }
     object_set(ctx, ctx.object_proto,
                ctx_intern_atom(ctx, (char*)"hasOwnProperty", 14),
                ctx_make_host_function(ctx, (char*)"hasOwnProperty", hop_ptr));
     object_set(ctx, ctx.object_proto,
                ctx_intern_atom(ctx, (char*)"toString", 8),
                ctx_make_host_function(ctx, (char*)"toString", ots_ptr));
+    object_set(ctx, ctx.object_proto,
+               ctx_intern_atom(ctx, (char*)"valueOf", 7),
+               ctx_make_host_function(ctx, (char*)"valueOf", ovo_ptr));
 
     // --- Error ---
     let err_ptr: void* = NULL;

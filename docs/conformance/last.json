@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 17:45 UTC",
+    "when": "2026-05-14 17:51 UTC",
     "total": 4821,
-    "passed": 2457,
-    "failed": 338,
+    "passed": 2459,
+    "failed": 336,
     "skipped": 2026
   },
   "failures": [
@@ -246,14 +246,6 @@
     {
       "path": "test/language/expressions/in/S11.8.7_A1.js",
       "reason": "zjs: throw: Test262Error: #1: \"MAX_VALUE\"\\u0009in\\u0009Number === true"
-    },
-    {
-      "path": "test/language/expressions/in/S8.12.6_A2_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: var __obj={}; \"valueOf\" in __obj"
-    },
-    {
-      "path": "test/language/expressions/in/S8.12.6_A2_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: var __proto={phylum:\"avis\"}; \"valueOf\" in __proto"
     },
     {
       "path": "test/language/expressions/in/rhs-yield-absent-strict.js",
