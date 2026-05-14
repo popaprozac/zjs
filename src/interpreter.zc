@@ -311,26 +311,38 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
 
     let reg_count = f.register_count;
     let regs: ZjsValue* = NULL;
+    // Fast path: small register files live on the C stack via alloca —
+    // no per-call malloc/free. fib's body wants ~5 regs; the vast
+    // majority of functions fit well under our cap. The cap is also a
+    // soft guard against deep recursion blowing the stack: for very
+    // wide register files we fall back to the heap.
+    let regs_on_heap: bool = false;
     raw {
-        regs = (ZjsValue*)calloc(reg_count, sizeof(ZjsValue));
+        if (reg_count <= 256) {
+            regs = (ZjsValue*)alloca(reg_count * sizeof(ZjsValue));
+        } else {
+            regs = (ZjsValue*)malloc(reg_count * sizeof(ZjsValue));
+            regs_on_heap = true;
+        }
     }
-    defer raw { free(regs); }
+    defer raw { if (regs_on_heap) free(regs); }
 
-    // Initialize register file to undefined so a bug doesn't crash with
-    // a stray NaN-boxed garbage value.
-    let init: ZjsValue = zjs_undefined();
-    let ri: u32 = 0;
-    while ri < reg_count {
-        regs[ri] = init;
-        ri = ri + 1;
-    }
-
-    // Copy incoming args into the first param_count registers.
+    // Copy incoming args into the first param_count slots first, then
+    // initialize the remaining slots to undefined. The init is
+    // load-bearing for GC safety — gc_mark_roots walks the whole
+    // root_frames.regs array, so an uninit slot would be marked as a
+    // bogus cell pointer.
     let copy_count: u32 = if arg_count < f.param_count { arg_count } else { f.param_count };
     let ai: u32 = 0;
     while ai < copy_count {
         regs[ai] = args[ai];
         ai = ai + 1;
+    }
+    let init: ZjsValue = zjs_undefined();
+    let ri: u32 = ai;
+    while ri < reg_count {
+        regs[ri] = init;
+        ri = ri + 1;
     }
 
     // Per-call try stack. Each frame stores where to jump on throw and
