@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:26 UTC",
+    "when": "2026-05-14 18:28 UTC",
     "total": 4821,
-    "passed": 2500,
-    "failed": 295,
+    "passed": 2504,
+    "failed": 291,
     "skipped": 2026
   },
   "failures": [
@@ -844,20 +844,12 @@
       "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
-      "path": "test/built-ins/JSON/parse/builtin.js",
-      "reason": "zjs: throw: Test262Error: Object.isExtensible(parse) must return true"
-    },
-    {
       "path": "test/built-ins/JSON/parse/reviver-call-args-after-forward-modification.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-forward-modifies-object.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/builtin.js",
-      "reason": "zjs: throw: Test262Error: Object.isExtensible(JSON.stringify) must return true"
     },
     {
       "path": "test/built-ins/JSON/stringify/replacer-array-undefined.js",
@@ -1160,20 +1152,12 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Promise/reject-function-extensible.js",
-      "reason": "zjs: throw: Test262Error: assert failed"
-    },
-    {
       "path": "test/built-ins/Promise/reject-function-property-order.js",
       "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
     },
     {
       "path": "test/built-ins/Promise/resolve/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-function-extensible.js",
-      "reason": "zjs: throw: Test262Error: assert failed"
     },
     {
       "path": "test/built-ins/Promise/resolve-function-property-order.js",
