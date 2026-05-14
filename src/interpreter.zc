@@ -625,18 +625,30 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
         } else if op == Op::Add {
             // ECMA-262: ToPrimitive both operands with hint "default"
             // (= "number" for non-Date). If either is a string after
-            // coercion, concatenate; else numeric add.
+            // coercion, concatenate; else numeric add. Skip the
+            // ToPrimitive + pending-throw machinery entirely when both
+            // operands are primitives (the common case) so the hot path
+            // stays branch-light. ToPrimitive(lhs) runs strictly before
+            // ToPrimitive(rhs) per spec — check pending after each call
+            // so a thrown value from the LHS isn't overwritten by the RHS.
             let av = regs[inst.b];
             let bv = regs[inst.c];
-            // ToPrimitive on any object-like operand (object / array /
-            // function / closure / host function). zjs_to_primitive
-            // short-circuits primitives.
-            if zjs_is_object(av) != 0 || zjs_is_array(av) != 0
-               || zjs_is_function(av) != 0 || zjs_is_closure(av) != 0
-               || zjs_is_host_function(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if zjs_is_object(bv) != 0 || zjs_is_array(bv) != 0
-               || zjs_is_function(bv) != 0 || zjs_is_closure(bv) != 0
-               || zjs_is_host_function(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 || is_object_like(bv) != 0 {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             if zjs_is_string(av) != 0 || zjs_is_string(bv) != 0 {
                 regs[inst.a] = zjs_string_concat(ctx, av, bv);
             } else {
@@ -644,8 +656,22 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             }
         } else if op == Op::Sub {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 || is_object_like(bv) != 0 {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             regs[inst.a] = zjs_arith_sub(av, bv);
         } else if op == Op::AddImm {
             // Fused int32 + i8 fast path; falls back to full Add semantics
@@ -666,9 +692,13 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 // Slow fallback: re-do as a real Add (handles strings,
                 // objects, doubles, etc.).
                 let bv = zjs_int32(imm);
-                if zjs_is_object(av) != 0 || zjs_is_array(av) != 0
-                   || zjs_is_function(av) != 0 || zjs_is_closure(av) != 0
-                   || zjs_is_host_function(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
                 if zjs_is_string(av) != 0 {
                     regs[inst.a] = zjs_string_concat(ctx, av, bv);
                 } else {
@@ -690,7 +720,13 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 }
             } else {
                 let bv = zjs_int32(imm);
-                if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
                 regs[inst.a] = zjs_arith_sub(av, bv);
             }
         } else if op == Op::CmpLtImm {
@@ -700,7 +736,13 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 regs[inst.a] = zjs_bool(if zjs_as_int32(av) < imm { 1 } else { 0 });
             } else {
                 let bv = zjs_int32(imm);
-                if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
                 regs[inst.a] = zjs_bool(zjs_cmp_lt(av, bv));
             }
         } else if op == Op::CmpLeImm {
@@ -710,7 +752,13 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 regs[inst.a] = zjs_bool(if zjs_as_int32(av) <= imm { 1 } else { 0 });
             } else {
                 let bv = zjs_int32(imm);
-                if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
                 regs[inst.a] = zjs_bool(zjs_cmp_le(av, bv));
             }
         } else if op == Op::CmpGtImm {
@@ -720,7 +768,13 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 regs[inst.a] = zjs_bool(if zjs_as_int32(av) > imm { 1 } else { 0 });
             } else {
                 let bv = zjs_int32(imm);
-                if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
                 // a > b is `b < a` (CmpGt's actual semantics — order swap).
                 regs[inst.a] = zjs_bool(zjs_cmp_lt(bv, av));
             }
@@ -731,28 +785,90 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 regs[inst.a] = zjs_bool(if zjs_as_int32(av) >= imm { 1 } else { 0 });
             } else {
                 let bv = zjs_int32(imm);
-                if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
                 regs[inst.a] = zjs_bool(zjs_cmp_le(bv, av));
             }
         } else if op == Op::Mul {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 || is_object_like(bv) != 0 {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             regs[inst.a] = zjs_arith_mul(av, bv);
         } else if op == Op::Div {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 || is_object_like(bv) != 0 {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             regs[inst.a] = zjs_arith_div(av, bv);
         } else if op == Op::Mod {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 || is_object_like(bv) != 0 {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             regs[inst.a] = zjs_arith_mod(av, bv);
         } else if op == Op::Pow {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 || is_object_like(bv) != 0 {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             regs[inst.a] = zjs_arith_pow(av, bv);
 
         // --- bitwise --------------------------------------------
@@ -783,8 +899,16 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             let ceb_obj = zjs_is_object(ceb) != 0 || zjs_is_array(ceb) != 0;
             if cea_obj && !ceb_obj && !zjs_is_undefined(ceb) && !zjs_is_null(ceb) {
                 cea = zjs_to_primitive(ctx, cea, false);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
             } else if ceb_obj && !cea_obj && !zjs_is_undefined(cea) && !zjs_is_null(cea) {
                 ceb = zjs_to_primitive(ctx, ceb, false);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
             }
             regs[inst.a] = zjs_bool(zjs_loose_eq(cea, ceb));
         } else if op == Op::CmpNe {
@@ -794,8 +918,16 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             let ceb_obj = zjs_is_object(ceb) != 0 || zjs_is_array(ceb) != 0;
             if cea_obj && !ceb_obj && !zjs_is_undefined(ceb) && !zjs_is_null(ceb) {
                 cea = zjs_to_primitive(ctx, cea, false);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
             } else if ceb_obj && !cea_obj && !zjs_is_undefined(cea) && !zjs_is_null(cea) {
                 ceb = zjs_to_primitive(ctx, ceb, false);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
             }
             let eq = zjs_loose_eq(cea, ceb);
             regs[inst.a] = zjs_bool(if eq != 0 { 0 } else { 1 });
@@ -806,29 +938,91 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             regs[inst.a] = zjs_bool(if eq != 0 { 0 } else { 1 });
         } else if op == Op::CmpLt {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 || is_object_like(bv) != 0 {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             regs[inst.a] = zjs_bool(zjs_cmp_lt(av, bv));
         } else if op == Op::CmpLe {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 || is_object_like(bv) != 0 {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             regs[inst.a] = zjs_bool(zjs_cmp_le(av, bv));
         } else if op == Op::CmpGt {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 || is_object_like(bv) != 0 {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             regs[inst.a] = zjs_bool(zjs_cmp_lt(bv, av));
         } else if op == Op::CmpGe {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 || is_object_like(bv) != 0 {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             regs[inst.a] = zjs_bool(zjs_cmp_le(bv, av));
 
         // --- unary ----------------------------------------------
         } else if op == Op::Neg {
             let v = regs[inst.b];
-            if is_object_like(v) != 0 { v = zjs_to_primitive(ctx, v, false); }
+            if is_object_like(v) != 0 {
+                v = zjs_to_primitive(ctx, v, false);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+            }
             regs[inst.a] = zjs_arith_neg(v);
         } else if op == Op::BitNot {
             regs[inst.a] = zjs_bit_not(regs[inst.b]);
@@ -935,6 +1129,10 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 ctx.current_host_fn = saved_host_fn;
                 ctx.host_this = saved_this;
                 regs[dst] = r;
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
             } else {
                 regs[dst] = zjs_undefined();
             }
@@ -1004,6 +1202,10 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 ctx.current_host_fn = saved_host_fn;
                 ctx.host_this = saved_this;
                 regs[dst] = r;
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
             } else {
                 regs[dst] = zjs_undefined();
             }
@@ -1069,6 +1271,18 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 }
                 ctx.current_host_fn = saved_host_fn;
                 ctx.host_this = saved_host;
+                if ctx.pending_throw_active {
+                    // Tail callee threw — pop our frame (we're already
+                    // semantically "returned") and surface the throw in
+                    // the caller.
+                    let thrown_v = consume_pending_throw(ctx);
+                    if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+                    let _ = pop_call_frame(ctx);
+                    throwing = true;
+                    thrown = thrown_v;
+                    exit_reason = 3;
+                    break;
+                }
                 // Pop and write result like an implicit Return.
                 if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
                 let ret_dst = pop_call_frame(ctx);
@@ -1215,6 +1429,10 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let ic_name: ZjsString* = f.ics[ic_slot].name;
                 let key_val = zjs_cell_from_ptr((void*)ic_name);
                 regs[dst] = property_get(ctx, obj_val, key_val);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
                 // Patch the IC if obj is an object that has the prop
                 // and the cache isn't already full+megamorphic.
                 if zjs_is_object(obj_val) != 0 && !f.ics[ic_slot].megamorphic {
@@ -1279,6 +1497,10 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let ic_name: ZjsString* = f.ics[ic_slot].name;
                 let key_val = zjs_cell_from_ptr((void*)ic_name);
                 property_set(ctx, obj_val, key_val, value);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
                 if zjs_is_object(obj_val) != 0 && !f.ics[ic_slot].megamorphic {
                     let o = zjs_as_object(obj_val);
                     let s = class_find_slot(o.cls, ic_name);
@@ -1319,8 +1541,16 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             regs[dst] = arr_val;
         } else if op == Op::LoadElem {
             regs[inst.a] = property_get(ctx, regs[inst.b], regs[inst.c]);
+            if ctx.pending_throw_active {
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
         } else if op == Op::StoreElem {
             property_set(ctx, regs[inst.a], regs[inst.b], regs[inst.c]);
+            if ctx.pending_throw_active {
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
         } else if op == Op::LoadThis {
             regs[inst.a] = ctx.host_this;
         } else if op == Op::In {
@@ -1541,6 +1771,10 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                     call_result = fp(ctx, argv_ptr, argc);
                 }
                 ctx.current_host_fn = saved_host_fn;
+                if ctx.pending_throw_active {
+                    did_throw = true;
+                    call_result = consume_pending_throw(ctx);
+                }
             }
             ctx.host_this = saved_this;
             if did_throw {
@@ -1608,21 +1842,21 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
         // else: unknown opcode — ignore (interpreter is permissive
         // during MVP; the compiler shouldn't emit such ops).
 
-        // Pending-throw bridge — a host helper invoked during this op
-        // (zjs_to_primitive's valueOf/toString, an Array.prototype.map
-        // callback, accessor getter/setter, etc.) may have raised a JS
-        // exception that the host can't propagate directly. Promote it
-        // to a local throw so the next outer-loop iteration runs the
-        // standard catch-or-unwind.
-        if ctx.pending_throw_active {
-            throwing = true;
-            thrown   = ctx.pending_throw_value;
-            ctx.pending_throw_active = false;
-            ctx.pending_throw_value  = zjs_undefined();
-            exit_reason = 3;
-            ctx.frames[cur_idx].ip = ip;
-            break;
-        }
+        // Pending-throw bridge is no longer per-instruction — each
+        // opcode handler that can call a host helper checks
+        // ctx.pending_throw_active inline (right after the helper
+        // returns) and promotes it to a local throw. Keeping the hot
+        // dispatch loop straight-line saves a memory load + branch per
+        // instruction. The slow-path checks live in:
+        //   - Op::Invoke / MethodInvoke / TailInvoke /
+        //     TailMethodInvoke / NewInvoke (host-fn callee branch)
+        //   - Op::Add / Sub / Mul / Div / Mod / Pow / AddImm-slow /
+        //     SubImm-slow (after zjs_to_primitive)
+        //   - Op::CmpEq / CmpNe / CmpLt / CmpLe / CmpGt / CmpGe
+        //     and their *Imm slow paths
+        //   - Op::Neg
+        //   - Op::LoadProp / StoreProp / LoadElem / StoreElem
+        //     (property accessors fire callbacks)
 
         ip = ip + 1;
         }   // end inner while ip < code_len
@@ -1677,6 +1911,19 @@ fn is_object_like(v: ZjsValue) -> int {
     if zjs_is_closure(v) != 0 { return 1; }
     if zjs_is_host_function(v) != 0 { return 1; }
     return 0;
+}
+
+// Read + clear the pending-throw bridge state. Called from each
+// opcode handler that just executed a host helper which may have
+// raised an exception (zjs_to_primitive, zjs_call_value, accessor
+// get/set, etc.). Returns the thrown value; caller is responsible
+// for setting throwing/exit_reason and breaking out of the inner
+// loop. ctx.pending_throw_active should be checked separately.
+fn consume_pending_throw(ctx: ZjsContext*) -> ZjsValue {
+    let v = ctx.pending_throw_value;
+    ctx.pending_throw_active = false;
+    ctx.pending_throw_value  = zjs_undefined();
+    return v;
 }
 
 fn zjs_to_primitive(ctx: ZjsContext*, v: ZjsValue, prefer_string: bool) -> ZjsValue {
