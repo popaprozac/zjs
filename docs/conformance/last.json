@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:12 UTC",
+    "when": "2026-05-14 18:16 UTC",
     "total": 4821,
-    "passed": 2486,
-    "failed": 309,
+    "passed": 2489,
+    "failed": 306,
     "skipped": 2026
   },
   "failures": [
@@ -332,10 +332,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/for-in/head-lhs-member.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/language/statements/for-in/head-var-bound-names-dup.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -432,10 +428,6 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
-      "path": "test/language/statements/for-of/head-lhs-async-dot.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/language/statements/for-of/head-lhs-async-escaped.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -449,10 +441,6 @@
     },
     {
       "path": "test/language/statements/for-of/head-lhs-cover.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/for-of/head-lhs-member.js",
       "reason": "zjs: throw: SyntaxError: compile error"
     },
     {

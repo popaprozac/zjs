@@ -2563,8 +2563,48 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // Write `elem_r` into the binding. Supported binding shapes:
         //   VarDecl with one declarator (`let k`)
         //   IdentExpr (bare `k`)
+        //   Member / Computed (e.g. `x.y` or `x[y]`) — re-evaluated
+        //     each iteration per the for-in/of LHS spec.
         let binding = node.left;
-        if binding == NULL || (binding.kind != NodeKind::VarDecl && binding.kind != NodeKind::IdentExpr) {
+        if binding == NULL {
+            c.had_error = true; return;
+        }
+        if binding.kind == NodeKind::Member || binding.kind == NodeKind::Computed {
+            let m_obj_r = compile_expr(c, binding.left);
+            let m_key_r: u8 = 0;
+            if binding.kind == NodeKind::Member {
+                m_key_r = emit_load_name_string(c, c.source + binding.name_start, binding.name_length);
+            } else {
+                m_key_r = compile_expr(c, binding.right);
+            }
+            emit(c, make_inst_abc(Op::StoreElem, m_obj_r, m_key_r, elem_r));
+            if m_key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            if m_obj_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            release_reg(c, elem_r);
+            // body
+            if node.children_count > 0 {
+                compile_stmt(c, node.children[0]);
+            }
+            let inc_at_m = (u32)c.code_count;
+            loop_set_continue(c, inc_at_m);
+            emit(c, make_inst_abc(Op::Add, i_r, i_r, one_r));
+            emit_jump_back(c, Op::Jmp, loop_top);
+            patch_jump(c, (u32)jmp_exit_idx);
+            let frame_m = c.loop_stack[c.loop_depth - 1];
+            let bi_m: u32 = 0;
+            while bi_m < frame_m.break_count {
+                patch_jump(c, frame_m.break_patches[bi_m]);
+                bi_m = bi_m + 1;
+            }
+            loop_pop(c);
+            c.fixed_regs = saved_fixed;
+            release_reg(c, i_r);
+            release_reg(c, one_r);
+            release_reg(c, len_r);
+            release_reg(c, iter_r);
+            return;
+        }
+        if binding.kind != NodeKind::VarDecl && binding.kind != NodeKind::IdentExpr {
             c.had_error = true; return;
         }
         let bname_start: u32 = 0;
