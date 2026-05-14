@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 19:36 UTC",
+    "when": "2026-05-14 19:40 UTC",
     "total": 4821,
-    "passed": 2529,
-    "failed": 266,
+    "passed": 2532,
+    "failed": 263,
     "skipped": 2026
   },
   "failures": [
@@ -320,10 +320,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/for-in/head-lhs-cover.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/language/statements/for-in/head-lhs-let.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -430,14 +426,6 @@
     {
       "path": "test/language/statements/for-of/head-lhs-async-invalid.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
-    },
-    {
-      "path": "test/language/statements/for-of/head-lhs-async-parens.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/for-of/head-lhs-cover.js",
-      "reason": "zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/statements/for-of/head-using-bound-names-fordecl-tdz.js",

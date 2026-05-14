@@ -2562,10 +2562,13 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
 
         // Write `elem_r` into the binding. Supported binding shapes:
         //   VarDecl with one declarator (`let k`)
-        //   IdentExpr (bare `k`)
+        //   IdentExpr (bare `k`, possibly inside Paren — `for ((x) of [...])`)
         //   Member / Computed (e.g. `x.y` or `x[y]`) — re-evaluated
         //     each iteration per the for-in/of LHS spec.
         let binding = node.left;
+        while binding != NULL && binding.kind == NodeKind::Paren {
+            binding = binding.left;
+        }
         if binding == NULL {
             c.had_error = true; return;
         }
