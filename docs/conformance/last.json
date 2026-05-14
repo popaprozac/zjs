@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 16:19 UTC",
+    "when": "2026-05-14 16:23 UTC",
     "total": 4821,
-    "passed": 2408,
-    "failed": 387,
+    "passed": 2410,
+    "failed": 385,
     "skipped": 2026
   },
   "failures": [
@@ -1184,10 +1184,6 @@
       "reason": "zjs: throw: Test262Error: #1: String.prototype.indexOf.hasOwnProperty(\"length\") return true. Actual: undefined"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: __instance = new Object(true); __instance.indexOf = String.prototype.indexOf;  __instance."
-    },
-    {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T2.js",
       "reason": "zjs: throw: Test262Error: #1: __instance = new Boolean; __instance.indexOf = String.prototype.indexOf;  __instance.index"
     },
@@ -1238,10 +1234,6 @@
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A11.js",
       "reason": "zjs: throw: Test262Error: #1: String.prototype.slice.hasOwnProperty(\"length\") return true. Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: __instance = new Object(true); __instance.slice = String.prototype.slice;  __instance.slic"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T10.js",

@@ -1421,14 +1421,28 @@ fn zjs_get_host_this(ctx: ZjsContext*) -> ZjsValue {
 // Object() / new Object() — when called as a constructor, returns the
 // (potentially boxed) primitive or a fresh object.
 fn host_object_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    // If invoked via `new`, ctx.host_this is the freshly-allocated obj
-    // with proto = Object.prototype. Use it.
-    if zjs_is_object(ctx.host_this) != 0 { return ctx.host_this; }
-    if argc == 0 { return ctx_new_object(ctx); }
+    // ECMA-262 §20.1.1.1: Object(value) returns a wrapped version of
+    // primitives, and the value itself if it's already an object.
+    // For `new Object()` with no args, returns a fresh {}.
+    if argc == 0 {
+        if zjs_is_object(ctx.host_this) != 0 { return ctx.host_this; }
+        return ctx_new_object(ctx);
+    }
     let v = args[0];
-    if zjs_is_undefined(v) != 0 || zjs_is_null(v) != 0 { return ctx_new_object(ctx); }
-    // Otherwise return value as-is (would normally wrap-box in real JS).
-    return v;
+    if zjs_is_undefined(v) != 0 || zjs_is_null(v) != 0 {
+        if zjs_is_object(ctx.host_this) != 0 { return ctx.host_this; }
+        return ctx_new_object(ctx);
+    }
+    if zjs_is_object(v) != 0 || zjs_is_array(v) != 0
+       || zjs_is_function(v) != 0 || zjs_is_closure(v) != 0
+       || zjs_is_host_function(v) != 0 || zjs_is_promise(v) != 0 {
+        return v;
+    }
+    // Primitive — wrap via ToObject (yields Boolean/Number/String wrapper
+    // with the appropriate prototype chain).
+    let wrapped = ctx_to_object(ctx, v);
+    if ctx.had_error { return zjs_undefined(); }
+    return wrapped;
 }
 
 // Object.create(proto) — fresh empty object whose [[Prototype]] is proto.
