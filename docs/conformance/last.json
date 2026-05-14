@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:02 UTC",
+    "when": "2026-05-14 18:08 UTC",
     "total": 4821,
-    "passed": 2475,
-    "failed": 320,
+    "passed": 2477,
+    "failed": 318,
     "skipped": 2026
   },
   "failures": [
@@ -216,10 +216,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/while/S12.6.2_A10.js",
-      "reason": "zjs: throw: ReferenceError: f is not defined"
-    },
-    {
       "path": "test/language/statements/while/S12.6.2_A5.js",
       "reason": "zjs: throw: Test262Error: #1: __in__do__before__break === 1. Actual:  __in__do__before__break ===undefined"
     },
@@ -238,10 +234,6 @@
     {
       "path": "test/language/statements/while/let-identifier-with-newline.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/do-while/S12.6.1_A10.js",
-      "reason": "zjs: throw: ReferenceError: f is not defined"
     },
     {
       "path": "test/language/statements/do-while/S12.6.1_A3.js",

@@ -691,8 +691,14 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         // identifier. Detect this case BEFORE compiling the operand
         // (which would emit a throwing LoadGlobal) and substitute
         // LoadGlobalOrUndefined.
-        if node.op == TokenKind::KwTypeof && node.left != NULL && node.left.kind == NodeKind::IdentExpr {
+        if node.op == TokenKind::KwTypeof && node.left != NULL {
+            // Unwrap parens — `typeof(x)` should behave like `typeof x`
+            // for the unresolved-reference fallback.
             let operand = node.left;
+            while operand != NULL && operand.kind == NodeKind::Paren {
+                operand = operand.left;
+            }
+            if operand != NULL && operand.kind == NodeKind::IdentExpr {
             let nm = c.source + operand.start;
             let nl = operand.end - operand.start;
             let local_idx = find_local_index(c, nm, nl);
@@ -709,6 +715,7 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
                 emit(c, make_inst_ab(Op::Typeof, dst_g, src_g));
                 release_reg(c, src_g);
                 return dst_g;
+            }
             }
         }
         let src = compile_expr(c, node.left);
