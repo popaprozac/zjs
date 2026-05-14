@@ -705,6 +705,15 @@ fn run_tests() -> void {
     check_int((char*)"unlabeled break still works", (char*)r"let r=0; for (let i=0;i<5;i++) { if (i===3) break; r=r+i }; r", 3);
     check_int((char*)"labeled while",               (char*)r"let r=0; loop: while (true) { r=r+1; if (r>=3) break loop }; r", 3);
 
+    // --- ToPrimitive coercion in arithmetic (Phase 3.8h) -----------
+    check_int((char*)"valueOf in +",                (char*)r"({valueOf: function() { return 1 }}) + 1", 2);
+    check_int((char*)"valueOf in -",                (char*)r"({valueOf: function() { return 10 }}) - 3", 7);
+    check_int((char*)"valueOf in *",                (char*)r"({valueOf: function() { return 5 }}) * 2", 10);
+    check_int((char*)"valueOf both sides",          (char*)r"let o = {valueOf: function() { return 7 }}; o + o", 14);
+    check_string((char*)"toString in + with str",   (char*)r"({toString: function() { return 'x' }}) + 'y'", (char*)"xy");
+    check_int((char*)"valueOf in <",                (char*)r"if (({valueOf: function() { return 3 }}) < 5) 1; else 0", 1);
+    check_int((char*)"unary - via valueOf",         (char*)r"-({valueOf: function() { return 4 }})", -4);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");
