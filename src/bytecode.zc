@@ -11,6 +11,7 @@
 // its register count.
 
 import "./value.zc";
+import "std/mem.zc"
 
 raw {
     #include <stdlib.h>
@@ -318,25 +319,17 @@ struct Function {
 }
 
 fn function_new() -> Function* {
-    let f: Function* = NULL;
-    raw {
-        f = (Function*)calloc(1, sizeof(Function));
-    }
+    let f = alloc<Function>();
     f.header.type_tag = TAG_FUNCTION;
     return f;
 }
 
 fn function_free(f: Function*) -> void {
     if f == NULL { return; }
-    let code = f.code;
-    let consts = f.constants;
-    let ics = f.ics;
-    raw {
-        free(code);
-        free(consts);
-        free(ics);
-        free(f);
-    }
+    dealloc(f.code);
+    dealloc(f.constants);
+    dealloc(f.ics);
+    dealloc(f);
 }
 
 // C-callable wrapper so context.zc can free functions without depending

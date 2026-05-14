@@ -3,6 +3,8 @@
 // 64-bit immediate values packed into one struct field. The struct
 // layout MUST match the typedef in include/zjs.h byte-for-byte — it's
 // part of the public C ABI.
+
+import "std/mem.zc"
 //
 // Layout summary (see docs/phases/phase-2-1-value-representation.md
 // for the bit-level reference):
@@ -671,8 +673,7 @@ fn zjs_as_accessor(v: ZjsValue) -> ZjsAccessor* {
 }
 
 fn zjs_accessor_new(get_v: ZjsValue, set_v: ZjsValue) -> ZjsAccessor* {
-    let a: ZjsAccessor* = NULL;
-    raw { a = (ZjsAccessor*)calloc(1, sizeof(ZjsAccessor)); }
+    let a = alloc<ZjsAccessor>();
     a.header.type_tag = TAG_ACCESSOR;
     a.get = get_v;
     a.set = set_v;
@@ -680,7 +681,9 @@ fn zjs_accessor_new(get_v: ZjsValue, set_v: ZjsValue) -> ZjsAccessor* {
 }
 
 fn accessor_free_void(p: void*) -> void {
-    raw { free(p); }
+    let a: ZjsAccessor* = NULL;
+    raw { a = (ZjsAccessor*)p; }
+    dealloc(a);
 }
 
 // Phase 3.10 — Promise. State machine with attached reactions.
@@ -709,8 +712,7 @@ fn zjs_as_promise(v: ZjsValue) -> ZjsPromise* {
 }
 
 fn zjs_promise_new() -> ZjsPromise* {
-    let p: ZjsPromise* = NULL;
-    raw { p = (ZjsPromise*)calloc(1, sizeof(ZjsPromise)); }
+    let p = alloc<ZjsPromise>();
     p.header.type_tag = TAG_PROMISE;
     p.state = PROMISE_PENDING;
     p.value = zjs_undefined();
@@ -720,9 +722,8 @@ fn zjs_promise_new() -> ZjsPromise* {
 fn promise_free_void(p: void*) -> void {
     let pr: ZjsPromise* = NULL;
     raw { pr = (ZjsPromise*)p; }
-    let r = pr.reactions;
-    raw { free(r); }
-    raw { free(p); }
+    dealloc(pr.reactions);
+    dealloc(pr);
 }
 
 struct ZjsClosure {
@@ -840,8 +841,7 @@ fn zjs_as_host_function(v: ZjsValue) -> ZjsHostFunction* {
 // (the caller in context.zc handles that).
 
 fn zjs_string_new_take(data: char*, length: u32) -> ZjsString* {
-    let s: ZjsString* = NULL;
-    raw { s = (ZjsString*)calloc(1, sizeof(ZjsString)); }
+    let s = alloc<ZjsString>();
     s.header.type_tag = TAG_STRING;
     s.length = length;
     s.data = data;
@@ -849,12 +849,9 @@ fn zjs_string_new_take(data: char*, length: u32) -> ZjsString* {
 }
 
 fn zjs_string_new(data: char*, length: u32) -> ZjsString* {
-    let copy: char* = NULL;
-    raw {
-        copy = (char*)malloc(length + 1);
-        memcpy(copy, data, length);
-        copy[length] = 0;
-    }
+    let copy = alloc_n<char>((usize)(length + 1));
+    mem_copy<char>(copy, data, (usize)length);
+    copy[length] = (char)0;
     return zjs_string_new_take(copy, length);
 }
 
@@ -862,16 +859,15 @@ fn string_free_void(p: void*) -> void {
     let s: ZjsString* = NULL;
     raw { s = (ZjsString*)p; }
     if s == NULL { return; }
-    let d = s.data;
-    raw { free(d); free(s); }
+    dealloc(s.data);
+    dealloc(s);
 }
 
 // Allocate a new empty object cell. The caller is responsible for
 // setting `cls` to a valid HiddenClass (typically the context's root
 // empty class) and registering the cell on the context.
 fn zjs_object_new() -> ZjsObject* {
-    let o: ZjsObject* = NULL;
-    raw { o = (ZjsObject*)calloc(1, sizeof(ZjsObject)); }
+    let o = alloc<ZjsObject>();
     o.header.type_tag = TAG_OBJECT;
     return o;
 }
@@ -880,15 +876,14 @@ fn object_free_void(p: void*) -> void {
     let o: ZjsObject* = NULL;
     raw { o = (ZjsObject*)p; }
     if o == NULL { return; }
-    let slots = o.slots;
-    raw { free(slots); free(o); }
+    dealloc(o.slots);
+    dealloc(o);
 }
 
 // Allocate a new HiddenClass cell. Parent / transition_name are set
 // by the caller. The transitions arrays start empty.
 fn zjs_hidden_class_new(parent: ZjsHiddenClass*, transition_name: ZjsString*, slot: u32, prop_count: u32) -> ZjsHiddenClass* {
-    let c: ZjsHiddenClass* = NULL;
-    raw { c = (ZjsHiddenClass*)calloc(1, sizeof(ZjsHiddenClass)); }
+    let c = alloc<ZjsHiddenClass>();
     c.header.type_tag = TAG_HIDDEN_CLASS;
     c.parent = parent;
     c.transition_name = transition_name;
@@ -901,21 +896,19 @@ fn hidden_class_free_void(p: void*) -> void {
     let c: ZjsHiddenClass* = NULL;
     raw { c = (ZjsHiddenClass*)p; }
     if c == NULL { return; }
-    let names = c.trans_names;
-    let kids  = c.trans_children;
-    raw { free(names); free(kids); free(c); }
+    dealloc(c.trans_names);
+    dealloc(c.trans_children);
+    dealloc(c);
 }
 
 // Allocate a new array with `length` slots, all initialized to undefined.
 fn zjs_array_new(length: u32) -> ZjsArray* {
-    let a: ZjsArray* = NULL;
-    raw { a = (ZjsArray*)calloc(1, sizeof(ZjsArray)); }
+    let a = alloc<ZjsArray>();
     a.header.type_tag = TAG_ARRAY;
     a.length = length;
     let cap: u32 = if length < 4 { 4 } else { length };
     a.cap = cap;
-    let buf: ZjsValue* = NULL;
-    raw { buf = (ZjsValue*)calloc(cap, sizeof(ZjsValue)); }
+    let buf = alloc_n<ZjsValue>((usize)cap);
     let und: ZjsValue = zjs_undefined();
     let i: u32 = 0;
     while i < cap {
@@ -930,23 +923,22 @@ fn array_free_void(p: void*) -> void {
     let a: ZjsArray* = NULL;
     raw { a = (ZjsArray*)p; }
     if a == NULL { return; }
-    let el = a.elements;
-    raw { free(el); free(a); }
+    dealloc(a.elements);
+    dealloc(a);
 }
 
 fn host_function_free_void(p: void*) -> void {
     let hf: ZjsHostFunction* = NULL;
     raw { hf = (ZjsHostFunction*)p; }
     if hf == NULL { return; }
-    let name = hf.name;
-    raw { free(name); free(hf); }
+    dealloc(hf.name);
+    dealloc(hf);
 }
 
 // Allocate a fresh closure. Caller fills function + env and registers
 // it on a context for cleanup.
 fn zjs_closure_new(function: void*, env: ZjsObject*) -> ZjsClosure* {
-    let cl: ZjsClosure* = NULL;
-    raw { cl = (ZjsClosure*)calloc(1, sizeof(ZjsClosure)); }
+    let cl = alloc<ZjsClosure>();
     cl.header.type_tag = TAG_CLOSURE;
     cl.function = function;
     cl.env = env;
@@ -957,7 +949,7 @@ fn closure_free_void(p: void*) -> void {
     let cl: ZjsClosure* = NULL;
     raw { cl = (ZjsClosure*)p; }
     if cl == NULL { return; }
-    raw { free(cl); }
+    dealloc(cl);
 }
 
 // =====================================================================
@@ -998,16 +990,9 @@ fn class_find_transition(cls: ZjsHiddenClass*, name: ZjsString*) -> ZjsHiddenCla
 fn class_add_transition(parent: ZjsHiddenClass*, name: ZjsString*, child: ZjsHiddenClass*) -> void {
     if parent.trans_count >= parent.trans_cap {
         let new_cap: u32 = if parent.trans_cap == 0 { 4 } else { parent.trans_cap * 2 };
-        let old_names = parent.trans_names;
-        let old_kids  = parent.trans_children;
-        let new_names: ZjsString** = NULL;
-        let new_kids:  ZjsHiddenClass** = NULL;
-        raw {
-            new_names = (ZjsString**)realloc(old_names, new_cap * sizeof(ZjsString*));
-            new_kids  = (ZjsHiddenClass**)realloc(old_kids, new_cap * sizeof(ZjsHiddenClass*));
-        }
-        parent.trans_names = new_names;
-        parent.trans_children = new_kids;
+        let old_cap = parent.trans_cap;
+        parent.trans_names    = realloc_n<ZjsString*>(parent.trans_names,    (usize)old_cap, (usize)new_cap);
+        parent.trans_children = realloc_n<ZjsHiddenClass*>(parent.trans_children, (usize)old_cap, (usize)new_cap);
         parent.trans_cap = new_cap;
     }
     parent.trans_names[parent.trans_count] = name;

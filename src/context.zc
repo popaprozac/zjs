@@ -8,6 +8,8 @@
 import "stdlib.h" as libc;
 import "string.h" as libc_str;
 import "./value.zc";
+import "std/mem.zc"
+import "std/math.zc"
 
 raw {
     #include <stdio.h>
@@ -189,10 +191,7 @@ struct ZjsContext {
 }
 
 fn zjs_new_context() -> ZjsContext* {
-    let result: ZjsContext* = NULL;
-    raw {
-        result = (ZjsContext*)calloc(1, sizeof(ZjsContext));
-    }
+    let result = alloc<ZjsContext>();
     if result != NULL {
         // GC initial threshold: collect after the first 4096 cell allocations,
         // then adapt to 2× live count after each collection.
@@ -214,19 +213,15 @@ fn zjs_new_context() -> ZjsContext* {
 
 fn zjs_free_context(ctx: ZjsContext*) -> void {
     if ctx == NULL { return; }
-    let root_frames = ctx.root_frames;
-    raw { free(root_frames); }
-    let atoms = ctx.atoms;
-    raw { free(atoms); }
+    dealloc(ctx.root_frames);
+    dealloc(ctx.atoms);
     // Free every interned global name.
     let i: u32 = 0;
     while i < ctx.global_count {
-        let name_ptr = ctx.globals[i].name;
-        raw { free(name_ptr); }
+        dealloc(ctx.globals[i].name);
         i = i + 1;
     }
-    let globals = ctx.globals;
-    raw { free(globals); }
+    dealloc(ctx.globals);
 
     // Free every heap cell, dispatched by its type tag.
     let j: u32 = 0;
@@ -265,16 +260,14 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     let ctx_try_stack = ctx.ctx_try_stack;
     let invoke_arg_buffer = ctx.invoke_arg_buffer;
     let microtask_queue = ctx.microtask_queue;
-    raw {
-        free(cells);
-        free(temp_roots);
-        free(reg_stack);
-        free(frames);
-        free(ctx_try_stack);
-        free(invoke_arg_buffer);
-        free(microtask_queue);
-        free(ctx);
-    }
+    dealloc(cells);
+    dealloc(temp_roots);
+    dealloc(reg_stack);
+    dealloc(frames);
+    dealloc(ctx_try_stack);
+    dealloc(invoke_arg_buffer);
+    dealloc(microtask_queue);
+    dealloc(ctx);
 }
 
 // Push a value as a transient GC root. Used by host functions that
@@ -284,10 +277,7 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
 fn ctx_push_temp_root(ctx: ZjsContext*, v: ZjsValue) -> void {
     if ctx.temp_root_count >= ctx.temp_root_cap {
         let new_cap: u32 = if ctx.temp_root_cap == 0 { 8 } else { ctx.temp_root_cap * 2 };
-        let old = ctx.temp_roots;
-        let new_arr: ZjsValue* = NULL;
-        raw { new_arr = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
-        ctx.temp_roots = new_arr;
+        ctx.temp_roots = realloc_n<ZjsValue>(ctx.temp_roots, (usize)ctx.temp_root_cap, (usize)new_cap);
         ctx.temp_root_cap = new_cap;
     }
     ctx.temp_roots[ctx.temp_root_count] = v;
@@ -316,10 +306,7 @@ fn ctx_replace_top_temp_root(ctx: ZjsContext*, v: ZjsValue) -> void {
 fn ctx_register_cell(ctx: ZjsContext*, p: void*) -> void {
     if ctx.cell_count >= ctx.cell_cap {
         let new_cap: u32 = if ctx.cell_cap == 0 { 16 } else { ctx.cell_cap * 2 };
-        let old = ctx.cells;
-        let new_arr: void** = NULL;
-        raw { new_arr = (void**)realloc(old, new_cap * sizeof(void*)); }
-        ctx.cells = new_arr;
+        ctx.cells = realloc_n<void*>(ctx.cells, (usize)ctx.cell_cap, (usize)new_cap);
         ctx.cell_cap = new_cap;
     }
     ctx.cells[ctx.cell_count] = p;
@@ -334,10 +321,7 @@ fn ctx_register_cell(ctx: ZjsContext*, p: void*) -> void {
 fn ctx_push_root_frame(ctx: ZjsContext*, regs: ZjsValue*, reg_count: u32) -> void {
     if ctx.root_depth >= ctx.root_cap {
         let new_cap: u32 = if ctx.root_cap == 0 { 16 } else { ctx.root_cap * 2 };
-        let old = ctx.root_frames;
-        let new_arr: GcRootFrame* = NULL;
-        raw { new_arr = (GcRootFrame*)realloc(old, new_cap * sizeof(GcRootFrame)); }
-        ctx.root_frames = new_arr;
+        ctx.root_frames = realloc_n<GcRootFrame>(ctx.root_frames, (usize)ctx.root_cap, (usize)new_cap);
         ctx.root_cap = new_cap;
     }
     ctx.root_frames[ctx.root_depth].regs = regs;
@@ -368,10 +352,7 @@ fn reg_stack_reserve(ctx: ZjsContext*, n: u32) -> u32 {
     if needed > ctx.reg_stack_cap {
         let new_cap: u32 = if ctx.reg_stack_cap == 0 { 256 } else { ctx.reg_stack_cap * 2 };
         while new_cap < needed { new_cap = new_cap * 2; }
-        let old = ctx.reg_stack;
-        let new_arr: ZjsValue* = NULL;
-        raw { new_arr = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
-        ctx.reg_stack = new_arr;
+        ctx.reg_stack = realloc_n<ZjsValue>(ctx.reg_stack, (usize)ctx.reg_stack_cap, (usize)new_cap);
         ctx.reg_stack_cap = new_cap;
     }
     let base = ctx.reg_stack_top;
@@ -397,10 +378,7 @@ fn reg_stack_release(ctx: ZjsContext*, n: u32) -> void {
 fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, ret_dst: u8) -> u32 {
     if ctx.frame_count >= ctx.frame_cap {
         let new_cap: u32 = if ctx.frame_cap == 0 { 64 } else { ctx.frame_cap * 2 };
-        let old = ctx.frames;
-        let new_arr: CallFrame* = NULL;
-        raw { new_arr = (CallFrame*)realloc(old, new_cap * sizeof(CallFrame)); }
-        ctx.frames = new_arr;
+        ctx.frames = realloc_n<CallFrame>(ctx.frames, (usize)ctx.frame_cap, (usize)new_cap);
         ctx.frame_cap = new_cap;
     }
     let reg_count: u32 = f.register_count;
@@ -525,9 +503,7 @@ fn tail_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32) -
 fn ctx_try_push(ctx: ZjsContext*, catch_ip: usize, catch_reg: u8) -> bool {
     if ctx.ctx_try_depth >= CTX_MAX_TRY_DEPTH { return false; }
     if ctx.ctx_try_stack == NULL {
-        let new_arr: CtxTryFrame* = NULL;
-        raw { new_arr = (CtxTryFrame*)calloc(CTX_MAX_TRY_DEPTH, sizeof(CtxTryFrame)); }
-        ctx.ctx_try_stack = new_arr;
+        ctx.ctx_try_stack = alloc_n<CtxTryFrame>((usize)CTX_MAX_TRY_DEPTH);
         ctx.ctx_try_cap = CTX_MAX_TRY_DEPTH;
     }
     let i = ctx.ctx_try_depth;
@@ -940,11 +916,7 @@ fn atom_table_grow(ctx: ZjsContext*) -> void {
     let old_atoms = ctx.atoms;
 
     let new_cap: u32 = if old_cap == 0 { 16 } else { old_cap * 2 };
-    let new_atoms: AtomEntry* = NULL;
-    raw {
-        new_atoms = (AtomEntry*)calloc(new_cap, sizeof(AtomEntry));
-    }
-    ctx.atoms = new_atoms;
+    ctx.atoms = alloc_n<AtomEntry>((usize)new_cap);
     ctx.atom_cap = new_cap;
     ctx.atom_count = 0;
 
@@ -956,7 +928,7 @@ fn atom_table_grow(ctx: ZjsContext*) -> void {
             }
             i = i + 1;
         }
-        raw { free(old_atoms); }
+        dealloc(old_atoms);
     }
 }
 
@@ -1001,7 +973,7 @@ fn ctx_intern_atom_take(ctx: ZjsContext*, data: char*, length: u32) -> ZjsString
     let existing = atom_table_lookup(ctx, data, length, h);
     if existing != NULL {
         // Caller's buffer is redundant — free it.
-        raw { free(data); }
+        dealloc(data);
         return existing;
     }
 
@@ -1052,9 +1024,7 @@ fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsVal
     if obj.slot_cap < needed {
         let new_cap: u32 = if obj.slot_cap == 0 { 4 } else { obj.slot_cap * 2 };
         while new_cap < needed { new_cap = new_cap * 2; }
-        let old = obj.slots;
-        let new_slots: ZjsValue* = NULL;
-        raw { new_slots = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
+        let new_slots = realloc_n<ZjsValue>(obj.slots, (usize)obj.slot_cap, (usize)new_cap);
         let und: ZjsValue = zjs_undefined();
         let i = obj.slot_cap;
         while i < new_cap {
@@ -1086,18 +1056,14 @@ fn ctx_new_array(ctx: ZjsContext*, length: u32) -> ZjsValue {
 // function with signature:
 //     ZjsValue (*)(ZjsContext*, ZjsValue*, uint32_t)
 fn ctx_register_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> ZjsValue {
-    let hf: ZjsHostFunction* = NULL;
-    raw { hf = (ZjsHostFunction*)calloc(1, sizeof(ZjsHostFunction)); }
+    let hf = alloc<ZjsHostFunction>();
     hf.header.type_tag = TAG_HOST_FUNCTION;
     hf.fn_ptr = fn_ptr;
 
     let name_len: usize = 0;
     raw { name_len = strlen(name); }
-    let name_copy: char* = NULL;
-    raw {
-        name_copy = (char*)malloc(name_len + 1);
-        memcpy(name_copy, name, name_len + 1);
-    }
+    let name_copy = alloc_n<char>(name_len + 1);
+    mem_copy<char>(name_copy, name, name_len + 1);
     hf.name = name_copy;
 
     ctx_register_cell(ctx, (void*)hf);
@@ -1114,18 +1080,14 @@ fn ctx_register_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> Z
 // used when the function is going to be attached as an object property
 // (e.g. Math.abs).
 fn ctx_make_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> ZjsValue {
-    let hf: ZjsHostFunction* = NULL;
-    raw { hf = (ZjsHostFunction*)calloc(1, sizeof(ZjsHostFunction)); }
+    let hf = alloc<ZjsHostFunction>();
     hf.header.type_tag = TAG_HOST_FUNCTION;
     hf.fn_ptr = fn_ptr;
 
     let name_len: usize = 0;
     raw { name_len = strlen(name); }
-    let name_copy: char* = NULL;
-    raw {
-        name_copy = (char*)malloc(name_len + 1);
-        memcpy(name_copy, name, name_len + 1);
-    }
+    let name_copy = alloc_n<char>(name_len + 1);
+    mem_copy<char>(name_copy, name, name_len + 1);
     hf.name = name_copy;
 
     ctx_register_cell(ctx, (void*)hf);
@@ -1172,19 +1134,15 @@ fn host_error_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     if msg_s.length == 0 { return name_v; }
     // Concatenate "Name: msg"
     let total = name_s.length + 2 + msg_s.length;
-    let buf: char* = NULL;
-    let nd = name_s.data;
-    let nl = name_s.length;
-    let md = msg_s.data;
-    let ml = msg_s.length;
-    raw {
-        buf = (char*)malloc(total + 1);
-        memcpy(buf, nd, nl);
-        buf[nl] = ':';
-        buf[nl + 1] = ' ';
-        memcpy(buf + nl + 2, md, ml);
-        buf[total] = 0;
-    }
+    let buf = alloc_n<char>((usize)(total + 1));
+    mem_copy<char>(buf, name_s.data, (usize)name_s.length);
+    buf[name_s.length]     = ':';
+    buf[name_s.length + 1] = ' ';
+    let tail_off = name_s.length + 2;
+    let tail: char* = NULL;
+    raw { tail = &buf[tail_off]; }
+    mem_copy<char>(tail, msg_s.data, (usize)msg_s.length);
+    buf[total] = (char)0;
     return ctx_intern_string_take(ctx, buf, total);
 }
 
@@ -1209,35 +1167,23 @@ fn host_math_abs(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
 fn host_math_floor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 { return zjs_double(0.0); }
-    let d = zjs_to_double(args[0]);
-    let r: f64 = 0.0;
-    raw { r = floor(d); }
-    return zjs_double(r);
+    return zjs_double(Math::floor(zjs_to_double(args[0])));
 }
 
 fn host_math_ceil(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 { return zjs_double(0.0); }
-    let d = zjs_to_double(args[0]);
-    let r: f64 = 0.0;
-    raw { r = ceil(d); }
-    return zjs_double(r);
+    return zjs_double(Math::ceil(zjs_to_double(args[0])));
 }
 
 fn host_math_round(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 { return zjs_double(0.0); }
-    let d = zjs_to_double(args[0]);
     // ECMA-262 Math.round rounds half toward +Infinity (not banker's rounding).
-    let r: f64 = 0.0;
-    raw { r = floor(d + 0.5); }
-    return zjs_double(r);
+    return zjs_double(Math::floor(zjs_to_double(args[0]) + 0.5));
 }
 
 fn host_math_sqrt(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 { return zjs_double(0.0); }
-    let d = zjs_to_double(args[0]);
-    let r: f64 = 0.0;
-    raw { r = sqrt(d); }
-    return zjs_double(r);
+    return zjs_double(Math::sqrt(zjs_to_double(args[0])));
 }
 
 fn host_math_pow(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -1245,9 +1191,7 @@ fn host_math_pow(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let exp:  f64 = 1.0;
     if argc >= 1 { base = zjs_to_double(args[0]); }
     if argc >= 2 { exp  = zjs_to_double(args[1]); }
-    let r: f64 = 0.0;
-    raw { r = pow(base, exp); }
-    return zjs_double(r);
+    return zjs_double(Math::pow(base, exp));
 }
 
 fn host_math_max(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -1412,13 +1356,9 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
         let sdata = s.data;
         let i: u32 = 0;
         while i < s.length {
-            let buf: char* = NULL;
-            let off = i;
-            raw {
-                buf = (char*)malloc(2);
-                buf[0] = sdata[off];
-                buf[1] = '\0';
-            }
+            let buf = alloc_n<char>((usize)2);
+            buf[0] = sdata[i];
+            buf[1] = (char)0;
             let piece = ctx_intern_string_take(ctx, buf, 1);
             arr.elements[i] = piece;
             i = i + 1;
@@ -2151,14 +2091,14 @@ fn host_string_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if ctx.pending_throw_active { return ctx_intern_string(ctx, (char*)"", 0); }
     if end < start { end = start; }
     let outlen = (u32)(end - start);
-    let buf: char* = NULL;
-    let src = s.data;
-    let src_off = (u32)start;
-    raw {
-        buf = (char*)malloc((size_t)outlen + 1);
-        if (outlen > 0) memcpy(buf, src + src_off, outlen);
-        buf[outlen] = '\0';
+    let buf = alloc_n<char>((usize)(outlen + 1));
+    if outlen > 0 {
+        let src_at: char* = NULL;
+        let src_off = (u32)start;
+        raw { src_at = &s->data[src_off]; }
+        mem_copy<char>(buf, src_at, (usize)outlen);
     }
+    buf[outlen] = (char)0;
     return ctx_intern_string_take(ctx, buf, outlen);
 }
 
@@ -2171,14 +2111,9 @@ fn host_string_char_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     if idx < 0 || (u32)idx >= s.length {
         return ctx_intern_string(ctx, (char*)"", 0);
     }
-    let buf: char* = NULL;
-    let off = (u32)idx;
-    let sd = s.data;
-    raw {
-        buf = (char*)malloc(2);
-        buf[0] = sd[off];
-        buf[1] = '\0';
-    }
+    let buf = alloc_n<char>((usize)2);
+    buf[0] = s.data[(u32)idx];
+    buf[1] = (char)0;
     return ctx_intern_string_take(ctx, buf, 1);
 }
 
@@ -2203,17 +2138,17 @@ fn host_string_to_upper_case(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zj
     let str_v = coerce_string_this(ctx);
     if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
     let s = zjs_as_string(str_v);
-    let buf: char* = NULL;
     let n = s.length;
-    let sd = s.data;
-    raw {
-        buf = (char*)malloc(n + 1);
-        for (uint32_t i = 0; i < n; i++) {
-            char c = sd[i];
-            buf[i] = (c >= 'a' && c <= 'z') ? (char)(c - 32) : c;
-        }
-        buf[n] = '\0';
+    let buf = alloc_n<char>((usize)(n + 1));
+    let i: u32 = 0;
+    while i < n {
+        let c = s.data[i];
+        let cu = (u8)c;
+        if cu >= 97 && cu <= 122 { buf[i] = (char)(cu - 32); }
+        else                     { buf[i] = c; }
+        i = i + 1;
     }
+    buf[n] = (char)0;
     return ctx_intern_string_take(ctx, buf, n);
 }
 
@@ -2221,17 +2156,17 @@ fn host_string_to_lower_case(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zj
     let str_v = coerce_string_this(ctx);
     if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
     let s = zjs_as_string(str_v);
-    let buf: char* = NULL;
     let n = s.length;
-    let sd = s.data;
-    raw {
-        buf = (char*)malloc(n + 1);
-        for (uint32_t i = 0; i < n; i++) {
-            char c = sd[i];
-            buf[i] = (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c;
-        }
-        buf[n] = '\0';
+    let buf = alloc_n<char>((usize)(n + 1));
+    let i: u32 = 0;
+    while i < n {
+        let c = s.data[i];
+        let cu = (u8)c;
+        if cu >= 65 && cu <= 90 { buf[i] = (char)(cu + 32); }
+        else                    { buf[i] = c; }
+        i = i + 1;
     }
+    buf[n] = (char)0;
     return ctx_intern_string_take(ctx, buf, n);
 }
 
@@ -2278,15 +2213,10 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // Empty separator: split into individual characters.
     if sep.length == 0 {
         let i: u32 = 0;
-        let sdata = s.data;
         while i < s.length {
-            let buf: char* = NULL;
-            let off = i;
-            raw {
-                buf = (char*)malloc(2);
-                buf[0] = sdata[off];
-                buf[1] = '\0';
-            }
+            let buf = alloc_n<char>((usize)2);
+            buf[0] = s.data[i];
+            buf[1] = (char)0;
             let piece = ctx_intern_string_take(ctx, buf, 1);
             array_set(result, result.length, piece);
             i = i + 1;
@@ -2306,14 +2236,13 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         raw { matches = (memcmp(hay_d + off, nee_d, nee_n) == 0) ? 1 : 0; }
         if matches != 0 {
             let piece_len = i - cursor;
-            let buf: char* = NULL;
-            let src_off = cursor;
-            let plen = piece_len;
-            raw {
-                buf = (char*)malloc((size_t)plen + 1);
-                if (plen > 0) memcpy(buf, hay_d + src_off, plen);
-                buf[plen] = '\0';
+            let buf = alloc_n<char>((usize)(piece_len + 1));
+            if piece_len > 0 {
+                let src: char* = NULL;
+                raw { src = &hay_d[cursor]; }
+                mem_copy<char>(buf, src, (usize)piece_len);
             }
+            buf[piece_len] = (char)0;
             let piece = ctx_intern_string_take(ctx, buf, piece_len);
             array_set(result, result.length, piece);
             cursor = i + nee_n;
@@ -2324,14 +2253,13 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     }
     // Trailing remainder
     let tail_len = hay_n - cursor;
-    let tail_buf: char* = NULL;
-    let tail_src = cursor;
-    let tlen = tail_len;
-    raw {
-        tail_buf = (char*)malloc((size_t)tlen + 1);
-        if (tlen > 0) memcpy(tail_buf, hay_d + tail_src, tlen);
-        tail_buf[tlen] = '\0';
+    let tail_buf = alloc_n<char>((usize)(tail_len + 1));
+    if tail_len > 0 {
+        let src: char* = NULL;
+        raw { src = &hay_d[cursor]; }
+        mem_copy<char>(tail_buf, src, (usize)tail_len);
     }
+    tail_buf[tail_len] = (char)0;
     let tail = ctx_intern_string_take(ctx, tail_buf, tail_len);
     array_set(result, result.length, tail);
     return result_v;
@@ -2587,10 +2515,7 @@ fn json_buf_grow(b: JsonBuf*, need: u32) -> void {
     if b.len + need <= b.cap { return; }
     let new_cap: u32 = if b.cap == 0 { 64 } else { b.cap * 2 };
     while new_cap < b.len + need { new_cap = new_cap * 2; }
-    let old = b.data;
-    let new_buf: char* = NULL;
-    raw { new_buf = (char*)realloc(old, new_cap); }
-    b.data = new_buf;
+    b.data = realloc_n<char>(b.data, (usize)b.cap, (usize)new_cap);
     b.cap = new_cap;
 }
 
@@ -2602,11 +2527,9 @@ fn json_buf_putc(b: JsonBuf*, ch: char) -> void {
 
 fn json_buf_puts(b: JsonBuf*, s: char*, n: u32) -> void {
     json_buf_grow(b, n);
-    let src = s;
-    let dst_base = b.data;
-    let off = b.len;
-    let count = n;
-    raw { memcpy(dst_base + off, src, count); }
+    let dst: char* = NULL;
+    raw { dst = b->data + b->len; }
+    mem_copy<char>(dst, s, (usize)n);
     b.len = b.len + n;
 }
 
@@ -2815,9 +2738,7 @@ fn jp_parse_value(ctx: ZjsContext*, p: JsonParser*) -> ZjsValue {
     if cu == 34 {               // '"' — string
         p.pos = p.pos + 1;
         let buf_cap: u32 = 16;
-        let buf: char* = NULL;
-        let bc = buf_cap;
-        raw { buf = (char*)malloc(bc); }
+        let buf = alloc_n<char>((usize)buf_cap);
         let blen: u32 = 0;
         let bcap = buf_cap;
         let ok = true;
@@ -2861,16 +2782,16 @@ fn jp_parse_value(ctx: ZjsContext*, p: JsonParser*) -> ZjsValue {
                     p.pos = p.pos + 3;
                     // MVP: encode as UTF-8 (BMP only, no surrogate joining).
                     if cp < 128 {
-                        if blen + 1 > bcap { bcap = bcap * 2; let oldp = buf; let bp: char* = NULL; raw { bp = (char*)realloc(oldp, bcap); } buf = bp; }
+                        if blen + 1 > bcap { let oldc = bcap; bcap = bcap * 2; buf = realloc_n<char>(buf, (usize)oldc, (usize)bcap); }
                         buf[blen] = (char)cp;
                         blen = blen + 1;
                     } else if cp < 2048 {
-                        if blen + 2 > bcap { bcap = bcap * 2; let oldp = buf; let bp: char* = NULL; raw { bp = (char*)realloc(oldp, bcap); } buf = bp; }
+                        if blen + 2 > bcap { let oldc = bcap; bcap = bcap * 2; buf = realloc_n<char>(buf, (usize)oldc, (usize)bcap); }
                         buf[blen]     = (char)(192 | (cp >> 6));
                         buf[blen + 1] = (char)(128 | (cp & 63));
                         blen = blen + 2;
                     } else {
-                        if blen + 3 > bcap { bcap = bcap * 2; let oldp = buf; let bp: char* = NULL; raw { bp = (char*)realloc(oldp, bcap); } buf = bp; }
+                        if blen + 3 > bcap { let oldc = bcap; bcap = bcap * 2; buf = realloc_n<char>(buf, (usize)oldc, (usize)bcap); }
                         buf[blen]     = (char)(224 | (cp >> 12));
                         buf[blen + 1] = (char)(128 | ((cp >> 6) & 63));
                         buf[blen + 2] = (char)(128 | (cp & 63));
@@ -2880,21 +2801,21 @@ fn jp_parse_value(ctx: ZjsContext*, p: JsonParser*) -> ZjsValue {
                     ok = false; break;
                 }
                 if !used_u {
-                    if blen + 1 > bcap { bcap = bcap * 2; let oldp = buf; let bp: char* = NULL; raw { bp = (char*)realloc(oldp, bcap); } buf = bp; }
+                    if blen + 1 > bcap { let oldc = bcap; bcap = bcap * 2; buf = realloc_n<char>(buf, (usize)oldc, (usize)bcap); }
                     buf[blen] = (char)out;
                     blen = blen + 1;
                 }
                 p.pos = p.pos + 1;
             } else {
-                if blen + 1 > bcap { bcap = bcap * 2; let oldp = buf; let bp: char* = NULL; raw { bp = (char*)realloc(oldp, bcap); } buf = bp; }
+                if blen + 1 > bcap { let oldc = bcap; bcap = bcap * 2; buf = realloc_n<char>(buf, (usize)oldc, (usize)bcap); }
                 buf[blen] = ch;
                 blen = blen + 1;
                 p.pos = p.pos + 1;
             }
         }
-        if !ok { raw { free(buf); } p.fail = true; return zjs_undefined(); }
+        if !ok { dealloc(buf); p.fail = true; return zjs_undefined(); }
         // Ensure null terminator slot.
-        if blen + 1 > bcap { bcap = blen + 1; let oldp = buf; let bp: char* = NULL; raw { bp = (char*)realloc(oldp, bcap); } buf = bp; }
+        if blen + 1 > bcap { let oldc = bcap; bcap = blen + 1; buf = realloc_n<char>(buf, (usize)oldc, (usize)bcap); }
         buf[blen] = '\0';
         return ctx_intern_string_take(ctx, buf, blen);
     }
@@ -3027,10 +2948,7 @@ fn promise_attach_reaction(ctx: ZjsContext*, p: ZjsPromise*,
                            result_promise: ZjsValue) -> void {
     if p.reaction_count + 3 > p.reaction_cap {
         let new_cap: u32 = if p.reaction_cap == 0 { 6 } else { p.reaction_cap * 2 };
-        let old = p.reactions;
-        let new_arr: ZjsValue* = NULL;
-        raw { new_arr = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
-        p.reactions = new_arr;
+        p.reactions = realloc_n<ZjsValue>(p.reactions, (usize)p.reaction_cap, (usize)new_cap);
         p.reaction_cap = new_cap;
     }
     p.reactions[p.reaction_count] = on_fulfilled;
@@ -3046,10 +2964,7 @@ fn microtask_enqueue(ctx: ZjsContext*,
     if slots_needed > ctx.microtask_cap {
         let new_cap: u32 = if ctx.microtask_cap == 0 { 16 } else { ctx.microtask_cap * 2 };
         while new_cap < slots_needed { new_cap = new_cap * 2; }
-        let old = ctx.microtask_queue;
-        let new_arr: ZjsValue* = NULL;
-        raw { new_arr = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
-        ctx.microtask_queue = new_arr;
+        ctx.microtask_queue = realloc_n<ZjsValue>(ctx.microtask_queue, (usize)ctx.microtask_cap, (usize)new_cap);
         ctx.microtask_cap = new_cap;
     }
     let base = ctx.microtask_count * 4;
@@ -4152,16 +4067,13 @@ fn host_object_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
                 let prefix_len: u32 = 8;
                 let suffix_len: u32 = 1;
                 let total = prefix_len + tag_str.length + suffix_len;
-                let buf: char* = NULL;
-                let td = tag_str.data;
-                let tn = tag_str.length;
-                raw {
-                    buf = (char*)malloc(total + 1);
-                    memcpy(buf, prefix, prefix_len);
-                    memcpy(buf + prefix_len, td, tn);
-                    buf[prefix_len + tn] = ']';
-                    buf[total] = 0;
-                }
+                let buf = alloc_n<char>((usize)(total + 1));
+                mem_copy<char>(buf, prefix, (usize)prefix_len);
+                let tail: char* = NULL;
+                raw { tail = &buf[prefix_len]; }
+                mem_copy<char>(tail, tag_str.data, (usize)tag_str.length);
+                buf[prefix_len + tag_str.length] = ']';
+                buf[total] = (char)0;
                 return ctx_intern_string_take(ctx, buf, total);
             }
         }
@@ -4406,16 +4318,15 @@ fn host_wrapper_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
 // MVP: ASCII only, takes each arg's truncated u8.
 fn host_string_from_char_code(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
-    let buf: char* = NULL;
     let n = argc;
-    raw { buf = (char*)malloc(n + 1); }
+    let buf = alloc_n<char>((usize)(n + 1));
     let i: u32 = 0;
     while i < argc {
         let cu = (u8)((u32)zjs_to_double(args[i]) & 255);
         buf[i] = (char)cu;
         i = i + 1;
     }
-    raw { buf[n] = 0; }
+    buf[n] = (char)0;
     return ctx_intern_string_take(ctx, buf, argc);
 }
 
@@ -4919,8 +4830,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"min", min_ptr));
 
     // Math constants — ECMA-262 §21.3. Read-only data properties.
-    let pi_d: f64 = 0.0;
-    let e_d: f64 = 0.0;
+    // PI/E come from std/math; the others aren't exposed there yet, so
+    // we fall back to <math.h>'s M_* macros via raw{}.
     let ln2_d: f64 = 0.0;
     let ln10_d: f64 = 0.0;
     let log2e_d: f64 = 0.0;
@@ -4928,8 +4839,6 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let sqrt2_d: f64 = 0.0;
     let sqrt1_2_d: f64 = 0.0;
     raw {
-        pi_d      = M_PI;
-        e_d       = M_E;
         ln2_d     = M_LN2;
         ln10_d    = M_LN10;
         log2e_d   = M_LOG2E;
@@ -4937,8 +4846,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         sqrt2_d   = M_SQRT2;
         sqrt1_2_d = M_SQRT1_2;
     }
-    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"PI", 2),       zjs_double(pi_d));
-    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"E", 1),        zjs_double(e_d));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"PI", 2),       zjs_double(Math::PI()));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"E", 1),        zjs_double(Math::E()));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"LN2", 3),      zjs_double(ln2_d));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"LN10", 4),     zjs_double(ln10_d));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"LOG2E", 5),    zjs_double(log2e_d));
@@ -5264,13 +5173,12 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
             }
             i_a = i_a + 1;
         }
-        let big: char* = NULL;
-        raw { big = (char*)malloc(total + 1); }
+        let big = alloc_n<char>((usize)(total + 1));
         let off: u32 = 0;
         let i_b: u32 = 0;
         while i_b < arr.length {
             if i_b > 0 {
-                raw { big[off] = ','; }
+                big[off] = ',';
                 off = off + 1;
             }
             let el = arr.elements[i_b];
@@ -5278,15 +5186,15 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
                 let es = zjs_to_string(ctx, el);
                 if zjs_is_string(es) != 0 {
                     let s = zjs_as_string(es);
-                    let sd = s.data;
-                    let sn = s.length;
-                    raw { memcpy(big + off, sd, sn); }
-                    off = off + sn;
+                    let dst: char* = NULL;
+                    raw { dst = &big[off]; }
+                    mem_copy<char>(dst, s.data, (usize)s.length);
+                    off = off + s.length;
                 }
             }
             i_b = i_b + 1;
         }
-        raw { big[total] = 0; }
+        big[total] = (char)0;
         return ctx_intern_string_take(ctx, big, total);
     } else {
         raw { len = (size_t)snprintf(buf, 64, "[object]"); }
@@ -5304,17 +5212,12 @@ fn zjs_string_concat(ctx: ZjsContext*, a: ZjsValue, b: ZjsValue) -> ZjsValue {
     let sa = zjs_as_string(sa_val);
     let sb = zjs_as_string(sb_val);
     let total = sa.length + sb.length;
-    let buf: char* = NULL;
-    let sa_data = sa.data;
-    let sb_data = sb.data;
-    let sa_len = sa.length;
-    let sb_len = sb.length;
-    raw {
-        buf = (char*)malloc(total + 1);
-        memcpy(buf, sa_data, sa_len);
-        memcpy(buf + sa_len, sb_data, sb_len);
-        buf[total] = 0;
-    }
+    let buf = alloc_n<char>((usize)(total + 1));
+    mem_copy<char>(buf, sa.data, (usize)sa.length);
+    let tail: char* = NULL;
+    raw { tail = &buf[sa->length]; }
+    mem_copy<char>(tail, sb.data, (usize)sb.length);
+    buf[total] = (char)0;
     return ctx_intern_string_take(ctx, buf, total);
 }
 
@@ -5340,27 +5243,18 @@ fn ctx_intern_global(ctx: ZjsContext*, name: char*, name_len: u32) -> u32 {
     let existing = ctx_find_global(ctx, name, name_len);
     if existing >= 0 { return (u32)existing; }
 
-    // Grow the table if needed.
+    // Grow the table if needed. realloc_n already zero-inits the new
+    // bytes, so we don't need a separate memset for the new tail.
     if ctx.global_count >= ctx.global_cap {
         let new_cap: u32 = if ctx.global_cap == 0 { 16 } else { ctx.global_cap * 2 };
-        let old_g = ctx.globals;
-        let new_g: GlobalEntry* = NULL;
-        raw {
-            new_g = (GlobalEntry*)realloc(old_g, new_cap * sizeof(GlobalEntry));
-            // Zero the new tail so we have a defined starting state.
-            memset(&new_g[ctx->global_cap], 0, (new_cap - ctx->global_cap) * sizeof(GlobalEntry));
-        }
-        ctx.globals = new_g;
+        ctx.globals = realloc_n<GlobalEntry>(ctx.globals, (usize)ctx.global_cap, (usize)new_cap);
         ctx.global_cap = new_cap;
     }
 
     // Allocate + copy the name (it's a slice of caller's source).
-    let name_copy: char* = NULL;
-    raw {
-        name_copy = (char*)malloc(name_len + 1);
-        memcpy(name_copy, name, name_len);
-        name_copy[name_len] = 0;
-    }
+    let name_copy = alloc_n<char>((usize)(name_len + 1));
+    mem_copy<char>(name_copy, name, (usize)name_len);
+    name_copy[name_len] = (char)0;
 
     let idx = ctx.global_count;
     ctx.globals[idx].name = name_copy;
