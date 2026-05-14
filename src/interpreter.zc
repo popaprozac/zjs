@@ -360,11 +360,15 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
     let ip: usize = 0;
 
     while ip < f.code_len {
-        // GC may run between instructions when allocation pressure
-        // exceeds the threshold. All live values are already in our
-        // rooted register file, in globals, or transitively reachable
-        // — safe boundary.
-        ctx_maybe_gc(ctx);
+        // GC safe-points are NOT at every instruction (the load+compare
+        // alone costs 15-25% on hot loops). Instead we poll at:
+        //   - backward Op::Jmp (loop heads), below
+        //   - Op::Invoke / MethodInvoke / Return (call boundaries), inline
+        //   - allocation opcodes (NewObject/Array/Closure) — fold the
+        //     check into their handlers if/when allocation pressure
+        //     dominates GC liveness.
+        // Straight-line arithmetic never allocates, so skipping the
+        // poll there is safe.
 
         // Unwind before fetching the next instruction.
         if throwing {
@@ -384,6 +388,11 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
         let op = inst.op;
 
         if op == Op::Return {
+            // GC safe-point on the way out — the only live value is the
+            // return value, and regs/temp_roots will be torn down.
+            // Keeps deeply-recursive allocator-heavy code from
+            // accumulating garbage between loop-head polls.
+            if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
             return InterpretResult{ is_throw: false, value: regs[inst.a] };
         }
         if op == Op::Halt {
@@ -536,15 +545,26 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             // structured Jmp's offset as "relative to ip + 1", so the
             // normal increment is what we want. Same for the conditional
             // jumps below.
+            // Backward jumps are loop heads — only safe-point we need
+            // to keep loops responsive to GC pressure.
+            if off < 0 {
+                if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+            }
         } else if op == Op::JmpIfTrue {
             if zjs_to_bool_coerce(regs[inst.a]) != 0 {
                 let off = inst_bc_i16(inst);
                 ip = (usize)((i32)ip + off);
+                if off < 0 {
+                    if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+                }
             }
         } else if op == Op::JmpIfFalse {
             if zjs_to_bool_coerce(regs[inst.a]) == 0 {
                 let off = inst_bc_i16(inst);
                 ip = (usize)((i32)ip + off);
+                if off < 0 {
+                    if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+                }
             }
         } else if op == Op::MethodInvoke {
             // Same dispatch as Invoke but regs[base+1] is `this` and
