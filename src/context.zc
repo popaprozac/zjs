@@ -1084,6 +1084,44 @@ fn host_error(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return make_named_error(ctx, (char*)"Error", 5, args, argc);
 }
 
+// Error.prototype.toString — ECMA-262 §20.5.3.4.
+// Returns "Name: message", or "Name" if message is empty/missing, or
+// "message" if name is empty. Defaults: Name="Error", message="".
+fn host_error_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_object(this_val) == 0 {
+        return ctx_intern_string(ctx, (char*)"Error", 5);
+    }
+    let name_v = property_get(ctx, this_val, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"name", 4)));
+    let msg_v  = property_get(ctx, this_val, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"message", 7)));
+    if zjs_is_undefined(name_v) != 0 { name_v = ctx_intern_string(ctx, (char*)"Error", 5); }
+    else if zjs_is_string(name_v) == 0 { name_v = zjs_to_string(ctx, name_v); }
+    let has_msg: bool = !zjs_is_undefined(msg_v);
+    if has_msg && zjs_is_string(msg_v) == 0 { msg_v = zjs_to_string(ctx, msg_v); }
+
+    if !has_msg { return name_v; }
+    let name_s = zjs_as_string(name_v);
+    let msg_s  = zjs_as_string(msg_v);
+    if name_s.length == 0 { return msg_v; }
+    if msg_s.length == 0 { return name_v; }
+    // Concatenate "Name: msg"
+    let total = name_s.length + 2 + msg_s.length;
+    let buf: char* = NULL;
+    let nd = name_s.data;
+    let nl = name_s.length;
+    let md = msg_s.data;
+    let ml = msg_s.length;
+    raw {
+        buf = (char*)malloc(total + 1);
+        memcpy(buf, nd, nl);
+        buf[nl] = ':';
+        buf[nl + 1] = ' ';
+        memcpy(buf + nl + 2, md, ml);
+        buf[total] = 0;
+    }
+    return ctx_intern_string_take(ctx, buf, total);
+}
+
 // --- Math.* helpers -------------------------------------------------
 
 raw {
@@ -3194,10 +3232,13 @@ fn make_named_error(ctx: ZjsContext*, name: char*, name_len: u32, args: ZjsValue
     ctx_push_temp_root(ctx, obj_v);
     defer ctx_pop_temp_root(ctx);
     let obj = zjs_as_object(obj_v);
-    let msg: ZjsValue = zjs_undefined();
-    if argc > 0 { msg = args[0]; }
-    if zjs_is_string(msg) == 0 { msg = zjs_to_string(ctx, msg); }
-    object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"message", 7), msg);
+    // Spec: only set `message` when explicitly provided. An omitted
+    // message stays inherited (Error.prototype.message = "" by spec,
+    // which our toString defaults sensibly).
+    if argc > 0 && zjs_is_undefined(args[0]) == 0 {
+        let msg = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+        object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"message", 7), msg);
+    }
     let name_str = ctx_intern_atom(ctx, name, name_len);
     object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"name", 4),
                zjs_cell_from_ptr((void*)name_str));
@@ -3481,6 +3522,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                 err_hf.prototype = zjs_as_object(p_v);
             }
             let err_proto = err_hf.prototype;
+            // Error.prototype.toString — "Name: message" per
+            // ECMA-262 §20.5.3.4. All subclasses inherit it.
+            let ets_ptr: void* = NULL; raw { ets_ptr = (void*)host_error_to_string; }
+            object_set(ctx, err_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
+                       ctx_make_host_function(ctx, (char*)"toString", ets_ptr));
             // Subclass each *Error.prototype to inherit from Error.prototype.
             let subs: ZjsValue[3];
             subs[0] = referr_v; subs[1] = typerr_v; subs[2] = rngerr_v;

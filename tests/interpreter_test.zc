@@ -766,6 +766,16 @@ fn run_tests() -> void {
     check_string((char*)"delete: typeof after",     (char*)r"let o = {x:1}; delete o.x; typeof o.x", (char*)"undefined");
     check_int((char*)"delete: array hole",          (char*)r"let a=[1,2,3]; delete a[1]; if (typeof a[1] === 'undefined') 1; else 0", 1);
 
+    // --- Error.prototype.toString (Phase 3.9j) ---------------------
+    check_string((char*)"Error toString: name + message",
+                 (char*)r"new Error('boom').toString()", (char*)"Error: boom");
+    check_string((char*)"TypeError toString: name + message",
+                 (char*)r"new TypeError('x').toString()", (char*)"TypeError: x");
+    check_string((char*)"Error toString: name only when no message",
+                 (char*)r"new TypeError().toString()", (char*)"TypeError");
+    check_string((char*)"Error toString: plain-call form",
+                 (char*)r"TypeError(1).toString()", (char*)"TypeError: 1");
+
     // --- Nested closures: multi-level capture (Phase 3.9j) ---------
     check_int((char*)"nested closure: 2 levels",
               (char*)r"function a() { let x = 10; function b() { function c() { return x } return c() } return b() } a()", 10);
