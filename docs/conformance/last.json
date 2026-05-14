@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 19:40 UTC",
+    "when": "2026-05-14 19:47 UTC",
     "total": 4821,
-    "passed": 2532,
-    "failed": 263,
+    "passed": 2535,
+    "failed": 260,
     "skipped": 2026
   },
   "failures": [
@@ -512,14 +512,6 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
-      "path": "test/language/statements/try/completion-values-fn-finally-normal.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/completion-values-fn-finally-return.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/language/statements/try/early-catch-function.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
@@ -785,10 +777,6 @@
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-forward-modifies-object.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/replacer-array-undefined.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {

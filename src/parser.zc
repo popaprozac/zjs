@@ -292,6 +292,34 @@ fn is_binding_ident(k: TokenKind) -> bool {
     return false;
 }
 
+// IdentifierName per ECMA-262 §11.6: identifier OR any reserved
+// word. Used wherever the spec allows a keyword as a name —
+// PropertyName in object literals, MemberExpression after `.`, etc.
+fn is_keyword_token(k: TokenKind) -> bool {
+    if k == TokenKind::KwVar || k == TokenKind::KwLet || k == TokenKind::KwConst { return true; }
+    if k == TokenKind::KwFunction || k == TokenKind::KwReturn { return true; }
+    if k == TokenKind::KwIf || k == TokenKind::KwElse { return true; }
+    if k == TokenKind::KwFor || k == TokenKind::KwWhile || k == TokenKind::KwDo { return true; }
+    if k == TokenKind::KwBreak || k == TokenKind::KwContinue { return true; }
+    if k == TokenKind::KwClass || k == TokenKind::KwExtends || k == TokenKind::KwSuper { return true; }
+    if k == TokenKind::KwNew || k == TokenKind::KwThis { return true; }
+    if k == TokenKind::KwTrue || k == TokenKind::KwFalse || k == TokenKind::KwNull || k == TokenKind::KwUndefined { return true; }
+    if k == TokenKind::KwTypeof || k == TokenKind::KwDelete || k == TokenKind::KwVoid { return true; }
+    if k == TokenKind::KwIn || k == TokenKind::KwOf || k == TokenKind::KwInstanceof { return true; }
+    if k == TokenKind::KwThrow || k == TokenKind::KwTry || k == TokenKind::KwCatch || k == TokenKind::KwFinally { return true; }
+    if k == TokenKind::KwSwitch || k == TokenKind::KwCase || k == TokenKind::KwDefault { return true; }
+    if k == TokenKind::KwAsync || k == TokenKind::KwAwait || k == TokenKind::KwYield { return true; }
+    if k == TokenKind::KwImport || k == TokenKind::KwExport || k == TokenKind::KwFrom || k == TokenKind::KwAs { return true; }
+    return false;
+}
+
+fn is_property_name_start(k: TokenKind) -> bool {
+    if k == TokenKind::Identifier { return true; }
+    if k == TokenKind::StringLit  { return true; }
+    if k == TokenKind::NumberLit  { return true; }
+    return is_keyword_token(k);
+}
+
 fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
     let kw = advance(p);   // var / let / const
 
@@ -1594,11 +1622,10 @@ fn parse_object(p: Parser*) -> AstNode* {
 
     while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
         let key_tok = peek(p);
-        // Key: identifier, string literal, or numeric literal (MVP — no
-        // computed [key] forms yet).
-        if key_tok.kind != TokenKind::Identifier
-            && key_tok.kind != TokenKind::StringLit
-            && key_tok.kind != TokenKind::NumberLit {
+        // Key: any IdentifierName (Identifier or reserved word),
+        // string literal, or numeric literal. Computed-key
+        // [expr] forms are TODO.
+        if !is_property_name_start(key_tok.kind) {
             p.had_error = true;
             break;
         }
