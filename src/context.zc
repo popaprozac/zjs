@@ -4868,8 +4868,16 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
         if zjs_is_function(ts_fn) != 0 || zjs_is_closure(ts_fn) != 0 || zjs_is_host_function(ts_fn) != 0 {
             let nullp: ZjsValue* = NULL;
             let r: ZjsValue = zjs_call_value_with_this(ctx, ts_fn, v, nullp, 0);
+            // Per ECMA-262 §7.1.18 (ToPrimitive with hint "string"), the
+            // first primitive returned by toString / valueOf is what we
+            // run ToString on. Strings come back unchanged; other
+            // primitives (undefined / null / number / bool) get their
+            // own ToString. Only when toString returns an object do we
+            // fall through to valueOf.
             if zjs_is_string(r) != 0 { return r; }
-            // toString returned a non-string; try valueOf as fallback.
+            if zjs_is_object(r) == 0 && zjs_is_array(r) == 0 {
+                return zjs_to_string(ctx, r);
+            }
         }
         // valueOf fallback for objects whose toString is missing or
         // returned non-string.

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 17:31 UTC",
+    "when": "2026-05-14 17:35 UTC",
     "total": 4821,
-    "passed": 2445,
-    "failed": 350,
+    "passed": 2447,
+    "failed": 348,
     "skipped": 2026
   },
   "failures": [
@@ -1052,10 +1052,6 @@
       "reason": "zjs: throw: Test262Error: #1: var x; var __obj = {toString:function(){return \"AB\";}}; var __obj2 = {valueOf:function(){r"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T8.js",
-      "reason": "zjs: throw: Test262Error: #1: __obj = {toString:function(){}}; String(__obj).indexOf(void 0) === 0. Actual: -1"
-    },
-    {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T1.js",
       "reason": "zjs: throw: Test262Error: #1.1: Exception === \"intointeger\". Actual: [object Object]"
     },
@@ -1126,10 +1122,6 @@
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",
       "reason": "zjs: throw: Test262Error: #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T8.js",
-      "reason": "zjs: throw: Test262Error: #1: __obj = {toString:function(){}}; String(__obj).slice(-4,void 0) === \"ined\". Actual: ect]"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A2_T7.js",
