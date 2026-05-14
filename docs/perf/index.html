@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>zjs benchmarks</title>
+<style>
+  body { font: 14px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          max-width: 1100px; margin: 2em auto; padding: 0 1em; color: #222; }
+  h1 { font-size: 1.4em; margin-bottom: 0.2em; }
+  .sub { color: #666; margin-bottom: 1.5em; }
+  .card { background: #fafafa; border: 1px solid #eee; border-radius: 6px;
+           padding: 1em 1.25em; margin-bottom: 1.25em; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }
+  th { background: #f5f5f5; }
+  td.bench { font-family: ui-monospace, SFMono-Regular, monospace; }
+  td.ms { text-align: right; font-variant-numeric: tabular-nums; }
+  td.delta { text-align: right; font-variant-numeric: tabular-nums; }
+  td.delta.up   { color: #c44; }   /* slower = bad */
+  td.delta.down { color: #2c7; }   /* faster = good */
+  svg { display: block; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }
+  .chart-box { background: #fff; border: 1px solid #eee; padding: 0.5em; border-radius: 4px; }
+  .chart-box h3 { font-size: 13px; margin: 0 0 4px 8px; font-family: ui-monospace, monospace; color: #444; }
+</style>
+
+<h1>zjs — benchmarks</h1>
+<p class="sub">End-to-end wall-clock per script (parse + compile + interpret).
+zjs-vs-zjs over time. Numbers are median of N iterations.</p>
+
+<div class="card">
+  <strong>Latest run</strong> &mdash; <span id="when"></span> @ <code id="sha"></code>
+  <table id="latest-table" style="margin-top: 0.5em;">
+    <thead><tr><th>Benchmark</th><th class="ms">Median ms</th><th class="ms">Min ms</th><th class="ms">Max ms</th><th class="delta">Δ vs first</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <strong>Per-benchmark history</strong> (median ms over time — lower is better)
+  <div id="charts" class="charts" style="margin-top: 0.5em;"></div>
+</div>
+
+<script id="history-data" type="application/json">[{"when": "2026-05-14 00:54 UTC", "sha": "d0c9b05e09", "results": [{"name": "array_iterate", "median": 0.03376829205080867, "min": 0.03283866588026285, "max": 0.03636508295312524, "iters": 5, "baseline_median": null}, {"name": "closure_call", "median": 0.1476035830564797, "min": 0.14404604211449623, "max": 0.14924449985846877, "iters": 5, "baseline_median": null}, {"name": "double_loop", "median": 0.146098209079355, "min": 0.1445322916842997, "max": 0.14729024982079864, "iters": 5, "baseline_median": null}, {"name": "int_loop", "median": 0.2967471247538924, "min": 0.29178612492978573, "max": 0.2992758327163756, "iters": 5, "baseline_median": null}, {"name": "method_call", "median": 0.16961754066869617, "min": 0.16340616717934608, "max": 0.17239858396351337, "iters": 5, "baseline_median": null}, {"name": "object_alloc", "median": 0.10998200019821525, "min": 0.10837474977597594, "max": 0.11387095926329494, "iters": 5, "baseline_median": null}, {"name": "property_mono", "median": 0.22630937490612268, "min": 0.2250321670435369, "max": 0.23483904218301177, "iters": 5, "baseline_median": null}, {"name": "property_poly", "median": 0.14857787499204278, "min": 0.14809483336284757, "max": 0.14880545856431127, "iters": 5, "baseline_median": null}, {"name": "string_concat", "median": 0.0032167499884963036, "min": 0.003006833139806986, "max": 0.003439874853938818, "iters": 5, "baseline_median": null}, {"name": "try_overhead", "median": 0.08876220788806677, "min": 0.08842100016772747, "max": 0.09000462526455522, "iters": 5, "baseline_median": null}]}]</script>
+<script id="latest-data"  type="application/json">{"when": "2026-05-14 00:54 UTC", "sha": "d0c9b05e09", "results": [{"name": "array_iterate", "median": 0.03376829205080867, "min": 0.03283866588026285, "max": 0.03636508295312524, "iters": 5, "baseline_median": null}, {"name": "closure_call", "median": 0.1476035830564797, "min": 0.14404604211449623, "max": 0.14924449985846877, "iters": 5, "baseline_median": null}, {"name": "double_loop", "median": 0.146098209079355, "min": 0.1445322916842997, "max": 0.14729024982079864, "iters": 5, "baseline_median": null}, {"name": "int_loop", "median": 0.2967471247538924, "min": 0.29178612492978573, "max": 0.2992758327163756, "iters": 5, "baseline_median": null}, {"name": "method_call", "median": 0.16961754066869617, "min": 0.16340616717934608, "max": 0.17239858396351337, "iters": 5, "baseline_median": null}, {"name": "object_alloc", "median": 0.10998200019821525, "min": 0.10837474977597594, "max": 0.11387095926329494, "iters": 5, "baseline_median": null}, {"name": "property_mono", "median": 0.22630937490612268, "min": 0.2250321670435369, "max": 0.23483904218301177, "iters": 5, "baseline_median": null}, {"name": "property_poly", "median": 0.14857787499204278, "min": 0.14809483336284757, "max": 0.14880545856431127, "iters": 5, "baseline_median": null}, {"name": "string_concat", "median": 0.0032167499884963036, "min": 0.003006833139806986, "max": 0.003439874853938818, "iters": 5, "baseline_median": null}, {"name": "try_overhead", "median": 0.08876220788806677, "min": 0.08842100016772747, "max": 0.09000462526455522, "iters": 5, "baseline_median": null}]}</script>
+<script>
+  const history = JSON.parse(document.getElementById('history-data').textContent);
+  const latest  = JSON.parse(document.getElementById('latest-data').textContent);
+
+  document.getElementById('when').textContent = latest.when || '';
+  document.getElementById('sha').textContent  = latest.sha  || '';
+
+  // Pick a per-bench color from a small palette so the eye can track
+  // them across charts.
+  function colorFor(name) {
+    const palette = ['#2c7','#36a','#c47','#a84','#5a5','#48c','#c4a','#974','#284'];
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 33 + name.charCodeAt(i)) >>> 0;
+    return palette[h % palette.length];
+  }
+
+  // Latest-results table
+  const tbody = document.querySelector('#latest-table tbody');
+  for (const r of latest.results || []) {
+    const tr = document.createElement('tr');
+    let delta = '';
+    let dcls  = '';
+    if (r.baseline_median) {
+      const pct = (r.median - r.baseline_median) / r.baseline_median * 100;
+      const sign = pct >= 0 ? '+' : '';
+      delta = `${sign}${pct.toFixed(1)}%`;
+      dcls = pct >  2 ? 'up' : (pct < -2 ? 'down' : '');
+    }
+    tr.innerHTML = `
+      <td class="bench">${r.name}</td>
+      <td class="ms">${(r.median * 1000).toFixed(2)}</td>
+      <td class="ms">${(r.min    * 1000).toFixed(2)}</td>
+      <td class="ms">${(r.max    * 1000).toFixed(2)}</td>
+      <td class="delta ${dcls}">${delta}</td>`;
+    tbody.appendChild(tr);
+  }
+
+  // Per-benchmark line charts.
+  const benchNames = new Set();
+  for (const row of history) {
+    for (const r of (row.results || [])) benchNames.add(r.name);
+  }
+  const W = 480, H = 130, P = 30;
+  const charts = document.getElementById('charts');
+  for (const name of [...benchNames].sort()) {
+    const points = [];
+    for (const row of history) {
+      const r = (row.results || []).find(x => x.name === name);
+      if (r) points.push({ when: row.when, sha: row.sha, ms: r.median * 1000 });
+    }
+    if (!points.length) continue;
+    let yMax = 0;
+    for (const p of points) yMax = Math.max(yMax, p.ms);
+    yMax = Math.max(yMax * 1.1, 1);
+    const xs = i => P + (i / Math.max(points.length - 1, 1)) * (W - 2*P);
+    const ys = v => H - P - (v / yMax) * (H - 2*P);
+    let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%">`;
+    svg += `<line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#999"/>`;
+    svg += `<line x1="${P}" y1="${P}"   x2="${P}"   y2="${H-P}" stroke="#999"/>`;
+    for (let v = 0; v <= yMax; v += yMax/4) {
+      const y = ys(v);
+      svg += `<line x1="${P}" y1="${y}" x2="${W-P}" y2="${y}" stroke="#eee"/>`;
+      svg += `<text x="${P-4}" y="${y+3}" text-anchor="end" fill="#888" font-size="9">${v.toFixed(1)}</text>`;
+    }
+    const color = colorFor(name);
+    const d = points.map((p, i) => `${xs(i)},${ys(p.ms)}`).join(' ');
+    svg += `<polyline points="${d}" fill="none" stroke="${color}" stroke-width="2"/>`;
+    points.forEach((p, i) => {
+      svg += `<circle cx="${xs(i)}" cy="${ys(p.ms)}" r="2.5" fill="${color}"><title>${p.when} @ ${p.sha}: ${p.ms.toFixed(2)}ms</title></circle>`;
+    });
+    const last = points[points.length - 1];
+    svg += `<text x="${xs(points.length - 1) + 4}" y="${ys(last.ms)+4}" font-size="10" fill="${color}">${last.ms.toFixed(1)}ms</text>`;
+    svg += '</svg>';
+    const box = document.createElement('div');
+    box.className = 'chart-box';
+    box.innerHTML = `<h3>${name}</h3>${svg}`;
+    charts.appendChild(box);
+  }
+</script>
+</html>

@@ -109,6 +109,27 @@ support (Object / Array / String / JSON / Math). Expand the
 For a fast harness-light sanity pass against a single subdir, the
 older C-based runner is still available as `make test262-quick`.
 
+## Benchmarks
+
+```bash
+make bench
+```
+
+Runs the scripts in `scripts/bench/*.js` (tight integer / double
+loops, monomorphic and polymorphic property access, closure invoke,
+method dispatch on a class prototype, array build + for-of, object
+literal allocation, string concat, try/catch overhead) and writes:
+
+- `docs/perf/last.json` — per-bench median / min / max
+- `docs/perf/history.jsonl` — append-only summary, one row per run
+- `docs/perf/index.html` — table of latest medians plus per-bench
+  line charts of median ms over time (open in any browser)
+
+Each benchmark is timed end-to-end around `zjs run <file>` (parse +
+compile + interpret), so the numbers are zjs-vs-zjs over commits —
+not cross-engine comparable. As direct-threading + AOT-bytecode +
+allocator work lands, these are the dials we'll watch move.
+
 ## Embed surface
 
 See `include/zjs.h`. QuickJS-style: opaque `ZjsContext*` handle, opaque NaN-boxed `ZjsValue`, no global state, all functions `extern "C"`-callable.

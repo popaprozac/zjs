@@ -48,7 +48,7 @@ PARSER_TEST_SRC := tests/parser_test.zc
 INTERP_TEST_SRC := tests/interpreter_test.zc
 T262_RUNNER_SRC := tests/test262_runner.c
 
-.PHONY: all lib cli smoke lexer-test parser-test interp-test test test262-runner test262 test262-quick clean
+.PHONY: all lib cli smoke lexer-test parser-test interp-test test test262-runner test262 test262-quick bench clean
 
 all: lib cli smoke lexer-test parser-test interp-test
 
@@ -89,6 +89,12 @@ $(T262_RUNNER): $(T262_RUNNER_SRC) include/zjs.h $(LIB) | $(BUILD_DIR)
 # https://github.com/tc39/test262). Report lands in docs/conformance/.
 test262: cli
 	@python3 scripts/test262/run.py --quiet
+
+# End-to-end microbenchmarks. Times each scripts/bench/*.js with
+# wall-clock around `zjs run`, records the median, appends history,
+# regenerates docs/perf/index.html.
+bench: cli
+	@python3 scripts/bench/run.py
 
 # Quick C-based runner — older, harness-light, no recording. Useful for
 # fast sanity checks against a specific subdir.
