@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 06:36 UTC",
+    "when": "2026-05-14 06:42 UTC",
     "total": 4144,
-    "passed": 2174,
-    "failed": 439,
+    "passed": 2195,
+    "failed": 418,
     "skipped": 1531
   },
   "failures": [
@@ -945,7 +945,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-26.js",
-      "reason": "zjs: throw: Test262Error: stepTwoOccurs !== true"
+      "reason": "zjs: throw: Test262Error: stepFiveOccurs !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-27.js",
@@ -1012,10 +1012,6 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-10.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-17.js",
       "reason": "zjs: throw: Test262Error: func(12, 11) !== true"
     },
@@ -1026,38 +1022,6 @@
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-19.js",
       "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-7.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-8.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-9.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-11.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-13.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-15.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-16.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-17.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-19.js",
@@ -1168,10 +1132,6 @@
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-12.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-13.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
@@ -1188,23 +1148,11 @@
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-2.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-3.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-4.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-5.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-6.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
@@ -1224,15 +1172,7 @@
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-11.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-12.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-13.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
@@ -1240,15 +1180,7 @@
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-15.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-16.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-17.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
@@ -1256,15 +1188,7 @@
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-19.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-20.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-21.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
@@ -1272,15 +1196,7 @@
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-29.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-8.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-9.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {

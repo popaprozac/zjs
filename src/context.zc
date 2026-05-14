@@ -1542,25 +1542,11 @@ fn read_length_u32(ctx: ZjsContext*, this_val: ZjsValue) -> u32 {
         return zjs_as_array(this_val).length;
     }
     if zjs_is_object(this_val) != 0 {
+        // Use property_get so the proto chain is walked AND accessor
+        // properties (Object.defineProperty getters) fire correctly.
         let len_atom = ctx_intern_atom(ctx, (char*)"length", 6);
-        // Walk the proto chain so e.g. `Boolean.prototype.length = 1`
-        // is observable through a wrapper instance.
-        let v: ZjsValue = zjs_undefined();
-        let cur = zjs_as_object(this_val);
-        while cur != NULL {
-            let slot = class_find_slot(cur.cls, len_atom);
-            if slot >= 0 {
-                let raw_v = cur.slots[(u32)slot];
-                if zjs_is_deleted(raw_v) == 0 {
-                    v = raw_v;
-                    cur = NULL;
-                } else {
-                    cur = cur.proto;
-                }
-            } else {
-                cur = cur.proto;
-            }
-        }
+        let key_v = zjs_cell_from_ptr((void*)len_atom);
+        let v = property_get(ctx, this_val, key_v);
         if zjs_is_int32(v) != 0 {
             let n = zjs_as_int32(v);
             if n > 0 { return (u32)n; }
@@ -1568,6 +1554,25 @@ fn read_length_u32(ctx: ZjsContext*, this_val: ZjsValue) -> u32 {
         }
         if zjs_is_double(v) != 0 {
             let d = zjs_as_double(v);
+            let is_finite: int = 0;
+            raw { is_finite = isfinite(d) ? 1 : 0; }
+            if is_finite == 0 { return 0; }
+            if d <= 0.0 { return 0; }
+            return (u32)d;
+        }
+        // String-coerce via valueOf/toString for objects-as-length
+        // (the test262 cases use { valueOf: function(){ return 2 } }).
+        if zjs_is_object(v) != 0 {
+            let d = zjs_to_double(v);
+            let is_finite: int = 0;
+            raw { is_finite = isfinite(d) ? 1 : 0; }
+            if is_finite == 0 { return 0; }
+            if d <= 0.0 { return 0; }
+            return (u32)d;
+        }
+        if zjs_is_string(v) != 0 {
+            // ToNumber on the string.
+            let d = zjs_to_double(v);
             let is_finite: int = 0;
             raw { is_finite = isfinite(d) ? 1 : 0; }
             if is_finite == 0 { return 0; }
@@ -1593,26 +1598,14 @@ fn obj_set_indexed(ctx: ZjsContext*, o: ZjsObject*, index: u32, value: ZjsValue)
 }
 
 fn obj_get_indexed(ctx: ZjsContext*, o: ZjsObject*, index: u32) -> ZjsValue {
-    let key_buf: char[16];
-    let key_len: int = 0;
-    raw {
-        key_len = snprintf(&key_buf[0], 16, "%u", (unsigned)index);
-    }
-    let kp: char* = NULL;
-    raw { kp = &key_buf[0]; }
-    let key_atom = ctx_intern_atom(ctx, kp, (u32)key_len);
-    // Proto-chain walk so wrapper-prototype indexed props
-    // (`Boolean.prototype[0] = true`) are observable.
-    let cur = o;
-    while cur != NULL {
-        let slot = class_find_slot(cur.cls, key_atom);
-        if slot >= 0 {
-            let raw_v = cur.slots[(u32)slot];
-            if zjs_is_deleted(raw_v) == 0 { return raw_v; }
-        }
-        cur = cur.proto;
-    }
-    return zjs_undefined();
+    // Delegate to property_get so accessors fire and proto-chain
+    // semantics (including string/array prototype intercepts) are
+    // honored. The key is the integer index reformatted as a string;
+    // property_get internally uses zjs_to_array_index for the fast
+    // path on real arrays.
+    let key_v = zjs_int32((i32)index);
+    let obj_v = zjs_cell_from_ptr((void*)o);
+    return property_get(ctx, obj_v, key_v);
 }
 
 fn host_array_push(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
