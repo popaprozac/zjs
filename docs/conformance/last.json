@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:33 UTC",
+    "when": "2026-05-14 18:38 UTC",
     "total": 4821,
-    "passed": 2508,
-    "failed": 287,
+    "passed": 2510,
+    "failed": 285,
     "skipped": 2026
   },
   "failures": [
@@ -998,14 +998,6 @@
     {
       "path": "test/built-ins/String/prototype/split/transferred-to-number-separator-override-tostring-returns-regexp.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Math/pow/applying-the-exp-operator_A14.js",
-      "reason": "zjs: throw: Test262Error: #1: Math.pow(-Infinity, undefined) !== +Infinity"
-    },
-    {
-      "path": "test/built-ins/Math/pow/applying-the-exp-operator_A22.js",
-      "reason": "zjs: throw: Test262Error: #1: Math.pow(0, NaN) !== +Infinity"
     },
     {
       "path": "test/built-ins/Math/sumPrecise/throws-on-non-number.js",

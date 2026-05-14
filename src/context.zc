@@ -4790,6 +4790,34 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"min", 3),
                ctx_make_host_function(ctx, (char*)"min", min_ptr));
 
+    // Math constants — ECMA-262 §21.3. Read-only data properties.
+    let pi_d: f64 = 0.0;
+    let e_d: f64 = 0.0;
+    let ln2_d: f64 = 0.0;
+    let ln10_d: f64 = 0.0;
+    let log2e_d: f64 = 0.0;
+    let log10e_d: f64 = 0.0;
+    let sqrt2_d: f64 = 0.0;
+    let sqrt1_2_d: f64 = 0.0;
+    raw {
+        pi_d      = M_PI;
+        e_d       = M_E;
+        ln2_d     = M_LN2;
+        ln10_d    = M_LN10;
+        log2e_d   = M_LOG2E;
+        log10e_d  = M_LOG10E;
+        sqrt2_d   = M_SQRT2;
+        sqrt1_2_d = M_SQRT1_2;
+    }
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"PI", 2),       zjs_double(pi_d));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"E", 1),        zjs_double(e_d));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"LN2", 3),      zjs_double(ln2_d));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"LN10", 4),     zjs_double(ln10_d));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"LOG2E", 5),    zjs_double(log2e_d));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"LOG10E", 6),   zjs_double(log10e_d));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"SQRT2", 5),    zjs_double(sqrt2_d));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"SQRT1_2", 7),  zjs_double(sqrt1_2_d));
+
     let math_slot = ctx_intern_global(ctx, (char*)"Math", 4);
     ctx.globals[math_slot].value = math_v;
     ctx.globals[math_slot].defined = true;
