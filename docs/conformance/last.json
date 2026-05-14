@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:11 UTC",
+    "when": "2026-05-14 18:12 UTC",
     "total": 4821,
-    "passed": 2479,
-    "failed": 316,
+    "passed": 2486,
+    "failed": 309,
     "skipped": 2026
   },
   "failures": [
@@ -592,10 +592,6 @@
       "reason": "zjs: throw: Test262Error: #4: var obj = {}; obj.length = Number.POSITIVE_INFINITY; obj.pop = Array.prototype.pop; obj.po"
     },
     {
-      "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A2_T3.js",
-      "reason": "zjs: throw: Test262Error: #12: var obj = {}; obj.length = new Number(2); obj.pop = Array.prototype.pop; obj.pop(); obj.l"
-    },
-    {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A3_T1.js",
       "reason": "zjs: throw: Test262Error: #1: var obj = {}; obj.pop = Array.prototype.pop; obj[0] = \"x\"; obj[4294967295] = \"y\"; obj.leng"
     },
@@ -642,14 +638,6 @@
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
       "reason": ""
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-3-21.js",
-      "reason": "zjs: throw: Test262Error: firstStepOccured !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-3-23.js",
-      "reason": "zjs: throw: Test262Error: valueOfAccessed !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-15.js",
@@ -700,23 +688,7 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-19.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-2.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-20.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-21.js",
-      "reason": "zjs: throw: Test262Error: testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-3-23.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {

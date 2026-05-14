@@ -1734,10 +1734,13 @@ fn read_length_u32(ctx: ZjsContext*, this_val: ZjsValue) -> u32 {
             if d <= 0.0 { return 0; }
             return (u32)d;
         }
-        // String-coerce via valueOf/toString for objects-as-length
-        // (the test262 cases use { valueOf: function(){ return 2 } }).
-        if zjs_is_object(v) != 0 {
-            let d = zjs_to_double(v);
+        // ECMA-262 ToLength: run ToPrimitive("number") first so the
+        // proto-chain valueOf fires (test262 cases use a length object
+        // with inherited valueOf returning the actual length).
+        if zjs_is_object(v) != 0 || zjs_is_array(v) != 0 {
+            let prim = zjs_to_primitive(ctx, v, false);
+            if ctx.pending_throw_active { return 0; }
+            let d = zjs_to_double(prim);
             let is_finite: int = 0;
             raw { is_finite = isfinite(d) ? 1 : 0; }
             if is_finite == 0 { return 0; }
