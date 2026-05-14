@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 00:41 UTC",
+    "when": "2026-05-14 00:48 UTC",
     "total": 4144,
-    "passed": 1948,
-    "failed": 665,
+    "passed": 1958,
+    "failed": 655,
     "skipped": 1531
   },
   "failures": [
@@ -1172,26 +1172,6 @@
       "reason": "zjs: throw: Test262Error: e instanceof ReferenceError"
     },
     {
-      "path": "test/language/statements/try/S12.14_A10_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: \"finally\" block must be evaluated at \"try{continue} catch finally\" construction"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A10_T3.js",
-      "reason": "zjs: throw: Test262Error: #1.1: \"finally\" block must be evaluated"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A10_T5.js",
-      "reason": "zjs: throw: Test262Error: #1.4: \"finally\" block must be evaluated"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A11_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: \"finally\" block must be evaluated at \"try{continue} catch finally\" construction"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A11_T3.js",
-      "reason": "zjs: throw: Test262Error: #1.1: \"finally\" block must be evaluated"
-    },
-    {
       "path": "test/language/statements/try/S12.14_A12_T2.js",
       "reason": "zjs: throw: Test262Error: #1.1: \"finally\" block must be evaluated"
     },
@@ -1202,14 +1182,6 @@
     {
       "path": "test/language/statements/try/S12.14_A12_T4.js",
       "reason": "zjs: throw: Test262Error: #1.1: \"finally\" block must be evaluated"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A13_T2.js",
-      "reason": "zjs: throw: Test262Error: #1.2: \"finally\" block must be evaluated"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A13_T3.js",
-      "reason": "zjs: throw: Test262Error: #1.4: \"finally\" block must be evaluated"
     },
     {
       "path": "test/language/statements/try/S12.14_A14.js",
@@ -1242,18 +1214,6 @@
     {
       "path": "test/language/statements/try/S12.14_A7_T3.js",
       "reason": "zjs: throw: Test262Error: #2.3: Exception === \"ex1\". Actual:  Exception ===ex2"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A9_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: \"finally\" block must be evaluated at \"try{continue} catch finally\" construction"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A9_T3.js",
-      "reason": "zjs: throw: Test262Error: #1.1: \"finally\" block must be evaluated"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A9_T5.js",
-      "reason": "zjs: throw: Test262Error: #1.4: \"finally\" block must be evaluated"
     },
     {
       "path": "test/language/statements/try/catch-parameter-boundnames-restriction-arguments-negative-early.js",

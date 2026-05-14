@@ -745,6 +745,14 @@ fn run_tests() -> void {
     check_int((char*)"accessor on proto: getter",   (char*)r"let p = {}; Object.defineProperty(p, 'x', {get: function() { return 5 }}); let o = Object.create(p); o.x", 5);
     check_string((char*)"getOwnPropertyDescriptor: accessor", (char*)r"let o = {}; let f = function() { return 1 }; Object.defineProperty(o, 'x', {get: f}); typeof Object.getOwnPropertyDescriptor(o, 'x').get", (char*)"function");
 
+    // --- return / break / continue through finally (Phase 3.9d) ----
+    check_int((char*)"return runs finally",         (char*)r"let s=0; function f() { try { return 1 } finally { s = 99 } } let r = f(); r + s", 100);
+    check_string((char*)"return val preserved",     (char*)r"let s=''; function f() { try { s = s + 'a'; return 1 } finally { s = s + 'b' } } let r = f(); r + s", (char*)"1ab");
+    check_string((char*)"nested finallies on return", (char*)r"let s=''; function f() { try { try { return 'r' } finally { s = s + 'i;' } } finally { s = s + 'o;' } } f() + s", (char*)"ri;o;");
+    check_int((char*)"return in catch with finally",  (char*)r"let s=0; function f() { try { throw 1 } catch(e) { return 7 } finally { s = 5 } } let r = f(); r + s", 12);
+    check_string((char*)"break runs finally",       (char*)r"let s=''; for (let i=0;i<3;i++) { try { s = s + i; if (i===1) break } finally { s = s + 'f' } }; s", (char*)"0f1f");
+    check_string((char*)"continue runs finally",    (char*)r"let s=''; for (let i=0;i<3;i++) { try { if (i===1) continue; s = s + i } finally { s = s + 'f' } }; s", (char*)"0ff2f");
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

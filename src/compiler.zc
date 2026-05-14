@@ -80,6 +80,14 @@ struct Compiler {
     pending_label_start:  u32;
     pending_label_length: u32;
 
+    // Phase 3.9d — stack of finally bodies currently "active" (we're
+    // compiling the matching try / catch). A ReturnStmt encountered
+    // inside walks this list top-down and inlines each finally body
+    // before emitting the actual Return.
+    active_finallies:        AstNode**;
+    active_finally_count:    u32;
+    active_finally_cap:      u32;
+
     // Phase 3.8e — implicit `arguments` binding. -1 if the function
     // doesn't reference `arguments` (or it's shadowed by a real
     // local of the same name). Otherwise: the reg holding the
@@ -110,6 +118,10 @@ struct LoopFrame {
     // matching label walk the stack to find this frame.
     label_start:     u32;
     label_length:    u32;
+    // Phase 3.9d — depth of c.active_finallies when this loop was
+    // pushed. Break/continue targeting this frame must inline every
+    // finally body above this depth before jumping.
+    finally_depth_at_entry: u32;
 }
 
 // --- Lifecycle ------------------------------------------------------
@@ -124,6 +136,25 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.last_expr_reg = -1;
     c.arguments_reg = -1;
     return c;
+}
+
+fn finally_push(c: Compiler*, body: AstNode*) -> void {
+    if c.active_finally_count >= c.active_finally_cap {
+        let new_cap: u32 = if c.active_finally_cap == 0 { 4 } else { c.active_finally_cap * 2 };
+        let old = c.active_finallies;
+        let new_arr: AstNode** = NULL;
+        raw { new_arr = (AstNode**)realloc(old, new_cap * sizeof(AstNode*)); }
+        c.active_finallies = new_arr;
+        c.active_finally_cap = new_cap;
+    }
+    c.active_finallies[c.active_finally_count] = body;
+    c.active_finally_count = c.active_finally_count + 1;
+}
+
+fn finally_pop(c: Compiler*) -> void {
+    if c.active_finally_count > 0 {
+        c.active_finally_count = c.active_finally_count - 1;
+    }
 }
 
 fn loop_push(c: Compiler*) -> void {
@@ -149,7 +180,33 @@ fn loop_push(c: Compiler*) -> void {
     c.loop_stack[c.loop_depth].label_length = c.pending_label_length;
     c.pending_label_start  = 0;
     c.pending_label_length = 0;
+    // Phase 3.9d — snapshot the active-finally depth so break/continue
+    // can inline only the finallies above this point.
+    c.loop_stack[c.loop_depth].finally_depth_at_entry = c.active_finally_count;
     c.loop_depth = c.loop_depth + 1;
+}
+
+// Inline every finally body whose nesting is above `min_depth`,
+// top-down. Used by break/continue to run finallies that sit between
+// the current compile point and the target loop frame, and by Return
+// when exiting the whole function. Caller is responsible for any
+// reg-protection bookkeeping around the call.
+fn inline_finallies_above(c: Compiler*, min_depth: u32) -> void {
+    if c.active_finally_count <= min_depth { return; }
+    let saved_stack = c.active_finallies;
+    let saved_count = c.active_finally_count;
+    // Temporarily empty the stack so a Return inside a finally body
+    // doesn't try to re-inline it.
+    c.active_finally_count = min_depth;
+    let i = saved_count;
+    while i > min_depth {
+        i = i - 1;
+        if saved_stack[i] != NULL {
+            compile_stmt(c, saved_stack[i]);
+        }
+    }
+    c.active_finallies = saved_stack;
+    c.active_finally_count = saved_count;
 }
 
 // Walk the loop stack top-down looking for a frame whose label
@@ -242,10 +299,12 @@ fn compiler_free(c: Compiler*) -> void {
     let locals = c.locals;
     let ics = c.ics;
     let loop_stack = c.loop_stack;
+    let active_finallies = c.active_finallies;
     raw {
         free(code);
         free(consts);
         free(loop_stack);
+        free(active_finallies);
         free(locals);
         free(ics);
         free(c);
@@ -2277,16 +2336,25 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::ReturnStmt {
+        // Compute the return value first so we have it in hand.
+        let r: u8 = 0;
         if node.left != NULL {
-            let r = compile_expr(c, node.left);
-            emit(c, make_inst_a(Op::Return, r));
-            c.last_expr_reg = (i32)r;
+            r = compile_expr(c, node.left);
         } else {
-            let r = alloc_reg(c);
+            r = alloc_reg(c);
             emit(c, make_inst_a(Op::LoadUndefined, r));
-            emit(c, make_inst_a(Op::Return, r));
-            c.last_expr_reg = (i32)r;
         }
+        // Phase 3.9d: run any pending finally bodies before returning.
+        // r must survive finally execution — bump fixed_regs over it so
+        // reset_temps inside finally can't recycle the slot.
+        if c.active_finally_count > 0 {
+            let saved_fixed = c.fixed_regs;
+            if r + 1 > c.fixed_regs { c.fixed_regs = r + 1; }
+            inline_finallies_above(c, 0);     // run ALL — we're leaving the function
+            c.fixed_regs = saved_fixed;
+        }
+        emit(c, make_inst_a(Op::Return, r));
+        c.last_expr_reg = (i32)r;
         reset_temps(c);
         return;
     }
@@ -2298,6 +2366,12 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             frame_idx = find_labeled_loop(c, c.source + node.name_start, node.name_length);
             if frame_idx < 0 { c.had_error = true; return; }
         }
+        // Phase 3.9d: run any finallies that sit between us and the
+        // target loop frame before we jump.
+        let target_depth = c.loop_stack[(u32)frame_idx].finally_depth_at_entry;
+        if c.active_finally_count > target_depth {
+            inline_finallies_above(c, target_depth);
+        }
         let jmp_idx = emit(c, make_inst_i16(Op::Jmp, 0));
         loop_add_break_to(c, (u32)frame_idx, (u32)jmp_idx);
         return;
@@ -2308,6 +2382,11 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         if node.name_length > 0 {
             frame_idx = find_labeled_loop(c, c.source + node.name_start, node.name_length);
             if frame_idx < 0 { c.had_error = true; return; }
+        }
+        // Same finally unwind as break.
+        let target_depth = c.loop_stack[(u32)frame_idx].finally_depth_at_entry;
+        if c.active_finally_count > target_depth {
+            inline_finallies_above(c, target_depth);
         }
         let lp = c.loop_stack[(u32)frame_idx];
         if lp.have_continue {
@@ -2391,6 +2470,10 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // at outer_handler with `thrown` placed in pending_reg.
         let outer_enter = emit(c, make_inst_a_i16(Op::EnterTry, pending_reg, 0));
 
+        // Push the finally body so that a `return` in either the try
+        // or catch arms runs the finally before exiting. (Phase 3.9d.)
+        finally_push(c, node.third);
+
         if has_catch {
             // Inner try: throws from the try-body land in catch_reg.
             let inner_enter = emit(c, make_inst_a_i16(Op::EnterTry, catch_reg, 0));
@@ -2405,6 +2488,8 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             // directly and routes them to the finally re-throw path.
             compile_stmt(c, node.left);
         }
+
+        finally_pop(c);
 
         emit(c, make_inst_a(Op::LeaveTry, 0));   // pop outer
 
