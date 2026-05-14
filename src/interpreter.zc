@@ -198,6 +198,18 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
+    // Promise cell — read through Promise.prototype (then / catch).
+    if zjs_is_promise(obj) != 0 && ctx.promise_ctor_proto != NULL && zjs_is_string(key) != 0 {
+        let cur = ctx.promise_ctor_proto;
+        let ks = zjs_as_string(key);
+        while cur != NULL {
+            let slot = class_find_slot(cur.cls, ks);
+            if slot >= 0 { return cur.slots[(u32)slot]; }
+            cur = cur.proto;
+        }
+        return zjs_undefined();
+    }
+
     // Primitives: no property access in MVP.
     return zjs_undefined();
 }
@@ -774,6 +786,8 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 raw { argv_ptr = &regs[base + 2]; }
                 let saved_this = ctx.host_this;
                 ctx.host_this = new_this;
+                let saved_host_fn = ctx.current_host_fn;
+                ctx.current_host_fn = hf_ptr;
                 let r: ZjsValue = zjs_undefined();
                 raw {
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
@@ -781,6 +795,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                     HostFn fp = (HostFn)hf->fn_ptr;
                     r = fp(ctx, argv_ptr, argc);
                 }
+                ctx.current_host_fn = saved_host_fn;
                 ctx.host_this = saved_this;
                 regs[dst] = r;
             } else {
@@ -840,6 +855,8 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 raw { argv_ptr = &regs[base + 1]; }
                 let saved_this = ctx.host_this;
                 ctx.host_this = zjs_undefined();
+                let saved_host_fn = ctx.current_host_fn;
+                ctx.current_host_fn = hf_ptr;
                 let r: ZjsValue = zjs_undefined();
                 raw {
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
@@ -847,6 +864,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                     HostFn fp = (HostFn)hf->fn_ptr;
                     r = fp(ctx, argv_ptr, argc);
                 }
+                ctx.current_host_fn = saved_host_fn;
                 ctx.host_this = saved_this;
                 regs[dst] = r;
             } else {
@@ -903,6 +921,8 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 raw { argv_ptr = &regs[base + arg_offset]; }
                 let saved_host = ctx.host_this;
                 ctx.host_this = new_this;
+                let saved_host_fn = ctx.current_host_fn;
+                ctx.current_host_fn = hf_ptr;
                 let r: ZjsValue = zjs_undefined();
                 raw {
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
@@ -910,6 +930,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                     HostFn fp = (HostFn)hf->fn_ptr;
                     r = fp(ctx, argv_ptr, argc);
                 }
+                ctx.current_host_fn = saved_host_fn;
                 ctx.host_this = saved_host;
                 // Pop and write result like an implicit Return.
                 if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
@@ -1268,6 +1289,12 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
+                } else if zjs_is_promise(val) != 0 {
+                    let cur = ctx.promise_ctor_proto;
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
                 }
             }
             regs[inst.a] = zjs_bool(result);
@@ -1347,19 +1374,24 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let hf_ptr = zjs_cell_as_ptr(callee);
                 let argv_ptr: ZjsValue* = NULL;
                 raw { argv_ptr = &regs[base + 1]; }
+                let saved_host_fn = ctx.current_host_fn;
+                ctx.current_host_fn = hf_ptr;
                 raw {
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
                     typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
                     HostFn fp = (HostFn)hf->fn_ptr;
                     call_result = fp(ctx, argv_ptr, argc);
                 }
+                ctx.current_host_fn = saved_host_fn;
             }
             ctx.host_this = saved_this;
             if did_throw {
                 throwing = true; thrown = call_result; exit_reason = 3; break;
             }
             // Use callee's return if it returned an object; else the new one.
-            if zjs_is_object(call_result) != 0 || zjs_is_array(call_result) != 0 {
+            if zjs_is_object(call_result) != 0
+                || zjs_is_array(call_result) != 0
+                || zjs_is_promise(call_result) != 0 {
                 regs[dst] = call_result;
             } else {
                 regs[dst] = new_obj_v;
@@ -1510,12 +1542,15 @@ fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsVal
         r = rr.value;
     } else if zjs_is_host_function(callee) != 0 {
         let hf_ptr = zjs_cell_as_ptr(callee);
+        let saved_host_fn = ctx.current_host_fn;
+        ctx.current_host_fn = hf_ptr;
         raw {
             ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
             typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
             HostFn fp = (HostFn)hf->fn_ptr;
             r = fp(ctx, args, argc);
         }
+        ctx.current_host_fn = saved_host_fn;
     }
     ctx.host_this = saved;
     return r;

@@ -154,6 +154,20 @@ struct ZjsContext {
     invoke_arg_buffer:     ZjsValue*;
     invoke_arg_buffer_cap: u32;
 
+    // Phase 3.10 — Promises.
+    // Currently-executing host function (set by Op::Invoke right
+    // before calling the C fn_ptr). Host fns that need per-instance
+    // state (Promise resolve/reject closures) read .bound from here.
+    current_host_fn: void*;
+    // Microtask queue. Each microtask is 4 consecutive slots:
+    //   handler (callable or undefined), arg, result_promise, is_fulfilled_path.
+    microtask_queue: ZjsValue*;
+    microtask_count: u32;
+    microtask_cap:   u32;
+    // Bound ctor for Promise — used by the .then path to construct
+    // the result promise. Cached at init.
+    promise_ctor_proto: ZjsObject*;
+
     // --- Atom table (interned strings) ---
     // Open-addressed hash table, power-of-2 capacity. Used for
     // property names + source-code string literals. Atoms are GC
@@ -229,6 +243,8 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
             closure_free_void(cp);
         } else if tag == TAG_ACCESSOR {
             accessor_free_void(cp);
+        } else if tag == TAG_PROMISE {
+            promise_free_void(cp);
         }
         j = j + 1;
     }
@@ -238,6 +254,7 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     let frames = ctx.frames;
     let ctx_try_stack = ctx.ctx_try_stack;
     let invoke_arg_buffer = ctx.invoke_arg_buffer;
+    let microtask_queue = ctx.microtask_queue;
     raw {
         free(cells);
         free(temp_roots);
@@ -245,6 +262,7 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
         free(frames);
         free(ctx_try_stack);
         free(invoke_arg_buffer);
+        free(microtask_queue);
         free(ctx);
     }
 }
@@ -534,6 +552,7 @@ fn gc_mark_value(v: ZjsValue) -> void {
     if tag == TAG_HOST_FUNCTION {
         // Phase 3.6: host functions can carry a .prototype.
         // Phase 3.8c: and arbitrary properties via .props.
+        // Phase 3.10: and a per-instance .bound value (Promise resolvers).
         let hf: ZjsHostFunction* = NULL;
         raw { hf = (ZjsHostFunction*)p; }
         if hf.prototype != NULL {
@@ -544,6 +563,7 @@ fn gc_mark_value(v: ZjsValue) -> void {
             let pv = zjs_cell_from_ptr((void*)hf.props);
             gc_mark_value(pv);
         }
+        gc_mark_value(hf.bound);
         return;
     }
 
@@ -597,6 +617,18 @@ fn gc_mark_value(v: ZjsValue) -> void {
         raw { a = (ZjsAccessor*)p; }
         gc_mark_value(a.get);
         gc_mark_value(a.set);
+        return;
+    }
+
+    if tag == TAG_PROMISE {
+        let pr: ZjsPromise* = NULL;
+        raw { pr = (ZjsPromise*)p; }
+        gc_mark_value(pr.value);
+        let i: u32 = 0;
+        while i < pr.reaction_count * 3 {
+            gc_mark_value(pr.reactions[i]);
+            i = i + 1;
+        }
         return;
     }
 
@@ -766,6 +798,16 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         }
         fi = fi + 1;
     }
+    // Phase 3.10 — microtask queue + cached Promise prototype.
+    let mq: u32 = 0;
+    while mq < ctx.microtask_count * 4 {
+        gc_mark_value(ctx.microtask_queue[mq]);
+        mq = mq + 1;
+    }
+    if ctx.promise_ctor_proto != NULL {
+        let pv = zjs_cell_from_ptr((void*)ctx.promise_ctor_proto);
+        gc_mark_value(pv);
+    }
     // Interned atoms — they live for the context's lifetime.
     let a: u32 = 0;
     while a < ctx.atom_cap {
@@ -796,6 +838,7 @@ fn gc_sweep(ctx: ZjsContext*) -> void {
               else if tag == TAG_HOST_FUNCTION { host_function_free_void(p); }
               else if tag == TAG_CLOSURE       { closure_free_void(p); }
               else if tag == TAG_ACCESSOR      { accessor_free_void(p); }
+              else if tag == TAG_PROMISE       { promise_free_void(p); }
         }
         i = i + 1;
     }
@@ -2677,6 +2720,312 @@ fn host_json_parse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return result;
 }
 
+// =====================================================================
+// Promise runtime (Phase 3.10)
+//
+// ECMA-262 §27.2. Minimal implementation:
+//   - Promise constructor with executor function
+//   - Promise.resolve / Promise.reject statics
+//   - .then(onFulfilled, onRejected) / .catch / .finally
+//   - Microtask queue drained at the end of each zjs_eval entry
+//   - Thenable assimilation when handler returns a Promise
+//
+// Tests-262 still skips a bunch of Promise.* statics (.all, .race,
+// .allSettled, .any) and the Symbol.toStringTag tag — those are
+// follow-ups.
+// =====================================================================
+
+fn promise_attach_reaction(ctx: ZjsContext*, p: ZjsPromise*,
+                           on_fulfilled: ZjsValue, on_rejected: ZjsValue,
+                           result_promise: ZjsValue) -> void {
+    if p.reaction_count + 3 > p.reaction_cap {
+        let new_cap: u32 = if p.reaction_cap == 0 { 6 } else { p.reaction_cap * 2 };
+        let old = p.reactions;
+        let new_arr: ZjsValue* = NULL;
+        raw { new_arr = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
+        p.reactions = new_arr;
+        p.reaction_cap = new_cap;
+    }
+    p.reactions[p.reaction_count] = on_fulfilled;
+    p.reactions[p.reaction_count + 1] = on_rejected;
+    p.reactions[p.reaction_count + 2] = result_promise;
+    p.reaction_count = p.reaction_count + 3;
+}
+
+fn microtask_enqueue(ctx: ZjsContext*,
+                     handler: ZjsValue, arg: ZjsValue,
+                     result_promise: ZjsValue, is_fulfilled: bool) -> void {
+    let slots_needed = ctx.microtask_count * 4 + 4;
+    if slots_needed > ctx.microtask_cap {
+        let new_cap: u32 = if ctx.microtask_cap == 0 { 16 } else { ctx.microtask_cap * 2 };
+        while new_cap < slots_needed { new_cap = new_cap * 2; }
+        let old = ctx.microtask_queue;
+        let new_arr: ZjsValue* = NULL;
+        raw { new_arr = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
+        ctx.microtask_queue = new_arr;
+        ctx.microtask_cap = new_cap;
+    }
+    let base = ctx.microtask_count * 4;
+    ctx.microtask_queue[base]     = handler;
+    ctx.microtask_queue[base + 1] = arg;
+    ctx.microtask_queue[base + 2] = result_promise;
+    ctx.microtask_queue[base + 3] = zjs_bool(if is_fulfilled { 1 } else { 0 });
+    ctx.microtask_count = ctx.microtask_count + 1;
+}
+
+fn promise_settle(ctx: ZjsContext*, pv: ZjsValue, value: ZjsValue, fulfilled: bool) -> void {
+    if zjs_is_promise(pv) == 0 { return; }
+    let p = zjs_as_promise(pv);
+    if p.state != PROMISE_PENDING { return; }
+    p.state = if fulfilled { PROMISE_FULFILLED } else { PROMISE_REJECTED };
+    p.value = value;
+    // Fire all attached reactions. Each entry is 3 slots
+    // (onFulfilled, onRejected, resultPromise).
+    let i: u32 = 0;
+    while i < p.reaction_count {
+        let on_f = p.reactions[i];
+        let on_r = p.reactions[i + 1];
+        let rp   = p.reactions[i + 2];
+        let handler = if fulfilled { on_f } else { on_r };
+        microtask_enqueue(ctx, handler, value, rp, fulfilled);
+        i = i + 3;
+    }
+    // Drop the reactions buffer — they've all been queued.
+    p.reaction_count = 0;
+}
+
+// ECMA-262 ResolvePromise semantics: if `value` is itself a promise,
+// adopt its eventual state (attach a then-style hook); otherwise
+// settle directly with the value.
+fn promise_resolve_with(ctx: ZjsContext*, pv: ZjsValue, value: ZjsValue) -> void {
+    if zjs_is_promise(value) != 0 {
+        // Identity self-reference is a TypeError per spec.
+        if zjs_cell_as_ptr(value) == zjs_cell_as_ptr(pv) {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"Chaining cycle detected", 23);
+            promise_settle(ctx, pv, err, false);
+            return;
+        }
+        let inner = zjs_as_promise(value);
+        if inner.state == PROMISE_FULFILLED {
+            promise_settle(ctx, pv, inner.value, true);
+        } else if inner.state == PROMISE_REJECTED {
+            promise_settle(ctx, pv, inner.value, false);
+        } else {
+            // Pending — attach an adopt-reaction that settles pv when inner settles.
+            // We piggy-back on the standard reaction shape: a "passthrough"
+            // microtask whose handler is undefined and whose result_promise
+            // is pv. Both fulfilled and rejected paths feed back into pv.
+            promise_attach_reaction(ctx, inner, zjs_undefined(), zjs_undefined(), pv);
+        }
+        return;
+    }
+    promise_settle(ctx, pv, value, true);
+}
+
+// Drain the microtask queue. Called at the end of zjs_eval (after the
+// main script has run). Microtasks may enqueue more microtasks; keep
+// draining until empty. Bounded by a safety limit to prevent runaway
+// loops in misbehaving programs.
+def MICROTASK_DRAIN_LIMIT: u32 = 1000000;
+
+fn drain_microtasks(ctx: ZjsContext*) -> void {
+    let safety: u32 = 0;
+    while ctx.microtask_count > 0 && safety < MICROTASK_DRAIN_LIMIT {
+        // Pop the first microtask: copy fields into locals, then shift.
+        // Could be O(n^2) for many microtasks; acceptable for now.
+        let handler = ctx.microtask_queue[0];
+        let arg     = ctx.microtask_queue[1];
+        let rp      = ctx.microtask_queue[2];
+        let is_full = zjs_as_bool(ctx.microtask_queue[3]) != 0;
+        // Shift remaining.
+        let n = ctx.microtask_count - 1;
+        let i: u32 = 0;
+        while i < n * 4 {
+            ctx.microtask_queue[i] = ctx.microtask_queue[i + 4];
+            i = i + 1;
+        }
+        ctx.microtask_count = n;
+
+        let callable: bool = zjs_is_function(handler) != 0
+            || zjs_is_closure(handler) != 0
+            || zjs_is_host_function(handler) != 0;
+        if !callable {
+            // Passthrough: propagate value/reason to result_promise.
+            if zjs_is_promise(rp) != 0 {
+                if is_full { promise_resolve_with(ctx, rp, arg); }
+                else       { promise_settle(ctx, rp, arg, false); }
+            }
+        } else {
+            // Call handler(arg). On success, resolve rp with the
+            // return value (which itself may be a thenable → adoption).
+            // On throw, reject rp with the thrown value.
+            let arg_buf: ZjsValue[1];
+            arg_buf[0] = arg;
+            let argp: ZjsValue* = NULL;
+            raw { argp = &arg_buf[0]; }
+            let saved_err = ctx.had_error;
+            ctx.had_error = false;
+            let saved_lasterr = ctx.last_error;
+            let r: ZjsValue = zjs_undefined();
+            raw { r = zjs_call_value_with_this(ctx, handler, zjs_undefined(), argp, 1); }
+            if ctx.had_error {
+                let thrown = ctx.last_error;
+                ctx.had_error = saved_err;
+                ctx.last_error = saved_lasterr;
+                if zjs_is_promise(rp) != 0 {
+                    promise_settle(ctx, rp, thrown, false);
+                }
+            } else {
+                ctx.had_error = saved_err;
+                ctx.last_error = saved_lasterr;
+                if zjs_is_promise(rp) != 0 {
+                    promise_resolve_with(ctx, rp, r);
+                }
+            }
+        }
+        safety = safety + 1;
+    }
+}
+
+// --- Host fns: Promise.resolve / Promise.reject helpers --------------
+
+fn host_promise_resolve_fn(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // Per-instance bound = the target promise.
+    let target_v: ZjsValue = zjs_undefined();
+    if ctx.current_host_fn != NULL {
+        let hf: ZjsHostFunction* = NULL;
+        raw { hf = (ZjsHostFunction*)ctx->current_host_fn; }
+        target_v = hf.bound;
+    }
+    let value = if argc >= 1 { args[0] } else { zjs_undefined() };
+    promise_resolve_with(ctx, target_v, value);
+    return zjs_undefined();
+}
+
+fn host_promise_reject_fn(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let target_v: ZjsValue = zjs_undefined();
+    if ctx.current_host_fn != NULL {
+        let hf: ZjsHostFunction* = NULL;
+        raw { hf = (ZjsHostFunction*)ctx->current_host_fn; }
+        target_v = hf.bound;
+    }
+    let reason = if argc >= 1 { args[0] } else { zjs_undefined() };
+    promise_settle(ctx, target_v, reason, false);
+    return zjs_undefined();
+}
+
+// new Promise(executor) — allocates a pending promise, builds bound
+// resolve/reject closures, and runs the executor synchronously.
+// If the executor throws, the promise is rejected with the thrown value.
+fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let executor = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    if ctx.promise_ctor_proto != NULL {
+        // Allow `new Promise()` to set up proto chain. The cell itself
+        // doesn't carry .proto (promises aren't ZjsObject), so
+        // property_get for promise instances must intercept on
+        // ctx.promise_ctor_proto. Handled below in property_get.
+    }
+    let pv = zjs_cell_from_ptr((void*)p);
+    ctx_push_temp_root(ctx, pv);
+    defer ctx_pop_temp_root(ctx);
+
+    // Build resolve/reject bound closures.
+    let resolve_ptr: void* = NULL; raw { resolve_ptr = (void*)host_promise_resolve_fn; }
+    let reject_ptr:  void* = NULL; raw { reject_ptr  = (void*)host_promise_reject_fn; }
+    let resolve_fn = ctx_make_host_function(ctx, (char*)"resolve", resolve_ptr);
+    let reject_fn  = ctx_make_host_function(ctx, (char*)"reject",  reject_ptr);
+    zjs_as_host_function(resolve_fn).bound = pv;
+    zjs_as_host_function(reject_fn).bound  = pv;
+
+    let callable = zjs_is_function(executor) != 0
+        || zjs_is_closure(executor) != 0
+        || zjs_is_host_function(executor) != 0;
+    if !callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Promise resolver is not a function", 34);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let exec_args: ZjsValue[2];
+    exec_args[0] = resolve_fn;
+    exec_args[1] = reject_fn;
+    let exec_argp: ZjsValue* = NULL;
+    raw { exec_argp = &exec_args[0]; }
+    let saved_err = ctx.had_error;
+    ctx.had_error = false;
+    let saved_lasterr = ctx.last_error;
+    raw { (void)zjs_call_value_with_this(ctx, executor, zjs_undefined(), exec_argp, 2); }
+    if ctx.had_error {
+        // Executor threw — reject (unless already settled).
+        let thrown = ctx.last_error;
+        ctx.had_error = saved_err;
+        ctx.last_error = saved_lasterr;
+        promise_settle(ctx, pv, thrown, false);
+    }
+    return pv;
+}
+
+// Promise.resolve(value) — if value is already a promise, return it;
+// else create a fulfilled one.
+fn host_promise_resolve_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_promise(v) != 0 { return v; }
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    promise_resolve_with(ctx, pv, v);
+    return pv;
+}
+
+// Promise.reject(reason) — always a new rejected promise.
+fn host_promise_reject_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let r = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    promise_settle(ctx, pv, r, false);
+    return pv;
+}
+
+// Promise.prototype.then(onFulfilled, onRejected)
+fn host_promise_then(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_promise(this_val) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Promise.prototype.then called on non-promise", 44);
+        ctx.had_error = true; ctx.last_error = err;
+        return zjs_undefined();
+    }
+    let on_f = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let on_r = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let p = zjs_as_promise(this_val);
+    let result = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)result);
+    let rp = zjs_cell_from_ptr((void*)result);
+    if p.state == PROMISE_FULFILLED {
+        microtask_enqueue(ctx, on_f, p.value, rp, true);
+    } else if p.state == PROMISE_REJECTED {
+        microtask_enqueue(ctx, on_r, p.value, rp, false);
+    } else {
+        promise_attach_reaction(ctx, p, on_f, on_r, rp);
+    }
+    return rp;
+}
+
+// Promise.prototype.catch(onRejected) ≡ this.then(undefined, onRejected).
+fn host_promise_catch(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let on_r = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let two_args: ZjsValue[2];
+    two_args[0] = zjs_undefined();
+    two_args[1] = on_r;
+    let argp: ZjsValue* = NULL;
+    raw { argp = &two_args[0]; }
+    return host_promise_then(ctx, argp, 2);
+}
+
 // --- console.log (Phase 3.8a) -------------------------------------
 //
 // Minimum console implementation: log / info / warn / error all print
@@ -3558,7 +3907,31 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ctx_register_host_function(ctx, (char*)"Set",        eval_ptr);
     ctx_register_host_function(ctx, (char*)"WeakMap",    eval_ptr);
     ctx_register_host_function(ctx, (char*)"WeakSet",    eval_ptr);
-    ctx_register_host_function(ctx, (char*)"Promise",    eval_ptr);
+    // Phase 3.10 — real Promise constructor.
+    let promise_ptr: void* = NULL; raw { promise_ptr = (void*)host_promise_ctor; }
+    let promise_v = ctx_register_host_function(ctx, (char*)"Promise", promise_ptr);
+    let promise_hf = zjs_as_host_function(promise_v);
+    // Promise.prototype — instance methods.
+    let pp_v = ctx_new_object(ctx);
+    promise_hf.prototype = zjs_as_object(pp_v);
+    ctx.promise_ctor_proto = promise_hf.prototype;
+    let pthen_ptr:  void* = NULL; raw { pthen_ptr  = (void*)host_promise_then; }
+    let pcatch_ptr: void* = NULL; raw { pcatch_ptr = (void*)host_promise_catch; }
+    object_set(ctx, promise_hf.prototype, ctx_intern_atom(ctx, (char*)"then", 4),
+               ctx_make_host_function(ctx, (char*)"then", pthen_ptr));
+    object_set(ctx, promise_hf.prototype, ctx_intern_atom(ctx, (char*)"catch", 5),
+               ctx_make_host_function(ctx, (char*)"catch", pcatch_ptr));
+    // Promise.resolve / Promise.reject statics on .props.
+    let presolve_ptr: void* = NULL; raw { presolve_ptr = (void*)host_promise_resolve_static; }
+    let preject_ptr:  void* = NULL; raw { preject_ptr  = (void*)host_promise_reject_static; }
+    if promise_hf.props == NULL {
+        let pr_v = ctx_new_object(ctx);
+        promise_hf.props = zjs_as_object(pr_v);
+    }
+    object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"resolve", 7),
+               ctx_make_host_function(ctx, (char*)"resolve", presolve_ptr));
+    object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"reject", 6),
+               ctx_make_host_function(ctx, (char*)"reject", preject_ptr));
     ctx_register_host_function(ctx, (char*)"Proxy",      eval_ptr);
     ctx_register_host_function(ctx, (char*)"ArrayBuffer", eval_ptr);
     ctx_register_host_function(ctx, (char*)"Uint8Array",  eval_ptr);

@@ -1,10 +1,10 @@
 {
   "summary": {
-    "when": "2026-05-14 07:21 UTC",
-    "total": 4144,
-    "passed": 2247,
-    "failed": 366,
-    "skipped": 1531
+    "when": "2026-05-14 14:37 UTC",
+    "total": 4821,
+    "passed": 2383,
+    "failed": 412,
+    "skipped": 2026
   },
   "failures": [
     {
@@ -1470,11 +1470,195 @@
     {
       "path": "test/built-ins/Math/sumPrecise/throws-on-non-number.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/all/S25.4.4.1_A2.1_T1.js",
+      "reason": "zjs: throw: Test262Error: The value of !!(p instanceof Promise) is expected to be true"
+    },
+    {
+      "path": "test/built-ins/Promise/all/ctx-ctor.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-element-function-extensible.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-element-function-property-order.js",
+      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-throws-iterator-return-is-not-callable.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-throws-iterator-return-null-or-undefined.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/allKeyed/extensible.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/ctx-ctor.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/reject-element-function-extensible.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/reject-element-function-property-order.js",
+      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/resolve-element-function-extensible.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/resolve-element-function-property-order.js",
+      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/resolve-throws-iterator-return-is-not-callable.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/resolve-throws-iterator-return-null-or-undefined.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/returns-promise.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettledKeyed/extensible.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/any/ctx-ctor.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/any/reject-element-function-extensible.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/any/reject-element-function-property-order.js",
+      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+    },
+    {
+      "path": "test/built-ins/Promise/any/resolve-throws-iterator-return-is-not-callable.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/any/resolve-throws-iterator-return-null-or-undefined.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/any/returns-promise.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/executor-function-extensible.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/executor-function-property-order.js",
+      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+    },
+    {
+      "path": "test/built-ins/Promise/property-order.js",
+      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/catch/S25.4.5.1_A1.1_T1.js",
+      "reason": "zjs: throw: Test262Error: The value of !!(Promise.prototype.catch instanceof Function) is expected to be true"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/catch/S25.4.5.1_A2.1_T1.js",
+      "reason": "zjs: throw: Test262Error: The value of !!(p.catch instanceof Function) is expected to be true"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/finally/subclass-species-constructor-reject-count.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/finally/subclass-species-constructor-resolve-count.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A1.1_T1.js",
+      "reason": "zjs: throw: Test262Error: The value of !!(Promise.prototype.then instanceof Function) is expected to be true"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A1.1_T2.js",
+      "reason": "zjs: throw: Test262Error: The value of !!(p.then instanceof Function) is expected to be true"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/then/capability-executor-called-twice.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/then/capability-executor-not-callable.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/then/ctor-custom.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/race/S25.4.4.3_A2.1_T1.js",
+      "reason": "zjs: throw: Test262Error: The value of !!(p instanceof Promise) is expected to be true"
+    },
+    {
+      "path": "test/built-ins/Promise/race/ctx-ctor.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/race/resolve-throws-iterator-return-is-not-callable.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/race/resolve-throws-iterator-return-null-or-undefined.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/reject/ctx-ctor.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/reject-function-extensible.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/reject-function-property-order.js",
+      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+    },
+    {
+      "path": "test/built-ins/Promise/resolve/ctx-ctor.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/resolve-function-extensible.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/resolve-function-property-order.js",
+      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+    },
+    {
+      "path": "test/built-ins/Promise/try/ctx-ctor.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/withResolvers/ctx-ctor.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
     }
   ],
   "skip_counts": {
-    "feature:BigInt": 102,
-    "feature:Symbol": 30,
+    "feature:BigInt": 104,
+    "feature:Symbol": 48,
     "feature:tail-call-optimization": 18,
     "feature:Proxy": 29,
     "feature:class-fields-private": 19,
@@ -1483,18 +1667,20 @@
     "feature:async-functions": 9,
     "feature:async-iteration": 9,
     "feature:generators": 170,
-    "feature:Symbol.iterator": 139,
-    "feature:destructuring-binding": 673,
+    "feature:Symbol.iterator": 263,
+    "feature:destructuring-binding": 675,
     "feature:object-rest": 46,
     "feature:optional-chaining": 8,
     "feature:destructuring-assignment": 2,
     "feature:TypedArray": 20,
-    "flag:async": 1,
+    "flag:async": 264,
     "flag:module": 2,
-    "include:propertyHelper.js": 193,
-    "include:isConstructor.js": 51,
+    "include:propertyHelper.js": 252,
+    "include:isConstructor.js": 66,
     "feature:well-formed-json-stringify": 1,
     "feature:computed-property-names": 4,
-    "include:byteConversionValues.js": 1
+    "include:byteConversionValues.js": 1,
+    "include:promiseHelper.js": 9,
+    "feature:Reflect": 3
   }
 }

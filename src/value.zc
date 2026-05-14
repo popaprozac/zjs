@@ -521,6 +521,12 @@ def TAG_HOST_FUNCTION: u8 = 4;
 def TAG_HIDDEN_CLASS:  u8 = 5;
 def TAG_CLOSURE:       u8 = 6;
 def TAG_ACCESSOR:      u8 = 7;   // Phase 3.9b: { get, set } pair stored in an object slot
+def TAG_PROMISE:       u8 = 8;   // Phase 3.10: ECMA-262 Promise
+
+// Promise states.
+def PROMISE_PENDING:   u8 = 0;
+def PROMISE_FULFILLED: u8 = 1;
+def PROMISE_REJECTED:  u8 = 2;
 
 struct CellHeader {
     type_tag: u8;
@@ -581,6 +587,10 @@ struct ZjsHostFunction {
     header: CellHeader;     // { type_tag = TAG_HOST_FUNCTION }
     fn_ptr: void*;          // ZjsValue (*)(ZjsContext*, ZjsValue*, uint32_t)
     name:   char*;          // for debugging — duplicated, owned
+    // Phase 3.10 — per-instance binding. Used by Promise resolve/reject
+    // closures to remember which promise they target. Read inside the
+    // host fn body via ctx.current_host_fn.bound. Default undefined.
+    bound:  ZjsValue;
     // Phase 3.6: `.prototype` for instanceof + constructor-style use.
     // Lazy — first read auto-creates an empty object.
     prototype: ZjsObject*;
@@ -625,6 +635,48 @@ fn zjs_accessor_new(get_v: ZjsValue, set_v: ZjsValue) -> ZjsAccessor* {
 }
 
 fn accessor_free_void(p: void*) -> void {
+    raw { free(p); }
+}
+
+// Phase 3.10 — Promise. State machine with attached reactions.
+// Each reaction is 3 contiguous slots: on_fulfilled, on_rejected,
+// result_promise. On settlement, every reaction enqueues a microtask
+// to be drained at the next safe point.
+struct ZjsPromise {
+    header:        CellHeader;       // { type_tag = TAG_PROMISE }
+    state:         u8;               // PROMISE_PENDING / FULFILLED / REJECTED
+    value:         ZjsValue;         // resolution value or rejection reason
+    reactions:     ZjsValue*;        // 3-tuples: [onFulfilled, onRejected, resultPromise]
+    reaction_count: u32;
+    reaction_cap:  u32;
+}
+
+fn zjs_is_promise(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_PROMISE { return 1; }
+    return 0;
+}
+
+fn zjs_as_promise(v: ZjsValue) -> ZjsPromise* {
+    let p = zjs_cell_as_ptr(v);
+    let pr: ZjsPromise* = NULL;
+    raw { pr = (ZjsPromise*)p; }
+    return pr;
+}
+
+fn zjs_promise_new() -> ZjsPromise* {
+    let p: ZjsPromise* = NULL;
+    raw { p = (ZjsPromise*)calloc(1, sizeof(ZjsPromise)); }
+    p.header.type_tag = TAG_PROMISE;
+    p.state = PROMISE_PENDING;
+    p.value = zjs_undefined();
+    return p;
+}
+
+fn promise_free_void(p: void*) -> void {
+    let pr: ZjsPromise* = NULL;
+    raw { pr = (ZjsPromise*)p; }
+    let r = pr.reactions;
+    raw { free(r); }
     raw { free(p); }
 }
 
