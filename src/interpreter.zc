@@ -658,9 +658,33 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
 
         // --- comparison -----------------------------------------
         } else if op == Op::CmpEq {
-            regs[inst.a] = zjs_bool(zjs_loose_eq(regs[inst.b], regs[inst.c]));
+            // ECMA-262 §7.2.13 step 13: when one side is an object and
+            // the other is a primitive, ToPrimitive(object) is invoked
+            // (which calls .valueOf / .toString). zjs_loose_eq alone
+            // handles wrapper objects via a hidden-key shortcut but
+            // can't invoke user methods — do that here while we still
+            // have ctx.
+            let cea = regs[inst.b];
+            let ceb = regs[inst.c];
+            let cea_obj = zjs_is_object(cea) != 0 || zjs_is_array(cea) != 0;
+            let ceb_obj = zjs_is_object(ceb) != 0 || zjs_is_array(ceb) != 0;
+            if cea_obj && !ceb_obj && !zjs_is_undefined(ceb) && !zjs_is_null(ceb) {
+                cea = zjs_to_primitive(ctx, cea, false);
+            } else if ceb_obj && !cea_obj && !zjs_is_undefined(cea) && !zjs_is_null(cea) {
+                ceb = zjs_to_primitive(ctx, ceb, false);
+            }
+            regs[inst.a] = zjs_bool(zjs_loose_eq(cea, ceb));
         } else if op == Op::CmpNe {
-            let eq = zjs_loose_eq(regs[inst.b], regs[inst.c]);
+            let cea = regs[inst.b];
+            let ceb = regs[inst.c];
+            let cea_obj = zjs_is_object(cea) != 0 || zjs_is_array(cea) != 0;
+            let ceb_obj = zjs_is_object(ceb) != 0 || zjs_is_array(ceb) != 0;
+            if cea_obj && !ceb_obj && !zjs_is_undefined(ceb) && !zjs_is_null(ceb) {
+                cea = zjs_to_primitive(ctx, cea, false);
+            } else if ceb_obj && !cea_obj && !zjs_is_undefined(cea) && !zjs_is_null(cea) {
+                ceb = zjs_to_primitive(ctx, ceb, false);
+            }
+            let eq = zjs_loose_eq(cea, ceb);
             regs[inst.a] = zjs_bool(if eq != 0 { 0 } else { 1 });
         } else if op == Op::CmpStrictEq {
             regs[inst.a] = zjs_bool(zjs_strict_eq(regs[inst.b], regs[inst.c]));

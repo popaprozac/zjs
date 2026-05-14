@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 17:28 UTC",
+    "when": "2026-05-14 17:31 UTC",
     "total": 4821,
-    "passed": 2443,
-    "failed": 352,
+    "passed": 2445,
+    "failed": 350,
     "skipped": 2026
   },
   "failures": [
@@ -81,11 +81,11 @@
     },
     {
       "path": "test/language/expressions/equals/S11.9.1_A7.8.js",
-      "reason": "zjs: throw: Test262Error: #1: ({valueOf: function() {return 1}} == true) === true"
+      "reason": "zjs: throw: Test262Error: #7.2: ({valueOf: function() {throw \"error\"}, toString: function() {return 1}} == 1) throw \"err"
     },
     {
       "path": "test/language/expressions/equals/S11.9.1_A7.9.js",
-      "reason": "zjs: throw: Test262Error: #1: (true == {valueOf: function() {return 1}}) === true"
+      "reason": "zjs: throw: Test262Error: #7.2: (1 == {valueOf: function() {throw \"error\"}, toString: function() {return 1}}) throw \"err"
     },
     {
       "path": "test/language/expressions/equals/to-prim-hint.js",
@@ -96,20 +96,12 @@
       "reason": "zjs: throw: Test262Error: #1: (true\\u0009!=\\u00091) === false"
     },
     {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A3.2.js",
-      "reason": "zjs: throw: Test262Error: #4: (true != {valueOf: function () {return 1}}) === false"
-    },
-    {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A3.3.js",
-      "reason": "zjs: throw: Test262Error: #4: ({valueOf: function () {return \"0\"}} != false) === false"
-    },
-    {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A7.8.js",
-      "reason": "zjs: throw: Test262Error: #1: (true != {valueOf: function() {return 1}}) === false"
+      "reason": "zjs: throw: Test262Error: #7: (1 != {valueOf: function() {throw \"error\"}, toString: function() {return 1}}) throw \"error"
     },
     {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A7.9.js",
-      "reason": "zjs: throw: Test262Error: #1: ({valueOf: function() {return 1}} != true) === false"
+      "reason": "zjs: throw: Test262Error: #7.2: ({valueOf: function() {throw \"error\"}, toString: function() {return 1}} != 1) throw \"err"
     },
     {
       "path": "test/language/expressions/strict-equals/S11.9.4_A1.js",
