@@ -126,9 +126,20 @@ literal allocation, string concat, try/catch overhead) and writes:
   line charts of median ms over time (open in any browser)
 
 Each benchmark is timed end-to-end around `zjs run <file>` (parse +
-compile + interpret), so the numbers are zjs-vs-zjs over commits —
-not cross-engine comparable. As direct-threading + AOT-bytecode +
-allocator work lands, these are the dials we'll watch move.
+compile + interpret). Numbers are tracked across commits in
+`docs/perf/index.html`.
+
+```bash
+make bench-compare
+```
+
+Also runs each script under `qjs`, `node`, and `bun` and writes
+`docs/perf/compare.html`. qjs is our closest peer (jitless
+interpreter, similar architecture). node/bun include JIT but their
+numbers are largely process-startup on our short scripts.
+
+Builds default to `--release` (`-O3`-ish) via `zc`. For debug
+builds: `make ZC_FLAGS='-w -O0 -g'`.
 
 ## Embed surface
 
