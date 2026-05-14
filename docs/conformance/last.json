@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 16:06 UTC",
+    "when": "2026-05-14 16:15 UTC",
     "total": 4821,
-    "passed": 2403,
-    "failed": 392,
+    "passed": 2406,
+    "failed": 389,
     "skipped": 2026
   },
   "failures": [
@@ -310,18 +310,6 @@
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A1.js",
       "reason": "zjs: throw: Test262Error: #1: ({})\\u0009instanceof\\u0009Object === true"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A6_T3.js",
-      "reason": "zjs: throw: Test262Error: #3 function MyFunct(){return 0}; MyFunct instanceof Object === true"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A7_T1.js",
-      "reason": "zjs: throw: Test262Error: #2: If instanceof returns true then GetValue(RelationalExpression) was constructed with ShiftE"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A7_T2.js",
-      "reason": "zjs: throw: Test262Error: #2: If instanceof returns true then GetValue(RelationalExpression) was constructed with ShiftE"
     },
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A7_T3.js",

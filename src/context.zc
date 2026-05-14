@@ -4204,6 +4204,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Boolean.prototype
     let bp = ctx_new_object(ctx);
     bool_hf.prototype = zjs_as_object(bp);
+    object_set(ctx, bool_hf.prototype, ctx_intern_atom(ctx, (char*)"constructor", 11), bool_full);
     object_set(ctx, bool_hf.prototype, valueof_atom,
                ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
     object_set(ctx, bool_hf.prototype, tostring_atom,
@@ -4211,6 +4212,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Number.prototype
     let np = ctx_new_object(ctx);
     num_hf.prototype = zjs_as_object(np);
+    object_set(ctx, num_hf.prototype, ctx_intern_atom(ctx, (char*)"constructor", 11), num_full);
     object_set(ctx, num_hf.prototype, valueof_atom,
                ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
     object_set(ctx, num_hf.prototype, tostring_atom,
@@ -4261,8 +4263,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                 err_hf.prototype = zjs_as_object(p_v);
             }
             let err_proto = err_hf.prototype;
-            // Error.prototype.toString — "Name: message" per
-            // ECMA-262 §20.5.3.4. All subclasses inherit it.
+            // Error.prototype.constructor / .toString.
+            object_set(ctx, err_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), err_v);
             let ets_ptr: void* = NULL; raw { ets_ptr = (void*)host_error_to_string; }
             object_set(ctx, err_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
                        ctx_make_host_function(ctx, (char*)"toString", ets_ptr));
@@ -4305,6 +4307,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let pp_v = ctx_new_object(ctx);
     promise_hf.prototype = zjs_as_object(pp_v);
     ctx.promise_ctor_proto = promise_hf.prototype;
+    object_set(ctx, promise_hf.prototype, ctx_intern_atom(ctx, (char*)"constructor", 11), promise_v);
     let pthen_ptr:  void* = NULL; raw { pthen_ptr  = (void*)host_promise_then; }
     let pcatch_ptr: void* = NULL; raw { pcatch_ptr = (void*)host_promise_catch; }
     object_set(ctx, promise_hf.prototype, ctx_intern_atom(ctx, (char*)"then", 4),
@@ -4409,6 +4412,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let object_v = ctx_register_host_function(ctx, (char*)"Object", obj_ctor_ptr);
     let object_hf = zjs_as_host_function(object_v);
     object_hf.prototype = ctx.object_proto;
+    object_set(ctx, ctx.object_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), object_v);
     let keys_ptr:   void* = NULL; raw { keys_ptr   = (void*)host_object_keys; }
     let create_ptr: void* = NULL; raw { create_ptr = (void*)host_object_create; }
     let gpo_ptr:    void* = NULL; raw { gpo_ptr    = (void*)host_object_get_prototype_of; }
@@ -4464,6 +4468,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // `Array.prototype.push.call(arr, x)` and similar find our method
     // table).
     arr_ctor.prototype = array_proto;
+    // ECMA-262: Array.prototype.constructor === Array. Same convention
+    // for all other prototype wirings below.
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), arr_ctor_v);
 
     // --- String.prototype intercept (Phase 3.5) ---
     let string_proto_v = ctx_new_object(ctx);
@@ -4493,6 +4500,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"toLowerCase", 11),
                ctx_make_host_function(ctx, (char*)"toLowerCase", slc_ptr));
     ctx.string_proto = string_proto;
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), strv_full);
     // Unify with the String constructor's .prototype so
     // `new String(x).slice(...)` reaches the same methods as a
     // primitive string's `.slice(...)`.
