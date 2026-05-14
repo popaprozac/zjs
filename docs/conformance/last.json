@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 19:23 UTC",
+    "when": "2026-05-14 19:36 UTC",
     "total": 4821,
-    "passed": 2523,
-    "failed": 272,
+    "passed": 2529,
+    "failed": 266,
     "skipped": 2026
   },
   "failures": [
@@ -772,20 +772,8 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-279.js",
-      "reason": "zjs: throw: Test262Error: hasProperty !== true"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-28.js",
       "reason": "zjs: throw: Test262Error: newObj.hasOwnProperty(\"prop\") !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-280.js",
-      "reason": "zjs: throw: Test262Error: hasProperty !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-289.js",
-      "reason": "zjs: throw: Test262Error: hasProperty !== true"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-291.js",
@@ -796,20 +784,8 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-59.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-6.js",
       "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-60.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-69.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-71.js",

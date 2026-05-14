@@ -1527,24 +1527,40 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     let key_str = zjs_as_string(key_v);
     let key_atom = ctx_intern_atom(ctx, key_str.data, key_str.length);
 
+    // Descriptor may be a plain object OR an array (whose expando bag
+    // holds the value/get/set keys) OR a host/user function with
+    // .props. Use property_get to read named slots through whichever
+    // shape is present.
     let desc_v = args[2];
-    if zjs_is_object(desc_v) == 0 { return obj_v; }
-    let desc = zjs_as_object(desc_v);
+    let desc_objlike: bool =
+           zjs_is_object(desc_v) != 0
+        || zjs_is_array(desc_v) != 0
+        || zjs_is_function(desc_v) != 0
+        || zjs_is_host_function(desc_v) != 0;
+    if !desc_objlike { return obj_v; }
 
     let value_key  = ctx_intern_atom(ctx, (char*)"value", 5);
     let get_key    = ctx_intern_atom(ctx, (char*)"get",   3);
     let set_key    = ctx_intern_atom(ctx, (char*)"set",   3);
 
-    let has_value = class_find_slot(desc.cls, value_key) >= 0;
-    let has_get   = class_find_slot(desc.cls, get_key)   >= 0;
-    let has_set   = class_find_slot(desc.cls, set_key)   >= 0;
+    let value_key_v = zjs_cell_from_ptr((void*)value_key);
+    let get_key_v   = zjs_cell_from_ptr((void*)get_key);
+    let set_key_v   = zjs_cell_from_ptr((void*)set_key);
+
+    let value_lookup = property_get(ctx, desc_v, value_key_v);
+    let get_lookup   = property_get(ctx, desc_v, get_key_v);
+    let set_lookup   = property_get(ctx, desc_v, set_key_v);
+
+    let has_value = zjs_is_undefined(value_lookup) == 0;
+    let has_get   = zjs_is_function(get_lookup) != 0 || zjs_is_closure(get_lookup) != 0 || zjs_is_host_function(get_lookup) != 0;
+    let has_set   = zjs_is_function(set_lookup) != 0 || zjs_is_closure(set_lookup) != 0 || zjs_is_host_function(set_lookup) != 0;
 
     if has_get || has_set {
         // Accessor descriptor (Phase 3.9b). Allocate an accessor cell
         // holding the get/set callbacks (default undefined) and store
         // it directly in the slot.
-        let g: ZjsValue = if has_get { object_get(desc, get_key) } else { zjs_undefined() };
-        let s: ZjsValue = if has_set { object_get(desc, set_key) } else { zjs_undefined() };
+        let g: ZjsValue = if has_get { get_lookup } else { zjs_undefined() };
+        let s: ZjsValue = if has_set { set_lookup } else { zjs_undefined() };
         let a = zjs_accessor_new(g, s);
         ctx_register_cell(ctx, (void*)a);
         let av = zjs_cell_from_ptr((void*)a);
@@ -1553,7 +1569,7 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     }
 
     // Data descriptor — extract `value` (default undefined if absent).
-    let value: ZjsValue = if has_value { object_get(desc, value_key) } else { zjs_undefined() };
+    let value: ZjsValue = if has_value { value_lookup } else { zjs_undefined() };
     object_set(ctx, o, key_atom, value);
     return obj_v;
 }
@@ -1605,8 +1621,15 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
             // right receiver. For an array-backed props bag this is
             // the array's expando object (a real ZjsObject).
             let desc_value = property_get(ctx, cls_owner_v, key_v);
-            // defineProperty needs an actual descriptor object.
-            if zjs_is_object(desc_value) != 0 {
+            // defineProperty accepts any object-like descriptor (plain
+            // object, array, function); host_object_define_property
+            // reads value / get / set through property_get on each.
+            let dv_objlike: bool =
+                   zjs_is_object(desc_value) != 0
+                || zjs_is_array(desc_value) != 0
+                || zjs_is_function(desc_value) != 0
+                || zjs_is_host_function(desc_value) != 0;
+            if dv_objlike {
                 let dp_args: ZjsValue[3];
                 dp_args[0] = obj_v;
                 dp_args[1] = key_v;
