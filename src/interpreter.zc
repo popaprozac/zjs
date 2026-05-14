@@ -1495,6 +1495,22 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
         // else: unknown opcode — ignore (interpreter is permissive
         // during MVP; the compiler shouldn't emit such ops).
 
+        // Pending-throw bridge — a host helper invoked during this op
+        // (zjs_to_primitive's valueOf/toString, an Array.prototype.map
+        // callback, accessor getter/setter, etc.) may have raised a JS
+        // exception that the host can't propagate directly. Promote it
+        // to a local throw so the next outer-loop iteration runs the
+        // standard catch-or-unwind.
+        if ctx.pending_throw_active {
+            throwing = true;
+            thrown   = ctx.pending_throw_value;
+            ctx.pending_throw_active = false;
+            ctx.pending_throw_value  = zjs_undefined();
+            exit_reason = 3;
+            ctx.frames[cur_idx].ip = ip;
+            break;
+        }
+
         ip = ip + 1;
         }   // end inner while ip < code_len
 
@@ -1574,7 +1590,12 @@ fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsVal
         let target: Function* = NULL;
         raw { target = (Function*)fp; }
         let rr = interpret(ctx, target, args, argc);
-        r = rr.value;
+        if rr.is_throw {
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = rr.value;
+        } else {
+            r = rr.value;
+        }
     } else if zjs_is_closure(callee) != 0 {
         let cl = zjs_as_closure(callee);
         let fp2 = cl.function;
@@ -1584,7 +1605,12 @@ fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsVal
         ctx.current_closure = cl;
         let rr = interpret(ctx, target2, args, argc);
         ctx.current_closure = saved_cl;
-        r = rr.value;
+        if rr.is_throw {
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = rr.value;
+        } else {
+            r = rr.value;
+        }
     } else if zjs_is_host_function(callee) != 0 {
         let hf_ptr = zjs_cell_as_ptr(callee);
         let saved_host_fn = ctx.current_host_fn;
@@ -1607,6 +1633,11 @@ fn zjs_call_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc: u32
         let target: Function* = NULL;
         raw { target = (Function*)fp; }
         let r = interpret(ctx, target, args, argc);
+        if r.is_throw {
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = r.value;
+            return zjs_undefined();
+        }
         return r.value;
     }
     if zjs_is_closure(callee) != 0 {
@@ -1618,6 +1649,11 @@ fn zjs_call_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc: u32
         ctx.current_closure = cl;
         let r2 = interpret(ctx, target2, args, argc);
         ctx.current_closure = saved_cl;
+        if r2.is_throw {
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = r2.value;
+            return zjs_undefined();
+        }
         return r2.value;
     }
     if zjs_is_host_function(callee) != 0 {

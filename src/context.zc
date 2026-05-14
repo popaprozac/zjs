@@ -159,6 +159,16 @@ struct ZjsContext {
     // before calling the C fn_ptr). Host fns that need per-instance
     // state (Promise resolve/reject closures) read .bound from here.
     current_host_fn: void*;
+    // Pending throw bridge — when a JS callback fired from a host
+    // helper (zjs_to_primitive's valueOf/toString, Array.prototype.map's
+    // user callback, etc.) raises an exception, the recursive
+    // interpret() can't propagate it directly because the host frame
+    // sits in between. zjs_call_value{,_with_this} set these fields
+    // instead; the outer interpret() inspects pending_throw_active at
+    // the end of each instruction and converts it back into a local
+    // throw (`throwing = true; thrown = pending_throw_value`).
+    pending_throw_active: bool;
+    pending_throw_value:  ZjsValue;
     // Microtask queue. Each microtask is 4 consecutive slots:
     //   handler (callable or undefined), arg, result_promise, is_fulfilled_path.
     microtask_queue: ZjsValue*;
