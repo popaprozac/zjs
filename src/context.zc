@@ -4357,9 +4357,34 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let synerr_ptr:  void* = NULL; raw { synerr_ptr  = (void*)host_syntax_error_ctor; }
     let urierr_ptr:  void* = NULL; raw { urierr_ptr  = (void*)host_uri_error; }
     let evlerr_ptr:  void* = NULL; raw { evlerr_ptr  = (void*)host_eval_error; }
-    ctx_register_host_function(ctx, (char*)"EvalError",   evlerr_ptr);
-    ctx_register_host_function(ctx, (char*)"URIError",    urierr_ptr);
-    ctx_register_host_function(ctx, (char*)"SyntaxError", synerr_ptr);
+    let evlerr_v = ctx_register_host_function(ctx, (char*)"EvalError",   evlerr_ptr);
+    let urierr_v = ctx_register_host_function(ctx, (char*)"URIError",    urierr_ptr);
+    let synerr_v = ctx_register_host_function(ctx, (char*)"SyntaxError", synerr_ptr);
+    // Chain these *Error.prototype → Error.prototype as well.
+    let err_slot2 = ctx_find_global(ctx, (char*)"Error", 5);
+    if err_slot2 >= 0 {
+        let err_v2 = ctx.globals[err_slot2].value;
+        if zjs_is_host_function(err_v2) != 0 {
+            let err_hf2 = zjs_as_host_function(err_v2);
+            if err_hf2.prototype != NULL {
+                let extras: ZjsValue[3];
+                extras[0] = evlerr_v; extras[1] = urierr_v; extras[2] = synerr_v;
+                let i: u32 = 0;
+                while i < 3 {
+                    let hv = extras[i];
+                    if zjs_is_host_function(hv) != 0 {
+                        let hf = zjs_as_host_function(hv);
+                        if hf.prototype == NULL {
+                            let pp_v = ctx_new_object(ctx);
+                            hf.prototype = zjs_as_object(pp_v);
+                        }
+                        hf.prototype.proto = err_hf2.prototype;
+                    }
+                    i = i + 1;
+                }
+            }
+        }
+    }
     // $262 — test262's per-context helper object. We don't implement
     // any of its methods; register as a plain empty object.
     let t262_v = ctx_new_object(ctx);

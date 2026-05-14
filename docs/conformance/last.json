@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 16:15 UTC",
+    "when": "2026-05-14 16:19 UTC",
     "total": 4821,
-    "passed": 2406,
-    "failed": 389,
+    "passed": 2408,
+    "failed": 387,
     "skipped": 2026
   },
   "failures": [
@@ -742,14 +742,6 @@
     {
       "path": "test/language/statements/try/S12.14_A15.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A19_T1.js",
-      "reason": "zjs: throw: Test262Error: #3: Exception.toString()===\"EvalError: 1\". Actual: Exception is [object Object]"
-    },
-    {
-      "path": "test/language/statements/try/S12.14_A19_T2.js",
-      "reason": "zjs: throw: Test262Error: #3.1: Exception.toString()===\"EvalError: 1\". Actual: Exception is [object Object]"
     },
     {
       "path": "test/language/statements/try/S12.14_A4.js",
