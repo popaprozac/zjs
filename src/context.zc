@@ -3015,6 +3015,197 @@ fn host_promise_then(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return rp;
 }
 
+// Internal: { promise, results, remaining, idx } per-element binding
+// used by Promise.all to track which slot to fill. Re-uses
+// __zjs_primitive__ trick: we stash a small descriptor object via
+// hidden keys on the on-fulfilled host function.
+def PA_PROMISE_KEY: char* = (char*)"__zjs_pa_p__";
+def PA_RESULTS_KEY: char* = (char*)"__zjs_pa_r__";
+def PA_REM_KEY:     char* = (char*)"__zjs_pa_n__";
+def PA_IDX_KEY:     char* = (char*)"__zjs_pa_i__";
+
+fn host_promise_all_on_fulfill(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // Per-element state shape:
+    //   __zjs_pa_p__: result promise (rp)
+    //   __zjs_pa_r__: results array
+    //   __zjs_pa_n__: shared-state object (whose own __zjs_pa_n__
+    //                  is the int remaining counter)
+    //   __zjs_pa_i__: this element's index
+    let hf: ZjsHostFunction* = NULL;
+    raw { hf = (ZjsHostFunction*)ctx->current_host_fn; }
+    let per_v = hf.bound;
+    if zjs_is_object(per_v) == 0 { return zjs_undefined(); }
+    let per = zjs_as_object(per_v);
+    let p_v   = object_get(per, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12));
+    let res_v = object_get(per, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12));
+    let shared_v = object_get(per, ctx_intern_atom(ctx, PA_REM_KEY, 12));
+    let idx_v = object_get(per, ctx_intern_atom(ctx, PA_IDX_KEY, 12));
+    if zjs_is_object(shared_v) == 0 { return zjs_undefined(); }
+    let shared = zjs_as_object(shared_v);
+
+    let value = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_array(res_v) != 0 && zjs_is_int32(idx_v) != 0 {
+        let arr = zjs_as_array(res_v);
+        array_set(arr, (u32)zjs_as_int32(idx_v), value);
+    }
+    let rem_v = object_get(shared, ctx_intern_atom(ctx, PA_REM_KEY, 12));
+    let rem = zjs_as_int32(rem_v) - 1;
+    object_set(ctx, shared, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(rem));
+    if rem == 0 && zjs_is_promise(p_v) != 0 {
+        promise_resolve_with(ctx, p_v, res_v);
+    }
+    return zjs_undefined();
+}
+
+fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let result = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)result);
+    let rp = zjs_cell_from_ptr((void*)result);
+    ctx_push_temp_root(ctx, rp);
+    defer ctx_pop_temp_root(ctx);
+
+    let iter = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_array(iter) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Promise.all requires an array", 29);
+        promise_settle(ctx, rp, err, false);
+        return rp;
+    }
+    let arr = zjs_as_array(iter);
+    if arr.length == 0 {
+        let empty = ctx_new_array(ctx, 0);
+        promise_settle(ctx, rp, empty, true);
+        return rp;
+    }
+
+    let results_v = ctx_new_array(ctx, arr.length);
+    let results = zjs_as_array(results_v);
+    results.length = arr.length;
+    // Pre-fill so the array has the right length even if elements settle out of order.
+    let init: u32 = 0;
+    while init < arr.length {
+        results.elements[init] = zjs_undefined();
+        init = init + 1;
+    }
+
+    // Shared state object that the on-fulfill helpers update.
+    let state_v = ctx_new_object(ctx);
+    let state = zjs_as_object(state_v);
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32((i32)arr.length));
+
+    let reject_ptr: void* = NULL; raw { reject_ptr = (void*)host_promise_reject_fn; }
+    let reject_fn = ctx_make_host_function(ctx, (char*)"reject", reject_ptr);
+    zjs_as_host_function(reject_fn).bound = rp;
+
+    let onf_ptr: void* = NULL; raw { onf_ptr = (void*)host_promise_all_on_fulfill; }
+    let i: u32 = 0;
+    while i < arr.length {
+        let item = arr.elements[i];
+        // Per-element on-fulfill closure with bound = state-shape that
+        // also carries the slot index.
+        let per_state_v = ctx_new_object(ctx);
+        let per_state = zjs_as_object(per_state_v);
+        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
+        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
+        // remaining counter is shared via the outer `state` object,
+        // re-read each callback. Easier: each per-state holds a
+        // reference to `state` and the on-fulfill mutates state.REM.
+        // For simplicity here we copy the same atoms into per_state
+        // BUT remaining is mirrored into the SHARED state.
+        // We do this by aliasing via the same atom on state itself;
+        // each per_state.PA_REM_KEY actually reads from `state`.
+        // Simpler: store all four keys on each per_state pointing into
+        // the shared remaining counter. We do that by storing the same
+        // ZjsObject* (state) under a key and dereferencing.
+        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_REM_KEY, 12), state_v);
+        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_IDX_KEY, 12), zjs_int32((i32)i));
+
+        let onf = ctx_make_host_function(ctx, (char*)"all_onf", onf_ptr);
+        zjs_as_host_function(onf).bound = per_state_v;
+
+        // Wrap item as a promise and attach .then(onf, reject_fn).
+        let item_pv = if zjs_is_promise(item) != 0 { item } else {
+            let pp = zjs_promise_new();
+            ctx_register_cell(ctx, (void*)pp);
+            let ppv = zjs_cell_from_ptr((void*)pp);
+            promise_resolve_with(ctx, ppv, item);
+            ppv
+        };
+        let ip = zjs_as_promise(item_pv);
+        // Pass `undefined` as the result promise so drain_microtasks
+        // doesn't auto-settle rp from these helpers' return values —
+        // onf is purely a side-effect updating internal state, and it
+        // settles rp itself when remaining reaches 0.
+        if ip.state == PROMISE_FULFILLED {
+            microtask_enqueue(ctx, onf, ip.value, zjs_undefined(), true);
+        } else if ip.state == PROMISE_REJECTED {
+            microtask_enqueue(ctx, reject_fn, ip.value, zjs_undefined(), false);
+        } else {
+            // promise_attach_reaction also runs through drain; the
+            // result_promise here doubles as both "linked output" and
+            // "drain target" in our model, so use rp directly for
+            // rejection-propagation but not for the success side.
+            // Simplest: install a SPLIT reaction by attaching twice:
+            //   - onf for fulfilled, with result=undefined (no auto-resolve)
+            //   - reject_fn for rejected, with result=undefined (it settles rp itself)
+            promise_attach_reaction(ctx, ip, onf, reject_fn, zjs_undefined());
+        }
+
+        i = i + 1;
+    }
+    return rp;
+}
+
+// Re-read the shared remaining counter via state's PA_REM_KEY ->
+// state_v. Patch the on-fulfill helper to read from there.
+// (Already done — host_promise_all_on_fulfill reads through `state`.)
+
+fn host_promise_race(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let result = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)result);
+    let rp = zjs_cell_from_ptr((void*)result);
+    let iter = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_array(iter) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Promise.race requires an array", 30);
+        promise_settle(ctx, rp, err, false);
+        return rp;
+    }
+    let arr = zjs_as_array(iter);
+    let resolve_ptr: void* = NULL; raw { resolve_ptr = (void*)host_promise_resolve_fn; }
+    let reject_ptr:  void* = NULL; raw { reject_ptr  = (void*)host_promise_reject_fn; }
+    let resolve_fn = ctx_make_host_function(ctx, (char*)"resolve", resolve_ptr);
+    let reject_fn  = ctx_make_host_function(ctx, (char*)"reject", reject_ptr);
+    zjs_as_host_function(resolve_fn).bound = rp;
+    zjs_as_host_function(reject_fn).bound  = rp;
+
+    let i: u32 = 0;
+    while i < arr.length {
+        let item = arr.elements[i];
+        let item_pv = if zjs_is_promise(item) != 0 { item } else {
+            let pp = zjs_promise_new();
+            ctx_register_cell(ctx, (void*)pp);
+            let ppv = zjs_cell_from_ptr((void*)pp);
+            promise_resolve_with(ctx, ppv, item);
+            ppv
+        };
+        let ip = zjs_as_promise(item_pv);
+        // resolve_fn / reject_fn settle rp themselves via their bound;
+        // pass undefined so drain doesn't double-settle.
+        if ip.state == PROMISE_FULFILLED {
+            microtask_enqueue(ctx, resolve_fn, ip.value, zjs_undefined(), true);
+        } else if ip.state == PROMISE_REJECTED {
+            microtask_enqueue(ctx, reject_fn, ip.value, zjs_undefined(), false);
+        } else {
+            promise_attach_reaction(ctx, ip, resolve_fn, reject_fn, zjs_undefined());
+        }
+        i = i + 1;
+    }
+    return rp;
+}
+
 // Promise.prototype.catch(onRejected) ≡ this.then(undefined, onRejected).
 fn host_promise_catch(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let on_r = if argc >= 1 { args[0] } else { zjs_undefined() };
@@ -3932,6 +4123,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"resolve", presolve_ptr));
     object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"reject", 6),
                ctx_make_host_function(ctx, (char*)"reject", preject_ptr));
+    let pall_ptr:  void* = NULL; raw { pall_ptr  = (void*)host_promise_all; }
+    let prace_ptr: void* = NULL; raw { prace_ptr = (void*)host_promise_race; }
+    object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"all", 3),
+               ctx_make_host_function(ctx, (char*)"all", pall_ptr));
+    object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"race", 4),
+               ctx_make_host_function(ctx, (char*)"race", prace_ptr));
     ctx_register_host_function(ctx, (char*)"Proxy",      eval_ptr);
     ctx_register_host_function(ctx, (char*)"ArrayBuffer", eval_ptr);
     ctx_register_host_function(ctx, (char*)"Uint8Array",  eval_ptr);

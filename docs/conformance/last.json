@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 14:37 UTC",
+    "when": "2026-05-14 14:46 UTC",
     "total": 4821,
-    "passed": 2383,
-    "failed": 412,
+    "passed": 2389,
+    "failed": 406,
     "skipped": 2026
   },
   "failures": [
@@ -317,7 +317,7 @@
     },
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A6_T3.js",
-      "reason": "zjs: throw: Test262Error: #2 function MyFunct(){return 0}; MyFunct instanceof Function === true"
+      "reason": "zjs: throw: Test262Error: #3 function MyFunct(){return 0}; MyFunct instanceof Object === true"
     },
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A7_T1.js",
@@ -1472,10 +1472,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Promise/all/S25.4.4.1_A2.1_T1.js",
-      "reason": "zjs: throw: Test262Error: The value of !!(p instanceof Promise) is expected to be true"
-    },
-    {
       "path": "test/built-ins/Promise/all/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -1572,28 +1568,12 @@
       "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
     },
     {
-      "path": "test/built-ins/Promise/prototype/catch/S25.4.5.1_A1.1_T1.js",
-      "reason": "zjs: throw: Test262Error: The value of !!(Promise.prototype.catch instanceof Function) is expected to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/catch/S25.4.5.1_A2.1_T1.js",
-      "reason": "zjs: throw: Test262Error: The value of !!(p.catch instanceof Function) is expected to be true"
-    },
-    {
       "path": "test/built-ins/Promise/prototype/finally/subclass-species-constructor-reject-count.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/subclass-species-constructor-resolve-count.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A1.1_T1.js",
-      "reason": "zjs: throw: Test262Error: The value of !!(Promise.prototype.then instanceof Function) is expected to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A1.1_T2.js",
-      "reason": "zjs: throw: Test262Error: The value of !!(p.then instanceof Function) is expected to be true"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/capability-executor-called-twice.js",
@@ -1606,10 +1586,6 @@
     {
       "path": "test/built-ins/Promise/prototype/then/ctor-custom.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/race/S25.4.4.3_A2.1_T1.js",
-      "reason": "zjs: throw: Test262Error: The value of !!(p instanceof Promise) is expected to be true"
     },
     {
       "path": "test/built-ins/Promise/race/ctx-ctor.js",
