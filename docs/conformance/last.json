@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 06:25 UTC",
+    "when": "2026-05-14 06:29 UTC",
     "total": 4144,
-    "passed": 2166,
-    "failed": 447,
+    "passed": 2168,
+    "failed": 445,
     "skipped": 1531
   },
   "failures": [
@@ -350,14 +350,6 @@
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A1.js",
       "reason": "zjs: throw: Test262Error: #1: ({})\\u0009instanceof\\u0009Object === true"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A5_T1.js",
-      "reason": "zjs: throw: Test262Error: #3: TypeError is subclass of Error from instanceof operator point of view"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A5_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: TypeError is subclass of Error from instanceof operator point of view"
     },
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A6_T3.js",

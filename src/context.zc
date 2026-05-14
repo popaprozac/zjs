@@ -3137,8 +3137,25 @@ fn make_named_error(ctx: ZjsContext*, name: char*, name_len: u32, args: ZjsValue
     // a fresh object with `proto = Foo.prototype` and bound it as
     // ctx.host_this. Decorating that object preserves the proto link
     // so `instanceof Foo` works.
+    //
+    // When called as a plain function (`Error(...)` / `TypeError(...)`),
+    // ECMA-262 still requires the result to be a proper Error subclass
+    // instance. Look up the constructor by name and seed obj.proto so
+    // `err instanceof TypeError` works for the non-new form too.
     let obj_v: ZjsValue = ctx.host_this;
-    if zjs_is_object(obj_v) == 0 { obj_v = ctx_new_object(ctx); }
+    if zjs_is_object(obj_v) == 0 {
+        obj_v = ctx_new_object(ctx);
+        let ctor_slot = ctx_find_global(ctx, name, name_len);
+        if ctor_slot >= 0 {
+            let ctor_v = ctx.globals[ctor_slot].value;
+            if zjs_is_host_function(ctor_v) != 0 {
+                let hf = zjs_as_host_function(ctor_v);
+                if hf.prototype != NULL {
+                    zjs_as_object(obj_v).proto = hf.prototype;
+                }
+            }
+        }
+    }
     // Defensive rooting: obj_v is either ctx.host_this (already rooted)
     // or a fresh object held across several cell-allocating calls
     // below. Pushing in both cases is safe and one-liner — host_this is
@@ -3417,9 +3434,40 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
     object_set(ctx, strv_hf.prototype, tostring_atom,
                ctx_make_host_function(ctx, (char*)"toString", wt_ptr));
-    ctx_register_host_function(ctx, (char*)"ReferenceError", referr_ptr);
-    ctx_register_host_function(ctx, (char*)"TypeError",      typerr_ptr);
-    ctx_register_host_function(ctx, (char*)"RangeError",     rngerr_ptr);
+    let referr_v = ctx_register_host_function(ctx, (char*)"ReferenceError", referr_ptr);
+    let typerr_v = ctx_register_host_function(ctx, (char*)"TypeError",      typerr_ptr);
+    let rngerr_v = ctx_register_host_function(ctx, (char*)"RangeError",     rngerr_ptr);
+
+    // Chain *Error.prototype → Error.prototype so `new TypeError instanceof Error` etc.
+    // Lazily create each prototype, then set its proto.
+    let err_slot = ctx_find_global(ctx, (char*)"Error", 5);
+    if err_slot >= 0 {
+        let err_v = ctx.globals[err_slot].value;
+        if zjs_is_host_function(err_v) != 0 {
+            let err_hf = zjs_as_host_function(err_v);
+            if err_hf.prototype == NULL {
+                let p_v = ctx_new_object(ctx);
+                err_hf.prototype = zjs_as_object(p_v);
+            }
+            let err_proto = err_hf.prototype;
+            // Subclass each *Error.prototype to inherit from Error.prototype.
+            let subs: ZjsValue[3];
+            subs[0] = referr_v; subs[1] = typerr_v; subs[2] = rngerr_v;
+            let i: u32 = 0;
+            while i < 3 {
+                let hv = subs[i];
+                if zjs_is_host_function(hv) != 0 {
+                    let hf = zjs_as_host_function(hv);
+                    if hf.prototype == NULL {
+                        let pp_v = ctx_new_object(ctx);
+                        hf.prototype = zjs_as_object(pp_v);
+                    }
+                    hf.prototype.proto = err_proto;
+                }
+                i = i + 1;
+            }
+        }
+    }
     ctx_register_host_function(ctx, (char*)"eval",           eval_ptr);
 
     // Stub globals for unsupported features. Their tests use the
