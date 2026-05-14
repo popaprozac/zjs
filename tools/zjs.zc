@@ -8,6 +8,7 @@
 
 import "../src/lib.zc";
 import "string.h" as libc_str;
+import "std/mem.zc"
 
 raw {
     #include <stdio.h>
@@ -321,7 +322,7 @@ fn run_file(path: char*) -> int {
         fclose(f);
     }
     if buf == NULL { eprintln "zjs: out of memory"; return 2; }
-    defer raw { free(buf); }
+    defer dealloc(buf);
 
     let ctx = zjs_new_context();
     if ctx == NULL { eprintln "zjs: failed to create context"; return 2; }

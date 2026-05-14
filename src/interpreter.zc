@@ -11,6 +11,7 @@
 import "./value.zc";
 import "./bytecode.zc";
 import "./context.zc";
+import "std/mem.zc"
 
 raw {
     #include <stdlib.h>
@@ -1079,7 +1080,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 // alloca — alloca inside a loop accumulates across
                 // iterations (no per-iteration free).
                 if ctx.invoke_arg_buffer == NULL {
-                    raw { ctx->invoke_arg_buffer = (ZjsValue*)malloc(CTX_INVOKE_ARG_CAP * sizeof(ZjsValue)); }
+                    ctx.invoke_arg_buffer = alloc_n<ZjsValue>((usize)CTX_INVOKE_ARG_CAP);
                     ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
                 }
                 let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
@@ -1099,7 +1100,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 // alloca — alloca inside a loop accumulates across
                 // iterations (no per-iteration free).
                 if ctx.invoke_arg_buffer == NULL {
-                    raw { ctx->invoke_arg_buffer = (ZjsValue*)malloc(CTX_INVOKE_ARG_CAP * sizeof(ZjsValue)); }
+                    ctx.invoke_arg_buffer = alloc_n<ZjsValue>((usize)CTX_INVOKE_ARG_CAP);
                     ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
                 }
                 let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
@@ -1152,7 +1153,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 // alloca — alloca inside a loop accumulates across
                 // iterations (no per-iteration free).
                 if ctx.invoke_arg_buffer == NULL {
-                    raw { ctx->invoke_arg_buffer = (ZjsValue*)malloc(CTX_INVOKE_ARG_CAP * sizeof(ZjsValue)); }
+                    ctx.invoke_arg_buffer = alloc_n<ZjsValue>((usize)CTX_INVOKE_ARG_CAP);
                     ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
                 }
                 let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
@@ -1172,7 +1173,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 // alloca — alloca inside a loop accumulates across
                 // iterations (no per-iteration free).
                 if ctx.invoke_arg_buffer == NULL {
-                    raw { ctx->invoke_arg_buffer = (ZjsValue*)malloc(CTX_INVOKE_ARG_CAP * sizeof(ZjsValue)); }
+                    ctx.invoke_arg_buffer = alloc_n<ZjsValue>((usize)CTX_INVOKE_ARG_CAP);
                     ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
                 }
                 let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
@@ -1225,7 +1226,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
 
             if zjs_is_function(callee) != 0 || zjs_is_closure(callee) != 0 {
                 if ctx.invoke_arg_buffer == NULL {
-                    raw { ctx->invoke_arg_buffer = (ZjsValue*)malloc(CTX_INVOKE_ARG_CAP * sizeof(ZjsValue)); }
+                    ctx.invoke_arg_buffer = alloc_n<ZjsValue>((usize)CTX_INVOKE_ARG_CAP);
                     ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
                 }
                 let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
