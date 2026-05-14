@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:08 UTC",
+    "when": "2026-05-14 18:11 UTC",
     "total": 4821,
-    "passed": 2477,
-    "failed": 318,
+    "passed": 2479,
+    "failed": 316,
     "skipped": 2026
   },
   "failures": [
@@ -616,16 +616,8 @@
       "reason": "zjs: throw: Test262Error: func(0, true) !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-21.js",
-      "reason": "zjs: throw: Test262Error: toStringAccessed !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-22.js",
       "reason": "zjs: throw: Test262Error: toStringAccessed"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-23.js",
-      "reason": "zjs: throw: Test262Error: valueOfAccessed !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-23.js",
@@ -645,7 +637,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-27.js",
-      "reason": "zjs: throw: Test262Error: stepThreeOccurs !== true"
+      "reason": "zjs: throw: Test262Error: stepFiveOccurs !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",

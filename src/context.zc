@@ -1877,6 +1877,13 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         let len_d: f64 = 0.0;
         let len_atom = ctx_intern_atom(ctx, (char*)"length", 6);
         let lkv = property_get(ctx, this_val, zjs_cell_from_ptr((void*)len_atom));
+        // ToLength(length) — ToNumber's ToPrimitive("number") hits
+        // valueOf first per spec. zjs_to_double on a bare object
+        // would have returned NaN.
+        if zjs_is_object(lkv) != 0 || zjs_is_array(lkv) != 0 {
+            lkv = zjs_to_primitive(ctx, lkv, false);
+            if ctx.pending_throw_active { return zjs_int32(-1); }
+        }
         len_d = zjs_to_double(lkv);
         raw { if (!isfinite(len_d) || len_d <= 0.0) len_d = 0.0; }
         let from_d: f64 = 0.0;
