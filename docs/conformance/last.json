@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:28 UTC",
+    "when": "2026-05-14 18:33 UTC",
     "total": 4821,
-    "passed": 2504,
-    "failed": 291,
+    "passed": 2508,
+    "failed": 287,
     "skipped": 2026
   },
   "failures": [
@@ -869,7 +869,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A11.js",
-      "reason": "zjs: throw: Test262Error: #1: String.prototype.indexOf.hasOwnProperty(\"length\") return true. Actual: undefined"
+      "reason": "zjs: throw: Test262Error: #2: String.prototype.indexOf.length === 1. Actual: 0"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T5.js",
@@ -884,16 +884,12 @@
       "reason": "zjs: throw: Test262Error: #1.2: var __FACTORY = String.prototype.indexOf; \"__instance = new __FACTORY\" throw a TypeError"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A8.js",
-      "reason": "zjs: throw: Test262Error: #0: String.prototype.indexOf.hasOwnProperty('length') return true. Actual: undefined"
-    },
-    {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A9.js",
-      "reason": "zjs: throw: Test262Error: #0: String.prototype.indexOf.hasOwnProperty('length') return true. Actual: undefined"
+      "reason": "zjs: throw: Test262Error: #2: delete String.prototype.indexOf.length; String.prototype.indexOf.hasOwnProperty('length') "
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A11.js",
-      "reason": "zjs: throw: Test262Error: #1: String.prototype.slice.hasOwnProperty(\"length\") return true. Actual: undefined"
+      "reason": "zjs: throw: Test262Error: #2: String.prototype.slice.length === 2. Actual: 0"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T15.js",
@@ -916,12 +912,8 @@
       "reason": "zjs: throw: Test262Error: #1: String.prototype.slice.prototype === undefined. Actual: [object Object]"
     },
     {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A8.js",
-      "reason": "zjs: throw: Test262Error: #0: String.prototype.slice.hasOwnProperty('length') return true. Actual: undefined"
-    },
-    {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A9.js",
-      "reason": "zjs: throw: Test262Error: #0: String.prototype.slice.hasOwnProperty('length') return true. Actual: undefined"
+      "reason": "zjs: throw: Test262Error: #2: delete String.prototype.slice.length; String.prototype.slice.hasOwnProperty('length') retu"
     },
     {
       "path": "test/built-ins/String/prototype/split/argument-is-regexp-a-z-and-instance-is-string-abc.js",
@@ -989,15 +981,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/split/checking-if-deleting-the-string-prototype-split-length-property-fails.js",
-      "reason": "zjs: throw: Test262Error: String.prototype.split.hasOwnProperty('length') must return true"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/checking-if-enumerating-the-string-prototype-split-length-property-fails.js",
-      "reason": "zjs: throw: Test262Error: String.prototype.split.hasOwnProperty('length') must return true"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/checking-string-prototype-split-length.js",
-      "reason": "zjs: throw: Test262Error: String.prototype.split.hasOwnProperty(\"length\") must return true"
+      "reason": "zjs: throw: Test262Error: The value of `!String.prototype.split.hasOwnProperty('length')` is true"
     },
     {
       "path": "test/built-ins/String/prototype/split/cstm-split-on-bigint-primitive.js",
