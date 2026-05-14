@@ -86,13 +86,16 @@ These are noted in phase docs but worth restating in one place:
   per-handler. Our interpreter's per-opcode handler body is also
   substantial (object dispatch, IC probe, GC awareness), which
   further dilutes the dispatch share. Conclusion: threading is real
-  but not the lever it once was. The work cost (rewriting ~900 lines
-  of dispatch in raw C inside one Zen-c function, or splitting into
-  N tail-called handlers) is high vs the expected ~5% ceiling.
-  Reconsider only after (a) frame-reuse / non-recursive interpreter
-  closes the fib-style call gap, OR (b) we move to a 4-byte
-  packed-per-opcode encoding (Hermes-style) where dispatch becomes
-  a larger share again.
+  but not the lever it once was *on Apple Silicon*.
+
+  **Cross-platform caveat**: zjs is meant to be platform-agnostic.
+  Branch-predictor quality varies a lot: older Intel/AMD x86, low-end
+  Cortex-A cores (Android, RPi, embedded), and similar likely show
+  much larger gains (15-30% range). When we start testing on real
+  non-Apple targets, re-run the dispatch microbenchmark there before
+  deciding whether to skip threading. The implementation cost
+  (rewriting ~900 lines of dispatch) is paid once but pays back on
+  every target the engine is ever embedded into.
 
 - **AOT bytecode bundles** (`.zbc` files, Hermes-style). Already on
   the roadmap. Trigger: iOS cold-start workloads where parse cost is
