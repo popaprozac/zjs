@@ -1233,16 +1233,26 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
                 while i < limit {
                     let nm = scratch[i];
                     if nm != NULL {
-                        // Already seen at a more-specific level?
-                        let seen: bool = false;
-                        let j: u32 = 0;
-                        while j < arr.length {
-                            if zjs_as_string(arr.elements[j]) == nm {
-                                seen = true; j = arr.length;
-                            } else { j = j + 1; }
+                        // Skip our internal hidden keys (`__zjs_*`) —
+                        // wrapper primitives, env chain, toString tag.
+                        // Spec equivalent is "non-enumerable own prop".
+                        let is_internal: bool = false;
+                        if nm.length >= 6 {
+                            let nd = nm.data;
+                            raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
                         }
-                        if !seen && !scratch_del[i] {
-                            array_set(arr, arr.length, zjs_cell_from_ptr((void*)nm));
+                        if !is_internal {
+                            // Already seen at a more-specific level?
+                            let seen: bool = false;
+                            let j: u32 = 0;
+                            while j < arr.length {
+                                if zjs_as_string(arr.elements[j]) == nm {
+                                    seen = true; j = arr.length;
+                                } else { j = j + 1; }
+                            }
+                            if !seen && !scratch_del[i] {
+                                array_set(arr, arr.length, zjs_cell_from_ptr((void*)nm));
+                            }
                         }
                     }
                     i = i + 1;
@@ -1505,8 +1515,17 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let i: u32 = 0;
     while i < limit {
         if scratch[i] != NULL {
-            arr.elements[out] = zjs_cell_from_ptr((void*)scratch[i]);
-            out = out + 1;
+            // Skip our internal `__zjs_*` keys (non-enumerable in spec).
+            let nm = scratch[i];
+            let is_internal: bool = false;
+            if nm.length >= 6 {
+                let nd = nm.data;
+                raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
+            }
+            if !is_internal {
+                arr.elements[out] = zjs_cell_from_ptr((void*)nm);
+                out = out + 1;
+            }
         }
         i = i + 1;
     }
@@ -2825,6 +2844,35 @@ fn host_object_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     else if zjs_is_function(this_val) != 0 || zjs_is_closure(this_val) != 0 || zjs_is_host_function(this_val) != 0 {
         label = (char*)"[object Function]"; label_len = 17;
     }
+    else if zjs_is_object(this_val) != 0 {
+        // Check for our internal tag (Math/JSON/Arguments) — gives
+        // `[object Math]` etc. Look up own prop only; the tag is
+        // never inherited so a fast own-slot check is enough.
+        let o = zjs_as_object(this_val);
+        let tag_atom = ctx_intern_atom(ctx, TAG_NAME_KEY, TAG_NAME_KEY_LEN);
+        let s = class_find_slot(o.cls, tag_atom);
+        if s >= 0 {
+            let tv = o.slots[(u32)s];
+            if zjs_is_string(tv) != 0 {
+                let tag_str = zjs_as_string(tv);
+                let prefix = (char*)"[object ";
+                let prefix_len: u32 = 8;
+                let suffix_len: u32 = 1;
+                let total = prefix_len + tag_str.length + suffix_len;
+                let buf: char* = NULL;
+                let td = tag_str.data;
+                let tn = tag_str.length;
+                raw {
+                    buf = (char*)malloc(total + 1);
+                    memcpy(buf, prefix, prefix_len);
+                    memcpy(buf + prefix_len, td, tn);
+                    buf[prefix_len + tn] = ']';
+                    buf[total] = 0;
+                }
+                return ctx_intern_string_take(ctx, buf, total);
+            }
+        }
+    }
     return ctx_intern_string(ctx, label, label_len);
 }
 
@@ -2943,6 +2991,14 @@ def WRAPPER_VALUE_KEY_LEN: u32 = 17;
 // immediate parent (Phase 3.9j).
 def OUTER_ENV_KEY: char* = (char*)"__zjs_outer_env__";
 def OUTER_ENV_KEY_LEN: u32 = 17;
+
+// Internal class-name tag used by Object.prototype.toString to return
+// `[object Math]` / `[object JSON]` / `[object Arguments]` for the
+// few specific built-in objects that have a fixed toString tag in the
+// spec but aren't a distinct cell type in our taxonomy. Symbol-keyed
+// `Symbol.toStringTag` will replace this once we have Symbols.
+def TAG_NAME_KEY: char* = (char*)"__zjs_tag__";
+def TAG_NAME_KEY_LEN: u32 = 11;
 
 // ECMA-262 §7.1.18 ToObject. Wraps primitives in their corresponding
 // wrapper objects (so `Array.prototype.X.call(true, ...)` sees an
@@ -3411,6 +3467,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // --- Math object with several method properties ---
     let math_v = ctx_new_object(ctx);
     let math   = zjs_as_object(math_v);
+    // Tag so Object.prototype.toString.call(Math) returns "[object Math]".
+    object_set(ctx, math, ctx_intern_atom(ctx, TAG_NAME_KEY, TAG_NAME_KEY_LEN),
+               ctx_intern_string(ctx, (char*)"Math", 4));
 
     let abs_ptr:   void* = NULL; raw { abs_ptr   = (void*)host_math_abs; }
     let floor_ptr: void* = NULL; raw { floor_ptr = (void*)host_math_floor; }
@@ -3538,6 +3597,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // --- JSON namespace (Phase 3.5b) ---
     let json_v = ctx_new_object(ctx);
     let json_o = zjs_as_object(json_v);
+    object_set(ctx, json_o, ctx_intern_atom(ctx, TAG_NAME_KEY, TAG_NAME_KEY_LEN),
+               ctx_intern_string(ctx, (char*)"JSON", 4));
     let stringify_ptr: void* = NULL; raw { stringify_ptr = (void*)host_json_stringify; }
     let parse_ptr:     void* = NULL; raw { parse_ptr     = (void*)host_json_parse; }
     object_set(ctx, json_o, ctx_intern_atom(ctx, (char*)"stringify", 9),
