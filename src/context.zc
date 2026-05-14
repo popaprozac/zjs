@@ -1523,19 +1523,35 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
     if zjs_is_object(props_v) == 0 { return obj_v; }
     let po = zjs_as_object(props_v);
 
-    // Walk props's own properties via the hidden-class chain.
+    // Walk props's own properties via the hidden-class chain. For each
+    // enumerable property, read its value via property_get so accessor
+    // getters fire (with `this = props_v`) — required by ECMA-262
+    // §20.1.2.3.1 step 5.b.
     let cls = po.cls;
     while cls != NULL && cls.parent != NULL {
         let name = cls.transition_name;
         let slot = cls.transition_slot;
-        let desc_value = po.slots[slot];
-        let dp_args: ZjsValue[3];
-        dp_args[0] = obj_v;
-        dp_args[1] = zjs_cell_from_ptr((void*)name);
-        dp_args[2] = desc_value;
-        let dp_p: ZjsValue* = NULL;
-        raw { dp_p = &dp_args[0]; }
-        host_object_define_property(ctx, dp_p, 3);
+        // Skip our internal hidden keys (`__zjs_*`).
+        let is_internal: bool = false;
+        if name.length >= 6 {
+            let nd = name.data;
+            raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
+        }
+        if !is_internal {
+            let key_v = zjs_cell_from_ptr((void*)name);
+            // Use property_get to invoke any getter with this=props_v.
+            let desc_value = property_get(ctx, props_v, key_v);
+            // defineProperty needs an actual descriptor object.
+            if zjs_is_object(desc_value) != 0 {
+                let dp_args: ZjsValue[3];
+                dp_args[0] = obj_v;
+                dp_args[1] = key_v;
+                dp_args[2] = desc_value;
+                let dp_p: ZjsValue* = NULL;
+                raw { dp_p = &dp_args[0]; }
+                host_object_define_property(ctx, dp_p, 3);
+            }
+        }
         cls = cls.parent;
     }
     return obj_v;

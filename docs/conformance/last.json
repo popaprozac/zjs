@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 14:52 UTC",
+    "when": "2026-05-14 15:26 UTC",
     "total": 4821,
-    "passed": 2390,
-    "failed": 405,
+    "passed": 2402,
+    "failed": 393,
     "skipped": 2026
   },
   "failures": [
@@ -1116,40 +1116,8 @@
       "reason": "zjs: throw: Test262Error: desc.hasOwnProperty(\"configurable\") !== true"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-10.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-11.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-12.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-13.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-14.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-15.js",
       "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-19.js",
-      "reason": "zjs: throw: Test262Error: newObj.hasOwnProperty(\"prop\") !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-24.js",
-      "reason": "zjs: throw: Test262Error: newObj.hasOwnProperty(\"prop\") !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-25.js",
-      "reason": "zjs: throw: Test262Error: newObj.hasOwnProperty(\"prop\") !== true"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-279.js",
@@ -1180,10 +1148,6 @@
       "reason": "zjs: throw: Test262Error: newObj.hasOwnProperty(\"prop\") !== true"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-4.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-5.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
@@ -1204,20 +1168,8 @@
       "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-7.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-71.js",
       "reason": "zjs: throw: Test262Error: accessed !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-8.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-9.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
       "path": "test/built-ins/JSON/parse/builtin.js",
