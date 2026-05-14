@@ -1663,6 +1663,54 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
 // Object.keys(obj) — array of own enumerable string keys, in insertion
 // order. We walk the hidden-class chain bottom-up; each transition_name
 // goes at transition_slot. Non-object inputs return an empty array.
+// Object.getOwnPropertyNames(o) — like Object.keys but spec-wise it
+// also lists non-enumerable own properties. We don't track
+// enumerability, so the two agree on plain objects + arrays. For a
+// host function we additionally surface `length` and `name` to match
+// the "built-in property order" tests (length before name).
+fn host_object_get_own_property_names(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return ctx_new_array(ctx, 0); }
+    let v = args[0];
+    if zjs_is_host_function(v) != 0 {
+        let hf = zjs_as_host_function(v);
+        let out_v = ctx_new_array(ctx, 4);
+        let out_arr = zjs_as_array(out_v);
+        let cursor: u32 = 0;
+        // Spec-mandated order: "length" then "name".
+        out_arr.elements[cursor] = ctx_intern_string(ctx, (char*)"length", 6);
+        cursor = cursor + 1;
+        out_arr.elements[cursor] = ctx_intern_string(ctx, (char*)"name", 4);
+        cursor = cursor + 1;
+        if hf.props != NULL {
+            let cls = hf.props.cls;
+            while cls != NULL && cls.parent != NULL {
+                let nm = cls.transition_name;
+                let slot = cls.transition_slot;
+                let is_internal: bool = false;
+                if nm.length >= 6 {
+                    let nd = nm.data;
+                    raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
+                }
+                if !is_internal && zjs_is_deleted(hf.props.slots[slot]) == 0 {
+                    if cursor >= out_arr.cap {
+                        // Grow if more than the default 4-prep got
+                        // exceeded — array_set handles growth for us.
+                        array_set(out_arr, cursor, zjs_cell_from_ptr((void*)nm));
+                    } else {
+                        out_arr.elements[cursor] = zjs_cell_from_ptr((void*)nm);
+                    }
+                    cursor = cursor + 1;
+                }
+                cls = cls.parent;
+            }
+        }
+        out_arr.length = cursor;
+        return out_v;
+    }
+    // Other receivers — fall through to Object.keys behavior.
+    return host_object_keys(ctx, args, argc);
+}
+
 fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 {
         return ctx_new_array(ctx, 0);
@@ -4853,6 +4901,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"defineProperties", dps_ptr));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getOwnPropertyDescriptor", 24),
                ctx_make_host_function(ctx, (char*)"getOwnPropertyDescriptor", gopd_ptr));
+    let gopn_ptr: void* = NULL; raw { gopn_ptr = (void*)host_object_get_own_property_names; }
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getOwnPropertyNames", 19),
+               ctx_make_host_function(ctx, (char*)"getOwnPropertyNames", gopn_ptr));
     // Extensibility introspection — we don't track frozen / sealed
     // state yet, so report every object as extensible / not frozen /
     // not sealed. Non-objects (primitives) get the spec's "true"

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:38 UTC",
+    "when": "2026-05-14 18:40 UTC",
     "total": 4821,
-    "passed": 2510,
-    "failed": 285,
+    "passed": 2513,
+    "failed": 282,
     "skipped": 2026
   },
   "failures": [
@@ -1088,10 +1088,6 @@
       "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
     },
     {
-      "path": "test/built-ins/Promise/property-order.js",
-      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
-    },
-    {
       "path": "test/built-ins/Promise/prototype/finally/subclass-species-constructor-reject-count.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -1128,16 +1124,8 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Promise/reject-function-property-order.js",
-      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
-    },
-    {
       "path": "test/built-ins/Promise/resolve/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-function-property-order.js",
-      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
     },
     {
       "path": "test/built-ins/Promise/try/ctx-ctor.js",
