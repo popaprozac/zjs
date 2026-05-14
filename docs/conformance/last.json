@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:23 UTC",
+    "when": "2026-05-14 18:26 UTC",
     "total": 4821,
-    "passed": 2499,
-    "failed": 296,
+    "passed": 2500,
+    "failed": 295,
     "skipped": 2026
   },
   "failures": [
@@ -778,10 +778,6 @@
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-17.js",
       "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/keys/15.2.3.14-3-4.js",
-      "reason": "zjs: throw: Test262Error: testArgs2(1, 2) !== true"
     },
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-12.js",

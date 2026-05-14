@@ -1664,7 +1664,30 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
 // order. We walk the hidden-class chain bottom-up; each transition_name
 // goes at transition_slot. Non-object inputs return an empty array.
 fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if argc == 0 || zjs_is_object(args[0]) == 0 {
+    if argc == 0 {
+        return ctx_new_array(ctx, 0);
+    }
+    // Array path: enumerate present indices as string keys. Holes and
+    // out-of-length slots stay invisible. Length itself is
+    // non-enumerable so it's omitted.
+    if zjs_is_array(args[0]) != 0 {
+        let a = zjs_as_array(args[0]);
+        let n = a.length;
+        let out_v = ctx_new_array(ctx, n);
+        let out_arr = zjs_as_array(out_v);
+        let i: u32 = 0;
+        while i < n {
+            let buf: char[16];
+            let blen: int = 0;
+            raw { blen = snprintf(&buf[0], 16, "%u", (unsigned)i); }
+            let bp: char* = NULL; raw { bp = &buf[0]; }
+            out_arr.elements[i] = ctx_intern_string(ctx, bp, (u32)blen);
+            i = i + 1;
+        }
+        out_arr.length = n;
+        return out_v;
+    }
+    if zjs_is_object(args[0]) == 0 {
         return ctx_new_array(ctx, 0);
     }
     let o = zjs_as_object(args[0]);
