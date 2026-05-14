@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 16:43 UTC",
+    "when": "2026-05-14 17:04 UTC",
     "total": 4821,
-    "passed": 2436,
-    "failed": 359,
+    "passed": 2438,
+    "failed": 357,
     "skipped": 2026
   },
   "failures": [
@@ -720,10 +720,6 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
-      "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A3.js",
-      "reason": "timeout"
-    },
-    {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A4_T1.js",
       "reason": "zjs: throw: Test262Error: #1: var obj = {}; obj.push = Array.prototype.push; obj.length = 4294967296; obj.push(\"x\", \"y\","
     },
@@ -794,10 +790,6 @@
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
       "reason": ""
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/length-near-integer-limit.js",
-      "reason": "timeout"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-3-21.js",

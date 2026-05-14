@@ -1833,10 +1833,25 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     let this_val = ctx.host_this;
     if argc == 0 { return zjs_int32(-1); }
     let needle = args[0];
+
     if zjs_is_array(this_val) != 0 {
         let arr = zjs_as_array(this_val);
-        let i: u32 = 0;
-        while i < arr.length {
+        let len = arr.length;
+        let from: u32 = 0;
+        if argc >= 2 {
+            let fi = zjs_to_double(args[1]);
+            raw { if (isnan(fi)) fi = 0; }
+            if fi < 0.0 {
+                let nfi = (f64)len + fi;
+                if nfi < 0.0 { from = 0; } else { from = (u32)nfi; }
+            } else if fi >= (f64)len {
+                return zjs_int32(-1);
+            } else {
+                from = (u32)fi;
+            }
+        }
+        let i: u32 = from;
+        while i < len {
             if zjs_strict_eq(arr.elements[i], needle) != 0 {
                 return zjs_int32((i32)i);
             }
@@ -1845,15 +1860,34 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         return zjs_int32(-1);
     }
     if zjs_is_object(this_val) != 0 {
+        // Generic-this: length may be > 2^32 (e.g. MAX_SAFE_INTEGER).
+        // Use a double counter so the spec range works, and honor
+        // fromIndex so callers near the limit can search a tiny window.
         let o = zjs_as_object(this_val);
-        let len = read_length_u32(ctx, this_val);
-        let i: u32 = 0;
-        while i < len {
-            let v = obj_get_indexed(ctx, o, i);
-            if zjs_strict_eq(v, needle) != 0 {
-                return zjs_int32((i32)i);
+        let len_d: f64 = 0.0;
+        let len_atom = ctx_intern_atom(ctx, (char*)"length", 6);
+        let lkv = property_get(ctx, this_val, zjs_cell_from_ptr((void*)len_atom));
+        len_d = zjs_to_double(lkv);
+        raw { if (!isfinite(len_d) || len_d <= 0.0) len_d = 0.0; }
+        let from_d: f64 = 0.0;
+        if argc >= 2 {
+            from_d = zjs_to_double(args[1]);
+            raw { if (isnan(from_d)) from_d = 0; }
+            if from_d < 0.0 {
+                from_d = len_d + from_d;
+                if from_d < 0.0 { from_d = 0.0; }
             }
-            i = i + 1;
+        }
+        if from_d >= len_d { return zjs_int32(-1); }
+        let i = from_d;
+        while i < len_d {
+            let idx_u: u32 = (u32)i;
+            let v = obj_get_indexed(ctx, o, idx_u);
+            if zjs_strict_eq(v, needle) != 0 {
+                if i <= 2147483647.0 { return zjs_int32((i32)i); }
+                return zjs_double(i);
+            }
+            i = i + 1.0;
         }
         return zjs_int32(-1);
     }

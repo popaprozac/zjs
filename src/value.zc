@@ -1010,6 +1010,11 @@ fn array_get(arr: ZjsArray*, idx: u32) -> ZjsValue {
 }
 
 fn array_set(arr: ZjsArray*, idx: u32, value: ZjsValue) -> void {
+    // Reject growths into unreasonable territory (spec says push at
+    // length=2^32-1 throws RangeError; we silently drop). The 64 Mi
+    // ceiling is chosen so the dense backing never demands a
+    // multi-GB realloc that would either OOM or hang clearing slots.
+    if idx >= 67108864 { return; }
     if idx >= arr.cap {
         let new_cap: u32 = if arr.cap == 0 { 4 } else { arr.cap };
         while new_cap <= idx { new_cap = new_cap * 2; }
