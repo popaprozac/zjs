@@ -31,6 +31,32 @@ struct GcRootFrame {
     reg_count: u32;
 }
 
+// Phase 3.9h scaffolding. The non-recursive-interpreter path doesn't
+// use these yet (only the helpers below populate them), but having
+// them in the struct lets the next phase swap in usage without
+// changing layout. See docs/phases/phase-3-9h-non-recursive-interpreter.md
+struct CallFrame {
+    f:                      Function*;
+    ip:                     usize;
+    regs_base:              u32;   // offset into ctx.reg_stack
+    reg_count:              u32;
+    return_dst:             u8;
+    saved_host_this:        ZjsValue;
+    saved_current_closure:  ZjsClosure*;
+    try_depth_at_entry:     u32;
+}
+
+// Phase 3.9h. Shared across all CallFrames once the migration lands —
+// each TryFrame carries the frame_index it lives in so unwinding can
+// pop above it without per-frame try arrays.
+struct CtxTryFrame {
+    frame_index: u32;
+    catch_ip:    usize;
+    catch_reg:   u8;
+}
+
+def CTX_MAX_TRY_DEPTH: u32 = 256;
+
 // Open-addressed hash-table entry. NULL `str` = empty slot.
 // We never delete atoms, so no tombstones needed.
 struct AtomEntry {
@@ -99,6 +125,22 @@ struct ZjsContext {
     root_cap:       u32;
     cells_since_gc: u32;              // allocations since last collection
     gc_threshold:   u32;              // run GC when cells_since_gc >= this
+
+    // --- Phase 3.9h scaffolding (unused until interpret() converts) ---
+    // Single contiguous register stack; CallFrames take slices.
+    reg_stack:        ZjsValue*;
+    reg_stack_top:    u32;
+    reg_stack_cap:    u32;
+
+    frames:           CallFrame*;
+    frame_count:      u32;
+    frame_cap:        u32;
+
+    // Shared try stack (replaces per-frame TryFrame[32] once migration
+    // lands). Sized once at first use up to CTX_MAX_TRY_DEPTH.
+    ctx_try_stack:    CtxTryFrame*;
+    ctx_try_depth:    u32;
+    ctx_try_cap:      u32;
 
     // --- Atom table (interned strings) ---
     // Open-addressed hash table, power-of-2 capacity. Used for
@@ -180,9 +222,15 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     }
     let cells = ctx.cells;
     let temp_roots = ctx.temp_roots;
+    let reg_stack = ctx.reg_stack;
+    let frames = ctx.frames;
+    let ctx_try_stack = ctx.ctx_try_stack;
     raw {
         free(cells);
         free(temp_roots);
+        free(reg_stack);
+        free(frames);
+        free(ctx_try_stack);
         free(ctx);
     }
 }
@@ -257,6 +305,144 @@ fn ctx_push_root_frame(ctx: ZjsContext*, regs: ZjsValue*, reg_count: u32) -> voi
 
 fn ctx_pop_root_frame(ctx: ZjsContext*) -> void {
     if ctx.root_depth > 0 { ctx.root_depth = ctx.root_depth - 1; }
+}
+
+// =====================================================================
+// Phase 3.9h — non-recursive interpreter scaffolding.
+//
+// These helpers manage the explicit CallFrame stack + shared register
+// stack that the next phase will use. They're correct and tested via
+// build coverage now, but not yet wired into interpret() — that swap
+// is Phase B. Keeping the scaffolding under its own dead-code path
+// means we can land it as a no-behavior-change commit and bisect cleanly.
+// =====================================================================
+
+// Reserve room for `n` more ZjsValue slots on the register stack and
+// return the base offset. Grows the stack geometrically. Caller is
+// responsible for initializing the reserved slots (to undefined, or
+// to actual arg values).
+fn reg_stack_reserve(ctx: ZjsContext*, n: u32) -> u32 {
+    let needed: u32 = ctx.reg_stack_top + n;
+    if needed > ctx.reg_stack_cap {
+        let new_cap: u32 = if ctx.reg_stack_cap == 0 { 256 } else { ctx.reg_stack_cap * 2 };
+        while new_cap < needed { new_cap = new_cap * 2; }
+        let old = ctx.reg_stack;
+        let new_arr: ZjsValue* = NULL;
+        raw { new_arr = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
+        ctx.reg_stack = new_arr;
+        ctx.reg_stack_cap = new_cap;
+    }
+    let base = ctx.reg_stack_top;
+    ctx.reg_stack_top = needed;
+    return base;
+}
+
+// Release the top `n` slots from the register stack.
+fn reg_stack_release(ctx: ZjsContext*, n: u32) -> void {
+    if n > ctx.reg_stack_top {
+        ctx.reg_stack_top = 0;
+    } else {
+        ctx.reg_stack_top = ctx.reg_stack_top - n;
+    }
+}
+
+// Push a CallFrame for `f`. Reserves `f.register_count` slots on the
+// register stack and copies the first `argc` args into them; remaining
+// slots are initialized to undefined (load-bearing — GC walks the
+// whole window). Returns the new frame's index.
+fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, ret_dst: u8) -> u32 {
+    if ctx.frame_count >= ctx.frame_cap {
+        let new_cap: u32 = if ctx.frame_cap == 0 { 64 } else { ctx.frame_cap * 2 };
+        let old = ctx.frames;
+        let new_arr: CallFrame* = NULL;
+        raw { new_arr = (CallFrame*)realloc(old, new_cap * sizeof(CallFrame)); }
+        ctx.frames = new_arr;
+        ctx.frame_cap = new_cap;
+    }
+    let reg_count: u32 = f.register_count;
+    let base = reg_stack_reserve(ctx, reg_count);
+
+    // Copy args, init the rest to undefined.
+    let copy_count: u32 = if argc < f.param_count { argc } else { f.param_count };
+    let i: u32 = 0;
+    while i < copy_count {
+        ctx.reg_stack[base + i] = args[i];
+        i = i + 1;
+    }
+    let undef: ZjsValue = zjs_undefined();
+    let j: u32 = i;
+    while j < reg_count {
+        ctx.reg_stack[base + j] = undef;
+        j = j + 1;
+    }
+
+    let idx = ctx.frame_count;
+    ctx.frames[idx].f = f;
+    ctx.frames[idx].ip = 0;
+    ctx.frames[idx].regs_base = base;
+    ctx.frames[idx].reg_count = reg_count;
+    ctx.frames[idx].return_dst = ret_dst;
+    ctx.frames[idx].saved_host_this = ctx.host_this;
+    ctx.frames[idx].saved_current_closure = ctx.current_closure;
+    ctx.frames[idx].try_depth_at_entry = ctx.ctx_try_depth;
+    ctx.frame_count = ctx.frame_count + 1;
+    return idx;
+}
+
+// Pop the top CallFrame. Restores ctx.host_this and ctx.current_closure
+// from the popped frame's saved_* fields, and shrinks the register
+// stack by the frame's reg_count. Pops any try-frames the frame owned.
+// Returns the popped frame's return_dst (so the caller can write the
+// return value into its own regs).
+fn pop_call_frame(ctx: ZjsContext*) -> u8 {
+    if ctx.frame_count == 0 { return 0; }
+    let idx = ctx.frame_count - 1;
+    let ret_dst = ctx.frames[idx].return_dst;
+    let reg_count = ctx.frames[idx].reg_count;
+    let saved_this = ctx.frames[idx].saved_host_this;
+    let saved_cl   = ctx.frames[idx].saved_current_closure;
+    let try_at_entry = ctx.frames[idx].try_depth_at_entry;
+
+    ctx.host_this = saved_this;
+    ctx.current_closure = saved_cl;
+    if ctx.ctx_try_depth > try_at_entry {
+        ctx.ctx_try_depth = try_at_entry;
+    }
+    reg_stack_release(ctx, reg_count);
+    ctx.frame_count = idx;
+    return ret_dst;
+}
+
+// Pop frames until frame_count == target. Used on throw unwinding and
+// when interpret() returns to its entry depth.
+fn pop_call_frames_to(ctx: ZjsContext*, target: u32) -> void {
+    while ctx.frame_count > target {
+        pop_call_frame(ctx);
+    }
+}
+
+// Push a try frame on the shared context try stack. Lazily allocates.
+fn ctx_try_push(ctx: ZjsContext*, catch_ip: usize, catch_reg: u8) -> bool {
+    if ctx.ctx_try_depth >= CTX_MAX_TRY_DEPTH { return false; }
+    if ctx.ctx_try_stack == NULL {
+        let new_arr: CtxTryFrame* = NULL;
+        raw { new_arr = (CtxTryFrame*)calloc(CTX_MAX_TRY_DEPTH, sizeof(CtxTryFrame)); }
+        ctx.ctx_try_stack = new_arr;
+        ctx.ctx_try_cap = CTX_MAX_TRY_DEPTH;
+    }
+    let i = ctx.ctx_try_depth;
+    let cur_frame = if ctx.frame_count > 0 { ctx.frame_count - 1 } else { 0 };
+    ctx.ctx_try_stack[i].frame_index = cur_frame;
+    ctx.ctx_try_stack[i].catch_ip = catch_ip;
+    ctx.ctx_try_stack[i].catch_reg = catch_reg;
+    ctx.ctx_try_depth = ctx.ctx_try_depth + 1;
+    return true;
+}
+
+fn ctx_try_pop(ctx: ZjsContext*) -> void {
+    if ctx.ctx_try_depth > 0 {
+        ctx.ctx_try_depth = ctx.ctx_try_depth - 1;
+    }
 }
 
 // Mark a single value's reachable graph. Idempotent — already-marked
@@ -480,7 +666,7 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     }
     // Last uncaught error (so the C consumer can still inspect it)
     gc_mark_value(ctx.last_error);
-    // Each active call frame
+    // Each active call frame (current recursive model)
     let j: u32 = 0;
     while j < ctx.root_depth {
         let frame = ctx.root_frames[j];
@@ -491,6 +677,11 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         }
         j = j + 1;
     }
+    // Phase 3.9h: shared reg_stack + per-frame saved values. Wired
+    // into gc_mark_roots in Phase B once interpret() starts using
+    // them. For now (Phase A scaffolding), reg_stack_top and
+    // frame_count are always 0 — the helpers exist but no caller
+    // populates them. Skip the loop overhead per GC cycle.
     // Interned atoms — they live for the context's lifetime.
     let a: u32 = 0;
     while a < ctx.atom_cap {
