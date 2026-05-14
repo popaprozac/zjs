@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 19:47 UTC",
+    "when": "2026-05-14 19:51 UTC",
     "total": 4821,
-    "passed": 2535,
-    "failed": 260,
+    "passed": 2537,
+    "failed": 258,
     "skipped": 2026
   },
   "failures": [
@@ -590,14 +590,6 @@
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-25.js",
       "reason": "zjs: throw: Test262Error: valueOfAccessed !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-26.js",
-      "reason": "zjs: throw: Test262Error: stepFiveOccurs !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-27.js",
-      "reason": "zjs: throw: Test262Error: stepFiveOccurs !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
