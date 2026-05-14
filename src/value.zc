@@ -455,7 +455,25 @@ fn zjs_to_primitive_for_eq(v: ZjsValue) -> ZjsValue {
     return v;
 }
 
+// ECMA-262 §7.2.14 Abstract Relational Comparison. If both operands
+// are strings, lexicographic UTF-16 (we use byte order — close enough
+// for ASCII tests; full Unicode collation is deferred). Otherwise
+// numeric comparison via ToNumber.
 fn zjs_cmp_lt(a: ZjsValue, b: ZjsValue) -> int {
+    if zjs_is_string(a) != 0 && zjs_is_string(b) != 0 {
+        let sa = zjs_as_string(a);
+        let sb = zjs_as_string(b);
+        let n = if sa.length < sb.length { sa.length } else { sb.length };
+        let sa_d = sa.data;
+        let sb_d = sb.data;
+        let cmp: int = 0;
+        raw { cmp = memcmp(sa_d, sb_d, n); }
+        if cmp < 0 { return 1; }
+        if cmp > 0 { return 0; }
+        // Equal prefixes — shorter string is less.
+        if sa.length < sb.length { return 1; }
+        return 0;
+    }
     let af = zjs_to_double(a);
     let bf = zjs_to_double(b);
     let is_nan: int = 0;
@@ -466,6 +484,19 @@ fn zjs_cmp_lt(a: ZjsValue, b: ZjsValue) -> int {
 }
 
 fn zjs_cmp_le(a: ZjsValue, b: ZjsValue) -> int {
+    if zjs_is_string(a) != 0 && zjs_is_string(b) != 0 {
+        let sa = zjs_as_string(a);
+        let sb = zjs_as_string(b);
+        let n = if sa.length < sb.length { sa.length } else { sb.length };
+        let sa_d = sa.data;
+        let sb_d = sb.data;
+        let cmp: int = 0;
+        raw { cmp = memcmp(sa_d, sb_d, n); }
+        if cmp < 0 { return 1; }
+        if cmp > 0 { return 0; }
+        if sa.length <= sb.length { return 1; }
+        return 0;
+    }
     let af = zjs_to_double(a);
     let bf = zjs_to_double(b);
     let is_nan: int = 0;

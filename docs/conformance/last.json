@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 07:10 UTC",
+    "when": "2026-05-14 07:15 UTC",
     "total": 4144,
-    "passed": 2237,
-    "failed": 376,
+    "passed": 2247,
+    "failed": 366,
     "skipped": 1531
   },
   "failures": [
@@ -180,20 +180,12 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/less-than/S11.8.1_A3.2_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #6: \"1\" < \"x\" === true"
-    },
-    {
       "path": "test/language/expressions/less-than/S11.8.1_A4.11.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"x\" < \"x \") === true"
+      "reason": "zjs: throw: Test262Error: #4: (\"abcd\" < abc\\u0064\") === false"
     },
     {
       "path": "test/language/expressions/less-than/S11.8.1_A4.12_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"xx\" < \"xy\") === true"
-    },
-    {
-      "path": "test/language/expressions/less-than/S11.8.1_A4.12_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"0\" < \"x\") !== true"
+      "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" < \"\\uFFFF\") === true"
     },
     {
       "path": "test/language/expressions/greater-than/S11.8.2_A1.js",
@@ -208,20 +200,12 @@
       "reason": "zjs: throw: Test262Error: #1.3: Failed with: [object Object]"
     },
     {
-      "path": "test/language/expressions/greater-than/S11.8.2_A3.2_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #5: \"x\" > \"1\" === true"
-    },
-    {
       "path": "test/language/expressions/greater-than/S11.8.2_A4.11.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"x \" > \"x\") === true"
+      "reason": "zjs: throw: Test262Error: #4: (\"abc\\u0064\" > abc\") === false"
     },
     {
       "path": "test/language/expressions/greater-than/S11.8.2_A4.12_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"xy\" > \"xx\") === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than/S11.8.2_A4.12_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"x\" > \"0\") !== true"
+      "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" > \"\\uFFFF\") === false"
     },
     {
       "path": "test/language/expressions/less-than-or-equal/S11.8.3_A1.js",
@@ -236,24 +220,12 @@
       "reason": "zjs: throw: Test262Error: #1.3: Failed with: [object Object]"
     },
     {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A3.2_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #6: \"1\" <= \"x\" === true"
-    },
-    {
       "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.10.js",
       "reason": "zjs: throw: Test262Error: #4: (\"abc\\u0064\" <= abcd\") === true"
     },
     {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.11.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"x\" <= \"x\") === true"
-    },
-    {
       "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.12_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"xx\" <= \"xy\") === true"
-    },
-    {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.12_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"0\" <= \"x\") !== true"
+      "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" <= \"\\uFFFF\") === true"
     },
     {
       "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A1.js",
@@ -268,24 +240,12 @@
       "reason": "zjs: throw: Test262Error: #1.3: var x = { valueOf: function () { throw \"x\"; } }; var y = { valueOf: function () { throw "
     },
     {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A3.2_T1.1.js",
-      "reason": "zjs: throw: Test262Error: #5: \"x\" >= \"1\" === true"
-    },
-    {
       "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.10.js",
       "reason": "zjs: throw: Test262Error: #4: (\"abcd\" >= abc\\u0064\") === true"
     },
     {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.11.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"x\" >= \"x\") === true"
-    },
-    {
       "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.12_T1.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"xy\" >= \"xx\") === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.12_T2.js",
-      "reason": "zjs: throw: Test262Error: #1: (\"x\" >= \"0\") !== true"
+      "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" >= \"\\uFFFF\") === false"
     },
     {
       "path": "test/language/expressions/logical-and/S11.11.1_A1.js",
