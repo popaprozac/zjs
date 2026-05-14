@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 06:02 UTC",
+    "when": "2026-05-14 06:08 UTC",
     "total": 4144,
-    "passed": 2152,
-    "failed": 461,
+    "passed": 2162,
+    "failed": 451,
     "skipped": 1531
   },
   "failures": [
@@ -338,10 +338,6 @@
     {
       "path": "test/language/expressions/unary-plus/S9.3_A4.2_T2.js",
       "reason": "zjs: throw: Test262Error: #3.2: +(-0) === -0. Actual: +0"
-    },
-    {
-      "path": "test/language/expressions/typeof/get-value.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/expressions/conditional/S11.12_A1.js",
@@ -900,10 +896,6 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
-      "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A2_T3.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A3.js",
       "reason": "timeout"
     },
@@ -916,24 +908,12 @@
       "reason": "zjs: throw: Test262Error: #1: var obj = {}; obj.push = Array.prototype.push; obj.length = 4294967295; obj.push(\"x\", \"y\","
     },
     {
-      "path": "test/built-ins/Array/prototype/push/set-length-array-is-frozen.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/push/set-length-array-length-is-non-writable.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A2_T2.js",
       "reason": "zjs: throw: Test262Error: #4: var obj = {}; obj.length = Number.POSITIVE_INFINITY; obj.pop = Array.prototype.pop; obj.po"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A2_T3.js",
       "reason": "zjs: throw: Test262Error: #12: var obj = {}; obj.length = new Number(2); obj.pop = Array.prototype.pop; obj.pop(); obj.l"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A2_T4.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A3_T1.js",
@@ -950,14 +930,6 @@
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A4_T2.js",
       "reason": "zjs: throw: Test262Error: #2: Array.prototype[1] = -1; x = [0,1]; x.length = 2; x.pop(); x[1] === -1. Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/pop/set-length-array-is-frozen.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/pop/set-length-array-length-is-non-writable.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-2-17.js",
@@ -1820,19 +1792,7 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/String/prototype/split/separator-undef-limit-custom.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/separator-undef-limit-zero.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/String/prototype/split/transferred-to-number-separator-override-tostring-returns-regexp.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/valueOf-is-called-for-limit-argument.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {

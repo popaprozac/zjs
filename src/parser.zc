@@ -1612,6 +1612,25 @@ fn parse_object(p: Parser*) -> AstNode* {
             value = parse_assignment(p);
             if value == NULL { break; }
             prop_end = value.end;
+        } else if peek_kind(p) == TokenKind::LParen {
+            // Method shorthand: { foo() {} } desugars to { foo: function foo() {} }.
+            // ECMA-262 §13.2.5 MethodDefinition.
+            if !expect_kind(p, TokenKind::LParen) { break; }
+            let params = parse_param_list(p);
+            if !expect_kind(p, TokenKind::RParen) { break; }
+            if peek_kind(p) != TokenKind::LBrace { p.had_error = true; break; }
+            p.function_depth = p.function_depth + 1;
+            let body = parse_block(p);
+            p.function_depth = p.function_depth - 1;
+            if body == NULL { break; }
+            let method_fn = new_node(&p.tracker, NodeKind::FunctionExpr, key_tok.start, body.end);
+            method_fn.name_start  = key_tok.start;
+            method_fn.name_length = key_tok.length;
+            method_fn.left = body;
+            method_fn.children = params.arr;
+            method_fn.children_count = params.count;
+            value = method_fn;
+            prop_end = body.end;
         } else {
             // Shorthand: { x } = { x: x }. Only valid if key is an Identifier.
             if key_tok.kind != TokenKind::Identifier {
