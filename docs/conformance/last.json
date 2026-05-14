@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 05:59 UTC",
+    "when": "2026-05-14 06:02 UTC",
     "total": 4144,
-    "passed": 2128,
-    "failed": 485,
+    "passed": 2152,
+    "failed": 461,
     "skipped": 1531
   },
   "failures": [
@@ -684,18 +684,6 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
-      "path": "test/language/statements/for-of/Array.prototype.entries.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/Array.prototype.keys.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/array.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/language/statements/for-of/head-const-bound-names-in-stmt.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
@@ -1008,44 +996,8 @@
       "reason": "zjs: throw: Test262Error: stepThreeOccurs !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-10.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-14.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
       "reason": ""
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-8.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-1.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-21.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-7.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-9.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-iii-2.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/length-near-integer-limit.js",
@@ -1074,38 +1026,6 @@
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-1-s.js",
       "reason": "zjs: throw: Test262Error: innerThisCorrect !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-1.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-9.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-11.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-5.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-7.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-16.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-22.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-8.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-iii-4.js",
@@ -1292,16 +1212,12 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-1.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-10.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-11.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-12.js",
@@ -1337,7 +1253,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-5.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-6.js",
@@ -1345,7 +1261,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-7.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-8.js",
@@ -1381,7 +1297,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-16.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-17.js",
@@ -1404,10 +1320,6 @@
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-22.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-28.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
@@ -1417,7 +1329,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-8.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-9.js",
@@ -1448,12 +1360,8 @@
       "reason": "zjs: throw: Test262Error: Property not found"
     },
     {
-      "path": "test/built-ins/Object/keys/15.2.3.14-5-13.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-14.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: Property not found"
     },
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-a-1.js",
@@ -1470,10 +1378,6 @@
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-a-4.js",
       "reason": "zjs: throw: Test262Error: desc.hasOwnProperty(\"configurable\") !== true"
-    },
-    {
-      "path": "test/built-ins/Object/keys/15.2.3.14-6-2.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-10.js",

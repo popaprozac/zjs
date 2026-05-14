@@ -1549,13 +1549,22 @@ fn parse_array(p: Parser*) -> AstNode* {
     }
 
     while peek_kind(p) != TokenKind::RBracket && peek_kind(p) != TokenKind::Eof {
-        let elem = parse_assignment(p);
-        if elem == NULL { break; }
+        // Elision: `,` in place of an element means an empty slot
+        // (spec calls this an "array hole"). It compiles to undefined.
+        let elem: AstNode* = NULL;
+        if peek_kind(p) == TokenKind::Comma {
+            // Don't consume the comma yet — fall through to the
+            // separator check below.
+            elem = new_node(&p.tracker, NodeKind::UndefinedExpr,
+                            peek(p).start, peek(p).start);
+        } else {
+            elem = parse_assignment(p);
+            if elem == NULL { break; }
+        }
         if count >= cap {
             cap = cap * 2;
-            raw {
-                buf = (AstNode**)realloc(buf, cap * sizeof(AstNode*));
-            }
+            let old_buf = buf;
+            raw { buf = (AstNode**)realloc(old_buf, cap * sizeof(AstNode*)); }
         }
         buf[count] = elem;
         count = count + 1;
