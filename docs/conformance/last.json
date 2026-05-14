@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 19:51 UTC",
+    "when": "2026-05-14 20:09 UTC",
     "total": 4821,
-    "passed": 2537,
-    "failed": 258,
+    "passed": 2538,
+    "failed": 257,
     "skipped": 2026
   },
   "failures": [
@@ -13,11 +13,7 @@
     },
     {
       "path": "test/language/expressions/addition/S11.6.1_A2.2_T3.js",
-      "reason": "zjs: throw: Test262Error: #1: function f1() {return 0;}; f1 + 1 === f1.toString() + 1"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A3.2_T1.2.js",
-      "reason": "zjs: throw: Test262Error: #1: ({} + function(){return 1}) === ({}.toString() + function(){return 1}.toString()). Actual:"
+      "reason": "zjs: throw: Test262Error: #2: f1unction f2() {return 0;} f2.valueOf = function() {return 1;}; 1 + f2 === 1 + 1. Actual: "
     },
     {
       "path": "test/language/expressions/subtraction/S11.6.2_A1.js",

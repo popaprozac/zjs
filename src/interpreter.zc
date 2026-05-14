@@ -162,7 +162,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     }
 
     // Function: .prototype lazy-creates an object on first read.
-    // Also serves .call and .apply via the cached host helpers.
+    // Also serves .call and .apply via the cached host helpers, plus
+    // Object.prototype methods (toString / valueOf / hasOwnProperty).
     if zjs_is_function(obj) != 0 {
         if zjs_is_string(key) != 0 {
             let ks = zjs_as_string(key);
@@ -188,6 +189,17 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
             if is_call  != 0 { return ctx.fn_call_v; }
             if is_apply != 0 { return ctx.fn_apply_v; }
+            if ctx.object_proto != NULL {
+                let cur = ctx.object_proto;
+                while cur != NULL {
+                    let s = class_find_slot(cur.cls, ks);
+                    if s >= 0 {
+                        let v = cur.slots[(u32)s];
+                        if zjs_is_deleted(v) == 0 { return v; }
+                    }
+                    cur = cur.proto;
+                }
+            }
         }
         return zjs_undefined();
     }
@@ -205,6 +217,17 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
             if is_call  != 0 { return ctx.fn_call_v; }
             if is_apply != 0 { return ctx.fn_apply_v; }
+            if ctx.object_proto != NULL {
+                let cur = ctx.object_proto;
+                while cur != NULL {
+                    let s = class_find_slot(cur.cls, ks);
+                    if s >= 0 {
+                        let v = cur.slots[(u32)s];
+                        if zjs_is_deleted(v) == 0 { return v; }
+                    }
+                    cur = cur.proto;
+                }
+            }
         }
         return zjs_undefined();
     }
@@ -605,8 +628,15 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             // coercion, concatenate; else numeric add.
             let av = regs[inst.b];
             let bv = regs[inst.c];
-            if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if zjs_is_object(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            // ToPrimitive on any object-like operand (object / array /
+            // function / closure / host function). zjs_to_primitive
+            // short-circuits primitives.
+            if zjs_is_object(av) != 0 || zjs_is_array(av) != 0
+               || zjs_is_function(av) != 0 || zjs_is_closure(av) != 0
+               || zjs_is_host_function(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+            if zjs_is_object(bv) != 0 || zjs_is_array(bv) != 0
+               || zjs_is_function(bv) != 0 || zjs_is_closure(bv) != 0
+               || zjs_is_host_function(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
             if zjs_is_string(av) != 0 || zjs_is_string(bv) != 0 {
                 regs[inst.a] = zjs_string_concat(ctx, av, bv);
             } else {
@@ -614,8 +644,8 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             }
         } else if op == Op::Sub {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if zjs_is_object(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
             regs[inst.a] = zjs_arith_sub(av, bv);
         } else if op == Op::AddImm {
             // Fused int32 + i8 fast path; falls back to full Add semantics
@@ -636,7 +666,9 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 // Slow fallback: re-do as a real Add (handles strings,
                 // objects, doubles, etc.).
                 let bv = zjs_int32(imm);
-                if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if zjs_is_object(av) != 0 || zjs_is_array(av) != 0
+                   || zjs_is_function(av) != 0 || zjs_is_closure(av) != 0
+                   || zjs_is_host_function(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
                 if zjs_is_string(av) != 0 {
                     regs[inst.a] = zjs_string_concat(ctx, av, bv);
                 } else {
@@ -658,7 +690,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 }
             } else {
                 let bv = zjs_int32(imm);
-                if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
                 regs[inst.a] = zjs_arith_sub(av, bv);
             }
         } else if op == Op::CmpLtImm {
@@ -668,7 +700,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 regs[inst.a] = zjs_bool(if zjs_as_int32(av) < imm { 1 } else { 0 });
             } else {
                 let bv = zjs_int32(imm);
-                if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
                 regs[inst.a] = zjs_bool(zjs_cmp_lt(av, bv));
             }
         } else if op == Op::CmpLeImm {
@@ -678,7 +710,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 regs[inst.a] = zjs_bool(if zjs_as_int32(av) <= imm { 1 } else { 0 });
             } else {
                 let bv = zjs_int32(imm);
-                if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
                 regs[inst.a] = zjs_bool(zjs_cmp_le(av, bv));
             }
         } else if op == Op::CmpGtImm {
@@ -688,7 +720,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 regs[inst.a] = zjs_bool(if zjs_as_int32(av) > imm { 1 } else { 0 });
             } else {
                 let bv = zjs_int32(imm);
-                if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
                 // a > b is `b < a` (CmpGt's actual semantics — order swap).
                 regs[inst.a] = zjs_bool(zjs_cmp_lt(bv, av));
             }
@@ -699,28 +731,28 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 regs[inst.a] = zjs_bool(if zjs_as_int32(av) >= imm { 1 } else { 0 });
             } else {
                 let bv = zjs_int32(imm);
-                if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+                if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
                 regs[inst.a] = zjs_bool(zjs_cmp_le(bv, av));
             }
         } else if op == Op::Mul {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if zjs_is_object(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
             regs[inst.a] = zjs_arith_mul(av, bv);
         } else if op == Op::Div {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if zjs_is_object(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
             regs[inst.a] = zjs_arith_div(av, bv);
         } else if op == Op::Mod {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if zjs_is_object(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
             regs[inst.a] = zjs_arith_mod(av, bv);
         } else if op == Op::Pow {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if zjs_is_object(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
             regs[inst.a] = zjs_arith_pow(av, bv);
 
         // --- bitwise --------------------------------------------
@@ -774,29 +806,29 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             regs[inst.a] = zjs_bool(if eq != 0 { 0 } else { 1 });
         } else if op == Op::CmpLt {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if zjs_is_object(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
             regs[inst.a] = zjs_bool(zjs_cmp_lt(av, bv));
         } else if op == Op::CmpLe {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if zjs_is_object(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
             regs[inst.a] = zjs_bool(zjs_cmp_le(av, bv));
         } else if op == Op::CmpGt {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if zjs_is_object(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
             regs[inst.a] = zjs_bool(zjs_cmp_lt(bv, av));
         } else if op == Op::CmpGe {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_object(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
-            if zjs_is_object(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
+            if is_object_like(av) != 0 { av = zjs_to_primitive(ctx, av, false); }
+            if is_object_like(bv) != 0 { bv = zjs_to_primitive(ctx, bv, false); }
             regs[inst.a] = zjs_bool(zjs_cmp_le(bv, av));
 
         // --- unary ----------------------------------------------
         } else if op == Op::Neg {
             let v = regs[inst.b];
-            if zjs_is_object(v) != 0 { v = zjs_to_primitive(ctx, v, false); }
+            if is_object_like(v) != 0 { v = zjs_to_primitive(ctx, v, false); }
             regs[inst.a] = zjs_arith_neg(v);
         } else if op == Op::BitNot {
             regs[inst.a] = zjs_bit_not(regs[inst.b]);
@@ -1634,8 +1666,30 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
 // Returns input unchanged if it's already primitive. If neither
 // valueOf nor toString returns a primitive, returns undefined
 // (spec says TypeError; MVP falls back).
+// True if `v` is any kind of object reference that requires ToPrimitive
+// before numeric / string-comparison coercion: plain objects, arrays,
+// and callable values (Function / Closure / HostFunction). Primitives
+// (numbers, strings, bool, null, undefined) return 0.
+fn is_object_like(v: ZjsValue) -> int {
+    if zjs_is_object(v) != 0 { return 1; }
+    if zjs_is_array(v) != 0 { return 1; }
+    if zjs_is_function(v) != 0 { return 1; }
+    if zjs_is_closure(v) != 0 { return 1; }
+    if zjs_is_host_function(v) != 0 { return 1; }
+    return 0;
+}
+
 fn zjs_to_primitive(ctx: ZjsContext*, v: ZjsValue, prefer_string: bool) -> ZjsValue {
-    if zjs_is_object(v) == 0 { return v; }
+    // Objects, arrays, and callables (Function / Closure / HostFunction)
+    // all go through the toString/valueOf coercion dance per spec.
+    // Primitives short-circuit.
+    let is_objy: int = 0;
+    if zjs_is_object(v) != 0 || zjs_is_array(v) != 0
+       || zjs_is_function(v) != 0 || zjs_is_closure(v) != 0
+       || zjs_is_host_function(v) != 0 {
+        is_objy = 1;
+    }
+    if is_objy == 0 { return v; }
 
     let valueOf_atom  = ctx_intern_atom(ctx, (char*)"valueOf",  7);
     let toString_atom = ctx_intern_atom(ctx, (char*)"toString", 8);
@@ -1648,13 +1702,21 @@ fn zjs_to_primitive(ctx: ZjsContext*, v: ZjsValue, prefer_string: bool) -> ZjsVa
     if zjs_is_function(m1) != 0 || zjs_is_closure(m1) != 0 || zjs_is_host_function(m1) != 0 {
         let r1 = zjs_call_value_with_this(ctx, m1, v, argv, 0);
         if ctx.pending_throw_active { return zjs_undefined(); }
-        if zjs_is_object(r1) == 0 && zjs_is_array(r1) == 0 { return r1; }
+        let r1_objy: int = 0;
+        if zjs_is_object(r1) != 0 || zjs_is_array(r1) != 0
+           || zjs_is_function(r1) != 0 || zjs_is_closure(r1) != 0
+           || zjs_is_host_function(r1) != 0 { r1_objy = 1; }
+        if r1_objy == 0 { return r1; }
     }
     let m2 = property_get(ctx, v, zjs_cell_from_ptr((void*)second_atom));
     if zjs_is_function(m2) != 0 || zjs_is_closure(m2) != 0 || zjs_is_host_function(m2) != 0 {
         let r2 = zjs_call_value_with_this(ctx, m2, v, argv, 0);
         if ctx.pending_throw_active { return zjs_undefined(); }
-        if zjs_is_object(r2) == 0 && zjs_is_array(r2) == 0 { return r2; }
+        let r2_objy: int = 0;
+        if zjs_is_object(r2) != 0 || zjs_is_array(r2) != 0
+           || zjs_is_function(r2) != 0 || zjs_is_closure(r2) != 0
+           || zjs_is_host_function(r2) != 0 { r2_objy = 1; }
+        if r2_objy == 0 { return r2; }
     }
     // ECMA-262 §7.1.1 step 8: neither method returned a primitive.
     // Raise a TypeError via the pending-throw bridge; the calling op

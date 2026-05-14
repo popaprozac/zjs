@@ -5239,6 +5239,55 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
             if zjs_is_object(r2) == 0 { return zjs_to_string(ctx, r2); }
         }
         raw { len = (size_t)snprintf(buf, 64, "[object Object]"); }
+    } else if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 || zjs_is_host_function(v) != 0 {
+        // ECMA-262 leaves Function.prototype.toString.host_call_target
+        // implementation-defined for built-ins; the [object Function]
+        // form matches what Object.prototype.toString.call(fn) returns
+        // and keeps `fn + ""` consistent with `fn.toString() + ""`.
+        raw { len = (size_t)snprintf(buf, 64, "[object Function]"); }
+    } else if zjs_is_array(v) != 0 {
+        // Array → comma-joined elements, no surrounding []. Spec's
+        // Array.prototype.toString delegates to Array.prototype.join.
+        // We don't have join inlined here, so build it locally.
+        let arr = zjs_as_array(v);
+        let total: u32 = 0;
+        let i_a: u32 = 0;
+        // First pass: total byte count.
+        while i_a < arr.length {
+            if i_a > 0 { total = total + 1; } // comma
+            let el = arr.elements[i_a];
+            if zjs_is_undefined(el) == 0 && zjs_is_null(el) == 0 {
+                let es = zjs_to_string(ctx, el);
+                if zjs_is_string(es) != 0 {
+                    total = total + zjs_as_string(es).length;
+                }
+            }
+            i_a = i_a + 1;
+        }
+        let big: char* = NULL;
+        raw { big = (char*)malloc(total + 1); }
+        let off: u32 = 0;
+        let i_b: u32 = 0;
+        while i_b < arr.length {
+            if i_b > 0 {
+                raw { big[off] = ','; }
+                off = off + 1;
+            }
+            let el = arr.elements[i_b];
+            if zjs_is_undefined(el) == 0 && zjs_is_null(el) == 0 {
+                let es = zjs_to_string(ctx, el);
+                if zjs_is_string(es) != 0 {
+                    let s = zjs_as_string(es);
+                    let sd = s.data;
+                    let sn = s.length;
+                    raw { memcpy(big + off, sd, sn); }
+                    off = off + sn;
+                }
+            }
+            i_b = i_b + 1;
+        }
+        raw { big[total] = 0; }
+        return ctx_intern_string_take(ctx, big, total);
     } else {
         raw { len = (size_t)snprintf(buf, 64, "[object]"); }
     }
