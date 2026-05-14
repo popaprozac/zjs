@@ -698,6 +698,13 @@ fn run_tests() -> void {
     check_int((char*)"finally: rethrow no catch",    (char*)r"let r=0; try { try { throw 7 } finally { r=99 } } catch(e) { r=r+e }; r", 106);
     check_int((char*)"finally: runs after return",   (char*)r"function f() { let r=0; try { throw 5 } catch(e) { r=e } finally { r=r+1 }; return r } f()", 6);
 
+    // --- Labeled break / continue (Phase 3.8g) ---------------------
+    check_int((char*)"break: outer label",          (char*)r"let r=0; outer: for (let i=0;i<5;i++) { for (let j=0;j<5;j++) { if (j===2) break outer; r=r+1 } }; r", 2);
+    check_int((char*)"continue: outer label",       (char*)r"let r=0; outer: for (let i=0;i<3;i++) { for (let j=0;j<3;j++) { if (j===1) continue outer; r=r+1 } }; r", 3);
+    check_int((char*)"break inner label only",      (char*)r"let r=0; A: for (let i=0;i<3;i++) { B: for (let j=0;j<3;j++) { if (j===1) break B; r=r+10 } }; r", 30);
+    check_int((char*)"unlabeled break still works", (char*)r"let r=0; for (let i=0;i<5;i++) { if (i===3) break; r=r+i }; r", 3);
+    check_int((char*)"labeled while",               (char*)r"let r=0; loop: while (true) { r=r+1; if (r>=3) break loop }; r", 3);
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

@@ -123,6 +123,28 @@ fn peek(p: Parser*) -> Token {
     return p.tokens[p.pos];
 }
 
+// Look ahead one token without consuming. Used by labeled-statement
+// detection (`ident :`) where a one-token peek isn't enough.
+fn peek_kind2(p: Parser*) -> TokenKind {
+    if p.pos + 1 >= p.token_count {
+        return TokenKind::Eof;
+    }
+    return p.tokens[p.pos + 1].kind;
+}
+
+// Is there a newline between two source offsets? Used for the
+// `break` / `continue` label rule — the optional label must be on
+// the SAME source line as the keyword (ASI inserts a `;` otherwise).
+fn has_newline_between(p: Parser*, a: u32, b: u32) -> bool {
+    let i = a;
+    while i < b {
+        let c = p.source[i];
+        if (u8)c == 10 || (u8)c == 13 { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
 fn peek_kind(p: Parser*) -> TokenKind {
     return peek(p).kind;
 }
@@ -192,6 +214,25 @@ fn parse_statement(p: Parser*) -> AstNode* {
         return new_node(&p.tracker, NodeKind::EmptyStmt, semi.start, semi.start + semi.length);
     }
     if k == TokenKind::Eof { return NULL; }
+
+    // Labeled statement: `IDENT : statement`. Detected by a 2-token
+    // lookahead — Identifier followed by Colon.
+    if k == TokenKind::Identifier && peek_kind2(p) == TokenKind::Colon {
+        let id = advance(p);     // identifier
+        advance(p);              // ':'
+        let body = parse_statement(p);
+        if body == NULL { return NULL; }
+        // Strict-mode: a LabelledStatement's body is a Statement, not
+        // a Declaration. `label: function f() {}` and friends are a
+        // SyntaxError. (Sloppy-mode Annex B allows function decls, but
+        // we're effectively strict everywhere.)
+        if is_disallowed_statement_body(body) { p.had_error = true; return NULL; }
+        let node = new_node(&p.tracker, NodeKind::LabeledStmt, id.start, body.end);
+        node.name_start  = id.start;
+        node.name_length = id.length;
+        node.left = body;
+        return node;
+    }
 
     // Default: expression statement.
     let expr = parse_expression(p);
@@ -493,14 +534,47 @@ fn finish_for_in_or_of(p: Parser*, kw_tok: Token, binding: AstNode*, op_kind: To
 
 fn parse_break(p: Parser*) -> AstNode* {
     let kw = advance(p);
-    let node = new_node(&p.tracker, NodeKind::BreakStmt, kw.start, kw.start + kw.length);
+    let end_pos = kw.start + kw.length;
+    let label_start: u32 = 0;
+    let label_length: u32 = 0;
+    // Optional label identifier immediately after `break` / `continue`,
+    // unless the next token is a statement terminator. We don't have
+    // proper ASI yet, so accept an identifier whenever we see one.
+    if peek_kind(p) == TokenKind::Identifier {
+        let next = peek(p);
+        let kw_end = kw.start + kw.length;
+        if !has_newline_between(p, kw_end, next.start) {
+            let id = advance(p);
+            label_start  = id.start;
+            label_length = id.length;
+            end_pos      = id.start + id.length;
+        }
+    }
+    let node = new_node(&p.tracker, NodeKind::BreakStmt, kw.start, end_pos);
+    node.name_start  = label_start;
+    node.name_length = label_length;
     match_terminator(p);
     return node;
 }
 
 fn parse_continue(p: Parser*) -> AstNode* {
     let kw = advance(p);
-    let node = new_node(&p.tracker, NodeKind::ContinueStmt, kw.start, kw.start + kw.length);
+    let end_pos = kw.start + kw.length;
+    let label_start: u32 = 0;
+    let label_length: u32 = 0;
+    if peek_kind(p) == TokenKind::Identifier {
+        let next = peek(p);
+        let kw_end = kw.start + kw.length;
+        if !has_newline_between(p, kw_end, next.start) {
+            let id = advance(p);
+            label_start  = id.start;
+            label_length = id.length;
+            end_pos      = id.start + id.length;
+        }
+    }
+    let node = new_node(&p.tracker, NodeKind::ContinueStmt, kw.start, end_pos);
+    node.name_start  = label_start;
+    node.name_length = label_length;
     match_terminator(p);
     return node;
 }

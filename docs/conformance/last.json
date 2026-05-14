@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-13 23:56 UTC",
+    "when": "2026-05-14 00:10 UTC",
     "total": 4144,
-    "passed": 1773,
-    "failed": 840,
+    "passed": 1776,
+    "failed": 837,
     "skipped": 1531
   },
   "failures": [
@@ -1057,19 +1057,19 @@
     },
     {
       "path": "test/language/statements/while/S12.6.2_A4_T2.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: ReferenceError: __in__do__before__break is not defined"
     },
     {
       "path": "test/language/statements/while/S12.6.2_A4_T3.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: ReferenceError: __in__do__before__break is not defined"
     },
     {
       "path": "test/language/statements/while/S12.6.2_A4_T4.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: ReferenceError: __in__do__before__break is not defined"
     },
     {
       "path": "test/language/statements/while/S12.6.2_A4_T5.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: This code should be unreacheable"
     },
     {
       "path": "test/language/statements/while/S12.6.2_A5.js",
@@ -1105,19 +1105,19 @@
     },
     {
       "path": "test/language/statements/do-while/S12.6.1_A4_T2.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: ReferenceError: __in__do__IN__after__break is not defined"
     },
     {
       "path": "test/language/statements/do-while/S12.6.1_A4_T3.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: ReferenceError: __in__do__IN__after__break is not defined"
     },
     {
       "path": "test/language/statements/do-while/S12.6.1_A4_T4.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: ReferenceError: __in__do__IN__after__break is not defined"
     },
     {
       "path": "test/language/statements/do-while/S12.6.1_A4_T5.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: This code should be unreacheable"
     },
     {
       "path": "test/language/statements/do-while/S12.6.1_A5.js",
@@ -1146,22 +1146,6 @@
     {
       "path": "test/language/statements/for/S12.6.3_A10_T2.js",
       "reason": "zjs: throw: Test262Error: #1: \"__in__deepest__loop=__in__deepest__loop\" does not lead to throwing exception"
-    },
-    {
-      "path": "test/language/statements/for/S12.6.3_A11.1_T2.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for/S12.6.3_A11_T2.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for/S12.6.3_A12.1_T2.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for/S12.6.3_A12_T2.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/for/S12.6.3_A13.js",
@@ -1594,6 +1578,10 @@
     {
       "path": "test/language/statements/return/line-terminators.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/block/labeled-continue.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A2_T3.js",
