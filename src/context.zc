@@ -1492,9 +1492,25 @@ fn read_length_u32(ctx: ZjsContext*, this_val: ZjsValue) -> u32 {
         return zjs_as_array(this_val).length;
     }
     if zjs_is_object(this_val) != 0 {
-        let o = zjs_as_object(this_val);
         let len_atom = ctx_intern_atom(ctx, (char*)"length", 6);
-        let v = object_get(o, len_atom);
+        // Walk the proto chain so e.g. `Boolean.prototype.length = 1`
+        // is observable through a wrapper instance.
+        let v: ZjsValue = zjs_undefined();
+        let cur = zjs_as_object(this_val);
+        while cur != NULL {
+            let slot = class_find_slot(cur.cls, len_atom);
+            if slot >= 0 {
+                let raw_v = cur.slots[(u32)slot];
+                if zjs_is_deleted(raw_v) == 0 {
+                    v = raw_v;
+                    cur = NULL;
+                } else {
+                    cur = cur.proto;
+                }
+            } else {
+                cur = cur.proto;
+            }
+        }
         if zjs_is_int32(v) != 0 {
             let n = zjs_as_int32(v);
             if n > 0 { return (u32)n; }
@@ -1535,7 +1551,18 @@ fn obj_get_indexed(ctx: ZjsContext*, o: ZjsObject*, index: u32) -> ZjsValue {
     let kp: char* = NULL;
     raw { kp = &key_buf[0]; }
     let key_atom = ctx_intern_atom(ctx, kp, (u32)key_len);
-    return object_get(o, key_atom);
+    // Proto-chain walk so wrapper-prototype indexed props
+    // (`Boolean.prototype[0] = true`) are observable.
+    let cur = o;
+    while cur != NULL {
+        let slot = class_find_slot(cur.cls, key_atom);
+        if slot >= 0 {
+            let raw_v = cur.slots[(u32)slot];
+            if zjs_is_deleted(raw_v) == 0 { return raw_v; }
+        }
+        cur = cur.proto;
+    }
+    return zjs_undefined();
 }
 
 fn host_array_push(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -2068,22 +2095,23 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         return zjs_undefined();
     }
 
-    // Generic-this path: any object with a `length` property.
-    // ECMA-262 §22.1.3.12: O = ToObject(this); len = ToLength(O.length).
-    // For primitives (boolean / number / string / undefined / null)
-    // we'd need a real ToObject — for now bail silently. That covers
-    // the test262 cases of forEach.call(Math, ...), .call(obj, ...),
-    // .call(new String(...), ...), etc., which are the bulk of fails.
-    if zjs_is_object(this_val) != 0 {
-        let o = zjs_as_object(this_val);
-        let len = read_length_u32(ctx, this_val);
+    // Generic-this path: ToObject(this), then iterate via length /
+    // indexed reads. Spec §22.1.3.12.
+    let obj_val = ctx_to_object(ctx, this_val);
+    if ctx.had_error { return zjs_undefined(); }
+    ctx_push_temp_root(ctx, obj_val);
+    defer ctx_pop_temp_root(ctx);
+
+    if zjs_is_object(obj_val) != 0 {
+        let o = zjs_as_object(obj_val);
+        let len = read_length_u32(ctx, obj_val);
         let i: u32 = 0;
         while i < len {
             let v = obj_get_indexed(ctx, o, i);
             let cb_args: ZjsValue[3];
             cb_args[0] = v;
             cb_args[1] = zjs_int32((i32)i);
-            cb_args[2] = this_val;
+            cb_args[2] = obj_val;
             let cb_args_ptr: ZjsValue* = NULL;
             raw { cb_args_ptr = &cb_args[0]; }
             raw { (void)zjs_call_value(ctx, cb, cb_args_ptr, 3); }
@@ -2878,6 +2906,59 @@ fn host_function_apply(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
 // won't bump into. Read by the prototype's valueOf / toString.
 def WRAPPER_VALUE_KEY: char* = (char*)"__zjs_primitive__";
 def WRAPPER_VALUE_KEY_LEN: u32 = 17;
+
+// ECMA-262 §7.1.18 ToObject. Wraps primitives in their corresponding
+// wrapper objects (so `Array.prototype.X.call(true, ...)` sees an
+// object). For null/undefined, sets ctx.had_error and returns
+// undefined — callers should propagate as TypeError.
+//
+// Already-object values (object/array/function/closure/host-function)
+// pass through unchanged.
+fn ctx_to_object(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
+    if zjs_is_object(v) != 0 { return v; }
+    if zjs_is_array(v) != 0 { return v; }
+    if zjs_is_function(v) != 0 { return v; }
+    if zjs_is_closure(v) != 0 { return v; }
+    if zjs_is_host_function(v) != 0 { return v; }
+
+    if zjs_is_null(v) != 0 || zjs_is_undefined(v) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Cannot convert null or undefined to object", 43);
+        ctx.had_error = true;
+        ctx.last_error = err;
+        return zjs_undefined();
+    }
+
+    // Primitive — wrap it. Pick the right prototype based on tag.
+    let proto: ZjsObject* = NULL;
+    if zjs_is_bool(v) != 0 {
+        // Boolean.prototype via the Boolean host function's .prototype.
+        let bool_g = ctx_find_global(ctx, (char*)"Boolean", 7);
+        if bool_g >= 0 {
+            let bv = ctx.globals[bool_g].value;
+            if zjs_is_host_function(bv) != 0 {
+                proto = zjs_as_host_function(bv).prototype;
+            }
+        }
+    } else if zjs_is_int32(v) != 0 || zjs_is_double(v) != 0 {
+        let num_g = ctx_find_global(ctx, (char*)"Number", 6);
+        if num_g >= 0 {
+            let nv = ctx.globals[num_g].value;
+            if zjs_is_host_function(nv) != 0 {
+                proto = zjs_as_host_function(nv).prototype;
+            }
+        }
+    } else if zjs_is_string(v) != 0 {
+        proto = ctx.string_proto;
+    }
+
+    let obj_v = ctx_new_object(ctx);
+    let obj = zjs_as_object(obj_v);
+    obj.proto = proto;
+    let key = ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN);
+    object_set(ctx, obj, key, v);
+    return obj_v;
+}
 
 fn wrap_primitive_if_new(ctx: ZjsContext*, primitive: ZjsValue) -> ZjsValue {
     // If invoked via `new`, NewInvoke set ctx.host_this to a fresh
