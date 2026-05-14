@@ -1577,10 +1577,43 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
 fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc < 2 { return zjs_undefined(); }
     let obj_v = args[0];
-    if zjs_is_object(obj_v) == 0 { return zjs_undefined(); }
-    let o = zjs_as_object(obj_v);
     let key_v = args[1];
     if zjs_is_string(key_v) == 0 { key_v = zjs_to_string(ctx, key_v); }
+
+    // Array fast path: numeric indices and "length".
+    if zjs_is_array(obj_v) != 0 {
+        let arr = zjs_as_array(obj_v);
+        let key_str_a = zjs_as_string(key_v);
+        // "length"?
+        if key_str_a.length == 6 {
+            let kd = key_str_a.data;
+            let is_len: int = 0;
+            raw { is_len = (memcmp(kd, "length", 6) == 0) ? 1 : 0; }
+            if is_len != 0 {
+                let r_v = ctx_new_object(ctx);
+                let r = zjs_as_object(r_v);
+                object_set(ctx, r, ctx_intern_atom(ctx, (char*)"value", 5), zjs_int32((i32)arr.length));
+                object_set(ctx, r, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(1));
+                object_set(ctx, r, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(0));
+                object_set(ctx, r, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(0));
+                return r_v;
+            }
+        }
+        let idx = zjs_to_array_index(key_v);
+        if idx >= 0 && (u32)idx < arr.length {
+            let r_v = ctx_new_object(ctx);
+            let r = zjs_as_object(r_v);
+            object_set(ctx, r, ctx_intern_atom(ctx, (char*)"value", 5), arr.elements[(u32)idx]);
+            object_set(ctx, r, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(1));
+            object_set(ctx, r, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(1));
+            object_set(ctx, r, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(1));
+            return r_v;
+        }
+        return zjs_undefined();
+    }
+
+    if zjs_is_object(obj_v) == 0 { return zjs_undefined(); }
+    let o = zjs_as_object(obj_v);
     let key_str = zjs_as_string(key_v);
     let key_atom = ctx_intern_atom(ctx, key_str.data, key_str.length);
 

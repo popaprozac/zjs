@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 16:23 UTC",
+    "when": "2026-05-14 16:27 UTC",
     "total": 4821,
-    "passed": 2410,
-    "failed": 385,
+    "passed": 2414,
+    "failed": 381,
     "skipped": 2026
   },
   "failures": [
@@ -1074,22 +1074,6 @@
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-14.js",
       "reason": "zjs: throw: Test262Error: Property not found"
-    },
-    {
-      "path": "test/built-ins/Object/keys/15.2.3.14-5-a-1.js",
-      "reason": "zjs: throw: Test262Error: desc.hasOwnProperty(\"value\") !== true"
-    },
-    {
-      "path": "test/built-ins/Object/keys/15.2.3.14-5-a-2.js",
-      "reason": "zjs: throw: Test262Error: desc.hasOwnProperty(\"writable\") !== true"
-    },
-    {
-      "path": "test/built-ins/Object/keys/15.2.3.14-5-a-3.js",
-      "reason": "zjs: throw: Test262Error: desc.hasOwnProperty(\"enumerable\") !== true"
-    },
-    {
-      "path": "test/built-ins/Object/keys/15.2.3.14-5-a-4.js",
-      "reason": "zjs: throw: Test262Error: desc.hasOwnProperty(\"configurable\") !== true"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-15.js",
