@@ -736,6 +736,15 @@ fn run_tests() -> void {
     check_int((char*)"getOwnPropertyDescriptor: missing", (char*)r"let o = {}; if (typeof Object.getOwnPropertyDescriptor(o, 'x') === 'undefined') 1; else 0", 1);
     check_int((char*)"defineProperty preserves proto", (char*)r"let p = {x: 99}; let o = Object.create(p); Object.defineProperty(o, 'y', {value: 1}); o.x + o.y", 100);
 
+    // --- Accessor properties (Phase 3.9b) --------------------------
+    check_int((char*)"accessor: getter",            (char*)r"let o = {}; Object.defineProperty(o, 'x', {get: function() { return 42 }}); o.x", 42);
+    check_int((char*)"accessor: setter",            (char*)r"let o = {}; let n = 0; Object.defineProperty(o, 'x', {set: function(v) { n = v }}); o.x = 99; n", 99);
+    check_int((char*)"accessor: get + set",         (char*)r"let o = {}; let _v = 1; Object.defineProperty(o, 'x', { get: function() { return _v }, set: function(v) { _v = v + 10 } }); o.x = 5; o.x", 15);
+    check_int((char*)"accessor: this binding",      (char*)r"let o = {}; Object.defineProperty(o, 'a', {get: function() { return this === o ? 1 : 0 }}); o.a", 1);
+    check_int((char*)"accessor: via Object.create", (char*)r"let o = Object.create({}, {p: {get: function() { return 7 }}}); o.p", 7);
+    check_int((char*)"accessor on proto: getter",   (char*)r"let p = {}; Object.defineProperty(p, 'x', {get: function() { return 5 }}); let o = Object.create(p); o.x", 5);
+    check_string((char*)"getOwnPropertyDescriptor: accessor", (char*)r"let o = {}; let f = function() { return 1 }; Object.defineProperty(o, 'x', {get: f}); typeof Object.getOwnPropertyDescriptor(o, 'x').get", (char*)"function");
+
     // --- Error + new (Phase 3.1e) -----------------------------------
     check_string((char*)"Error message",     (char*)r"let e = Error('boom'); e.message",        (char*)"boom");
     check_string((char*)"new Error message", (char*)r"let e = new Error('boom'); e.message",    (char*)"boom");

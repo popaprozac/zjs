@@ -96,7 +96,20 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let cur = o;
         while cur != NULL {
             let slot = class_find_slot(cur.cls, name);
-            if slot >= 0 { return cur.slots[(u32)slot]; }
+            if slot >= 0 {
+                let v = cur.slots[(u32)slot];
+                // Accessor (Phase 3.9b)? Invoke the getter with this=obj.
+                if zjs_is_accessor(v) != 0 {
+                    let acc = zjs_as_accessor(v);
+                    let g = acc.get;
+                    if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
+                        let nullp: ZjsValue* = NULL;
+                        return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                    }
+                    return zjs_undefined();
+                }
+                return v;
+            }
             cur = cur.proto;
         }
         return zjs_undefined();
@@ -201,7 +214,33 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
     if zjs_is_object(obj) != 0 {
         let o = zjs_as_object(obj);
         let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
-        object_set(ctx, o, zjs_as_string(key_str_val), value);
+        let name = zjs_as_string(key_str_val);
+        // Walk the proto chain looking for an accessor whose setter
+        // should fire (Phase 3.9b). A data property on the proto means
+        // we'll shadow via an own write.
+        let cur = o;
+        while cur != NULL {
+            let slot = class_find_slot(cur.cls, name);
+            if slot >= 0 {
+                let v = cur.slots[(u32)slot];
+                if zjs_is_accessor(v) != 0 {
+                    let acc = zjs_as_accessor(v);
+                    let s = acc.set;
+                    if zjs_is_function(s) != 0 || zjs_is_closure(s) != 0 || zjs_is_host_function(s) != 0 {
+                        let arr: ZjsValue[1];
+                        arr[0] = value;
+                        let argp: ZjsValue* = NULL;
+                        raw { argp = &arr[0]; }
+                        let _ = zjs_call_value_with_this(ctx, s, obj, argp, 1);
+                    }
+                    return;
+                }
+                cur = NULL;     // data property — fall through and write our own
+            } else {
+                cur = cur.proto;
+            }
+        }
+        object_set(ctx, o, name, value);
         return;
     }
     // Function.prototype = obj (Phase 3.6). Only the prototype slot is
@@ -675,8 +714,13 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             if zjs_is_object(obj_val) != 0 {
                 let o = zjs_as_object(obj_val);
                 if o.cls == ic_class && ic_class != NULL {
-                    regs[dst] = o.slots[ic_slot_n];
-                    took_fast = true;
+                    let raw_v = o.slots[ic_slot_n];
+                    // Accessor slot (Phase 3.9b): bail to the slow path
+                    // which invokes the getter with the right `this`.
+                    if zjs_is_accessor(raw_v) == 0 {
+                        regs[dst] = raw_v;
+                        took_fast = true;
+                    }
                 }
             }
             if !took_fast {
@@ -725,9 +769,14 @@ fn interpret(ctx: ZjsContext*, f: Function*, args: ZjsValue*, arg_count: u32) ->
             if zjs_is_object(obj_val) != 0 {
                 let o = zjs_as_object(obj_val);
                 if o.cls == ic_class && ic_class != NULL {
-                    // Existing-slot write — no transition, no GC implication.
-                    o.slots[ic_slot_n] = value;
-                    took_fast = true;
+                    let raw_v = o.slots[ic_slot_n];
+                    // Accessor slot (Phase 3.9b): bail to the slow path
+                    // which invokes the setter with `this = obj`.
+                    if zjs_is_accessor(raw_v) == 0 {
+                        // Existing-slot write — no transition, no GC implication.
+                        o.slots[ic_slot_n] = value;
+                        took_fast = true;
+                    }
                 }
             }
             if !took_fast {

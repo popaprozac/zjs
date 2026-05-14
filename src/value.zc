@@ -399,6 +399,7 @@ def TAG_ARRAY:         u8 = 3;
 def TAG_HOST_FUNCTION: u8 = 4;
 def TAG_HIDDEN_CLASS:  u8 = 5;
 def TAG_CLOSURE:       u8 = 6;
+def TAG_ACCESSOR:      u8 = 7;   // Phase 3.9b: { get, set } pair stored in an object slot
 
 struct CellHeader {
     type_tag: u8;
@@ -471,6 +472,41 @@ struct ZjsHostFunction {
 // `env` is a plain ZjsObject whose properties are the captured locals.
 // Multiple closures from the same outer call share the same env object,
 // preserving JS reference semantics for captured variables.
+// Accessor property cell — stored as the slot value when a property
+// was installed via `Object.defineProperty(o, k, {get, set})`. The
+// fast IC slot read detects this tag and falls through to the slow
+// path which invokes get/set with `this = receiver_obj`.
+struct ZjsAccessor {
+    header: CellHeader;          // { type_tag = TAG_ACCESSOR }
+    get:    ZjsValue;            // callable or undefined
+    set:    ZjsValue;            // callable or undefined
+}
+
+fn zjs_is_accessor(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_ACCESSOR { return 1; }
+    return 0;
+}
+
+fn zjs_as_accessor(v: ZjsValue) -> ZjsAccessor* {
+    let p = zjs_cell_as_ptr(v);
+    let a: ZjsAccessor* = NULL;
+    raw { a = (ZjsAccessor*)p; }
+    return a;
+}
+
+fn zjs_accessor_new(get_v: ZjsValue, set_v: ZjsValue) -> ZjsAccessor* {
+    let a: ZjsAccessor* = NULL;
+    raw { a = (ZjsAccessor*)calloc(1, sizeof(ZjsAccessor)); }
+    a.header.type_tag = TAG_ACCESSOR;
+    a.get = get_v;
+    a.set = set_v;
+    return a;
+}
+
+fn accessor_free_void(p: void*) -> void {
+    raw { free(p); }
+}
+
 struct ZjsClosure {
     header:   CellHeader;        // { type_tag = TAG_CLOSURE }
     function: void*;              // Function* — opaque to value.zc (defined in bytecode.zc)
