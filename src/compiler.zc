@@ -2743,17 +2743,48 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::LabeledStmt {
-        // Stash the label so the next loop's loop_push() picks it up.
-        // Limitation: labeled non-loop statements (block / if / etc.)
-        // are parsed but the label is dropped here — a `break <label>`
-        // targeting one would fail to compile. test262 mostly uses
-        // labeled loops; non-loop labels are deferred.
-        c.pending_label_start  = node.name_start;
-        c.pending_label_length = node.name_length;
-        compile_stmt(c, node.left);
-        // Clear if the inner statement wasn't a loop (didn't claim it).
+        let inner = node.left;
+        let ik = if inner != NULL { inner.kind } else { NodeKind::EmptyStmt };
+        let is_loop_target =
+               ik == NodeKind::WhileStmt
+            || ik == NodeKind::DoWhileStmt
+            || ik == NodeKind::ForStmt
+            || ik == NodeKind::ForInStmt
+            || ik == NodeKind::ForOfStmt;
+        if is_loop_target {
+            // Stash the label so the loop's loop_push() picks it up.
+            c.pending_label_start  = node.name_start;
+            c.pending_label_length = node.name_length;
+            compile_stmt(c, inner);
+            c.pending_label_start  = 0;
+            c.pending_label_length = 0;
+            return;
+        }
+        // Labeled non-loop (block, if, try, plain statement). Push a
+        // synthetic loop frame so a `break <label>` inside the body can
+        // patch out to the position immediately after the inner
+        // statement. `continue` against a labeled non-loop is a
+        // SyntaxError, but we don't enforce that yet — a stray
+        // `continue` would just have nowhere to land.
+        loop_push(c);
+        let frame_idx = c.loop_depth - 1;
+        c.loop_stack[frame_idx].label_start  = node.name_start;
+        c.loop_stack[frame_idx].label_length = node.name_length;
+        // Clear pending so an inner loop doesn't accidentally inherit
+        // this label too (the LabeledStmt → inner-loop case is already
+        // handled by the branch above).
         c.pending_label_start  = 0;
         c.pending_label_length = 0;
+        compile_stmt(c, inner);
+        // Patch every break that targeted this frame to here (after
+        // the body).
+        let frame = c.loop_stack[frame_idx];
+        let bi: u32 = 0;
+        while bi < frame.break_count {
+            patch_jump(c, frame.break_patches[bi]);
+            bi = bi + 1;
+        }
+        loop_pop(c);
         return;
     }
 

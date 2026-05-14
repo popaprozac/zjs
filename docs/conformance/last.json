@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 17:08 UTC",
+    "when": "2026-05-14 17:18 UTC",
     "total": 4821,
-    "passed": 2439,
-    "failed": 356,
+    "passed": 2441,
+    "failed": 354,
     "skipped": 2026
   },
   "failures": [
@@ -332,10 +332,6 @@
       "reason": "zjs: throw: ReferenceError: f is not defined"
     },
     {
-      "path": "test/language/statements/while/S12.6.2_A4_T5.js",
-      "reason": "zjs: throw: Test262Error: This code should be unreacheable"
-    },
-    {
       "path": "test/language/statements/while/S12.6.2_A5.js",
       "reason": "zjs: throw: Test262Error: #1: __in__do__before__break === 1. Actual:  __in__do__before__break ===undefined"
     },
@@ -362,10 +358,6 @@
     {
       "path": "test/language/statements/do-while/S12.6.1_A3.js",
       "reason": "zjs: throw: Test262Error: #1: __in__do === 1. Actual:  __in__do ===undefined"
-    },
-    {
-      "path": "test/language/statements/do-while/S12.6.1_A4_T5.js",
-      "reason": "zjs: throw: Test262Error: This code should be unreacheable"
     },
     {
       "path": "test/language/statements/do-while/S12.6.1_A5.js",
