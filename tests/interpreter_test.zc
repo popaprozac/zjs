@@ -765,6 +765,19 @@ fn run_tests() -> void {
     check_string((char*)"delete: typeof after",     (char*)r"let o = {x:1}; delete o.x; typeof o.x", (char*)"undefined");
     check_int((char*)"delete: array hole",          (char*)r"let a=[1,2,3]; delete a[1]; if (typeof a[1] === 'undefined') 1; else 0", 1);
 
+    // --- Nested closures: multi-level capture (Phase 3.9j) ---------
+    check_int((char*)"nested closure: 2 levels",
+              (char*)r"function a() { let x = 10; function b() { function c() { return x } return c() } return b() } a()", 10);
+    check_int((char*)"nested closure: 3 levels",
+              (char*)r"function a() { let x = 5; function b() { function c() { function d() { return x * 2 } return d() } return c() } return b() } a()", 10);
+    check_int((char*)"nested closure: mutate from deep",
+              (char*)r"function a() { let x = 1; function b() { function c() { x = x + 100 } c() } b(); return x } a()", 101);
+    check_int((char*)"nested closure: outer + inner captures",
+              (char*)r"function a() { let x = 7; function b() { let y = 3; function c() { return x + y } return c() } return b() } a()", 10);
+    check_int((char*)"nested closure: shared parent state",
+              (char*)r"function make() { let n = 0; return function() { return function() { n = n + 1; return n } } } let outer = make(); let inner = outer(); inner(); inner(); inner()",
+              3);
+
     // --- Tail-call optimization (Phase 3.9h-C) ---------------------
     // Correctness: deep tail recursion should NOT stack-overflow. The
     // pre-TCO interpreter would crash at a few thousand frames.

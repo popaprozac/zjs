@@ -552,23 +552,18 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
             }
         }
 
-        // 2. If we're in an inner function, check the parent's locals.
-        //    Captured parent-locals live in the parent's env, which is
-        //    available to us as current_closure.env via LoadEnv.
-        if c.parent != NULL {
-            let outer_idx = find_local_index(c.parent, name, name_len);
-            if outer_idx >= 0 && c.parent.locals[(u32)outer_idx].captured {
-                c.has_outer_refs = true;
-                let env_r = alloc_reg(c);
-                emit(c, make_inst_a(Op::LoadEnv, env_r));
-                let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-                let ic = alloc_ic_slot(c, name_atom);
-                let dst = alloc_reg(c);
-                emit(c, make_inst_abc(Op::LoadProp, dst, env_r, (u8)ic));
-                release_reg(c, env_r);
-                if c.next_reg <= dst { c.next_reg = dst + 1; }
-                return dst;
-            }
+        // 2. Walk the lexical compiler chain. Depth=1 is c.parent.
+        let depth = outer_capture_depth(c, name, name_len);
+        if depth > 0 {
+            c.has_outer_refs = true;
+            let env_r = emit_env_chain_walk(c, depth);
+            let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+            let ic = alloc_ic_slot(c, name_atom);
+            let dst = alloc_reg(c);
+            emit(c, make_inst_abc(Op::LoadProp, dst, env_r, (u8)ic));
+            release_reg(c, env_r);
+            if c.next_reg <= dst { c.next_reg = dst + 1; }
+            return dst;
         }
 
         // 3. Fall through to globals.
@@ -950,14 +945,11 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     let captured_local = local_idx >= 0 && c.locals[(u32)local_idx].captured;
     let local_reg: u8 = if local_idx >= 0 { c.locals[(u32)local_idx].reg } else { 0 };
 
-    // Resolve to outer-scope captured local if not found locally.
-    let outer_idx: i32 = -1;
-    if local_idx < 0 && c.parent != NULL {
-        let oi = find_local_index(c.parent, name, name_len);
-        if oi >= 0 && c.parent.locals[(u32)oi].captured {
-            outer_idx = oi;
-            c.has_outer_refs = true;
-        }
+    // Resolve to outer-scope captured local via multi-level walk.
+    let outer_depth: u32 = 0;
+    if local_idx < 0 {
+        outer_depth = outer_capture_depth(c, name, name_len);
+        if outer_depth > 0 { c.has_outer_refs = true; }
     }
 
     if op_tok == TokenKind::Eq {
@@ -970,9 +962,8 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
             } else {
                 emit(c, make_inst_ab(Op::Mov, local_reg, r));
             }
-        } else if outer_idx >= 0 {
-            let env_r = alloc_reg(c);
-            emit(c, make_inst_a(Op::LoadEnv, env_r));
+        } else if outer_depth > 0 {
+            let env_r = emit_env_chain_walk(c, outer_depth);
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
             let ic = alloc_ic_slot(c, name_atom);
             emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, r));
@@ -984,9 +975,8 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         return r;
     }
 
-    // Compound assignment: load, op, store. (Existing path — for
-    // captured locals it works via the env-property machinery too,
-    // but emits more instructions. Acceptable for MVP.)
+    // Compound assignment: load, op, store. Same shape, just emits
+    // both a LoadProp and a StoreProp pair.
     let cur = alloc_reg(c);
     if local_idx >= 0 {
         if captured_local {
@@ -996,9 +986,8 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         } else {
             emit(c, make_inst_ab(Op::Mov, cur, local_reg));
         }
-    } else if outer_idx >= 0 {
-        let env_r = alloc_reg(c);
-        emit(c, make_inst_a(Op::LoadEnv, env_r));
+    } else if outer_depth > 0 {
+        let env_r = emit_env_chain_walk(c, outer_depth);
         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
         let ic = alloc_ic_slot(c, name_atom);
         emit(c, make_inst_abc(Op::LoadProp, cur, env_r, (u8)ic));
@@ -1036,9 +1025,8 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         } else {
             emit(c, make_inst_ab(Op::Mov, local_reg, dst));
         }
-    } else if outer_idx >= 0 {
-        let env_r = alloc_reg(c);
-        emit(c, make_inst_a(Op::LoadEnv, env_r));
+    } else if outer_depth > 0 {
+        let env_r = emit_env_chain_walk(c, outer_depth);
         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
         let ic = alloc_ic_slot(c, name_atom);
         emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, dst));
@@ -1360,8 +1348,21 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     //     marks specific locals as captured.
     if node.left != NULL { analyze_captures(c, node.left); }
 
-    // 2c. If we'll need an env object, reserve a register for it now
-    //     so it stays out of the temp range.
+    // 2b'. Phase 3.9j — detect "transitive outer refs": references
+    //      inside this function's body (including nested closures)
+    //      that reach past us to ancestor scope. `has_outer_refs`
+    //      means we need to either receive an env from our caller
+    //      (we're a Closure) AND/OR forward one to our inner
+    //      closures. It does NOT mean we allocate our own env — only
+    //      `needs_env` (own-captured locals) does.
+    if node.left != NULL && c.parent != NULL && detect_outer_refs(c, node.left, source) {
+        c.has_outer_refs = true;
+    }
+
+    // 2c. If we'll need an env object for OWN captures, reserve a
+    //     register for it. Pass-through functions (has_outer_refs but
+    //     no own captures) just forward current_closure.env to their
+    //     inner closures at MakeClosure time — no allocation.
     if c.needs_env {
         c.env_reg = alloc_reg(c);
     }
@@ -1386,6 +1387,17 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     }
     if c.needs_env {
         emit(c, make_inst_a(Op::NewObject, c.env_reg));
+        // Phase 3.9j: if our nested closures reach past us into the
+        // enclosing scope, chain via __outer__ to the parent's env.
+        // current_closure.env (LoadEnv) is that env.
+        if c.has_outer_refs {
+            let outer_r = alloc_reg(c);
+            emit(c, make_inst_a(Op::LoadEnv, outer_r));
+            let outer_atom = ctx_intern_atom(c.ctx, OUTER_ENV_KEY, OUTER_ENV_KEY_LEN);
+            let ic = alloc_ic_slot(c, outer_atom);
+            emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, outer_r));
+            release_reg(c, outer_r);
+        }
         let j: u32 = 0;
         while j < c.local_count {
             // Params first — they all have indices < param_count.
@@ -1467,15 +1479,10 @@ fn compile_function_value(c: Compiler*, node: AstNode*) -> u8 {
     // in a closure with the current env. The outer (c) must have
     // needs_env = true for this to be reachable.
     if f.needs_env || inner_has_captures_from(c) {
-        // Use c.env_reg as the closure's captured env. If c doesn't
-        // have an env (top-level program creating a closure with no
-        // captures), the env_reg will be 0 and the closure's env is
-        // effectively a stale value — harmless because the inner
-        // wouldn't access it.
         let cls_reg = alloc_reg(c);
-        let env_reg: u8 = 0;
-        if c.needs_env { env_reg = c.env_reg; }
-        emit(c, make_inst_abc(Op::MakeClosure, cls_reg, dst, env_reg));
+        let env = closure_env_reg(c);
+        emit(c, make_inst_abc(Op::MakeClosure, cls_reg, dst, env.reg));
+        if env.is_temp { release_reg(c, env.reg); }
         release_reg(c, dst);
         if c.next_reg <= cls_reg { c.next_reg = cls_reg + 1; }
         return cls_reg;
@@ -1490,14 +1497,41 @@ fn compile_function_value(c: Compiler*, node: AstNode*) -> u8 {
 // own ancestors is not currently distinguished — that's a pending
 // multi-level case we don't support yet.
 fn inner_has_captures_from(c: Compiler*) -> bool {
-    // For MVP one-level closures, if we have any captured locals at
-    // all, the inner functions captured from us. Conservative.
+    // If WE (c) have any captured local, inner functions can read it
+    // through our env. If we ourselves forward an env (has_outer_refs),
+    // inner functions need to be wrapped as Closures too so they
+    // receive the env we're chaining through.
+    if c.has_outer_refs { return true; }
     let i: u32 = 0;
     while i < c.local_count {
         if c.locals[i].captured { return true; }
         i = i + 1;
     }
     return false;
+}
+
+// Compute the env_reg to use when emitting MakeClosure inside `c`.
+// - If c has its own env (own captured locals), use c.env_reg.
+// - Else if c is a passthrough (has_outer_refs), emit LoadEnv into a
+//   fresh temp reg so c's inner closure receives c's enclosing env.
+// - Else return 0 (the inner doesn't actually capture anything, so
+//   the env value won't be used).
+// Returns (env_reg, is_temp). Caller must release_reg if is_temp.
+struct ClosureEnvReg {
+    reg:     u8;
+    is_temp: bool;
+}
+
+fn closure_env_reg(c: Compiler*) -> ClosureEnvReg {
+    if c.needs_env {
+        return ClosureEnvReg{ reg: c.env_reg, is_temp: false };
+    }
+    if c.has_outer_refs {
+        let temp = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadEnv, temp));
+        return ClosureEnvReg{ reg: temp, is_temp: true };
+    }
+    return ClosureEnvReg{ reg: 0, is_temp: false };
 }
 
 // Class compilation (Phase 3.7) — desugar to:
@@ -1671,13 +1705,10 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
     let captured_local = local_idx >= 0 && c.locals[(u32)local_idx].captured;
     let local_reg: u8 = if local_idx >= 0 { c.locals[(u32)local_idx].reg } else { 0 };
 
-    let outer_idx: i32 = -1;
-    if local_idx < 0 && c.parent != NULL {
-        let oi = find_local_index(c.parent, name, name_len);
-        if oi >= 0 && c.parent.locals[(u32)oi].captured {
-            outer_idx = oi;
-            c.has_outer_refs = true;
-        }
+    let outer_depth: u32 = 0;
+    if local_idx < 0 {
+        outer_depth = outer_capture_depth(c, name, name_len);
+        if outer_depth > 0 { c.has_outer_refs = true; }
     }
 
     let cur = alloc_reg(c);
@@ -1689,9 +1720,8 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
         } else {
             emit(c, make_inst_ab(Op::Mov, cur, local_reg));
         }
-    } else if outer_idx >= 0 {
-        let env_r = alloc_reg(c);
-        emit(c, make_inst_a(Op::LoadEnv, env_r));
+    } else if outer_depth > 0 {
+        let env_r = emit_env_chain_walk(c, outer_depth);
         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
         let ic = alloc_ic_slot(c, name_atom);
         emit(c, make_inst_abc(Op::LoadProp, cur, env_r, (u8)ic));
@@ -1715,9 +1745,8 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
         } else {
             emit(c, make_inst_ab(Op::Mov, local_reg, new_reg));
         }
-    } else if outer_idx >= 0 {
-        let env_r = alloc_reg(c);
-        emit(c, make_inst_a(Op::LoadEnv, env_r));
+    } else if outer_depth > 0 {
+        let env_r = emit_env_chain_walk(c, outer_depth);
         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
         let ic = alloc_ic_slot(c, name_atom);
         emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, new_reg));
@@ -1841,6 +1870,107 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
 
 // Does the nested function `fn_node` (FunctionDecl/Expr/ArrowFunc)
 // declare `name` as one of its own locals (param or var)?
+// AST pre-pass. Returns true if `body` contains any IdentExpr that
+// (a) isn't local to `c` and (b) is local to some ancestor compiler.
+// Used at the start of compile_function to decide whether `c` needs
+// to allocate an env to forward via __outer__ to its nested closures.
+//
+// Walks across nested function/arrow boundaries — references inside
+// deeply-nested functions also count as outer refs for THIS function
+// if they target our parent or further up. Shadowing inside the inner
+// scope is approximated: we treat any reference to a name as "needs
+// outer" if NEITHER c nor any ancestor between c and the reference
+// declares it (the reference might still be a global, which we handle
+// by checking it's local in some ancestor).
+fn detect_outer_refs(c: Compiler*, body: AstNode*, source: char*) -> bool {
+    if body == NULL { return false; }
+    let k = body.kind;
+    if k == NodeKind::IdentExpr {
+        let nm = source + body.start;
+        let nl = body.end - body.start;
+        if find_local_index(c, nm, nl) >= 0 { return false; }
+        let anc: Compiler* = c.parent;
+        while anc != NULL {
+            if find_local_index(anc, nm, nl) >= 0 { return true; }
+            anc = anc.parent;
+        }
+        return false;
+    }
+    if k == NodeKind::FunctionDecl || k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
+        if body.left != NULL && detect_outer_refs(c, body.left, source) { return true; }
+        return false;
+    }
+    if body.left  != NULL && detect_outer_refs(c, body.left,  source) { return true; }
+    if body.right != NULL && detect_outer_refs(c, body.right, source) { return true; }
+    if body.third != NULL && detect_outer_refs(c, body.third, source) { return true; }
+    let i: u32 = 0;
+    while i < body.children_count {
+        if detect_outer_refs(c, body.children[i], source) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+// True if `c` has at least one own local marked captured (i.e., it
+// will allocate its own env at function entry).
+fn compiler_has_own_env(c: Compiler*) -> bool {
+    let i: u32 = 0;
+    while i < c.local_count {
+        if c.locals[i].captured { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+// Walk the lexical compiler chain looking for a captured local. Returns
+// the ENV-CHAIN depth (counting only ancestors that have their own env)
+// from our current_closure.env to the env that holds the name. Returns
+// 0 if not found. Side effect: every PASS-THROUGH intermediate (no own
+// env yet flagged as outer-ref) gets has_outer_refs=true.
+//
+// depth=1 means current_closure.env IS the target env (just LoadEnv +
+// final LoadProp). Each additional own-env ancestor between us and the
+// target adds one __outer__ walk.
+fn outer_capture_depth(c: Compiler*, name: char*, name_len: u32) -> u32 {
+    let anc: Compiler* = c.parent;
+    let env_depth: u32 = 0;
+    while anc != NULL {
+        let oi = find_local_index(anc, name, name_len);
+        if oi >= 0 && anc.locals[(u32)oi].captured {
+            // Mark every passthrough intermediate from c.parent up
+            // to (but not including) anc as has_outer_refs so their
+            // MakeClosure emit forwards env via LoadEnv.
+            let mark: Compiler* = c.parent;
+            while mark != anc {
+                mark.has_outer_refs = true;
+                mark = mark.parent;
+            }
+            return env_depth + 1;
+        }
+        // Skipping anc — only counts toward env depth if it has its
+        // own env. has_outer_refs alone (passthrough) doesn't add.
+        if compiler_has_own_env(anc) { env_depth = env_depth + 1; }
+        anc = anc.parent;
+    }
+    return 0;
+}
+
+// Emit a register holding the env at `depth` levels up the chain.
+// Always allocates a fresh register that the caller must release.
+// depth must be >= 1.
+fn emit_env_chain_walk(c: Compiler*, depth: u32) -> u8 {
+    let env_r = alloc_reg(c);
+    emit(c, make_inst_a(Op::LoadEnv, env_r));
+    let outer_atom = ctx_intern_atom(c.ctx, OUTER_ENV_KEY, OUTER_ENV_KEY_LEN);
+    let w: u32 = 1;
+    while w < depth {
+        let ic_outer = alloc_ic_slot(c, outer_atom);
+        emit(c, make_inst_abc(Op::LoadProp, env_r, env_r, (u8)ic_outer));
+        w = w + 1;
+    }
+    return env_r;
+}
+
 fn name_is_local_of_function(fn_node: AstNode*, source: char*, name: char*, name_len: u32) -> bool {
     // Params
     let i: u32 = 0;
@@ -1945,8 +2075,17 @@ fn scan_inner_for_captures(c: Compiler*, fn_node: AstNode*, body: AstNode*) -> v
     }
 
     if k == NodeKind::FunctionDecl || k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
-        // Don't descend into deeply-nested function bodies for MVP.
-        // (A proper multi-level analysis would recurse and chain.)
+        // Descend into nested function bodies so transitive captures
+        // are discovered. `fn_node` stays the IMMEDIATE inner function
+        // we're scanning *for* (used to gate "is this name a local of
+        // the inner?"); when we recurse into a doubly-nested function,
+        // we conservatively keep fn_node — works for the common case
+        // where the deeply-nested code doesn't shadow the
+        // outer-function name we're looking for. (TODO: precise scope
+        // tracking for shadow cases.)
+        if body.left != NULL {
+            scan_inner_for_captures(c, body, body.left);
+        }
         return;
     }
 
@@ -2159,9 +2298,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         let needs_wrap = f.needs_env || inner_has_captures_from(c);
         if needs_wrap {
             let cls_reg = alloc_reg(c);
-            let env_reg: u8 = 0;
-            if c.needs_env { env_reg = c.env_reg; }
-            emit(c, make_inst_abc(Op::MakeClosure, cls_reg, r, env_reg));
+            let env = closure_env_reg(c);
+            emit(c, make_inst_abc(Op::MakeClosure, cls_reg, r, env.reg));
+            if env.is_temp { release_reg(c, env.reg); }
             release_reg(c, r);
             r = cls_reg;
         }

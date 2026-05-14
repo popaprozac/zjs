@@ -2907,6 +2907,12 @@ fn host_function_apply(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
 def WRAPPER_VALUE_KEY: char* = (char*)"__zjs_primitive__";
 def WRAPPER_VALUE_KEY_LEN: u32 = 17;
 
+// Hidden slot used by closure envs to chain to the enclosing
+// function's env. Used by deeply-nested closures to walk past their
+// immediate parent (Phase 3.9j).
+def OUTER_ENV_KEY: char* = (char*)"__zjs_outer_env__";
+def OUTER_ENV_KEY_LEN: u32 = 17;
+
 // ECMA-262 §7.1.18 ToObject. Wraps primitives in their corresponding
 // wrapper objects (so `Array.prototype.X.call(true, ...)` sees an
 // object). For null/undefined, sets ctx.had_error and returns
