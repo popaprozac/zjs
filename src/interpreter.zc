@@ -1566,13 +1566,22 @@ fn zjs_to_primitive(ctx: ZjsContext*, v: ZjsValue, prefer_string: bool) -> ZjsVa
     let m1 = property_get(ctx, v, zjs_cell_from_ptr((void*)first_atom));
     if zjs_is_function(m1) != 0 || zjs_is_closure(m1) != 0 || zjs_is_host_function(m1) != 0 {
         let r1 = zjs_call_value_with_this(ctx, m1, v, argv, 0);
-        if zjs_is_object(r1) == 0 { return r1; }
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_object(r1) == 0 && zjs_is_array(r1) == 0 { return r1; }
     }
     let m2 = property_get(ctx, v, zjs_cell_from_ptr((void*)second_atom));
     if zjs_is_function(m2) != 0 || zjs_is_closure(m2) != 0 || zjs_is_host_function(m2) != 0 {
         let r2 = zjs_call_value_with_this(ctx, m2, v, argv, 0);
-        if zjs_is_object(r2) == 0 { return r2; }
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_object(r2) == 0 && zjs_is_array(r2) == 0 { return r2; }
     }
+    // ECMA-262 §7.1.1 step 8: neither method returned a primitive.
+    // Raise a TypeError via the pending-throw bridge; the calling op
+    // will promote it before the next instruction.
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                (char*)"Cannot convert object to primitive value", 40);
+    ctx.pending_throw_active = true;
+    ctx.pending_throw_value  = err;
     return zjs_undefined();
 }
 

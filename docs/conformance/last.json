@@ -1,19 +1,15 @@
 {
   "summary": {
-    "when": "2026-05-14 17:51 UTC",
+    "when": "2026-05-14 17:57 UTC",
     "total": 4821,
-    "passed": 2459,
-    "failed": 336,
+    "passed": 2474,
+    "failed": 321,
     "skipped": 2026
   },
   "failures": [
     {
       "path": "test/language/expressions/addition/S11.6.1_A1.js",
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009+\\u00091 === 2"
-    },
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A2.2_T1.js",
-      "reason": "zjs: throw: Test262Error: #8.2: 1 + {valueOf: function() {return {}}, toString: function() {return {}}} throw TypeError."
     },
     {
       "path": "test/language/expressions/addition/S11.6.1_A2.2_T3.js",
@@ -28,44 +24,20 @@
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009-\\u00091 === 0"
     },
     {
-      "path": "test/language/expressions/subtraction/S11.6.2_A2.2_T1.js",
-      "reason": "zjs: throw: Test262Error: #8.2: 1 - {valueOf: function() {return {}}, toString: function() {return {}}} throw TypeError."
-    },
-    {
       "path": "test/language/expressions/multiplication/S11.5.1_A1.js",
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009*\\u00091 === 1"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A2.2_T1.js",
-      "reason": "zjs: throw: Test262Error: #8.2: 1 * {valueOf: function() {return {}}, toString: function() {return {}}} throw TypeError."
     },
     {
       "path": "test/language/expressions/division/S11.5.2_A1.js",
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009/\\u00091 === 1"
     },
     {
-      "path": "test/language/expressions/division/S11.5.2_A2.2_T1.js",
-      "reason": "zjs: throw: Test262Error: #8.2: 1 / {valueOf: function() {return {}}, toString: function() {return {}}} throw TypeError."
-    },
-    {
       "path": "test/language/expressions/modulus/S11.5.3_A1.js",
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009%\\u00091 === 0"
     },
     {
-      "path": "test/language/expressions/modulus/S11.5.3_A2.2_T1.js",
-      "reason": "zjs: throw: Test262Error: #8.2: 1 % {valueOf: function() {return {}}, toString: function() {return {}}} throw TypeError."
-    },
-    {
       "path": "test/language/expressions/equals/S11.9.1_A1.js",
       "reason": "zjs: throw: Test262Error: #1: (true\\u0009==\\u00091) === true"
-    },
-    {
-      "path": "test/language/expressions/equals/S11.9.1_A7.8.js",
-      "reason": "zjs: throw: Test262Error: #8.2: ({valueOf: function() {return {}}, toString: function() {return {}}} == 1) throw TypeErr"
-    },
-    {
-      "path": "test/language/expressions/equals/S11.9.1_A7.9.js",
-      "reason": "zjs: throw: Test262Error: #8.2: (1 == {valueOf: function() {return {}}, toString: function() {return {}}}) throw TypeErr"
     },
     {
       "path": "test/language/expressions/equals/to-prim-hint.js",
@@ -76,24 +48,12 @@
       "reason": "zjs: throw: Test262Error: #1: (true\\u0009!=\\u00091) === false"
     },
     {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A7.8.js",
-      "reason": "zjs: throw: Test262Error: #8: (1 != {valueOf: function() {return {}}, toString: function() {return {}}}) throw TypeError"
-    },
-    {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A7.9.js",
-      "reason": "zjs: throw: Test262Error: #8.2: ({valueOf: function() {return {}}, toString: function() {return {}}} != 1) throw TypeErr"
-    },
-    {
       "path": "test/language/expressions/strict-equals/S11.9.4_A1.js",
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009===\\u00091"
     },
     {
       "path": "test/language/expressions/less-than/S11.8.1_A1.js",
       "reason": "zjs: throw: Test262Error: #1: (0\\u0009<\\u00091) === true"
-    },
-    {
-      "path": "test/language/expressions/less-than/S11.8.1_A2.2_T1.js",
-      "reason": "zjs: throw: Test262Error: #8.2: 1 < {valueOf: function() {return {}}, toString: function() {return {}}} throw TypeError."
     },
     {
       "path": "test/language/expressions/less-than/S11.8.1_A4.12_T1.js",
@@ -104,10 +64,6 @@
       "reason": "zjs: throw: Test262Error: #1: 0\\u0009>\\u00091) === false"
     },
     {
-      "path": "test/language/expressions/greater-than/S11.8.2_A2.2_T1.js",
-      "reason": "zjs: throw: Test262Error: #8.2: 1 > {valueOf: function() {return {}}, toString: function() {return {}}} throw TypeError."
-    },
-    {
       "path": "test/language/expressions/greater-than/S11.8.2_A4.12_T1.js",
       "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" > \"\\uFFFF\") === false"
     },
@@ -116,20 +72,12 @@
       "reason": "zjs: throw: Test262Error: #1: (1\\u0009<=\\u00091) === true"
     },
     {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A2.2_T1.js",
-      "reason": "zjs: throw: Test262Error: #8.2: 1 <= {valueOf: function() {return {}}, toString: function() {return {}}} throw TypeError"
-    },
-    {
       "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.12_T1.js",
       "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" <= \"\\uFFFF\") === true"
     },
     {
       "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A1.js",
       "reason": "zjs: throw: Test262Error: #1: (1\\u0009>=\\u00091) === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A2.2_T1.js",
-      "reason": "zjs: throw: Test262Error: #8.2: 1 >= {valueOf: function() {return {}}, toString: function() {return {}}} throw TypeError"
     },
     {
       "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.12_T1.js",
@@ -152,16 +100,8 @@
       "reason": "zjs: throw: Test262Error: #1: -\\u00091 === -1"
     },
     {
-      "path": "test/language/expressions/unary-minus/S11.4.7_A2.2_T1.js",
-      "reason": "zjs: throw: Test262Error: #8.2: var object = {valueOf: function() {return {}}, toString: function() {return {}}}; -objec"
-    },
-    {
       "path": "test/language/expressions/unary-plus/S11.4.6_A1.js",
       "reason": "zjs: throw: Test262Error: #1: +\\u00091 === 1"
-    },
-    {
-      "path": "test/language/expressions/unary-plus/S11.4.6_A2.2_T1.js",
-      "reason": "zjs: throw: Test262Error: #8.2: var object = {valueOf: function() {return {}}, toString: function() {return {}}}; +objec"
     },
     {
       "path": "test/language/expressions/unary-plus/S11.4.6_A3_T3.js",
