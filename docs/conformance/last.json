@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-14 18:19 UTC",
+    "when": "2026-05-14 18:21 UTC",
     "total": 4821,
-    "passed": 2491,
-    "failed": 304,
+    "passed": 2495,
+    "failed": 300,
     "skipped": 2026
   },
   "failures": [
@@ -882,22 +882,6 @@
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A11.js",
       "reason": "zjs: throw: Test262Error: #1: String.prototype.indexOf.hasOwnProperty(\"length\") return true. Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A1_T10.js",
-      "reason": "zjs: throw: Test262Error: #1: var x; var __obj = {toString:function(){return \"AB\";}}; var __obj2 = {valueOf:function(){r"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T1.js",
-      "reason": "zjs: throw: Test262Error: #1.1: Exception === \"intointeger\". Actual: [object Object]"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T2.js",
-      "reason": "zjs: throw: Test262Error: #1.1: Exception === \"intointeger\". Actual: [object Object]"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T3.js",
-      "reason": "zjs: throw: Test262Error: #1: var __obj = {toString:function(){return \"AB\";}}; var __obj2 = {valueOf:function(){return {"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T5.js",
