@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 08:52 UTC",
+    "when": "2026-05-15 08:57 UTC",
     "total": 4821,
-    "passed": 2140,
-    "failed": 655,
+    "passed": 2150,
+    "failed": 645,
     "skipped": 2026
   },
   "failures": [
@@ -1204,26 +1204,6 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-10.js",
-      "reason": "zjs: throw: Test262Error: wrong error type"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-11.js",
-      "reason": "zjs: throw: Test262Error: wrong error type"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-15.js",
-      "reason": "zjs: throw: Test262Error: lengthAccessed !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-8.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-9.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-1.js",
       "reason": "zjs: throw: Test262Error: resArr[0]"
     },
@@ -1378,26 +1358,6 @@
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-17.js",
       "reason": "zjs: throw: Test262Error: func(12, 11) !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-10.js",
-      "reason": "zjs: throw: Test262Error: wrong error type"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-11.js",
-      "reason": "zjs: throw: Test262Error: wrong error type"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-15.js",
-      "reason": "zjs: throw: Test262Error: lengthAccessed !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-8.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-9.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-5-1.js",

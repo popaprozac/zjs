@@ -3164,7 +3164,6 @@ raw {
 
 fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_array_coercible_this(ctx) { return zjs_undefined(); }
-    if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
     let this_val = ctx.host_this;
     // ECMA-262 §22.1.3.18 step 1: O = ToObject(this). Lift primitives
     // so `Array.prototype.map.call("abc", cb)` walks char indices via
@@ -3173,13 +3172,18 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         this_val = ctx_to_object(ctx, this_val);
         if ctx.pending_throw_active { return zjs_undefined(); }
     }
+    // Length via read_length_u32 — handles arrays (dense), objects
+    // (property_get + ToLength), and also functions / regex / host
+    // fns / wrapped primitives by walking the value's prototype.
+    //
+    // Spec order: a length-getter throw fires BEFORE the IsCallable
+    // check on the callback, so 4-10-style tests see the original
+    // Test262Error rather than a missing-callback TypeError.
+    let len = read_length_u32(ctx, this_val);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
     let cb = args[0];
     let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
-
-    // Length via read_length_u32 — handles arrays (dense), objects
-    // (property_get + ToLength), and now also functions / regex /
-    // host fns / wrapped primitives by walking the value's prototype.
-    let len = read_length_u32(ctx, this_val);
 
     let result_v = ctx_new_array(ctx, len);
     ctx_push_temp_root(ctx, result_v);
@@ -3364,12 +3368,15 @@ fn host_array_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
 fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_array_coercible_this(ctx) { return zjs_undefined(); }
-    if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
     let this_val = ctx.host_this;
     if zjs_is_array(this_val) == 0 && zjs_is_object(this_val) == 0 {
         this_val = ctx_to_object(ctx, this_val);
         if ctx.pending_throw_active { return zjs_undefined(); }
     }
+    // Spec order: length first, then IsCallable.
+    let _len_probe = read_length_u32(ctx, this_val);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
     let cb = args[0];
     // ECMA-262 §22.1.3.12: forEach(callbackfn, thisArg). Second arg
     // becomes `this` in the callback. Pass undefined when absent.
