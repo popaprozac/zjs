@@ -2197,6 +2197,10 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             regs[inst.a] = arr_v;
         } else if op == Op::IterPrepare {
             regs[inst.a] = iter_prepare(ctx, regs[inst.b], (u32)inst.c);
+            if ctx.pending_throw_active {
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
         } else if op == Op::ArrayLength {
             let src = regs[inst.b];
             if zjs_is_array(src) != 0 {

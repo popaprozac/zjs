@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 11:30 UTC",
+    "when": "2026-05-15 11:35 UTC",
     "total": 4821,
-    "passed": 2186,
-    "failed": 609,
+    "passed": 2187,
+    "failed": 608,
     "skipped": 2026
   },
   "failures": [
@@ -553,11 +553,11 @@
     },
     {
       "path": "test/language/statements/for-of/Array.prototype.entries.js",
-      "reason": "zjs: throw: Test262Error: Visits all elements"
+      "reason": "zjs: throw: TypeError: for-of on null or undefined"
     },
     {
       "path": "test/language/statements/for-of/Array.prototype.keys.js",
-      "reason": "zjs: throw: Test262Error: Visits all elements"
+      "reason": "zjs: throw: TypeError: for-of on null or undefined"
     },
     {
       "path": "test/language/statements/for-of/arguments-mapped-aliasing.js",
@@ -625,10 +625,6 @@
     },
     {
       "path": "test/language/statements/for-of/head-expr-primitive-iterator-method.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/for-of/head-expr-to-obj.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {

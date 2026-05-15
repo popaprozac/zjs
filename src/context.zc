@@ -1653,6 +1653,15 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
         return ctx_new_array(ctx, 0);
     }
 
+    // for-of on null/undefined throws TypeError per ECMA-262
+    // §14.7.5.5 (GetIterator → RequireObjectCoercible).
+    if zjs_is_null(src) != 0 || zjs_is_undefined(src) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"for-of on null or undefined", 27);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return ctx_new_array(ctx, 0);
+    }
     // for-of: element values. Spec: %ArrayIteratorPrototype%.next does
     // Get(O, ToString(k)) on each step — holes surface as undefined to
     // the loop, and **mutations during iteration are observed** (pops
