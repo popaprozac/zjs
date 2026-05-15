@@ -5439,6 +5439,39 @@ fn build_type_error(ctx: ZjsContext*, msg: char*) -> ZjsValue {
 
 // Object.prototype.hasOwnProperty(key) — checks own properties only,
 // not the proto chain. Reads ctx.host_this for the receiver.
+// Object.prototype.propertyIsEnumerable(V): true if `V` (as a string
+// key) is an own property of `this` AND is enumerable. Walks only
+// own slots — no prototype chain.
+fn host_property_is_enumerable(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_bool(0); }
+    let this_val = ctx.host_this;
+    let key = args[0];
+    if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+    let name = zjs_as_string(key);
+    if zjs_is_object(this_val) != 0 {
+        let o = zjs_as_object(this_val);
+        let slot = class_find_slot(o.cls, name);
+        if slot >= 0 && zjs_is_deleted(o.slots[(u32)slot]) == 0 {
+            let attrs = object_get_attrs(o, (u32)slot);
+            if (attrs & PROP_ENUMERABLE) != 0 { return zjs_bool(1); }
+        }
+        return zjs_bool(0);
+    }
+    if zjs_is_array(this_val) != 0 {
+        let a = zjs_as_array(this_val);
+        let idx = zjs_to_array_index(key);
+        if idx >= 0 && array_has_index(a, (u32)idx) != 0 { return zjs_bool(1); }
+        if a.props != NULL {
+            let slot = class_find_slot(a.props.cls, name);
+            if slot >= 0 && zjs_is_deleted(a.props.slots[(u32)slot]) == 0 {
+                let attrs = object_get_attrs(a.props, (u32)slot);
+                if (attrs & PROP_ENUMERABLE) != 0 { return zjs_bool(1); }
+            }
+        }
+    }
+    return zjs_bool(0);
+}
+
 // Object.prototype.isPrototypeOf(V): walk V's prototype chain looking
 // for `this`. Returns true if found, false otherwise. Non-object V
 // always returns false.
@@ -6062,6 +6095,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ctx.object_proto = zjs_as_object(obj_proto_v);
     let hop_ptr: void* = NULL; raw { hop_ptr = (void*)host_has_own_property; }
     let ipo_ptr: void* = NULL; raw { ipo_ptr = (void*)host_is_prototype_of; }
+    let pie_ptr: void* = NULL; raw { pie_ptr = (void*)host_property_is_enumerable; }
     let ots_ptr: void* = NULL; raw { ots_ptr = (void*)host_object_to_string; }
     let ovo_ptr: void* = NULL; raw { ovo_ptr = (void*)host_object_value_of; }
     object_set(ctx, ctx.object_proto,
@@ -6070,6 +6104,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, ctx.object_proto,
                ctx_intern_atom(ctx, (char*)"isPrototypeOf", 13),
                ctx_make_host_function_arity(ctx, (char*)"isPrototypeOf", ipo_ptr, 1));
+    object_set(ctx, ctx.object_proto,
+               ctx_intern_atom(ctx, (char*)"propertyIsEnumerable", 20),
+               ctx_make_host_function_arity(ctx, (char*)"propertyIsEnumerable", pie_ptr, 1));
     object_set(ctx, ctx.object_proto,
                ctx_intern_atom(ctx, (char*)"toString", 8),
                ctx_make_host_function(ctx, (char*)"toString", ots_ptr));
