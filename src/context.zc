@@ -2246,6 +2246,38 @@ fn require_object_keys_arg(ctx: ZjsContext*, v: ZjsValue) -> bool {
     return true;
 }
 
+// Object.is(a, b) — ECMA-262 §7.2.10 SameValue. Like ===, except
+// NaN equals NaN, and +0 doesn't equal -0.
+fn host_object_is(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let a = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let b = if argc >= 2 { args[1] } else { zjs_undefined() };
+    // NaN handling first — Object.is(NaN, NaN) is true.
+    if zjs_is_number(a) != 0 && zjs_is_number(b) != 0 {
+        let da = zjs_to_double(a);
+        let db = zjs_to_double(b);
+        let na_nan: int = 0;
+        let nb_nan: int = 0;
+        raw {
+            na_nan = isnan(da) ? 1 : 0;
+            nb_nan = isnan(db) ? 1 : 0;
+        }
+        if na_nan != 0 && nb_nan != 0 { return zjs_bool(1); }
+        if na_nan != 0 || nb_nan != 0 { return zjs_bool(0); }
+        // ±0 distinction: 1/+0 = +Infinity, 1/-0 = -Infinity.
+        if da == 0.0 && db == 0.0 {
+            let sa: int = 0;
+            let sb: int = 0;
+            raw {
+                sa = signbit(da) ? 1 : 0;
+                sb = signbit(db) ? 1 : 0;
+            }
+            return zjs_bool(if sa == sb { 1 } else { 0 });
+        }
+        return zjs_bool(if da == db { 1 } else { 0 });
+    }
+    return zjs_bool(zjs_strict_eq(a, b));
+}
+
 fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
     if !require_object_keys_arg(ctx, v) { return zjs_undefined(); }
@@ -6769,6 +6801,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let keys_ptr:   void* = NULL; raw { keys_ptr   = (void*)host_object_keys; }
     let create_ptr: void* = NULL; raw { create_ptr = (void*)host_object_create; }
     let gpo_ptr:    void* = NULL; raw { gpo_ptr    = (void*)host_object_get_prototype_of; }
+    let ois_ptr:    void* = NULL; raw { ois_ptr    = (void*)host_object_is; }
     let obj_props_v = ctx_new_object(ctx);
     object_hf.props = zjs_as_object(obj_props_v);
     // Arities reflect the function-length values test262 asserts on.
@@ -6778,6 +6811,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"create", create_ptr, 2));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getPrototypeOf", 14),
                ctx_make_host_function_arity(ctx, (char*)"getPrototypeOf", gpo_ptr, 1));
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"is", 2),
+               ctx_make_host_function_arity(ctx, (char*)"is", ois_ptr, 2));
     // Phase 3.9a — Object.defineProperty / defineProperties /
     // getOwnPropertyDescriptor.
     let dp_ptr:   void* = NULL; raw { dp_ptr   = (void*)host_object_define_property; }
