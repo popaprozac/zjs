@@ -253,6 +253,18 @@ def write_compare_html(out_path, summary, bench_names, engine_names):
   td.bench {{ font-family: ui-monospace, SFMono-Regular, monospace; }}
   td.ms {{ text-align: right; font-variant-numeric: tabular-nums; }}
   td.ratio {{ text-align: right; font-variant-numeric: tabular-nums; color: #888; }}
+  .legend {{ display: flex; gap: 1.25em; font-size: 12px; color: #555;
+             margin: 0.4em 0 0.8em; flex-wrap: wrap; }}
+  .legend .sw {{ display: inline-block; width: 10px; height: 10px;
+                 margin-right: 4px; vertical-align: middle; border-radius: 2px; }}
+  .toggle {{ font-size: 12px; color: #666; margin-bottom: 0.6em; }}
+  .toggle label {{ margin-right: 1em; cursor: pointer; }}
+  svg text.bench-label {{ font: 12px ui-monospace, SFMono-Regular, monospace;
+                          fill: #333; }}
+  svg text.tick {{ font: 11px sans-serif; fill: #777; }}
+  svg text.bar-val {{ font: 11px sans-serif; fill: #333; }}
+  svg line.grid {{ stroke: #e8e8e8; stroke-width: 1; }}
+  svg line.axis {{ stroke: #aaa; stroke-width: 1; }}
 </style>
 
 <h1>zjs vs other engines</h1>
@@ -260,6 +272,15 @@ def write_compare_html(out_path, summary, bench_names, engine_names):
 Median wall-clock per script (lower is better). Includes engine startup —
 JIT-heavy engines have small absolute numbers because the iterations
 in our scripts are too short to repay JIT cost.</p>
+
+<div class="card">
+  <div class="legend" id="legend"></div>
+  <div class="toggle">
+    <label><input type="radio" name="scale" value="linear" checked> linear</label>
+    <label><input type="radio" name="scale" value="log"> log scale</label>
+  </div>
+  <svg id="chart" width="1040" height="40" role="img" aria-label="bench comparison"></svg>
+</div>
 
 <div class="card">
   <table id="compare-table">
@@ -305,6 +326,142 @@ in our scripts are too short to repay JIT cost.</p>
     tr.innerHTML = html;
     tbody.appendChild(tr);
   }}
+
+  // --- Grouped bar chart per benchmark -----------------------------
+  // One row per bench; one bar per engine within the row, side-by-side.
+  // Bars scaled to the slowest engine on that bench so even fast engines
+  // are visible. Toggle linear/log via the radio above.
+  const palette = {{
+    zjs:  '#d65a31',
+    qjs:  '#3b82f6',
+    node: '#10b981',
+    bun:  '#a855f7',
+  }};
+  const fallbackPalette = ['#888', '#666', '#444', '#bbb'];
+  function colorFor(engine, idx) {{
+    return palette[engine] || fallbackPalette[idx % fallbackPalette.length];
+  }}
+
+  const legend = document.getElementById('legend');
+  legend.innerHTML = engines.map((e, i) => {{
+    const c = colorFor(e, i);
+    return `<span><span class="sw" style="background:${{c}}"></span>${{e}}</span>`;
+  }}).join('');
+
+  const svg = document.getElementById('chart');
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+
+  function el(name, attrs, text) {{
+    const n = document.createElementNS(SVG_NS, name);
+    for (const k in attrs) n.setAttribute(k, attrs[k]);
+    if (text != null) n.textContent = text;
+    return n;
+  }}
+
+  function getValues(benchName) {{
+    const row = data.results.find(r => r.name === benchName);
+    if (!row) return {{}};
+    return row.engines || {{}};
+  }}
+
+  function drawChart() {{
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    const scaleMode = document.querySelector('input[name=scale]:checked').value;
+
+    // Layout constants.
+    const padL = 130, padR = 40, padT = 24, padB = 28;
+    const rowH = 18 * engines.length + 12;
+    const width  = 1040;
+    const innerW = width - padL - padR;
+    const height = padT + rowH * benches.length + padB;
+    svg.setAttribute('width', width);
+    svg.setAttribute('height', height);
+    svg.setAttribute('viewBox', `0 0 ${{width}} ${{height}}`);
+
+    // Find the slowest reading across all benches/engines for scale.
+    let maxMs = 0;
+    for (const name of benches) {{
+      const v = getValues(name);
+      for (const e of engines) {{
+        if (v[e] != null && v[e] * 1000 > maxMs) maxMs = v[e] * 1000;
+      }}
+    }}
+    if (maxMs <= 0) return;
+
+    const minLog = 0.1; // ms — floor for log-scale clarity
+    function xFor(ms) {{
+      if (ms == null) return null;
+      if (scaleMode === 'log') {{
+        const lo = Math.log10(minLog);
+        const hi = Math.log10(Math.max(maxMs, minLog * 10));
+        const v  = Math.log10(Math.max(ms, minLog));
+        return padL + innerW * (v - lo) / (hi - lo);
+      }} else {{
+        return padL + innerW * (ms / maxMs);
+      }}
+    }}
+
+    // Grid + ticks.
+    const ticks = scaleMode === 'log'
+      ? [0.1, 1, 10, 100, 1000].filter(t => t <= maxMs * 1.2)
+      : (function () {{
+          const n = 5;
+          const out = [];
+          for (let i = 1; i <= n; i++) out.push(maxMs * i / n);
+          return out;
+        }})();
+    for (const t of ticks) {{
+      const x = xFor(t);
+      if (x == null) continue;
+      svg.appendChild(el('line', {{
+        class: 'grid',
+        x1: x, x2: x, y1: padT - 4, y2: height - padB,
+      }}));
+      svg.appendChild(el('text', {{
+        class: 'tick', x: x, y: height - padB + 14, 'text-anchor': 'middle',
+      }}, t < 10 ? t.toFixed(1) : Math.round(t).toString()));
+    }}
+    // Axis line
+    svg.appendChild(el('line', {{
+      class: 'axis', x1: padL, x2: width - padR,
+      y1: height - padB, y2: height - padB,
+    }}));
+    svg.appendChild(el('text', {{
+      class: 'tick', x: (padL + width - padR) / 2, y: height - 6,
+      'text-anchor': 'middle',
+    }}, 'milliseconds (median wall-clock)'));
+
+    // Rows.
+    benches.forEach((name, bi) => {{
+      const y0 = padT + bi * rowH;
+      const v  = getValues(name);
+      svg.appendChild(el('text', {{
+        class: 'bench-label', x: padL - 8, y: y0 + rowH / 2,
+        'text-anchor': 'end', 'dominant-baseline': 'middle',
+      }}, name));
+
+      engines.forEach((e, ei) => {{
+        const ms = v[e] != null ? v[e] * 1000 : null;
+        const yy = y0 + 6 + ei * 18;
+        if (ms == null) return;
+        const xEnd = xFor(ms);
+        const x0   = xFor(scaleMode === 'log' ? Math.max(ms, minLog) * 0 + minLog : 0);
+        const x    = (scaleMode === 'log') ? padL : padL;
+        const w    = Math.max(1, xEnd - padL);
+        svg.appendChild(el('rect', {{
+          x: x, y: yy, width: w, height: 14,
+          fill: colorFor(e, ei), rx: 2, ry: 2,
+        }}));
+        svg.appendChild(el('text', {{
+          class: 'bar-val', x: xEnd + 4, y: yy + 11,
+        }}, ms < 10 ? ms.toFixed(2) + 'ms' : ms.toFixed(1) + 'ms'));
+      }});
+    }});
+  }}
+
+  drawChart();
+  document.querySelectorAll('input[name=scale]').forEach(r =>
+    r.addEventListener('change', drawChart));
 </script>
 </html>
 """
