@@ -3114,6 +3114,11 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         let pmatch_buf: ZRegMatch[1];
         let cursor: u32 = 0;
         let scan: u32 = 0;
+        // Set when the last emitted piece came from the empty-match
+        // single-char advance (so the trailing "" should be suppressed,
+        // matching ECMA-262's split-into-chars semantic for an empty
+        // pattern). Cleared on any normal piece emission.
+        let last_was_empty_advance: bool = false;
         while scan <= hay_n && arr.length < limit_u32 {
             let rc: int = -1;
             let scan_off = scan;
@@ -3136,8 +3141,10 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
                 array_set(arr, arr.length, ctx_intern_string_take(ctx, pbuf, 1));
                 cursor = cursor + 1;
                 scan = cursor;
+                last_was_empty_advance = true;
                 continue;
             }
+            last_was_empty_advance = false;
             let piece_len = mstart - cursor;
             let pbuf = alloc_n<char>((usize)(piece_len + 1));
             if piece_len > 0 {
@@ -3151,16 +3158,20 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             // Avoid infinite loops on /(?=x)/-style empty matches.
             scan = if mend > scan { mend } else { scan + 1 };
         }
-        // Trailing piece. For the empty-regex / split-into-chars case
-        // we've already emitted all chars, so cursor == hay_n and the
-        // remainder is empty — skip emitting it (would add a spurious
-        // "" otherwise).
-        if arr.length < limit_u32 && cursor < hay_n {
+        // Trailing piece. Spec emits even an empty trailing element
+        // after the final non-empty match (`"abc".split(/[a-z]/)` →
+        // `["", "", "", ""]`). The empty-regex / split-into-chars
+        // case (`"abc".split(new RegExp())` → `["a", "b", "c"]`) is
+        // the lone exception — suppress the tail when the loop exited
+        // via the empty-match single-char advance branch.
+        if arr.length < limit_u32 && !last_was_empty_advance {
             let tlen = hay_n - cursor;
             let tbuf = alloc_n<char>((usize)(tlen + 1));
-            let src: char* = NULL;
-            raw { src = &hay_d[cursor]; }
-            mem_copy<char>(tbuf, src, (usize)tlen);
+            if tlen > 0 {
+                let src: char* = NULL;
+                raw { src = &hay_d[cursor]; }
+                mem_copy<char>(tbuf, src, (usize)tlen);
+            }
             tbuf[tlen] = (char)0;
             array_set(arr, arr.length, ctx_intern_string_take(ctx, tbuf, tlen));
         }
