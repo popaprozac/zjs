@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 08:15 UTC",
+    "when": "2026-05-15 08:27 UTC",
     "total": 4821,
-    "passed": 2118,
-    "failed": 677,
+    "passed": 2120,
+    "failed": 675,
     "skipped": 2026
   },
   "failures": [
@@ -1024,16 +1024,8 @@
       "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, true)"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-9.js",
-      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, true)"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-2-17.js",
       "reason": "zjs: throw: Test262Error: func(0, true) !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-2-19.js",
-      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, obj[1])"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-13.js",

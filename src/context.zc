@@ -2480,51 +2480,41 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         }
         return zjs_int32(-1);
     }
-    if zjs_is_object(this_val) != 0 {
-        // Generic-this: length may be > 2^32 (e.g. MAX_SAFE_INTEGER).
-        // Use a double counter so the spec range works, and honor
-        // fromIndex so callers near the limit can search a tiny window.
-        let o = zjs_as_object(this_val);
-        let len_d: f64 = 0.0;
-        let len_atom = ctx_intern_atom(ctx, (char*)"length", 6);
-        let lkv = property_get(ctx, this_val, zjs_cell_from_ptr((void*)len_atom));
-        // ToLength(length) — ToNumber's ToPrimitive("number") hits
-        // valueOf first per spec. zjs_to_double on a bare object
-        // would have returned NaN.
-        if zjs_is_object(lkv) != 0 || zjs_is_array(lkv) != 0 {
-            lkv = zjs_to_primitive(ctx, lkv, false);
+    // Generic-this for everything else (objects, functions, closures,
+    // host fns, regex). Reads via property_get so the right prototype
+    // chain and accessor handling fire for each receiver kind.
+    let len_atom = ctx_intern_atom(ctx, (char*)"length", 6);
+    let lkv = property_get(ctx, this_val, zjs_cell_from_ptr((void*)len_atom));
+    if zjs_is_object(lkv) != 0 || zjs_is_array(lkv) != 0 {
+        lkv = zjs_to_primitive(ctx, lkv, false);
+        if ctx.pending_throw_active { return zjs_int32(-1); }
+    }
+    let len_d = zjs_to_double(lkv);
+    raw { if (!isfinite(len_d) || len_d <= 0.0) len_d = 0.0; }
+    let from_d: f64 = 0.0;
+    if argc >= 2 {
+        let pos = args[1];
+        if zjs_is_object(pos) != 0 || zjs_is_array(pos) != 0 {
+            pos = zjs_to_primitive(ctx, pos, false);
             if ctx.pending_throw_active { return zjs_int32(-1); }
         }
-        len_d = zjs_to_double(lkv);
-        raw { if (!isfinite(len_d) || len_d <= 0.0) len_d = 0.0; }
-        let from_d: f64 = 0.0;
-        if argc >= 2 {
-            // ToInteger(fromIndex) goes through ToPrimitive("number"),
-            // so an object with a valueOf needs to fire.
-            let pos = args[1];
-            if zjs_is_object(pos) != 0 || zjs_is_array(pos) != 0 {
-                pos = zjs_to_primitive(ctx, pos, false);
-                if ctx.pending_throw_active { return zjs_int32(-1); }
-            }
-            from_d = zjs_to_double(pos);
-            raw { if (isnan(from_d)) from_d = 0; }
-            if from_d < 0.0 {
-                from_d = len_d + from_d;
-                if from_d < 0.0 { from_d = 0.0; }
-            }
+        from_d = zjs_to_double(pos);
+        raw { if (isnan(from_d)) from_d = 0; }
+        if from_d < 0.0 {
+            from_d = len_d + from_d;
+            if from_d < 0.0 { from_d = 0.0; }
         }
-        if from_d >= len_d { return zjs_int32(-1); }
-        let i = from_d;
-        while i < len_d {
-            let idx_u: u32 = (u32)i;
-            let v = obj_get_indexed(ctx, o, idx_u);
-            if zjs_strict_eq(v, needle) != 0 {
-                if i <= 2147483647.0 { return zjs_int32((i32)i); }
-                return zjs_double(i);
-            }
-            i = i + 1.0;
+    }
+    if from_d >= len_d { return zjs_int32(-1); }
+    let i = from_d;
+    while i < len_d {
+        let idx_u: u32 = (u32)i;
+        let v = property_get(ctx, this_val, zjs_int32((i32)idx_u));
+        if zjs_strict_eq(v, needle) != 0 {
+            if i <= 2147483647.0 { return zjs_int32((i32)i); }
+            return zjs_double(i);
         }
-        return zjs_int32(-1);
+        i = i + 1.0;
     }
     return zjs_int32(-1);
 }
