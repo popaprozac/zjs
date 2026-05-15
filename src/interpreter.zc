@@ -190,6 +190,17 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
             if is_call  != 0 { return ctx.fn_call_v; }
             if is_apply != 0 { return ctx.fn_apply_v; }
+            // Expando bag — fires before Object.prototype so user-set
+            // properties shadow inherited methods (`fn.toString = ...`
+            // wins over Object.prototype.toString). Mirrors how host
+            // functions and arrays carry a lazy props object.
+            let fp_p = zjs_cell_as_ptr(obj);
+            let f_p: Function* = NULL;
+            raw { f_p = (Function*)fp_p; }
+            if f_p.props != NULL {
+                let pv = object_get(f_p.props, ks);
+                if zjs_is_undefined(pv) == 0 { return pv; }
+            }
             if ctx.object_proto != NULL {
                 let cur = ctx.object_proto;
                 while cur != NULL {
@@ -406,20 +417,32 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         object_set(ctx, o, name, value);
         return;
     }
-    // Function.prototype = obj (Phase 3.6). Only the prototype slot is
-    // writable in MVP; other function properties are ignored.
+    // Function: `.prototype` updates the prototype slot (Phase 3.6),
+    // anything else lands on the lazy props bag — same shape as host
+    // functions and array expandos. Unlocks the standard idiom
+    // `fn.cnt = 0; fn.cnt++` and the test262 harness pattern
+    // (`assert.sameValue = function (...) { ... }`).
     if zjs_is_function(obj) != 0 && zjs_is_string(key) != 0 {
         let ks = zjs_as_string(key);
         let is_proto: int = 0;
         let kd = ks.data;
         let kn = ks.length;
         raw { is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0; }
+        let fp = zjs_cell_as_ptr(obj);
+        let f: Function* = NULL;
+        raw { f = (Function*)fp; }
         if is_proto != 0 && zjs_is_object(value) != 0 {
-            let fp = zjs_cell_as_ptr(obj);
-            let f: Function* = NULL;
-            raw { f = (Function*)fp; }
             f.prototype = zjs_as_object(value);
+            return;
         }
+        // `.prototype = non-object` is a no-op in MVP (spec coerces /
+        // ignores per writable=false in some envs); preserve that.
+        if is_proto != 0 { return; }
+        if f.props == NULL {
+            let pv = ctx_new_object(ctx);
+            f.props = zjs_as_object(pv);
+        }
+        object_set(ctx, f.props, ks, value);
         return;
     }
     if zjs_is_host_function(obj) != 0 && zjs_is_string(key) != 0 {
@@ -1666,10 +1689,24 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                     let name = zjs_as_string(key_str_val);
                     if class_find_slot(hf.props.cls, name) >= 0 { present = 1; }
                 }
+            } else if zjs_is_function(obj) != 0 {
+                // Function: probe .props (Function.prototype always
+                // exists, but "prototype" in fn returns true only if
+                // the user touched it — mirror what V8/JSC do for an
+                // unobserved-prototype function: report `true` for the
+                // well-known own-slots and the props bag).
+                let fp = zjs_cell_as_ptr(obj);
+                let f: Function* = NULL;
+                raw { f = (Function*)fp; }
+                if f.props != NULL {
+                    let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+                    let name = zjs_as_string(key_str_val);
+                    if class_find_slot(f.props.cls, name) >= 0 { present = 1; }
+                }
             }
-            // Function / Closure: only have .prototype + .call/.apply
-            // — match the spec-y "no own props" for those; leave
-            // present=0.
+            // Closure: still no own-props (closures wrap a Function
+            // and would alias if they piggybacked on f.props). Leave
+            // present=0 for now; revisit if a harness needs it.
             regs[inst.a] = zjs_bool(present);
         } else if op == Op::Instanceof {
             // val instanceof ctor — ctor.prototype must be in val's chain.

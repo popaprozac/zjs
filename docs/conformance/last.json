@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 01:18 UTC",
+    "when": "2026-05-15 01:27 UTC",
     "total": 4821,
-    "passed": 2538,
-    "failed": 257,
+    "passed": 1865,
+    "failed": 930,
     "skipped": 2026
   },
   "failures": [
@@ -12,8 +12,24 @@
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009+\\u00091 === 2"
     },
     {
-      "path": "test/language/expressions/addition/S11.6.1_A2.2_T3.js",
-      "reason": "zjs: throw: Test262Error: #2: f1unction f2() {return 0;} f2.valueOf = function() {return 1;}; 1 + f2 === 1 + 1. Actual: "
+      "path": "test/language/expressions/addition/coerce-symbol-to-prim-err.js",
+      "reason": "zjs: throw: Test262Error: error thrown by left-hand side"
+    },
+    {
+      "path": "test/language/expressions/addition/coerce-symbol-to-prim-invocation.js",
+      "reason": "zjs: throw: Test262Error: methods invoked in correct sequence"
+    },
+    {
+      "path": "test/language/expressions/addition/coerce-symbol-to-prim-return-obj.js",
+      "reason": "zjs: throw: Test262Error: ordinary object value, right-hand side"
+    },
+    {
+      "path": "test/language/expressions/addition/coerce-symbol-to-prim-return-prim.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/expressions/addition/get-symbol-to-prim-err.js",
+      "reason": "zjs: throw: Test262Error: error from property access of left-hand side"
     },
     {
       "path": "test/language/expressions/subtraction/S11.6.2_A1.js",
@@ -28,12 +44,36 @@
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009/\\u00091 === 1"
     },
     {
+      "path": "test/language/expressions/division/no-magic-asi-from-block-eval.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/language/expressions/modulus/S11.5.3_A1.js",
       "reason": "zjs: throw: Test262Error: #1: 1\\u0009%\\u00091 === 0"
     },
     {
       "path": "test/language/expressions/equals/S11.9.1_A1.js",
       "reason": "zjs: throw: Test262Error: #1: (true\\u0009==\\u00091) === true"
+    },
+    {
+      "path": "test/language/expressions/equals/coerce-symbol-to-prim-err.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/expressions/equals/coerce-symbol-to-prim-invocation.js",
+      "reason": "zjs: throw: Test262Error: method invoked exactly once"
+    },
+    {
+      "path": "test/language/expressions/equals/coerce-symbol-to-prim-return-obj.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/expressions/equals/coerce-symbol-to-prim-return-prim.js",
+      "reason": "zjs: throw: Test262Error: number primitive (equal)"
+    },
+    {
+      "path": "test/language/expressions/equals/get-symbol-to-prim-err.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/language/expressions/equals/to-prim-hint.js",
@@ -100,8 +140,44 @@
       "reason": "zjs: throw: Test262Error: #1: +\\u00091 === 1"
     },
     {
+      "path": "test/language/expressions/typeof/built-in-exotic-objects-no-call.js",
+      "reason": "zjs: throw: Test262Error: typeof this === \"object\""
+    },
+    {
+      "path": "test/language/expressions/typeof/built-in-functions.js",
+      "reason": "zjs: throw: Test262Error: typeof Math.exp === \"function\""
+    },
+    {
+      "path": "test/language/expressions/typeof/built-in-ordinary-objects-no-call.js",
+      "reason": "zjs: throw: Test262Error: typeof Reflect === \"object\""
+    },
+    {
+      "path": "test/language/expressions/typeof/get-value.js",
+      "reason": "zjs: throw: Test262Error: typeof x === \"number\""
+    },
+    {
+      "path": "test/language/expressions/typeof/native-call.js",
+      "reason": "zjs: throw: Test262Error: typeof new Function() === \"function\""
+    },
+    {
+      "path": "test/language/expressions/typeof/null.js",
+      "reason": "zjs: throw: Test262Error: typeof RegExp(\"0\").exec(\"1\") === \"object\""
+    },
+    {
+      "path": "test/language/expressions/typeof/string.js",
+      "reason": "zjs: throw: Test262Error: typeof Date() === \"string\""
+    },
+    {
+      "path": "test/language/expressions/typeof/syntax.js",
+      "reason": "zjs: throw: Test262Error: #1: var x = 0; typeof\\u0009x; x === \"number\"."
+    },
+    {
       "path": "test/language/expressions/conditional/S11.12_A1.js",
       "reason": "zjs: throw: Test262Error: #1: (false\\u0009?\\u0009true\\u0009:\\u0009true) === true"
+    },
+    {
+      "path": "test/language/expressions/conditional/coalesce-expr-ternary.js",
+      "reason": "zjs: throw: Test262Error: false ?? true ? 0 : 42"
     },
     {
       "path": "test/language/expressions/conditional/in-branch-1.js",
@@ -164,12 +240,20 @@
       "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
     },
     {
+      "path": "test/language/expressions/instanceof/prototype-getter-with-object-throws.js",
+      "reason": "zjs: throw: Test262Error: wrong error type"
+    },
+    {
       "path": "test/language/expressions/instanceof/prototype-getter-with-object.js",
       "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
     },
     {
       "path": "test/language/expressions/instanceof/prototype-getter-with-primitive.js",
       "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+    },
+    {
+      "path": "test/language/expressions/instanceof/symbol-hasinstance-get-err.js",
+      "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
       "path": "test/language/expressions/instanceof/symbol-hasinstance-invocation.js",
@@ -188,6 +272,10 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/language/expressions/this/11.1.1-1.js",
+      "reason": "zjs: throw: Test262Error: notSameValue failed"
+    },
+    {
       "path": "test/language/expressions/this/S11.1.1_A3.2.js",
       "reason": "zjs: throw: Test262Error: #2: function SetEvalThis() {this.THIS = eval(\"this\")} (new SetEvalThis()).THIS.toString() !== "
     },
@@ -198,6 +286,22 @@
     {
       "path": "test/language/statements/if/S12.5_A2.js",
       "reason": "zjs: throw: Test262Error: #1: In the \"if\" Statement eval as Expression is admitted"
+    },
+    {
+      "path": "test/language/statements/if/cptn-else-false-nrml.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/if/cptn-else-true-nrml.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/if/cptn-no-else-true-abrupt-empty.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/if/cptn-no-else-true-nrml.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/if/let-block-with-newline.js",
@@ -218,6 +322,14 @@
     {
       "path": "test/language/statements/while/S12.6.2_A8.js",
       "reason": "zjs: throw: Test262Error: #1: __odds === 5. Actual:  __odds ===0"
+    },
+    {
+      "path": "test/language/statements/while/cptn-abrupt-empty.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/while/cptn-iter.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/while/let-block-with-newline.js",
@@ -242,6 +354,22 @@
     {
       "path": "test/language/statements/do-while/S12.6.1_A8.js",
       "reason": "zjs: throw: Test262Error: #1: __odds === 5. Actual:  __odds ===0"
+    },
+    {
+      "path": "test/language/statements/do-while/cptn-abrupt-empty.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/do-while/cptn-normal.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for/cptn-decl-expr-iter.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for/cptn-expr-expr-iter.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/for/head-const-bound-names-in-stmt.js",
@@ -272,6 +400,26 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/language/statements/for/scope-body-lex-boundary.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for/scope-body-lex-open.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for/scope-head-lex-close.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for/scope-head-lex-open.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-in/12.6.4-2.js",
+      "reason": "zjs: throw: Test262Error: accessedProp"
+    },
+    {
       "path": "test/language/statements/for-in/S12.6.4_A3.1.js",
       "reason": "zjs: throw: Test262Error: #1: __evaluated === __str. Actual:  __evaluated ===undefined"
     },
@@ -296,12 +444,36 @@
       "reason": "zjs: throw: Test262Error: Unexpected value: 'aa1ba2ca3'"
     },
     {
+      "path": "test/language/statements/for-in/cptn-decl-abrupt-empty.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-in/cptn-decl-itr.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-in/cptn-expr-abrupt-empty.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-in/cptn-expr-itr.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-in/head-const-bound-names-fordecl-tdz.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/language/statements/for-in/head-const-bound-names-in-stmt.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
       "path": "test/language/statements/for-in/head-const-bound-names-let.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/for-in/head-let-bound-names-fordecl-tdz.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/language/statements/for-in/head-let-bound-names-in-stmt.js",
@@ -314,6 +486,10 @@
     {
       "path": "test/language/statements/for-in/head-let-destructuring.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/for-in/head-let-fresh-binding-per-iteration.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/for-in/head-lhs-let.js",
@@ -336,6 +512,14 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/language/statements/for-in/resizable-buffer.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-in/scope-body-lex-boundary.js",
+      "reason": "zjs: throw: Test262Error: notSameValue failed"
+    },
+    {
       "path": "test/language/statements/for-in/scope-body-lex-close.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -350,6 +534,10 @@
     {
       "path": "test/language/statements/for-in/scope-head-lex-close.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/for-in/scope-head-lex-open.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/for-in/scope-head-var-none.js",
@@ -380,12 +568,68 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
+      "path": "test/language/statements/for-of/Array.prototype.entries.js",
+      "reason": "zjs: throw: Test262Error: Visits all elements"
+    },
+    {
+      "path": "test/language/statements/for-of/Array.prototype.keys.js",
+      "reason": "zjs: throw: Test262Error: Visits all elements"
+    },
+    {
+      "path": "test/language/statements/for-of/arguments-mapped-aliasing.js",
+      "reason": "zjs: throw: Test262Error: argument at index 1"
+    },
+    {
+      "path": "test/language/statements/for-of/arguments-mapped-mutation.js",
+      "reason": "zjs: throw: Test262Error: argument at index 1"
+    },
+    {
+      "path": "test/language/statements/for-of/arguments-unmapped-mutation.js",
+      "reason": "zjs: throw: Test262Error: argument at index 1"
+    },
+    {
+      "path": "test/language/statements/for-of/array-contract.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/array-expand.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/array-key-get-error.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/for-of/cptn-decl-abrupt-empty.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/cptn-decl-itr.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/cptn-expr-abrupt-empty.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/cptn-expr-itr.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/head-const-bound-names-fordecl-tdz.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/language/statements/for-of/head-const-bound-names-in-stmt.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
       "path": "test/language/statements/for-of/head-const-bound-names-let.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/for-of/head-const-fresh-binding-per-iteration.js",
+      "reason": "zjs: throw: Test262Error: `f[0]()` returns `1`"
     },
     {
       "path": "test/language/statements/for-of/head-const-init.js",
@@ -400,6 +644,22 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
+      "path": "test/language/statements/for-of/head-expr-obj-iterator-method.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/for-of/head-expr-primitive-iterator-method.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/for-of/head-expr-to-obj.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/for-of/head-let-bound-names-fordecl-tdz.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/language/statements/for-of/head-let-bound-names-in-stmt.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
@@ -410,6 +670,10 @@
     {
       "path": "test/language/statements/for-of/head-let-destructuring.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/for-of/head-let-fresh-binding-per-iteration.js",
+      "reason": "zjs: throw: Test262Error: `f[0]()` returns `1`"
     },
     {
       "path": "test/language/statements/for-of/head-let-init.js",
@@ -452,6 +716,30 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/language/statements/for-of/map-contract-expand.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/map-contract.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/map-expand-contract.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/map-expand.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/map.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/scope-body-lex-boundary.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/language/statements/for-of/scope-body-lex-close.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -468,8 +756,40 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/language/statements/for-of/scope-head-lex-open.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/language/statements/for-of/scope-head-var-none.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/for-of/set-contract-expand.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/set-contract.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/set-expand-contract.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/set-expand.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/set.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/string-astral-truncated.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/string-astral.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-grow-before-end.js",
@@ -485,7 +805,19 @@
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-shrink-to-zero-mid-iteration.js",
-      "reason": "zjs: throw: Test262Error: TestIterationAndResize: resize condition should have been hit"
+      "reason": "zjs: throw: Test262Error: wrong error type"
+    },
+    {
+      "path": "test/language/statements/try/12.14-14.js",
+      "reason": "zjs: throw: Test262Error: result"
+    },
+    {
+      "path": "test/language/statements/try/12.14-15.js",
+      "reason": "zjs: throw: Test262Error: result"
+    },
+    {
+      "path": "test/language/statements/try/12.14-16.js",
+      "reason": "zjs: throw: Test262Error: result"
     },
     {
       "path": "test/language/statements/try/S12.14_A14.js",
@@ -500,12 +832,48 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/language/statements/try/catch-parameter-boundnames-restriction-arguments-eval-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/language/statements/try/catch-parameter-boundnames-restriction-arguments-negative-early.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
+      "path": "test/language/statements/try/catch-parameter-boundnames-restriction-eval-eval-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/language/statements/try/catch-parameter-boundnames-restriction-eval-negative-early.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/try/completion-values-fn-finally-abrupt.js",
+      "reason": "zjs: throw: Test262Error: 2: fiinally count"
+    },
+    {
+      "path": "test/language/statements/try/completion-values.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/try/cptn-catch.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/try/cptn-finally-from-catch.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/try/cptn-finally-skip-catch.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/try/cptn-finally-wo-catch.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/try/cptn-try.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/try/early-catch-function.js",
@@ -516,8 +884,20 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
+      "path": "test/language/statements/try/optional-catch-binding-lexical.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/try/scope-catch-block-lex-close.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/language/statements/try/scope-catch-block-lex-open.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/try/scope-catch-param-lex-close.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/try/scope-catch-param-lex-open.js",
@@ -536,8 +916,28 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/language/statements/empty/cptn-value.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/language/statements/block/labeled-continue.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/block/scope-lex-close.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/block/scope-lex-open.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A2_T2.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A3.js",
+      "reason": "zjs: throw: Test262Error: The value of push is expected to be 4294967295"
     },
     {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A4_T1.js",
@@ -546,6 +946,46 @@
     {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A4_T2.js",
       "reason": "zjs: throw: Test262Error: #1: var obj = {}; obj.push = Array.prototype.push; obj.length = 4294967295; obj.push(\"x\", \"y\","
+    },
+    {
+      "path": "test/built-ins/Array/prototype/push/call-with-boolean.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.push.call(true) must return 0"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/push/clamps-to-integer-limit.js",
+      "reason": "zjs: throw: Test262Error: Length is 2**53 - 1"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/push/length-near-integer-limit-set-failure.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/push/length-near-integer-limit.js",
+      "reason": "zjs: throw: Test262Error: New arrayLike.length is 2**53 - 1"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/push/set-length-array-is-frozen.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/push/set-length-array-length-is-non-writable.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/push/set-length-zero-array-is-frozen.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/push/set-length-zero-array-length-is-non-writable.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/push/throws-if-integer-limit-exceeded.js",
+      "reason": "zjs: throw: Test262Error: Length is 2**53 - 1"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/push/throws-with-string-receiver.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.push.call('')"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A2_T2.js",
@@ -568,12 +1008,88 @@
       "reason": "zjs: throw: Test262Error: #2: Array.prototype[1] = -1; x = [0,1]; x.length = 2; x.pop(); x[1] === -1. Actual: undefined"
     },
     {
+      "path": "test/built-ins/Array/prototype/pop/clamps-to-integer-limit.js",
+      "reason": "zjs: throw: Test262Error: Length is 2**53 - 1"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/pop/length-near-integer-limit.js",
+      "reason": "zjs: throw: Test262Error: arrayLike['9007199254740990'] is returned from pop()"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/pop/set-length-array-is-frozen.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/pop/set-length-array-length-is-non-writable.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/pop/set-length-zero-array-is-frozen.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/pop/set-length-zero-array-length-is-non-writable.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/pop/throws-with-string-receiver.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.pop.call('')"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-2.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-3.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(true, targetObj)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-5.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(5, targetObj)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-7.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(\"abc\", \"b\")"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-9.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, true)"
+    },
+    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-2-17.js",
       "reason": "zjs: throw: Test262Error: func(0, true) !== true"
     },
     {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-2-19.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, obj[1])"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-13.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, \"200.59\")"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-14.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(objOne, true)"
+    },
+    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-22.js",
-      "reason": "zjs: throw: Test262Error: toStringAccessed"
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-24.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, false)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-8.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, 0)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-4-9.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, targetObj)"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-23.js",
@@ -581,39 +1097,415 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-24.js",
-      "reason": "zjs: throw: Test262Error: toStringAccessed"
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-25.js",
       "reason": "zjs: throw: Test262Error: valueOfAccessed !== true"
     },
     {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-28.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-29.js",
+      "reason": "zjs: throw: Test262Error: stepFiveOccurs"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-32.js",
+      "reason": "zjs: throw: Test262Error: [0, targetObj, 2].indexOf(targetObj, -1.5)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-8.js",
+      "reason": "zjs: throw: Test262Error: a.indexOf(b.toString())"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-9.js",
+      "reason": "zjs: throw: Test262Error: a.indexOf(2,4294967290 )"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-10.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(6.99)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-16.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(1)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-17.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(\"last\")"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-18.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(\"prototype\")"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-19.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(\"unconfigurable\")"
+    },
+    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
       "reason": ""
     },
     {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-6.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(\"10\", fromIndex)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-8.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(1)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-1.js",
+      "reason": "zjs: throw: Test262Error: [0, , 2].indexOf(undefined)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-11.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(true)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-13.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(true)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
+      "reason": "zjs: throw: Test262Error: [, , , ].indexOf(10)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-17.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(undefined)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-19.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(undefined)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-28.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(true)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-30.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-31.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-6.js",
+      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call({ 0: true, 1: 1, length: 2 }, true)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-7.js",
+      "reason": "zjs: throw: Test262Error: [, , , ].indexOf(true)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-9.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(0)"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-ii-2.js",
+      "reason": "zjs: throw: Test262Error: [undefined].indexOf()"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-grow.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-shrink.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/length-near-integer-limit.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/resizable-buffer-special-float-values.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/resizable-buffer.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-15.js",
+      "reason": "zjs: throw: Test262Error: testResult[1]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-2.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-3.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-5.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-7.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-9.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-2-19.js",
+      "reason": "zjs: throw: Test262Error: testResult.length"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-3-14.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-3-28.js",
+      "reason": "timeout"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-3-29.js",
+      "reason": "timeout"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-3-8.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-15.js",
-      "reason": "zjs: throw: Test262Error: lengthAccessed !== true"
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-3.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-4.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-5.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-6.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-7.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-8.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-9.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-1.js",
+      "reason": "zjs: throw: Test262Error: resArr[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-22.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-23.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-6.js",
+      "reason": "zjs: throw: Test262Error: resArr[4]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-7.js",
+      "reason": "zjs: throw: Test262Error: resArr.toString()"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-9.js",
+      "reason": "zjs: throw: Test262Error: called"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-10.js",
+      "reason": "zjs: throw: Test262Error: typeof testResult[1]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-11.js",
+      "reason": "zjs: throw: Test262Error: typeof testResult[1]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-13.js",
+      "reason": "zjs: throw: Test262Error: testResult[1]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-14.js",
+      "reason": "zjs: throw: Test262Error: typeof testResult[3]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-15.js",
+      "reason": "zjs: throw: Test262Error: testResult[2]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-16.js",
+      "reason": "zjs: throw: Test262Error: testResult[2]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-3.js",
+      "reason": "zjs: throw: Test262Error: typeof testResult[2]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-5.js",
+      "reason": "zjs: throw: Test262Error: testResult[1]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-7.js",
+      "reason": "zjs: throw: Test262Error: testResult[1]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-8.js",
+      "reason": "zjs: throw: Test262Error: typeof testResult[1]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-9.js",
+      "reason": "zjs: throw: Test262Error: typeof testResult[1]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-10.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-12.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-14.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-16.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-18.js",
+      "reason": "zjs: throw: Test262Error: testResult[1]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-19.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-28.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-30.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-31.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-8.js",
+      "reason": "zjs: throw: Test262Error: newArr[1]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-ii-16.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-ii-17.js",
+      "reason": "zjs: throw: Test262Error: testResult[0]"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-ii-19.js",
+      "reason": "zjs: throw: Test262Error: called"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-ii-7.js",
+      "reason": "zjs: throw: Test262Error: accessed"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-9-3.js",
       "reason": "zjs: throw: Test262Error: Array.isArray(a) !== true"
     },
     {
+      "path": "test/built-ins/Array/prototype/map/create-ctor-non-object.js",
+      "reason": "zjs: throw: Test262Error: null value"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/create-ctor-poisoned.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/create-non-array-invalid-len.js",
+      "reason": "timeout"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/create-non-array.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/create-proto-from-ctor-realm-array.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/create-proto-from-ctor-realm-non-array.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/create-species-abrupt.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/create-species-null.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/create-species-poisoned.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/create-species-undef.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/create-species.js",
+      "reason": "zjs: throw: Test262Error: Constructor invoked exactly once"
+    },
+    {
       "path": "test/built-ins/Array/prototype/map/resizable-buffer.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Array/prototype/map/target-array-non-extensible.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/target-array-with-non-configurable-property.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-15.js",
       "reason": "zjs: throw: Test262Error: result !== true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-2.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-9.js",
@@ -628,16 +1520,44 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-15.js",
-      "reason": "zjs: throw: Test262Error: lengthAccessed !== true"
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-3.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-4.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-5.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-6.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-7.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-8.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-9.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-5-1.js",
+      "reason": "zjs: throw: Test262Error: result"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-5-22.js",
@@ -646,6 +1566,10 @@
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-5-23.js",
       "reason": "zjs: throw: Test262Error: result !== true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-5.js",
+      "reason": "zjs: throw: Test262Error: callCnt"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-10.js",
@@ -720,24 +1644,188 @@
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-30.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-31.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-8.js",
       "reason": "zjs: throw: Test262Error: testResult !== true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-16.js",
+      "reason": "zjs: throw: Test262Error: result"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-17.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-7.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-8-10.js",
+      "reason": "zjs: throw: Test262Error: callCnt"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-0-2.js",
+      "reason": "zjs: throw: Test262Error: Object.keys.length"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-1-4.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-1-5.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-2-7.js",
+      "reason": "zjs: throw: Test262Error: arr.length"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-2-8.js",
+      "reason": "zjs: throw: Test262Error: arr.length"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-3-2.js",
+      "reason": "zjs: throw: Test262Error: a.length"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-3-7.js",
+      "reason": "zjs: throw: Test262Error: arr.length"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-5-10.js",
+      "reason": "zjs: throw: Test262Error: arr[p]"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-5-11.js",
+      "reason": "zjs: throw: Test262Error: arr[p]"
+    },
+    {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-12.js",
       "reason": "zjs: throw: Test262Error: Property not found"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-5-13.js",
+      "reason": "zjs: throw: Test262Error: Unexpected property at index: 0"
     },
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-14.js",
       "reason": "zjs: throw: Test262Error: Property not found"
     },
     {
+      "path": "test/built-ins/Object/keys/15.2.3.14-5-3.js",
+      "reason": "zjs: throw: Test262Error: arr[p]"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-5-4.js",
+      "reason": "zjs: throw: Test262Error: arr[p]"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-5-7.js",
+      "reason": "zjs: throw: Test262Error: arr[p]"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-5-8.js",
+      "reason": "zjs: throw: Test262Error: arr[p]"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-5-9.js",
+      "reason": "zjs: throw: Test262Error: arr[p]"
+    },
+    {
+      "path": "test/built-ins/Object/keys/15.2.3.14-5-b-1.js",
+      "reason": "zjs: throw: Test262Error: index"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-0-2.js",
+      "reason": "zjs: throw: Test262Error: Object.create.length"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-1-1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-1-3.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-1-4.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-3-1.js",
+      "reason": "zjs: throw: Test262Error: b.isPrototypeOf(d)"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-1.js",
+      "reason": "zjs: throw: Test262Error: b.isPrototypeOf(d)"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-124.js",
+      "reason": "zjs: throw: Test262Error: result1"
+    },
+    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-15.js",
       "reason": "zjs: throw: Test262Error: result !== true"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-17.js",
+      "reason": "zjs: throw: Test262Error: newObj.hasOwnProperty(\"prop\")"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-177.js",
+      "reason": "zjs: throw: Test262Error: newObj.prop"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-20.js",
+      "reason": "zjs: throw: Test262Error: newObj.hasOwnProperty(\"prop\")"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-203.js",
+      "reason": "zjs: throw: Test262Error: beforeWrite"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-256.js",
+      "reason": "zjs: throw: Test262Error: newObj.prop"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-258.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-259.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-26.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-260.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-261.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-262.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-27.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-28.js",
@@ -748,8 +1836,120 @@
       "reason": "zjs: throw: Test262Error: hasProperty !== true"
     },
     {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-293.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-294.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-295.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-296.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-297.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-3.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-300.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-301.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-302.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-303.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-304.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-308.js",
+      "reason": "zjs: throw: Test262Error: isEnumerable"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-312.js",
+      "reason": "zjs: throw: Test262Error: isEnumerable"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-39.js",
+      "reason": "zjs: throw: Test262Error: tempArray[index++] !== q && newObj.hasOwnProperty(q)"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-40.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-41.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-42.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-43.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-44.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-45.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-47.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-5.js",
       "reason": "zjs: throw: Test262Error: result !== true"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-50.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-51.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-54.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-55.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-56.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-57.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-58.js",
+      "reason": "zjs: throw: Test262Error: accessed"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-6.js",
@@ -760,24 +1960,440 @@
       "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-72.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-73.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-75.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-76.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-77.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-78.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-79.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-82.js",
+      "reason": "zjs: throw: Test262Error: accessed"
+    },
+    {
+      "path": "test/built-ins/Object/create/properties-arg-to-object-non-empty-string.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/create/properties-arg-to-object-null.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-0-2.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf.length"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-0-3.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-1-2.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-1-3.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(true)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-1-4.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(\"abc\")"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-1.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(0)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-1.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Boolean)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-10.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(RegExp)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-11.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Error)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-12.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(EvalError)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-13.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(RangeError)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-14.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(ReferenceError)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-15.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(SyntaxError)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-16.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(TypeError)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-17.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(URIError)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-2.js",
+      "reason": "zjs: throw: Test262Error: x.isPrototypeOf(d)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-20.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(obj)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-21.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(arr)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-28.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(obj)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-3.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Object)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-30.js",
+      "reason": "zjs: throw: Test262Error: proto.isPrototypeOf(this)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-4.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Function)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-5.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Array)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-6.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(String)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-7.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Number)"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-9.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Date)"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-0-1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-0-2.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-0-3.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-0-4.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-0-5.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-0-6.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-0-8.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g1-1.js",
+      "reason": "zjs: throw: Test262Error: <TAB> should produce a syntax error as whitespace results in two tokens"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g1-2.js",
+      "reason": "zjs: throw: Test262Error: <CR> should produce a syntax error as whitespace results in two tokens"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g1-3.js",
+      "reason": "zjs: throw: Test262Error: <LF> should produce a syntax error as whitespace results in two tokens"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g1-4.js",
+      "reason": "zjs: throw: Test262Error: <SP> should produce a syntax error as whitespace results in two tokens"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g2-2.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g2-3.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g2-4.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g4-1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g4-2.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g4-3.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g4-4.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g5-2.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.1.1-g5-3.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.2-2-1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.2-2-10.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.2-2-2.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.2-2-3.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.2-2-4.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.2-2-5.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.2-2-6.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.2-2-7.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.2-2-8.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/15.12.2-2-9.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/builtin.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(\"JSON.parse\") must return the value of Function.prototype"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/invalid-whitespace.js",
+      "reason": "zjs: throw: Test262Error: \\u1680"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/reviver-array-get-prop-from-prototype.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/built-ins/JSON/parse/reviver-call-args-after-forward-modification.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/reviver-call-err.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-forward-modifies-object.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/JSON/parse/reviver-get-name-err.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/reviver-object-get-prop-from-prototype.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/text-negative-zero.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/text-object-abrupt.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/builtin.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(JSON.stringify) must return the value of Function.prototype"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/property-order.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/replacer-array-duplicates.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/replacer-array-empty.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/replacer-array-number-object.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/replacer-array-order.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/replacer-array-string-object.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/replacer-array-undefined.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/replacer-function-abrupt.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/replacer-function-array-circular.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/replacer-function-object-circular.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/replacer-function-object-deleted-property.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/replacer-function-result-undefined.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/built-ins/JSON/stringify/replacer-function-result.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/replacer-function-tojson.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/space-number-object.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/space-string-object.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/space-string.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-array-circular.js",
+      "reason": ""
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-boolean-object.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-function.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-number-negative-zero.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-number-object.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-object-abrupt.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-object-circular.js",
+      "reason": ""
     },
     {
       "path": "test/built-ins/JSON/stringify/value-string-escape-ascii.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/JSON/stringify/value-string-object.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-tojson-abrupt.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-tojson-arguments.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-tojson-array-circular.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/JSON/stringify/value-tojson-not-function.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-tojson-object-circular.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-tojson-result.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T5.js",
@@ -796,6 +2412,14 @@
       "reason": "zjs: throw: Test262Error: #2: delete String.prototype.indexOf.length; String.prototype.indexOf.hasOwnProperty('length') "
     },
     {
+      "path": "test/built-ins/String/prototype/indexOf/position-tointeger.js",
+      "reason": "zjs: throw: Test262Error: ToInteger: [\"1\"].toString() => \"1\" => 1"
+    },
+    {
+      "path": "test/built-ins/String/prototype/indexOf/this-value-not-obj-coercible.js",
+      "reason": "zjs: throw: Test262Error: undefined"
+    },
+    {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T15.js",
       "reason": "zjs: throw: Test262Error: #1: var __num = 11.001002; Number.prototype.slice = String.prototype.slice; __num.slice()===\"1"
     },
@@ -812,8 +2436,28 @@
       "reason": "zjs: throw: Test262Error: #1: String.prototype.slice.prototype === undefined. Actual: [object Object]"
     },
     {
+      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A7.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A9.js",
       "reason": "zjs: throw: Test262Error: #2: delete String.prototype.slice.length; String.prototype.slice.hasOwnProperty('length') retu"
+    },
+    {
+      "path": "test/built-ins/String/prototype/slice/this-value-not-obj-coercible.js",
+      "reason": "zjs: throw: Test262Error: undefined"
+    },
+    {
+      "path": "test/built-ins/String/prototype/slice/this-value-tostring-throws-toprimitive.js",
+      "reason": "zjs: throw: Test262Error: String.prototype.slice throws in its toprimitive step."
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/argument-is-new-reg-exp-and-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/argument-is-reg-exp-a-z-and-instance-is-string-abc.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
     },
     {
       "path": "test/built-ins/String/prototype/split/argument-is-regexp-a-z-and-instance-is-string-abc.js",
@@ -832,12 +2476,56 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/String/prototype/split/argument-is-regexp-reg-exp-d-and-instance-is-string-dfe23iu-34-65.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
       "path": "test/built-ins/String/prototype/split/argument-is-regexp-s-and-instance-is-string-a-b-c-de-f.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/String/prototype/split/argument-is-regexp-x-and-instance-is-string-a-b-c-de-f.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/arguments-are-boolean-expression-function-call-and-null-and-instance-is-boolean.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is 0"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/arguments-are-false-and-true-and-instance-is-object.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is 0"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-0-and-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-1-and-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split[0] is expected to equal the value of __expected[0]"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-2-and-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-3-and-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-4-and-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-hi-and-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-undefined-and-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-void-0-and-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
     },
     {
       "path": "test/built-ins/String/prototype/split/arguments-are-regexp-l-and-0-and-instance-is-string-hello.js",
@@ -876,44 +2564,660 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/String/prototype/split/call-split-1-0-instance-is-number.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/call-split-1-1-instance-is-number.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/call-split-1-100-instance-is-number.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/call-split-1-2-instance-is-number.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/call-split-1-boo-instance-is-number.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/call-split-1-instance-is-number.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/call-split-1-math-pow-2-32-1-instance-is-number.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/call-split-1-void-0-instance-is-number.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
       "path": "test/built-ins/String/prototype/split/call-split-2-instance-is-string-one-two-three-four-five.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/call-split-l-0-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/call-split-l-1-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/call-split-l-2-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/call-split-l-na-n-instance-is-string-hello.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/call-split-new-reg-exp.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __string.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/checking-by-using-eval.js",
+      "reason": "zjs: throw: Test262Error: The value of `typeof __split` is \"object\""
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/checking-if-creating-the-string-prototype-split-object-fails.js",
+      "reason": "zjs: throw: Test262Error: #1: __FACTORY = String.prototype.split; \"__instance = new __FACTORY\" lead to throwing exceptio"
     },
     {
       "path": "test/built-ins/String/prototype/split/checking-if-deleting-the-string-prototype-split-length-property-fails.js",
       "reason": "zjs: throw: Test262Error: The value of `!String.prototype.split.hasOwnProperty('length')` is true"
     },
     {
+      "path": "test/built-ins/String/prototype/split/checking-string-prototype-split-prototype.js",
+      "reason": "zjs: throw: Test262Error: The value of String.prototype.split.prototype is expected to equal `undefined`"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/cstm-split-get-err.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/cstm-split-invocation.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/built-ins/String/prototype/split/cstm-split-on-bigint-primitive.js",
       "reason": "zjs: throw: ReferenceError: n is not defined"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/instance-is-function.js",
+      "reason": "zjs: throw: Test262Error: __split[0].substring(0, 8) must return \"function\""
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/separator-number-limit-math-pow-2-32-1-instance-is-number.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/separator-override-tostring-limit-override-valueof-throws.js",
+      "reason": "zjs: throw: Test262Error: The value of `e` is \"intointeger\""
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/separator-override-tostring-limit-override-valueof-tostring-throws.js",
+      "reason": "zjs: throw: Test262Error: The value of `e` is \"intointeger\""
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/separator-override-tostring-limit-override-valueof-tostring.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is 2"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/separator-override-tostring-limit-override-valueof.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is 1"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/separator-override-tostring-throws-limit-override-valueof-throws.js",
+      "reason": "zjs: throw: Test262Error: The value of `e` is \"intoint\""
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-regexp-comma-instance-is-string-one-1-two-2-four-4.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/String/prototype/split/separator-regexp-limit-string-via-eval.js",
+      "reason": "zjs: throw: Test262Error: The value of `typeof __split` is \"object\""
+    },
+    {
       "path": "test/built-ins/String/prototype/split/separator-regexp.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/separator-undef-limit-zero.js",
+      "reason": "zjs: throw: Test262Error: result.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/this-value-not-obj-coercible.js",
+      "reason": "zjs: throw: Test262Error: undefined"
     },
     {
       "path": "test/built-ins/String/prototype/split/transferred-to-number-separator-override-tostring-returns-regexp.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/String/prototype/split/valueOf-is-called-for-limit-argument.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Math/abs/S15.8.2.1_A2.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/acos/S15.8.2.2_A1.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/acos/S15.8.2.2_A2.js",
+      "reason": "zjs: throw: Test262Error: 1.000000000000001"
+    },
+    {
+      "path": "test/built-ins/Math/acos/S15.8.2.2_A3.js",
+      "reason": "zjs: throw: Test262Error: -1.000000000000001"
+    },
+    {
+      "path": "test/built-ins/Math/acos/S15.8.2.2_A4.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/acosh/arg-is-infinity.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/acosh/arg-is-one.js",
+      "reason": "zjs: throw: Test262Error: Math.acosh should produce 0 for +1"
+    },
+    {
+      "path": "test/built-ins/Math/acosh/nan-returns.js",
+      "reason": "zjs: throw: Test262Error: NaN"
+    },
+    {
+      "path": "test/built-ins/Math/asin/S15.8.2.3_A1.js",
+      "reason": "zjs: throw: Test262Error: NaN"
+    },
+    {
+      "path": "test/built-ins/Math/asin/S15.8.2.3_A2.js",
+      "reason": "zjs: throw: Test262Error: 1.000000000000001"
+    },
+    {
+      "path": "test/built-ins/Math/asin/S15.8.2.3_A3.js",
+      "reason": "zjs: throw: Test262Error: -1.000000000000001"
+    },
+    {
+      "path": "test/built-ins/Math/asin/S15.8.2.3_A4.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/asin/S15.8.2.3_A5.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/asinh/asinh-specialVals.js",
+      "reason": "zjs: throw: Test262Error: Math.asinh produces incorrect output for NaN"
+    },
+    {
+      "path": "test/built-ins/Math/atan/S15.8.2.4_A1.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/atan/S15.8.2.4_A2.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/atan/S15.8.2.4_A3.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/atan2/S15.8.2.5_A1.js",
+      "reason": "zjs: throw: Test262Error: (NaN, -Infinity)"
+    },
+    {
+      "path": "test/built-ins/Math/atan2/S15.8.2.5_A14.js",
+      "reason": "zjs: throw: Test262Error"
+    },
+    {
+      "path": "test/built-ins/Math/atan2/S15.8.2.5_A16.js",
+      "reason": "zjs: throw: Test262Error: (-1e-15, Infinity)"
+    },
+    {
+      "path": "test/built-ins/Math/atan2/S15.8.2.5_A4.js",
+      "reason": "zjs: throw: Test262Error"
+    },
+    {
+      "path": "test/built-ins/Math/atan2/S15.8.2.5_A5.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/atan2/S15.8.2.5_A8.js",
+      "reason": "zjs: throw: Test262Error: (-0, 1e-15)"
+    },
+    {
+      "path": "test/built-ins/Math/atan2/S15.8.2.5_A9.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/atanh/atanh-specialVals.js",
+      "reason": "zjs: throw: Test262Error: Math.atanh produces incorrect output for -1.9"
+    },
+    {
+      "path": "test/built-ins/Math/cbrt/cbrt-specialValues.js",
+      "reason": "zjs: throw: Test262Error: Math.cbrt produces incorrect output for NaN"
+    },
+    {
+      "path": "test/built-ins/Math/clz32/Math.clz32.js",
+      "reason": "zjs: throw: Test262Error: Math.clz32(0)"
+    },
+    {
+      "path": "test/built-ins/Math/clz32/Math.clz32_1.js",
+      "reason": "zjs: throw: Test262Error: Math.clz32(1)"
+    },
+    {
+      "path": "test/built-ins/Math/clz32/Math.clz32_2.js",
+      "reason": "zjs: throw: Test262Error: Math.clz32(2147483648)"
+    },
+    {
+      "path": "test/built-ins/Math/clz32/infinity.js",
+      "reason": "zjs: throw: Test262Error: Infinity"
+    },
+    {
+      "path": "test/built-ins/Math/clz32/int32bit.js",
+      "reason": "zjs: throw: Test262Error: 2**32-1"
+    },
+    {
+      "path": "test/built-ins/Math/clz32/nan.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/cos/S15.8.2.7_A1.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/cos/S15.8.2.7_A2.js",
+      "reason": "zjs: throw: Test262Error: Math.cos(+0) must return 1"
+    },
+    {
+      "path": "test/built-ins/Math/cos/S15.8.2.7_A3.js",
+      "reason": "zjs: throw: Test262Error: Math.cos(-0) must return 1"
+    },
+    {
+      "path": "test/built-ins/Math/cos/S15.8.2.7_A4.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/cos/S15.8.2.7_A5.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/cosh/cosh-specialVals.js",
+      "reason": "zjs: throw: Test262Error: Math.cosh produces incorrect output for NaN"
+    },
+    {
+      "path": "test/built-ins/Math/exp/S15.8.2.8_A1.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/exp/S15.8.2.8_A2.js",
+      "reason": "zjs: throw: Test262Error: Math.exp(+0) must return 1"
+    },
+    {
+      "path": "test/built-ins/Math/exp/S15.8.2.8_A3.js",
+      "reason": "zjs: throw: Test262Error: Math.exp(-0) must return 1"
+    },
+    {
+      "path": "test/built-ins/Math/exp/S15.8.2.8_A4.js",
+      "reason": "zjs: throw: Test262Error: Math.exp(+Infinity) must return +Infinity"
+    },
+    {
+      "path": "test/built-ins/Math/exp/S15.8.2.8_A5.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/expm1/expm1-specialVals.js",
+      "reason": "zjs: throw: Test262Error: Math.expm1 produces incorrect output for NaN"
+    },
+    {
+      "path": "test/built-ins/Math/fround/Math.fround_Infinity.js",
+      "reason": "zjs: throw: Test262Error: Math.fround(Infinity)"
+    },
+    {
+      "path": "test/built-ins/Math/fround/Math.fround_NaN.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/fround/Math.fround_Zero.js",
+      "reason": "zjs: throw: Test262Error: Math.fround(0)"
+    },
+    {
+      "path": "test/built-ins/Math/fround/ties.js",
+      "reason": "zjs: throw: Test262Error: Math.fround(a0)"
+    },
+    {
+      "path": "test/built-ins/Math/fround/value-convertion.js",
+      "reason": "zjs: throw: Test262Error: 2**32-1"
+    },
+    {
+      "path": "test/built-ins/Math/hypot/Math.hypot_Infinity.js",
+      "reason": "zjs: throw: Test262Error: Math.hypot(3, Infinity)"
+    },
+    {
+      "path": "test/built-ins/Math/hypot/Math.hypot_InfinityNaN.js",
+      "reason": "zjs: throw: Test262Error: Math.hypot(NaN, Infinity)"
+    },
+    {
+      "path": "test/built-ins/Math/hypot/Math.hypot_NaN.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/hypot/Math.hypot_NegInfinity.js",
+      "reason": "zjs: throw: Test262Error: Math.hypot(3, -Infinity)"
+    },
+    {
+      "path": "test/built-ins/Math/hypot/Math.hypot_NoArgs.js",
+      "reason": "zjs: throw: Test262Error: Math.hypot()"
+    },
+    {
+      "path": "test/built-ins/Math/hypot/Math.hypot_Success_2.js",
+      "reason": "zjs: throw: Test262Error: Math.hypot(3,4)"
+    },
+    {
+      "path": "test/built-ins/Math/hypot/Math.hypot_ToNumberErr.js",
+      "reason": "zjs: throw: Test262Error: Math.hypot propagates an abrupt completion from coercing an argument to Number"
+    },
+    {
+      "path": "test/built-ins/Math/hypot/Math.hypot_Zero_2.js",
+      "reason": "zjs: throw: Test262Error: Math.hypot(0)"
+    },
+    {
+      "path": "test/built-ins/Math/imul/results.js",
+      "reason": "zjs: throw: Test262Error: (2, 4)"
+    },
+    {
+      "path": "test/built-ins/Math/log/S15.8.2.10_A1.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/log/S15.8.2.10_A2.js",
+      "reason": "zjs: throw: Test262Error: -0.000000000000001"
+    },
+    {
+      "path": "test/built-ins/Math/log/S15.8.2.10_A3.js",
+      "reason": "zjs: throw: Test262Error: Math.log(+0) must return -Infinity"
+    },
+    {
+      "path": "test/built-ins/Math/log/S15.8.2.10_A4.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/log/S15.8.2.10_A5.js",
+      "reason": "zjs: throw: Test262Error: Math.log(+Infinity) must return +Infinity"
+    },
+    {
+      "path": "test/built-ins/Math/log10/Log10-specialVals.js",
+      "reason": "zjs: throw: Test262Error: Math.log10 produces incorrect output for -0"
+    },
+    {
+      "path": "test/built-ins/Math/log1p/specific-results.js",
+      "reason": "zjs: throw: Test262Error: NaN"
+    },
+    {
+      "path": "test/built-ins/Math/log2/log2-basicTests.js",
+      "reason": "zjs: throw: Test262Error: Math.log2 produces incorrect output for -0"
+    },
+    {
+      "path": "test/built-ins/Math/max/Math.max_each-element-coerced.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/max/S15.8.2.11_A2.js",
+      "reason": "zjs: throw: Test262Error: max(-Infinity, NaN)"
+    },
+    {
+      "path": "test/built-ins/Math/max/S15.8.2.11_A4.js",
+      "reason": "zjs: throw: Test262Error: The value of Math.max.length is expected to be 2"
+    },
+    {
+      "path": "test/built-ins/Math/max/zeros.js",
+      "reason": "zjs: throw: Test262Error: (-0, 0)"
+    },
+    {
+      "path": "test/built-ins/Math/min/Math.min_each-element-coerced.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/min/S15.8.2.12_A2.js",
+      "reason": "zjs: throw: Test262Error: min(-Infinity, NaN)"
+    },
+    {
+      "path": "test/built-ins/Math/min/S15.8.2.12_A4.js",
+      "reason": "zjs: throw: Test262Error: The value of Math.min.length is expected to be 2"
+    },
+    {
+      "path": "test/built-ins/Math/min/zeros.js",
+      "reason": "zjs: throw: Test262Error: (0, -0)"
+    },
+    {
+      "path": "test/built-ins/Math/pow/applying-the-exp-operator_A1.js",
+      "reason": "zjs: throw: Test262Error"
+    },
+    {
+      "path": "test/built-ins/Math/pow/applying-the-exp-operator_A7.js",
+      "reason": "zjs: throw: Test262Error: (-1, Infinity)"
+    },
+    {
+      "path": "test/built-ins/Math/pow/applying-the-exp-operator_A8.js",
+      "reason": "zjs: throw: Test262Error: (-1, -Infinity)"
+    },
+    {
+      "path": "test/built-ins/Math/random/S15.8.2.14_A1.js",
+      "reason": "zjs: throw: Test262Error: should not produce a non-numeric value: undefined"
+    },
+    {
+      "path": "test/built-ins/Math/round/S15.8.2.15_A3.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/round/S15.8.2.15_A7.js",
+      "reason": "zjs: throw: Test262Error: The result of evaluating (1 / Math.round(-0.5)) is expected to be 1 / -0"
+    },
+    {
+      "path": "test/built-ins/Math/sign/sign-specialVals.js",
+      "reason": "zjs: throw: Test262Error: NaN"
+    },
+    {
+      "path": "test/built-ins/Math/sin/S15.8.2.16_A1.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/sin/S15.8.2.16_A4.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/sin/S15.8.2.16_A5.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/sin/zero.js",
+      "reason": "zjs: throw: Test262Error: +0"
+    },
+    {
+      "path": "test/built-ins/Math/sinh/sinh-specialVals.js",
+      "reason": "zjs: throw: Test262Error: Math.sinh produces incorrect output for NaN"
+    },
+    {
+      "path": "test/built-ins/Math/sumPrecise/sum-is-NaN.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/sumPrecise/sum-is-infinite.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/sumPrecise/sum-is-minus-zero.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/sumPrecise/sum.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/built-ins/Math/sumPrecise/throws-on-non-number.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Math/tan/S15.8.2.18_A1.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/tan/S15.8.2.18_A2.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/tan/S15.8.2.18_A3.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/tan/S15.8.2.18_A4.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/tan/S15.8.2.18_A5.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/tanh/tanh-specialVals.js",
+      "reason": "zjs: throw: Test262Error: Math.tanh produces incorrect output for NaN"
+    },
+    {
+      "path": "test/built-ins/Math/trunc/Math.trunc_Infinity.js",
+      "reason": "zjs: throw: Test262Error: Math.trunc(Infinity)"
+    },
+    {
+      "path": "test/built-ins/Math/trunc/Math.trunc_NaN.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Math/trunc/Math.trunc_NegDecimal.js",
+      "reason": "zjs: throw: Test262Error: Math.trunc(-.9)"
+    },
+    {
+      "path": "test/built-ins/Math/trunc/Math.trunc_PosDecimal.js",
+      "reason": "zjs: throw: Test262Error: Math.trunc(.9)"
+    },
+    {
+      "path": "test/built-ins/Math/trunc/Math.trunc_Success.js",
+      "reason": "zjs: throw: Test262Error: Math.trunc(4578.584949)"
+    },
+    {
+      "path": "test/built-ins/Math/trunc/Math.trunc_Zero.js",
+      "reason": "zjs: throw: Test262Error: Math.trunc(0)"
+    },
+    {
+      "path": "test/built-ins/Math/trunc/trunc-sampleTests.js",
+      "reason": "zjs: throw: Test262Error: Math.trunc should produce +0 for values between 0 and 1"
+    },
+    {
+      "path": "test/built-ins/Math/trunc/trunc-specialVals.js",
+      "reason": "zjs: throw: Test262Error: Math.trunc should produce negative infinity for Number.NEGATIVE_INFINITY"
+    },
+    {
+      "path": "test/built-ins/Promise/Symbol.species/return-value.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/Symbol.species/symbol-species-name.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/all/S25.4.4.1_A4.1_T1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/all/call-resolve-element-after-return.js",
+      "reason": "zjs: throw: Test262Error: callCount after call to all()"
+    },
+    {
+      "path": "test/built-ins/Promise/all/call-resolve-element-items.js",
+      "reason": "zjs: throw: Test262Error: callCount after call to all()"
+    },
+    {
+      "path": "test/built-ins/Promise/all/call-resolve-element.js",
+      "reason": "zjs: throw: Test262Error: callCount after call to all()"
+    },
+    {
+      "path": "test/built-ins/Promise/all/capability-executor-called-twice.js",
+      "reason": "zjs: throw: Test262Error: executor initially called with no arguments"
+    },
+    {
+      "path": "test/built-ins/Promise/all/capability-executor-not-callable.js",
+      "reason": "zjs: throw: Test262Error: executor not called at all"
+    },
+    {
+      "path": "test/built-ins/Promise/all/ctx-ctor-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Promise/all/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Promise/all/ctx-non-ctor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/all/invoke-resolve-get-once-multiple-calls.js",
+      "reason": "zjs: throw: Test262Error: Got `resolve` only once for each iterated value"
+    },
+    {
+      "path": "test/built-ins/Promise/all/invoke-resolve-get-once-no-calls.js",
+      "reason": "zjs: throw: Test262Error: Got `resolve` only once for each iterated value"
+    },
+    {
+      "path": "test/built-ins/Promise/all/invoke-resolve-return.js",
+      "reason": "zjs: throw: Test262Error: new `then` method invoked exactly once"
+    },
+    {
+      "path": "test/built-ins/Promise/all/invoke-resolve.js",
+      "reason": "zjs: throw: Test262Error: `resolve` invoked once for each iterated value"
+    },
+    {
+      "path": "test/built-ins/Promise/all/invoke-then.js",
+      "reason": "zjs: throw: Test262Error: `then` invoked once for every iterated value"
+    },
+    {
+      "path": "test/built-ins/Promise/all/new-resolve-function.js",
+      "reason": "zjs: throw: Test262Error: p1.then call count"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-before-loop-exit-from-same.js",
+      "reason": "zjs: throw: Test262Error: callCount after resolving p1"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-before-loop-exit.js",
+      "reason": "zjs: throw: Test262Error: callCount after call to all()"
+    },
+    {
       "path": "test/built-ins/Promise/all/resolve-element-function-extensible.js",
       "reason": "zjs: throw: Test262Error: assert failed"
     },
     {
+      "path": "test/built-ins/Promise/all/resolve-element-function-nonconstructor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Promise/all/resolve-element-function-property-order.js",
       "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-element-function-prototype.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-from-same-thenable.js",
+      "reason": "zjs: throw: Test262Error: callCount after resolving all elements"
     },
     {
       "path": "test/built-ins/Promise/all/resolve-throws-iterator-return-is-not-callable.js",
@@ -924,28 +3228,104 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Promise/all/same-reject-function.js",
+      "reason": "zjs: throw: Test262Error: p1.then call count"
+    },
+    {
+      "path": "test/built-ins/Promise/allKeyed/ctx-non-ctor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Promise/allKeyed/extensible.js",
       "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/allKeyed/proto.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Promise.allKeyed) must return the value of Function.prototype"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/capability-executor-called-twice.js",
+      "reason": "zjs: throw: Test262Error: executor initially called with no arguments"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/capability-executor-not-callable.js",
+      "reason": "zjs: throw: Test262Error: executor not called at all"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/ctx-ctor-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Promise/allSettled/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Promise/allSettled/ctx-non-ctor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/invoke-resolve-get-once-multiple-calls.js",
+      "reason": "zjs: throw: Test262Error: Got `resolve` only once for each iterated value"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/invoke-resolve-get-once-no-calls.js",
+      "reason": "zjs: throw: Test262Error: Got `resolve` only once for each iterated value"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/invoke-resolve-return.js",
+      "reason": "zjs: throw: Test262Error: new `then` method invoked exactly once"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/invoke-resolve.js",
+      "reason": "zjs: throw: Test262Error: `resolve` invoked once for each iterated value"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/invoke-then.js",
+      "reason": "zjs: throw: Test262Error: `then` invoked once for every iterated value"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/new-reject-function.js",
+      "reason": "zjs: throw: Test262Error: p1.then call count"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/new-resolve-function.js",
+      "reason": "zjs: throw: Test262Error: p1.then call count"
+    },
+    {
       "path": "test/built-ins/Promise/allSettled/reject-element-function-extensible.js",
       "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/reject-element-function-multiple-calls.js",
+      "reason": "zjs: throw: Test262Error: rejectCallCount after call to allSettled()"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/reject-element-function-nonconstructor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-element-function-property-order.js",
       "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
     },
     {
+      "path": "test/built-ins/Promise/allSettled/reject-element-function-prototype.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/built-ins/Promise/allSettled/resolve-element-function-extensible.js",
       "reason": "zjs: throw: Test262Error: assert failed"
     },
     {
+      "path": "test/built-ins/Promise/allSettled/resolve-element-function-nonconstructor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Promise/allSettled/resolve-element-function-property-order.js",
       "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/resolve-element-function-prototype.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-throws-iterator-return-is-not-callable.js",
@@ -956,20 +3336,80 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Promise/allSettled/returns-promise.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettledKeyed/ctx-non-ctor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Promise/allSettledKeyed/extensible.js",
       "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettledKeyed/proto.js",
+      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Promise.allSettledKeyed) must return the value of Function.prototype"
+    },
+    {
+      "path": "test/built-ins/Promise/any/call-reject-element-after-return.js",
+      "reason": "zjs: throw: Test262Error: callCount after call to any()"
+    },
+    {
+      "path": "test/built-ins/Promise/any/call-reject-element-items.js",
+      "reason": "zjs: throw: Test262Error: callCount after call to any()"
+    },
+    {
+      "path": "test/built-ins/Promise/any/capability-executor-called-twice.js",
+      "reason": "zjs: throw: Test262Error: executor initially called with no arguments"
+    },
+    {
+      "path": "test/built-ins/Promise/any/capability-executor-not-callable.js",
+      "reason": "zjs: throw: Test262Error: executor not called at all"
+    },
+    {
+      "path": "test/built-ins/Promise/any/ctx-ctor-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Promise/any/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Promise/any/invoke-resolve-return.js",
+      "reason": "zjs: throw: Test262Error: new `then` method invoked exactly once"
+    },
+    {
+      "path": "test/built-ins/Promise/any/new-reject-function.js",
+      "reason": "zjs: throw: Test262Error: p1.then call count"
+    },
+    {
       "path": "test/built-ins/Promise/any/reject-element-function-extensible.js",
       "reason": "zjs: throw: Test262Error: assert failed"
     },
     {
+      "path": "test/built-ins/Promise/any/reject-element-function-nonconstructor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Promise/any/reject-element-function-property-order.js",
       "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+    },
+    {
+      "path": "test/built-ins/Promise/any/reject-element-function-prototype.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/any/reject-from-same-thenable.js",
+      "reason": "zjs: throw: Test262Error: callCount after resolving all elements"
+    },
+    {
+      "path": "test/built-ins/Promise/any/resolve-before-loop-exit-from-same.js",
+      "reason": "zjs: throw: Test262Error: callCount after call to p1OnRejected()"
+    },
+    {
+      "path": "test/built-ins/Promise/any/resolve-before-loop-exit.js",
+      "reason": "zjs: throw: Test262Error: callCount after call to any()"
     },
     {
       "path": "test/built-ins/Promise/any/resolve-throws-iterator-return-is-not-callable.js",
@@ -980,12 +3420,52 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Promise/any/returns-promise.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/exec-args.js",
+      "reason": "zjs: throw: Test262Error: length of first argument"
+    },
+    {
       "path": "test/built-ins/Promise/executor-function-extensible.js",
       "reason": "zjs: throw: Test262Error: assert failed"
     },
     {
       "path": "test/built-ins/Promise/executor-function-property-order.js",
       "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+    },
+    {
+      "path": "test/built-ins/Promise/executor-function-prototype.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/executor-not-callable.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/catch/invokes-then.js",
+      "reason": "zjs: throw: Test262Error: Invokes `then` method exactly once"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/catch/this-value-non-object.js",
+      "reason": "zjs: throw: Test262Error: undefined"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/catch/this-value-then-poisoned.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/catch/this-value-then-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/finally/invokes-then-with-non-function.js",
+      "reason": "zjs: throw: Test262Error: Invokes `then` method exactly once"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/finally/species-constructor-throws.js",
+      "reason": "zjs: throw: Test262Error: SpeciesConstructor throws a TypeError if the constructor property is not an object."
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/subclass-species-constructor-reject-count.js",
@@ -996,6 +3476,38 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Promise/prototype/finally/this-value-non-object.js",
+      "reason": "zjs: throw: Test262Error: undefined"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/finally/this-value-proxy.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/finally/this-value-then-poisoned.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/finally/this-value-then-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/finally/this-value-thenable.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/no-promise-state.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A2.1_T1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A2.1_T2.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Promise/prototype/then/capability-executor-called-twice.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -1004,12 +3516,72 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Promise/prototype/then/context-check-on-entry.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Promise/prototype/then/ctor-custom.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Promise/prototype/then/ctor-null.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/then/ctor-poisoned.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/then/ctor-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/race/S25.4.4.3_A3.1_T1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/race/S25.4.4.3_A3.1_T2.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/race/capability-executor-called-twice.js",
+      "reason": "zjs: throw: Test262Error: executor initially called with no arguments"
+    },
+    {
+      "path": "test/built-ins/Promise/race/capability-executor-not-callable.js",
+      "reason": "zjs: throw: Test262Error: executor not called at all"
+    },
+    {
+      "path": "test/built-ins/Promise/race/ctx-ctor-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Promise/race/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/race/ctx-non-ctor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/race/invoke-resolve-get-once-multiple-calls.js",
+      "reason": "zjs: throw: Test262Error: Got `resolve` only once for each iterated value"
+    },
+    {
+      "path": "test/built-ins/Promise/race/invoke-resolve-get-once-no-calls.js",
+      "reason": "zjs: throw: Test262Error: Got `resolve` only once for each iterated value"
+    },
+    {
+      "path": "test/built-ins/Promise/race/invoke-resolve-return.js",
+      "reason": "zjs: throw: Test262Error: new `then` method invoked exactly once"
+    },
+    {
+      "path": "test/built-ins/Promise/race/invoke-resolve.js",
+      "reason": "zjs: throw: Test262Error: `resolve` invoked once for each iterated value"
+    },
+    {
+      "path": "test/built-ins/Promise/race/invoke-then.js",
+      "reason": "zjs: throw: Test262Error: `then` invoked once for every iterated value"
     },
     {
       "path": "test/built-ins/Promise/race/resolve-throws-iterator-return-is-not-callable.js",
@@ -1020,20 +3592,140 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Promise/race/same-reject-function.js",
+      "reason": "zjs: throw: Test262Error: p1.then call count"
+    },
+    {
+      "path": "test/built-ins/Promise/race/same-resolve-function.js",
+      "reason": "zjs: throw: Test262Error: p1.then call count"
+    },
+    {
+      "path": "test/built-ins/Promise/reject/S25.4.4.4_A3.1_T1.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/reject/capability-executor-called-twice.js",
+      "reason": "zjs: throw: Test262Error: executor initially called with no arguments"
+    },
+    {
+      "path": "test/built-ins/Promise/reject/capability-executor-not-callable.js",
+      "reason": "zjs: throw: Test262Error: executor not called at all"
+    },
+    {
+      "path": "test/built-ins/Promise/reject/capability-invocation-error.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/reject/capability-invocation.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/reject/ctx-ctor-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Promise/reject/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/reject/ctx-non-ctor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/reject-function-nonconstructor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/reject-function-prototype.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/resolve/arg-uniq-ctor.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/resolve/capability-executor-called-twice.js",
+      "reason": "zjs: throw: Test262Error: executor initially called with no arguments"
+    },
+    {
+      "path": "test/built-ins/Promise/resolve/capability-executor-not-callable.js",
+      "reason": "zjs: throw: Test262Error: executor not called at all"
+    },
+    {
+      "path": "test/built-ins/Promise/resolve/capability-invocation-error.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/resolve/ctx-ctor-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Promise/resolve/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Promise/resolve/ctx-non-ctor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/resolve/resolve-from-promise-capability.js",
+      "reason": "zjs: throw: Test262Error: callCount after call to resolve()"
+    },
+    {
+      "path": "test/built-ins/Promise/resolve/resolve-prms-cstm-then.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/resolve-function-nonconstructor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/resolve-function-prototype.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/try/ctx-ctor-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Promise/try/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/built-ins/Promise/try/ctx-non-ctor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/try/ctx-non-object.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/try/promise.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/undefined-newtarget.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
       "path": "test/built-ins/Promise/withResolvers/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/withResolvers/ctx-non-ctor.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/withResolvers/ctx-non-object.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/built-ins/Promise/withResolvers/promise.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/built-ins/Promise/withResolvers/resolvers.js",
+      "reason": "zjs: throw: Test262Error: type of resolve property"
     }
   ],
   "skip_counts": {

@@ -316,10 +316,21 @@ struct Function {
     // Phase 3.6: `.prototype` for instanceof + constructor-style use.
     // Lazy — first read auto-creates an empty object.
     prototype:      ZjsObject*;
+
+    // Expando bag for arbitrary properties (`fn.foo = 1`). Lazy — NULL
+    // until the first non-`prototype` string-keyed property is set.
+    // Matches ZjsHostFunction.props in shape and lifetime; the
+    // property_get / property_set / Op::In paths route through this
+    // before falling back to Object.prototype.
+    props:          ZjsObject*;
 }
 
 fn function_new() -> Function* {
-    let f = alloc<Function>();
+    // zalloc so prototype / props / needs_env etc. start cleanly zeroed.
+    // Several lookups check `f.prototype == NULL` / `f.props == NULL`
+    // as the lazy-create gate — relying on garbage there would be a
+    // very subtle bug.
+    let f = zalloc<Function>();
     f.header.type_tag = TAG_FUNCTION;
     return f;
 }
