@@ -201,10 +201,14 @@ zjs-vs-zjs over time. Numbers are median of N iterations.</p>
     out_path.write_text(html)
 
 DEFAULT_OTHER_ENGINES = [
-    # name,  binary (resolved via PATH),  extra args before script
-    ("qjs",  "qjs",   []),
-    ("node", "node",  []),
-    ("bun",  "bun",   []),
+    # name,    binary (resolved via PATH),  extra args before script
+    # Peer interpreters first (similar design space — no JIT by default,
+    # embeddable), then JIT engines for the absolute-ceiling reference.
+    ("qjs",    "qjs",    []),
+    ("boa",    "boa",    []),
+    ("kiesel", "kiesel", []),
+    ("node",   "node",   []),
+    ("bun",    "bun",    []),
 ]
 
 def time_engine(label, bin_path, extra_args, script_path, iters):
@@ -332,10 +336,12 @@ in our scripts are too short to repay JIT cost.</p>
   // Bars scaled to the slowest engine on that bench so even fast engines
   // are visible. Toggle linear/log via the radio above.
   const palette = {{
-    zjs:  '#d65a31',
-    qjs:  '#3b82f6',
-    node: '#10b981',
-    bun:  '#a855f7',
+    zjs:    '#d65a31',
+    qjs:    '#3b82f6',
+    boa:    '#06b6d4',
+    kiesel: '#f59e0b',
+    node:   '#10b981',
+    bun:    '#a855f7',
   }};
   const fallbackPalette = ['#888', '#666', '#444', '#bbb'];
   function colorFor(engine, idx) {{
@@ -473,7 +479,7 @@ def main():
     ap.add_argument("--filter", type=str, default=None)
     ap.add_argument("--no-record", action="store_true")
     ap.add_argument("--compare", action="store_true",
-                    help="also run benches under qjs/node/bun; write docs/perf/compare.html")
+                    help="also run benches under qjs/boa/kiesel/node/bun (whichever are on PATH); write docs/perf/compare.html")
     args = ap.parse_args()
 
     if not ZJS_BIN.exists():
