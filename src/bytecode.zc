@@ -222,6 +222,10 @@ enum Op {
     //   derived-class constructor. Unlike Op::Invoke this DOES NOT
     //   reset host_this to undefined/global.
     SuperCall,        // a=dst, b=base, c=argc.
+    // DefineMethod: like StoreProp but the resulting slot's attrs
+    //   are (writable + configurable, NOT enumerable). Used by
+    //   class method definitions which spec-mandate non-enumerable.
+    DefineMethod,     // a=obj, b=ic_slot, c=val_reg.
                       // dst = a string from ECMA-262 §13.5.3
                       // (one of: "undefined" "object" "boolean"
                       // "number" "string" "function").

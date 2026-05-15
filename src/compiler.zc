@@ -1718,6 +1718,20 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     }
     if ctor_fn == NULL { c.had_error = true; return alloc_reg(c); }
     ctor_fn.is_class_constructor = true;
+    // ECMA-262: classes have a `.name` data property set from the
+    // class binding (or "" for anonymous class expressions). Install
+    // it on the constructor's expando bag now.
+    if cls_node.name_length > 0 {
+        if ctor_fn.props == NULL {
+            let pv = ctx_new_object(c.ctx);
+            ctor_fn.props = zjs_as_object(pv);
+        }
+        let name_atom = ctx_intern_atom(c.ctx, (char*)"name", 4);
+        let cls_name_v = ctx_intern_string(c.ctx,
+                                           c.source + cls_node.name_start,
+                                           cls_node.name_length);
+        object_set(c.ctx, ctor_fn.props, name_atom, cls_name_v);
+    }
 
     let ctor_ptr: void* = NULL;
     raw { ctor_ptr = (void*)ctor_fn; }
@@ -1778,9 +1792,10 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
                 if m_ic <= 255 {
                     // static methods attach to the constructor itself
                     // (so `Foo.method(...)` works); instance methods go
-                    // on the prototype as before.
+                    // on the prototype as before. DefineMethod installs
+                    // with non-enumerable attrs per spec.
                     let target = if m.bool_value { ctor_reg } else { proto_reg };
-                    emit(c, make_inst_abc(Op::StoreProp, target, (u8)m_ic, mreg));
+                    emit(c, make_inst_abc(Op::DefineMethod, target, (u8)m_ic, mreg));
                 }
                 release_reg(c, mreg);
             }

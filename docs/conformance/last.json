@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 20:25 UTC",
+    "when": "2026-05-15 20:34 UTC",
     "total": 13247,
-    "passed": 2561,
-    "failed": 742,
+    "passed": 2563,
+    "failed": 740,
     "skipped": 9944
   },
   "failures": [
@@ -737,23 +737,15 @@
     },
     {
       "path": "test/language/statements/class/definition/basics.js",
-      "reason": "zjs: throw: Test262Error: The value of `C.name` is `'C'`"
+      "reason": "zjs: throw: Test262Error: The value of `E.name` is `'E'`"
     },
     {
       "path": "test/language/statements/class/definition/constructable-but-no-prototype.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/language/statements/class/definition/constructor-property.js",
-      "reason": "zjs: throw: Test262Error: The value of `desc.enumerable` is `false`, after executing `var desc = Object.getOwnPropertyDe"
-    },
-    {
       "path": "test/language/statements/class/definition/constructor-strict-by-default.js",
       "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/definition/constructor.js",
-      "reason": "zjs: throw: Test262Error: The value of `desc.enumerable` is `false`, after executing `var desc = Object.getOwnPropertyDe"
     },
     {
       "path": "test/language/statements/class/definition/early-errors-class-method-duplicate-parameters.js",
@@ -773,7 +765,7 @@
     },
     {
       "path": "test/language/statements/class/definition/methods.js",
-      "reason": "zjs: throw: Test262Error: The value of `desc.enumerable` is `false`"
+      "reason": "zjs: throw: Test262Error: The value of `desc.configurable` is `true`"
     },
     {
       "path": "test/language/statements/class/definition/numeric-property-names.js",

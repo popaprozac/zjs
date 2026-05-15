@@ -241,11 +241,11 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 if f.prototype == NULL {
                     let proto_v = ctx_new_object(ctx);
                     f.prototype = zjs_as_object(proto_v);
-                    // Spec: F.prototype.constructor === F. Set it on
-                    // lazy create so `new F(...).constructor === F`.
-                    object_set(ctx, f.prototype,
-                               ctx_intern_atom(ctx, (char*)"constructor", 11),
-                               obj);
+                    // Spec: F.prototype.constructor === F (writable +
+                    // configurable, NOT enumerable).
+                    object_define_property_slot(ctx, f.prototype,
+                        ctx_intern_atom(ctx, (char*)"constructor", 11),
+                        obj, PROP_WRITABLE | PROP_CONFIGURABLE);
                 }
                 return zjs_cell_from_ptr((void*)f.prototype);
             }
@@ -1631,6 +1631,42 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             let llen: u32 = 0;
             raw { llen = (uint32_t)strlen(label); }
             regs[inst.a] = ctx_intern_string(ctx, label, llen);
+        } else if op == Op::DefineMethod {
+            // Class method definition: install on `obj` with attrs
+            // (writable + configurable, NOT enumerable). The ic-slot
+            // gives us the method name; the value sits in regs[c].
+            let obj_v = regs[inst.a];
+            let ic_slot = inst.b;
+            let value = regs[inst.c];
+            let target_obj: ZjsObject* = NULL;
+            if zjs_is_object(obj_v) != 0 {
+                target_obj = zjs_as_object(obj_v);
+            } else if zjs_is_function(obj_v) != 0 {
+                // Static methods on a Function*: install on .props.
+                let fp = zjs_cell_as_ptr(obj_v);
+                let ff: Function* = NULL;
+                raw { ff = (Function*)fp; }
+                if ff.props == NULL {
+                    let pv = ctx_new_object(ctx);
+                    ff.props = zjs_as_object(pv);
+                }
+                target_obj = ff.props;
+            } else if zjs_is_closure(obj_v) != 0 {
+                let cl = zjs_as_closure(obj_v);
+                let fp2 = cl.function;
+                let f2: Function* = NULL;
+                raw { f2 = (Function*)fp2; }
+                if f2.props == NULL {
+                    let pv = ctx_new_object(ctx);
+                    f2.props = zjs_as_object(pv);
+                }
+                target_obj = f2.props;
+            }
+            if target_obj != NULL {
+                let ic_name: ZjsString* = f.ics[ic_slot].name;
+                let attrs: u8 = PROP_WRITABLE | PROP_CONFIGURABLE;
+                object_define_property_slot(ctx, target_obj, ic_name, value, attrs);
+            }
         } else if op == Op::SetProto {
             // a = proto, b = obj. Wire obj.proto = proto (both must be
             // Objects; non-object args are silently no-ops).
@@ -2218,9 +2254,11 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 if f.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     f.prototype = zjs_as_object(pv);
-                    object_set(ctx, f.prototype,
-                               ctx_intern_atom(ctx, (char*)"constructor", 11),
-                               callee);
+                    // F.prototype.constructor is writable + configurable
+                    // but NOT enumerable per spec.
+                    object_define_property_slot(ctx, f.prototype,
+                        ctx_intern_atom(ctx, (char*)"constructor", 11),
+                        callee, PROP_WRITABLE | PROP_CONFIGURABLE);
                 }
                 proto_obj = f.prototype;
             } else if zjs_is_closure(callee) != 0 {
@@ -2231,9 +2269,11 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 if f.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     f.prototype = zjs_as_object(pv);
-                    object_set(ctx, f.prototype,
-                               ctx_intern_atom(ctx, (char*)"constructor", 11),
-                               callee);
+                    // F.prototype.constructor is writable + configurable
+                    // but NOT enumerable per spec.
+                    object_define_property_slot(ctx, f.prototype,
+                        ctx_intern_atom(ctx, (char*)"constructor", 11),
+                        callee, PROP_WRITABLE | PROP_CONFIGURABLE);
                 }
                 proto_obj = f.prototype;
             } else if zjs_is_host_function(callee) != 0 {
@@ -2241,9 +2281,9 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 if hf.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     hf.prototype = zjs_as_object(pv);
-                    object_set(ctx, hf.prototype,
-                               ctx_intern_atom(ctx, (char*)"constructor", 11),
-                               callee);
+                    object_define_property_slot(ctx, hf.prototype,
+                        ctx_intern_atom(ctx, (char*)"constructor", 11),
+                        callee, PROP_WRITABLE | PROP_CONFIGURABLE);
                 }
                 proto_obj = hf.prototype;
             }
