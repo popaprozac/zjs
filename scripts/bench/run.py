@@ -274,19 +274,19 @@ JIT-heavy engines have small absolute numbers because the iterations
 in our scripts are too short to repay JIT cost.</p>
 
 <div class="card">
+  <table id="compare-table">
+    <thead><tr id="thead-row"></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div class="card">
   <div class="legend" id="legend"></div>
   <div class="toggle">
     <label><input type="radio" name="scale" value="linear" checked> linear</label>
     <label><input type="radio" name="scale" value="log"> log scale</label>
   </div>
   <svg id="chart" width="1040" height="40" role="img" aria-label="bench comparison"></svg>
-</div>
-
-<div class="card">
-  <table id="compare-table">
-    <thead><tr id="thead-row"></tr></thead>
-    <tbody></tbody>
-  </table>
 </div>
 
 <script id="data" type="application/json">{summary_json}</script>
