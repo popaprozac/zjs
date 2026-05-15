@@ -326,6 +326,18 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
             if is_call  != 0 { return ctx.fn_call_v; }
             if is_apply != 0 { return ctx.fn_apply_v; }
+            // Same proto walk as TAG_FUNCTION — Function.prototype first.
+            if ctx.function_proto != NULL {
+                let cur = ctx.function_proto;
+                while cur != NULL {
+                    let s = class_find_slot(cur.cls, ks);
+                    if s >= 0 {
+                        let v = cur.slots[(u32)s];
+                        if zjs_is_deleted(v) == 0 { return v; }
+                    }
+                    cur = cur.proto;
+                }
+            }
             if ctx.object_proto != NULL {
                 let cur = ctx.object_proto;
                 while cur != NULL {
@@ -399,6 +411,19 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                         }
                         return raw_v;
                     }
+                }
+            }
+            // Same Function.prototype → Object.prototype walk as the
+            // other callable cases.
+            if ctx.function_proto != NULL {
+                let cur = ctx.function_proto;
+                while cur != NULL {
+                    let s = class_find_slot(cur.cls, ks);
+                    if s >= 0 {
+                        let v = cur.slots[(u32)s];
+                        if zjs_is_deleted(v) == 0 { return v; }
+                    }
+                    cur = cur.proto;
                 }
             }
             // Fall back through Object.prototype so methods like

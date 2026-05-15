@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-05-15 21:46 UTC",
+    "when": "2026-05-15 21:49 UTC",
     "total": 13247,
     "passed": 2588,
     "failed": 715,
@@ -1989,7 +1989,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": ""
+      "reason": "zjs: throw: Test262Error: arr.indexOf(targetObj, fromIndex)"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
