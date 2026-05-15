@@ -692,7 +692,9 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
             let pv = ctx_new_object(ctx);
             f.props = zjs_as_object(pv);
         }
-        object_set(ctx, f.props, ks, value);
+        // Route through property_set on the props object so accessors
+        // (set via `static set x(v) {}` etc.) fire their setters.
+        property_set(ctx, zjs_cell_from_ptr((void*)f.props), key, value);
         return;
     }
     if zjs_is_host_function(obj) != 0 {
@@ -712,7 +714,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
             let pv = ctx_new_object(ctx);
             hf.props = zjs_as_object(pv);
         }
-        object_set(ctx, hf.props, ks, value);
+        property_set(ctx, zjs_cell_from_ptr((void*)hf.props), key, value);
         return;
     }
     if zjs_is_regexp(obj) != 0 {
@@ -1826,8 +1828,40 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             let obj_v = regs[inst.a];
             let key_v = regs[inst.b];
             let fn_v  = regs[inst.c];
-            if zjs_is_object(obj_v) != 0 && zjs_is_string(key_v) != 0 {
-                let o = zjs_as_object(obj_v);
+            // Route static class accessors (where the target is the
+            // constructor function itself) onto its .props expando.
+            let target_o: ZjsObject* = NULL;
+            if zjs_is_object(obj_v) != 0 {
+                target_o = zjs_as_object(obj_v);
+            } else if zjs_is_function(obj_v) != 0 {
+                let fp_dg = zjs_cell_as_ptr(obj_v);
+                let ff_dg: Function* = NULL;
+                raw { ff_dg = (Function*)fp_dg; }
+                if ff_dg.props == NULL {
+                    let pv = ctx_new_object(ctx);
+                    ff_dg.props = zjs_as_object(pv);
+                }
+                target_o = ff_dg.props;
+            } else if zjs_is_closure(obj_v) != 0 {
+                let cl_dg = zjs_as_closure(obj_v);
+                let fp2_dg = cl_dg.function;
+                let ff2_dg: Function* = NULL;
+                raw { ff2_dg = (Function*)fp2_dg; }
+                if ff2_dg.props == NULL {
+                    let pv = ctx_new_object(ctx);
+                    ff2_dg.props = zjs_as_object(pv);
+                }
+                target_o = ff2_dg.props;
+            } else if zjs_is_host_function(obj_v) != 0 {
+                let hf_dg = zjs_as_host_function(obj_v);
+                if hf_dg.props == NULL {
+                    let pv = ctx_new_object(ctx);
+                    hf_dg.props = zjs_as_object(pv);
+                }
+                target_o = hf_dg.props;
+            }
+            if target_o != NULL && zjs_is_string(key_v) != 0 {
+                let o = target_o;
                 let key_s = zjs_as_string(key_v);
                 let key_atom = ctx_intern_atom(ctx, key_s.data, key_s.length);
                 let existing_slot = class_find_slot(o.cls, key_atom);
