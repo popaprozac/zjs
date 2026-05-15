@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 08:48 UTC",
+    "when": "2026-05-15 08:52 UTC",
     "total": 4821,
-    "passed": 2139,
-    "failed": 656,
+    "passed": 2140,
+    "failed": 655,
     "skipped": 2026
   },
   "failures": [
@@ -1018,10 +1018,6 @@
     {
       "path": "test/built-ins/Array/prototype/pop/throws-with-string-receiver.js",
       "reason": "zjs: throw: Test262Error: Array.prototype.pop.call('')"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-12.js",
-      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, true)"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-2-17.js",

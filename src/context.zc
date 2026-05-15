@@ -5654,6 +5654,8 @@ fn ctx_to_object(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
     if zjs_is_function(v) != 0 { return v; }
     if zjs_is_closure(v) != 0 { return v; }
     if zjs_is_host_function(v) != 0 { return v; }
+    if zjs_is_regexp(v) != 0 { return v; }
+    if zjs_is_promise(v) != 0 { return v; }
 
     if zjs_is_null(v) != 0 || zjs_is_undefined(v) != 0 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
