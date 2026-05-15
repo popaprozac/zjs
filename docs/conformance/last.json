@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 10:51 UTC",
+    "when": "2026-05-15 10:58 UTC",
     "total": 4821,
-    "passed": 2173,
-    "failed": 622,
+    "passed": 2174,
+    "failed": 621,
     "skipped": 2026
   },
   "failures": [
@@ -1616,10 +1616,6 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/built-ins/JSON/parse/text-object-abrupt.js",
-      "reason": "zjs: throw: Test262Error: wrong error type"
-    },
-    {
       "path": "test/built-ins/JSON/stringify/builtin.js",
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(JSON.stringify) must return the value of Function.prototype"
     },
@@ -1829,7 +1825,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-override-tostring-throws-limit-override-valueof-throws.js",
-      "reason": "zjs: throw: Test262Error: The value of `e` is \"intoint\""
+      "reason": ""
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-regexp-limit-string-via-eval.js",

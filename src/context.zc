@@ -4308,7 +4308,12 @@ fn host_json_parse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // `JSON.parse()` with no args parses the literal string "undefined"
     // which is invalid JSON and throws — covered by the fail path below.
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
-    if zjs_is_string(v) == 0 { v = zjs_to_string(ctx, v); }
+    if zjs_is_string(v) == 0 {
+        v = zjs_to_string(ctx, v);
+        // If toString/valueOf threw, propagate that — don't mask it
+        // with our own "Invalid JSON" SyntaxError.
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
     let s = zjs_as_string(v);
     let p: JsonParser;
     p.src = s.data; p.len = s.length; p.pos = 0; p.fail = false;
@@ -7067,65 +7072,26 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
     } else if zjs_is_undefined(v) != 0 {
         raw { len = (size_t)snprintf(buf, 64, "undefined"); }
     } else if zjs_is_object(v) != 0 {
-        // ECMA-262 §7.1.18: ToPrimitive(O, "string") tries toString
-        // then valueOf. We invoke .toString() if it's a callable
-        // prototype method; if that returns a string, use it.
-        // Fallback is the spec's "[object Object]" form.
-        let o = zjs_as_object(v);
-        let ts_atom = ctx_intern_atom(ctx, (char*)"toString", 8);
-        let cur = o;
-        let ts_fn: ZjsValue = zjs_undefined();
-        while cur != NULL {
-            let slot = class_find_slot(cur.cls, ts_atom);
-            if slot >= 0 {
-                let raw_v = cur.slots[(u32)slot];
-                if zjs_is_deleted(raw_v) == 0 {
-                    ts_fn = raw_v;
-                    cur = NULL;
-                } else {
-                    cur = cur.proto;
-                }
-            } else {
-                cur = cur.proto;
-            }
-        }
-        if zjs_is_function(ts_fn) != 0 || zjs_is_closure(ts_fn) != 0 || zjs_is_host_function(ts_fn) != 0 {
+        // ECMA-262 §7.1.17/§7.1.18: ToPrimitive(O, "string") tries
+        // toString then valueOf. Fetch each via property_get so
+        // accessor getters fire (and their throws propagate).
+        let ts_v = property_get(ctx, v, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"toString", 8)));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_function(ts_v) != 0 || zjs_is_closure(ts_v) != 0 || zjs_is_host_function(ts_v) != 0 {
             let nullp: ZjsValue* = NULL;
-            let r: ZjsValue = zjs_call_value_with_this(ctx, ts_fn, v, nullp, 0);
-            // Per ECMA-262 §7.1.18 (ToPrimitive with hint "string"), the
-            // first primitive returned by toString / valueOf is what we
-            // run ToString on. Strings come back unchanged; other
-            // primitives (undefined / null / number / bool) get their
-            // own ToString. Only when toString returns an object do we
-            // fall through to valueOf.
+            let r: ZjsValue = zjs_call_value_with_this(ctx, ts_v, v, nullp, 0);
+            if ctx.pending_throw_active { return zjs_undefined(); }
             if zjs_is_string(r) != 0 { return r; }
             if zjs_is_object(r) == 0 && zjs_is_array(r) == 0 {
                 return zjs_to_string(ctx, r);
             }
         }
-        // valueOf fallback for objects whose toString is missing or
-        // returned non-string.
-        let vo_atom = ctx_intern_atom(ctx, (char*)"valueOf", 7);
-        let cur2 = o;
-        let vo_fn: ZjsValue = zjs_undefined();
-        while cur2 != NULL {
-            let slot = class_find_slot(cur2.cls, vo_atom);
-            if slot >= 0 {
-                let raw_v = cur2.slots[(u32)slot];
-                if zjs_is_deleted(raw_v) == 0 {
-                    vo_fn = raw_v;
-                    cur2 = NULL;
-                } else {
-                    cur2 = cur2.proto;
-                }
-            } else {
-                cur2 = cur2.proto;
-            }
-        }
-        if zjs_is_function(vo_fn) != 0 || zjs_is_closure(vo_fn) != 0 || zjs_is_host_function(vo_fn) != 0 {
+        let vo_v = property_get(ctx, v, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"valueOf", 7)));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_function(vo_v) != 0 || zjs_is_closure(vo_v) != 0 || zjs_is_host_function(vo_v) != 0 {
             let nullp: ZjsValue* = NULL;
-            let r2: ZjsValue = zjs_call_value_with_this(ctx, vo_fn, v, nullp, 0);
-            // If valueOf returned a primitive, recurse.
+            let r2: ZjsValue = zjs_call_value_with_this(ctx, vo_v, v, nullp, 0);
+            if ctx.pending_throw_active { return zjs_undefined(); }
             if zjs_is_object(r2) == 0 { return zjs_to_string(ctx, r2); }
         }
         raw { len = (size_t)snprintf(buf, 64, "[object Object]"); }
