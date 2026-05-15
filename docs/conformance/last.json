@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 19:36 UTC",
+    "when": "2026-05-15 19:41 UTC",
     "total": 4821,
-    "passed": 2394,
-    "failed": 401,
+    "passed": 2398,
+    "failed": 397,
     "skipped": 2026
   },
   "failures": [
@@ -1004,26 +1004,6 @@
       "reason": "zjs: throw: Test262Error: String.prototype.slice throws in its toprimitive step."
     },
     {
-      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-hi-and-instance-is-string-hello.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/arguments-are-regexp-l-and-hi-and-instance-is-string-hello.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is 0"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/call-split-1-boo-instance-is-number.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/call-split-1-math-pow-2-32-1-instance-is-number.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/call-split-l-na-n-instance-is-string-hello.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
-    },
-    {
       "path": "test/built-ins/String/prototype/split/checking-by-using-eval.js",
       "reason": "zjs: throw: Test262Error: The value of `typeof __split` is \"object\""
     },
@@ -1065,11 +1045,15 @@
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-override-tostring-throws-limit-override-valueof-throws.js",
-      "reason": ""
+      "reason": "zjs: throw: Test262Error: The value of `e` is \"intoint\""
     },
     {
-      "path": "test/built-ins/String/prototype/split/separator-undef-limit-zero.js",
-      "reason": "zjs: throw: Test262Error: result.length"
+      "path": "test/built-ins/String/prototype/split/separator-tostring-error.js",
+      "reason": "zjs: throw: Test262Error: ToString should be called on the separator before checking if the limit is zero."
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/separator-undef-limit-custom.js",
+      "reason": "zjs: throw: Test262Error: boolean, result.length"
     },
     {
       "path": "test/built-ins/String/prototype/split/transferred-to-number-separator-override-tostring-returns-regexp.js",

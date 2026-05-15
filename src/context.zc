@@ -3637,6 +3637,27 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = coerce_string_this(ctx);
     if zjs_is_string(this_val) == 0 { return ctx_new_array(ctx, 0); }
     let s = zjs_as_string(this_val);
+    // ECMA-262: limit is ToUint32(limit) (undefined → 2^32-1).
+    // Process this BEFORE the separator-undefined check so a 0 limit
+    // still short-circuits to an empty array per step 8.
+    let limit_u32: u32 = 0xffffffff;
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
+        let lim = zjs_to_double(args[1]);
+        if ctx.pending_throw_active { return ctx_new_array(ctx, 0); }
+        let is_nan_l: int = 0; raw { is_nan_l = isnan(lim) ? 1 : 0; }
+        if is_nan_l != 0 { lim = 0.0; }
+        // ToUint32: floor toward zero, modulo 2^32, treat NaN as 0.
+        let v_d: f64 = lim;
+        raw {
+            if (v_d < 0) v_d = -v_d;
+            v_d = floor(v_d);
+            v_d = fmod(v_d, 4294967296.0);
+            if (lim < 0) v_d = 4294967296.0 - v_d;
+            if (v_d == 4294967296.0) v_d = 0.0;
+        }
+        limit_u32 = (u32)v_d;
+    }
+    if limit_u32 == 0 { return ctx_new_array(ctx, 0); }
     // If no separator, return [s].
     if argc == 0 || zjs_is_undefined(args[0]) != 0 {
         let one = ctx_new_array(ctx, 1);
@@ -3646,15 +3667,6 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         return one;
     }
     let sep_arg = args[0];
-    // Regex separator path: walk the input applying tre_regexec, push
-    // each between-match span. Empty-match positions are advanced past
-    // so we don't infinite-loop. Honors a numeric `limit` second arg
-    // for the trivial common case.
-    let limit_u32: u32 = 0xffffffff;
-    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
-        let lim = zjs_to_double(args[1]);
-        if lim >= 0.0 && lim < 4294967295.0 { limit_u32 = (u32)lim; }
-    }
     if zjs_is_regexp(sep_arg) != 0 {
         let r = zjs_as_regexp(sep_arg);
         let result_v = ctx_new_array(ctx, 0);
