@@ -228,6 +228,11 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 if f.prototype == NULL {
                     let proto_v = ctx_new_object(ctx);
                     f.prototype = zjs_as_object(proto_v);
+                    // Spec: F.prototype.constructor === F. Set it on
+                    // lazy create so `new F(...).constructor === F`.
+                    object_set(ctx, f.prototype,
+                               ctx_intern_atom(ctx, (char*)"constructor", 11),
+                               obj);
                 }
                 return zjs_cell_from_ptr((void*)f.prototype);
             }
@@ -2120,6 +2125,9 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 if f.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     f.prototype = zjs_as_object(pv);
+                    object_set(ctx, f.prototype,
+                               ctx_intern_atom(ctx, (char*)"constructor", 11),
+                               callee);
                 }
                 proto_obj = f.prototype;
             } else if zjs_is_closure(callee) != 0 {
@@ -2130,6 +2138,9 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 if f.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     f.prototype = zjs_as_object(pv);
+                    object_set(ctx, f.prototype,
+                               ctx_intern_atom(ctx, (char*)"constructor", 11),
+                               callee);
                 }
                 proto_obj = f.prototype;
             } else if zjs_is_host_function(callee) != 0 {
@@ -2137,6 +2148,9 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 if hf.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     hf.prototype = zjs_as_object(pv);
+                    object_set(ctx, hf.prototype,
+                               ctx_intern_atom(ctx, (char*)"constructor", 11),
+                               callee);
                 }
                 proto_obj = hf.prototype;
             }
