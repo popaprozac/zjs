@@ -604,12 +604,29 @@ struct ZjsObject {
     header:   CellHeader;       // { type_tag = TAG_OBJECT }
     cls:      ZjsHiddenClass*;
     slots:    ZjsValue*;         // heap-allocated, sized to slot_cap >= cls.prop_count
+    // Per-slot property attribute byte (writable / enumerable /
+    // configurable bits — see PROP_* constants). Parallel to `slots`,
+    // same capacity. NULL until the first property is added (matches
+    // `slots`'s lazy allocation). Stored off-shape because attributes
+    // can differ per object while sharing a hidden class — a
+    // defineProperty with enumerable=false should not fragment the
+    // shape graph for objects that otherwise have the same keys.
+    attrs:    u8*;
     slot_cap: u32;
     // Prototype object (Phase 3.6). NULL = no proto / top of chain.
     // Property lookups that miss the own-property table walk obj.proto
     // recursively. Set by `new`, Object.create, or Object.setPrototypeOf.
     proto:    ZjsObject*;
 }
+
+// Property attribute bits — fit in one byte per slot. Default for
+// plain assignment (`o.x = 1`) is PROP_DEFAULT (all three on); the
+// ECMA-262 defineProperty defaults are stricter — see
+// host_object_define_property.
+def PROP_WRITABLE:     u8 = 0x01;
+def PROP_ENUMERABLE:   u8 = 0x02;
+def PROP_CONFIGURABLE: u8 = 0x04;
+def PROP_DEFAULT:      u8 = 0x07;
 
 struct ZjsArray {
     header:   CellHeader;       // { type_tag = TAG_ARRAY }
@@ -867,7 +884,10 @@ fn string_free_void(p: void*) -> void {
 // setting `cls` to a valid HiddenClass (typically the context's root
 // empty class) and registering the cell on the context.
 fn zjs_object_new() -> ZjsObject* {
-    let o = alloc<ZjsObject>();
+    // zalloc so cls / slots / attrs / proto start zero. Several lookups
+    // gate on NULL pointers; uninitialized garbage was working by luck
+    // (same fix as function_new took earlier).
+    let o = zalloc<ZjsObject>();
     o.header.type_tag = TAG_OBJECT;
     return o;
 }
@@ -877,6 +897,7 @@ fn object_free_void(p: void*) -> void {
     raw { o = (ZjsObject*)p; }
     if o == NULL { return; }
     dealloc(o.slots);
+    dealloc(o.attrs);
     dealloc(o);
 }
 

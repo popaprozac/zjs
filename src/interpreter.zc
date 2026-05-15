@@ -1897,7 +1897,8 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
         } else if op == Op::DeleteElem {
             // Mark the property's slot DELETED (sentinel). For arrays:
             // clear the element (set to undefined; the spec calls this
-            // an "array hole"). Returns boolean true on success.
+            // an "array hole"). Returns boolean true on success, false
+            // when the property exists but is non-configurable.
             let dst = inst.a;
             let obj_v = regs[inst.b];
             let key   = regs[inst.c];
@@ -1908,7 +1909,12 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let name = zjs_as_string(key_str);
                 let slot = class_find_slot(o.cls, name);
                 if slot >= 0 {
-                    o.slots[(u32)slot] = zjs_deleted();
+                    let a = object_get_attrs(o, (u32)slot);
+                    if (a & PROP_CONFIGURABLE) == 0 {
+                        ok = false;
+                    } else {
+                        o.slots[(u32)slot] = zjs_deleted();
+                    }
                 }
                 // Property not present → spec returns true.
             } else if zjs_is_array(obj_v) != 0 {
@@ -1917,6 +1923,8 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 if idx >= 0 && (u32)idx < a.length {
                     // `delete arr[i]` leaves a hole — the slot is no
                     // longer "in" the array for HasProperty purposes.
+                    // Array elements aren't tracked with attrs yet, so
+                    // they're always configurable per spec.
                     a.elements[(u32)idx] = zjs_deleted();
                 }
             }

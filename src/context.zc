@@ -1008,9 +1008,23 @@ fn ctx_new_object(ctx: ZjsContext*) -> ZjsValue {
 
 // Full object_set with hidden-class transition logic. Updates an
 // existing property if present; otherwise follows or creates a
-// transition edge.
+// transition edge. New properties get default attributes (writable
+// + enumerable + configurable all true) — matches the ECMA-262
+// behavior of `o.x = 1` going through OrdinarySet which creates a
+// data property with full attributes.
 fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsValue) -> void {
-    if object_set_existing(obj, name, value) != 0 { return; }
+    let existing = class_find_slot(obj.cls, name);
+    if existing >= 0 {
+        // Existing slot — check writable.
+        let attrs = if obj.attrs != NULL { obj.attrs[(u32)existing] } else { PROP_DEFAULT };
+        if (attrs & PROP_WRITABLE) == 0 {
+            // Strict-mode would throw; non-strict silently drops. MVP
+            // takes the non-strict path everywhere.
+            return;
+        }
+        obj.slots[(u32)existing] = value;
+        return;
+    }
 
     // Property is new. Find or create a transition.
     let parent_cls = obj.cls;
@@ -1023,23 +1037,92 @@ fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsVal
         class_add_transition(parent_cls, name, child);
     }
 
-    // Grow slots to accommodate the new property.
+    // Grow slots + attrs to accommodate the new property. Both arrays
+    // are sized identically so the slot index doubles as an attrs
+    // index — no separate cap tracking.
     let needed = child.prop_count;
     if obj.slot_cap < needed {
         let new_cap: u32 = if obj.slot_cap == 0 { 4 } else { obj.slot_cap * 2 };
         while new_cap < needed { new_cap = new_cap * 2; }
         let new_slots = realloc_n<ZjsValue>(obj.slots, (usize)obj.slot_cap, (usize)new_cap);
+        let new_attrs = realloc_n<u8>(obj.attrs, (usize)obj.slot_cap, (usize)new_cap);
         let und: ZjsValue = zjs_undefined();
         let i = obj.slot_cap;
         while i < new_cap {
             new_slots[i] = und;
+            new_attrs[i] = PROP_DEFAULT;
             i = i + 1;
         }
         obj.slots = new_slots;
+        obj.attrs = new_attrs;
         obj.slot_cap = new_cap;
     }
 
     obj.slots[child.transition_slot] = value;
+    obj.attrs[child.transition_slot] = PROP_DEFAULT;
+    obj.cls = child;
+}
+
+// Read the attribute byte for slot `idx` on `obj`. Returns
+// PROP_DEFAULT if the object has no attrs array yet (lazy alloc) —
+// the slot would have been freshly written via the bootstrap path
+// and inherits full attributes.
+fn object_get_attrs(obj: ZjsObject*, slot: u32) -> u8 {
+    if obj.attrs == NULL { return PROP_DEFAULT; }
+    if slot >= obj.slot_cap { return PROP_DEFAULT; }
+    return obj.attrs[slot];
+}
+
+// Write the attribute byte for slot `idx`. Caller is responsible
+// for ensuring the slot exists (slot < cls.prop_count). The attrs
+// array is allocated lazily by object_set; this writer assumes it
+// already exists since the slot does.
+fn object_set_attrs(obj: ZjsObject*, slot: u32, attrs: u8) -> void {
+    if obj.attrs == NULL { return; }
+    if slot >= obj.slot_cap { return; }
+    obj.attrs[slot] = attrs;
+}
+
+// Low-level define: write value + attrs without the writable check.
+// Used by Object.defineProperty and friends — the spec entry point
+// that explicitly changes attributes. Plain assignment goes through
+// object_set, which DOES honor writable.
+fn object_define_property_slot(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsValue, attrs: u8) -> void {
+    let existing = class_find_slot(obj.cls, name);
+    if existing >= 0 {
+        obj.slots[(u32)existing] = value;
+        if obj.attrs != NULL { obj.attrs[(u32)existing] = attrs; }
+        return;
+    }
+    // New property: same transition logic as object_set's new-prop path.
+    let parent_cls = obj.cls;
+    let child = class_find_transition(parent_cls, name);
+    if child == NULL {
+        child = zjs_hidden_class_new(parent_cls, name,
+                                      parent_cls.prop_count,
+                                      parent_cls.prop_count + 1);
+        ctx_register_cell(ctx, (void*)child);
+        class_add_transition(parent_cls, name, child);
+    }
+    let needed = child.prop_count;
+    if obj.slot_cap < needed {
+        let new_cap: u32 = if obj.slot_cap == 0 { 4 } else { obj.slot_cap * 2 };
+        while new_cap < needed { new_cap = new_cap * 2; }
+        let new_slots = realloc_n<ZjsValue>(obj.slots, (usize)obj.slot_cap, (usize)new_cap);
+        let new_attrs = realloc_n<u8>(obj.attrs, (usize)obj.slot_cap, (usize)new_cap);
+        let und: ZjsValue = zjs_undefined();
+        let i = obj.slot_cap;
+        while i < new_cap {
+            new_slots[i] = und;
+            new_attrs[i] = PROP_DEFAULT;
+            i = i + 1;
+        }
+        obj.slots = new_slots;
+        obj.attrs = new_attrs;
+        obj.slot_cap = new_cap;
+    }
+    obj.slots[child.transition_slot] = value;
+    obj.attrs[child.transition_slot] = attrs;
     obj.cls = child;
 }
 
@@ -1299,8 +1382,16 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
                 while cls != NULL && cls.parent != NULL {
                     let slot = cls.transition_slot;
                     if slot < limit {
+                        // for-in yields only enumerable own keys per
+                        // spec; non-enumerable slots are silently
+                        // skipped (the `scratch_del` flag handles
+                        // both holes and non-enumerable as "absent").
+                        let a = object_get_attrs(cur, slot);
+                        let enumerable = (a & PROP_ENUMERABLE) != 0;
                         scratch[slot] = cls.transition_name;
-                        scratch_del[slot] = zjs_is_deleted(cur.slots[slot]) != 0;
+                        scratch_del[slot] =
+                            zjs_is_deleted(cur.slots[slot]) != 0
+                            || !enumerable;
                     }
                     cls = cls.parent;
                 }
@@ -1538,22 +1629,43 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
         return zjs_undefined();
     }
 
+    // Read attribute fields. ECMA-262 §6.2.5 ToPropertyDescriptor:
+    // when defineProperty/Properties is given a descriptor, ABSENT
+    // attributes default to FALSE — stricter than plain assignment
+    // (`o.x = 1`) which uses PROP_DEFAULT (all true). When
+    // redefining an existing property we'd merge with the existing
+    // descriptor, but MVP defines unconditionally with whatever's
+    // present (or false).
+    let wri_key = ctx_intern_atom(ctx, (char*)"writable",     8);
+    let enu_key = ctx_intern_atom(ctx, (char*)"enumerable",   10);
+    let cfg_key = ctx_intern_atom(ctx, (char*)"configurable", 12);
+    let wri_lookup = property_get(ctx, desc_v, zjs_cell_from_ptr((void*)wri_key));
+    let enu_lookup = property_get(ctx, desc_v, zjs_cell_from_ptr((void*)enu_key));
+    let cfg_lookup = property_get(ctx, desc_v, zjs_cell_from_ptr((void*)cfg_key));
+    let attrs: u8 = 0;
+    if zjs_to_bool_coerce(wri_lookup) != 0 { attrs = attrs | PROP_WRITABLE; }
+    if zjs_to_bool_coerce(enu_lookup) != 0 { attrs = attrs | PROP_ENUMERABLE; }
+    if zjs_to_bool_coerce(cfg_lookup) != 0 { attrs = attrs | PROP_CONFIGURABLE; }
+
     if has_get || has_set {
         // Accessor descriptor (Phase 3.9b). Allocate an accessor cell
         // holding the get/set callbacks (default undefined) and store
-        // it directly in the slot.
+        // it directly in the slot. Accessor descriptors don't have a
+        // writable attribute — clear that bit so getOwnPropertyDescriptor
+        // reports the accessor shape correctly.
         let g: ZjsValue = if has_get { get_lookup } else { zjs_undefined() };
         let s: ZjsValue = if has_set { set_lookup } else { zjs_undefined() };
-        let a = zjs_accessor_new(g, s);
-        ctx_register_cell(ctx, (void*)a);
-        let av = zjs_cell_from_ptr((void*)a);
-        object_set(ctx, o, key_atom, av);
+        let acc = zjs_accessor_new(g, s);
+        ctx_register_cell(ctx, (void*)acc);
+        let av = zjs_cell_from_ptr((void*)acc);
+        let acc_attrs = attrs & (PROP_ENUMERABLE | PROP_CONFIGURABLE);
+        object_define_property_slot(ctx, o, key_atom, av, acc_attrs);
         return obj_v;
     }
 
     // Data descriptor — extract `value` (default undefined if absent).
     let value: ZjsValue = if has_value { value_lookup } else { zjs_undefined() };
-    object_set(ctx, o, key_atom, value);
+    object_define_property_slot(ctx, o, key_atom, value, attrs);
     return obj_v;
 }
 
@@ -1694,16 +1806,20 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
     ctx_push_temp_root(ctx, result_v);
     defer ctx_pop_temp_root(ctx);
     let result = zjs_as_object(result_v);
+    let pattrs = object_get_attrs(o, (u32)slot);
     if zjs_is_accessor(raw_v) != 0 {
         let acc = zjs_as_accessor(raw_v);
         object_set(ctx, result, ctx_intern_atom(ctx, (char*)"get", 3), acc.get);
         object_set(ctx, result, ctx_intern_atom(ctx, (char*)"set", 3), acc.set);
     } else {
         object_set(ctx, result, ctx_intern_atom(ctx, (char*)"value", 5), raw_v);
-        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(1));
+        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"writable", 8),
+                   zjs_bool(if (pattrs & PROP_WRITABLE) != 0 { 1 } else { 0 }));
     }
-    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(1));
-    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(1));
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"enumerable", 10),
+               zjs_bool(if (pattrs & PROP_ENUMERABLE) != 0 { 1 } else { 0 }));
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"configurable", 12),
+               zjs_bool(if (pattrs & PROP_CONFIGURABLE) != 0 { 1 } else { 0 }));
     return result_v;
 }
 
@@ -1838,8 +1954,13 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let cls = o.cls;
     while cls != NULL && cls.parent != NULL {
         let slot = cls.transition_slot;
+        // Object.keys reports own enumerable string-keyed properties:
+        // skip deleted slots AND skip non-enumerable slots.
         if slot < limit && zjs_is_deleted(o.slots[slot]) == 0 {
-            scratch[slot] = cls.transition_name;
+            let a = object_get_attrs(o, slot);
+            if (a & PROP_ENUMERABLE) != 0 {
+                scratch[slot] = cls.transition_name;
+            }
         }
         cls = cls.parent;
     }
