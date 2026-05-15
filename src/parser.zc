@@ -550,6 +550,18 @@ fn finish_for_in_or_of(p: Parser*, kw_tok: Token, binding: AstNode*, op_kind: To
             if is_let != 0 { p.had_error = true; return NULL; }
         }
     }
+    // Spec: for-of LHS may not begin with the identifier `async`.
+    // `for (async of [1])` is an early SyntaxError so the head can be
+    // disambiguated from `for await (async of [...])` etc.
+    if op_kind == TokenKind::KwOf && binding != NULL && binding.kind == NodeKind::IdentExpr {
+        let bn_len = binding.end - binding.start;
+        if bn_len == 5 {
+            let nm = p.source + binding.start;
+            let is_async: int = 0;
+            raw { is_async = (memcmp(nm, "async", 5) == 0) ? 1 : 0; }
+            if is_async != 0 { p.had_error = true; return NULL; }
+        }
+    }
     advance(p);    // consume 'in' or 'of'
     // ECMA-262: for-of's RHS is an AssignmentExpression (no comma);
     // for-in's RHS is an Expression. We constrain both to

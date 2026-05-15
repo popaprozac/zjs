@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 17:50 UTC",
+    "when": "2026-05-15 17:52 UTC",
     "total": 4821,
-    "passed": 2300,
-    "failed": 495,
+    "passed": 2301,
+    "failed": 494,
     "skipped": 2026
   },
   "failures": [
@@ -570,10 +570,6 @@
     {
       "path": "test/language/statements/for-of/head-lhs-async-escaped.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/head-lhs-async-invalid.js",
-      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
       "path": "test/language/statements/for-of/head-using-bound-names-fordecl-tdz.js",
