@@ -1423,8 +1423,11 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let ai: u32 = 0;
                 while ai < argc { argv_buf[ai] = regs[base + 2 + (u8)ai]; ai = ai + 1; }
                 ctx.frames[cur_idx].ip = ip + 1;
-                ctx.host_this = new_this;
+                // push_call_frame snapshots ctx.host_this into the new
+                // frame's saved_host_this — push BEFORE we overwrite
+                // host_this, so pop restores the caller's `this`.
                 push_call_frame(ctx, target, argv_buf, argc, dst);
+                ctx.host_this = new_this;
                 exit_reason = 2;
                 break;
             } else if zjs_is_closure(callee) != 0 {
@@ -1443,9 +1446,9 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let ai: u32 = 0;
                 while ai < argc { argv_buf[ai] = regs[base + 2 + (u8)ai]; ai = ai + 1; }
                 ctx.frames[cur_idx].ip = ip + 1;
+                push_call_frame(ctx, target2, argv_buf, argc, dst);
                 ctx.host_this = new_this;
                 ctx.current_closure = cl;
-                push_call_frame(ctx, target2, argv_buf, argc, dst);
                 exit_reason = 2;
                 break;
             } else if zjs_is_host_function(callee) != 0 {
@@ -1504,6 +1507,9 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let ai: u32 = 0;
                 while ai < argc { argv_buf[ai] = regs[base + 1 + (u8)ai]; ai = ai + 1; }
                 ctx.frames[cur_idx].ip = ip + 1;
+                // Push before reassigning host_this so the new frame's
+                // saved_host_this records the caller's `this`.
+                push_call_frame(ctx, target, argv_buf, argc, dst);
                 // Non-strict default `this` is the global object per
                 // ECMA-262 OrdinaryCallBindThis step 6. We don't track
                 // strict-mode-per-function yet; default to global.
@@ -1512,7 +1518,6 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 } else {
                     ctx.host_this = zjs_undefined();
                 }
-                push_call_frame(ctx, target, argv_buf, argc, dst);
                 exit_reason = 2;
                 break;
             } else if zjs_is_closure(callee) != 0 {
@@ -1531,13 +1536,13 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let ai: u32 = 0;
                 while ai < argc { argv_buf[ai] = regs[base + 1 + (u8)ai]; ai = ai + 1; }
                 ctx.frames[cur_idx].ip = ip + 1;
+                push_call_frame(ctx, target2, argv_buf, argc, dst);
                 if ctx.global_this_obj != NULL {
                     ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
                 } else {
                     ctx.host_this = zjs_undefined();
                 }
                 ctx.current_closure = cl;
-                push_call_frame(ctx, target2, argv_buf, argc, dst);
                 exit_reason = 2;
                 break;
             } else if zjs_is_host_function(callee) != 0 {
@@ -1774,6 +1779,15 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             let base = inst.b;
             let argc = (u32)inst.c;
             let parent = regs[base];
+            // Spec: a derived-class constructor must call super exactly
+            // once. The second call throws ReferenceError ("Super
+            // constructor may only be called once").
+            if ctx.frame_count > 0 && ctx.frames[cur_idx].super_called {
+                let err = build_typed_error(ctx, (char*)"ReferenceError", 14,
+                                            (char*)"Super constructor may only be called once", 41);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
             let argv_ptr: ZjsValue* = NULL;
             if argc > 0 { raw { argv_ptr = &regs[base + 1]; } }
             // Some host ctors (Promise, RegExp, ...) allocate a special
@@ -2184,6 +2198,17 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 }
             }
         } else if op == Op::LoadThis {
+            // Spec: in a derived-class constructor `this` is in the
+            // TDZ until super() runs. Reading it before then is a
+            // ReferenceError.
+            if f.is_class_constructor
+               && f.parent_ctor.bits != zjs_undefined().bits
+               && !ctx.frames[cur_idx].super_called {
+                let err = build_typed_error(ctx, (char*)"ReferenceError", 14,
+                                            (char*)"Must call super constructor before using 'this' in derived constructor", 70);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
             regs[inst.a] = ctx.host_this;
         } else if op == Op::In {
             // key in obj — ECMA-262 §13.10.1: obj must be an Object,
@@ -2540,16 +2565,44 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             if did_throw {
                 throwing = true; thrown = call_result; exit_reason = 3; break;
             }
-            // Use callee's return if it returned an Object (per ECMA-262
-            // — any object-typed value, including callables produced by
-            // `new Function(...)`).
-            if zjs_is_object(call_result) != 0
+            let result_is_object: bool =
+                zjs_is_object(call_result) != 0
                 || zjs_is_array(call_result) != 0
                 || zjs_is_promise(call_result) != 0
                 || zjs_is_regexp(call_result) != 0
                 || zjs_is_function(call_result) != 0
                 || zjs_is_closure(call_result) != 0
-                || zjs_is_host_function(call_result) != 0 {
+                || zjs_is_host_function(call_result) != 0;
+            // Derived-class ctor: a non-undefined non-Object return is
+            // a TypeError. Base ctors silently coerce to `this`.
+            let callee_is_derived: bool = false;
+            if zjs_is_function(callee) != 0 {
+                let dfp = zjs_cell_as_ptr(callee);
+                let dt: Function* = NULL;
+                raw { dt = (Function*)dfp; }
+                if dt.is_class_constructor && dt.parent_ctor.bits != zjs_undefined().bits {
+                    callee_is_derived = true;
+                }
+            } else if zjs_is_closure(callee) != 0 {
+                let dcl = zjs_as_closure(callee);
+                let dfp2 = dcl.function;
+                let dt2: Function* = NULL;
+                raw { dt2 = (Function*)dfp2; }
+                if dt2.is_class_constructor && dt2.parent_ctor.bits != zjs_undefined().bits {
+                    callee_is_derived = true;
+                }
+            }
+            if callee_is_derived
+               && !result_is_object
+               && zjs_is_undefined(call_result) == 0 {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"Derived constructors may only return object or undefined", 56);
+                throwing = true; thrown = err; exit_reason = 3; break;
+            }
+            // Use callee's return if it returned an Object (per ECMA-262
+            // — any object-typed value, including callables produced by
+            // `new Function(...)`).
+            if result_is_object {
                 regs[dst] = call_result;
             } else if final_this.bits != new_obj_v.bits
                       && (zjs_is_promise(final_this) != 0
