@@ -3115,6 +3115,12 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     }
 
     if k == NodeKind::TryStmt {
+        // ECMA-262 14.15.8 step 6: TryStatement returns UpdateEmpty
+        // with undefined when the try block produced an empty
+        // completion. Mirror the if / while heads.
+        if !c.is_function && c.last_expr_reg >= 0 {
+            emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
+        }
         // Catch parameter is a local register. At function scope it's
         // already allocated by collect_locals; at program (top-level)
         // scope we allocate it on the spot. Either way we bump

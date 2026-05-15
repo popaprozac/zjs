@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 21:30 UTC",
+    "when": "2026-05-15 21:33 UTC",
     "total": 13247,
-    "passed": 2580,
-    "failed": 723,
+    "passed": 2582,
+    "failed": 721,
     "skipped": 9944
   },
   "failures": [
@@ -472,10 +472,6 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/language/statements/try/cptn-catch.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/language/statements/try/cptn-finally-from-catch.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
@@ -485,10 +481,6 @@
     },
     {
       "path": "test/language/statements/try/cptn-finally-wo-catch.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/try/cptn-try.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
