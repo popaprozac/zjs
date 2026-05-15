@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 22:23 UTC",
+    "when": "2026-05-15 23:05 UTC",
     "total": 13247,
-    "passed": 2636,
-    "failed": 667,
+    "passed": 2723,
+    "failed": 580,
     "skipped": 9944
   },
   "failures": [
@@ -309,7 +309,7 @@
     },
     {
       "path": "test/language/statements/for-of/head-lhs-async-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/for-of/head-using-bound-names-fordecl-tdz.js",
@@ -596,12 +596,20 @@
       "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
-      "path": "test/language/statements/class/class-name-ident-await-escaped.js",
+      "path": "test/language/statements/class/class-name-ident-await.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/class-name-ident-await.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/class/class-name-ident-let-escaped.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/class-name-ident-static-escaped.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/class-name-ident-yield-escaped.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
       "path": "test/language/statements/class/definition/basics.js",
@@ -629,7 +637,7 @@
     },
     {
       "path": "test/language/statements/class/definition/this-access-restriction-2.js",
-      "reason": "zjs: throw: Test262Error: The result of `exn instanceof ReferenceError` is `true`"
+      "reason": "zjs: throw: Test262Error: The value of `this.prp` is `a + b`"
     },
     {
       "path": "test/language/statements/class/definition/this-access-restriction.js",
@@ -637,7 +645,7 @@
     },
     {
       "path": "test/language/statements/class/definition/this-check-ordering.js",
-      "reason": "zjs: throw: Test262Error: The result of `exn instanceof ReferenceError` is `true`"
+      "reason": "zjs: throw: Test262Error: The value of `baseCalled` is `1`"
     },
     {
       "path": "test/language/statements/class/elements/private-class-field-on-nonextensible-objects.js",
@@ -698,178 +706,6 @@
     {
       "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",
       "reason": "zjs: throw: Test262Error: assert failed"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-break-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-case-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-catch-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-class-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-const-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-continue-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-debugger-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-default-escaped-ext.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-default-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-delete-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-do-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-else-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-enum-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-export-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-extends-escaped-ext.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-extends-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-finally-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-for-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-function-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-if-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-implements-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-import-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-in-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-instanceof-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-interface-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-let-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-new-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-package-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-private-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-protected-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-public-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-return-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-static-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-super-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-switch-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-this-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-throw-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-try-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-typeof-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-var-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-void-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-while-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/ident-name-method-def-with-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/method/dflt-params-trailing-comma.js",
@@ -1100,10 +936,6 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/language/statements/class/subclass/derived-class-return-override-catch.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/language/statements/class/subclass/derived-class-return-override-finally-super-arrow.js",
       "reason": "zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
     },
@@ -1114,22 +946,6 @@
     {
       "path": "test/language/statements/class/subclass/derived-class-return-override-for-of.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/subclass/derived-class-return-override-with-boolean.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/subclass/derived-class-return-override-with-null.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/subclass/derived-class-return-override-with-number.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/subclass/derived-class-return-override-with-string.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/language/statements/class/subclass/private-class-field-on-nonextensible-return-override.js",
@@ -1300,15 +1116,23 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/class-name-ident-await-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/language/expressions/class/class-name-ident-await.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/language/expressions/class/class-name-ident-let-escaped.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/class-name-ident-static-escaped.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
       "path": "test/language/expressions/class/class-name-ident-static.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/class-name-ident-yield-escaped.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
@@ -1373,178 +1197,6 @@
     },
     {
       "path": "test/language/expressions/class/heritage-async-arrow-function.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-break-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-case-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-catch-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-class-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-const-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-continue-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-debugger-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-default-escaped-ext.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-default-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-delete-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-do-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-else-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-enum-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-export-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-extends-escaped-ext.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-extends-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-finally-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-for-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-function-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-if-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-implements-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-import-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-in-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-instanceof-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-interface-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-let-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-new-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-package-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-private-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-protected-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-public-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-return-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-static-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-super-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-switch-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-this-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-throw-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-try-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-typeof-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-var-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-void-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-while-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/ident-name-method-def-with-escaped.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
@@ -1785,7 +1437,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": ""
+      "reason": "zjs: throw: Test262Error: arr.indexOf(targetObj, fromIndex)"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
