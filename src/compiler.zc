@@ -1069,6 +1069,15 @@ fn emit_load_name_string(c: Compiler*, name: char*, name_len: u32) -> u8 {
     return r;
 }
 
+// Like emit_load_name_string but takes an already-interned atom.
+fn emit_load_atom(c: Compiler*, atom: ZjsString*) -> u8 {
+    let val = zjs_cell_from_ptr((void*)atom);
+    let idx = add_const(c, val);
+    let r = alloc_reg(c);
+    emit(c, make_inst_a_u16(Op::LoadConst, r, idx));
+    return r;
+}
+
 fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
     // Intern the property name as an atom and reserve an IC slot for
     // this access site. The interpreter's LoadProp handler uses the
@@ -1675,6 +1684,74 @@ fn closure_env_reg(c: Compiler*) -> ClosureEnvReg {
 //   Class.prototype.m1 = function(<params>) { <body> };
 //   ...
 //
+// Canonicalize a method name from its source slice. Supports
+// identifiers (returned as-is), NumberLit (parsed and ToString'd —
+// `0x10` → `"16"`, `1e2` → `"100"`), and StringLit (content between
+// quotes, with the same escape-decoding compile_string_literal uses).
+fn intern_method_name_atom(c: Compiler*, name_start: u32, name_length: u32) -> ZjsString* {
+    let mn = c.source + name_start;
+    let ml = name_length;
+    if ml == 0 { return ctx_intern_atom(c.ctx, mn, ml); }
+    let first = mn[0];
+    // NumberLit: starts with a digit or `.` followed by digit.
+    let is_numeric: int = 0;
+    raw {
+        is_numeric = (first >= '0' && first <= '9') ? 1
+                   : (first == '.' && ml > 1 && mn[1] >= '0' && mn[1] <= '9') ? 1
+                   : 0;
+    }
+    if is_numeric != 0 {
+        let d = parse_number_literal(c.source, name_start, ml);
+        let buf: char[48];
+        let len: int = 0;
+        raw {
+            // Match the spec's ToString for finite doubles: integral
+            // values print without a decimal point.
+            if (d == (double)(long long)d && d >= -1e15 && d <= 1e15) {
+                len = snprintf(&buf[0], 48, "%lld", (long long)d);
+            } else {
+                int found = 0;
+                for (int prec = 1; prec <= 17 && !found; prec++) {
+                    char tmp[48];
+                    int n = snprintf(tmp, 48, "%.*g", prec, d);
+                    char* end = NULL;
+                    double rt = strtod(tmp, &end);
+                    if (rt == d) { memcpy(&buf[0], tmp, n + 1); len = n; found = 1; }
+                }
+                if (!found) len = snprintf(&buf[0], 48, "%.17g", d);
+            }
+        }
+        let bp: char* = NULL; raw { bp = &buf[0]; }
+        return ctx_intern_atom(c.ctx, bp, (u32)len);
+    }
+    // StringLit: surrounded by quotes. Strip them; minimal escape
+    // handling (just `\\` and `\"`/`\'` — full escape passes through).
+    if first == 34 || first == 39 {     // '"' or '\''
+        if ml < 2 { return ctx_intern_atom(c.ctx, (char*)"", 0); }
+        let inner_start = name_start + 1;
+        let inner_len   = ml - 2;
+        let buf = alloc_n<char>((usize)(inner_len + 1));
+        let out: u32 = 0;
+        let i: u32 = 0;
+        while i < inner_len {
+            let ch = c.source[inner_start + i];
+            if ch == 92 && i + 1 < inner_len {        // backslash
+                let nx = c.source[inner_start + i + 1];
+                if nx == 92 || nx == 34 || nx == 39 {  // \\, \", \'
+                    buf[out] = (char)nx; out = out + 1; i = i + 2; continue;
+                }
+                if nx == 110 { buf[out] = (char)10; out = out + 1; i = i + 2; continue; }
+                if nx == 116 { buf[out] = (char)9;  out = out + 1; i = i + 2; continue; }
+            }
+            buf[out] = ch; out = out + 1; i = i + 1;
+        }
+        buf[out] = (char)0;
+        return ctx_intern_atom_take(c.ctx, buf, out);
+    }
+    // Identifier / keyword — source slice is the canonical name.
+    return ctx_intern_atom(c.ctx, mn, ml);
+}
+
 // `cls_node` is a ClassDecl or ClassExpr. Returns the register holding
 // the resulting constructor function value. Caller decides what to do
 // with it (bind to a local / global for ClassDecl, return as expression
@@ -1788,18 +1865,18 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
                     mreg = mcls;
                 }
                 let target = if m.bool_value { ctor_reg } else { proto_reg };
+                // Canonicalize the method name — handles NumberLit and
+                // StringLit name forms (`get 0x10()` / `set "foo"()`).
+                let m_atom = intern_method_name_atom(c, m.name_start, ml);
                 if m.op == TokenKind::KwGet {
-                    // Getter: install via Op::DefineGetter (key is a
-                    // separate register, not an IC slot).
-                    let key_r = emit_load_name_string(c, mn, ml);
+                    let key_r = emit_load_atom(c, m_atom);
                     emit(c, make_inst_abc(Op::DefineGetter, target, key_r, mreg));
                     release_reg(c, key_r);
                 } else if m.op == TokenKind::KwSet {
-                    let key_r = emit_load_name_string(c, mn, ml);
+                    let key_r = emit_load_atom(c, m_atom);
                     emit(c, make_inst_abc(Op::DefineSetter, target, key_r, mreg));
                     release_reg(c, key_r);
                 } else {
-                    let m_atom = ctx_intern_atom(c.ctx, mn, ml);
                     let m_ic = alloc_ic_slot(c, m_atom);
                     if m_ic <= 255 {
                         // static methods attach to the constructor itself

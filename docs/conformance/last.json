@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 20:38 UTC",
+    "when": "2026-05-15 21:01 UTC",
     "total": 13247,
-    "passed": 2553,
-    "failed": 750,
+    "passed": 2573,
+    "failed": 730,
     "skipped": 9944
   },
   "failures": [
@@ -560,31 +560,7 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-binary.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-exponent.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-hex.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-leading-decimal.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/language/statements/class/accessor-name-inst/literal-numeric-non-canonical.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-octal.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/class/accessor-name-inst/literal-string-char-escape.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -596,27 +572,11 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/language/statements/class/accessor-name-inst/literal-string-default.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/class/accessor-name-inst/literal-string-double-quote.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/class/accessor-name-inst/literal-string-empty.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/language/statements/class/accessor-name-inst/literal-string-hex-escape.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-string-line-continuation.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/class/accessor-name-inst/literal-string-single-quote.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -1500,31 +1460,7 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-binary.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-exponent.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-hex.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-leading-decimal.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-non-canonical.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-octal.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/expressions/class/accessor-name-inst/literal-string-char-escape.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -1536,27 +1472,11 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/language/expressions/class/accessor-name-inst/literal-string-default.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/expressions/class/accessor-name-inst/literal-string-double-quote.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/expressions/class/accessor-name-inst/literal-string-empty.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/language/expressions/class/accessor-name-inst/literal-string-hex-escape.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-string-line-continuation.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/expressions/class/accessor-name-inst/literal-string-single-quote.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
