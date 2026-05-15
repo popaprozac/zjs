@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 17:01 UTC",
+    "when": "2026-05-15 17:11 UTC",
     "total": 4821,
-    "passed": 2275,
-    "failed": 520,
+    "passed": 2276,
+    "failed": 519,
     "skipped": 2026
   },
   "failures": [
@@ -1418,10 +1418,6 @@
     {
       "path": "test/built-ins/String/prototype/slice/this-value-tostring-throws-toprimitive.js",
       "reason": "zjs: throw: Test262Error: String.prototype.slice throws in its toprimitive step."
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/argument-is-regexp-and-instance-is-number.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is 4"
     },
     {
       "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-hi-and-instance-is-string-hello.js",

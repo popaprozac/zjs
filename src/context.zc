@@ -4766,6 +4766,65 @@ fn regex_translate_to_posix(src: ZjsString*) -> char* {
                 raw { memcpy(buf + out, "[^ \t\n\r\f\v]", 9); }
                 out = out + 9; i = i + 2; continue;
             }
+            // \uXXXX — four-hex Unicode escape. ECMA-262 regex grammar
+            // allows it both inside and outside character classes. POSIX
+            // / TRE doesn't understand `\u`, so emit the actual byte
+            // when the code point fits in 7 bits; otherwise pass
+            // through (best effort — the regex engine will likely
+            // mismatch but at least won't segfault).
+            if nx == (char)'u' && i + 5 < n {
+                let v0: int = 0; let v1: int = 0; let v2: int = 0; let v3: int = 0;
+                let ok: int = 0;
+                let h0 = data[i + 2]; let h1 = data[i + 3];
+                let h2 = data[i + 4]; let h3 = data[i + 5];
+                raw {
+                    #define ZJS_HEX(out, c) do { \
+                        if (c >= '0' && c <= '9') out = c - '0'; \
+                        else if (c >= 'a' && c <= 'f') out = c - 'a' + 10; \
+                        else if (c >= 'A' && c <= 'F') out = c - 'A' + 10; \
+                        else out = -1; \
+                    } while (0)
+                    ZJS_HEX(v0, h0); ZJS_HEX(v1, h1);
+                    ZJS_HEX(v2, h2); ZJS_HEX(v3, h3);
+                    #undef ZJS_HEX
+                    ok = (v0 >= 0 && v1 >= 0 && v2 >= 0 && v3 >= 0) ? 1 : 0;
+                }
+                if ok != 0 {
+                    let cp: int = v0 * 4096 + v1 * 256 + v2 * 16 + v3;
+                    if cp < 128 {
+                        buf[out] = (char)cp;
+                        out = out + 1; i = i + 6; continue;
+                    }
+                    buf[out] = (char)'?';
+                    out = out + 1; i = i + 6; continue;
+                }
+            }
+            // \xHH — two-hex escape. Same handling.
+            if nx == (char)'x' && i + 3 < n {
+                let v0: int = 0; let v1: int = 0;
+                let ok: int = 0;
+                let h0 = data[i + 2]; let h1 = data[i + 3];
+                raw {
+                    #define ZJS_HEX(out, c) do { \
+                        if (c >= '0' && c <= '9') out = c - '0'; \
+                        else if (c >= 'a' && c <= 'f') out = c - 'a' + 10; \
+                        else if (c >= 'A' && c <= 'F') out = c - 'A' + 10; \
+                        else out = -1; \
+                    } while (0)
+                    ZJS_HEX(v0, h0); ZJS_HEX(v1, h1);
+                    #undef ZJS_HEX
+                    ok = (v0 >= 0 && v1 >= 0) ? 1 : 0;
+                }
+                if ok != 0 {
+                    let cp: int = v0 * 16 + v1;
+                    if cp < 128 {
+                        buf[out] = (char)cp;
+                        out = out + 1; i = i + 4; continue;
+                    }
+                    buf[out] = (char)'?';
+                    out = out + 1; i = i + 4; continue;
+                }
+            }
             // `\b` (word boundary) is `[[:<:]]|[[:>:]]` in TRE — but the
             // alternation only makes sense inside a group. Cheaper +
             // correct enough for most tests: emit `\b` and rely on TRE
