@@ -367,6 +367,10 @@ struct Function {
     // (non-extended) classes leave this undefined. Marked at class-
     // create time on the Function*.
     parent_ctor:          ZjsValue;
+    // Synthesized default constructor for `class Child extends
+    // Parent {}`. Op::NewInvoke detects this and forwards its args
+    // directly to parent_ctor instead of interpreting an empty body.
+    is_default_derived_ctor: bool;
 }
 
 fn function_new() -> Function* {

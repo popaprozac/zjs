@@ -2412,11 +2412,34 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let fp = zjs_cell_as_ptr(callee);
                 let target: Function* = NULL;
                 raw { target = (Function*)fp; }
-                let argv_ptr: ZjsValue* = NULL;
-                raw { argv_ptr = &regs[base + 1]; }
-                let r = interpret(ctx, target, argv_ptr, argc);
-                if r.is_throw { did_throw = true; call_result = r.value; }
-                else          { call_result = r.value; }
+                // Synthesized default derived constructor: forward
+                // arguments straight to the parent ctor instead of
+                // interpreting an empty body.
+                if target.is_default_derived_ctor {
+                    let parent = target.parent_ctor;
+                    let argv_ptr: ZjsValue* = NULL;
+                    raw { argv_ptr = &regs[base + 1]; }
+                    let r: ZjsValue = zjs_undefined();
+                    raw { r = zjs_call_value_with_this(ctx, parent, ctx->host_this, argv_ptr, argc); }
+                    if ctx.pending_throw_active {
+                        did_throw = true;
+                        call_result = consume_pending_throw(ctx);
+                    } else {
+                        // If parent ctor returned a special cell
+                        // (TAG_PROMISE, TAG_REGEXP), pivot host_this
+                        // and propagate up — same logic as SuperCall.
+                        if zjs_is_promise(r) != 0 || zjs_is_regexp(r) != 0 {
+                            ctx.host_this = r;
+                        }
+                        call_result = r;
+                    }
+                } else {
+                    let argv_ptr: ZjsValue* = NULL;
+                    raw { argv_ptr = &regs[base + 1]; }
+                    let r = interpret(ctx, target, argv_ptr, argc);
+                    if r.is_throw { did_throw = true; call_result = r.value; }
+                    else          { call_result = r.value; }
+                }
             } else if zjs_is_closure(callee) != 0 {
                 let cl = zjs_as_closure(callee);
                 let fp2 = cl.function;
