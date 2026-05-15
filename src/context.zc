@@ -3588,6 +3588,22 @@ fn json_emit_string(b: JsonBuf*, s: char*, n: u32) -> void {
 struct JsonCtx {
     replacer_fn:  ZjsValue;
     replacer_arr: ZjsValue;     // (an array) or undefined
+    indent_str:   char*;        // owned char buffer or NULL = no indent
+    indent_len:   u32;          // strlen(indent_str)
+    depth:        u32;          // current nesting level
+}
+
+// Emit a newline and `depth` copies of the indent string. Used by
+// pretty-printing only — when indent_len is 0 this is a no-op caller
+// can skip.
+fn json_emit_indent(b: JsonBuf*, jc: JsonCtx*) -> void {
+    if jc.indent_len == 0 { return; }
+    json_buf_putc(b, '\n');
+    let i: u32 = 0;
+    while i < jc.depth {
+        json_buf_puts(b, jc.indent_str, jc.indent_len);
+        i = i + 1;
+    }
 }
 
 // Apply replacer fn to (key, value), returning the value to actually
@@ -3671,9 +3687,13 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
     if zjs_is_array(v) != 0 {
         let a = zjs_as_array(v);
         json_buf_putc(b, '[');
+        if a.length == 0 { json_buf_putc(b, ']'); return; }
+        jc.depth = jc.depth + 1;
         let i: u32 = 0;
         while i < a.length {
             if i > 0 { json_buf_putc(b, ','); }
+            else if jc.indent_len == 0 { /* compact: nothing */ }
+            json_emit_indent(b, jc);
             // ECMA-262 SerializeJSONArray: holes emit "null", not "".
             let slot = a.elements[i];
             let elem_v: ZjsValue = if zjs_is_deleted(slot) != 0 { zjs_null() } else { slot };
@@ -3690,6 +3710,8 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
             else                              { json_stringify_value(ctx, jc, b, elem_v); }
             i = i + 1;
         }
+        jc.depth = jc.depth - 1;
+        json_emit_indent(b, jc);
         json_buf_putc(b, ']');
         return;
     }
@@ -3699,6 +3721,8 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
         // the hidden-class chain bottom-up (same approach as Object.keys).
         let count = o.cls.prop_count;
         json_buf_putc(b, '{');
+        let saved_depth = jc.depth;
+        jc.depth = jc.depth + 1;
         // First gather names by slot.
         let names: ZjsString*[64];          // MVP: 64-prop cap per object
         let names_ptr: ZjsString** = NULL;
@@ -3744,8 +3768,10 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
                                     || zjs_cell_tag(processed) == TAG_CLOSURE
                                     || zjs_cell_tag(processed) == TAG_HOST_FUNCTION) {
                                 if emitted > 0 { json_buf_putc(b, ','); }
+                                json_emit_indent(b, jc);
                                 json_emit_string(b, kname.data, kname.length);
                                 json_buf_putc(b, ':');
+                                if jc.indent_len > 0 { json_buf_putc(b, ' '); }
                                 json_stringify_value(ctx, jc, b, processed);
                                 emitted = emitted + 1;
                             }
@@ -3774,8 +3800,10 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
                             || zjs_is_host_function(processed) != 0;
                         if zjs_is_undefined(processed) == 0 && !is_callable {
                             if emitted > 0 { json_buf_putc(b, ','); }
+                            json_emit_indent(b, jc);
                             json_emit_string(b, n.data, n.length);
                             json_buf_putc(b, ':');
+                            if jc.indent_len > 0 { json_buf_putc(b, ' '); }
                             json_stringify_value(ctx, jc, b, processed);
                             emitted = emitted + 1;
                         }
@@ -3784,6 +3812,8 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
                 i = i + 1;
             }
         }
+        jc.depth = saved_depth;
+        if emitted > 0 { json_emit_indent(b, jc); }
         json_buf_putc(b, '}');
         return;
     }
@@ -3803,6 +3833,41 @@ fn host_json_stringify(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     let jc: JsonCtx;
     jc.replacer_fn  = zjs_undefined();
     jc.replacer_arr = zjs_undefined();
+    jc.indent_str   = NULL;
+    jc.indent_len   = 0;
+    jc.depth        = 0;
+    // Parse the optional `space` arg (third). Number → that many
+    // spaces (clamped to 10). String → take up to first 10 chars
+    // verbatim. Anything else is ignored.
+    if argc >= 3 {
+        let sp = args[2];
+        if zjs_is_int32(sp) != 0 || zjs_is_double(sp) != 0 {
+            let n = zjs_to_double(sp);
+            let nclamp: u32 = 0;
+            if n >= 1.0 {
+                if n > 10.0 { nclamp = 10; } else { nclamp = (u32)n; }
+            }
+            if nclamp > 0 {
+                let buf = alloc_n<char>((usize)(nclamp + 1));
+                let bi: u32 = 0;
+                while bi < nclamp { buf[bi] = ' '; bi = bi + 1; }
+                buf[nclamp] = (char)0;
+                jc.indent_str = buf;
+                jc.indent_len = nclamp;
+            }
+        } else if zjs_is_string(sp) != 0 {
+            let s = zjs_as_string(sp);
+            let take: u32 = if s.length > 10 { 10 } else { s.length };
+            if take > 0 {
+                let buf = alloc_n<char>((usize)(take + 1));
+                let bi: u32 = 0;
+                while bi < take { buf[bi] = s.data[bi]; bi = bi + 1; }
+                buf[take] = (char)0;
+                jc.indent_str = buf;
+                jc.indent_len = take;
+            }
+        }
+    }
     if argc >= 2 {
         let r = args[1];
         if zjs_is_function(r) != 0 || zjs_is_closure(r) != 0 || zjs_is_host_function(r) != 0 {
@@ -3866,6 +3931,7 @@ fn host_json_stringify(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     let b: JsonBuf;
     b.data = NULL; b.len = 0; b.cap = 0;
     json_stringify_value(ctx, &jc, &b, v);
+    if jc.indent_str != NULL { dealloc(jc.indent_str); }
     // Null-terminate for safety; ctx_intern_string_take only reads `len`.
     json_buf_putc(&b, '\0');
     b.len = b.len - 1;
@@ -5328,6 +5394,9 @@ fn console_write_value(v: ZjsValue, stream_is_stderr: bool) -> void {
         let nojc: JsonCtx;
         nojc.replacer_fn = zjs_undefined();
         nojc.replacer_arr = zjs_undefined();
+        nojc.indent_str = NULL;
+        nojc.indent_len = 0;
+        nojc.depth = 0;
         json_stringify_value(nullctx, &nojc, &b, v);
         let bd = b.data;
         let bn = b.len;
