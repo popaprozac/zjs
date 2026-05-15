@@ -1910,6 +1910,19 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     let key_str = zjs_as_string(key_v);
     let key_atom = ctx_intern_atom(ctx, key_str.data, key_str.length);
 
+    // ECMA-262 §10.4.2.4 ArraySetLength: if obj is an Array and key
+    // names a numeric index, bump array.length to max(length, idx+1).
+    // Tests rely on this so a for-of over an array that only had
+    // defineProperty install a key visits it.
+    if zjs_is_array(obj_v) != 0 {
+        let idx = zjs_to_array_index(key_v);
+        if idx >= 0 {
+            let arr = zjs_as_array(obj_v);
+            let need = (u32)idx + 1;
+            if need > arr.length { arr.length = need; }
+        }
+    }
+
     // Descriptor may be a plain object OR an array (whose expando bag
     // holds the value/get/set keys) OR a host/user function with
     // .props. Use property_get to read named slots through whichever
