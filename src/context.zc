@@ -2747,7 +2747,10 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         if ctx.pending_throw_active { return zjs_int32(-1); }
     }
     let len_d = zjs_to_double(lkv);
-    raw { if (!isfinite(len_d) || len_d <= 0.0) len_d = 0.0; }
+    raw {
+        if (!isfinite(len_d) || len_d <= 0.0) len_d = 0.0;
+        else len_d = floor(len_d);   // ToLength truncates to integer
+    }
     let from_d: f64 = 0.0;
     if argc >= 2 {
         let pos = args[1];

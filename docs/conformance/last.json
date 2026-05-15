@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 11:49 UTC",
+    "when": "2026-05-15 11:52 UTC",
     "total": 4821,
-    "passed": 2211,
-    "failed": 584,
+    "passed": 2214,
+    "failed": 581,
     "skipped": 2026
   },
   "failures": [
@@ -1004,10 +1004,6 @@
       "reason": "zjs: throw: Test262Error: func(0, true) !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-13.js",
-      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, \"200.59\")"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-14.js",
       "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(objOne, true)"
     },
@@ -1016,16 +1012,8 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-24.js",
-      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, false)"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-8.js",
       "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, 0)"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-4-9.js",
-      "reason": "zjs: throw: Test262Error: Array.prototype.indexOf.call(obj, targetObj)"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-23.js",
