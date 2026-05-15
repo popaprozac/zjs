@@ -4191,6 +4191,10 @@ fn jp_parse_value(ctx: ZjsContext*, p: JsonParser*) -> ZjsValue {
         parsed = strtod(buf, NULL);
     }
     if is_negative { parsed = -parsed; }
+    // ECMA-262 §25.5.1 step 9: "-0" parses to -0 (preserves sign).
+    // int32 representation can't carry the negative-zero bit, so we
+    // route it through double when the input was a literal `-0`.
+    if is_negative && parsed == 0.0 { return zjs_double(-0.0); }
     // Prefer int32 representation if it fits.
     let as_int = (i32)parsed;
     if (f64)as_int == parsed { return zjs_int32(as_int); }

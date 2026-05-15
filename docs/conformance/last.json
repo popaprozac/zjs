@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 10:00 UTC",
+    "when": "2026-05-15 10:07 UTC",
     "total": 4821,
-    "passed": 2167,
-    "failed": 628,
+    "passed": 2168,
+    "failed": 627,
     "skipped": 2026
   },
   "failures": [
@@ -1625,10 +1625,6 @@
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-object-get-prop-from-prototype.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/text-negative-zero.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
