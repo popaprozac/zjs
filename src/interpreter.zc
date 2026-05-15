@@ -1874,6 +1874,25 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             let ic_slot = inst.c;
             let obj_val = regs[obj_reg];
 
+            // ECMA-262 RequireObjectCoercible: property access on
+            // undefined / null throws TypeError.
+            if zjs_is_undefined(obj_val) != 0 || zjs_is_null(obj_val) != 0 {
+                let ic_name: ZjsString* = f.ics[ic_slot].name;
+                let buf: char[128];
+                let n: int = 0;
+                let ic_d = ic_name.data;
+                let ic_l = ic_name.length;
+                raw {
+                    n = snprintf(&buf[0], 128, "Cannot read properties of %s (reading '%.*s')",
+                                 zjs_is_undefined(obj_val) ? "undefined" : "null",
+                                 (int)(ic_l > 64 ? 64 : ic_l), ic_d);
+                }
+                let bp: char* = NULL; raw { bp = &buf[0]; }
+                let err = build_typed_error(ctx, (char*)"TypeError", 9, bp, (u32)n);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
+
             let took_fast: bool = false;
             if zjs_is_object(obj_val) != 0 {
                 let o = zjs_as_object(obj_val);

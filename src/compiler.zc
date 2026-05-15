@@ -1898,16 +1898,26 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     // Object.getPrototypeOf(Child) === Parent. Evaluated AFTER methods
     // are attached so the methods land on the child's own prototype.
     if cls_node.right != NULL {
-        let parent_reg = compile_expr(c, cls_node.right);
-        let parent_proto_ic = alloc_ic_slot(c, ctx_intern_atom(c.ctx, (char*)"prototype", 9));
-        let parent_proto_reg = alloc_reg(c);
-        if parent_proto_ic <= 255 {
-            emit(c, make_inst_abc(Op::LoadProp, parent_proto_reg, parent_reg, (u8)parent_proto_ic));
-            emit(c, make_inst_ab(Op::SetProto, parent_proto_reg, proto_reg));
+        // Special-case `extends null`: Foo.prototype.[[Prototype]] is
+        // null (no parent_proto load); Foo.[[Prototype]] stays the
+        // default Function.prototype (we don't SetParentCtor).
+        if cls_node.right.kind == NodeKind::NullExpr {
+            let null_reg = alloc_reg(c);
+            emit(c, make_inst_a(Op::LoadNull, null_reg));
+            emit(c, make_inst_ab(Op::SetProto, null_reg, proto_reg));
+            release_reg(c, null_reg);
+        } else {
+            let parent_reg = compile_expr(c, cls_node.right);
+            let parent_proto_ic = alloc_ic_slot(c, ctx_intern_atom(c.ctx, (char*)"prototype", 9));
+            let parent_proto_reg = alloc_reg(c);
+            if parent_proto_ic <= 255 {
+                emit(c, make_inst_abc(Op::LoadProp, parent_proto_reg, parent_reg, (u8)parent_proto_ic));
+                emit(c, make_inst_ab(Op::SetProto, parent_proto_reg, proto_reg));
+            }
+            emit(c, make_inst_ab(Op::SetParentCtor, ctor_reg, parent_reg));
+            release_reg(c, parent_proto_reg);
+            if parent_reg + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
         }
-        emit(c, make_inst_ab(Op::SetParentCtor, ctor_reg, parent_reg));
-        release_reg(c, parent_proto_reg);
-        if parent_reg + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
     }
 
     release_reg(c, proto_reg);

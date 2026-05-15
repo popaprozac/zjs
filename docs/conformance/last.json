@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 21:49 UTC",
+    "when": "2026-05-15 21:57 UTC",
     "total": 13247,
-    "passed": 2588,
-    "failed": 715,
+    "passed": 2586,
+    "failed": 717,
     "skipped": 9944
   },
   "failures": [
@@ -637,7 +637,7 @@
     },
     {
       "path": "test/language/statements/class/arguments/default-constructor.js",
-      "reason": "zjs: throw: Test262Error: The value of `args.length` is `0`"
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'length')"
     },
     {
       "path": "test/language/statements/class/class-name-ident-await-escaped.js",
@@ -681,7 +681,7 @@
     },
     {
       "path": "test/language/statements/class/definition/prototype-getter.js",
-      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')"
     },
     {
       "path": "test/language/statements/class/definition/setters-restricted-ids.js",
@@ -1268,10 +1268,6 @@
       "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
-      "path": "test/language/statements/class/subclass/class-definition-null-proto.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/language/statements/class/subclass/class-definition-parent-proto-null.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
@@ -1325,7 +1321,7 @@
     },
     {
       "path": "test/language/statements/class/subclass/superclass-bound-function.js",
-      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')"
     },
     {
       "path": "test/language/statements/class/subclass-builtins/subclass-AggregateError.js",
@@ -2017,7 +2013,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-grow.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'BYTES_PER_ELEMENT')"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-shrink.js",
@@ -2120,8 +2116,12 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
+      "path": "test/built-ins/Array/prototype/map/create-proto-from-ctor-realm-array.js",
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'global')"
+    },
+    {
       "path": "test/built-ins/Array/prototype/map/create-proto-from-ctor-realm-non-array.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'global')"
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-species-abrupt.js",
@@ -2134,6 +2134,14 @@
     {
       "path": "test/built-ins/Array/prototype/map/create-species.js",
       "reason": "zjs: throw: Test262Error: Constructor invoked exactly once"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/resizable-buffer-grow-mid-iteration.js",
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'BYTES_PER_ELEMENT')"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/resizable-buffer-shrink-mid-iteration.js",
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'BYTES_PER_ELEMENT')"
     },
     {
       "path": "test/built-ins/Array/prototype/map/resizable-buffer.js",
@@ -2214,6 +2222,18 @@
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-8-10.js",
       "reason": "zjs: throw: Test262Error: callCnt"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/resizable-buffer-grow-mid-iteration.js",
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'BYTES_PER_ELEMENT')"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/resizable-buffer-shrink-mid-iteration.js",
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'BYTES_PER_ELEMENT')"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/resizable-buffer.js",
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'BYTES_PER_ELEMENT')"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-15.js",
@@ -2373,11 +2393,11 @@
     },
     {
       "path": "test/built-ins/Promise/Symbol.species/return-value.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
     },
     {
       "path": "test/built-ins/Promise/Symbol.species/symbol-species-name.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
     },
     {
       "path": "test/built-ins/Promise/all/S25.4.4.1_A4.1_T1.js",
@@ -2476,10 +2496,6 @@
       "reason": "zjs: throw: Test262Error: p1.then call count"
     },
     {
-      "path": "test/built-ins/Promise/allKeyed/ctx-non-ctor.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/built-ins/Promise/allKeyed/extensible.js",
       "reason": "zjs: throw: Test262Error: assert failed"
     },
@@ -2574,10 +2590,6 @@
     {
       "path": "test/built-ins/Promise/allSettled/resolve-throws-iterator-return-null-or-undefined.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettledKeyed/ctx-non-ctor.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Promise/allSettledKeyed/extensible.js",
@@ -2693,10 +2705,6 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/this-value-then-throws.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A2.1_T2.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
