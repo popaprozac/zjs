@@ -2392,6 +2392,45 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
         return zjs_undefined();
     }
 
+    // Function / closure / host-fn special "prototype" / "name" /
+    // "length" keys first.
+    let key_str_pre = zjs_as_string(key_v);
+    let is_prototype_k: int = 0;
+    let is_name_k: int = 0;
+    let is_length_k: int = 0;
+    let ksd = key_str_pre.data;
+    let ksn = key_str_pre.length;
+    raw {
+        is_prototype_k = (ksn == 9 && memcmp(ksd, "prototype", 9) == 0) ? 1 : 0;
+        is_name_k      = (ksn == 4 && memcmp(ksd, "name",      4) == 0) ? 1 : 0;
+        is_length_k    = (ksn == 6 && memcmp(ksd, "length",    6) == 0) ? 1 : 0;
+    }
+    if is_prototype_k != 0
+       && (zjs_is_function(obj_v) != 0 || zjs_is_closure(obj_v) != 0 || zjs_is_host_function(obj_v) != 0) {
+        let proto_v = property_get(ctx, obj_v, key_v);
+        if zjs_is_undefined(proto_v) != 0 { return zjs_undefined(); }
+        let r_v = ctx_new_object(ctx);
+        let r = zjs_as_object(r_v);
+        object_set(ctx, r, ctx_intern_atom(ctx, (char*)"value", 5), proto_v);
+        // For class constructors the prototype is non-writable +
+        // non-configurable; regular function ctors are writable +
+        // configurable. is_class_constructor only exists on Function*,
+        // not closures / host fns — treat host fns as regular ctors.
+        let is_class: bool = false;
+        if zjs_is_function(obj_v) != 0 {
+            let fp = zjs_cell_as_ptr(obj_v);
+            let ff: Function* = NULL;
+            raw { ff = (Function*)fp; }
+            is_class = ff.is_class_constructor;
+        }
+        let writable: int = if is_class { 0 } else { 1 };
+        let configurable: int = if is_class { 0 } else { 1 };
+        object_set(ctx, r, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(writable));
+        object_set(ctx, r, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(0));
+        object_set(ctx, r, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(configurable));
+        return r_v;
+    }
+
     // Function / closure / host-fn receivers: route to their .props
     // expando (where static methods, F.x = ..., etc. live).
     let o: ZjsObject* = NULL;
