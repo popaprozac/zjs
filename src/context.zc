@@ -1512,9 +1512,37 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     let get_lookup   = property_get(ctx, desc_v, get_key_v);
     let set_lookup   = property_get(ctx, desc_v, set_key_v);
 
+    // ECMA-262 §6.2.5 ToPropertyDescriptor: a get/set that is present
+    // (non-undefined) but not callable, or a descriptor that mixes a
+    // data field (value) with an accessor field (get/set), is a
+    // TypeError. property_get returns undefined for missing properties,
+    // so a `get: undefined` (or absent `get`) reads as undefined and is
+    // a valid "no getter" — only non-undefined non-callable throws.
+    let get_present = zjs_is_undefined(get_lookup) == 0;
+    let set_present = zjs_is_undefined(set_lookup) == 0;
+    let get_callable = zjs_is_function(get_lookup) != 0 || zjs_is_closure(get_lookup) != 0 || zjs_is_host_function(get_lookup) != 0;
+    let set_callable = zjs_is_function(set_lookup) != 0 || zjs_is_closure(set_lookup) != 0 || zjs_is_host_function(set_lookup) != 0;
+    if get_present && !get_callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Getter must be a function or undefined", 38);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    if set_present && !set_callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Setter must be a function or undefined", 38);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
     let has_value = zjs_is_undefined(value_lookup) == 0;
-    let has_get   = zjs_is_function(get_lookup) != 0 || zjs_is_closure(get_lookup) != 0 || zjs_is_host_function(get_lookup) != 0;
-    let has_set   = zjs_is_function(set_lookup) != 0 || zjs_is_closure(set_lookup) != 0 || zjs_is_host_function(set_lookup) != 0;
+    let has_get   = get_callable;
+    let has_set   = set_callable;
+    if has_value && (get_present || set_present) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Cannot both specify accessors and a value or writable attribute", 64);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
 
     if has_get || has_set {
         // Accessor descriptor (Phase 3.9b). Allocate an accessor cell
@@ -1582,23 +1610,32 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
             // right receiver. For an array-backed props bag this is
             // the array's expando object (a real ZjsObject).
             let desc_value = property_get(ctx, cls_owner_v, key_v);
-            // defineProperty accepts any object-like descriptor (plain
-            // object, array, function); host_object_define_property
-            // reads value / get / set through property_get on each.
+            // ECMA-262 §19.1.2.3.1 step 5.c: ToPropertyDescriptor on a
+            // non-object descriptor throws TypeError. Most commonly this
+            // surfaces when the props bag holds an accessor-only entry
+            // (set without get) — reading it returns undefined.
             let dv_objlike: bool =
                    zjs_is_object(desc_value) != 0
                 || zjs_is_array(desc_value) != 0
                 || zjs_is_function(desc_value) != 0
                 || zjs_is_host_function(desc_value) != 0;
-            if dv_objlike {
-                let dp_args: ZjsValue[3];
-                dp_args[0] = obj_v;
-                dp_args[1] = key_v;
-                dp_args[2] = desc_value;
-                let dp_p: ZjsValue* = NULL;
-                raw { dp_p = &dp_args[0]; }
-                host_object_define_property(ctx, dp_p, 3);
+            if !dv_objlike {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"Property descriptor must be an object", 37);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return zjs_undefined();
             }
+            let dp_args: ZjsValue[3];
+            dp_args[0] = obj_v;
+            dp_args[1] = key_v;
+            dp_args[2] = desc_value;
+            let dp_p: ZjsValue* = NULL;
+            raw { dp_p = &dp_args[0]; }
+            host_object_define_property(ctx, dp_p, 3);
+            // define_property may have thrown a descriptor-validation
+            // TypeError — bubble it out so the caller's invocation
+            // epilogue picks it up.
+            if ctx.pending_throw_active { return zjs_undefined(); }
         }
         cls = cls.parent;
     }
