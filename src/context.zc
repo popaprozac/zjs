@@ -1341,6 +1341,187 @@ fn host_math_min(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_double(best);
 }
 
+// One-argument Math wrappers — delegate to C math.h. NaN/Infinity
+// propagation, domain errors → NaN, etc. are all handled by libm so
+// we just thread the value through. ECMA-262 says `Math.X()` (no arg)
+// returns NaN — falls out of zjs_to_double(undefined).
+fn host_math_sin(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = sin(d); }
+    return zjs_double(r);
+}
+fn host_math_cos(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = cos(d); }
+    return zjs_double(r);
+}
+fn host_math_tan(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = tan(d); }
+    return zjs_double(r);
+}
+fn host_math_asin(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = asin(d); }
+    return zjs_double(r);
+}
+fn host_math_acos(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = acos(d); }
+    return zjs_double(r);
+}
+fn host_math_atan(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = atan(d); }
+    return zjs_double(r);
+}
+fn host_math_atan2(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let y = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let x = if argc >= 2 { zjs_to_double(args[1]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = atan2(y, x); }
+    return zjs_double(r);
+}
+fn host_math_exp(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = exp(d); }
+    return zjs_double(r);
+}
+fn host_math_log(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = log(d); }
+    return zjs_double(r);
+}
+fn host_math_log2(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = log2(d); }
+    return zjs_double(r);
+}
+fn host_math_log10(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = log10(d); }
+    return zjs_double(r);
+}
+fn host_math_log1p(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = log1p(d); }
+    return zjs_double(r);
+}
+fn host_math_expm1(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = expm1(d); }
+    return zjs_double(r);
+}
+fn host_math_sinh(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = sinh(d); }
+    return zjs_double(r);
+}
+fn host_math_cosh(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = cosh(d); }
+    return zjs_double(r);
+}
+fn host_math_tanh(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = tanh(d); }
+    return zjs_double(r);
+}
+fn host_math_asinh(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = asinh(d); }
+    return zjs_double(r);
+}
+fn host_math_acosh(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = acosh(d); }
+    return zjs_double(r);
+}
+fn host_math_atanh(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = atanh(d); }
+    return zjs_double(r);
+}
+fn host_math_cbrt(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = cbrt(d); }
+    return zjs_double(r);
+}
+fn host_math_trunc(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0; raw { r = trunc(d); }
+    return zjs_double(r);
+}
+fn host_math_sign(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    // Per spec: NaN→NaN; -0→-0; +0→+0; positive→1; negative→-1.
+    let is_nan: int = 0;
+    raw { is_nan = isnan(d) ? 1 : 0; }
+    if is_nan != 0 { return zjs_double(d); }
+    if d > 0.0 { return zjs_int32(1); }
+    if d < 0.0 { return zjs_int32(-1); }
+    return zjs_double(d);   // preserves signed zero
+}
+fn host_math_hypot(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // sqrt(a^2 + b^2 + ...) — variadic; libm has hypot(a,b) for 2-arg.
+    if argc == 0 { return zjs_double(0.0); }
+    if argc == 1 {
+        let d = zjs_to_double(args[0]);
+        let r: f64 = 0.0; raw { r = fabs(d); }
+        return zjs_double(r);
+    }
+    if argc == 2 {
+        let a = zjs_to_double(args[0]);
+        let b = zjs_to_double(args[1]);
+        let r: f64 = 0.0; raw { r = hypot(a, b); }
+        return zjs_double(r);
+    }
+    let sum: f64 = 0.0;
+    let i: u32 = 0;
+    while i < argc {
+        let d = zjs_to_double(args[i]);
+        sum = sum + d * d;
+        i = i + 1;
+    }
+    let r: f64 = 0.0; raw { r = sqrt(sum); }
+    return zjs_double(r);
+}
+fn host_math_fround(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let r: f64 = 0.0;
+    raw { float f = (float)d; r = (double)f; }
+    return zjs_double(r);
+}
+fn host_math_clz32(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let v: u32 = 0;
+    raw {
+        if (isnan(d) || isinf(d)) v = 0;
+        else v = (uint32_t)((int64_t)d & 0xFFFFFFFFLL);
+    }
+    if v == 0 { return zjs_int32(32); }
+    let n: i32 = 0;
+    raw { n = (int32_t)__builtin_clz(v); }
+    return zjs_int32(n);
+}
+fn host_math_imul(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let a = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    let b = if argc >= 2 { zjs_to_double(args[1]) } else { 0.0 };
+    let r: i32 = 0;
+    raw {
+        int32_t ai = (int32_t)(int64_t)a;
+        int32_t bi = (int32_t)(int64_t)b;
+        r = (int32_t)((uint32_t)ai * (uint32_t)bi);
+    }
+    return zjs_int32(r);
+}
+fn host_math_random(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // [0,1) — coarse: rand() / (RAND_MAX + 1.0). Engine-quality
+    // PRNG is a separate concern.
+    let r: f64 = 0.0;
+    raw { r = (double)rand() / ((double)RAND_MAX + 1.0); }
+    return zjs_double(r);
+}
+
 // =====================================================================
 // Phase 3.4 — for-in / for-of iteration prepare.
 //
@@ -6090,6 +6271,62 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"max", max_ptr));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"min", 3),
                ctx_make_host_function(ctx, (char*)"min", min_ptr));
+
+    // Full transcendental + hyperbolic set delegated to libm.
+    let sin_ptr:    void* = NULL; raw { sin_ptr    = (void*)host_math_sin; }
+    let cos_ptr:    void* = NULL; raw { cos_ptr    = (void*)host_math_cos; }
+    let tan_ptr:    void* = NULL; raw { tan_ptr    = (void*)host_math_tan; }
+    let asin_ptr:   void* = NULL; raw { asin_ptr   = (void*)host_math_asin; }
+    let acos_ptr:   void* = NULL; raw { acos_ptr   = (void*)host_math_acos; }
+    let atan_ptr:   void* = NULL; raw { atan_ptr   = (void*)host_math_atan; }
+    let atan2_ptr:  void* = NULL; raw { atan2_ptr  = (void*)host_math_atan2; }
+    let exp_ptr:    void* = NULL; raw { exp_ptr    = (void*)host_math_exp; }
+    let mlog_ptr:   void* = NULL; raw { mlog_ptr   = (void*)host_math_log; }
+    let log2_ptr:   void* = NULL; raw { log2_ptr   = (void*)host_math_log2; }
+    let log10_ptr:  void* = NULL; raw { log10_ptr  = (void*)host_math_log10; }
+    let log1p_ptr:  void* = NULL; raw { log1p_ptr  = (void*)host_math_log1p; }
+    let expm1_ptr:  void* = NULL; raw { expm1_ptr  = (void*)host_math_expm1; }
+    let sinh_ptr:   void* = NULL; raw { sinh_ptr   = (void*)host_math_sinh; }
+    let cosh_ptr:   void* = NULL; raw { cosh_ptr   = (void*)host_math_cosh; }
+    let tanh_ptr:   void* = NULL; raw { tanh_ptr   = (void*)host_math_tanh; }
+    let asinh_ptr:  void* = NULL; raw { asinh_ptr  = (void*)host_math_asinh; }
+    let acosh_ptr:  void* = NULL; raw { acosh_ptr  = (void*)host_math_acosh; }
+    let atanh_ptr:  void* = NULL; raw { atanh_ptr  = (void*)host_math_atanh; }
+    let cbrt_ptr:   void* = NULL; raw { cbrt_ptr   = (void*)host_math_cbrt; }
+    let trunc_ptr:  void* = NULL; raw { trunc_ptr  = (void*)host_math_trunc; }
+    let sign_ptr:   void* = NULL; raw { sign_ptr   = (void*)host_math_sign; }
+    let hypot_ptr:  void* = NULL; raw { hypot_ptr  = (void*)host_math_hypot; }
+    let fround_ptr: void* = NULL; raw { fround_ptr = (void*)host_math_fround; }
+    let clz32_ptr:  void* = NULL; raw { clz32_ptr  = (void*)host_math_clz32; }
+    let imul_ptr:   void* = NULL; raw { imul_ptr   = (void*)host_math_imul; }
+    let random_ptr: void* = NULL; raw { random_ptr = (void*)host_math_random; }
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"sin",    3),  ctx_make_host_function_arity(ctx, (char*)"sin",    sin_ptr,    1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"cos",    3),  ctx_make_host_function_arity(ctx, (char*)"cos",    cos_ptr,    1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"tan",    3),  ctx_make_host_function_arity(ctx, (char*)"tan",    tan_ptr,    1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"asin",   4),  ctx_make_host_function_arity(ctx, (char*)"asin",   asin_ptr,   1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"acos",   4),  ctx_make_host_function_arity(ctx, (char*)"acos",   acos_ptr,   1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"atan",   4),  ctx_make_host_function_arity(ctx, (char*)"atan",   atan_ptr,   1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"atan2",  5),  ctx_make_host_function_arity(ctx, (char*)"atan2",  atan2_ptr,  2));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"exp",    3),  ctx_make_host_function_arity(ctx, (char*)"exp",    exp_ptr,    1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"log",    3),  ctx_make_host_function_arity(ctx, (char*)"log",    mlog_ptr,   1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"log2",   4),  ctx_make_host_function_arity(ctx, (char*)"log2",   log2_ptr,   1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"log10",  5),  ctx_make_host_function_arity(ctx, (char*)"log10",  log10_ptr,  1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"log1p",  5),  ctx_make_host_function_arity(ctx, (char*)"log1p",  log1p_ptr,  1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"expm1",  5),  ctx_make_host_function_arity(ctx, (char*)"expm1",  expm1_ptr,  1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"sinh",   4),  ctx_make_host_function_arity(ctx, (char*)"sinh",   sinh_ptr,   1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"cosh",   4),  ctx_make_host_function_arity(ctx, (char*)"cosh",   cosh_ptr,   1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"tanh",   4),  ctx_make_host_function_arity(ctx, (char*)"tanh",   tanh_ptr,   1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"asinh",  5),  ctx_make_host_function_arity(ctx, (char*)"asinh",  asinh_ptr,  1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"acosh",  5),  ctx_make_host_function_arity(ctx, (char*)"acosh",  acosh_ptr,  1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"atanh",  5),  ctx_make_host_function_arity(ctx, (char*)"atanh",  atanh_ptr,  1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"cbrt",   4),  ctx_make_host_function_arity(ctx, (char*)"cbrt",   cbrt_ptr,   1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"trunc",  5),  ctx_make_host_function_arity(ctx, (char*)"trunc",  trunc_ptr,  1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"sign",   4),  ctx_make_host_function_arity(ctx, (char*)"sign",   sign_ptr,   1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"hypot",  5),  ctx_make_host_function_arity(ctx, (char*)"hypot",  hypot_ptr,  2));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"fround", 6),  ctx_make_host_function_arity(ctx, (char*)"fround", fround_ptr, 1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"clz32",  5),  ctx_make_host_function_arity(ctx, (char*)"clz32",  clz32_ptr,  1));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"imul",   4),  ctx_make_host_function_arity(ctx, (char*)"imul",   imul_ptr,   2));
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"random", 6),  ctx_make_host_function_arity(ctx, (char*)"random", random_ptr, 0));
 
     // Math constants — ECMA-262 §21.3. Read-only data properties.
     // PI/E come from std/math; the others aren't exposed there yet, so

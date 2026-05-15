@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 08:07 UTC",
+    "when": "2026-05-15 08:15 UTC",
     "total": 4821,
-    "passed": 2032,
-    "failed": 763,
+    "passed": 2118,
+    "failed": 677,
     "skipped": 2026
   },
   "failures": [
@@ -142,10 +142,6 @@
     {
       "path": "test/language/expressions/typeof/built-in-exotic-objects-no-call.js",
       "reason": "zjs: throw: Test262Error: typeof this === \"object\""
-    },
-    {
-      "path": "test/language/expressions/typeof/built-in-functions.js",
-      "reason": "zjs: throw: Test262Error: typeof Math.exp === \"function\""
     },
     {
       "path": "test/language/expressions/typeof/built-in-ordinary-objects-no-call.js",
@@ -2072,264 +2068,8 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/built-ins/Math/acos/S15.8.2.2_A1.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/acos/S15.8.2.2_A2.js",
-      "reason": "zjs: throw: Test262Error: 1.000000000000001"
-    },
-    {
-      "path": "test/built-ins/Math/acos/S15.8.2.2_A3.js",
-      "reason": "zjs: throw: Test262Error: -1.000000000000001"
-    },
-    {
-      "path": "test/built-ins/Math/acos/S15.8.2.2_A4.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/acosh/arg-is-infinity.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/acosh/arg-is-one.js",
-      "reason": "zjs: throw: Test262Error: Math.acosh should produce 0 for +1"
-    },
-    {
-      "path": "test/built-ins/Math/acosh/nan-returns.js",
-      "reason": "zjs: throw: Test262Error: NaN"
-    },
-    {
-      "path": "test/built-ins/Math/asin/S15.8.2.3_A1.js",
-      "reason": "zjs: throw: Test262Error: NaN"
-    },
-    {
-      "path": "test/built-ins/Math/asin/S15.8.2.3_A2.js",
-      "reason": "zjs: throw: Test262Error: 1.000000000000001"
-    },
-    {
-      "path": "test/built-ins/Math/asin/S15.8.2.3_A3.js",
-      "reason": "zjs: throw: Test262Error: -1.000000000000001"
-    },
-    {
-      "path": "test/built-ins/Math/asin/S15.8.2.3_A4.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/asin/S15.8.2.3_A5.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/asinh/asinh-specialVals.js",
-      "reason": "zjs: throw: Test262Error: Math.asinh produces incorrect output for NaN"
-    },
-    {
-      "path": "test/built-ins/Math/atan/S15.8.2.4_A1.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/atan/S15.8.2.4_A2.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/atan/S15.8.2.4_A3.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/atan2/S15.8.2.5_A1.js",
-      "reason": "zjs: throw: Test262Error: (NaN, -Infinity)"
-    },
-    {
-      "path": "test/built-ins/Math/atan2/S15.8.2.5_A14.js",
-      "reason": "zjs: throw: Test262Error"
-    },
-    {
-      "path": "test/built-ins/Math/atan2/S15.8.2.5_A16.js",
-      "reason": "zjs: throw: Test262Error: (-1e-15, Infinity)"
-    },
-    {
-      "path": "test/built-ins/Math/atan2/S15.8.2.5_A4.js",
-      "reason": "zjs: throw: Test262Error"
-    },
-    {
-      "path": "test/built-ins/Math/atan2/S15.8.2.5_A5.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/atan2/S15.8.2.5_A8.js",
-      "reason": "zjs: throw: Test262Error: (-0, 1e-15)"
-    },
-    {
-      "path": "test/built-ins/Math/atan2/S15.8.2.5_A9.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/atanh/atanh-specialVals.js",
-      "reason": "zjs: throw: Test262Error: Math.atanh produces incorrect output for -1.9"
-    },
-    {
-      "path": "test/built-ins/Math/cbrt/cbrt-specialValues.js",
-      "reason": "zjs: throw: Test262Error: Math.cbrt produces incorrect output for NaN"
-    },
-    {
-      "path": "test/built-ins/Math/clz32/Math.clz32.js",
-      "reason": "zjs: throw: Test262Error: Math.clz32(0)"
-    },
-    {
-      "path": "test/built-ins/Math/clz32/Math.clz32_1.js",
-      "reason": "zjs: throw: Test262Error: Math.clz32(1)"
-    },
-    {
-      "path": "test/built-ins/Math/clz32/Math.clz32_2.js",
-      "reason": "zjs: throw: Test262Error: Math.clz32(2147483648)"
-    },
-    {
-      "path": "test/built-ins/Math/clz32/infinity.js",
-      "reason": "zjs: throw: Test262Error: Infinity"
-    },
-    {
-      "path": "test/built-ins/Math/clz32/int32bit.js",
-      "reason": "zjs: throw: Test262Error: 2**32-1"
-    },
-    {
-      "path": "test/built-ins/Math/clz32/nan.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/cos/S15.8.2.7_A1.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/cos/S15.8.2.7_A2.js",
-      "reason": "zjs: throw: Test262Error: Math.cos(+0) must return 1"
-    },
-    {
-      "path": "test/built-ins/Math/cos/S15.8.2.7_A3.js",
-      "reason": "zjs: throw: Test262Error: Math.cos(-0) must return 1"
-    },
-    {
-      "path": "test/built-ins/Math/cos/S15.8.2.7_A4.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/cos/S15.8.2.7_A5.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/cosh/cosh-specialVals.js",
-      "reason": "zjs: throw: Test262Error: Math.cosh produces incorrect output for NaN"
-    },
-    {
-      "path": "test/built-ins/Math/exp/S15.8.2.8_A1.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/exp/S15.8.2.8_A2.js",
-      "reason": "zjs: throw: Test262Error: Math.exp(+0) must return 1"
-    },
-    {
-      "path": "test/built-ins/Math/exp/S15.8.2.8_A3.js",
-      "reason": "zjs: throw: Test262Error: Math.exp(-0) must return 1"
-    },
-    {
-      "path": "test/built-ins/Math/exp/S15.8.2.8_A4.js",
-      "reason": "zjs: throw: Test262Error: Math.exp(+Infinity) must return +Infinity"
-    },
-    {
-      "path": "test/built-ins/Math/exp/S15.8.2.8_A5.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/expm1/expm1-specialVals.js",
-      "reason": "zjs: throw: Test262Error: Math.expm1 produces incorrect output for NaN"
-    },
-    {
-      "path": "test/built-ins/Math/fround/Math.fround_Infinity.js",
-      "reason": "zjs: throw: Test262Error: Math.fround(Infinity)"
-    },
-    {
-      "path": "test/built-ins/Math/fround/Math.fround_NaN.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/fround/Math.fround_Zero.js",
-      "reason": "zjs: throw: Test262Error: Math.fround(0)"
-    },
-    {
-      "path": "test/built-ins/Math/fround/ties.js",
-      "reason": "zjs: throw: Test262Error: Math.fround(a0)"
-    },
-    {
-      "path": "test/built-ins/Math/fround/value-convertion.js",
-      "reason": "zjs: throw: Test262Error: 2**32-1"
-    },
-    {
-      "path": "test/built-ins/Math/hypot/Math.hypot_Infinity.js",
-      "reason": "zjs: throw: Test262Error: Math.hypot(3, Infinity)"
-    },
-    {
-      "path": "test/built-ins/Math/hypot/Math.hypot_InfinityNaN.js",
-      "reason": "zjs: throw: Test262Error: Math.hypot(NaN, Infinity)"
-    },
-    {
-      "path": "test/built-ins/Math/hypot/Math.hypot_NaN.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/hypot/Math.hypot_NegInfinity.js",
-      "reason": "zjs: throw: Test262Error: Math.hypot(3, -Infinity)"
-    },
-    {
-      "path": "test/built-ins/Math/hypot/Math.hypot_NoArgs.js",
-      "reason": "zjs: throw: Test262Error: Math.hypot()"
-    },
-    {
-      "path": "test/built-ins/Math/hypot/Math.hypot_Success_2.js",
-      "reason": "zjs: throw: Test262Error: Math.hypot(3,4)"
-    },
-    {
       "path": "test/built-ins/Math/hypot/Math.hypot_ToNumberErr.js",
       "reason": "zjs: throw: Test262Error: Math.hypot propagates an abrupt completion from coercing an argument to Number"
-    },
-    {
-      "path": "test/built-ins/Math/hypot/Math.hypot_Zero_2.js",
-      "reason": "zjs: throw: Test262Error: Math.hypot(0)"
-    },
-    {
-      "path": "test/built-ins/Math/imul/results.js",
-      "reason": "zjs: throw: Test262Error: (2, 4)"
-    },
-    {
-      "path": "test/built-ins/Math/log/S15.8.2.10_A1.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/log/S15.8.2.10_A2.js",
-      "reason": "zjs: throw: Test262Error: -0.000000000000001"
-    },
-    {
-      "path": "test/built-ins/Math/log/S15.8.2.10_A3.js",
-      "reason": "zjs: throw: Test262Error: Math.log(+0) must return -Infinity"
-    },
-    {
-      "path": "test/built-ins/Math/log/S15.8.2.10_A4.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/log/S15.8.2.10_A5.js",
-      "reason": "zjs: throw: Test262Error: Math.log(+Infinity) must return +Infinity"
-    },
-    {
-      "path": "test/built-ins/Math/log10/Log10-specialVals.js",
-      "reason": "zjs: throw: Test262Error: Math.log10 produces incorrect output for -0"
-    },
-    {
-      "path": "test/built-ins/Math/log1p/specific-results.js",
-      "reason": "zjs: throw: Test262Error: NaN"
-    },
-    {
-      "path": "test/built-ins/Math/log2/log2-basicTests.js",
-      "reason": "zjs: throw: Test262Error: Math.log2 produces incorrect output for -0"
     },
     {
       "path": "test/built-ins/Math/max/Math.max_each-element-coerced.js",
@@ -2376,40 +2116,12 @@
       "reason": "zjs: throw: Test262Error: (-1, -Infinity)"
     },
     {
-      "path": "test/built-ins/Math/random/S15.8.2.14_A1.js",
-      "reason": "zjs: throw: Test262Error: should not produce a non-numeric value: undefined"
-    },
-    {
       "path": "test/built-ins/Math/round/S15.8.2.15_A3.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/built-ins/Math/round/S15.8.2.15_A7.js",
       "reason": "zjs: throw: Test262Error: The result of evaluating (1 / Math.round(-0.5)) is expected to be 1 / -0"
-    },
-    {
-      "path": "test/built-ins/Math/sign/sign-specialVals.js",
-      "reason": "zjs: throw: Test262Error: NaN"
-    },
-    {
-      "path": "test/built-ins/Math/sin/S15.8.2.16_A1.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/sin/S15.8.2.16_A4.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/sin/S15.8.2.16_A5.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/sin/zero.js",
-      "reason": "zjs: throw: Test262Error: +0"
-    },
-    {
-      "path": "test/built-ins/Math/sinh/sinh-specialVals.js",
-      "reason": "zjs: throw: Test262Error: Math.sinh produces incorrect output for NaN"
     },
     {
       "path": "test/built-ins/Math/sumPrecise/sum-is-NaN.js",
@@ -2430,62 +2142,6 @@
     {
       "path": "test/built-ins/Math/sumPrecise/throws-on-non-number.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Math/tan/S15.8.2.18_A1.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/tan/S15.8.2.18_A2.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/tan/S15.8.2.18_A3.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/tan/S15.8.2.18_A4.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/tan/S15.8.2.18_A5.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/tanh/tanh-specialVals.js",
-      "reason": "zjs: throw: Test262Error: Math.tanh produces incorrect output for NaN"
-    },
-    {
-      "path": "test/built-ins/Math/trunc/Math.trunc_Infinity.js",
-      "reason": "zjs: throw: Test262Error: Math.trunc(Infinity)"
-    },
-    {
-      "path": "test/built-ins/Math/trunc/Math.trunc_NaN.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/trunc/Math.trunc_NegDecimal.js",
-      "reason": "zjs: throw: Test262Error: Math.trunc(-.9)"
-    },
-    {
-      "path": "test/built-ins/Math/trunc/Math.trunc_PosDecimal.js",
-      "reason": "zjs: throw: Test262Error: Math.trunc(.9)"
-    },
-    {
-      "path": "test/built-ins/Math/trunc/Math.trunc_Success.js",
-      "reason": "zjs: throw: Test262Error: Math.trunc(4578.584949)"
-    },
-    {
-      "path": "test/built-ins/Math/trunc/Math.trunc_Zero.js",
-      "reason": "zjs: throw: Test262Error: Math.trunc(0)"
-    },
-    {
-      "path": "test/built-ins/Math/trunc/trunc-sampleTests.js",
-      "reason": "zjs: throw: Test262Error: Math.trunc should produce +0 for values between 0 and 1"
-    },
-    {
-      "path": "test/built-ins/Math/trunc/trunc-specialVals.js",
-      "reason": "zjs: throw: Test262Error: Math.trunc should produce negative infinity for Number.NEGATIVE_INFINITY"
     },
     {
       "path": "test/built-ins/Promise/Symbol.species/return-value.js",
