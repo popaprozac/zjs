@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 19:25 UTC",
+    "when": "2026-05-15 19:36 UTC",
     "total": 4821,
-    "passed": 2389,
-    "failed": 406,
+    "passed": 2394,
+    "failed": 401,
     "skipped": 2026
   },
   "failures": [
@@ -118,14 +118,6 @@
     {
       "path": "test/language/expressions/in/rhs-yield-present.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/this/S11.1.1_A3.1.js",
-      "reason": "zjs: throw: Test262Error: #2: function ReturnEvalThis() {return eval(\"this\")} ReturnEvalThis() === this. Actual: [object"
-    },
-    {
-      "path": "test/language/expressions/this/S11.1.1_A4.1.js",
-      "reason": "zjs: throw: Test262Error: #2: var MyFunction = new Function(\"return eval('this')\"); MyFunction() === this. Actual: [obje"
     },
     {
       "path": "test/language/statements/if/let-block-with-newline.js",
@@ -444,18 +436,6 @@
       "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
-      "path": "test/language/statements/try/12.14-14.js",
-      "reason": "zjs: throw: Test262Error: result"
-    },
-    {
-      "path": "test/language/statements/try/12.14-15.js",
-      "reason": "zjs: throw: Test262Error: result"
-    },
-    {
-      "path": "test/language/statements/try/12.14-16.js",
-      "reason": "zjs: throw: Test262Error: result"
-    },
-    {
       "path": "test/language/statements/try/S12.14_A14.js",
       "reason": "zjs: throw: Test262Error: #1: Exception ===\"ex\". Actual:  Exception ===ReferenceError: with is not defined"
     },
@@ -709,7 +689,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": ""
+      "reason": "zjs: throw: Test262Error: arr.indexOf(targetObj, fromIndex)"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -764,8 +744,8 @@
       "reason": "zjs: throw: Test262Error: testResult[1]"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-1.js",
-      "reason": "zjs: throw: Test262Error: resArr[0]"
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-1-s.js",
+      "reason": "zjs: throw: Test262Error: innerThisCorrect !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-6.js",
@@ -876,8 +856,8 @@
       "reason": "zjs: throw: Test262Error: func(12, 11) !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-5-1.js",
-      "reason": "zjs: throw: Test262Error: result"
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-5-1-s.js",
+      "reason": "zjs: throw: Test262Error: innerThisCorrect !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-5.js",
@@ -1424,7 +1404,7 @@
       "reason": "zjs: throw: Test262Error: length of first argument"
     },
     {
-      "path": "test/built-ins/Promise/executor-call-context-sloppy.js",
+      "path": "test/built-ins/Promise/executor-call-context-strict.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {

@@ -1442,7 +1442,14 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let ai: u32 = 0;
                 while ai < argc { argv_buf[ai] = regs[base + 1 + (u8)ai]; ai = ai + 1; }
                 ctx.frames[cur_idx].ip = ip + 1;
-                ctx.host_this = zjs_undefined();
+                // Non-strict default `this` is the global object per
+                // ECMA-262 OrdinaryCallBindThis step 6. We don't track
+                // strict-mode-per-function yet; default to global.
+                if ctx.global_this_obj != NULL {
+                    ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                } else {
+                    ctx.host_this = zjs_undefined();
+                }
                 push_call_frame(ctx, target, argv_buf, argc, dst);
                 exit_reason = 2;
                 break;
@@ -1462,7 +1469,11 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let ai: u32 = 0;
                 while ai < argc { argv_buf[ai] = regs[base + 1 + (u8)ai]; ai = ai + 1; }
                 ctx.frames[cur_idx].ip = ip + 1;
-                ctx.host_this = zjs_undefined();
+                if ctx.global_this_obj != NULL {
+                    ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                } else {
+                    ctx.host_this = zjs_undefined();
+                }
                 ctx.current_closure = cl;
                 push_call_frame(ctx, target2, argv_buf, argc, dst);
                 exit_reason = 2;
@@ -2446,6 +2457,14 @@ fn zjs_to_primitive(ctx: ZjsContext*, v: ZjsValue, prefer_string: bool) -> ZjsVa
 // `this_val` is the receiver the callee should see.
 fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsValue, args: ZjsValue*, argc: u32) -> ZjsValue {
     let saved = ctx.host_this;
+    // Non-strict default: coerce undefined / null `this` to the global
+    // object for user functions (matches OrdinaryCallBindThis step 6).
+    // Host functions get the explicit this_val unchanged.
+    if (zjs_is_undefined(this_val) != 0 || zjs_is_null(this_val) != 0)
+       && (zjs_is_function(callee) != 0 || zjs_is_closure(callee) != 0)
+       && ctx.global_this_obj != NULL {
+        this_val = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+    }
     ctx.host_this = this_val;
     let r: ZjsValue = zjs_undefined();
     if zjs_is_function(callee) != 0 {
