@@ -5413,6 +5413,43 @@ fn host_promise_reject_fn(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
 // Promise and resolve/reject are the bound capability functions.
 // Used by code that needs to externalize resolve/reject (sometimes
 // called a "deferred" pattern).
+// Promise.try(callback, ...args) — call callback synchronously,
+// wrap return value in a promise (or reject with the thrown error
+// on synchronous throw).
+fn host_promise_try(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_promise_constructor_this(ctx, (char*)"try", 3) { return zjs_undefined(); }
+    let cb = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    let is_callable = zjs_is_function(cb) != 0
+                     || zjs_is_closure(cb) != 0
+                     || zjs_is_host_function(cb) != 0;
+    if !is_callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Promise.try callback is not callable", 36);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let rest: ZjsValue* = NULL;
+    let rest_n: u32 = if argc > 1 { argc - 1 } else { 0 };
+    if rest_n > 0 { raw { rest = &args[1]; } }
+    let saved_pt = ctx.pending_throw_active;
+    let saved_pv = ctx.pending_throw_value;
+    ctx.pending_throw_active = false;
+    let r: ZjsValue = zjs_undefined();
+    raw { r = zjs_call_value_with_this(ctx, cb, zjs_undefined(), rest, rest_n); }
+    if ctx.pending_throw_active {
+        let thrown = ctx.pending_throw_value;
+        ctx.pending_throw_active = saved_pt;
+        ctx.pending_throw_value = saved_pv;
+        promise_settle(ctx, pv, thrown, false);
+        return pv;
+    }
+    promise_resolve_with(ctx, pv, r);
+    return pv;
+}
+
 fn host_promise_with_resolvers(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_promise_constructor_this(ctx, (char*)"withResolvers", 13) { return zjs_undefined(); }
     let p = zjs_promise_new();
@@ -7341,6 +7378,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let pwr_ptr: void* = NULL; raw { pwr_ptr = (void*)host_promise_with_resolvers; }
     object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"withResolvers", 13),
                ctx_make_host_function_arity(ctx, (char*)"withResolvers", pwr_ptr, 0));
+    let ptry_ptr: void* = NULL; raw { ptry_ptr = (void*)host_promise_try; }
+    object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"try", 3),
+               ctx_make_host_function_arity(ctx, (char*)"try", ptry_ptr, 1));
     ctx_register_host_function(ctx, (char*)"Proxy",      eval_ptr);
     ctx_register_host_function(ctx, (char*)"ArrayBuffer", eval_ptr);
     ctx_register_host_function(ctx, (char*)"Uint8Array",  eval_ptr);
