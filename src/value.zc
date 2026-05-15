@@ -1102,6 +1102,11 @@ fn object_set_existing(obj: ZjsObject*, name: ZjsString*, value: ZjsValue) -> in
 
 fn array_get(arr: ZjsArray*, idx: u32) -> ZjsValue {
     if idx >= arr.length { return zjs_undefined(); }
+    // length may temporarily exceed cap when a sparse defineProperty
+    // bumps the array's length without writing into elements (the
+    // value lives on the .props expando). Reading those slots returns
+    // undefined safely.
+    if idx >= arr.cap { return zjs_undefined(); }
     let v = arr.elements[idx];
     // Hole sentinel reads as undefined to JS code.
     if zjs_is_deleted(v) != 0 { return zjs_undefined(); }
@@ -1113,6 +1118,7 @@ fn array_get(arr: ZjsArray*, idx: u32) -> ZjsValue {
 // (forEach / map / indexOf / etc. skip absent indices entirely).
 fn array_has_index(arr: ZjsArray*, idx: u32) -> int {
     if idx >= arr.length { return 0; }
+    if idx >= arr.cap { return 0; }
     if zjs_is_deleted(arr.elements[idx]) != 0 { return 0; }
     return 1;
 }
