@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 18:53 UTC",
+    "when": "2026-05-15 18:57 UTC",
     "total": 4821,
-    "passed": 2321,
-    "failed": 474,
+    "passed": 2322,
+    "failed": 473,
     "skipped": 2026
   },
   "failures": [
@@ -1254,10 +1254,6 @@
     {
       "path": "test/built-ins/JSON/stringify/replacer-function-result.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/space-string-object.js",
-      "reason": "zjs: throw: Test262Error: should not be called"
     },
     {
       "path": "test/built-ins/JSON/stringify/value-string-escape-ascii.js",
