@@ -4719,6 +4719,33 @@ fn host_promise_reject_fn(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
     return zjs_undefined();
 }
 
+// Promise.withResolvers() — ECMA-262 §27.2.4.7. Returns
+// `{ promise, resolve, reject }` where promise is a fresh pending
+// Promise and resolve/reject are the bound capability functions.
+// Used by code that needs to externalize resolve/reject (sometimes
+// called a "deferred" pattern).
+fn host_promise_with_resolvers(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    ctx_push_temp_root(ctx, pv);
+    defer ctx_pop_temp_root(ctx);
+
+    let resolve_ptr: void* = NULL; raw { resolve_ptr = (void*)host_promise_resolve_fn; }
+    let reject_ptr:  void* = NULL; raw { reject_ptr  = (void*)host_promise_reject_fn; }
+    let resolve_fn = ctx_make_host_function_arity(ctx, (char*)"resolve", resolve_ptr, 1);
+    let reject_fn  = ctx_make_host_function_arity(ctx, (char*)"reject",  reject_ptr, 1);
+    zjs_as_host_function(resolve_fn).bound = pv;
+    zjs_as_host_function(reject_fn).bound  = pv;
+
+    let r_v = ctx_new_object(ctx);
+    let r = zjs_as_object(r_v);
+    object_set(ctx, r, ctx_intern_atom(ctx, (char*)"promise", 7), pv);
+    object_set(ctx, r, ctx_intern_atom(ctx, (char*)"resolve", 7), resolve_fn);
+    object_set(ctx, r, ctx_intern_atom(ctx, (char*)"reject",  6), reject_fn);
+    return r_v;
+}
+
 // new Promise(executor) — allocates a pending promise, builds bound
 // resolve/reject closures, and runs the executor synchronously.
 // If the executor throws, the promise is rejected with the thrown value.
@@ -6444,6 +6471,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let pany_ptr: void* = NULL; raw { pany_ptr = (void*)host_promise_any; }
     object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"any", 3),
                ctx_make_host_function_arity(ctx, (char*)"any", pany_ptr, 1));
+    let pwr_ptr: void* = NULL; raw { pwr_ptr = (void*)host_promise_with_resolvers; }
+    object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"withResolvers", 13),
+               ctx_make_host_function_arity(ctx, (char*)"withResolvers", pwr_ptr, 0));
     ctx_register_host_function(ctx, (char*)"Proxy",      eval_ptr);
     ctx_register_host_function(ctx, (char*)"ArrayBuffer", eval_ptr);
     ctx_register_host_function(ctx, (char*)"Uint8Array",  eval_ptr);

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 09:41 UTC",
+    "when": "2026-05-15 09:57 UTC",
     "total": 4821,
-    "passed": 2163,
-    "failed": 632,
+    "passed": 2164,
+    "failed": 631,
     "skipped": 2026
   },
   "failures": [
@@ -2528,12 +2528,8 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/built-ins/Promise/withResolvers/promise.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/built-ins/Promise/withResolvers/resolvers.js",
-      "reason": "zjs: throw: Test262Error: type of resolve property"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     }
   ],
   "skip_counts": {
