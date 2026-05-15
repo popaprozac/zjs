@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 16:31 UTC",
+    "when": "2026-05-15 16:46 UTC",
     "total": 4821,
-    "passed": 2260,
-    "failed": 535,
+    "passed": 2271,
+    "failed": 524,
     "skipped": 2026
   },
   "failures": [
@@ -1524,64 +1524,20 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/built-ins/Math/abs/S15.8.2.1_A2.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/hypot/Math.hypot_ToNumberErr.js",
-      "reason": "zjs: throw: Test262Error: Math.hypot propagates an abrupt completion from coercing an argument to Number"
-    },
-    {
       "path": "test/built-ins/Math/max/Math.max_each-element-coerced.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Math/max/S15.8.2.11_A2.js",
-      "reason": "zjs: throw: Test262Error: max(-Infinity, NaN)"
-    },
-    {
-      "path": "test/built-ins/Math/max/S15.8.2.11_A4.js",
-      "reason": "zjs: throw: Test262Error: The value of Math.max.length is expected to be 2"
-    },
-    {
-      "path": "test/built-ins/Math/max/zeros.js",
-      "reason": "zjs: throw: Test262Error: (-0, 0)"
     },
     {
       "path": "test/built-ins/Math/min/Math.min_each-element-coerced.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/built-ins/Math/min/S15.8.2.12_A2.js",
-      "reason": "zjs: throw: Test262Error: min(-Infinity, NaN)"
-    },
-    {
-      "path": "test/built-ins/Math/min/S15.8.2.12_A4.js",
-      "reason": "zjs: throw: Test262Error: The value of Math.min.length is expected to be 2"
-    },
-    {
-      "path": "test/built-ins/Math/min/zeros.js",
-      "reason": "zjs: throw: Test262Error: (0, -0)"
-    },
-    {
       "path": "test/built-ins/Math/pow/applying-the-exp-operator_A1.js",
       "reason": "zjs: throw: Test262Error"
     },
     {
-      "path": "test/built-ins/Math/pow/applying-the-exp-operator_A7.js",
-      "reason": "zjs: throw: Test262Error: (-1, Infinity)"
-    },
-    {
-      "path": "test/built-ins/Math/pow/applying-the-exp-operator_A8.js",
-      "reason": "zjs: throw: Test262Error: (-1, -Infinity)"
-    },
-    {
-      "path": "test/built-ins/Math/round/S15.8.2.15_A3.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/built-ins/Math/round/S15.8.2.15_A7.js",
-      "reason": "zjs: throw: Test262Error: The result of evaluating (1 / Math.round(-0.5)) is expected to be 1 / -0"
+      "reason": "zjs: throw: Test262Error: The result of evaluating (1 / Math.round(x)) is expected to be 1 / 0"
     },
     {
       "path": "test/built-ins/Math/sumPrecise/sum-is-NaN.js",
