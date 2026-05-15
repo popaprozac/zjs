@@ -284,6 +284,20 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                     }
                 }
             }
+            // Walk Function.prototype (which carries the call/apply
+            // helpers and the constructor link to the Function global)
+            // before Object.prototype.
+            if ctx.function_proto != NULL {
+                let cur = ctx.function_proto;
+                while cur != NULL {
+                    let s = class_find_slot(cur.cls, ks);
+                    if s >= 0 {
+                        let v = cur.slots[(u32)s];
+                        if zjs_is_deleted(v) == 0 { return v; }
+                    }
+                    cur = cur.proto;
+                }
+            }
             if ctx.object_proto != NULL {
                 let cur = ctx.object_proto;
                 while cur != NULL {

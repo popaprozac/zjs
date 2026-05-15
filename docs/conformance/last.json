@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 21:42 UTC",
+    "when": "2026-05-15 21:46 UTC",
     "total": 13247,
-    "passed": 2587,
-    "failed": 716,
+    "passed": 2588,
+    "failed": 715,
     "skipped": 9944
   },
   "failures": [
@@ -86,10 +86,6 @@
     {
       "path": "test/language/expressions/conditional/in-branch-1.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A7_T3.js",
-      "reason": "zjs: throw: Test262Error: #2: If instanceof returns true then GetValue(RelationalExpression) was constructed with ShiftE"
     },
     {
       "path": "test/language/expressions/instanceof/S15.3.5.3_A2_T2.js",
@@ -1993,7 +1989,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "zjs: throw: Test262Error: arr.indexOf(targetObj, fromIndex)"
+      "reason": ""
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -2293,7 +2289,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",
-      "reason": "zjs: throw: Test262Error: #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: undefined"
+      "reason": "zjs: throw: Test262Error: #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: [obje"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A7.js",
