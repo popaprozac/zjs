@@ -344,6 +344,12 @@ struct Function {
     // property_get / property_set / Op::In paths route through this
     // before falling back to Object.prototype.
     props:          ZjsObject*;
+
+    // 2026-05-15 — set when this Function was emitted as a class
+    // constructor. Op::Invoke / Op::MethodInvoke throw TypeError when
+    // called without `new` (NewInvoke clears the flag's effect via
+    // new_target_active).
+    is_class_constructor: bool;
 }
 
 fn function_new() -> Function* {

@@ -1431,6 +1431,14 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let fp = zjs_cell_as_ptr(callee);
                 let target: Function* = NULL;
                 raw { target = (Function*)fp; }
+                // Class constructors must be called with `new` — plain
+                // `C()` is a TypeError per ECMA-262.
+                if target.is_class_constructor {
+                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                (char*)"Class constructor cannot be invoked without 'new'", 50);
+                    throwing = true; thrown = err; exit_reason = 3;
+                    ctx.frames[cur_idx].ip = ip + 1; break;
+                }
                 // Use the context's reusable arg buffer instead of
                 // alloca — alloca inside a loop accumulates across
                 // iterations (no per-iteration free).

@@ -1717,6 +1717,7 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         ctor_fn = compile_function(c.ctx, c.source, empty_ptr, c);
     }
     if ctor_fn == NULL { c.had_error = true; return alloc_reg(c); }
+    ctor_fn.is_class_constructor = true;
 
     let ctor_ptr: void* = NULL;
     raw { ctor_ptr = (void*)ctor_fn; }

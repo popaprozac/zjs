@@ -1,10 +1,10 @@
 {
   "summary": {
-    "when": "2026-05-15 20:20 UTC",
-    "total": 4821,
-    "passed": 2405,
-    "failed": 390,
-    "skipped": 2026
+    "when": "2026-05-15 20:25 UTC",
+    "total": 13247,
+    "passed": 2561,
+    "failed": 742,
+    "skipped": 9944
   },
   "failures": [
     {
@@ -542,6 +542,1414 @@
     {
       "path": "test/language/statements/block/scope-lex-open.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/computed-err-evaluation.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/computed-err-to-prop-key.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/computed-err-unresolvable.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/computed.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-binary.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-exponent.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-hex.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-leading-decimal.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-non-canonical.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-octal.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-zero.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-string-char-escape.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-string-default-escaped-ext.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-string-default-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-string-default.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-string-double-quote.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-string-empty.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-string-hex-escape.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-string-line-continuation.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-string-single-quote.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-inst/literal-string-unicode-escape.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/computed-err-evaluation.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/computed-err-to-prop-key.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/computed-err-unresolvable.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/computed.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-numeric-binary.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-numeric-exponent.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-numeric-hex.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-numeric-leading-decimal.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-numeric-non-canonical.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-numeric-octal.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-numeric-zero.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-string-char-escape.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-string-default-escaped-ext.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-string-default-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-string-default.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-string-double-quote.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-string-empty.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-string-hex-escape.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-string-line-continuation.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-string-single-quote.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/accessor-name-static/literal-string-unicode-escape.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/arguments/access.js",
+      "reason": "zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/arguments/default-constructor.js",
+      "reason": "zjs: throw: Test262Error: The value of `args.length` is `0`"
+    },
+    {
+      "path": "test/language/statements/class/class-name-ident-await-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/class-name-ident-await.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/class-name-ident-static.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/definition/accessors.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/definition/basics.js",
+      "reason": "zjs: throw: Test262Error: The value of `C.name` is `'C'`"
+    },
+    {
+      "path": "test/language/statements/class/definition/constructable-but-no-prototype.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/definition/constructor-property.js",
+      "reason": "zjs: throw: Test262Error: The value of `desc.enumerable` is `false`, after executing `var desc = Object.getOwnPropertyDe"
+    },
+    {
+      "path": "test/language/statements/class/definition/constructor-strict-by-default.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/definition/constructor.js",
+      "reason": "zjs: throw: Test262Error: The value of `desc.enumerable` is `false`, after executing `var desc = Object.getOwnPropertyDe"
+    },
+    {
+      "path": "test/language/statements/class/definition/early-errors-class-method-duplicate-parameters.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/definition/getters-restricted-ids.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/definition/invalid-extends.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/definition/methods-restricted-properties.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/definition/methods.js",
+      "reason": "zjs: throw: Test262Error: The value of `desc.enumerable` is `false`"
+    },
+    {
+      "path": "test/language/statements/class/definition/numeric-property-names.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/definition/prototype-getter.js",
+      "reason": "zjs: throw: Test262Error: The value of `calls` is `1`"
+    },
+    {
+      "path": "test/language/statements/class/definition/prototype-property.js",
+      "reason": "zjs: throw: Test262Error: The value of `descr.configurable` is `false`"
+    },
+    {
+      "path": "test/language/statements/class/definition/prototype-setter.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/definition/setters-restricted-ids.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/definition/side-effects-in-extends.js",
+      "reason": "zjs: throw: Test262Error: `Object.getPrototypeOf(D)` returns `C`"
+    },
+    {
+      "path": "test/language/statements/class/definition/this-access-restriction-2.js",
+      "reason": "zjs: throw: Test262Error: The result of `exn instanceof ReferenceError` is `true`"
+    },
+    {
+      "path": "test/language/statements/class/definition/this-access-restriction.js",
+      "reason": "zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/definition/this-check-ordering.js",
+      "reason": "zjs: throw: Test262Error: The result of `exn instanceof ReferenceError` is `true`"
+    },
+    {
+      "path": "test/language/statements/class/elements/private-class-field-on-nonextensible-objects.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-class-body-ctor-duplicate.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-contains-super-method.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-meth-prototype.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-meth-super.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-accessor-meth-valid.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-break-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-case-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-catch-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-class-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-const-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-continue-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-debugger-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-default-escaped-ext.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-default-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-delete-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-do-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-else-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-enum-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-export-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-extends-escaped-ext.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-extends-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-finally-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-for-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-function-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-if-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-implements-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-import-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-in-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-instanceof-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-interface-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-let-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-new-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-package-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-private-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-protected-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-public-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-return-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-static-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-super-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-switch-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-this-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-throw-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-try-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-typeof-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-var-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-void-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-while-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/ident-name-method-def-with-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/method/dflt-params-trailing-comma.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/method-static/dflt-params-trailing-comma.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/name-binding/basic.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/name-binding/const.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/name-binding/expression.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/name-binding/in-extends-expression-assigned.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/name-binding/in-extends-expression.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/poisoned-underscore-proto.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/restricted-properties.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/scope-meth-paramsbody-var-close.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/scope-meth-paramsbody-var-open.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/scope-name-lex-close.js",
+      "reason": "zjs: throw: Test262Error: from instance method"
+    },
+    {
+      "path": "test/language/statements/class/scope-name-lex-open-heritage.js",
+      "reason": "zjs: throw: Test262Error: inner binding is independent"
+    },
+    {
+      "path": "test/language/statements/class/scope-name-lex-open-no-heritage.js",
+      "reason": "zjs: throw: Test262Error: inner binding value"
+    },
+    {
+      "path": "test/language/statements/class/scope-setter-paramsbody-var-close.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/scope-setter-paramsbody-var-open.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/scope-static-meth-paramsbody-var-close.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/scope-static-meth-paramsbody-var-open.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/scope-static-setter-paramsbody-var-close.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/scope-static-setter-paramsbody-var-open.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-arguments-functions.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-arguments-methods.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-await-binding-valid.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-expr-new-target.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-expr-this.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-scope-lex-close.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-scope-lex-derived.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-scope-lex-open.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-scope-var-close.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-scope-var-derived.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-scope-var-open.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-statement-list-optional.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-init-super-property.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/static-method-non-configurable-err.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/strict-mode/arguments-callee.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/strict-mode/with.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/subclass/binding.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Array/contructor-calls-super-single-argument.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Array/length.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Array/regular-subclassing.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Array/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/ArrayBuffer/regular-subclassing.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/ArrayBuffer/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Boolean/regular-subclassing.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Boolean/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/DataView/regular-subclassing.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/DataView/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Date/regular-subclassing.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Date/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Error/regular-subclassing.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Error/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Function/regular-subclassing.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Function/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/GeneratorFunction/regular-subclassing.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/GeneratorFunction/super-must-be-called.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Map/regular-subclassing.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Map/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/EvalError-name.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/EvalError-super.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/RangeError-name.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/RangeError-super.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/ReferenceError-name.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/ReferenceError-super.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/SyntaxError-name.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/SyntaxError-super.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/TypeError-name.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/TypeError-super.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/URIError-name.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/URIError-super.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Number/regular-subclassing.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Number/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Object/constructor-return-undefined-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Object/constructor-returns-non-object.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Promise/regular-subclassing.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Promise/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Proxy/no-prototype-throws.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/RegExp/regular-subclassing.js",
+      "reason": "zjs: throw: TypeError: RegExp.prototype.test called on non-RegExp\u0000"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/RegExp/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Set/regular-subclassing.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/Set/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/String/regular-subclassing.js",
+      "reason": ""
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/String/super-must-be-called.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtins.js",
+      "reason": "zjs: throw: Test262Error: The value of `eua.length` is `10`"
+    },
+    {
+      "path": "test/language/statements/class/subclass/class-definition-evaluation-empty-constructor-heritage-present.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/class-definition-null-proto-super.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/class-definition-null-proto-this.js",
+      "reason": "zjs: throw: Test262Error: wrong error type"
+    },
+    {
+      "path": "test/language/statements/class/subclass/class-definition-null-proto.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/class-definition-parent-proto-null.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass/default-constructor-2.js",
+      "reason": "zjs: throw: Test262Error: The value of `s2.x` is `1`"
+    },
+    {
+      "path": "test/language/statements/class/subclass/default-constructor.js",
+      "reason": "zjs: throw: Test262Error: The value of `calls` is `1`"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-catch-super-arrow.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-catch-super.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-catch.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-for-of-arrow.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-for-of.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-with-boolean.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-with-null.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-with-number.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-with-string.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/private-class-field-on-nonextensible-return-override.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/subclass-builtins/subclass-AggregateError.js",
+      "reason": "zjs: throw: ReferenceError: AggregateError is not defined"
+    },
+    {
+      "path": "test/language/statements/class/subclass-builtins/subclass-Date.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass-builtins/subclass-Map.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/language/statements/class/subclass-builtins/subclass-Set.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/language/statements/class/super/in-constructor-superproperty-evaluation.js",
+      "reason": "zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-constructor.js",
+      "reason": "zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-getter.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-methods.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-setter.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-static-getter.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-static-methods.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-static-setter.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/syntax/class-body-method-definition-super-property.js",
+      "reason": "zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/syntax/class-declaration-computed-method-definition.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/syntax/class-declaration-computed-method-generator-definition.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/syntax/early-errors/class-definition-evaluation-block-duplicate-binding.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/syntax/early-errors/class-definition-evaluation-scriptbody-duplicate-binding.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/computed-err-evaluation.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/computed-err-to-prop-key.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/computed-err-unresolvable.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/computed.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-binary.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-exponent.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-hex.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-leading-decimal.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-non-canonical.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-octal.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-zero.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-string-char-escape.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-string-default-escaped-ext.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-string-default-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-string-default.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-string-double-quote.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-string-empty.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-string-hex-escape.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-string-line-continuation.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-string-single-quote.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst/literal-string-unicode-escape.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-inst-computed-in.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/computed-err-evaluation.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/computed-err-to-prop-key.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/computed-err-unresolvable.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/computed.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-numeric-binary.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-numeric-exponent.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-numeric-hex.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-numeric-leading-decimal.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-numeric-non-canonical.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-numeric-octal.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-numeric-zero.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-string-char-escape.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-string-default-escaped-ext.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-string-default-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-string-default.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-string-double-quote.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-string-empty.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-string-hex-escape.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-string-line-continuation.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-string-single-quote.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static/literal-string-unicode-escape.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/accessor-name-static-computed-in.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/class-name-ident-await-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/class-name-ident-await.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/class-name-ident-static.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-class-body-ctor-duplicate.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-method.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-meth-prototype.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-meth-super.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-accessor-meth-valid.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/language/expressions/class/heritage-arrow-function.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/expressions/class/heritage-async-arrow-function.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-break-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-case-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-catch-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-class-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-const-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-continue-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-debugger-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-default-escaped-ext.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-default-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-delete-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-do-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-else-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-enum-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-export-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-extends-escaped-ext.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-extends-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-finally-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-for-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-function-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-if-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-implements-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-import-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-in-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-instanceof-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-interface-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-let-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-new-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-package-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-private-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-protected-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-public-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-return-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-static-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-super-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-switch-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-this-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-throw-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-try-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-typeof-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-var-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-void-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-while-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/ident-name-method-def-with-escaped.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/method/dflt-params-trailing-comma.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/method-static/dflt-params-trailing-comma.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/poisoned-underscore-proto.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/expressions/class/restricted-properties.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/expressions/class/scope-meth-paramsbody-var-close.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/scope-meth-paramsbody-var-open.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/scope-name-lex-close.js",
+      "reason": "zjs: throw: Test262Error: from instance method"
+    },
+    {
+      "path": "test/language/expressions/class/scope-name-lex-open-heritage.js",
+      "reason": "zjs: throw: Test262Error: from class heritage"
+    },
+    {
+      "path": "test/language/expressions/class/scope-name-lex-open-no-heritage.js",
+      "reason": "zjs: throw: Test262Error: inner binding value"
+    },
+    {
+      "path": "test/language/expressions/class/scope-setter-paramsbody-var-close.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/scope-setter-paramsbody-var-open.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/scope-static-meth-paramsbody-var-close.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/scope-static-meth-paramsbody-var-open.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/scope-static-setter-paramsbody-var-close.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/scope-static-setter-paramsbody-var-open.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/static-init-await-reference.js",
+      "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/subclass-builtins/subclass-AggregateError.js",
+      "reason": "zjs: throw: ReferenceError: AggregateError is not defined"
+    },
+    {
+      "path": "test/language/expressions/class/subclass-builtins/subclass-Date.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/language/expressions/class/subclass-builtins/subclass-Map.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
+    },
+    {
+      "path": "test/language/expressions/class/subclass-builtins/subclass-Set.js",
+      "reason": "zjs: throw: Test262Error: assert failed"
     },
     {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A2_T2.js",
@@ -1570,27 +2978,39 @@
   ],
   "skip_counts": {
     "feature:BigInt": 104,
-    "feature:Symbol": 48,
+    "feature:Symbol": 54,
     "feature:tail-call-optimization": 18,
-    "feature:Proxy": 29,
-    "feature:class-fields-private": 19,
-    "feature:class-static-methods-private": 2,
-    "feature:class-methods-private": 2,
-    "feature:async-functions": 9,
-    "feature:async-iteration": 9,
-    "feature:generators": 170,
-    "feature:Symbol.iterator": 263,
-    "feature:destructuring-binding": 675,
-    "feature:object-rest": 46,
+    "feature:Proxy": 30,
+    "feature:class-fields-private": 500,
+    "feature:class-static-methods-private": 1049,
+    "feature:class-methods-private": 1208,
+    "feature:async-functions": 186,
+    "feature:async-iteration": 789,
+    "feature:generators": 1456,
+    "feature:Symbol.iterator": 1000,
+    "feature:destructuring-binding": 1219,
+    "feature:object-rest": 190,
     "feature:optional-chaining": 8,
     "feature:destructuring-assignment": 2,
-    "feature:TypedArray": 20,
+    "feature:TypedArray": 48,
     "flag:async": 264,
-    "flag:module": 2,
-    "include:propertyHelper.js": 252,
+    "flag:module": 6,
+    "feature:rest-parameters": 48,
+    "feature:default-parameters": 144,
+    "feature:object-spread": 32,
+    "feature:class-fields-public": 591,
+    "feature:computed-property-names": 252,
+    "feature:decorators": 24,
+    "include:propertyHelper.js": 274,
+    "feature:class-static-fields-private": 300,
+    "feature:new.target": 24,
+    "feature:class-static-fields-public": 32,
+    "feature:WeakMap": 4,
+    "feature:WeakSet": 4,
+    "feature:SharedArrayBuffer": 2,
+    "feature:WeakRef": 2,
     "include:isConstructor.js": 66,
     "feature:well-formed-json-stringify": 1,
-    "feature:computed-property-names": 4,
     "include:byteConversionValues.js": 1,
     "include:promiseHelper.js": 9,
     "feature:Reflect": 3

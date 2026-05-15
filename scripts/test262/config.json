@@ -36,6 +36,8 @@
     "test/language/statements/return",
     "test/language/statements/empty",
     "test/language/statements/block",
+    "test/language/statements/class",
+    "test/language/expressions/class",
     "test/built-ins/Array/prototype/push",
     "test/built-ins/Array/prototype/pop",
     "test/built-ins/Array/prototype/indexOf",
