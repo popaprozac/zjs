@@ -6831,10 +6831,16 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"forEach", 7),
                ctx_make_host_function_arity(ctx, (char*)"forEach", fe_ptr, 1));
     let join_ptr:   void* = NULL; raw { join_ptr   = (void*)host_array_join; }
+    // Array.prototype.toString delegates to .join() with comma separator
+    // (or Object.prototype.toString if join isn't callable, but our
+    // arrays always have join). Use the join host fn directly — it
+    // already handles empty-separator default = ",".
     let aslice_ptr: void* = NULL; raw { aslice_ptr = (void*)host_array_slice; }
     let aconc_ptr:  void* = NULL; raw { aconc_ptr  = (void*)host_array_concat; }
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"join", 4),
                ctx_make_host_function_arity(ctx, (char*)"join", join_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
+               ctx_make_host_function_arity(ctx, (char*)"toString", join_ptr, 0));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"slice", 5),
                ctx_make_host_function_arity(ctx, (char*)"slice", aslice_ptr, 2));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"concat", 6),

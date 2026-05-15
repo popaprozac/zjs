@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 10:41 UTC",
+    "when": "2026-05-15 10:45 UTC",
     "total": 4821,
-    "passed": 2170,
-    "failed": 625,
+    "passed": 2173,
+    "failed": 622,
     "skipped": 2026
   },
   "failures": [
@@ -1060,10 +1060,6 @@
       "reason": "zjs: throw: Test262Error: [0, targetObj, 2].indexOf(targetObj, -1.5)"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-8.js",
-      "reason": "zjs: throw: Test262Error: a.indexOf(b.toString())"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-9.js",
       "reason": "zjs: throw: Test262Error: a.indexOf(2,4294967290 )"
     },
@@ -1202,10 +1198,6 @@
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-6.js",
       "reason": "zjs: throw: Test262Error: resArr[4]"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-7.js",
-      "reason": "zjs: throw: Test262Error: resArr.toString()"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-9.js",
@@ -1726,10 +1718,6 @@
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A9.js",
       "reason": "zjs: throw: Test262Error: #2: delete String.prototype.indexOf.length; String.prototype.indexOf.hasOwnProperty('length') "
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/position-tointeger.js",
-      "reason": "zjs: throw: Test262Error: ToInteger: [\"1\"].toString() => \"1\" => 1"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",
