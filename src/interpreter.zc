@@ -1685,6 +1685,24 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
         } else if op == Op::SetParentCtor {
             let ctor_v = regs[inst.a];
             let parent_v = regs[inst.b];
+            // ECMA-262 14.6.6 step 5: parent must be a constructor
+            // (callable with a [[Construct]] internal method) or null.
+            // We allow user functions / closures / host fns with a
+            // .prototype set (the same gate require_promise_constructor_this
+            // uses), and explicit null.
+            let parent_ok: bool = false;
+            if zjs_is_null(parent_v) != 0 { parent_ok = true; }
+            else if zjs_is_function(parent_v) != 0 || zjs_is_closure(parent_v) != 0 {
+                parent_ok = true;
+            } else if zjs_is_host_function(parent_v) != 0 {
+                let phf = zjs_as_host_function(parent_v);
+                if phf.prototype != NULL { parent_ok = true; }
+            }
+            if !parent_ok {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"Class extends value is not a constructor", 40);
+                throwing = true; thrown = err; exit_reason = 3; break;
+            }
             if zjs_is_function(ctor_v) != 0 {
                 let fp = zjs_cell_as_ptr(ctor_v);
                 let ff: Function* = NULL;

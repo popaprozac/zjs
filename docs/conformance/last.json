@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 21:20 UTC",
+    "when": "2026-05-15 21:22 UTC",
     "total": 13247,
-    "passed": 2577,
-    "failed": 726,
+    "passed": 2580,
+    "failed": 723,
     "skipped": 9944
   },
   "failures": [
@@ -692,10 +692,6 @@
       "reason": "zjs: throw: Test262Error: The value of `E.name` is `'E'`"
     },
     {
-      "path": "test/language/statements/class/definition/constructable-but-no-prototype.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/language/statements/class/definition/constructor-strict-by-default.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
@@ -708,10 +704,6 @@
       "reason": "zjs: throw: Test262Error: The value of `C.eval` is `3`"
     },
     {
-      "path": "test/language/statements/class/definition/invalid-extends.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/language/statements/class/definition/methods-restricted-properties.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
@@ -721,11 +713,7 @@
     },
     {
       "path": "test/language/statements/class/definition/prototype-getter.js",
-      "reason": "zjs: throw: Test262Error: The value of `calls` is `1`"
-    },
-    {
-      "path": "test/language/statements/class/definition/prototype-setter.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/definition/setters-restricted-ids.js",
@@ -993,11 +981,11 @@
     },
     {
       "path": "test/language/statements/class/name-binding/in-extends-expression-assigned.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
       "path": "test/language/statements/class/name-binding/in-extends-expression.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
       "path": "test/language/statements/class/poisoned-underscore-proto.js",
@@ -1137,11 +1125,11 @@
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/ArrayBuffer/regular-subclassing.js",
-      "reason": "zjs: throw: Test262Error: assert failed"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/ArrayBuffer/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Boolean/regular-subclassing.js",
@@ -1153,19 +1141,19 @@
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/DataView/regular-subclassing.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/DataView/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Date/regular-subclassing.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Date/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Error/regular-subclassing.js",
@@ -1193,11 +1181,11 @@
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Map/regular-subclassing.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Map/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/NativeError/EvalError-name.js",
@@ -1272,10 +1260,6 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/language/statements/class/subclass/builtin-objects/Proxy/no-prototype-throws.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/language/statements/class/subclass/builtin-objects/RegExp/regular-subclassing.js",
       "reason": "zjs: throw: TypeError: RegExp.prototype.test called on non-RegExp\u0000"
     },
@@ -1285,11 +1269,11 @@
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Set/regular-subclassing.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Set/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/String/regular-subclassing.js",
@@ -1301,7 +1285,7 @@
     },
     {
       "path": "test/language/statements/class/subclass/builtins.js",
-      "reason": "zjs: throw: Test262Error: The value of `eua.length` is `10`"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass/class-definition-evaluation-empty-constructor-heritage-present.js",
@@ -1372,20 +1356,24 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
+      "path": "test/language/statements/class/subclass/superclass-bound-function.js",
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
+    },
+    {
       "path": "test/language/statements/class/subclass-builtins/subclass-AggregateError.js",
       "reason": "zjs: throw: ReferenceError: AggregateError is not defined"
     },
     {
       "path": "test/language/statements/class/subclass-builtins/subclass-Date.js",
-      "reason": "zjs: throw: Test262Error: assert failed"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass-builtins/subclass-Map.js",
-      "reason": "zjs: throw: Test262Error: assert failed"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass-builtins/subclass-Set.js",
-      "reason": "zjs: throw: Test262Error: assert failed"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/super/in-constructor-superproperty-evaluation.js",
@@ -1877,15 +1865,15 @@
     },
     {
       "path": "test/language/expressions/class/subclass-builtins/subclass-Date.js",
-      "reason": "zjs: throw: Test262Error: assert failed"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/expressions/class/subclass-builtins/subclass-Map.js",
-      "reason": "zjs: throw: Test262Error: assert failed"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/expressions/class/subclass-builtins/subclass-Set.js",
-      "reason": "zjs: throw: Test262Error: assert failed"
+      "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A2_T2.js",
