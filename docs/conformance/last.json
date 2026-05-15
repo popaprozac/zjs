@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-05-15 10:45 UTC",
+    "when": "2026-05-15 10:51 UTC",
     "total": 4821,
     "passed": 2173,
     "failed": 622,
@@ -169,7 +169,7 @@
     },
     {
       "path": "test/language/expressions/conditional/coalesce-expr-ternary.js",
-      "reason": "zjs: throw: Test262Error: false ?? true ? 0 : 42"
+      "reason": "zjs: throw: Test262Error: Symbol() ?? false ? 0 : 42"
     },
     {
       "path": "test/language/expressions/conditional/in-branch-1.js",

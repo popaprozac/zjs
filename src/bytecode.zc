@@ -71,6 +71,8 @@ enum Op {
     Jmp,              // bc = signed offset in instructions
     JmpIfTrue,        // a=src, bc=offset
     JmpIfFalse,       // a=src, bc=offset
+    JmpIfNotNullish,  // a=src, bc=offset — used by ??; jumps when src
+                      // is anything other than null or undefined.
 
     // Universal return — exits interpret() with regs[a] as the value.
     Return,

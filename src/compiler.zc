@@ -900,12 +900,11 @@ fn compile_logical(c: Compiler*, node: AstNode*) -> u8 {
     if op_tok == TokenKind::PipePipe       { jmp_op = Op::JmpIfTrue; }
     else if op_tok == TokenKind::AmpAmp    { jmp_op = Op::JmpIfFalse; }
     else if op_tok == TokenKind::QuestionQuestion {
-        // ?? coalesces null/undefined to RHS; for MVP we treat all
-        // non-null-or-undefined as the LHS result. We don't have a
-        // dedicated "JmpIfNotNullish" op, so we synthesize: assume
-        // LHS sticks when truthy. (Wrong for `0 ?? x` but acceptable
-        // for the 3.0a milestone — fix in 3.1.)
-        jmp_op = Op::JmpIfTrue;
+        // ?? coalesces only null/undefined to RHS. Anything else
+        // (including 0, "", false) keeps the LHS. Uses a dedicated
+        // op that jumps past the RHS only when src is not null and
+        // not undefined.
+        jmp_op = Op::JmpIfNotNullish;
     }
     let jmp_idx = emit(c, make_inst_a_i16(jmp_op, dst, 0));
 
