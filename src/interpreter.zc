@@ -869,6 +869,17 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             // GC safe-point on the way out — only the return value
             // survives the frame.
             if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+            // Spec: derived-class constructor must call super() before
+            // returning. If super wasn't called, `this` is in TDZ —
+            // throw ReferenceError.
+            if f.is_class_constructor
+               && f.parent_ctor.bits != zjs_undefined().bits
+               && !ctx.frames[cur_idx].super_called {
+                let err = build_typed_error(ctx, (char*)"ReferenceError", 14,
+                                            (char*)"Must call super constructor before returning from derived constructor", 69);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
             let rv = regs[inst.a];
             let ret_dst = pop_call_frame(ctx);
             if ctx.frame_count <= entry_frame {
@@ -1802,6 +1813,11 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 if ctx.frame_count > 0 {
                     ctx.frames[ctx.frame_count - 1].saved_host_this = r;
                 }
+            }
+            // Mark `this` as initialized for the spec's "must-call-super"
+            // check at Op::Return.
+            if ctx.frame_count > 0 {
+                ctx.frames[ctx.frame_count - 1].super_called = true;
             }
             regs[dst] = r;
         } else if op == Op::Throw {

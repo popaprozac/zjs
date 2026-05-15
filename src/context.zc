@@ -55,6 +55,10 @@ struct CallFrame {
     saved_host_this:        ZjsValue;
     saved_current_closure:  ZjsClosure*;
     try_depth_at_entry:     u32;
+    // True when this frame is a derived-class constructor that has
+    // called super() (so `this` is bound). Pre-super reads of `this`
+    // and a return-without-super both throw ReferenceError per spec.
+    super_called:           bool;
 }
 
 // Phase 3.9h. Shared across all CallFrames once the migration lands —
@@ -445,6 +449,10 @@ fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, r
     ctx.frames[idx].saved_host_this = ctx.host_this;
     ctx.frames[idx].saved_current_closure = ctx.current_closure;
     ctx.frames[idx].try_depth_at_entry = ctx.ctx_try_depth;
+    // Per-frame flag — Op::SuperCall sets it; Op::Return checks it
+    // for derived-class ctors. Default false; non-derived ctors and
+    // plain calls treat it as a no-op.
+    ctx.frames[idx].super_called = false;
     ctx.frame_count = ctx.frame_count + 1;
     return idx;
 }

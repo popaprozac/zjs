@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 22:19 UTC",
+    "when": "2026-05-15 22:23 UTC",
     "total": 13247,
-    "passed": 2623,
-    "failed": 680,
+    "passed": 2636,
+    "failed": 667,
     "skipped": 9944
   },
   "failures": [
@@ -593,7 +593,7 @@
     },
     {
       "path": "test/language/statements/class/arguments/default-constructor.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
       "path": "test/language/statements/class/class-name-ident-await-escaped.js",
@@ -1016,20 +1016,12 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/language/statements/class/subclass/builtin-objects/Array/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/language/statements/class/subclass/builtin-objects/ArrayBuffer/regular-subclassing.js",
       "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/ArrayBuffer/super-must-be-called.js",
       "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/Boolean/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/DataView/regular-subclassing.js",
@@ -1048,14 +1040,6 @@
       "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
-      "path": "test/language/statements/class/subclass/builtin-objects/Error/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/Function/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/language/statements/class/subclass/builtin-objects/GeneratorFunction/regular-subclassing.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -1072,52 +1056,12 @@
       "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
-      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/EvalError-super.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/RangeError-super.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/ReferenceError-super.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/SyntaxError-super.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/TypeError-super.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/NativeError/URIError-super.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/language/statements/class/subclass/builtin-objects/Number/regular-subclassing.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/language/statements/class/subclass/builtin-objects/Number/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/Object/constructor-return-undefined-throws.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/language/statements/class/subclass/builtin-objects/Object/constructor-returns-non-object.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/Promise/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/RegExp/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Set/regular-subclassing.js",
@@ -1126,10 +1070,6 @@
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Set/super-must-be-called.js",
       "reason": "zjs: throw: TypeError: Class extends value is not a constructor"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/String/super-must-be-called.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/language/statements/class/subclass/builtins.js",
@@ -1148,8 +1088,12 @@
       "reason": "zjs: throw: Test262Error: The value of `Subclass2.prototype` is `Object.getPrototypeOf(s2prime)`"
     },
     {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-catch-finally-arrow.js",
+      "reason": "zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
+    },
+    {
       "path": "test/language/statements/class/subclass/derived-class-return-override-catch-super-arrow.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
       "path": "test/language/statements/class/subclass/derived-class-return-override-catch-super.js",
@@ -1158,6 +1102,10 @@
     {
       "path": "test/language/statements/class/subclass/derived-class-return-override-catch.js",
       "reason": "zjs: throw: Test262Error: expected throw"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-finally-super-arrow.js",
+      "reason": "zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
     },
     {
       "path": "test/language/statements/class/subclass/derived-class-return-override-for-of-arrow.js",
@@ -1837,7 +1785,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "zjs: throw: Test262Error: arr.indexOf(targetObj, fromIndex)"
+      "reason": ""
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
