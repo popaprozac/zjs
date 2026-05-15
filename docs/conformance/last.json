@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 18:20 UTC",
+    "when": "2026-05-15 18:30 UTC",
     "total": 4821,
-    "passed": 2311,
-    "failed": 484,
+    "passed": 2318,
+    "failed": 477,
     "skipped": 2026
   },
   "failures": [
@@ -1448,10 +1448,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Promise/all/ctx-non-ctor.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/built-ins/Promise/all/invoke-resolve-get-once-multiple-calls.js",
       "reason": "zjs: throw: Test262Error: Got `resolve` only once for each iterated value"
     },
@@ -1542,10 +1538,6 @@
     {
       "path": "test/built-ins/Promise/allSettled/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/ctx-non-ctor.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-resolve-get-once-multiple-calls.js",
@@ -1792,10 +1784,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Promise/race/ctx-non-ctor.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/built-ins/Promise/race/invoke-resolve-get-once-multiple-calls.js",
       "reason": "zjs: throw: Test262Error: Got `resolve` only once for each iterated value"
     },
@@ -1860,10 +1848,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Promise/reject/ctx-non-ctor.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/built-ins/Promise/reject-function-nonconstructor.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
@@ -1890,10 +1874,6 @@
     {
       "path": "test/built-ins/Promise/resolve/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve/ctx-non-ctor.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Promise/resolve/resolve-from-promise-capability.js",
@@ -1930,14 +1910,6 @@
     {
       "path": "test/built-ins/Promise/withResolvers/ctx-ctor.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/withResolvers/ctx-non-ctor.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Promise/withResolvers/ctx-non-object.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Promise/withResolvers/resolvers.js",

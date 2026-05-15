@@ -5413,6 +5413,7 @@ fn host_promise_reject_fn(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
 // Used by code that needs to externalize resolve/reject (sometimes
 // called a "deferred" pattern).
 fn host_promise_with_resolvers(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_promise_constructor_this(ctx, (char*)"withResolvers", 13) { return zjs_undefined(); }
     let p = zjs_promise_new();
     ctx_register_cell(ctx, (void*)p);
     let pv = zjs_cell_from_ptr((void*)p);
@@ -5501,7 +5502,35 @@ fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
 // Promise.resolve(value) — if value is already a promise, return it;
 // else create a fulfilled one.
+// ECMA-262 §27.2.4.6 (and §27.2.4.5): Promise.resolve / Promise.reject
+// require `this` to be an Object (a constructor). Tests in the
+// `Promise/{resolve,reject}/ctx-*` clusters call these with a custom
+// `this` and assert TypeError when it isn't.
+fn require_promise_constructor_this(ctx: ZjsContext*, fn_name: char*, fn_name_len: u32) -> bool {
+    let t = ctx.host_this;
+    // User functions and closures are always constructible. Host
+    // functions are constructible if they were registered with a
+    // .prototype (the marker we use for the few real built-in ctors
+    // like Promise / RegExp / Error / Number / etc.); plain helper
+    // host fns (eval, parseInt, ...) leave it NULL.
+    let t_ok: bool = false;
+    if zjs_is_function(t) != 0 || zjs_is_closure(t) != 0 {
+        t_ok = true;
+    } else if zjs_is_host_function(t) != 0 {
+        let hf = zjs_as_host_function(t);
+        if hf.prototype != NULL { t_ok = true; }
+    }
+    if !t_ok {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"this is not a constructor", 25);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return false;
+    }
+    return true;
+}
+
 fn host_promise_resolve_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_promise_constructor_this(ctx, (char*)"resolve", 7) { return zjs_undefined(); }
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
     if zjs_is_promise(v) != 0 { return v; }
     let p = zjs_promise_new();
@@ -5513,6 +5542,7 @@ fn host_promise_resolve_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
 
 // Promise.reject(reason) — always a new rejected promise.
 fn host_promise_reject_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_promise_constructor_this(ctx, (char*)"reject", 6) { return zjs_undefined(); }
     let r = if argc >= 1 { args[0] } else { zjs_undefined() };
     let p = zjs_promise_new();
     ctx_register_cell(ctx, (void*)p);
@@ -5590,6 +5620,7 @@ fn host_promise_all_on_fulfill(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
 }
 
 fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_promise_constructor_this(ctx, (char*)"all", 3) { return zjs_undefined(); }
     let result = zjs_promise_new();
     ctx_register_cell(ctx, (void*)result);
     let rp = zjs_cell_from_ptr((void*)result);
@@ -5695,6 +5726,7 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 // (Already done — host_promise_all_on_fulfill reads through `state`.)
 
 fn host_promise_race(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_promise_constructor_this(ctx, (char*)"race", 4) { return zjs_undefined(); }
     let result = zjs_promise_new();
     ctx_register_cell(ctx, (void*)result);
     let rp = zjs_cell_from_ptr((void*)result);
@@ -5786,6 +5818,7 @@ fn host_promise_all_settled_on_reject(ctx: ZjsContext*, args: ZjsValue*, argc: u
 }
 
 fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_promise_constructor_this(ctx, (char*)"allSettled", 10) { return zjs_undefined(); }
     let result = zjs_promise_new();
     ctx_register_cell(ctx, (void*)result);
     let rp = zjs_cell_from_ptr((void*)result);
@@ -5910,6 +5943,7 @@ fn host_promise_any_on_reject(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Z
 }
 
 fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_promise_constructor_this(ctx, (char*)"any", 3) { return zjs_undefined(); }
     let result = zjs_promise_new();
     ctx_register_cell(ctx, (void*)result);
     let rp = zjs_cell_from_ptr((void*)result);
