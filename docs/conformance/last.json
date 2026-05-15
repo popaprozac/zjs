@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 17:11 UTC",
+    "when": "2026-05-15 17:16 UTC",
     "total": 4821,
-    "passed": 2276,
-    "failed": 519,
+    "passed": 2277,
+    "failed": 518,
     "skipped": 2026
   },
   "failures": [
@@ -580,14 +580,6 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
-      "path": "test/language/statements/for-of/head-expr-obj-iterator-method.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/statements/for-of/head-expr-primitive-iterator-method.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/language/statements/for-of/head-let-bound-names-fordecl-tdz.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
@@ -641,23 +633,23 @@
     },
     {
       "path": "test/language/statements/for-of/map-contract-expand.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/map-contract.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/map-expand-contract.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/map-expand.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/map.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/scope-body-lex-boundary.js",
@@ -689,23 +681,23 @@
     },
     {
       "path": "test/language/statements/for-of/set-contract-expand.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/set-contract.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/set-expand-contract.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/set-expand.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/set.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/string-astral-truncated.js",
@@ -717,19 +709,23 @@
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-grow-before-end.js",
-      "reason": "zjs: throw: Test262Error: TestIterationAndResize: resize condition should have been hit"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-grow-mid-iteration.js",
-      "reason": "zjs: throw: Test262Error: TestIterationAndResize: resize condition should have been hit"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-shrink-mid-iteration.js",
-      "reason": "zjs: throw: Test262Error: TestIterationAndResize: resize condition should have been hit"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-shrink-to-zero-mid-iteration.js",
-      "reason": "zjs: throw: Test262Error: wrong error type"
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
+    },
+    {
+      "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer.js",
+      "reason": "zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/try/12.14-14.js",

@@ -1826,6 +1826,23 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
         ctx_pop_temp_root(ctx);
         return arr_v;
     }
+    // ECMA-262 GetIterator: non-array, non-string sources need a callable
+    // @@iterator method (or a `next`-style Iterator object). We don't
+    // have Symbols, but a sloppy fallback recognizes objects that look
+    // iterator-like: a `length` property + numeric keys. If a plain
+    // object has no `length`, it's not iterable → throw TypeError.
+    if zjs_is_object(src) != 0 {
+        let len_atom = ctx_intern_atom(ctx, (char*)"length", 6);
+        let lv = property_get(ctx, src, zjs_cell_from_ptr((void*)len_atom));
+        if ctx.pending_throw_active { return ctx_new_array(ctx, 0); }
+        if zjs_is_undefined(lv) == 0 {
+            return src;   // walk by index (array-like)
+        }
+    }
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                (char*)"for-of on non-iterable value", 28);
+    ctx.pending_throw_active = true;
+    ctx.pending_throw_value = err;
     return ctx_new_array(ctx, 0);
 }
 
