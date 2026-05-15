@@ -48,12 +48,24 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             let idx = zjs_to_array_index(key);
             if idx >= 0 { return array_get(arr, (u32)idx); }
             // Expando bag (e.g. `let a = []; a.foo = 1;`) before
-            // falling through to Array.prototype methods.
+            // falling through to Array.prototype methods. Fire
+            // accessors with `this = array`.
             if arr.props != NULL {
                 let slot_p = class_find_slot(arr.props.cls, ks);
                 if slot_p >= 0 {
                     let v = arr.props.slots[(u32)slot_p];
-                    if zjs_is_deleted(v) == 0 { return v; }
+                    if zjs_is_deleted(v) == 0 {
+                        if zjs_is_accessor(v) != 0 {
+                            let acc = zjs_as_accessor(v);
+                            let g = acc.get;
+                            if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
+                                let nullp: ZjsValue* = NULL;
+                                return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                            }
+                            return zjs_undefined();
+                        }
+                        return v;
+                    }
                 }
             }
             // Walk array_proto then its chain (so hasOwnProperty from
@@ -209,8 +221,22 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             let f_p: Function* = NULL;
             raw { f_p = (Function*)fp_p; }
             if f_p.props != NULL {
-                let pv = object_get(f_p.props, ks);
-                if zjs_is_undefined(pv) == 0 { return pv; }
+                let slot = class_find_slot(f_p.props.cls, ks);
+                if slot >= 0 {
+                    let raw_v = f_p.props.slots[(u32)slot];
+                    if zjs_is_deleted(raw_v) == 0 {
+                        if zjs_is_accessor(raw_v) != 0 {
+                            let acc = zjs_as_accessor(raw_v);
+                            let g = acc.get;
+                            if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
+                                let nullp: ZjsValue* = NULL;
+                                return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                            }
+                            return zjs_undefined();
+                        }
+                        return raw_v;
+                    }
+                }
             }
             if ctx.object_proto != NULL {
                 let cur = ctx.object_proto;
@@ -296,8 +322,22 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 return ctx_intern_string(ctx, hf.name, (u32)n_len);
             }
             if hf.props != NULL {
-                let pv = object_get(hf.props, ks);
-                if zjs_is_undefined(pv) == 0 { return pv; }
+                let slot = class_find_slot(hf.props.cls, ks);
+                if slot >= 0 {
+                    let raw_v = hf.props.slots[(u32)slot];
+                    if zjs_is_deleted(raw_v) == 0 {
+                        if zjs_is_accessor(raw_v) != 0 {
+                            let acc = zjs_as_accessor(raw_v);
+                            let g = acc.get;
+                            if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
+                                let nullp: ZjsValue* = NULL;
+                                return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                            }
+                            return zjs_undefined();
+                        }
+                        return raw_v;
+                    }
+                }
             }
             // Fall back through Object.prototype so methods like
             // hasOwnProperty / toString / valueOf are reachable on a
@@ -370,10 +410,25 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         if is_sticky != 0 { return zjs_bool(if (r.flags & REGEX_FLAG_STICKY)      != 0 { 1 } else { 0 }); }
         if is_dotall != 0 { return zjs_bool(if (r.flags & REGEX_FLAG_DOTALL)      != 0 { 1 } else { 0 }); }
         if is_last   != 0 { return zjs_int32((i32)r.last_index); }
-        // Expando bag — user-set keys win over inherited methods.
+        // Expando bag — user-set keys win over inherited methods. Fire
+        // accessors with `this = regex`.
         if r.props != NULL {
-            let pv = object_get(r.props, ks);
-            if zjs_is_undefined(pv) == 0 { return pv; }
+            let slot = class_find_slot(r.props.cls, ks);
+            if slot >= 0 {
+                let raw_v = r.props.slots[(u32)slot];
+                if zjs_is_deleted(raw_v) == 0 {
+                    if zjs_is_accessor(raw_v) != 0 {
+                        let acc = zjs_as_accessor(raw_v);
+                        let g = acc.get;
+                        if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
+                            let nullp: ZjsValue* = NULL;
+                            return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                        }
+                        return zjs_undefined();
+                    }
+                    return raw_v;
+                }
+            }
         }
         // Methods + everything else through the prototype.
         if ctx.regexp_proto != NULL {

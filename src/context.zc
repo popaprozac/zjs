@@ -1785,11 +1785,55 @@ fn host_object_create(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
 // descriptors (get/set) are recognized as "absent value" and the
 // property is created with value = undefined; calling the
 // accessor isn't wired up yet (Phase 3.9b).
+// Resolve the receiver to the ZjsObject* where named properties go.
+// Plain objects ARE the receiver. Arrays / functions / host fns /
+// regex carry their named props in a sub-object (lazy-created via
+// the .props field). Returns NULL if the receiver isn't supported
+// (e.g. primitives — defineProperty silently no-ops there).
+fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
+    if zjs_is_object(obj_v) != 0 { return zjs_as_object(obj_v); }
+    if zjs_is_array(obj_v) != 0 {
+        let arr = zjs_as_array(obj_v);
+        if arr.props == NULL {
+            let pv = ctx_new_object(ctx);
+            arr.props = zjs_as_object(pv);
+        }
+        return arr.props;
+    }
+    if zjs_is_function(obj_v) != 0 {
+        let fp = zjs_cell_as_ptr(obj_v);
+        let f: Function* = NULL;
+        raw { f = (Function*)fp; }
+        if f.props == NULL {
+            let pv = ctx_new_object(ctx);
+            f.props = zjs_as_object(pv);
+        }
+        return f.props;
+    }
+    if zjs_is_host_function(obj_v) != 0 {
+        let hf = zjs_as_host_function(obj_v);
+        if hf.props == NULL {
+            let pv = ctx_new_object(ctx);
+            hf.props = zjs_as_object(pv);
+        }
+        return hf.props;
+    }
+    if zjs_is_regexp(obj_v) != 0 {
+        let r = zjs_as_regexp(obj_v);
+        if r.props == NULL {
+            let pv = ctx_new_object(ctx);
+            r.props = zjs_as_object(pv);
+        }
+        return r.props;
+    }
+    return NULL;
+}
+
 fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc < 3 { return zjs_undefined(); }
     let obj_v = args[0];
-    if zjs_is_object(obj_v) == 0 { return obj_v; }
-    let o = zjs_as_object(obj_v);
+    let o = resolve_define_receiver(ctx, obj_v);
+    if o == NULL { return obj_v; }
 
     let key_v = args[1];
     if zjs_is_string(key_v) == 0 { key_v = zjs_to_string(ctx, key_v); }
@@ -1901,18 +1945,36 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
     let obj_v = args[0];
     if zjs_is_object(obj_v) == 0 { return obj_v; }
     let props_v = args[1];
-    // ECMA-262 §19.1.2.3 step 2: props is ToObject'd. For an array we
-    // walk its expando bag (numeric indices alone aren't useful here).
-    // Plain objects use their own hidden class. Other cell types
-    // (function / host function) carry their props elsewhere — handled
-    // below by special-casing.
+    // ECMA-262 §19.1.2.3 step 2: props is ToObject'd. Plain objects
+    // use their own hidden class. Arrays / functions / host fns /
+    // regex carry their named-property expando in a sub-object —
+    // walk THAT for the descriptors, but call property_get on the
+    // ORIGINAL receiver so accessor `this` is the function / array
+    // / regex itself.
     let cls_root: ZjsHiddenClass* = NULL;
     let cls_owner_v: ZjsValue = zjs_undefined();
     if zjs_is_array(props_v) != 0 {
         let pa = zjs_as_array(props_v);
         if pa.props == NULL { return obj_v; }
         cls_root = pa.props.cls;
-        cls_owner_v = zjs_cell_from_ptr((void*)pa.props);
+        cls_owner_v = props_v;
+    } else if zjs_is_function(props_v) != 0 {
+        let fp = zjs_cell_as_ptr(props_v);
+        let f: Function* = NULL;
+        raw { f = (Function*)fp; }
+        if f.props == NULL { return obj_v; }
+        cls_root = f.props.cls;
+        cls_owner_v = props_v;
+    } else if zjs_is_host_function(props_v) != 0 {
+        let hf = zjs_as_host_function(props_v);
+        if hf.props == NULL { return obj_v; }
+        cls_root = hf.props.cls;
+        cls_owner_v = props_v;
+    } else if zjs_is_regexp(props_v) != 0 {
+        let r = zjs_as_regexp(props_v);
+        if r.props == NULL { return obj_v; }
+        cls_root = r.props.cls;
+        cls_owner_v = props_v;
     } else if zjs_is_object(props_v) != 0 {
         cls_root = zjs_as_object(props_v).cls;
         cls_owner_v = props_v;
@@ -1947,6 +2009,17 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
             } else if zjs_is_array(cls_owner_v) != 0 {
                 let oa = zjs_as_array(cls_owner_v);
                 if oa.props != NULL { owner_obj = oa.props; }
+            } else if zjs_is_function(cls_owner_v) != 0 {
+                let fp = zjs_cell_as_ptr(cls_owner_v);
+                let f: Function* = NULL;
+                raw { f = (Function*)fp; }
+                if f.props != NULL { owner_obj = f.props; }
+            } else if zjs_is_host_function(cls_owner_v) != 0 {
+                let hf = zjs_as_host_function(cls_owner_v);
+                if hf.props != NULL { owner_obj = hf.props; }
+            } else if zjs_is_regexp(cls_owner_v) != 0 {
+                let r = zjs_as_regexp(cls_owner_v);
+                if r.props != NULL { owner_obj = r.props; }
             }
             let prop_attrs: u8 = if owner_obj != NULL { object_get_attrs(owner_obj, slot) } else { PROP_DEFAULT };
             if (prop_attrs & PROP_ENUMERABLE) == 0 {
