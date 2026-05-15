@@ -1412,7 +1412,7 @@ fn host_object_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // Primitive — wrap via ToObject (yields Boolean/Number/String wrapper
     // with the appropriate prototype chain).
     let wrapped = ctx_to_object(ctx, v);
-    if ctx.had_error { return zjs_undefined(); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
     return wrapped;
 }
 
@@ -2058,16 +2058,18 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
 // --- String.prototype helpers ---------------------------------------
 
 // Apply ECMA-262 `O = RequireObjectCoercible(this); S = ToString(O)`
-// to the calling-host's `this`. Returns undefined and sets had_error
-// if `this` is null/undefined; returns a string-typed ZjsValue
-// otherwise. Caller should bail on undefined.
+// to the calling-host's `this`. Returns undefined and arms a
+// JS-visible TypeError throw via pending_throw_active if `this` is
+// null/undefined; returns a string-typed ZjsValue otherwise. Callers
+// bail on undefined and the interpreter's post-host-call epilogue
+// observes pending_throw_active and unwinds.
 fn coerce_string_this(ctx: ZjsContext*) -> ZjsValue {
     let this_val = ctx.host_this;
     if zjs_is_undefined(this_val) != 0 || zjs_is_null(this_val) != 0 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                     (char*)"Cannot convert null or undefined to object", 43);
-        ctx.had_error = true;
-        ctx.last_error = err;
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
         return zjs_undefined();
     }
     if zjs_is_string(this_val) != 0 { return this_val; }
@@ -2382,7 +2384,7 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             raw { cb_args_ptr = &cb_args[0]; }
             let mapped: ZjsValue = zjs_undefined();
             raw { mapped = zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
-            if ctx.had_error { return result_v; }
+            if ctx.pending_throw_active { return result_v; }
             array_set(result, i, mapped);
         }
         i = i + 1;
@@ -2553,7 +2555,7 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
             let cb_args_ptr: ZjsValue* = NULL;
             raw { cb_args_ptr = &cb_args[0]; }
             raw { (void)zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
-            if ctx.had_error { return zjs_undefined(); }
+            if ctx.pending_throw_active { return zjs_undefined(); }
             i = i + 1;
         }
         return zjs_undefined();
@@ -2562,7 +2564,7 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     // Generic-this path: ToObject(this), then iterate via length /
     // indexed reads. Spec §22.1.3.12.
     let obj_val = ctx_to_object(ctx, this_val);
-    if ctx.had_error { return zjs_undefined(); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
     ctx_push_temp_root(ctx, obj_val);
     defer ctx_pop_temp_root(ctx);
 
@@ -2579,7 +2581,7 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
             let cb_args_ptr: ZjsValue* = NULL;
             raw { cb_args_ptr = &cb_args[0]; }
             raw { (void)zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
-            if ctx.had_error { return zjs_undefined(); }
+            if ctx.pending_throw_active { return zjs_undefined(); }
             i = i + 1;
         }
     }
@@ -3159,21 +3161,27 @@ fn drain_microtasks(ctx: ZjsContext*) -> void {
             arg_buf[0] = arg;
             let argp: ZjsValue* = NULL;
             raw { argp = &arg_buf[0]; }
-            let saved_err = ctx.had_error;
-            ctx.had_error = false;
-            let saved_lasterr = ctx.last_error;
+            // zjs_call_value_with_this signals a JS-side throw via
+            // pending_throw_active, not had_error. Save/restore the
+            // pending-throw channel so an in-flight throw from the
+            // surrounding interpret() (if any) survives this nested
+            // synchronous call and isn't lost.
+            let saved_pt = ctx.pending_throw_active;
+            let saved_pv = ctx.pending_throw_value;
+            ctx.pending_throw_active = false;
+            ctx.pending_throw_value = zjs_undefined();
             let r: ZjsValue = zjs_undefined();
             raw { r = zjs_call_value_with_this(ctx, handler, zjs_undefined(), argp, 1); }
-            if ctx.had_error {
-                let thrown = ctx.last_error;
-                ctx.had_error = saved_err;
-                ctx.last_error = saved_lasterr;
+            if ctx.pending_throw_active {
+                let thrown = ctx.pending_throw_value;
+                ctx.pending_throw_active = saved_pt;
+                ctx.pending_throw_value = saved_pv;
                 if zjs_is_promise(rp) != 0 {
                     promise_settle(ctx, rp, thrown, false);
                 }
             } else {
-                ctx.had_error = saved_err;
-                ctx.last_error = saved_lasterr;
+                ctx.pending_throw_active = saved_pt;
+                ctx.pending_throw_value = saved_pv;
                 if zjs_is_promise(rp) != 0 {
                     promise_resolve_with(ctx, rp, r);
                 }
@@ -3249,15 +3257,16 @@ fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     exec_args[1] = reject_fn;
     let exec_argp: ZjsValue* = NULL;
     raw { exec_argp = &exec_args[0]; }
-    let saved_err = ctx.had_error;
-    ctx.had_error = false;
-    let saved_lasterr = ctx.last_error;
+    let saved_pt = ctx.pending_throw_active;
+    let saved_pv = ctx.pending_throw_value;
+    ctx.pending_throw_active = false;
+    ctx.pending_throw_value = zjs_undefined();
     raw { (void)zjs_call_value_with_this(ctx, executor, zjs_undefined(), exec_argp, 2); }
-    if ctx.had_error {
+    if ctx.pending_throw_active {
         // Executor threw — reject (unless already settled).
-        let thrown = ctx.last_error;
-        ctx.had_error = saved_err;
-        ctx.last_error = saved_lasterr;
+        let thrown = ctx.pending_throw_value;
+        ctx.pending_throw_active = saved_pt;
+        ctx.pending_throw_value = saved_pv;
         promise_settle(ctx, pv, thrown, false);
     }
     return pv;
@@ -3291,7 +3300,8 @@ fn host_promise_then(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if zjs_is_promise(this_val) == 0 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                     (char*)"Promise.prototype.then called on non-promise", 44);
-        ctx.had_error = true; ctx.last_error = err;
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
         return zjs_undefined();
     }
     let on_f = if argc >= 1 { args[0] } else { zjs_undefined() };
@@ -3785,13 +3795,14 @@ fn host_promise_finally_helper(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
         raw { (void)zjs_call_value_with_this(ctx, handler, zjs_undefined(), nullp, 0); }
     }
     // Propagate. The microtask drain treats our return as the
-    // resolution value, so on rejection we need to re-throw.
+    // resolution value, so on rejection we need to re-throw — the
+    // surrounding reaction loop reads pending_throw_active to
+    // distinguish "fulfilled with v" from "rejected with v".
     if zjs_is_bool(is_f_v) != 0 && zjs_as_bool(is_f_v) != 0 {
         return value;
     }
-    // Re-throw the original rejection reason.
-    ctx.had_error = true;
-    ctx.last_error = value;
+    ctx.pending_throw_active = true;
+    ctx.pending_throw_value = value;
     return zjs_undefined();
 }
 
@@ -3800,7 +3811,8 @@ fn host_promise_finally(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     if zjs_is_promise(this_val) == 0 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                     (char*)"Promise.prototype.finally called on non-promise", 47);
-        ctx.had_error = true; ctx.last_error = err;
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
         return zjs_undefined();
     }
     let handler = if argc >= 1 { args[0] } else { zjs_undefined() };
@@ -4301,8 +4313,10 @@ def TAG_NAME_KEY_LEN: u32 = 11;
 
 // ECMA-262 §7.1.18 ToObject. Wraps primitives in their corresponding
 // wrapper objects (so `Array.prototype.X.call(true, ...)` sees an
-// object). For null/undefined, sets ctx.had_error and returns
-// undefined — callers should propagate as TypeError.
+// object). For null/undefined, arms a JS-visible TypeError via
+// pending_throw_active and returns undefined — callers must check
+// pending_throw_active (or simply propagate the undefined and let
+// the interpreter's post-host-call epilogue unwind).
 //
 // Already-object values (object/array/function/closure/host-function)
 // pass through unchanged.
@@ -4316,8 +4330,8 @@ fn ctx_to_object(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
     if zjs_is_null(v) != 0 || zjs_is_undefined(v) != 0 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                     (char*)"Cannot convert null or undefined to object", 43);
-        ctx.had_error = true;
-        ctx.last_error = err;
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
         return zjs_undefined();
     }
 

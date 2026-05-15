@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 01:43 UTC",
+    "when": "2026-05-15 02:01 UTC",
     "total": 4821,
-    "passed": 1876,
-    "failed": 919,
+    "passed": 1889,
+    "failed": 906,
     "skipped": 2026
   },
   "failures": [
@@ -1388,10 +1388,6 @@
       "reason": "zjs: throw: Test262Error: testResult[0]"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-30.js",
-      "reason": "zjs: throw: Test262Error: accessed"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-31.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
@@ -1410,10 +1406,6 @@
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-ii-19.js",
       "reason": "zjs: throw: Test262Error: called"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-ii-7.js",
-      "reason": "zjs: throw: Test262Error: accessed"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-9-3.js",
@@ -1616,10 +1608,6 @@
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-30.js",
-      "reason": "zjs: throw: Test262Error: accessed"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-31.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
@@ -1634,10 +1622,6 @@
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-17.js",
       "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-7.js",
-      "reason": "zjs: throw: Test262Error: accessed"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-8-10.js",
@@ -2372,10 +2356,6 @@
       "reason": "zjs: throw: Test262Error: ToInteger: [\"1\"].toString() => \"1\" => 1"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/this-value-not-obj-coercible.js",
-      "reason": "zjs: throw: Test262Error: undefined"
-    },
-    {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T15.js",
       "reason": "zjs: throw: Test262Error: #1: var __num = 11.001002; Number.prototype.slice = String.prototype.slice; __num.slice()===\"1"
     },
@@ -2398,10 +2378,6 @@
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A9.js",
       "reason": "zjs: throw: Test262Error: #2: delete String.prototype.slice.length; String.prototype.slice.hasOwnProperty('length') retu"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/this-value-not-obj-coercible.js",
-      "reason": "zjs: throw: Test262Error: undefined"
     },
     {
       "path": "test/built-ins/String/prototype/slice/this-value-tostring-throws-toprimitive.js",
@@ -2646,10 +2622,6 @@
     {
       "path": "test/built-ins/String/prototype/split/separator-undef-limit-zero.js",
       "reason": "zjs: throw: Test262Error: result.length"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/this-value-not-obj-coercible.js",
-      "reason": "zjs: throw: Test262Error: undefined"
     },
     {
       "path": "test/built-ins/String/prototype/split/transferred-to-number-separator-override-tostring-returns-regexp.js",
@@ -3401,27 +3373,19 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/catch/invokes-then.js",
-      "reason": "zjs: throw: Test262Error: Invokes `then` method exactly once"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/catch/this-value-non-object.js",
-      "reason": "zjs: throw: Test262Error: undefined"
+      "reason": "zjs: throw: TypeError: Promise.prototype.then called on non-promise"
     },
     {
       "path": "test/built-ins/Promise/prototype/catch/this-value-then-poisoned.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
       "path": "test/built-ins/Promise/prototype/catch/this-value-then-throws.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/invokes-then-with-non-function.js",
       "reason": "zjs: throw: Test262Error: Invokes `then` method exactly once"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/finally/species-constructor-throws.js",
-      "reason": "zjs: throw: Test262Error: SpeciesConstructor throws a TypeError if the constructor property is not an object."
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/subclass-species-constructor-reject-count.js",
@@ -3432,12 +3396,8 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Promise/prototype/finally/this-value-non-object.js",
-      "reason": "zjs: throw: Test262Error: undefined"
-    },
-    {
       "path": "test/built-ins/Promise/prototype/finally/this-value-proxy.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Promise.prototype.finally called on non-promise"
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/this-value-then-poisoned.js",
@@ -3449,15 +3409,7 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/this-value-thenable.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/no-promise-state.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A2.1_T1.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: TypeError: Promise.prototype.finally called on non-promise"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A2.1_T2.js",
@@ -3470,10 +3422,6 @@
     {
       "path": "test/built-ins/Promise/prototype/then/capability-executor-not-callable.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/context-check-on-entry.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/ctor-custom.js",
