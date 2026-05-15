@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 20:34 UTC",
+    "when": "2026-05-15 20:38 UTC",
     "total": 13247,
-    "passed": 2563,
-    "failed": 740,
+    "passed": 2553,
+    "failed": 750,
     "skipped": 9944
   },
   "failures": [
@@ -561,71 +561,67 @@
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-numeric-binary.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-numeric-exponent.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-numeric-hex.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-numeric-leading-decimal.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-numeric-non-canonical.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-numeric-octal.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/accessor-name-inst/literal-numeric-zero.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-string-char-escape.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-string-default-escaped-ext.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-string-default-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-string-default.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-string-double-quote.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-string-empty.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-string-hex-escape.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-string-line-continuation.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-string-single-quote.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-string-unicode-escape.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/computed-err-evaluation.js",
@@ -645,71 +641,71 @@
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-numeric-binary.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-numeric-exponent.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-numeric-hex.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-numeric-leading-decimal.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-numeric-non-canonical.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-numeric-octal.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-numeric-zero.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-string-char-escape.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-string-default-escaped-ext.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-string-default-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-string-default.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-string-double-quote.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-string-empty.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-string-hex-escape.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-string-line-continuation.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-string-single-quote.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-string-unicode-escape.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/class/arguments/access.js",
@@ -733,7 +729,7 @@
     },
     {
       "path": "test/language/statements/class/definition/accessors.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: The value of `desc.enumerable` is `false`"
     },
     {
       "path": "test/language/statements/class/definition/basics.js",
@@ -753,7 +749,7 @@
     },
     {
       "path": "test/language/statements/class/definition/getters-restricted-ids.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: The value of `C.eval` is `3`"
     },
     {
       "path": "test/language/statements/class/definition/invalid-extends.js",
@@ -761,7 +757,7 @@
     },
     {
       "path": "test/language/statements/class/definition/methods-restricted-properties.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/language/statements/class/definition/methods.js",
@@ -769,7 +765,7 @@
     },
     {
       "path": "test/language/statements/class/definition/numeric-property-names.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: The value of `desc.enumerable` is `false`"
     },
     {
       "path": "test/language/statements/class/definition/prototype-getter.js",
@@ -785,7 +781,7 @@
     },
     {
       "path": "test/language/statements/class/definition/setters-restricted-ids.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: The value of `x` is `3`"
     },
     {
       "path": "test/language/statements/class/definition/side-effects-in-extends.js",
@@ -812,7 +808,31 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-contains-super-get.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-contains-super-method.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-contains-super-set.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-ctor-get.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-ctor-set.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-get-meth-prototype.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-get-meth-super.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
@@ -824,8 +844,16 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-set-meth-prototype.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-set-meth-super.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
       "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-accessor-meth-valid.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: assert failed"
     },
     {
       "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",
@@ -1012,16 +1040,12 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/name-binding/basic.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/language/statements/class/name-binding/const.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/language/statements/class/name-binding/expression.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: ReferenceError: C is not defined"
     },
     {
       "path": "test/language/statements/class/name-binding/in-extends-expression-assigned.js",
@@ -1429,27 +1453,15 @@
     },
     {
       "path": "test/language/statements/class/super/in-getter.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/super/in-methods.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/super/in-setter.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: The value of `new C().y` is `1`"
     },
     {
       "path": "test/language/statements/class/super/in-static-getter.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: The value of `C.x` is `1`"
     },
     {
       "path": "test/language/statements/class/super/in-static-methods.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/super/in-static-setter.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: `C.method()` returns `1`"
     },
     {
       "path": "test/language/statements/class/syntax/class-body-method-definition-super-property.js",
@@ -1489,71 +1501,67 @@
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-binary.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-exponent.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-hex.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-leading-decimal.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-non-canonical.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-octal.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-zero.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-string-char-escape.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-string-default-escaped-ext.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-string-default-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-string-default.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-string-double-quote.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-string-empty.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-string-hex-escape.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-string-line-continuation.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-string-single-quote.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-string-unicode-escape.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst-computed-in.js",
@@ -1577,71 +1585,71 @@
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-numeric-binary.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-numeric-exponent.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-numeric-hex.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-numeric-leading-decimal.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-numeric-non-canonical.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-numeric-octal.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-numeric-zero.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-string-char-escape.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-string-default-escaped-ext.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-string-default-escaped.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-string-default.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-string-double-quote.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-string-empty.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-string-hex-escape.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-string-line-continuation.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-string-single-quote.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-string-unicode-escape.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static-computed-in.js",
@@ -1664,7 +1672,31 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-get.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-method.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-set.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-get.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-set.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-get-meth-prototype.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-get-meth-super.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
@@ -1676,8 +1708,16 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-set-meth-prototype.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-set-meth-super.js",
+      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
+    },
+    {
       "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-accessor-meth-valid.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "zjs: throw: Test262Error: assert failed"
     },
     {
       "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",

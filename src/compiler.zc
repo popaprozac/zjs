@@ -1787,15 +1787,27 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
                     release_reg(c, mreg);
                     mreg = mcls;
                 }
-                let m_atom = ctx_intern_atom(c.ctx, mn, ml);
-                let m_ic = alloc_ic_slot(c, m_atom);
-                if m_ic <= 255 {
-                    // static methods attach to the constructor itself
-                    // (so `Foo.method(...)` works); instance methods go
-                    // on the prototype as before. DefineMethod installs
-                    // with non-enumerable attrs per spec.
-                    let target = if m.bool_value { ctor_reg } else { proto_reg };
-                    emit(c, make_inst_abc(Op::DefineMethod, target, (u8)m_ic, mreg));
+                let target = if m.bool_value { ctor_reg } else { proto_reg };
+                if m.op == TokenKind::KwGet {
+                    // Getter: install via Op::DefineGetter (key is a
+                    // separate register, not an IC slot).
+                    let key_r = emit_load_name_string(c, mn, ml);
+                    emit(c, make_inst_abc(Op::DefineGetter, target, key_r, mreg));
+                    release_reg(c, key_r);
+                } else if m.op == TokenKind::KwSet {
+                    let key_r = emit_load_name_string(c, mn, ml);
+                    emit(c, make_inst_abc(Op::DefineSetter, target, key_r, mreg));
+                    release_reg(c, key_r);
+                } else {
+                    let m_atom = ctx_intern_atom(c.ctx, mn, ml);
+                    let m_ic = alloc_ic_slot(c, m_atom);
+                    if m_ic <= 255 {
+                        // static methods attach to the constructor itself
+                        // (so `Foo.method(...)` works); instance methods go
+                        // on the prototype as before. DefineMethod installs
+                        // with non-enumerable attrs per spec.
+                        emit(c, make_inst_abc(Op::DefineMethod, target, (u8)m_ic, mreg));
+                    }
                 }
                 release_reg(c, mreg);
             }

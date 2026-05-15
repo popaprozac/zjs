@@ -802,6 +802,24 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
             is_static = true;
         }
     }
+    // Optional `get` / `set` accessor prefix. Same rule as `static`:
+    // only treat as the contextual keyword when followed by another
+    // property name (so `get() {}` defines a method called `get`).
+    let acc_kind: TokenKind = TokenKind::Eq;   // sentinel for "regular method"
+    let id2 = peek(p);
+    if id2.kind == TokenKind::Identifier && id2.length == 3 {
+        let nd = p.source + id2.start;
+        let is_get: int = 0;
+        let is_set: int = 0;
+        raw {
+            is_get = (memcmp(nd, "get", 3) == 0) ? 1 : 0;
+            is_set = (memcmp(nd, "set", 3) == 0) ? 1 : 0;
+        }
+        if (is_get != 0 || is_set != 0) && is_property_name_start(peek_kind2(p)) {
+            advance(p);
+            acc_kind = if is_get != 0 { TokenKind::KwGet } else { TokenKind::KwSet };
+        }
+    }
     // Method name: Identifier OR a contextual / reserved word usable as
     // a property name (`of`, `static`, `let`, ...).
     let name_tok = peek(p);
@@ -822,6 +840,7 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     node.name_start  = name_tok.start;
     node.name_length = name_tok.length;
     node.bool_value  = is_static;
+    node.op          = acc_kind;
     node.left = body;
     node.children = params.arr;
     node.children_count = params.count;
