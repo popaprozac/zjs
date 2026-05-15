@@ -4003,6 +4003,12 @@ struct JsonCtx {
     indent_str:   char*;        // owned char buffer or NULL = no indent
     indent_len:   u32;          // strlen(indent_str)
     depth:        u32;          // current nesting level
+    // Cycle-detection stack: pointers to objects / arrays currently
+    // being serialized. ECMA-262 §25.5.2.4 step 1 throws TypeError if
+    // a value is already on the stack. Capped at 32 levels — beyond
+    // that we'd risk the host stack anyway.
+    stack:        void*[32];
+    stack_depth:  u32;
 }
 
 // Emit a newline and `depth` copies of the indent string. Used by
@@ -4163,6 +4169,28 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
     }
     if zjs_is_array(v) != 0 {
         let a = zjs_as_array(v);
+        // Cycle check before descending. ECMA-262 §25.5.2 throws
+        // TypeError on a structural cycle (including indirect ones).
+        let aptr: void* = (void*)a;
+        let s: u32 = 0;
+        while s < jc.stack_depth {
+            if jc.stack[s] == aptr {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"Converting circular structure to JSON", 37);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return;
+            }
+            s = s + 1;
+        }
+        if jc.stack_depth >= 32 {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"JSON.stringify nesting too deep", 31);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return;
+        }
+        jc.stack[jc.stack_depth] = aptr;
+        jc.stack_depth = jc.stack_depth + 1;
+        defer { jc.stack_depth = jc.stack_depth - 1; }
         json_buf_putc(b, '[');
         if a.length == 0 { json_buf_putc(b, ']'); return; }
         jc.depth = jc.depth + 1;
@@ -4197,6 +4225,27 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
     }
     if zjs_is_object(v) != 0 {
         let o = zjs_as_object(v);
+        // Cycle check before descending — mirrors the array branch.
+        let optr: void* = (void*)o;
+        let s2: u32 = 0;
+        while s2 < jc.stack_depth {
+            if jc.stack[s2] == optr {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"Converting circular structure to JSON", 37);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return;
+            }
+            s2 = s2 + 1;
+        }
+        if jc.stack_depth >= 32 {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"JSON.stringify nesting too deep", 31);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return;
+        }
+        jc.stack[jc.stack_depth] = optr;
+        jc.stack_depth = jc.stack_depth + 1;
+        defer { jc.stack_depth = jc.stack_depth - 1; }
         // Enumerate own property names in insertion order by walking
         // the hidden-class chain bottom-up (same approach as Object.keys).
         let count = o.cls.prop_count;
@@ -4329,6 +4378,7 @@ fn host_json_stringify(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     jc.indent_str   = NULL;
     jc.indent_len   = 0;
     jc.depth        = 0;
+    jc.stack_depth  = 0;
     // Parse the optional `space` arg (third). Number → that many
     // spaces (clamped to 10). String → take up to first 10 chars
     // verbatim. Anything else is ignored.
@@ -6035,6 +6085,7 @@ fn console_write_value(v: ZjsValue, stream_is_stderr: bool) -> void {
         nojc.indent_str = NULL;
         nojc.indent_len = 0;
         nojc.depth = 0;
+        nojc.stack_depth = 0;
         json_stringify_value(nullctx, &nojc, &b, v);
         let bd = b.data;
         let bn = b.len;

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 17:24 UTC",
+    "when": "2026-05-15 17:29 UTC",
     "total": 4821,
-    "passed": 2280,
-    "failed": 515,
+    "passed": 2285,
+    "failed": 510,
     "skipped": 2026
   },
   "failures": [
@@ -988,6 +988,10 @@
       "reason": "zjs: throw: Test262Error: arr.indexOf(\"prototype\")"
     },
     {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(targetObj, fromIndex)"
+    },
+    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-6.js",
       "reason": ""
     },
@@ -1340,14 +1344,6 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/built-ins/JSON/stringify/replacer-function-array-circular.js",
-      "reason": ""
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/replacer-function-object-circular.js",
-      "reason": ""
-    },
-    {
       "path": "test/built-ins/JSON/stringify/replacer-function-object-deleted-property.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
@@ -1360,24 +1356,8 @@
       "reason": "zjs: throw: Test262Error: should not be called"
     },
     {
-      "path": "test/built-ins/JSON/stringify/value-array-circular.js",
-      "reason": ""
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/value-object-circular.js",
-      "reason": ""
-    },
-    {
       "path": "test/built-ins/JSON/stringify/value-string-escape-ascii.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/value-tojson-array-circular.js",
-      "reason": ""
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/value-tojson-object-circular.js",
-      "reason": ""
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A7.js",
