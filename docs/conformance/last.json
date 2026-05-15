@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 08:41 UTC",
+    "when": "2026-05-15 08:44 UTC",
     "total": 4821,
-    "passed": 2126,
-    "failed": 669,
+    "passed": 2136,
+    "failed": 659,
     "skipped": 2026
   },
   "failures": [
@@ -1232,14 +1232,6 @@
       "reason": "zjs: throw: Test262Error: resArr[0]"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-22.js",
-      "reason": "zjs: throw: Test262Error: testResult[0]"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-23.js",
-      "reason": "zjs: throw: Test262Error: testResult[0]"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-6.js",
       "reason": "zjs: throw: Test262Error: resArr[4]"
     },
@@ -1332,14 +1324,6 @@
       "reason": "zjs: throw: Test262Error: newArr[1]"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-ii-16.js",
-      "reason": "zjs: throw: Test262Error: testResult[0]"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-ii-17.js",
-      "reason": "zjs: throw: Test262Error: testResult[0]"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-ii-19.js",
       "reason": "zjs: throw: Test262Error: called"
     },
@@ -1422,14 +1406,6 @@
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-5-1.js",
       "reason": "zjs: throw: Test262Error: result"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-5-22.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-5-23.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-5.js",
@@ -1516,14 +1492,6 @@
       "reason": "zjs: throw: Test262Error: testResult !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-16.js",
-      "reason": "zjs: throw: Test262Error: result"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-ii-17.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-8-10.js",
       "reason": "zjs: throw: Test262Error: callCnt"
     },
@@ -1532,24 +1500,16 @@
       "reason": "zjs: throw: Test262Error: a.length"
     },
     {
-      "path": "test/built-ins/Object/keys/15.2.3.14-5-11.js",
-      "reason": "zjs: throw: Test262Error: arr[p]"
-    },
-    {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-12.js",
       "reason": "zjs: throw: Test262Error: Property not found"
     },
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-13.js",
-      "reason": "zjs: throw: Test262Error: Unexpected property at index: 0"
+      "reason": "zjs: throw: Test262Error: Unexpected property at index: 1"
     },
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-14.js",
       "reason": "zjs: throw: Test262Error: Property not found"
-    },
-    {
-      "path": "test/built-ins/Object/keys/15.2.3.14-5-b-1.js",
-      "reason": "zjs: throw: Test262Error: index"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-3-1.js",
@@ -1921,7 +1881,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/split/argument-is-regexp-and-instance-is-number.js",
-      "reason": "zjs: throw: Test262Error: The value of `typeof __split` is \"object\""
+      "reason": "zjs: throw: Test262Error: The value of __split.length is 4"
     },
     {
       "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-hi-and-instance-is-string-hello.js",
@@ -2017,7 +1977,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-regexp-limit-string-via-eval.js",
-      "reason": "zjs: throw: Test262Error: The value of `typeof __split` is \"object\""
+      "reason": "zjs: throw: Test262Error: The value of __split[0] is \"6776767677.\""
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-undef-limit-zero.js",
