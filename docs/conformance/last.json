@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 08:00 UTC",
+    "when": "2026-05-15 08:07 UTC",
     "total": 4821,
-    "passed": 2028,
-    "failed": 767,
+    "passed": 2032,
+    "failed": 763,
     "skipped": 2026
   },
   "failures": [
@@ -1588,10 +1588,6 @@
       "reason": "zjs: throw: Test262Error: b.isPrototypeOf(d)"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-10.js",
-      "reason": "zjs: throw: TypeError: Property descriptor must be an object"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-12.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
@@ -1608,16 +1604,8 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-17.js",
-      "reason": "zjs: throw: Test262Error: newObj.hasOwnProperty(\"prop\")"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-177.js",
       "reason": "zjs: throw: TypeError: Property descriptor must be an object"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-20.js",
-      "reason": "zjs: throw: Test262Error: newObj.hasOwnProperty(\"prop\")"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-203.js",
@@ -1654,10 +1642,6 @@
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-304.js",
       "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-33.js",
-      "reason": "zjs: throw: TypeError: Property descriptor must be an object"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-35.js",

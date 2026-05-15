@@ -1740,6 +1740,24 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
             raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
         }
         if !is_internal {
+            // Spec: only ENUMERABLE own props of `props` become
+            // descriptor entries. The hidden-class walker visits all
+            // slots regardless; skip non-enumerable ones here. Critical
+            // for `Object.create({}, Math)` — Math has non-enumerable
+            // `PI` (a number) which would otherwise trip the
+            // "descriptor must be an object" throw.
+            let owner_obj: ZjsObject* = NULL;
+            if zjs_is_object(cls_owner_v) != 0 {
+                owner_obj = zjs_as_object(cls_owner_v);
+            } else if zjs_is_array(cls_owner_v) != 0 {
+                let oa = zjs_as_array(cls_owner_v);
+                if oa.props != NULL { owner_obj = oa.props; }
+            }
+            let prop_attrs: u8 = if owner_obj != NULL { object_get_attrs(owner_obj, slot) } else { PROP_DEFAULT };
+            if (prop_attrs & PROP_ENUMERABLE) == 0 {
+                cls = cls.parent;
+                continue;
+            }
             let key_v = zjs_cell_from_ptr((void*)name);
             // Read through cls_owner so accessor getters fire on the
             // right receiver. For an array-backed props bag this is
@@ -6278,6 +6296,65 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let console_slot = ctx_intern_global(ctx, (char*)"console", 7);
     ctx.globals[console_slot].value = console_v;
     ctx.globals[console_slot].defined = true;
+
+    // Mark every property on every built-in prototype as
+    // non-enumerable. Per spec, ALL methods on Object.prototype,
+    // Array.prototype, String.prototype, etc. — and Math's constants
+    // like PI / E — are { writable: true, configurable: true,
+    // enumerable: FALSE }. Our bootstrap installs them via plain
+    // object_set which gives PROP_DEFAULT (enumerable=true). Sweep
+    // those bits off in one pass so Object.keys / for-in / the
+    // descriptor walk in Object.create({}, SomeProto) all see them
+    // as non-enumerable.
+    proto_mark_nonenum(ctx.object_proto);
+    proto_mark_nonenum(ctx.array_proto);
+    proto_mark_nonenum(ctx.string_proto);
+    proto_mark_nonenum(ctx.regexp_proto);
+    proto_mark_nonenum(ctx.promise_ctor_proto);
+    // Wrapper prototypes (Number.prototype, Boolean.prototype) and
+    // Math live as the .prototype of their constructor or as a plain
+    // global. Walk via the global table.
+    let num_g = ctx_find_global(ctx, (char*)"Number", 6);
+    if num_g >= 0 {
+        let nv = ctx.globals[num_g].value;
+        if zjs_is_host_function(nv) != 0 {
+            proto_mark_nonenum(zjs_as_host_function(nv).prototype);
+        }
+    }
+    let bool_g = ctx_find_global(ctx, (char*)"Boolean", 7);
+    if bool_g >= 0 {
+        let bv = ctx.globals[bool_g].value;
+        if zjs_is_host_function(bv) != 0 {
+            proto_mark_nonenum(zjs_as_host_function(bv).prototype);
+        }
+    }
+    let math_g = ctx_find_global(ctx, (char*)"Math", 4);
+    if math_g >= 0 {
+        let mv = ctx.globals[math_g].value;
+        if zjs_is_object(mv) != 0 {
+            proto_mark_nonenum(zjs_as_object(mv));
+        }
+    }
+    let json_g = ctx_find_global(ctx, (char*)"JSON", 4);
+    if json_g >= 0 {
+        let jv = ctx.globals[json_g].value;
+        if zjs_is_object(jv) != 0 {
+            proto_mark_nonenum(zjs_as_object(jv));
+        }
+    }
+}
+
+fn proto_mark_nonenum(proto: ZjsObject*) -> void {
+    if proto == NULL { return; }
+    if proto.attrs == NULL { return; }
+    let cls = proto.cls;
+    while cls != NULL && cls.parent != NULL {
+        let slot = cls.transition_slot;
+        if slot < proto.slot_cap {
+            proto.attrs[slot] = proto.attrs[slot] & ~PROP_ENUMERABLE;
+        }
+        cls = cls.parent;
+    }
 }
 
 // --- Error inspection (public ABI) ----------------------------------
