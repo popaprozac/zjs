@@ -1543,16 +1543,81 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             arr.length = count;
             regs[dst] = arr_val;
         } else if op == Op::LoadElem {
-            regs[inst.a] = property_get(ctx, regs[inst.b], regs[inst.c]);
-            if ctx.pending_throw_active {
-                throwing = true; thrown = consume_pending_throw(ctx);
-                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            // Type-guard fast path for `arr[i]` where `arr` is an array
+            // and `i` is a small int. Skips the property_get function
+            // call, the pending-throw check, and the hole-to-undefined
+            // conversion in array_get. Sieve and tight indexed loops
+            // sit here; the slow path catches strings, doubles, holes
+            // (which fall back to coerce-to-undefined), and accessors.
+            let obj_val = regs[inst.b];
+            let key_val = regs[inst.c];
+            let took_fast: bool = false;
+            if zjs_is_array(obj_val) != 0 && zjs_is_int32(key_val) != 0 {
+                let i = zjs_as_int32(key_val);
+                if i >= 0 {
+                    let arr = zjs_as_array(obj_val);
+                    let u = (u32)i;
+                    if u < arr.length {
+                        let v = arr.elements[u];
+                        // Hole → undefined inline (avoid one extra branch
+                        // in array_get).
+                        if zjs_is_deleted(v) == 0 {
+                            regs[inst.a] = v;
+                        } else {
+                            regs[inst.a] = zjs_undefined();
+                        }
+                        took_fast = true;
+                    } else {
+                        // Out-of-bounds read is `undefined` — common in
+                        // defensive `i < arr.length` patterns where the
+                        // compiler can't prove it. No prototype walk on
+                        // pure int index path.
+                        regs[inst.a] = zjs_undefined();
+                        took_fast = true;
+                    }
+                }
+            }
+            if !took_fast {
+                regs[inst.a] = property_get(ctx, obj_val, key_val);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
             }
         } else if op == Op::StoreElem {
-            property_set(ctx, regs[inst.a], regs[inst.b], regs[inst.c]);
-            if ctx.pending_throw_active {
-                throwing = true; thrown = consume_pending_throw(ctx);
-                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            // Mirror of LoadElem's fast path: dense indexed write with
+            // no realloc. Three cases stay fast:
+            //   (a) in-bounds: pure slot write, length unchanged
+            //   (b) past length but within capacity: write + bump length
+            //   (c) past capacity: fall through to array_set (realloc)
+            // Case (b) relies on the invariant that slots in [length, cap)
+            // are holes (zjs_deleted) — maintained by array_set's grow
+            // path and by length-shrink in property_set.
+            let obj_val = regs[inst.a];
+            let key_val = regs[inst.b];
+            let value   = regs[inst.c];
+            let took_fast: bool = false;
+            if zjs_is_array(obj_val) != 0 && zjs_is_int32(key_val) != 0 {
+                let i = zjs_as_int32(key_val);
+                if i >= 0 {
+                    let arr = zjs_as_array(obj_val);
+                    let u = (u32)i;
+                    if u < arr.length {
+                        arr.elements[u] = value;
+                        took_fast = true;
+                    } else if u < arr.cap {
+                        arr.elements[u] = value;
+                        arr.length = u + 1;
+                        took_fast = true;
+                    }
+                }
+            }
+            if !took_fast {
+                property_set(ctx, obj_val, key_val, value);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
             }
         } else if op == Op::LoadThis {
             regs[inst.a] = ctx.host_this;
