@@ -2830,7 +2830,14 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         let len = arr.length;
         let from: u32 = 0;
         if argc >= 2 {
-            let fi = zjs_to_double(args[1]);
+            let fi_v = args[1];
+            // ECMA-262: fromIndex via ToInteger → ToPrimitive("number").
+            // Object args must fire valueOf / toString in spec order.
+            if zjs_is_object(fi_v) != 0 || zjs_is_array(fi_v) != 0 {
+                fi_v = zjs_to_primitive(ctx, fi_v, false);
+                if ctx.pending_throw_active { return zjs_int32(-1); }
+            }
+            let fi = zjs_to_double(fi_v);
             raw { if (isnan(fi)) fi = 0; }
             if fi < 0.0 {
                 let nfi = (f64)len + fi;

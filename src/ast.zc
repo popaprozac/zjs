@@ -27,6 +27,10 @@ enum NodeKind {
     BoolExpr,               // bool_value
     NullExpr,
     UndefinedExpr,
+    HoleExpr,               // array-literal elision (`,` slot) — distinct
+                            //   from explicit `undefined` so the slot can
+                            //   be recorded as a hole (zjs_deleted)
+                            //   rather than a real undefined value.
     ThisExpr,
     IdentExpr,              // (start..end is the identifier text)
     RegexExpr,              // (start..end is the full /pattern/flags slice)

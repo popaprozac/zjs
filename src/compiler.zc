@@ -490,6 +490,11 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         emit(c, make_inst_a(Op::LoadUndefined, dst));
         return dst;
     }
+    if k == NodeKind::HoleExpr {
+        let dst = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadHole, dst));
+        return dst;
+    }
     if k == NodeKind::StringExpr {
         return compile_string_literal(c, node);
     }

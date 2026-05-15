@@ -25,6 +25,7 @@ enum Op {
     LoadConst,        // a=dst, bc=const_idx (u16)
     LoadInt,          // a=dst, bc=imm (i16) — small-int fast path
     LoadUndefined,    // a=dst
+    LoadHole,         // a=dst — zjs_deleted sentinel for array elision slots
     LoadNull,         // a=dst
     LoadTrue,         // a=dst
     LoadFalse,        // a=dst

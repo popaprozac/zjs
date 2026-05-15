@@ -837,6 +837,10 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             regs[inst.a] = f.constants[inst_bc_u16(inst)];
         } else if op == Op::LoadUndefined {
             regs[inst.a] = zjs_undefined();
+        } else if op == Op::LoadHole {
+            // Array-literal elision slot; surface zjs_deleted so
+            // NewArray copies it into the elements buffer as a hole.
+            regs[inst.a] = zjs_deleted();
         } else if op == Op::LoadNull {
             regs[inst.a] = zjs_null();
         } else if op == Op::LoadTrue {

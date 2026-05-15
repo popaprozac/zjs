@@ -1559,12 +1559,11 @@ fn parse_array(p: Parser*) -> AstNode* {
 
     while peek_kind(p) != TokenKind::RBracket && peek_kind(p) != TokenKind::Eof {
         // Elision: `,` in place of an element means an empty slot
-        // (spec calls this an "array hole"). It compiles to undefined.
+        // (spec calls this an "array hole"). Distinct from explicit
+        // `undefined` — holes are absent from HasProperty / Object.keys.
         let elem: AstNode* = NULL;
         if peek_kind(p) == TokenKind::Comma {
-            // Don't consume the comma yet — fall through to the
-            // separator check below.
-            elem = new_node(&p.tracker, NodeKind::UndefinedExpr,
+            elem = new_node(&p.tracker, NodeKind::HoleExpr,
                             peek(p).start, peek(p).start);
         } else {
             elem = parse_assignment(p);
