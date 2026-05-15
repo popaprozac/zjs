@@ -88,6 +88,7 @@ def write_html(out_path, history, latest):
   table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
   th, td {{ text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }}
   th {{ background: #f5f5f5; }}
+  th.ms, th.delta {{ text-align: right; }}
   td.bench {{ font-family: ui-monospace, SFMono-Regular, monospace; }}
   td.ms {{ text-align: right; font-variant-numeric: tabular-nums; }}
   td.delta {{ text-align: right; font-variant-numeric: tabular-nums; }}
@@ -184,10 +185,7 @@ zjs-vs-zjs over time. Numbers are median of N iterations.</p>
     }}
     const color = colorFor(name);
     const d = points.map((p, i) => `${{xs(i)}},${{ys(p.ms)}}`).join(' ');
-    svg += `<polyline points="${{d}}" fill="none" stroke="${{color}}" stroke-width="2"/>`;
-    points.forEach((p, i) => {{
-      svg += `<circle cx="${{xs(i)}}" cy="${{ys(p.ms)}}" r="2.5" fill="${{color}}"><title>${{p.when}} @ ${{p.sha}}: ${{p.ms.toFixed(2)}}ms</title></circle>`;
-    }});
+    svg += `<polyline points="${{d}}" fill="none" stroke="${{color}}" stroke-width="1.5"/>`;
     const last = points[points.length - 1];
     svg += `<text x="${{xs(points.length - 1) + 4}}" y="${{ys(last.ms)+4}}" font-size="10" fill="${{color}}">${{last.ms.toFixed(1)}}ms</text>`;
     svg += '</svg>';
@@ -250,6 +248,7 @@ def write_compare_html(out_path, summary, bench_names, engine_names):
   table {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
   th, td {{ text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }}
   th {{ background: #f5f5f5; }}
+  th.ms, th.ratio {{ text-align: right; }}
   td.bench {{ font-family: ui-monospace, SFMono-Regular, monospace; }}
   td.ms {{ text-align: right; font-variant-numeric: tabular-nums; }}
   td.ratio {{ text-align: right; font-variant-numeric: tabular-nums; color: #888; }}
