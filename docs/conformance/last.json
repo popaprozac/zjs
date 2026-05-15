@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 07:35 UTC",
+    "when": "2026-05-15 07:38 UTC",
     "total": 4821,
-    "passed": 2005,
-    "failed": 790,
+    "passed": 2013,
+    "failed": 782,
     "skipped": 2026
   },
   "failures": [
@@ -1556,10 +1556,6 @@
       "reason": "zjs: throw: Test262Error: callCnt"
     },
     {
-      "path": "test/built-ins/Object/keys/15.2.3.14-0-2.js",
-      "reason": "zjs: throw: Test262Error: Object.keys.length"
-    },
-    {
       "path": "test/built-ins/Object/keys/15.2.3.14-3-2.js",
       "reason": "zjs: throw: Test262Error: a.length"
     },
@@ -1582,10 +1578,6 @@
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-5-b-1.js",
       "reason": "zjs: throw: Test262Error: index"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-0-2.js",
-      "reason": "zjs: throw: Test262Error: Object.create.length"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-3-1.js",
@@ -1704,18 +1696,6 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-0-2.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf.length"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-1-3.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(true)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-1.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(0)"
-    },
-    {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-1.js",
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Boolean)"
     },
@@ -1757,10 +1737,6 @@
     },
     {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-20.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(obj)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-26.js",
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(obj)"
     },
     {
@@ -2800,10 +2776,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Promise/allSettled/returns-promise.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/built-ins/Promise/allSettledKeyed/ctx-non-ctor.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
@@ -2882,10 +2854,6 @@
     {
       "path": "test/built-ins/Promise/any/resolve-throws-iterator-return-null-or-undefined.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/any/returns-promise.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/built-ins/Promise/exec-args.js",

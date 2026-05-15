@@ -1881,10 +1881,53 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         if ctx.array_proto == NULL { return zjs_null(); }
         return zjs_cell_from_ptr((void*)ctx.array_proto);
     }
-    // Primitives — ToObject would wrap, then get prototype. For our
-    // MVP just return the matching prototype chain root directly.
+    if zjs_is_host_function(v) != 0 {
+        // Constructor / host fn's own prototype field is its
+        // .prototype value, NOT its [[Prototype]]. The [[Prototype]]
+        // of every callable is Function.prototype — but we don't have
+        // a real Function.prototype yet. Return null for now;
+        // refining this is the path to passing tests that compare
+        // ctor [[Prototype]] === Function.prototype.
+        let hf = zjs_as_host_function(v);
+        if hf.prototype == NULL { return zjs_null(); }
+        return zjs_null();
+    }
+    if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 {
+        return zjs_null();
+    }
+    if zjs_is_regexp(v) != 0 && ctx.regexp_proto != NULL {
+        return zjs_cell_from_ptr((void*)ctx.regexp_proto);
+    }
+    if zjs_is_promise(v) != 0 && ctx.promise_ctor_proto != NULL {
+        return zjs_cell_from_ptr((void*)ctx.promise_ctor_proto);
+    }
+    // Primitives — ToObject(v) would wrap, then get its prototype.
+    // Surface the matching prototype chain root directly; that's the
+    // observable result.
     if zjs_is_string(v) != 0 && ctx.string_proto != NULL {
         return zjs_cell_from_ptr((void*)ctx.string_proto);
+    }
+    if zjs_is_bool(v) != 0 {
+        let bool_g = ctx_find_global(ctx, (char*)"Boolean", 7);
+        if bool_g >= 0 {
+            let bv = ctx.globals[bool_g].value;
+            if zjs_is_host_function(bv) != 0 {
+                let proto = zjs_as_host_function(bv).prototype;
+                if proto != NULL { return zjs_cell_from_ptr((void*)proto); }
+            }
+        }
+        return zjs_null();
+    }
+    if zjs_is_number(v) != 0 {
+        let num_g = ctx_find_global(ctx, (char*)"Number", 6);
+        if num_g >= 0 {
+            let nv = ctx.globals[num_g].value;
+            if zjs_is_host_function(nv) != 0 {
+                let proto = zjs_as_host_function(nv).prototype;
+                if proto != NULL { return zjs_cell_from_ptr((void*)proto); }
+            }
+        }
+        return zjs_null();
     }
     return zjs_null();
 }
@@ -6022,12 +6065,13 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let gpo_ptr:    void* = NULL; raw { gpo_ptr    = (void*)host_object_get_prototype_of; }
     let obj_props_v = ctx_new_object(ctx);
     object_hf.props = zjs_as_object(obj_props_v);
+    // Arities reflect the function-length values test262 asserts on.
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"keys", 4),
-               ctx_make_host_function(ctx, (char*)"keys", keys_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"keys", keys_ptr, 1));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"create", 6),
-               ctx_make_host_function(ctx, (char*)"create", create_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"create", create_ptr, 2));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getPrototypeOf", 14),
-               ctx_make_host_function(ctx, (char*)"getPrototypeOf", gpo_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"getPrototypeOf", gpo_ptr, 1));
     // Phase 3.9a — Object.defineProperty / defineProperties /
     // getOwnPropertyDescriptor.
     let dp_ptr:   void* = NULL; raw { dp_ptr   = (void*)host_object_define_property; }
