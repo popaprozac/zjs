@@ -4134,15 +4134,30 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
     // ECMA-262 §25.5.2.2 SerializeJSONProperty steps 4a-d:
     // unbox Boolean / Number / String / BigInt wrapper objects.
     // Detected via the `__zjs_primitive__` internal slot we stash in
-    // `new Boolean(x)` / `new Number(x)` / `new String(x)`.
+    // `new Boolean(x)` / `new Number(x)` / `new String(x)`. Boolean
+    // unboxes directly (the spec reads [[BooleanData]] without
+    // observable side effects); Number / String route through the
+    // user-overridable ToNumber / ToString so a custom valueOf or
+    // toString on the wrapper fires.
     if zjs_is_object(v) != 0 {
         let o = zjs_as_object(v);
         let wkey = ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN);
         let prim = object_get(o, wkey);
         if zjs_is_undefined(prim) == 0 {
-            // Recurse with the primitive — short-circuits to the
-            // bool / number / string branch above.
-            json_stringify_value(ctx, jc, b, prim);
+            let coerced: ZjsValue = prim;
+            if zjs_is_bool(prim) != 0 {
+                // [[BooleanData]] — read directly.
+                coerced = prim;
+            } else if zjs_is_string(prim) != 0 {
+                coerced = zjs_to_string(ctx, v);
+                if ctx.pending_throw_active { return; }
+            } else {
+                // Number wrapper (or any other) — ToNumber fires valueOf.
+                let prim2 = zjs_to_primitive(ctx, v, false);
+                if ctx.pending_throw_active { return; }
+                coerced = prim2;
+            }
+            json_stringify_value(ctx, jc, b, coerced);
             return;
         }
     }
