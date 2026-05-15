@@ -531,6 +531,15 @@ fn parse_for(p: Parser*) -> AstNode* {
 // `for (` and the binding. `op_kind` is KwIn or KwOf — drives the
 // returned NodeKind.
 fn finish_for_in_or_of(p: Parser*, kw_tok: Token, binding: AstNode*, op_kind: TokenKind) -> AstNode* {
+    // ECMA-262: ForDeclaration / ForBinding in for-in / for-of heads
+    // may not carry an initializer, and must be exactly one binding.
+    // `for (let x = 1 of [])` and `for (var x, y in obj)` are both
+    // early SyntaxErrors.
+    if binding != NULL && binding.kind == NodeKind::VarDecl {
+        if binding.children_count != 1 { p.had_error = true; return NULL; }
+        let decl0 = binding.children[0];
+        if decl0 != NULL && decl0.left != NULL { p.had_error = true; return NULL; }
+    }
     advance(p);    // consume 'in' or 'of'
     let iter_expr = parse_expression(p);
     if iter_expr == NULL { return NULL; }

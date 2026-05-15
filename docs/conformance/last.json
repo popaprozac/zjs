@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 15:59 UTC",
+    "when": "2026-05-15 16:12 UTC",
     "total": 4821,
-    "passed": 2235,
-    "failed": 560,
+    "passed": 2246,
+    "failed": 549,
     "skipped": 2026
   },
   "failures": [
@@ -524,23 +524,11 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/for-in/var-arguments-fn-strict-init.js",
-      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
-    },
-    {
       "path": "test/language/statements/for-in/var-arguments-fn-strict.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
-      "path": "test/language/statements/for-in/var-arguments-strict-init.js",
-      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
-    },
-    {
       "path": "test/language/statements/for-in/var-arguments-strict.js",
-      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
-    },
-    {
-      "path": "test/language/statements/for-in/var-eval-strict-init.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
@@ -600,10 +588,6 @@
       "reason": "zjs: throw: Test262Error: `f[0]()` returns `1`"
     },
     {
-      "path": "test/language/statements/for-of/head-const-init.js",
-      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
-    },
-    {
       "path": "test/language/statements/for-of/head-decl-no-expr.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
@@ -640,10 +624,6 @@
       "reason": "zjs: throw: Test262Error: `f[0]()` returns `1`"
     },
     {
-      "path": "test/language/statements/for-of/head-let-init.js",
-      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
-    },
-    {
       "path": "test/language/statements/for-of/head-lhs-async-escaped.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -662,10 +642,6 @@
     {
       "path": "test/language/statements/for-of/head-var-bound-names-dup.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/head-var-init.js",
-      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
       "path": "test/language/statements/for-of/head-var-no-expr.js",
@@ -1420,20 +1396,12 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/JSON/stringify/replacer-function-tojson.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/built-ins/JSON/stringify/space-string-object.js",
       "reason": "zjs: throw: Test262Error: should not be called"
     },
     {
       "path": "test/built-ins/JSON/stringify/value-array-circular.js",
       "reason": ""
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/value-boolean-object.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/built-ins/JSON/stringify/value-number-object.js",
@@ -1452,16 +1420,8 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/built-ins/JSON/stringify/value-tojson-abrupt.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/value-tojson-arguments.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/built-ins/JSON/stringify/value-tojson-array-circular.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": ""
     },
     {
       "path": "test/built-ins/JSON/stringify/value-tojson-not-function.js",
@@ -1469,11 +1429,7 @@
     },
     {
       "path": "test/built-ins/JSON/stringify/value-tojson-object-circular.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/value-tojson-result.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": ""
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A7.js",

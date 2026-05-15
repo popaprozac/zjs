@@ -3829,6 +3829,29 @@ fn json_apply_replacer(ctx: ZjsContext*, jc: JsonCtx*, key: ZjsValue, v: ZjsValu
     return r;
 }
 
+// ECMA-262 §25.5.2.2 SerializeJSONProperty step 2: if value is an
+// object (incl. arrays / wrappers) and has a callable .toJSON method,
+// invoke it with the current key and use the return value in place
+// of the original. Pure no-op for primitives.
+fn json_apply_to_json(ctx: ZjsContext*, key: ZjsValue, v: ZjsValue) -> ZjsValue {
+    if zjs_is_object(v) == 0 && zjs_is_array(v) == 0 { return v; }
+    let to_json_atom = ctx_intern_atom(ctx, (char*)"toJSON", 6);
+    let to_json_fn = property_get(ctx, v, zjs_cell_from_ptr((void*)to_json_atom));
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let is_callable = zjs_is_function(to_json_fn) != 0
+                     || zjs_is_closure(to_json_fn) != 0
+                     || zjs_is_host_function(to_json_fn) != 0;
+    if !is_callable { return v; }
+    let cb_args: ZjsValue[1];
+    cb_args[0] = key;
+    let argp: ZjsValue* = NULL;
+    raw { argp = &cb_args[0]; }
+    let r: ZjsValue = zjs_undefined();
+    raw { r = zjs_call_value_with_this(ctx, to_json_fn, v, argp, 1); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    return r;
+}
+
 // True if the property name is in the replacer-array allowlist.
 // When no array filter is active, all keys pass.
 fn json_key_in_filter(jc: JsonCtx*, name: ZjsString*) -> bool {
@@ -3903,6 +3926,21 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
         json_emit_string(b, s.data, s.length);
         return;
     }
+    // ECMA-262 §25.5.2.2 SerializeJSONProperty steps 4a-d:
+    // unbox Boolean / Number / String / BigInt wrapper objects.
+    // Detected via the `__zjs_primitive__` internal slot we stash in
+    // `new Boolean(x)` / `new Number(x)` / `new String(x)`.
+    if zjs_is_object(v) != 0 {
+        let o = zjs_as_object(v);
+        let wkey = ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN);
+        let prim = object_get(o, wkey);
+        if zjs_is_undefined(prim) == 0 {
+            // Recurse with the primitive — short-circuits to the
+            // bool / number / string branch above.
+            json_stringify_value(ctx, jc, b, prim);
+            return;
+        }
+    }
     if zjs_is_array(v) != 0 {
         let a = zjs_as_array(v);
         json_buf_putc(b, '[');
@@ -3916,14 +3954,17 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
             // ECMA-262 SerializeJSONArray: holes emit "null", not "".
             let slot = a.elements[i];
             let elem_v: ZjsValue = if zjs_is_deleted(slot) != 0 { zjs_null() } else { slot };
-            // Replacer is called with key = index-as-string per spec.
+            // toJSON + replacer key for an array element is index-as-string.
+            let buf: char[16];
+            let blen: int = 0;
+            raw { blen = snprintf(&buf[0], 16, "%u", (unsigned)i); }
+            let bp: char* = NULL; raw { bp = &buf[0]; }
+            let key_s = ctx_intern_string(ctx, bp, (u32)blen);
+            elem_v = json_apply_to_json(ctx, key_s, elem_v);
+            if ctx.pending_throw_active { return; }
             if zjs_is_undefined(jc.replacer_fn) == 0 {
-                let buf: char[16];
-                let blen: int = 0;
-                raw { blen = snprintf(&buf[0], 16, "%u", (unsigned)i); }
-                let bp: char* = NULL; raw { bp = &buf[0]; }
-                let key_s = ctx_intern_string(ctx, bp, (u32)blen);
                 elem_v = json_apply_replacer(ctx, jc, key_s, elem_v);
+                if ctx.pending_throw_active { return; }
             }
             if zjs_is_undefined(elem_v) != 0 { json_buf_puts(b, (char*)"null", 4); }
             else                              { json_stringify_value(ctx, jc, b, elem_v); }
@@ -3980,6 +4021,8 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
                             // getters fire (and their throws propagate).
                             let val = property_get(ctx, v, kv);
                             if ctx.pending_throw_active { return; }
+                            val = json_apply_to_json(ctx, kv, val);
+                            if ctx.pending_throw_active { return; }
                             let processed = json_apply_replacer(ctx, jc, kv, val);
                             if ctx.pending_throw_active { return; }
                             if zjs_is_undefined(processed) == 0
@@ -4009,6 +4052,8 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
                         // property_get fires accessors and lets their
                         // throws propagate (value-object-abrupt-style).
                         let val = property_get(ctx, v, key_v);
+                        if ctx.pending_throw_active { return; }
+                        val = json_apply_to_json(ctx, key_v, val);
                         if ctx.pending_throw_active { return; }
                         let processed = json_apply_replacer(ctx, jc, key_v, val);
                         if ctx.pending_throw_active { return; }
@@ -4145,9 +4190,13 @@ fn host_json_stringify(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     // holder `{"": value}` and calls replacer("", value) before
     // serializing — same effect as letting json_apply_replacer fire
     // once with key="".
+    let key0 = ctx_intern_string(ctx, (char*)"", 0);
+    // Per spec, toJSON fires BEFORE the replacer.
+    v = json_apply_to_json(ctx, key0, v);
+    if ctx.pending_throw_active { return zjs_undefined(); }
     if zjs_is_undefined(jc.replacer_fn) == 0 {
-        let key0 = ctx_intern_string(ctx, (char*)"", 0);
         v = json_apply_replacer(ctx, &jc, key0, v);
+        if ctx.pending_throw_active { return zjs_undefined(); }
     }
     // Top-level undefined / functions return undefined (per spec).
     if zjs_is_undefined(v) != 0 { return zjs_undefined(); }
