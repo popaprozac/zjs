@@ -541,7 +541,16 @@ fn finish_for_in_or_of(p: Parser*, kw_tok: Token, binding: AstNode*, op_kind: To
         if decl0 != NULL && decl0.left != NULL { p.had_error = true; return NULL; }
     }
     advance(p);    // consume 'in' or 'of'
-    let iter_expr = parse_expression(p);
+    // ECMA-262: for-of's RHS is an AssignmentExpression (no comma);
+    // for-in's RHS is an Expression. We constrain both to
+    // AssignmentExpression-or-Comma here for simplicity, then verify
+    // for-of did not consume a comma by checking we land at ')'.
+    let iter_expr: AstNode* = NULL;
+    if op_kind == TokenKind::KwOf {
+        iter_expr = parse_assignment(p);
+    } else {
+        iter_expr = parse_expression(p);
+    }
     if iter_expr == NULL { return NULL; }
     if !expect_kind(p, TokenKind::RParen) { return NULL; }
     let body = parse_statement(p);
