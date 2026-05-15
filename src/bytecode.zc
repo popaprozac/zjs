@@ -354,6 +354,10 @@ struct Function {
     // called without `new` (NewInvoke clears the flag's effect via
     // new_target_active).
     is_class_constructor: bool;
+    // Class method / accessor — distinct from a constructor in that
+    // it has no .prototype property and is not constructible. Read
+    // by `is_proto` and the constructibility checks.
+    is_method: bool;
 }
 
 fn function_new() -> Function* {

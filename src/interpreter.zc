@@ -238,6 +238,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 let fp = zjs_cell_as_ptr(obj);
                 let f: Function* = NULL;
                 raw { f = (Function*)fp; }
+                // Class methods / accessors don't have a .prototype.
+                if f.is_method { return zjs_undefined(); }
                 if f.prototype == NULL {
                     let proto_v = ctx_new_object(ctx);
                     f.prototype = zjs_as_object(proto_v);

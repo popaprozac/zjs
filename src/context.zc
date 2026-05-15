@@ -2392,8 +2392,27 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
         return zjs_undefined();
     }
 
-    if zjs_is_object(obj_v) == 0 { return zjs_undefined(); }
-    let o = zjs_as_object(obj_v);
+    // Function / closure / host-fn receivers: route to their .props
+    // expando (where static methods, F.x = ..., etc. live).
+    let o: ZjsObject* = NULL;
+    if zjs_is_object(obj_v) != 0 {
+        o = zjs_as_object(obj_v);
+    } else if zjs_is_function(obj_v) != 0 {
+        let fp = zjs_cell_as_ptr(obj_v);
+        let ff: Function* = NULL;
+        raw { ff = (Function*)fp; }
+        if ff.props != NULL { o = ff.props; }
+    } else if zjs_is_closure(obj_v) != 0 {
+        let cl = zjs_as_closure(obj_v);
+        let fp2 = cl.function;
+        let ff2: Function* = NULL;
+        raw { ff2 = (Function*)fp2; }
+        if ff2.props != NULL { o = ff2.props; }
+    } else if zjs_is_host_function(obj_v) != 0 {
+        let hf = zjs_as_host_function(obj_v);
+        if hf.props != NULL { o = hf.props; }
+    }
+    if o == NULL { return zjs_undefined(); }
     let key_str = zjs_as_string(key_v);
     let key_atom = ctx_intern_atom(ctx, key_str.data, key_str.length);
 

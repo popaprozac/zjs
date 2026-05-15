@@ -1849,6 +1849,7 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
             // Compile method body as a function.
             let mfn = compile_function(c.ctx, c.source, m, c);
             if mfn != NULL {
+                mfn.is_method = true;
                 let mptr: void* = NULL;
                 raw { mptr = (void*)mfn; }
                 ctx_register_cell(c.ctx, mptr);
@@ -1960,7 +1961,51 @@ fn has_arguments_local(c: Compiler*) -> bool {
 // Postfix / prefix ++/-- on an identifier target. MVP — only IdentExpr;
 // `obj.x++` and `arr[i]++` are future work.
 fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: bool) -> u8 {
-    if target == NULL || target.kind != NodeKind::IdentExpr {
+    if target == NULL {
+        c.had_error = true;
+        return alloc_reg(c);
+    }
+    // Member access target: `obj.prop++` / `obj.prop--`.
+    if target.kind == NodeKind::Member {
+        let obj_r = compile_expr(c, target.left);
+        let name_atom = ctx_intern_atom(c.ctx, c.source + target.name_start, target.name_length);
+        let ic = alloc_ic_slot(c, name_atom);
+        let cur = alloc_reg(c);
+        emit(c, make_inst_abc(Op::LoadProp, cur, obj_r, (u8)ic));
+        let new_reg = alloc_reg(c);
+        let op_ = if is_inc { Op::AddImm } else { Op::SubImm };
+        emit(c, make_inst_abc(op_, new_reg, cur, (u8)1));
+        emit(c, make_inst_abc(Op::StoreProp, obj_r, (u8)ic, new_reg));
+        if obj_r + 1 == c.next_reg
+           || (target.left.kind != NodeKind::IdentExpr && obj_r + 2 == c.next_reg) {
+            // Best-effort temp recovery — only release if obj_r was a
+            // freshly-allocated temp adjacent to our cursor.
+        }
+        if is_postfix {
+            release_reg(c, new_reg);
+            return cur;
+        }
+        release_reg(c, cur);
+        return new_reg;
+    }
+    // Computed access target: `obj[key]++`.
+    if target.kind == NodeKind::Computed {
+        let obj_r = compile_expr(c, target.left);
+        let key_r = compile_expr(c, target.right);
+        let cur = alloc_reg(c);
+        emit(c, make_inst_abc(Op::LoadElem, cur, obj_r, key_r));
+        let new_reg = alloc_reg(c);
+        let op_ = if is_inc { Op::AddImm } else { Op::SubImm };
+        emit(c, make_inst_abc(op_, new_reg, cur, (u8)1));
+        emit(c, make_inst_abc(Op::StoreElem, obj_r, key_r, new_reg));
+        if is_postfix {
+            release_reg(c, new_reg);
+            return cur;
+        }
+        release_reg(c, cur);
+        return new_reg;
+    }
+    if target.kind != NodeKind::IdentExpr {
         c.had_error = true;
         return alloc_reg(c);
     }
