@@ -3589,10 +3589,17 @@ fn jp_parse_value(ctx: ZjsContext*, p: JsonParser*) -> ZjsValue {
         let blen: u32 = 0;
         let bcap = buf_cap;
         let ok = true;
+        let closed = false;
         while p.pos < p.len {
             let ch = p.src[p.pos];
             let chu = (u8)ch;
-            if chu == 34 { p.pos = p.pos + 1; break; }
+            if chu == 34 { p.pos = p.pos + 1; closed = true; break; }
+            // ECMA-262 §25.5.1 (JSON.parse grammar): JSONStringCharacter
+            // disallows raw U+0000 through U+001F. They must be \uXXXX
+            // escaped (and for the C0 controls below   even that
+            // is required — most-strict reading). Reject the unescaped
+            // form.
+            if chu < 0x20 { ok = false; break; }
             if chu == 92 {      // '\'
                 p.pos = p.pos + 1;
                 if p.pos >= p.len { ok = false; break; }
@@ -3660,7 +3667,9 @@ fn jp_parse_value(ctx: ZjsContext*, p: JsonParser*) -> ZjsValue {
                 p.pos = p.pos + 1;
             }
         }
-        if !ok { dealloc(buf); p.fail = true; return zjs_undefined(); }
+        // EOF before closing quote also fails: the spec requires a
+        // matching `"` to end the string.
+        if !ok || !closed { dealloc(buf); p.fail = true; return zjs_undefined(); }
         // Ensure null terminator slot.
         if blen + 1 > bcap { let oldc = bcap; bcap = blen + 1; buf = realloc_n<char>(buf, (usize)oldc, (usize)bcap); }
         buf[blen] = '\0';

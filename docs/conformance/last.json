@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 07:38 UTC",
+    "when": "2026-05-15 07:46 UTC",
     "total": 4821,
-    "passed": 2013,
-    "failed": 782,
+    "passed": 2020,
+    "failed": 775,
     "skipped": 2026
   },
   "failures": [
@@ -1770,34 +1770,6 @@
     {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-9.js",
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Date)"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g2-4.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g4-1.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g4-2.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g4-3.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g4-4.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-1.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-6.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/JSON/parse/builtin.js",
