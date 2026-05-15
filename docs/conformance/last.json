@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 07:20 UTC",
+    "when": "2026-05-15 07:26 UTC",
     "total": 4821,
-    "passed": 1988,
-    "failed": 807,
+    "passed": 1993,
+    "failed": 802,
     "skipped": 2026
   },
   "failures": [
@@ -1896,15 +1896,11 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/built-ins/JSON/stringify/replacer-array-empty.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/built-ins/JSON/stringify/replacer-array-number-object.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/built-ins/JSON/stringify/replacer-array-order.js",
+      "path": "test/built-ins/JSON/stringify/replacer-array-number.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -1912,27 +1908,15 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/built-ins/JSON/stringify/replacer-array-undefined.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/replacer-function-abrupt.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/built-ins/JSON/stringify/replacer-function-array-circular.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": ""
     },
     {
       "path": "test/built-ins/JSON/stringify/replacer-function-object-circular.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": ""
     },
     {
       "path": "test/built-ins/JSON/stringify/replacer-function-object-deleted-property.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/replacer-function-result-undefined.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -1961,10 +1945,6 @@
     },
     {
       "path": "test/built-ins/JSON/stringify/value-boolean-object.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/value-function.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
