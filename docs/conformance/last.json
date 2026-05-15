@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 09:57 UTC",
+    "when": "2026-05-15 10:00 UTC",
     "total": 4821,
-    "passed": 2164,
-    "failed": 631,
+    "passed": 2167,
+    "failed": 628,
     "skipped": 2026
   },
   "failures": [
@@ -1728,10 +1728,6 @@
       "reason": "zjs: throw: Test262Error: #1.1: Exception === \"intostr\". Actual: [object Object]"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A6.js",
-      "reason": "zjs: throw: Test262Error: #1: String.prototype.indexOf.prototype === undefined. Actual: [object Object]"
-    },
-    {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A7.js",
       "reason": "zjs: throw: Test262Error: #1.2: var __FACTORY = String.prototype.indexOf; \"__instance = new __FACTORY\" throw a TypeError"
     },
@@ -1754,10 +1750,6 @@
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A3_T4.js",
       "reason": "zjs: throw: Test262Error: #1: __instance.slice(0,100) === \"undefined\". Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A6.js",
-      "reason": "zjs: throw: Test262Error: #1: String.prototype.slice.prototype === undefined. Actual: [object Object]"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A7.js",
@@ -1822,10 +1814,6 @@
     {
       "path": "test/built-ins/String/prototype/split/checking-if-deleting-the-string-prototype-split-length-property-fails.js",
       "reason": "zjs: throw: Test262Error: The value of `!String.prototype.split.hasOwnProperty('length')` is true"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/checking-string-prototype-split-prototype.js",
-      "reason": "zjs: throw: Test262Error: The value of String.prototype.split.prototype is expected to equal `undefined`"
     },
     {
       "path": "test/built-ins/String/prototype/split/cstm-split-get-err.js",
