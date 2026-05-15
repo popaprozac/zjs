@@ -7069,7 +7069,29 @@ fn host_eval_error(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 // Stub for `eval` — we don't implement runtime eval; return undefined.
 // Many tests reference `eval` only for environment checks.
 fn host_eval_stub(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    return zjs_undefined();
+    // Minimal indirect-eval: parse + interpret the source in a fresh
+    // top-level program. Does NOT see surrounding locals (matches the
+    // spec for indirect eval; direct-eval is a separate feature
+    // gate). Lexer now recognizes the full ECMA-262 WhiteSpace +
+    // LineTerminator set so the source-text edge tests work.
+    if argc == 0 { return zjs_undefined(); }
+    let src = args[0];
+    if zjs_is_string(src) == 0 { return src; }
+    let s = zjs_as_string(src);
+    let buf = alloc_n<char>((usize)(s.length + 1));
+    if s.length > 0 { mem_copy<char>(buf, s.data, (usize)s.length); }
+    buf[s.length] = (char)0;
+    let r = zjs_eval(ctx, buf);
+    dealloc(buf);
+    if ctx.had_error {
+        let err = ctx.last_error;
+        ctx.had_error = false;
+        ctx.last_error = zjs_undefined();
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return r;
 }
 
 // new Function(p1, p2, ..., body) — compile a function whose

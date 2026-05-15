@@ -89,9 +89,22 @@ impl Lexer {
         self.crossed_newline = false;
         while !self.at_end() {
             let c = self.peek();
-            if c == (u8)' ' || c == (u8)'\t' || c == (u8)'\r' || c == (u8)'\n' {
+            if c == (u8)' ' || c == (u8)'\t' || c == (u8)'\r' || c == (u8)'\n'
+               || c == 0x0B || c == 0x0C {
                 if c == (u8)'\n' { self.crossed_newline = true; }
                 self.advance();
+            } else if c == 0xC2 && self.peek_at(1) == 0xA0 {
+                // U+00A0 NO-BREAK SPACE (UTF-8: C2 A0).
+                self.advance(); self.advance();
+            } else if c == 0xEF && self.peek_at(1) == 0xBB && self.peek_at(2) == 0xBF {
+                // U+FEFF ZERO WIDTH NO-BREAK SPACE / BOM (UTF-8: EF BB BF).
+                self.advance(); self.advance(); self.advance();
+            } else if c == 0xE2 && self.peek_at(1) == 0x80
+                      && (self.peek_at(2) == 0xA8 || self.peek_at(2) == 0xA9) {
+                // U+2028 LINE SEPARATOR / U+2029 PARAGRAPH SEPARATOR
+                // (UTF-8: E2 80 A8 / E2 80 A9) — both are line terminators.
+                self.crossed_newline = true;
+                self.advance(); self.advance(); self.advance();
             } else if c == (u8)'/' && self.peek_at(1) == (u8)'/' {
                 // line comment: consume until newline (don't eat the newline itself —
                 // advance() will count it next pass through the loop)

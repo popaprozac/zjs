@@ -1,16 +1,12 @@
 {
   "summary": {
-    "when": "2026-05-15 19:02 UTC",
+    "when": "2026-05-15 19:11 UTC",
     "total": 4821,
-    "passed": 2323,
-    "failed": 472,
+    "passed": 2340,
+    "failed": 455,
     "skipped": 2026
   },
   "failures": [
-    {
-      "path": "test/language/expressions/addition/S11.6.1_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: 1\\u0009+\\u00091 === 2"
-    },
     {
       "path": "test/language/expressions/addition/coerce-symbol-to-prim-err.js",
       "reason": "zjs: throw: Test262Error: error thrown by left-hand side"
@@ -30,30 +26,6 @@
     {
       "path": "test/language/expressions/addition/get-symbol-to-prim-err.js",
       "reason": "zjs: throw: Test262Error: error from property access of left-hand side"
-    },
-    {
-      "path": "test/language/expressions/subtraction/S11.6.2_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: 1\\u0009-\\u00091 === 0"
-    },
-    {
-      "path": "test/language/expressions/multiplication/S11.5.1_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: 1\\u0009*\\u00091 === 1"
-    },
-    {
-      "path": "test/language/expressions/division/S11.5.2_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: 1\\u0009/\\u00091 === 1"
-    },
-    {
-      "path": "test/language/expressions/division/no-magic-asi-from-block-eval.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/expressions/modulus/S11.5.3_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: 1\\u0009%\\u00091 === 0"
-    },
-    {
-      "path": "test/language/expressions/equals/S11.9.1_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: (true\\u0009==\\u00091) === true"
     },
     {
       "path": "test/language/expressions/equals/coerce-symbol-to-prim-err.js",
@@ -80,64 +52,20 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/does-not-equals/S11.9.2_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: (true\\u0009!=\\u00091) === false"
-    },
-    {
-      "path": "test/language/expressions/strict-equals/S11.9.4_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: 1\\u0009===\\u00091"
-    },
-    {
-      "path": "test/language/expressions/less-than/S11.8.1_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: (0\\u0009<\\u00091) === true"
-    },
-    {
       "path": "test/language/expressions/less-than/S11.8.1_A4.12_T1.js",
       "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" < \"\\uFFFF\") === true"
-    },
-    {
-      "path": "test/language/expressions/greater-than/S11.8.2_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: 0\\u0009>\\u00091) === false"
     },
     {
       "path": "test/language/expressions/greater-than/S11.8.2_A4.12_T1.js",
       "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" > \"\\uFFFF\") === false"
     },
     {
-      "path": "test/language/expressions/less-than-or-equal/S11.8.3_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: (1\\u0009<=\\u00091) === true"
-    },
-    {
       "path": "test/language/expressions/less-than-or-equal/S11.8.3_A4.12_T1.js",
       "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" <= \"\\uFFFF\") === true"
     },
     {
-      "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: (1\\u0009>=\\u00091) === true"
-    },
-    {
       "path": "test/language/expressions/greater-than-or-equal/S11.8.4_A4.12_T1.js",
       "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" >= \"\\uFFFF\") === false"
-    },
-    {
-      "path": "test/language/expressions/logical-and/S11.11.1_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: (true\\u0009&&\\u0009true) === true"
-    },
-    {
-      "path": "test/language/expressions/logical-or/S11.11.2_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: (false\\u0009||\\u0009true) === true"
-    },
-    {
-      "path": "test/language/expressions/logical-not/S11.4.9_A1.js",
-      "reason": "zjs: throw: Test262Error: #true: !\\u0009true === false"
-    },
-    {
-      "path": "test/language/expressions/unary-minus/S11.4.7_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: -\\u00091 === -1"
-    },
-    {
-      "path": "test/language/expressions/unary-plus/S11.4.6_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: +\\u00091 === 1"
     },
     {
       "path": "test/language/expressions/typeof/built-in-exotic-objects-no-call.js",
@@ -156,24 +84,12 @@
       "reason": "zjs: throw: Test262Error: typeof Date() === \"string\""
     },
     {
-      "path": "test/language/expressions/typeof/syntax.js",
-      "reason": "zjs: throw: Test262Error: #1: var x = 0; typeof\\u0009x; x === \"number\"."
-    },
-    {
-      "path": "test/language/expressions/conditional/S11.12_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: (false\\u0009?\\u0009true\\u0009:\\u0009true) === true"
-    },
-    {
       "path": "test/language/expressions/conditional/coalesce-expr-ternary.js",
       "reason": "zjs: throw: Test262Error: Symbol() ?? false ? 0 : 42"
     },
     {
       "path": "test/language/expressions/conditional/in-branch-1.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: ({})\\u0009instanceof\\u0009Object === true"
     },
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A7_T3.js",
@@ -200,10 +116,6 @@
       "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
     },
     {
-      "path": "test/language/expressions/in/S11.8.7_A1.js",
-      "reason": "zjs: throw: Test262Error: #1: \"MAX_VALUE\"\\u0009in\\u0009Number === true"
-    },
-    {
       "path": "test/language/expressions/in/rhs-yield-absent-strict.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
@@ -224,15 +136,23 @@
       "reason": "zjs: throw: Test262Error: #2: var MyFunction = new Function(\"this.THIS = eval('this')\"); var MyObject = new MyFunction()"
     },
     {
-      "path": "test/language/statements/if/S12.5_A2.js",
-      "reason": "zjs: throw: Test262Error: #1: In the \"if\" Statement eval as Expression is admitted"
+      "path": "test/language/statements/if/cptn-else-false-abrupt-empty.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/if/cptn-else-false-nrml.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
+      "path": "test/language/statements/if/cptn-else-true-abrupt-empty.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/language/statements/if/cptn-else-true-nrml.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/if/cptn-no-else-false.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -252,23 +172,15 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/while/S12.6.2_A5.js",
-      "reason": "zjs: throw: Test262Error: #1: __in__do__before__break === 1. Actual:  __in__do__before__break ===undefined"
-    },
-    {
-      "path": "test/language/statements/while/S12.6.2_A7.js",
-      "reason": "zjs: throw: Test262Error: #1: The \"while\" statement is evaluated as described in the Standard"
-    },
-    {
-      "path": "test/language/statements/while/S12.6.2_A8.js",
-      "reason": "zjs: throw: Test262Error: #1: __odds === 5. Actual:  __odds ===0"
-    },
-    {
       "path": "test/language/statements/while/cptn-abrupt-empty.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/while/cptn-iter.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/while/cptn-no-iter.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -278,22 +190,6 @@
     {
       "path": "test/language/statements/while/let-identifier-with-newline.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/do-while/S12.6.1_A3.js",
-      "reason": "zjs: throw: Test262Error: #1: __in__do === 1. Actual:  __in__do ===undefined"
-    },
-    {
-      "path": "test/language/statements/do-while/S12.6.1_A5.js",
-      "reason": "zjs: throw: Test262Error: #1: __in__do__before__break === 1. Actual:  __in__do__before__break ===undefined"
-    },
-    {
-      "path": "test/language/statements/do-while/S12.6.1_A7.js",
-      "reason": "zjs: throw: Test262Error: #1: The \"do-while\" statement is evaluted according to the Standard"
-    },
-    {
-      "path": "test/language/statements/do-while/S12.6.1_A8.js",
-      "reason": "zjs: throw: Test262Error: #1: __odds === 5. Actual:  __odds ===0"
     },
     {
       "path": "test/language/statements/do-while/cptn-abrupt-empty.js",
@@ -308,7 +204,15 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
+      "path": "test/language/statements/for/cptn-decl-expr-no-iter.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/language/statements/for/cptn-expr-expr-iter.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for/cptn-expr-expr-no-iter.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -318,6 +222,14 @@
     {
       "path": "test/language/statements/for/head-init-async-of.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/for/head-init-expr-check-empty-inc-empty-completion.js",
+      "reason": "zjs: throw: Test262Error: #1: __evaluated === 4. Actual:  __evaluated ===4"
+    },
+    {
+      "path": "test/language/statements/for/head-init-var-check-empty-inc-empty-completion.js",
+      "reason": "zjs: throw: Test262Error: #1: __evaluated === 4. Actual:  __evaluated ===4"
     },
     {
       "path": "test/language/statements/for/head-let-bound-names-in-stmt.js",
@@ -356,22 +268,6 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/language/statements/for-in/S12.6.4_A3.1.js",
-      "reason": "zjs: throw: Test262Error: #1: __evaluated === __str. Actual:  __evaluated ===undefined"
-    },
-    {
-      "path": "test/language/statements/for-in/S12.6.4_A3.js",
-      "reason": "zjs: throw: Test262Error: #1: __evaluated === __str. Actual:  __evaluated ===undefined"
-    },
-    {
-      "path": "test/language/statements/for-in/S12.6.4_A4.1.js",
-      "reason": "zjs: throw: Test262Error: #2: __str === __evaluated. Actual:  __str ==="
-    },
-    {
-      "path": "test/language/statements/for-in/S12.6.4_A4.js",
-      "reason": "zjs: throw: Test262Error: #2: __str === __evaluated. Actual:  __str ==="
-    },
-    {
       "path": "test/language/statements/for-in/S12.6.4_A7_T2.js",
       "reason": "zjs: throw: Test262Error: Unexpected value: 'aa1baundefinedca3'"
     },
@@ -384,11 +280,27 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
+      "path": "test/language/statements/for-in/cptn-decl-skip-itr.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-in/cptn-decl-zero-itr.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/language/statements/for-in/cptn-expr-abrupt-empty.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/for-in/cptn-expr-itr.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-in/cptn-expr-skip-itr.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-in/cptn-expr-zero-itr.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -500,11 +412,19 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
+      "path": "test/language/statements/for-of/cptn-decl-no-itr.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/language/statements/for-of/cptn-expr-abrupt-empty.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/for-of/cptn-expr-itr.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/for-of/cptn-expr-no-itr.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -704,7 +624,31 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
+      "path": "test/language/statements/try/cptn-catch-empty-break.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/try/cptn-catch-empty-continue.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/try/cptn-catch-finally-empty-break.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/try/cptn-catch-finally-empty-continue.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
       "path": "test/language/statements/try/cptn-catch.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/try/cptn-finally-empty-break.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
+    },
+    {
+      "path": "test/language/statements/try/cptn-finally-empty-continue.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -761,11 +705,7 @@
     },
     {
       "path": "test/language/statements/return/line-terminators.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/empty/cptn-value.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: Test262Error: #1: LineTerminator(U-000A) between return and Identifier_opt yields return without Identifier_"
     },
     {
       "path": "test/language/statements/block/labeled-continue.js",
@@ -1348,10 +1288,6 @@
       "reason": ""
     },
     {
-      "path": "test/built-ins/String/prototype/split/separator-regexp-limit-string-via-eval.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is 1"
-    },
-    {
       "path": "test/built-ins/String/prototype/split/separator-undef-limit-zero.js",
       "reason": "zjs: throw: Test262Error: result.length"
     },
@@ -1710,10 +1646,6 @@
     {
       "path": "test/built-ins/Promise/prototype/finally/subclass-species-constructor-resolve-count.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/finally/this-value-proxy.js",
-      "reason": "zjs: throw: TypeError: Promise.prototype.finally: receiver has no callable then"
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/this-value-then-poisoned.js",
