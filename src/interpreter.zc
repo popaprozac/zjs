@@ -2278,6 +2278,22 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             let argc = (u32)inst.c;
             let callee = regs[base];
 
+            // Class methods are not constructible. (Built-in host
+            // helpers like String.prototype.slice arguably aren't
+            // either, but distinguishing them from stub ctors like
+            // Date is awkward without a per-function flag — left as
+            // a follow-up.)
+            if zjs_is_function(callee) != 0 {
+                let fp_c = zjs_cell_as_ptr(callee);
+                let ff_c: Function* = NULL;
+                raw { ff_c = (Function*)fp_c; }
+                if ff_c.is_method {
+                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                (char*)"Class method is not a constructor", 33);
+                    throwing = true; thrown = err; exit_reason = 3; break;
+                }
+            }
+
             // Lazy-create the constructor's .prototype as we did in
             // property_get, so even a never-touched ctor.prototype is
             // a real object after `new` runs.
