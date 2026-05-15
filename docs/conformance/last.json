@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 18:57 UTC",
+    "when": "2026-05-15 19:02 UTC",
     "total": 4821,
-    "passed": 2322,
-    "failed": 473,
+    "passed": 2323,
+    "failed": 472,
     "skipped": 2026
   },
   "failures": [
@@ -1326,10 +1326,6 @@
     {
       "path": "test/built-ins/String/prototype/split/cstm-split-on-bigint-primitive.js",
       "reason": "zjs: throw: ReferenceError: n is not defined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/instance-is-function.js",
-      "reason": "zjs: throw: Test262Error: __split[0].substring(0, 8) must return \"function\""
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-override-tostring-limit-override-valueof-throws.js",

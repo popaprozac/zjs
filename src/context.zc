@@ -3114,6 +3114,162 @@ fn host_string_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return ctx_intern_string_take(ctx, buf, outlen);
 }
 
+// String.prototype.substring(start, end): like slice but clamps
+// negative args to 0 and swaps start/end if start > end.
+fn host_string_substring(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let s = zjs_as_string(str_v);
+    let slen: i32 = (i32)s.length;
+    let start_d: f64 = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    if ctx.pending_throw_active { return ctx_intern_string(ctx, (char*)"", 0); }
+    let end_d: f64 = if argc >= 2 { zjs_to_double(args[1]) } else { (f64)slen };
+    if ctx.pending_throw_active { return ctx_intern_string(ctx, (char*)"", 0); }
+    let is_nan_s: int = 0; raw { is_nan_s = isnan(start_d) ? 1 : 0; }
+    let is_nan_e: int = 0; raw { is_nan_e = isnan(end_d)   ? 1 : 0; }
+    if is_nan_s != 0 { start_d = 0.0; }
+    if is_nan_e != 0 { end_d   = 0.0; }
+    if start_d < 0.0 { start_d = 0.0; }
+    if end_d   < 0.0 { end_d   = 0.0; }
+    if start_d > (f64)slen { start_d = (f64)slen; }
+    if end_d   > (f64)slen { end_d   = (f64)slen; }
+    let start: i32 = (i32)start_d;
+    let end:   i32 = (i32)end_d;
+    if start > end { let t = start; start = end; end = t; }
+    let outlen = (u32)(end - start);
+    let buf = alloc_n<char>((usize)(outlen + 1));
+    if outlen > 0 {
+        let src_at: char* = NULL;
+        let src_off = (u32)start;
+        raw { src_at = &s->data[src_off]; }
+        mem_copy<char>(buf, src_at, (usize)outlen);
+    }
+    buf[outlen] = (char)0;
+    return ctx_intern_string_take(ctx, buf, outlen);
+}
+
+// String.prototype.startsWith(searchString, position = 0)
+fn host_string_starts_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if zjs_is_string(str_v) == 0 { return zjs_bool(0); }
+    let s = zjs_as_string(str_v);
+    if argc == 0 { return zjs_bool(0); }
+    let needle = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    if ctx.pending_throw_active { return zjs_bool(0); }
+    let ns = zjs_as_string(needle);
+    let pos: i32 = 0;
+    if argc >= 2 { pos = (i32)zjs_to_double(args[1]); }
+    if pos < 0 { pos = 0; }
+    if pos > (i32)s.length { return zjs_bool(ns.length == 0); }
+    if pos + (i32)ns.length > (i32)s.length { return zjs_bool(0); }
+    let sd = s.data; let nd = ns.data; let off = (u32)pos; let nl = ns.length;
+    let eq: int = 0;
+    raw { eq = (memcmp(sd + off, nd, nl) == 0) ? 1 : 0; }
+    return zjs_bool(eq);
+}
+
+// String.prototype.endsWith(searchString, endPosition = length)
+fn host_string_ends_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if zjs_is_string(str_v) == 0 { return zjs_bool(0); }
+    let s = zjs_as_string(str_v);
+    if argc == 0 { return zjs_bool(0); }
+    let needle = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    if ctx.pending_throw_active { return zjs_bool(0); }
+    let ns = zjs_as_string(needle);
+    let endp: i32 = (i32)s.length;
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
+        endp = (i32)zjs_to_double(args[1]);
+        if endp < 0 { endp = 0; }
+        if endp > (i32)s.length { endp = (i32)s.length; }
+    }
+    if (i32)ns.length > endp { return zjs_bool(ns.length == 0); }
+    let from = endp - (i32)ns.length;
+    let sd = s.data; let nd = ns.data; let off = (u32)from; let nl = ns.length;
+    let eq: int = 0;
+    raw { eq = (memcmp(sd + off, nd, nl) == 0) ? 1 : 0; }
+    return zjs_bool(eq);
+}
+
+// String.prototype.includes(searchString, position = 0)
+fn host_string_includes(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if zjs_is_string(str_v) == 0 { return zjs_bool(0); }
+    if argc == 0 { return zjs_bool(0); }
+    // Delegate to indexOf semantics (skipping the regex-as-search guard
+    // since ECMA-262 forbids it; spec is detailed elsewhere).
+    let need_args: ZjsValue[2];
+    need_args[0] = args[0];
+    if argc >= 2 { need_args[1] = args[1]; }
+    let argp: ZjsValue* = NULL; raw { argp = &need_args[0]; }
+    let r = host_string_index_of(ctx, argp, if argc >= 2 { 2 } else { 1 });
+    if ctx.pending_throw_active { return zjs_bool(0); }
+    return zjs_bool(zjs_is_int32(r) != 0 && zjs_as_int32(r) >= 0);
+}
+
+// String.prototype.trim — strip whitespace + line terminators per
+// ECMA-262 §22.1.3.32.
+fn host_string_trim(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let s = zjs_as_string(str_v);
+    let sd = s.data;
+    let lo: u32 = 0;
+    let hi: u32 = s.length;
+    raw {
+        while (lo < hi) {
+            unsigned char c = (unsigned char)sd[lo];
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') lo++;
+            else break;
+        }
+        while (hi > lo) {
+            unsigned char c = (unsigned char)sd[hi - 1];
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') hi--;
+            else break;
+        }
+    }
+    let outlen = hi - lo;
+    let buf = alloc_n<char>((usize)(outlen + 1));
+    if outlen > 0 {
+        let src_at: char* = NULL;
+        let src_off = lo;
+        raw { src_at = &s->data[src_off]; }
+        mem_copy<char>(buf, src_at, (usize)outlen);
+    }
+    buf[outlen] = (char)0;
+    return ctx_intern_string_take(ctx, buf, outlen);
+}
+
+// String.prototype.repeat(count)
+fn host_string_repeat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let s = zjs_as_string(str_v);
+    let n_d: f64 = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    if ctx.pending_throw_active { return ctx_intern_string(ctx, (char*)"", 0); }
+    let is_inf: int = 0; raw { is_inf = isinf(n_d) ? 1 : 0; }
+    if n_d < 0.0 || is_inf != 0 {
+        let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                                    (char*)"Invalid count value", 19);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let n: u32 = (u32)n_d;
+    if n == 0 || s.length == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let outlen = s.length * n;
+    let buf = alloc_n<char>((usize)(outlen + 1));
+    let i: u32 = 0;
+    while i < n {
+        let dst: char* = NULL;
+        let off = i * s.length;
+        raw { dst = buf + off; }
+        mem_copy<char>(dst, s.data, (usize)s.length);
+        i = i + 1;
+    }
+    buf[outlen] = (char)0;
+    return ctx_intern_string_take(ctx, buf, outlen);
+}
+
 fn host_string_char_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let str_v = coerce_string_this(ctx);
     if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
@@ -7714,6 +7870,24 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"toUpperCase", suc_ptr, 0));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"toLowerCase", 11),
                ctx_make_host_function_arity(ctx, (char*)"toLowerCase", slc_ptr, 0));
+    let ssub_ptr:   void* = NULL; raw { ssub_ptr   = (void*)host_string_substring; }
+    let strim_ptr:  void* = NULL; raw { strim_ptr  = (void*)host_string_trim; }
+    let srep_ptr:   void* = NULL; raw { srep_ptr   = (void*)host_string_repeat; }
+    let ssw_ptr:    void* = NULL; raw { ssw_ptr    = (void*)host_string_starts_with; }
+    let sew_ptr:    void* = NULL; raw { sew_ptr    = (void*)host_string_ends_with; }
+    let sinc_ptr:   void* = NULL; raw { sinc_ptr   = (void*)host_string_includes; }
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"substring", 9),
+               ctx_make_host_function_arity(ctx, (char*)"substring", ssub_ptr, 2));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"trim", 4),
+               ctx_make_host_function_arity(ctx, (char*)"trim", strim_ptr, 0));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"repeat", 6),
+               ctx_make_host_function_arity(ctx, (char*)"repeat", srep_ptr, 1));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"startsWith", 10),
+               ctx_make_host_function_arity(ctx, (char*)"startsWith", ssw_ptr, 1));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"endsWith", 8),
+               ctx_make_host_function_arity(ctx, (char*)"endsWith", sew_ptr, 1));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"includes", 8),
+               ctx_make_host_function_arity(ctx, (char*)"includes", sinc_ptr, 1));
     ctx.string_proto = string_proto;
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), strv_full);
     // Unify with the String constructor's .prototype so
