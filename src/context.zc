@@ -1829,6 +1829,52 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
     return NULL;
 }
 
+// ECMA-262 HasProperty(desc, name): walks the descriptor's proto
+// chain for plain objects, plus checks the expando bag for
+// array / function / host-fn / regex descriptors. Used by
+// defineProperty's partial-merge logic — ToPropertyDescriptor
+// queries HasProperty rather than [[GetOwnProperty]], so inherited
+// fields participate.
+fn descriptor_has_own(desc: ZjsValue, name: ZjsString*) -> bool {
+    if zjs_is_object(desc) != 0 {
+        let cur = zjs_as_object(desc);
+        while cur != NULL {
+            let slot = class_find_slot(cur.cls, name);
+            if slot >= 0 && zjs_is_deleted(cur.slots[(u32)slot]) == 0 {
+                return true;
+            }
+            cur = cur.proto;
+        }
+        return false;
+    }
+    let bag: ZjsObject* = NULL;
+    if zjs_is_array(desc) != 0 {
+        let a = zjs_as_array(desc);
+        bag = a.props;
+    } else if zjs_is_function(desc) != 0 {
+        let fp = zjs_cell_as_ptr(desc);
+        let f: Function* = NULL;
+        raw { f = (Function*)fp; }
+        bag = f.props;
+    } else if zjs_is_host_function(desc) != 0 {
+        bag = zjs_as_host_function(desc).props;
+    } else if zjs_is_regexp(desc) != 0 {
+        bag = zjs_as_regexp(desc).props;
+    } else {
+        return false;
+    }
+    if bag == NULL { return false; }
+    let cur = bag;
+    while cur != NULL {
+        let slot = class_find_slot(cur.cls, name);
+        if slot >= 0 && zjs_is_deleted(cur.slots[(u32)slot]) == 0 {
+            return true;
+        }
+        cur = cur.proto;
+    }
+    return false;
+}
+
 fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc < 3 { return zjs_undefined(); }
     let obj_v = args[0];
@@ -1904,23 +1950,46 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     // redefining an existing property we'd merge with the existing
     // descriptor, but MVP defines unconditionally with whatever's
     // present (or false).
+    // ECMA-262 §6.2.5.1 ToPropertyDescriptor + 9.1.6.3
+    // ValidateAndApplyPropertyDescriptor: when redefining an existing
+    // own property, fields absent from the new descriptor inherit
+    // from the existing one. Detect "has X" by walking the
+    // descriptor's own keys (not via property_get, which can't tell
+    // missing from undefined-valued).
     let wri_key = ctx_intern_atom(ctx, (char*)"writable",     8);
     let enu_key = ctx_intern_atom(ctx, (char*)"enumerable",   10);
     let cfg_key = ctx_intern_atom(ctx, (char*)"configurable", 12);
+    let value_atom_str = ctx_intern_atom(ctx, (char*)"value", 5);
+    let has_value_field = descriptor_has_own(desc_v, value_atom_str);
+    let has_wri_field   = descriptor_has_own(desc_v, wri_key);
+    let has_enu_field   = descriptor_has_own(desc_v, enu_key);
+    let has_cfg_field   = descriptor_has_own(desc_v, cfg_key);
     let wri_lookup = property_get(ctx, desc_v, zjs_cell_from_ptr((void*)wri_key));
     let enu_lookup = property_get(ctx, desc_v, zjs_cell_from_ptr((void*)enu_key));
     let cfg_lookup = property_get(ctx, desc_v, zjs_cell_from_ptr((void*)cfg_key));
+
+    // Compute attrs. Existing slot? Start from its current attrs and
+    // override only the bits the new descriptor explicitly specifies.
+    // No existing slot → defineProperty defaults (all false) per spec.
+    let existing_slot = class_find_slot(o.cls, key_atom);
     let attrs: u8 = 0;
-    if zjs_to_bool_coerce(wri_lookup) != 0 { attrs = attrs | PROP_WRITABLE; }
-    if zjs_to_bool_coerce(enu_lookup) != 0 { attrs = attrs | PROP_ENUMERABLE; }
-    if zjs_to_bool_coerce(cfg_lookup) != 0 { attrs = attrs | PROP_CONFIGURABLE; }
+    if existing_slot >= 0 {
+        attrs = object_get_attrs(o, (u32)existing_slot);
+    }
+    if has_wri_field {
+        if zjs_to_bool_coerce(wri_lookup) != 0 { attrs = attrs | PROP_WRITABLE; }
+        else                                   { attrs = attrs & ~PROP_WRITABLE; }
+    }
+    if has_enu_field {
+        if zjs_to_bool_coerce(enu_lookup) != 0 { attrs = attrs | PROP_ENUMERABLE; }
+        else                                   { attrs = attrs & ~PROP_ENUMERABLE; }
+    }
+    if has_cfg_field {
+        if zjs_to_bool_coerce(cfg_lookup) != 0 { attrs = attrs | PROP_CONFIGURABLE; }
+        else                                   { attrs = attrs & ~PROP_CONFIGURABLE; }
+    }
 
     if has_get || has_set {
-        // Accessor descriptor (Phase 3.9b). Allocate an accessor cell
-        // holding the get/set callbacks (default undefined) and store
-        // it directly in the slot. Accessor descriptors don't have a
-        // writable attribute — clear that bit so getOwnPropertyDescriptor
-        // reports the accessor shape correctly.
         let g: ZjsValue = if has_get { get_lookup } else { zjs_undefined() };
         let s: ZjsValue = if has_set { set_lookup } else { zjs_undefined() };
         let acc = zjs_accessor_new(g, s);
@@ -1931,8 +2000,15 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
         return obj_v;
     }
 
-    // Data descriptor — extract `value` (default undefined if absent).
-    let value: ZjsValue = if has_value { value_lookup } else { zjs_undefined() };
+    // Data descriptor — extract `value`. If the descriptor doesn't
+    // carry a `value` field AND the slot already exists, keep the
+    // existing value (only attrs change).
+    let value: ZjsValue = zjs_undefined();
+    if has_value_field {
+        value = value_lookup;
+    } else if existing_slot >= 0 {
+        value = o.slots[(u32)existing_slot];
+    }
     object_define_property_slot(ctx, o, key_atom, value, attrs);
     return obj_v;
 }
@@ -4210,9 +4286,6 @@ fn host_json_parse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let p: JsonParser;
     p.src = s.data; p.len = s.length; p.pos = 0; p.fail = false;
     let result = jp_parse_value(ctx, &p);
-    // ECMA-262 §25.5.1 JSON.parse must throw SyntaxError on invalid
-    // input — both grammar failures and trailing tokens (anything left
-    // over after the value is followed only by JSON whitespace).
     if !p.fail {
         jp_skip_ws(&p);
         if p.pos != s.length { p.fail = true; }
