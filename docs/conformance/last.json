@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 19:19 UTC",
+    "when": "2026-05-15 19:25 UTC",
     "total": 4821,
-    "passed": 2352,
-    "failed": 443,
+    "passed": 2389,
+    "failed": 406,
     "skipped": 2026
   },
   "failures": [
@@ -128,52 +128,12 @@
       "reason": "zjs: throw: Test262Error: #2: var MyFunction = new Function(\"return eval('this')\"); MyFunction() === this. Actual: [obje"
     },
     {
-      "path": "test/language/statements/if/cptn-else-false-abrupt-empty.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/if/cptn-else-false-nrml.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/if/cptn-else-true-abrupt-empty.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/if/cptn-else-true-nrml.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/if/cptn-no-else-false.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/if/cptn-no-else-true-abrupt-empty.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/if/cptn-no-else-true-nrml.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/language/statements/if/let-block-with-newline.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/if/let-identifier-with-newline.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/while/cptn-abrupt-empty.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/while/cptn-iter.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/while/cptn-no-iter.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/while/let-block-with-newline.js",
@@ -184,27 +144,7 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/do-while/cptn-abrupt-empty.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/do-while/cptn-normal.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for/cptn-decl-expr-iter.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for/cptn-decl-expr-no-iter.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/language/statements/for/cptn-expr-expr-iter.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for/cptn-expr-expr-no-iter.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -214,14 +154,6 @@
     {
       "path": "test/language/statements/for/head-init-async-of.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for/head-init-expr-check-empty-inc-empty-completion.js",
-      "reason": "zjs: throw: Test262Error: #1: __evaluated === 4. Actual:  __evaluated ===4"
-    },
-    {
-      "path": "test/language/statements/for/head-init-var-check-empty-inc-empty-completion.js",
-      "reason": "zjs: throw: Test262Error: #1: __evaluated === 4. Actual:  __evaluated ===4"
     },
     {
       "path": "test/language/statements/for/head-let-bound-names-in-stmt.js",
@@ -262,38 +194,6 @@
     {
       "path": "test/language/statements/for-in/S12.6.4_A7_T2.js",
       "reason": "zjs: throw: Test262Error: Unexpected value: 'aa1baundefinedca3'"
-    },
-    {
-      "path": "test/language/statements/for-in/cptn-decl-abrupt-empty.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-in/cptn-decl-itr.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-in/cptn-decl-skip-itr.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-in/cptn-decl-zero-itr.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-in/cptn-expr-abrupt-empty.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-in/cptn-expr-itr.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-in/cptn-expr-skip-itr.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-in/cptn-expr-zero-itr.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/for-in/head-const-bound-names-fordecl-tdz.js",
@@ -394,30 +294,6 @@
     {
       "path": "test/language/statements/for-of/arguments-unmapped-mutation.js",
       "reason": "zjs: throw: Test262Error: argument at index 3"
-    },
-    {
-      "path": "test/language/statements/for-of/cptn-decl-abrupt-empty.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-of/cptn-decl-itr.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-of/cptn-decl-no-itr.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-of/cptn-expr-abrupt-empty.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-of/cptn-expr-itr.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-of/cptn-expr-no-itr.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/for-of/head-const-bound-names-fordecl-tdz.js",
@@ -616,31 +492,7 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/language/statements/try/cptn-catch-empty-break.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/try/cptn-catch-empty-continue.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/try/cptn-catch-finally-empty-break.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/try/cptn-catch-finally-empty-continue.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/language/statements/try/cptn-catch.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/try/cptn-finally-empty-break.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/try/cptn-finally-empty-continue.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
@@ -857,7 +709,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "zjs: throw: Test262Error: arr.indexOf(targetObj, fromIndex)"
+      "reason": ""
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",

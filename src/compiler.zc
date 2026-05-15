@@ -2458,6 +2458,13 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::IfStmt {
+        // ECMA-262 14.6.7 step 7: Return UpdateEmpty(stmtCompletion, undefined).
+        // At top level we reset the result register before the branch
+        // so an empty-body if produces undefined (not the prior value).
+        // Expression statements inside the branch will overwrite.
+        if !c.is_function && c.last_expr_reg >= 0 {
+            emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
+        }
         let cond_reg = compile_expr(c, node.left);
         let jmp_else = emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_reg, 0));
         release_reg(c, cond_reg);
@@ -2476,6 +2483,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::WhileStmt {
+        if !c.is_function && c.last_expr_reg >= 0 {
+            emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
+        }
         let loop_top = (u32)c.code_count;
         loop_push(c);
         loop_set_continue(c, loop_top);
@@ -2497,6 +2507,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::DoWhileStmt {
+        if !c.is_function && c.last_expr_reg >= 0 {
+            emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
+        }
         let loop_top = (u32)c.code_count;
         // continue jumps target the test, only known after body.
         loop_push(c);
@@ -2517,6 +2530,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::ForInStmt || k == NodeKind::ForOfStmt {
+        if !c.is_function && c.last_expr_reg >= 0 {
+            emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
+        }
         // Desugar to:
         //   iter = IterPrepare(src, kind)
         //   one  = 1                       (used to increment i in-loop)
@@ -2699,6 +2715,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::ForStmt {
+        if !c.is_function && c.last_expr_reg >= 0 {
+            emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
+        }
         // init
         if node.left != NULL { compile_stmt_or_expr(c, node.left); }
         let loop_top = (u32)c.code_count;
