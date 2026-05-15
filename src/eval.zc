@@ -42,7 +42,16 @@ fn zjs_eval(ctx: ZjsContext*, source: char*) -> ZjsValue {
     }
     defer function_free(f);
 
+    // Bind top-level `this` to the global-object placeholder so
+    // tests like `var g = this; g.foo` see globals. interpret()'s
+    // call-frame mechanism saves/restores host_this around inner
+    // calls; we only need to set it at the top.
+    let saved_this = ctx.host_this;
+    if ctx.global_this_obj != NULL {
+        ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+    }
     let r = interpret(ctx, f, NULL, 0);
+    ctx.host_this = saved_this;
     // Phase 3.10 — drain queued microtasks after the script body. Tests
     // that use Promise.resolve(...).then(...) without an explicit
     // async-test harness rely on the next sync turn observing the

@@ -152,6 +152,19 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let o = zjs_as_object(obj);
         let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
         let name = zjs_as_string(key_str_val);
+        // globalThis: a property miss falls through to the globals
+        // table so `var g = this; g.someGlobal` works at top level.
+        if o == ctx.global_this_obj {
+            // Try the own-slot path first (allows defineProperty on
+            // globalThis to shadow); then fall back to the globals table.
+            let slot_g = class_find_slot(o.cls, name);
+            if slot_g < 0 {
+                let gslot = ctx_find_global(ctx, name.data, name.length);
+                if gslot >= 0 && ctx.globals[(u32)gslot].defined {
+                    return ctx.globals[(u32)gslot].value;
+                }
+            }
+        }
         let cur = o;
         while cur != NULL {
             let slot = class_find_slot(cur.cls, name);

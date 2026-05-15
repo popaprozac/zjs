@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 19:11 UTC",
+    "when": "2026-05-15 19:19 UTC",
     "total": 4821,
-    "passed": 2340,
-    "failed": 455,
+    "passed": 2352,
+    "failed": 443,
     "skipped": 2026
   },
   "failures": [
@@ -68,10 +68,6 @@
       "reason": "zjs: throw: Test262Error: #10: (\"\\u{10000}\" >= \"\\uFFFF\") === false"
     },
     {
-      "path": "test/language/expressions/typeof/built-in-exotic-objects-no-call.js",
-      "reason": "zjs: throw: Test262Error: typeof this === \"object\""
-    },
-    {
       "path": "test/language/expressions/typeof/built-in-ordinary-objects-no-call.js",
       "reason": "zjs: throw: Test262Error: typeof Reflect === \"object\""
     },
@@ -124,16 +120,12 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/this/11.1.1-1.js",
-      "reason": "zjs: throw: Test262Error: notSameValue failed"
+      "path": "test/language/expressions/this/S11.1.1_A3.1.js",
+      "reason": "zjs: throw: Test262Error: #2: function ReturnEvalThis() {return eval(\"this\")} ReturnEvalThis() === this. Actual: [object"
     },
     {
-      "path": "test/language/expressions/this/S11.1.1_A3.2.js",
-      "reason": "zjs: throw: Test262Error: #2: function SetEvalThis() {this.THIS = eval(\"this\")} (new SetEvalThis()).THIS.toString() !== "
-    },
-    {
-      "path": "test/language/expressions/this/S11.1.1_A4.2.js",
-      "reason": "zjs: throw: Test262Error: #2: var MyFunction = new Function(\"this.THIS = eval('this')\"); var MyObject = new MyFunction()"
+      "path": "test/language/expressions/this/S11.1.1_A4.1.js",
+      "reason": "zjs: throw: Test262Error: #2: var MyFunction = new Function(\"return eval('this')\"); MyFunction() === this. Actual: [obje"
     },
     {
       "path": "test/language/statements/if/cptn-else-false-abrupt-empty.js",
@@ -1092,40 +1084,8 @@
       "reason": "zjs: throw: Test262Error: callCnt"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-124.js",
-      "reason": "zjs: throw: TypeError: Property descriptor must be an object"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-149.js",
-      "reason": "zjs: throw: Test262Error: afterDeleted"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-15.js",
       "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-177.js",
-      "reason": "zjs: throw: TypeError: Property descriptor must be an object"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-203.js",
-      "reason": "zjs: throw: TypeError: Property descriptor must be an object"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-228.js",
-      "reason": "zjs: throw: Test262Error: newObj.prop"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-256.js",
-      "reason": "zjs: throw: TypeError: Property descriptor must be an object"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-291.js",
-      "reason": "zjs: throw: TypeError: Property descriptor must be an object"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-300.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-302.js",
@@ -1144,20 +1104,8 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-71.js",
-      "reason": "zjs: throw: TypeError: Property descriptor must be an object"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-96.js",
-      "reason": "zjs: throw: Test262Error: accessed !== true"
-    },
-    {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-28.js",
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(obj)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-30.js",
-      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-array-get-prop-from-prototype.js",
@@ -1622,6 +1570,10 @@
     {
       "path": "test/built-ins/Promise/exec-args.js",
       "reason": "zjs: throw: Test262Error: length of first argument"
+    },
+    {
+      "path": "test/built-ins/Promise/executor-call-context-sloppy.js",
+      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/built-ins/Promise/executor-function-extensible.js",

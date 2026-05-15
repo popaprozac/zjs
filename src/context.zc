@@ -132,6 +132,10 @@ struct ZjsContext {
     // returns it; property_get on a callable walks it before
     // object_proto. Created in ctx_init_builtins.
     function_proto: ZjsObject*;
+    // Top-level `this` (and the `globalThis` global). Property
+    // reads / writes go through the existing globals table; this
+    // object serves as a JS-visible handle to the global scope.
+    global_this_obj: ZjsObject*;
 
     // Phase 3.5b — temp-root stack. Host functions that invoke JS
     // callbacks (Array.prototype.map / forEach) need to keep
@@ -791,6 +795,10 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     if ctx.function_proto != NULL {
         let fp_val = zjs_cell_from_ptr((void*)ctx.function_proto);
         gc_mark_value(fp_val);
+    }
+    if ctx.global_this_obj != NULL {
+        let gt_val = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+        gc_mark_value(gt_val);
     }
     // Phase 3.8d cached helpers
     gc_mark_value(ctx.fn_call_v);
@@ -7318,6 +7326,16 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_intern_atom(ctx, (char*)"call", 4),  ctx.fn_call_v);
     object_set(ctx, ctx.function_proto,
                ctx_intern_atom(ctx, (char*)"apply", 5), ctx.fn_apply_v);
+
+    // --- globalThis (2026-05-15) ---
+    // Top-level `this` resolves to this object; property reads on it
+    // fall through to the globals table (handled in property_get).
+    // Tests like `var g = this; g.foo` rely on this.
+    let global_this_v = ctx_new_object(ctx);
+    ctx.global_this_obj = zjs_as_object(global_this_v);
+    let gt_slot = ctx_intern_global(ctx, (char*)"globalThis", 10);
+    ctx.globals[gt_slot].value = global_this_v;
+    ctx.globals[gt_slot].defined = true;
 
     // --- Error ---
     let err_ptr: void* = NULL;
