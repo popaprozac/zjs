@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 02:21 UTC",
+    "when": "2026-05-15 02:30 UTC",
     "total": 4821,
-    "passed": 1932,
-    "failed": 863,
+    "passed": 1940,
+    "failed": 855,
     "skipped": 2026
   },
   "failures": [
@@ -1248,40 +1248,24 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-1.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-10.js",
+      "reason": "zjs: throw: Test262Error: wrong error type"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-11.js",
+      "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-15.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-3.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-4.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-5.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-6.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-7.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: lengthAccessed !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-8.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-4-9.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-1.js",
@@ -1476,40 +1460,24 @@
       "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-1.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-10.js",
+      "reason": "zjs: throw: Test262Error: wrong error type"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-11.js",
+      "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-15.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-3.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-4.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-5.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-6.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-7.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: lengthAccessed !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-8.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-4-9.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-5-1.js",

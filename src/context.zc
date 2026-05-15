@@ -1939,6 +1939,23 @@ fn require_array_coercible_this(ctx: ZjsContext*) -> bool {
     return false;
 }
 
+// Spec's IsCallable check for the array-method callback argument. The
+// no-callback / non-callable case throws TypeError per
+// ECMA-262 §22.1.3.12 (forEach), §22.1.3.18 (map), and siblings.
+// Returns true on success; on failure arms the JS-visible throw and
+// the caller bails with zjs_undefined().
+fn require_callback_callable(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> bool {
+    let cb = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_function(cb) != 0 || zjs_is_closure(cb) != 0 || zjs_is_host_function(cb) != 0 {
+        return true;
+    }
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                (char*)"Callback is not a function", 26);
+    ctx.pending_throw_active = true;
+    ctx.pending_throw_value = err;
+    return false;
+}
+
 fn host_array_push(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_array_coercible_this(ctx) { return zjs_undefined(); }
     let this_val = ctx.host_this;
@@ -2367,8 +2384,8 @@ raw {
 
 fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_array_coercible_this(ctx) { return zjs_undefined(); }
+    if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
     let this_val = ctx.host_this;
-    if argc == 0 { return ctx_new_array(ctx, 0); }
     let cb = args[0];
     let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
 
@@ -2560,8 +2577,8 @@ fn host_array_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
 fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_array_coercible_this(ctx) { return zjs_undefined(); }
+    if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
     let this_val = ctx.host_this;
-    if argc == 0 { return zjs_undefined(); }
     let cb = args[0];
     // ECMA-262 §22.1.3.12: forEach(callbackfn, thisArg). Second arg
     // becomes `this` in the callback. Pass undefined when absent.
