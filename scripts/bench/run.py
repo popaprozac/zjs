@@ -98,6 +98,7 @@ def write_html(out_path, history, latest):
   .charts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }}
   .chart-box {{ background: #fff; border: 1px solid #eee; padding: 0.5em; border-radius: 4px; }}
   .chart-box h3 {{ font-size: 13px; margin: 0 0 4px 8px; font-family: ui-monospace, monospace; color: #444; }}
+  .chart-box svg {{ overflow: visible; }}
 </style>
 
 <h1>zjs — benchmarks</h1>
