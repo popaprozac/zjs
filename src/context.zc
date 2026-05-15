@@ -1570,6 +1570,14 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
             let arr_v = ctx_new_array(ctx, 0);
             ctx_push_temp_root(ctx, arr_v);
             defer ctx_pop_temp_root(ctx);
+            // Track all own names seen across the proto walk — used to
+            // shadow ancestor entries even when the closer level's
+            // entry was non-enumerable (spec). Separate from `arr`
+            // which only collects the emitted enumerable keys.
+            let shadowed_arr_v = ctx_new_array(ctx, 0);
+            ctx_push_temp_root(ctx, shadowed_arr_v);
+            defer ctx_pop_temp_root(ctx);
+            let shadowed_v = zjs_as_array(shadowed_arr_v);
             let arr = zjs_as_array(arr_v);
             let cur: ZjsObject* = zjs_as_object(src);
             while cur != NULL && cur != ctx.object_proto {
@@ -1609,23 +1617,30 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
                     if nm != NULL {
                         // Skip our internal hidden keys (`__zjs_*`) —
                         // wrapper primitives, env chain, toString tag.
-                        // Spec equivalent is "non-enumerable own prop".
                         let is_internal: bool = false;
                         if nm.length >= 6 {
                             let nd = nm.data;
                             raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
                         }
                         if !is_internal {
-                            // Already seen at a more-specific level?
+                            // Shadowed by an earlier (more-specific)
+                            // level? Important: even an own
+                            // non-enumerable own prop shadows the
+                            // ancestor's enumerable one, so we track
+                            // shadowing via `shadowed_v`, separate
+                            // from the emit list.
                             let seen: bool = false;
                             let j: u32 = 0;
-                            while j < arr.length {
-                                if zjs_as_string(arr.elements[j]) == nm {
-                                    seen = true; j = arr.length;
+                            while j < shadowed_v.length {
+                                if zjs_as_string(shadowed_v.elements[j]) == nm {
+                                    seen = true; j = shadowed_v.length;
                                 } else { j = j + 1; }
                             }
-                            if !seen && !scratch_del[i] {
-                                array_set(arr, arr.length, zjs_cell_from_ptr((void*)nm));
+                            if !seen {
+                                array_set(shadowed_v, shadowed_v.length, zjs_cell_from_ptr((void*)nm));
+                                if !scratch_del[i] {
+                                    array_set(arr, arr.length, zjs_cell_from_ptr((void*)nm));
+                                }
                             }
                         }
                     }

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 10:30 UTC",
+    "when": "2026-05-15 10:35 UTC",
     "total": 4821,
-    "passed": 2168,
-    "failed": 627,
+    "passed": 2169,
+    "failed": 626,
     "skipped": 2026
   },
   "failures": [
@@ -406,10 +406,6 @@
     {
       "path": "test/language/statements/for/scope-head-lex-open.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-in/12.6.4-2.js",
-      "reason": "zjs: throw: Test262Error: accessedProp"
     },
     {
       "path": "test/language/statements/for-in/S12.6.4_A3.1.js",
