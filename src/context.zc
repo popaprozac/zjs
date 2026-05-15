@@ -2472,6 +2472,271 @@ fn host_string_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     return result;
 }
 
+// String.prototype.replace(search, replacement). MVP support:
+//   * search: string OR regex
+//   * replacement: string (no `$1`/`$&` substitutions yet) OR function
+// For regex search without the `g` flag, replaces only the first
+// match. With `g`, replaces all non-overlapping matches.
+fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = coerce_string_this(ctx);
+    if zjs_is_string(this_val) == 0 { return this_val; }
+    let s = zjs_as_string(this_val);
+    if argc < 2 { return this_val; }
+    let search_v = args[0];
+    let repl_v   = args[1];
+    let repl_is_fn: bool = zjs_is_function(repl_v) != 0
+        || zjs_is_closure(repl_v) != 0
+        || zjs_is_host_function(repl_v) != 0;
+    let repl_str_v: ZjsValue = if !repl_is_fn {
+        if zjs_is_string(repl_v) != 0 { repl_v } else { zjs_to_string(ctx, repl_v) }
+    } else { zjs_undefined() };
+
+    // Builder: simple growing char buffer.
+    let out_cap: u32 = s.length + 16;
+    let out_buf = alloc_n<char>((usize)out_cap);
+    let out_len: u32 = 0;
+
+    let hay_d = s.data;
+    let hay_n = s.length;
+
+    if zjs_is_regexp(search_v) != 0 {
+        let r = zjs_as_regexp(search_v);
+        if !regex_ensure_compiled(r) {
+            dealloc(out_buf);
+            return this_val;
+        }
+        let is_global = (r.flags & REGEX_FLAG_GLOBAL) != 0;
+        let preg = r.preg;
+        let pmatch_buf: ZRegMatch[1];
+        let cursor: u32 = 0;
+        let scan: u32 = 0;
+        while scan <= hay_n {
+            let rc: int = -1;
+            let scan_off = scan;
+            raw {
+                rc = tre_regexec((regex_t*)preg, hay_d + scan_off, 1, (regmatch_t*)pmatch_buf, 0);
+            }
+            if rc != 0 { break; }
+            let mstart = scan + (u32)pmatch_buf[0].rm_so;
+            let mend   = scan + (u32)pmatch_buf[0].rm_eo;
+            // Append [cursor..mstart) verbatim.
+            let pre_len = mstart - cursor;
+            while out_len + pre_len + 64 > out_cap {
+                let new_cap = out_cap * 2 + 64;
+                out_buf = realloc_n<char>(out_buf, (usize)out_cap, (usize)new_cap);
+                out_cap = new_cap;
+            }
+            if pre_len > 0 {
+                let src: char* = NULL;
+                raw { src = &hay_d[cursor]; }
+                mem_copy<char>(out_buf + out_len, src, (usize)pre_len);
+                out_len = out_len + pre_len;
+            }
+            // Compute replacement (string or function call).
+            let rep_data: char* = NULL;
+            let rep_len: u32 = 0;
+            let rep_str_holder: ZjsValue = zjs_undefined();
+            if repl_is_fn {
+                // fn(match, offset, str) — no captures yet for MVP.
+                let mlen = mend - mstart;
+                let mbuf = alloc_n<char>((usize)(mlen + 1));
+                if mlen > 0 {
+                    let msrc: char* = NULL;
+                    raw { msrc = &hay_d[mstart]; }
+                    mem_copy<char>(mbuf, msrc, (usize)mlen);
+                }
+                mbuf[mlen] = (char)0;
+                let mstr = ctx_intern_string_take(ctx, mbuf, mlen);
+                let cb_args: ZjsValue[3];
+                cb_args[0] = mstr;
+                cb_args[1] = zjs_int32((i32)mstart);
+                cb_args[2] = this_val;
+                let cb_argp: ZjsValue* = NULL;
+                raw { cb_argp = &cb_args[0]; }
+                let cb_r: ZjsValue = zjs_undefined();
+                raw { cb_r = zjs_call_value_with_this(ctx, repl_v, zjs_undefined(), cb_argp, 3); }
+                if zjs_is_string(cb_r) == 0 { cb_r = zjs_to_string(ctx, cb_r); }
+                rep_str_holder = cb_r;
+                rep_data = zjs_as_string(cb_r).data;
+                rep_len  = zjs_as_string(cb_r).length;
+            } else {
+                rep_data = zjs_as_string(repl_str_v).data;
+                rep_len  = zjs_as_string(repl_str_v).length;
+            }
+            while out_len + rep_len + 64 > out_cap {
+                let new_cap = out_cap * 2 + 64;
+                out_buf = realloc_n<char>(out_buf, (usize)out_cap, (usize)new_cap);
+                out_cap = new_cap;
+            }
+            if rep_len > 0 {
+                mem_copy<char>(out_buf + out_len, rep_data, (usize)rep_len);
+                out_len = out_len + rep_len;
+            }
+            cursor = mend;
+            scan = if mend > scan { mend } else { scan + 1 };
+            if !is_global { break; }
+        }
+        // Trailing remainder.
+        let tail_len = hay_n - cursor;
+        while out_len + tail_len + 1 > out_cap {
+            let new_cap = out_cap * 2 + 64;
+            out_buf = realloc_n<char>(out_buf, (usize)out_cap, (usize)new_cap);
+            out_cap = new_cap;
+        }
+        if tail_len > 0 {
+            let src: char* = NULL;
+            raw { src = &hay_d[cursor]; }
+            mem_copy<char>(out_buf + out_len, src, (usize)tail_len);
+            out_len = out_len + tail_len;
+        }
+        out_buf[out_len] = (char)0;
+        return ctx_intern_string_take(ctx, out_buf, out_len);
+    }
+
+    // String search: replace first occurrence only.
+    let search_str_v = if zjs_is_string(search_v) != 0 { search_v } else { zjs_to_string(ctx, search_v) };
+    let nee = zjs_as_string(search_str_v);
+    let nee_d = nee.data;
+    let nee_n = nee.length;
+    let found_at: i32 = -1;
+    let i: u32 = 0;
+    while i + nee_n <= hay_n {
+        let off = i;
+        let eq: int = 0;
+        raw { eq = (memcmp(hay_d + off, nee_d, nee_n) == 0) ? 1 : 0; }
+        if eq != 0 { found_at = (i32)i; break; }
+        i = i + 1;
+    }
+    if found_at < 0 {
+        dealloc(out_buf);
+        return this_val;
+    }
+    let mstart = (u32)found_at;
+    let mend = mstart + nee_n;
+    // Append prefix.
+    while out_len + mstart + 64 > out_cap {
+        let new_cap = out_cap * 2 + 64;
+        out_buf = realloc_n<char>(out_buf, (usize)out_cap, (usize)new_cap);
+        out_cap = new_cap;
+    }
+    if mstart > 0 {
+        mem_copy<char>(out_buf + out_len, hay_d, (usize)mstart);
+        out_len = out_len + mstart;
+    }
+    // Replacement.
+    let rep_data: char* = NULL;
+    let rep_len: u32 = 0;
+    if repl_is_fn {
+        let cb_args: ZjsValue[3];
+        cb_args[0] = search_str_v;
+        cb_args[1] = zjs_int32((i32)mstart);
+        cb_args[2] = this_val;
+        let cb_argp: ZjsValue* = NULL;
+        raw { cb_argp = &cb_args[0]; }
+        let cb_r: ZjsValue = zjs_undefined();
+        raw { cb_r = zjs_call_value_with_this(ctx, repl_v, zjs_undefined(), cb_argp, 3); }
+        if zjs_is_string(cb_r) == 0 { cb_r = zjs_to_string(ctx, cb_r); }
+        rep_data = zjs_as_string(cb_r).data;
+        rep_len  = zjs_as_string(cb_r).length;
+    } else {
+        rep_data = zjs_as_string(repl_str_v).data;
+        rep_len  = zjs_as_string(repl_str_v).length;
+    }
+    while out_len + rep_len + (hay_n - mend) + 64 > out_cap {
+        let new_cap = out_cap * 2 + 64;
+        out_buf = realloc_n<char>(out_buf, (usize)out_cap, (usize)new_cap);
+        out_cap = new_cap;
+    }
+    if rep_len > 0 {
+        mem_copy<char>(out_buf + out_len, rep_data, (usize)rep_len);
+        out_len = out_len + rep_len;
+    }
+    let tail_len = hay_n - mend;
+    if tail_len > 0 {
+        let src: char* = NULL;
+        raw { src = &hay_d[mend]; }
+        mem_copy<char>(out_buf + out_len, src, (usize)tail_len);
+        out_len = out_len + tail_len;
+    }
+    out_buf[out_len] = (char)0;
+    return ctx_intern_string_take(ctx, out_buf, out_len);
+}
+
+// String.prototype.match(regexp): if regexp has the global flag,
+// return an array of all full-match strings (no captures). Else
+// delegate to RegExp.prototype.exec for the single match (full +
+// captures + .index/.input). Non-regexp args are coerced via
+// new RegExp(arg).
+fn host_string_match(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = coerce_string_this(ctx);
+    if zjs_is_string(this_val) == 0 { return zjs_null(); }
+    // Coerce the argument to a RegExp.
+    let pat_v: ZjsValue = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let re_v: ZjsValue = zjs_undefined();
+    if zjs_is_regexp(pat_v) != 0 {
+        re_v = pat_v;
+    } else {
+        let pat_str = if zjs_is_undefined(pat_v) != 0 {
+            ctx_intern_string(ctx, (char*)"", 0)
+        } else if zjs_is_string(pat_v) != 0 {
+            pat_v
+        } else {
+            zjs_to_string(ctx, pat_v)
+        };
+        re_v = ctx_new_regexp(ctx, pat_str, ctx_intern_string(ctx, (char*)"", 0));
+    }
+    let re = zjs_as_regexp(re_v);
+    let is_global = (re.flags & REGEX_FLAG_GLOBAL) != 0;
+    if !is_global {
+        // Spec routes through @@match → exec(thisStr). Call exec
+        // directly to skip a synthetic indirection.
+        let saved_host = ctx.host_this;
+        ctx.host_this = re_v;
+        let ex_args: ZjsValue[1];
+        ex_args[0] = this_val;
+        let ex_argp: ZjsValue* = NULL;
+        raw { ex_argp = &ex_args[0]; }
+        let r = host_regexp_exec(ctx, ex_argp, 1);
+        ctx.host_this = saved_host;
+        return r;
+    }
+    // Global: iterate exec until no match, collect full-match strings.
+    if !regex_ensure_compiled(re) { return zjs_null(); }
+    let s = zjs_as_string(this_val);
+    let preg = re.preg;
+    let hay_d = s.data;
+    let hay_n = s.length;
+    let result_v = ctx_new_array(ctx, 0);
+    ctx_push_temp_root(ctx, result_v);
+    defer ctx_pop_temp_root(ctx);
+    let arr = zjs_as_array(result_v);
+    let pmatch_buf: ZRegMatch[1];
+    let scan: u32 = 0;
+    while scan <= hay_n {
+        let rc: int = -1;
+        let scan_off = scan;
+        raw {
+            rc = tre_regexec((regex_t*)preg, hay_d + scan_off, 1, (regmatch_t*)pmatch_buf, 0);
+        }
+        if rc != 0 { break; }
+        let mstart = scan + (u32)pmatch_buf[0].rm_so;
+        let mend   = scan + (u32)pmatch_buf[0].rm_eo;
+        let mlen = mend - mstart;
+        let mbuf = alloc_n<char>((usize)(mlen + 1));
+        if mlen > 0 {
+            let src: char* = NULL;
+            raw { src = &hay_d[mstart]; }
+            mem_copy<char>(mbuf, src, (usize)mlen);
+        }
+        mbuf[mlen] = (char)0;
+        array_set(arr, arr.length, ctx_intern_string_take(ctx, mbuf, mlen));
+        scan = if mend > scan { mend } else { scan + 1 };
+    }
+    re.last_index = 0;
+    if arr.length == 0 { return zjs_null(); }
+    return result_v;
+}
+
 fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = coerce_string_this(ctx);
     if zjs_is_string(this_val) == 0 { return ctx_new_array(ctx, 0); }
@@ -2484,7 +2749,68 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         one_arr.length = 1;
         return one;
     }
-    let sep_v = args[0];
+    let sep_arg = args[0];
+    // Regex separator path: walk the input applying tre_regexec, push
+    // each between-match span. Empty-match positions are advanced past
+    // so we don't infinite-loop. Honors a numeric `limit` second arg
+    // for the trivial common case.
+    let limit_u32: u32 = 0xffffffff;
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
+        let lim = zjs_to_double(args[1]);
+        if lim >= 0.0 && lim < 4294967295.0 { limit_u32 = (u32)lim; }
+    }
+    if zjs_is_regexp(sep_arg) != 0 {
+        let r = zjs_as_regexp(sep_arg);
+        let result_v = ctx_new_array(ctx, 0);
+        if !regex_ensure_compiled(r) {
+            let arr = zjs_as_array(result_v);
+            array_set(arr, 0, this_val);
+            return result_v;
+        }
+        let arr = zjs_as_array(result_v);
+        let preg = r.preg;
+        let hay_d = s.data;
+        let hay_n = s.length;
+        let pmatch_buf: ZRegMatch[1];
+        let cursor: u32 = 0;
+        let scan: u32 = 0;
+        while scan <= hay_n && arr.length < limit_u32 {
+            let rc: int = -1;
+            let scan_off = scan;
+            raw {
+                rc = tre_regexec((regex_t*)preg, hay_d + scan_off, 1, (regmatch_t*)pmatch_buf, 0);
+            }
+            if rc != 0 { break; }
+            let mstart = scan + (u32)pmatch_buf[0].rm_so;
+            let mend   = scan + (u32)pmatch_buf[0].rm_eo;
+            if mstart >= hay_n { break; }
+            let piece_len = mstart - cursor;
+            let pbuf = alloc_n<char>((usize)(piece_len + 1));
+            if piece_len > 0 {
+                let src: char* = NULL;
+                raw { src = &hay_d[cursor]; }
+                mem_copy<char>(pbuf, src, (usize)piece_len);
+            }
+            pbuf[piece_len] = (char)0;
+            array_set(arr, arr.length, ctx_intern_string_take(ctx, pbuf, piece_len));
+            cursor = mend;
+            // Empty-match advance: avoid infinite loops on /(?=x)/ etc.
+            scan = if mend > scan { mend } else { scan + 1 };
+        }
+        if arr.length < limit_u32 {
+            let tlen = hay_n - cursor;
+            let tbuf = alloc_n<char>((usize)(tlen + 1));
+            if tlen > 0 {
+                let src: char* = NULL;
+                raw { src = &hay_d[cursor]; }
+                mem_copy<char>(tbuf, src, (usize)tlen);
+            }
+            tbuf[tlen] = (char)0;
+            array_set(arr, arr.length, ctx_intern_string_take(ctx, tbuf, tlen));
+        }
+        return result_v;
+    }
+    let sep_v = sep_arg;
     if zjs_is_string(sep_v) == 0 { sep_v = zjs_to_string(ctx, sep_v); }
     let sep = zjs_as_string(sep_v);
     let result_v = ctx_new_array(ctx, 0);
@@ -3315,12 +3641,15 @@ fn regex_translate_to_posix(src: ZjsString*) -> char* {
                 out = out + 13; i = i + 2; continue;
             }
             if nx == (char)'s' {
-                raw { memcpy(buf + out, "[ \\t\\n\\r\\f\\v]", 13); }
-                out = out + 13; i = i + 2; continue;
+                // ECMA-262 WhiteSpace + LineTerminator. POSIX char
+                // classes don't interpret \t/\n/\r/\f/\v inside [...] —
+                // we must emit the actual control bytes here.
+                raw { memcpy(buf + out, "[ \t\n\r\f\v]", 8); }
+                out = out + 8; i = i + 2; continue;
             }
             if nx == (char)'S' {
-                raw { memcpy(buf + out, "[^ \\t\\n\\r\\f\\v]", 14); }
-                out = out + 14; i = i + 2; continue;
+                raw { memcpy(buf + out, "[^ \t\n\r\f\v]", 9); }
+                out = out + 9; i = i + 2; continue;
             }
             // `\b` (word boundary) is `[[:<:]]|[[:>:]]` in TRE — but the
             // alternation only makes sense inside a group. Cheaper +
@@ -3387,6 +3716,97 @@ fn host_regexp_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     }
     if zjs_is_string(flags_v) == 0 { flags_v = zjs_to_string(ctx, flags_v); }
     return ctx_new_regexp(ctx, pattern_v, flags_v);
+}
+
+// RegExp.prototype.exec(str): coerce `str`, run the regex, build a
+// match array shaped per ECMA-262 §22.2.7.2:
+//   result[0]       = full match
+//   result[1..]     = capture groups (or undefined if not matched)
+//   result.index    = position of full match in the input
+//   result.input    = the original string
+//   result.groups   = undefined (we don't have named groups yet)
+// Returns null on no match. Honors lastIndex advance for g/y.
+fn host_regexp_exec(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_regexp(this_val) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"RegExp.prototype.exec called on non-RegExp", 43);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let r = zjs_as_regexp(this_val);
+    if !regex_ensure_compiled(r) { return zjs_null(); }
+    let arg_v = if argc >= 1 { args[0] } else { ctx_intern_string(ctx, (char*)"undefined", 9) };
+    if zjs_is_string(arg_v) == 0 { arg_v = zjs_to_string(ctx, arg_v); }
+    let s = zjs_as_string(arg_v);
+    let stateful = (r.flags & (REGEX_FLAG_GLOBAL | REGEX_FLAG_STICKY)) != 0;
+    let start_idx: u32 = if stateful { r.last_index } else { 0 };
+    if start_idx > s.length {
+        if stateful { r.last_index = 0; }
+        return zjs_null();
+    }
+    let preg = r.preg;
+    let sdata = s.data;
+    // Read re_nsub off the compiled preg so we know how big the
+    // pmatch buffer needs to be (full match + N captures).
+    let nsub: u32 = 0;
+    raw { nsub = (uint32_t)((regex_t*)preg)->re_nsub; }
+    let total_groups = nsub + 1;
+    let pmatch_buf = alloc_n<ZRegMatch>((usize)total_groups);
+    let rc: int = -1;
+    raw {
+        rc = tre_regexec((regex_t*)preg, sdata + start_idx, total_groups, (regmatch_t*)pmatch_buf, 0);
+    }
+    if rc != 0 {
+        dealloc(pmatch_buf);
+        if stateful { r.last_index = 0; }
+        return zjs_null();
+    }
+    let mstart_off = pmatch_buf[0].rm_so;
+    let mend_off   = pmatch_buf[0].rm_eo;
+    if (r.flags & REGEX_FLAG_STICKY) != 0 && mstart_off != 0 {
+        dealloc(pmatch_buf);
+        r.last_index = 0;
+        return zjs_null();
+    }
+    let abs_mstart = start_idx + (u32)mstart_off;
+    let abs_mend   = start_idx + (u32)mend_off;
+    if stateful { r.last_index = abs_mend; }
+
+    // Build the result array: [fullMatch, group1, group2, ...].
+    let result_v = ctx_new_array(ctx, total_groups);
+    ctx_push_temp_root(ctx, result_v);
+    defer ctx_pop_temp_root(ctx);
+    let result = zjs_as_array(result_v);
+    let i: u32 = 0;
+    while i < total_groups {
+        let gs = pmatch_buf[i].rm_so;
+        let ge = pmatch_buf[i].rm_eo;
+        if gs < 0 {
+            // Group didn't participate in the match.
+            result.elements[i] = zjs_undefined();
+        } else {
+            let gabs_s = start_idx + (u32)gs;
+            let gabs_e = start_idx + (u32)ge;
+            let glen = gabs_e - gabs_s;
+            let slice = ctx_intern_string(ctx, sdata + gabs_s, glen);
+            result.elements[i] = slice;
+        }
+        i = i + 1;
+    }
+    result.length = total_groups;
+    dealloc(pmatch_buf);
+
+    // .index, .input, .groups via the expando bag.
+    if result.props == NULL {
+        let pv = ctx_new_object(ctx);
+        result.props = zjs_as_object(pv);
+    }
+    object_set(ctx, result.props, ctx_intern_atom(ctx, (char*)"index", 5), zjs_int32((i32)abs_mstart));
+    object_set(ctx, result.props, ctx_intern_atom(ctx, (char*)"input", 5), arg_v);
+    object_set(ctx, result.props, ctx_intern_atom(ctx, (char*)"groups", 6), zjs_undefined());
+    return result_v;
 }
 
 // RegExp.prototype.test(str): coerce `str`, run the regex, advance
@@ -5256,6 +5676,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let rtest_ptr: void* = NULL; raw { rtest_ptr = (void*)host_regexp_test; }
     object_set(ctx, regexp_hf.prototype, ctx_intern_atom(ctx, (char*)"test", 4),
                ctx_make_host_function_arity(ctx, (char*)"test", rtest_ptr, 1));
+    let rexec_ptr: void* = NULL; raw { rexec_ptr = (void*)host_regexp_exec; }
+    object_set(ctx, regexp_hf.prototype, ctx_intern_atom(ctx, (char*)"exec", 4),
+               ctx_make_host_function_arity(ctx, (char*)"exec", rexec_ptr, 1));
     ctx_register_host_function(ctx, (char*)"Symbol",     eval_ptr);
     ctx_register_host_function(ctx, (char*)"Map",        eval_ptr);
     ctx_register_host_function(ctx, (char*)"Set",        eval_ptr);
@@ -5528,6 +5951,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"slice", slice_ptr, 2));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"split", 5),
                ctx_make_host_function_arity(ctx, (char*)"split", split_ptr, 2));
+    let smatch_ptr: void* = NULL; raw { smatch_ptr = (void*)host_string_match; }
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"match", 5),
+               ctx_make_host_function_arity(ctx, (char*)"match", smatch_ptr, 1));
+    let srepl_ptr: void* = NULL; raw { srepl_ptr = (void*)host_string_replace; }
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"replace", 7),
+               ctx_make_host_function_arity(ctx, (char*)"replace", srepl_ptr, 2));
     let scat_ptr:   void* = NULL; raw { scat_ptr   = (void*)host_string_concat; }
     let scha_ptr:   void* = NULL; raw { scha_ptr   = (void*)host_string_char_at; }
     let scca_ptr:   void* = NULL; raw { scca_ptr   = (void*)host_string_char_code_at; }
