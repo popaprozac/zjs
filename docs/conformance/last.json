@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 11:02 UTC",
+    "when": "2026-05-15 11:09 UTC",
     "total": 4821,
-    "passed": 2174,
-    "failed": 621,
+    "passed": 2177,
+    "failed": 618,
     "skipped": 2026
   },
   "failures": [
@@ -1068,20 +1068,16 @@
       "reason": "zjs: throw: Test262Error: arr.indexOf(6.99)"
     },
     {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-12.js",
+      "reason": "zjs: throw: Test262Error: arr.indexOf(\"6.99\")"
+    },
+    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-16.js",
       "reason": "zjs: throw: Test262Error: arr.indexOf(1)"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-17.js",
-      "reason": "zjs: throw: Test262Error: arr.indexOf(\"last\")"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-18.js",
       "reason": "zjs: throw: Test262Error: arr.indexOf(\"prototype\")"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-19.js",
-      "reason": "zjs: throw: Test262Error: arr.indexOf(\"unconfigurable\")"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
@@ -1090,10 +1086,6 @@
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-6.js",
       "reason": "zjs: throw: Test262Error: arr.indexOf(\"10\", fromIndex)"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-8.js",
-      "reason": "zjs: throw: Test262Error: arr.indexOf(1)"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-1.js",
@@ -1138,10 +1130,6 @@
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-7.js",
       "reason": "zjs: throw: Test262Error: [, , , ].indexOf(true)"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-9.js",
-      "reason": "zjs: throw: Test262Error: arr.indexOf(0)"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-ii-2.js",

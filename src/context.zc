@@ -2690,9 +2690,23 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         while i < len {
             // Spec checks HasProperty(O, k) before the strict-equality
             // step — holes never compare equal to anything, including
-            // undefined. Skip them.
-            let slot = arr.elements[i];
-            if zjs_is_deleted(slot) == 0 {
+            // undefined. Skip them. When arr.props exists, route
+            // through property_get so installed accessors fire.
+            let slot: ZjsValue = zjs_undefined();
+            let present: bool = false;
+            if arr.props != NULL {
+                let v_pg = property_get(ctx, this_val, zjs_int32((i32)i));
+                if ctx.pending_throw_active { return zjs_int32(-1); }
+                slot = v_pg;
+                present = true;
+            } else {
+                let raw_v = arr.elements[i];
+                if zjs_is_deleted(raw_v) == 0 {
+                    slot = raw_v;
+                    present = true;
+                }
+            }
+            if present {
                 if zjs_strict_eq(slot, needle) != 0 {
                     return zjs_int32((i32)i);
                 }
