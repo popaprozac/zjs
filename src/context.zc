@@ -7220,8 +7220,13 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
             } else if (isinf(d)) {
                 len = (size_t)snprintf(buf, 64, d > 0 ? "Infinity" : "-Infinity");
             } else if (d == (double)(int64_t)d && d >= -1e15 && d <= 1e15) {
-                // Integral path — no trailing ".0".
+                // Integral path within 53-bit range — exact integer print.
                 len = (size_t)snprintf(buf, 64, "%lld", (long long)d);
+            } else if (d == floor(d) && fabs(d) < 1e21) {
+                // ECMA-262 NumberToString: integral doubles up to 10^21
+                // print as integers (no scientific). %.0f respects the
+                // IEEE-double rounding for values past 2^53.
+                len = (size_t)snprintf(buf, 64, "%.0f", d);
             } else {
                 // Spec wants the shortest string that round-trips
                 // through strtod back to the same double. Try

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 16:12 UTC",
+    "when": "2026-05-15 16:20 UTC",
     "total": 4821,
-    "passed": 2246,
-    "failed": 549,
+    "passed": 2253,
+    "failed": 542,
     "skipped": 2026
   },
   "failures": [
@@ -224,20 +224,12 @@
       "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
     },
     {
-      "path": "test/language/expressions/instanceof/primitive-prototype-with-primitive.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
-    },
-    {
-      "path": "test/language/expressions/instanceof/prototype-getter-with-object-throws.js",
-      "reason": "zjs: throw: Test262Error: wrong error type"
-    },
-    {
-      "path": "test/language/expressions/instanceof/prototype-getter-with-object.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+      "path": "test/language/expressions/instanceof/primitive-prototype-with-object.js",
+      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/language/expressions/instanceof/prototype-getter-with-primitive.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+      "reason": "zjs: throw: Test262Error: getter for 'prototype' called"
     },
     {
       "path": "test/language/expressions/instanceof/symbol-hasinstance-get-err.js",
@@ -1468,27 +1460,11 @@
       "reason": "zjs: throw: Test262Error: The value of __split.length is 0"
     },
     {
-      "path": "test/built-ins/String/prototype/split/call-split-1-100-instance-is-number.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/call-split-1-2-instance-is-number.js",
-      "reason": "zjs: throw: Test262Error: The value of __split[index] is expected to equal the value of __expected[index]"
-    },
-    {
       "path": "test/built-ins/String/prototype/split/call-split-1-boo-instance-is-number.js",
       "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
     },
     {
-      "path": "test/built-ins/String/prototype/split/call-split-1-instance-is-number.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
-    },
-    {
       "path": "test/built-ins/String/prototype/split/call-split-1-math-pow-2-32-1-instance-is-number.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/call-split-1-void-0-instance-is-number.js",
       "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
     },
     {
@@ -1522,10 +1498,6 @@
     {
       "path": "test/built-ins/String/prototype/split/instance-is-function.js",
       "reason": "zjs: throw: Test262Error: __split[0].substring(0, 8) must return \"function\""
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/separator-number-limit-math-pow-2-32-1-instance-is-number.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-override-tostring-limit-override-valueof-throws.js",
