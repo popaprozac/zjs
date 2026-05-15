@@ -1340,19 +1340,13 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
     }
 
     // for-of: element values. Spec: %ArrayIteratorPrototype%.next does
-    // Get(O, ToString(k)) — holes surface as undefined to the loop.
+    // Get(O, ToString(k)) on each step — holes surface as undefined to
+    // the loop, and **mutations during iteration are observed** (pops
+    // shorten the run, pushes extend it). Return the live array; the
+    // for-of bytecode re-reads ArrayLength on every iteration to pick
+    // up length changes.
     if zjs_is_array(src) != 0 {
-        // Snapshot a copy so the user can't mutate the source mid-iteration.
-        let a = zjs_as_array(src);
-        let copy_v = ctx_new_array(ctx, a.length);
-        let copy = zjs_as_array(copy_v);
-        let i: u32 = 0;
-        while i < a.length {
-            copy.elements[i] = array_get(a, i);  // hole → undefined
-            i = i + 1;
-        }
-        copy.length = a.length;
-        return copy_v;
+        return src;
     }
     if zjs_is_string(src) != 0 {
         // Split into 1-char strings. Cheap fallback — proper iterator

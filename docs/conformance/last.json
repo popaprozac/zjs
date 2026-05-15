@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 02:16 UTC",
+    "when": "2026-05-15 02:21 UTC",
     "total": 4821,
-    "passed": 1930,
-    "failed": 865,
+    "passed": 1932,
+    "failed": 863,
     "skipped": 2026
   },
   "failures": [
@@ -581,19 +581,11 @@
     },
     {
       "path": "test/language/statements/for-of/arguments-mapped-mutation.js",
-      "reason": "zjs: throw: Test262Error: argument at index 1"
+      "reason": "zjs: throw: Test262Error: argument at index 3"
     },
     {
       "path": "test/language/statements/for-of/arguments-unmapped-mutation.js",
-      "reason": "zjs: throw: Test262Error: argument at index 1"
-    },
-    {
-      "path": "test/language/statements/for-of/array-contract.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/for-of/array-expand.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: Test262Error: argument at index 3"
     },
     {
       "path": "test/language/statements/for-of/array-key-get-error.js",

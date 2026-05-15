@@ -526,7 +526,10 @@ fn run_tests() -> void {
     check_int((char*)"for-of: empty",               (char*)r"let s=42; for (let v of []) { s = s + v }; s", 42);
     check_int((char*)"for-of: bare ident",          (char*)r"let v; for (v of [7,8,9]) {} v", 9);
     check_int((char*)"for-of: inside fn",           (char*)r"function sumArr(xs) { let s = 0; for (let x of xs) { s = s + x }; return s } sumArr([10,20,30])", 60);
-    check_int((char*)"for-of: snapshot length",     (char*)r"let xs = [1,2,3]; let s = 0; for (let v of xs) { s = s + v; xs.push(99) }; s", 6);
+    // for-of observes live mutations of the source array (spec): a pop
+    // inside the loop body cuts the iteration short. Sum of [10,20,30]
+    // after popping the last each step is 10 + 20 = 30.
+    check_int((char*)"for-of: pop mid-iter",        (char*)r"let xs = [10,20,30]; let s = 0; for (let v of xs) { s = s + v; xs.pop() }; s", 30);
     // for-of on string
     check_int((char*)"for-of: string len",          (char*)r"let r=0; for (let c of 'abc') { r = r + 1 }; r", 3);
     check_string((char*)"for-of: string concat",    (char*)r"let r=''; for (let c of 'hi') { r = r + c }; r", (char*)"hi");
