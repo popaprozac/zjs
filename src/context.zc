@@ -2197,6 +2197,16 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     if argc == 0 { return zjs_int32(-1); }
     let needle = args[0];
 
+    // ECMA-262 §22.1.3.14 step 2: `O = ToObject(this)`. For primitive
+    // receivers (`indexOf.call("abc", "b")`, `.call(true, target)`,
+    // numbers, etc.) wrap and dispatch through the generic-object path.
+    // The wrapper's prototype chain carries the indexed properties
+    // (Boolean.prototype[1] = ... patterns) and the length getter.
+    if zjs_is_array(this_val) == 0 && zjs_is_object(this_val) == 0 {
+        this_val = ctx_to_object(ctx, this_val);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
+
     if zjs_is_array(this_val) != 0 {
         let arr = zjs_as_array(this_val);
         let len = arr.length;
@@ -2902,6 +2912,13 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_array_coercible_this(ctx) { return zjs_undefined(); }
     if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
     let this_val = ctx.host_this;
+    // ECMA-262 §22.1.3.18 step 1: O = ToObject(this). Lift primitives
+    // so `Array.prototype.map.call("abc", cb)` walks char indices via
+    // the wrapper's String.prototype chain.
+    if zjs_is_array(this_val) == 0 && zjs_is_object(this_val) == 0 {
+        this_val = ctx_to_object(ctx, this_val);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
     let cb = args[0];
     let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
 
@@ -3095,6 +3112,10 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     if !require_array_coercible_this(ctx) { return zjs_undefined(); }
     if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
     let this_val = ctx.host_this;
+    if zjs_is_array(this_val) == 0 && zjs_is_object(this_val) == 0 {
+        this_val = ctx_to_object(ctx, this_val);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
     let cb = args[0];
     // ECMA-262 §22.1.3.12: forEach(callbackfn, thisArg). Second arg
     // becomes `this` in the callback. Pass undefined when absent.
