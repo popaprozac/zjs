@@ -2266,7 +2266,10 @@ fn read_length_u32(ctx: ZjsContext*, this_val: ZjsValue) -> u32 {
     if zjs_is_array(this_val) != 0 {
         return zjs_as_array(this_val).length;
     }
-    if zjs_is_object(this_val) != 0 {
+    // Any non-array cell value (objects + function / regex / host fn /
+    // wrapper primitives) routes through property_get on the receiver,
+    // which handles each shape's prototype chain.
+    if zjs_is_undefined(this_val) == 0 && zjs_is_null(this_val) == 0 {
         // Use property_get so the proto chain is walked AND accessor
         // properties (Object.defineProperty getters) fire correctly.
         let len_atom = ctx_intern_atom(ctx, (char*)"length", 6);
@@ -3159,11 +3162,10 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let cb = args[0];
     let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
 
-    // Determine length and source-element accessor.
-    let len: u32 = 0;
-    if zjs_is_array(this_val) != 0 { len = zjs_as_array(this_val).length; }
-    else if zjs_is_object(this_val) != 0 { len = read_length_u32(ctx, this_val); }
-    else { return ctx_new_array(ctx, 0); }
+    // Length via read_length_u32 — handles arrays (dense), objects
+    // (property_get + ToLength), and now also functions / regex /
+    // host fns / wrapped primitives by walking the value's prototype.
+    let len = read_length_u32(ctx, this_val);
 
     let result_v = ctx_new_array(ctx, len);
     ctx_push_temp_root(ctx, result_v);
@@ -3187,11 +3189,12 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
                 }
             }
         } else {
-            // Generic-this — we don't track holes on plain objects yet,
-            // so treat every in-range index as present (matches our
-            // current behavior; spec would HasProperty-check).
+            // Generic-this — we don't track holes on non-array objects,
+            // so treat every in-range index as present and read through
+            // property_get (handles function expandos, regex props,
+            // wrapper-prototype chains for primitives, etc.).
             present = true;
-            src = obj_get_indexed(ctx, zjs_as_object(this_val), i);
+            src = property_get(ctx, this_val, zjs_int32((i32)i));
         }
         if present {
             let cb_args: ZjsValue[3];
@@ -3383,29 +3386,22 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         return zjs_undefined();
     }
 
-    // Generic-this path: ToObject(this), then iterate via length /
-    // indexed reads. Spec §22.1.3.12.
-    let obj_val = ctx_to_object(ctx, this_val);
-    if ctx.pending_throw_active { return zjs_undefined(); }
-    ctx_push_temp_root(ctx, obj_val);
-    defer ctx_pop_temp_root(ctx);
-
-    if zjs_is_object(obj_val) != 0 {
-        let o = zjs_as_object(obj_val);
-        let len = read_length_u32(ctx, obj_val);
-        let i: u32 = 0;
-        while i < len {
-            let v = obj_get_indexed(ctx, o, i);
-            let cb_args: ZjsValue[3];
-            cb_args[0] = v;
-            cb_args[1] = zjs_int32((i32)i);
-            cb_args[2] = obj_val;
-            let cb_args_ptr: ZjsValue* = NULL;
-            raw { cb_args_ptr = &cb_args[0]; }
-            raw { (void)zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
-            if ctx.pending_throw_active { return zjs_undefined(); }
-            i = i + 1;
-        }
+    // Generic-this path: read_length_u32 + property_get on the
+    // receiver value. Handles function / host-fn / regex /
+    // wrapper-primitive receivers uniformly (no ZjsObject cast).
+    let len = read_length_u32(ctx, this_val);
+    let i: u32 = 0;
+    while i < len {
+        let v = property_get(ctx, this_val, zjs_int32((i32)i));
+        let cb_args: ZjsValue[3];
+        cb_args[0] = v;
+        cb_args[1] = zjs_int32((i32)i);
+        cb_args[2] = this_val;
+        let cb_args_ptr: ZjsValue* = NULL;
+        raw { cb_args_ptr = &cb_args[0]; }
+        raw { (void)zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i + 1;
     }
     return zjs_undefined();
 }
