@@ -152,6 +152,12 @@ impl Lexer {
         if is_id_start(c) {
             return self.scan_identifier_or_keyword(start);
         }
+        // `\uXXXX` / `\u{...}` is a valid IdentifierStart per spec —
+        // accept it here so the body of scan_identifier_or_keyword
+        // can do the full pass.
+        if c == (u8)'\\' && self.peek_at(1) == (u8)'u' {
+            return self.scan_identifier_or_keyword(start);
+        }
         if is_digit(c) {
             return self.scan_number(start);
         }
@@ -178,14 +184,78 @@ impl Lexer {
     // --- Identifier / keyword ---------------------------------------
 
     fn scan_identifier_or_keyword(self, start: u32) -> Token {
-        // First char already known to be is_id_start (peek confirmed).
-        self.advance();
-        while !self.at_end() && is_id_part(self.peek()) {
+        // First char is is_id_start OR a `\u` escape (caller-checked).
+        let has_escape: bool = false;
+        // Consume the first char (either an id_start byte or a
+        // `\uXXXX` / `\u{...}` escape).
+        if self.peek() == (u8)'\\' {
+            if !self.consume_unicode_escape() {
+                return Token{kind: TokenKind::Invalid, start: start, length: 1};
+            }
+            has_escape = true;
+        } else {
             self.advance();
         }
+        while !self.at_end() {
+            let c = self.peek();
+            if is_id_part(c) {
+                self.advance();
+            } else if c == (u8)'\\' && self.peek_at(1) == (u8)'u' {
+                if !self.consume_unicode_escape() {
+                    return Token{kind: TokenKind::Invalid, start: start, length: 1};
+                }
+                has_escape = true;
+            } else {
+                break;
+            }
+        }
         let length: u32 = (u32)self.pos - start;
+        // If any escape was used, this is an IdentifierName but NOT
+        // a reserved word (spec): `if` is an identifier, never a
+        // keyword. Force Identifier kind to keep keyword positions strict.
+        if has_escape {
+            return Token{kind: TokenKind::Identifier, start: start, length: length};
+        }
         let kind = lookup_keyword(self.source + start, (usize)length);
         return Token{kind: kind, start: start, length: length};
+    }
+
+    // Consumes a `\uXXXX` or `\u{...}` escape after verifying that
+    // the resulting code point would be a valid IdentifierPart/Start.
+    // Currently restricts code points to ASCII id_part chars — the
+    // lexer is ASCII-only elsewhere, so accepting non-ASCII via escape
+    // would be inconsistent with the rest of identifier scanning.
+    fn consume_unicode_escape(self) -> bool {
+        if self.peek() != (u8)'\\' || self.peek_at(1) != (u8)'u' { return false; }
+        self.advance(); self.advance();    // \u
+        let cp: u32 = 0;
+        if self.peek() == (u8)'{' {
+            self.advance();
+            let n: u32 = 0;
+            while !self.at_end() && self.peek() != (u8)'}' {
+                let d = hex_digit_val(self.peek());
+                if d < 0 { return false; }
+                cp = (cp << 4) | (u32)d;
+                n = n + 1;
+                if n > 6 || cp > 0x10FFFF { return false; }
+                self.advance();
+            }
+            if self.peek() != (u8)'}' { return false; }
+            self.advance();
+        } else {
+            let i: u32 = 0;
+            while i < 4 {
+                let d = hex_digit_val(self.peek());
+                if d < 0 { return false; }
+                cp = (cp << 4) | (u32)d;
+                self.advance();
+                i = i + 1;
+            }
+        }
+        // Restrict to ASCII id_part for now.
+        if cp > 0x7F { return false; }
+        if !is_id_part((u8)cp) { return false; }
+        return true;
     }
 
     // --- Number -----------------------------------------------------
@@ -524,6 +594,15 @@ fn is_hex_digit(c: u8) -> bool {
     if c >= (u8)'a' && c <= (u8)'f' { return true; }
     if c >= (u8)'A' && c <= (u8)'F' { return true; }
     return false;
+}
+
+// Returns 0–15 for a hex digit, -1 otherwise. Useful when the value
+// is needed (vs just classification).
+fn hex_digit_val(c: u8) -> int {
+    if c >= (u8)'0' && c <= (u8)'9' { return (int)(c - (u8)'0'); }
+    if c >= (u8)'a' && c <= (u8)'f' { return (int)(c - (u8)'a') + 10; }
+    if c >= (u8)'A' && c <= (u8)'F' { return (int)(c - (u8)'A') + 10; }
+    return -1;
 }
 
 fn is_alpha(c: u8) -> bool {
