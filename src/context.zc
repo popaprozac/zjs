@@ -2474,8 +2474,12 @@ fn host_array_push(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         }
         return zjs_int32((i32)arr.length);
     }
+    // Generic-this: ToObject primitive receivers (push.call(true), etc.)
+    if zjs_is_object(this_val) == 0 {
+        this_val = ctx_to_object(ctx, this_val);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
     if zjs_is_object(this_val) != 0 {
-        // Generic-this: walk obj.length and assign at indices.
         let o = zjs_as_object(this_val);
         let len = read_length_u32(ctx, this_val);
         let i: u32 = 0;
@@ -2503,6 +2507,10 @@ fn host_array_pop(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         arr.elements[arr.length - 1] = zjs_deleted();
         arr.length = arr.length - 1;
         return last;
+    }
+    if zjs_is_object(this_val) == 0 {
+        this_val = ctx_to_object(ctx, this_val);
+        if ctx.pending_throw_active { return zjs_undefined(); }
     }
     if zjs_is_object(this_val) != 0 {
         let o = zjs_as_object(this_val);

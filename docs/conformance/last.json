@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 09:16 UTC",
+    "when": "2026-05-15 09:21 UTC",
     "total": 4821,
-    "passed": 2157,
-    "failed": 638,
+    "passed": 2158,
+    "failed": 637,
     "skipped": 2026
   },
   "failures": [
@@ -930,10 +930,6 @@
     {
       "path": "test/built-ins/Array/prototype/push/S15.4.4.7_A4_T2.js",
       "reason": "zjs: throw: Test262Error: #1: var obj = {}; obj.push = Array.prototype.push; obj.length = 4294967295; obj.push(\"x\", \"y\","
-    },
-    {
-      "path": "test/built-ins/Array/prototype/push/call-with-boolean.js",
-      "reason": "zjs: throw: Test262Error: Array.prototype.push.call(true) must return 0"
     },
     {
       "path": "test/built-ins/Array/prototype/push/clamps-to-integer-limit.js",
