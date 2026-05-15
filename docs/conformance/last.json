@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 09:21 UTC",
+    "when": "2026-05-15 09:25 UTC",
     "total": 4821,
-    "passed": 2158,
-    "failed": 637,
+    "passed": 2159,
+    "failed": 636,
     "skipped": 2026
   },
   "failures": [
@@ -1689,10 +1689,6 @@
     },
     {
       "path": "test/built-ins/JSON/stringify/value-boolean-object.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/value-number-negative-zero.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {

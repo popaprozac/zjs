@@ -3653,6 +3653,9 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
         let is_finite: int = 0;
         raw { is_finite = isfinite(d) ? 1 : 0; }
         if is_finite == 0 { json_buf_puts(b, (char*)"null", 4); return; }
+        // ECMA-262 §7.1.16.1 NumberToString: +0 and -0 both serialize
+        // as "0". snprintf("%g", -0.0) emits "-0" which violates that.
+        if d == 0.0 { json_buf_putc(b, '0'); return; }
         let tmp: char[32];
         let written: int = 0;
         let tp: char* = NULL;
