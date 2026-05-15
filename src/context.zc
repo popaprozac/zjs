@@ -1708,13 +1708,37 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
 }
 
 // Object.getPrototypeOf(obj) — Phase 3.6.
+// ECMA-262 ToObject for Object.{keys, values, entries, getPrototypeOf,
+// getOwnPropertyNames, ...}: null and undefined throw TypeError per ES2015+.
+// Returns true if the argument is suitable; false (with a pending throw
+// armed) if the caller must bail.
+fn require_object_keys_arg(ctx: ZjsContext*, v: ZjsValue) -> bool {
+    if zjs_is_null(v) != 0 || zjs_is_undefined(v) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Cannot convert null or undefined to object", 43);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return false;
+    }
+    return true;
+}
+
 fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if argc == 0 { return zjs_null(); }
-    let v = args[0];
+    let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !require_object_keys_arg(ctx, v) { return zjs_undefined(); }
     if zjs_is_object(v) != 0 {
         let o = zjs_as_object(v);
         if o.proto == NULL { return zjs_null(); }
         return zjs_cell_from_ptr((void*)o.proto);
+    }
+    if zjs_is_array(v) != 0 {
+        if ctx.array_proto == NULL { return zjs_null(); }
+        return zjs_cell_from_ptr((void*)ctx.array_proto);
+    }
+    // Primitives — ToObject would wrap, then get prototype. For our
+    // MVP just return the matching prototype chain root directly.
+    if zjs_is_string(v) != 0 && ctx.string_proto != NULL {
+        return zjs_cell_from_ptr((void*)ctx.string_proto);
     }
     return zjs_null();
 }
@@ -1771,9 +1795,8 @@ fn host_object_get_own_property_names(ctx: ZjsContext*, args: ZjsValue*, argc: u
 }
 
 fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if argc == 0 {
-        return ctx_new_array(ctx, 0);
-    }
+    let arg0 = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !require_object_keys_arg(ctx, arg0) { return zjs_undefined(); }
     // Array path: enumerate present indices as string keys. Holes and
     // out-of-length slots stay invisible. Length itself is
     // non-enumerable so it's omitted.

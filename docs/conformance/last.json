@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 02:30 UTC",
+    "when": "2026-05-15 02:35 UTC",
     "total": 4821,
-    "passed": 1940,
-    "failed": 855,
+    "passed": 1950,
+    "failed": 845,
     "skipped": 2026
   },
   "failures": [
@@ -1400,14 +1400,6 @@
       "reason": "timeout"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/create-non-array.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/create-proto-from-ctor-realm-array.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/create-proto-from-ctor-realm-non-array.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
@@ -1416,16 +1408,8 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/create-species-null.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/create-species-poisoned.js",
       "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/create-species-undef.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-species.js",
@@ -1590,14 +1574,6 @@
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-0-2.js",
       "reason": "zjs: throw: Test262Error: Object.keys.length"
-    },
-    {
-      "path": "test/built-ins/Object/keys/15.2.3.14-1-4.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Object/keys/15.2.3.14-1-5.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Object/keys/15.2.3.14-2-7.js",
@@ -1836,20 +1812,8 @@
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf.length"
     },
     {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-0-3.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-1-2.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-1-3.js",
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(true)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-1-4.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(\"abc\")"
     },
     {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-1.js",
@@ -1900,10 +1864,6 @@
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(obj)"
     },
     {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-21.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(arr)"
-    },
-    {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-28.js",
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(obj)"
     },
@@ -1913,7 +1873,7 @@
     },
     {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-30.js",
-      "reason": "zjs: throw: Test262Error: proto.isPrototypeOf(this)"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-4.js",
@@ -2933,11 +2893,11 @@
     },
     {
       "path": "test/built-ins/Promise/all/resolve-element-function-property-order.js",
-      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/all/resolve-element-function-prototype.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/all/resolve-from-same-thenable.js",
@@ -2965,7 +2925,7 @@
     },
     {
       "path": "test/built-ins/Promise/allKeyed/proto.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Promise.allKeyed) must return the value of Function.prototype"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/allSettled/capability-executor-called-twice.js",
@@ -3029,11 +2989,11 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-element-function-property-order.js",
-      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-element-function-prototype.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-element-function-extensible.js",
@@ -3045,11 +3005,11 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-element-function-property-order.js",
-      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-element-function-prototype.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-throws-iterator-return-is-not-callable.js",
@@ -3073,7 +3033,7 @@
     },
     {
       "path": "test/built-ins/Promise/allSettledKeyed/proto.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Promise.allSettledKeyed) must return the value of Function.prototype"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/any/call-reject-element-after-return.js",
@@ -3117,11 +3077,11 @@
     },
     {
       "path": "test/built-ins/Promise/any/reject-element-function-property-order.js",
-      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/any/reject-element-function-prototype.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/any/reject-from-same-thenable.js",
@@ -3157,11 +3117,11 @@
     },
     {
       "path": "test/built-ins/Promise/executor-function-property-order.js",
-      "reason": "zjs: throw: Test262Error: The `length` property comes before the `name` property on built-in functions"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/executor-function-prototype.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/executor-not-callable.js",
