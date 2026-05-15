@@ -2885,10 +2885,13 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let result_v = ctx_new_array(ctx, 0);
     let result = zjs_as_array(result_v);
 
-    // Empty separator: split into individual characters.
+    // ECMA-262 §22.1.3.21 step 9: limit == 0 short-circuits to [].
+    if limit_u32 == 0 { return result_v; }
+
+    // Empty separator: split into individual characters, honoring limit.
     if sep.length == 0 {
         let i: u32 = 0;
-        while i < s.length {
+        while i < s.length && result.length < limit_u32 {
             let buf = alloc_n<char>((usize)2);
             buf[0] = s.data[i];
             buf[1] = (char)0;
@@ -2905,7 +2908,7 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let nee_n  = sep.length;
     let cursor: u32 = 0;
     let i: u32 = 0;
-    while i + nee_n <= hay_n {
+    while i + nee_n <= hay_n && result.length < limit_u32 {
         let matches: int = 0;
         let off = i;
         raw { matches = (memcmp(hay_d + off, nee_d, nee_n) == 0) ? 1 : 0; }
@@ -2926,17 +2929,19 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             i = i + 1;
         }
     }
-    // Trailing remainder
-    let tail_len = hay_n - cursor;
-    let tail_buf = alloc_n<char>((usize)(tail_len + 1));
-    if tail_len > 0 {
-        let src: char* = NULL;
-        raw { src = &hay_d[cursor]; }
-        mem_copy<char>(tail_buf, src, (usize)tail_len);
+    // Trailing remainder (respect limit too).
+    if result.length < limit_u32 {
+        let tail_len = hay_n - cursor;
+        let tail_buf = alloc_n<char>((usize)(tail_len + 1));
+        if tail_len > 0 {
+            let src: char* = NULL;
+            raw { src = &hay_d[cursor]; }
+            mem_copy<char>(tail_buf, src, (usize)tail_len);
+        }
+        tail_buf[tail_len] = (char)0;
+        let tail = ctx_intern_string_take(ctx, tail_buf, tail_len);
+        array_set(result, result.length, tail);
     }
-    tail_buf[tail_len] = (char)0;
-    let tail = ctx_intern_string_take(ctx, tail_buf, tail_len);
-    array_set(result, result.length, tail);
     return result_v;
 }
 
