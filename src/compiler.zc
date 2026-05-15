@@ -3155,6 +3155,11 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             emit(c, make_inst_a(Op::LeaveTry, 0));
             let skip_idx = emit(c, make_inst_i16(Op::Jmp, 0));
             patch_jump(c, enter_idx);
+            // Catch entry: reset the result register so an empty
+            // catch body produces undefined (UpdateEmpty per spec).
+            if !c.is_function && c.last_expr_reg >= 0 {
+                emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
+            }
             // Bind the catch parameter for the catch body only.
             if added_catch_local {
                 add_local(c, node.name_start, node.name_length, catch_reg);
@@ -3190,6 +3195,10 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             emit(c, make_inst_a(Op::LeaveTry, 0));
             let skip_catch = emit(c, make_inst_i16(Op::Jmp, 0));
             patch_jump(c, inner_enter);
+            // Reset result register on catch entry per UpdateEmpty.
+            if !c.is_function && c.last_expr_reg >= 0 {
+                emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
+            }
             // Catch parameter bound for the catch body only.
             if added_catch_local {
                 add_local(c, node.name_start, node.name_length, catch_reg);
@@ -3215,8 +3224,31 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         emit(c, make_inst_a(Op::LoadTrue, flag_reg));
         patch_jump(c, skip_outer);
 
+        // Save the try/catch body's result so the spec semantics for
+        // try-finally apply: if finally completes normally, the body's
+        // completion wins (with empty → undefined). Reset result_reg
+        // before the finally so an empty finally itself doesn't
+        // contribute a value.
+        let body_save: i32 = -1;
+        if !c.is_function && c.last_expr_reg >= 0 {
+            let save_reg = alloc_reg(c);
+            if save_reg + 1 > c.fixed_regs { c.fixed_regs = save_reg + 1; }
+            emit(c, make_inst_ab(Op::Mov, save_reg, (u8)c.last_expr_reg));
+            emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
+            body_save = (i32)save_reg;
+        }
+
         // Finally body runs on both paths.
         compile_stmt(c, node.third);
+
+        // After finally completes normally, restore the body's value
+        // (UpdateEmpty(B, undefined) per spec). Abrupt finally
+        // completions (return/throw inside finally) take a different
+        // path and never reach this Mov.
+        if body_save >= 0 {
+            emit(c, make_inst_ab(Op::Mov, (u8)c.last_expr_reg, (u8)body_save));
+            release_reg(c, (u8)body_save);
+        }
 
         // If we got here via the outer handler, re-throw pending_reg.
         let after_finally = emit(c, make_inst_a_i16(Op::JmpIfFalse, flag_reg, 0));

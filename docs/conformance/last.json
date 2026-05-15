@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 21:33 UTC",
+    "when": "2026-05-15 21:38 UTC",
     "total": 13247,
-    "passed": 2582,
-    "failed": 721,
+    "passed": 2586,
+    "failed": 717,
     "skipped": 9944
   },
   "failures": [
@@ -466,22 +466,6 @@
     {
       "path": "test/language/statements/try/completion-values-fn-finally-abrupt.js",
       "reason": "zjs: throw: Test262Error: 2: fiinally count"
-    },
-    {
-      "path": "test/language/statements/try/completion-values.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/try/cptn-finally-from-catch.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/try/cptn-finally-skip-catch.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/language/statements/try/cptn-finally-wo-catch.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/try/early-catch-function.js",
