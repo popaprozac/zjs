@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 17:36 UTC",
+    "when": "2026-05-15 17:41 UTC",
     "total": 4821,
-    "passed": 2288,
-    "failed": 507,
+    "passed": 2290,
+    "failed": 505,
     "skipped": 2026
   },
   "failures": [
@@ -1222,14 +1222,6 @@
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-8-10.js",
       "reason": "zjs: throw: Test262Error: callCnt"
-    },
-    {
-      "path": "test/built-ins/Object/keys/15.2.3.14-3-2.js",
-      "reason": "zjs: throw: Test262Error: a.length"
-    },
-    {
-      "path": "test/built-ins/Object/keys/15.2.3.14-5-12.js",
-      "reason": "zjs: throw: Test262Error: Property not found"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-12.js",

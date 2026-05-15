@@ -2603,23 +2603,17 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
                     let raw_v = a.props.slots[slot];
                     let attrs = object_get_attrs(a.props, slot);
                     if zjs_is_deleted(raw_v) == 0 && (attrs & PROP_ENUMERABLE) != 0 {
-                        // Only emit numeric-keyed entries through this
-                        // path (named expandos are already covered by
-                        // the spec's "all own enumerable string keys"
-                        // and aren't expected when the receiver is an
-                        // array literal).
+                        // Skip internal `__zjs_*` hidden keys. Numeric
+                        // keys past arr.cap AND string keys (e.g. a
+                        // defineProperty'd named prop on an array)
+                        // both land here.
                         let nd = nm.data;
                         let nl = nm.length;
-                        let is_numeric: int = 0;
-                        raw {
-                            is_numeric = 1;
-                            if (nl == 0) is_numeric = 0;
-                            for (uint32_t kk = 0; kk < nl && is_numeric; kk++) {
-                                char c = nd[kk];
-                                if (c < '0' || c > '9') is_numeric = 0;
-                            }
+                        let is_internal: bool = false;
+                        if nl >= 6 {
+                            raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
                         }
-                        if is_numeric != 0 {
+                        if !is_internal {
                             array_set(out_arr, out_idx, zjs_cell_from_ptr((void*)nm));
                             out_idx = out_idx + 1;
                         }
@@ -2631,10 +2625,35 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         out_arr.length = out_idx;
         return out_v;
     }
-    if zjs_is_object(args[0]) == 0 {
+    // Function / host-function / regex receivers: walk the .props
+    // expando if any. Closure shares the underlying Function*.
+    let receiver_obj: ZjsObject* = NULL;
+    if zjs_is_function(args[0]) != 0 {
+        let fp = zjs_cell_as_ptr(args[0]);
+        let f: Function* = NULL;
+        raw { f = (Function*)fp; }
+        receiver_obj = f.props;
+    } else if zjs_is_closure(args[0]) != 0 {
+        let cl = zjs_as_closure(args[0]);
+        let fp2 = cl.function;
+        let f2: Function* = NULL;
+        raw { f2 = (Function*)fp2; }
+        receiver_obj = f2.props;
+    } else if zjs_is_host_function(args[0]) != 0 {
+        let hf = zjs_as_host_function(args[0]);
+        receiver_obj = hf.props;
+    } else if zjs_is_regexp(args[0]) != 0 {
+        let r = zjs_as_regexp(args[0]);
+        receiver_obj = r.props;
+    } else if zjs_is_object(args[0]) != 0 {
+        receiver_obj = zjs_as_object(args[0]);
+    } else {
         return ctx_new_array(ctx, 0);
     }
-    let o = zjs_as_object(args[0]);
+    if receiver_obj == NULL {
+        return ctx_new_array(ctx, 0);
+    }
+    let o = receiver_obj;
     let cap = o.cls.prop_count;
     let arr_v = ctx_new_array(ctx, cap);
     let arr = zjs_as_array(arr_v);
