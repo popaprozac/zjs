@@ -3777,7 +3777,19 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
         let tmp: char[32];
         let written: int = 0;
         let tp: char* = NULL;
-        raw { tp = &tmp[0]; written = snprintf(tp, 32, "%g", d); }
+        raw {
+            tp = &tmp[0];
+            // Shortest round-trip: try precisions until strtod recovers
+            // the same double. Same algorithm as zjs_to_string.
+            int found = 0;
+            for (int prec = 1; prec <= 17 && !found; prec++) {
+                int n = snprintf(tp, 32, "%.*g", prec, d);
+                char* end = NULL;
+                double rt = strtod(tp, &end);
+                if (rt == d) { written = n; found = 1; }
+            }
+            if (!found) { written = snprintf(tp, 32, "%.17g", d); }
+        }
         json_buf_puts(b, tp, (u32)written);
         return;
     }
@@ -7019,10 +7031,26 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
                 // Integral path — no trailing ".0".
                 len = (size_t)snprintf(buf, 64, "%lld", (long long)d);
             } else {
-                // %g default (6 sig figs) — matches common JS toString
-                // for typical decimals. Not the spec's shortest-round-
-                // trip algorithm, but close enough for most workloads.
-                len = (size_t)snprintf(buf, 64, "%g", d);
+                // Spec wants the shortest string that round-trips
+                // through strtod back to the same double. Try
+                // increasing precision (1..17) and pick the first
+                // that does. Worst case is %.17g; common values
+                // settle around 1-6 sig figs.
+                int found = 0;
+                for (int prec = 1; prec <= 17 && !found; prec++) {
+                    char tmp[64];
+                    size_t n = (size_t)snprintf(tmp, 64, "%.*g", prec, d);
+                    char* end = NULL;
+                    double rt = strtod(tmp, &end);
+                    if (rt == d) {
+                        memcpy(buf, tmp, n + 1);
+                        len = n;
+                        found = 1;
+                    }
+                }
+                if (!found) {
+                    len = (size_t)snprintf(buf, 64, "%.17g", d);
+                }
             }
         }
     } else if zjs_is_bool(v) != 0 {

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 10:35 UTC",
+    "when": "2026-05-15 10:41 UTC",
     "total": 4821,
-    "passed": 2169,
-    "failed": 626,
+    "passed": 2170,
+    "failed": 625,
     "skipped": 2026
   },
   "failures": [
@@ -1732,10 +1732,6 @@
       "reason": "zjs: throw: Test262Error: ToInteger: [\"1\"].toString() => \"1\" => 1"
     },
     {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T15.js",
-      "reason": "zjs: throw: Test262Error: #1: var __num = 11.001002; Number.prototype.slice = String.prototype.slice; __num.slice()===\"1"
-    },
-    {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",
       "reason": "zjs: throw: Test262Error: #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: undefined"
     },
@@ -1849,7 +1845,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-regexp-limit-string-via-eval.js",
-      "reason": "zjs: throw: Test262Error: The value of __split[0] is \"6776767677.\""
+      "reason": "zjs: throw: Test262Error: The value of __split.length is 1"
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-undef-limit-zero.js",
