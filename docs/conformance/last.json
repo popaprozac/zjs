@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 02:12 UTC",
+    "when": "2026-05-15 02:16 UTC",
     "total": 4821,
-    "passed": 1906,
-    "failed": 889,
+    "passed": 1930,
+    "failed": 865,
     "skipped": 2026
   },
   "failures": [
@@ -1976,58 +1976,6 @@
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Date)"
     },
     {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-1.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-2.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-3.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-4.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-5.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-6.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-8.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g1-1.js",
-      "reason": "zjs: throw: Test262Error: <TAB> should produce a syntax error as whitespace results in two tokens"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g1-2.js",
-      "reason": "zjs: throw: Test262Error: <CR> should produce a syntax error as whitespace results in two tokens"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g1-3.js",
-      "reason": "zjs: throw: Test262Error: <LF> should produce a syntax error as whitespace results in two tokens"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g1-4.js",
-      "reason": "zjs: throw: Test262Error: <SP> should produce a syntax error as whitespace results in two tokens"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g2-2.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g2-3.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/built-ins/JSON/parse/15.12.1.1-g2-4.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
@@ -2048,35 +1996,7 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g5-2.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g5-3.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/built-ins/JSON/parse/15.12.2-2-1.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-10.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-2.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-3.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-4.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-5.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
@@ -2084,24 +2004,8 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-7.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-8.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-9.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/built-ins/JSON/parse/builtin.js",
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(\"JSON.parse\") must return the value of Function.prototype"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/invalid-whitespace.js",
-      "reason": "zjs: throw: Test262Error: \\u1680"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-array-get-prop-from-prototype.js",
@@ -2133,7 +2037,7 @@
     },
     {
       "path": "test/built-ins/JSON/parse/text-object-abrupt.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
+      "reason": "zjs: throw: Test262Error: wrong error type"
     },
     {
       "path": "test/built-ins/JSON/stringify/builtin.js",
