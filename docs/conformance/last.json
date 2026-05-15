@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 17:16 UTC",
+    "when": "2026-05-15 17:21 UTC",
     "total": 4821,
-    "passed": 2277,
-    "failed": 518,
+    "passed": 2279,
+    "failed": 516,
     "skipped": 2026
   },
   "failures": [
@@ -222,14 +222,6 @@
     {
       "path": "test/language/expressions/instanceof/S15.3.5.3_A3_T2.js",
       "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
-    },
-    {
-      "path": "test/language/expressions/instanceof/primitive-prototype-with-object.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/language/expressions/instanceof/prototype-getter-with-primitive.js",
-      "reason": "zjs: throw: Test262Error: getter for 'prototype' called"
     },
     {
       "path": "test/language/expressions/instanceof/symbol-hasinstance-get-err.js",

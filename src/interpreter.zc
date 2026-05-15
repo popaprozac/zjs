@@ -1989,12 +1989,25 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             } else if zjs_is_object(ctor) != 0
                       && zjs_as_object(ctor) == ctx.function_proto {
                 // Function.prototype is callable per spec (a no-op
-                // anonymous function). For OrdinaryHasInstance to
-                // proceed: read its `prototype` property (which may
-                // have been overridden by a getter or data assignment)
-                // and use that as the chain root. Primitive LHS still
-                // returns false early at the chain-walk step below.
+                // anonymous function). For OrdinaryHasInstance, step 3
+                // (Type(O) is not Object → return false) happens BEFORE
+                // step 4 (Get C.prototype). Short-circuit here so we
+                // never invoke a `Function.prototype.prototype` getter
+                // when LHS is a primitive.
                 ctor_callable = true;
+                let val_is_obj: bool =
+                       zjs_is_object(val) != 0
+                    || zjs_is_array(val) != 0
+                    || zjs_is_function(val) != 0
+                    || zjs_is_closure(val) != 0
+                    || zjs_is_host_function(val) != 0
+                    || zjs_is_promise(val) != 0
+                    || zjs_is_regexp(val) != 0;
+                if !val_is_obj {
+                    regs[inst.a] = zjs_bool(0);
+                    ip = ip + 1;
+                    continue;
+                }
                 let p_atom = ctx_intern_atom(ctx, (char*)"prototype", 9);
                 let p_v = property_get(ctx, ctor, zjs_cell_from_ptr((void*)p_atom));
                 if ctx.pending_throw_active {
@@ -2002,10 +2015,17 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                     thrown = consume_pending_throw(ctx);
                     exit_reason = 3; break;
                 }
+                // OrdinaryHasInstance step 5: if Type(P) is not Object,
+                // throw TypeError.
+                let p_is_obj: bool =
+                       zjs_is_object(p_v) != 0
+                    || zjs_is_array(p_v) != 0;
+                if !p_is_obj {
+                    let perr = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                 (char*)"Function has non-object prototype in instanceof check", 53);
+                    throwing = true; thrown = perr; exit_reason = 3; break;
+                }
                 if zjs_is_object(p_v) != 0 { proto_obj = zjs_as_object(p_v); }
-                else if zjs_is_array(p_v) != 0 { proto_obj = NULL; }
-                // Primitive prototype overrides default — OrdinaryHasInstance
-                // still returns false for non-object LHS (handled below).
             }
             if !ctor_callable {
                 let err = build_typed_error(ctx, (char*)"TypeError", 9,
