@@ -1330,22 +1330,28 @@ fn compile_regex_literal(c: Compiler*, node: AstNode*) -> u8 {
     return dst;
 }
 
-fn compile_string_literal(c: Compiler*, node: AstNode*) -> u8 {
-    // node.start/end include the surrounding quotes.
-    let raw_start = node.start + 1;
-    let raw_end   = if node.end > 0 { node.end - 1 } else { node.start + 1 };
-    let raw_len   = if raw_end > raw_start { raw_end - raw_start } else { 0 };
-
-    // Decoded length is at most raw_len (escapes shrink, never grow).
-    let buf = alloc_n<char>((usize)(raw_len + 1));
-
+// Decode a JS string-literal body (excluding the surrounding quotes)
+// from src[raw_start..raw_start+raw_len] into buf. Returns the number
+// of bytes written to buf. Handles \xXX, \uXXXX, \u{...}, \n, \t, \r,
+// \b, \f, \v, \0, line-continuations, and the trivial \" \' \\ cases.
+// buf must have room for raw_len + 1 bytes (escapes can only shrink).
+fn decode_string_body(src: char*, raw_start: u32, raw_len: u32, buf: char*) -> u32 {
     let out: u32 = 0;
     let i: u32 = 0;
-    let src = c.source;
     while i < raw_len {
         let ch = src[raw_start + i];
         if ch == 92 && i + 1 < raw_len {        // backslash
             let nx = src[raw_start + i + 1];
+            // \<LineTerminator> — line continuation: produces nothing.
+            if nx == 10 {                         // LF
+                i = i + 2;
+                continue;
+            }
+            if nx == 13 {                         // CR or CR-LF
+                if i + 2 < raw_len && src[raw_start + i + 2] == 10 { i = i + 3; }
+                else                                                { i = i + 2; }
+                continue;
+            }
             // \xXX — 2-hex-digit byte.
             if nx == 120 && i + 3 < raw_len {    // 'x'
                 let h1: int = 0;
@@ -1367,13 +1373,11 @@ fn compile_string_literal(c: Compiler*, node: AstNode*) -> u8 {
                     continue;
                 }
             }
-            // \uXXXX — 4-hex-digit code point, UTF-8-encoded into buf.
-            // Also \u{XXXXXX} variable-length form.
-            if nx == 117 {  // 'u'
+            // \uXXXX / \u{...} — UTF-8 encode into buf.
+            if nx == 117 {
                 let cp: u32 = 0;
                 let consumed: u32 = 0;
                 if i + 2 < raw_len && src[raw_start + i + 2] == 123 {
-                    // \u{...} — read until '}'
                     let p: u32 = i + 3;
                     let valid: bool = true;
                     while p < raw_len {
@@ -1393,7 +1397,6 @@ fn compile_string_literal(c: Compiler*, node: AstNode*) -> u8 {
                         consumed = p - i + 1;
                     }
                 } else if i + 5 < raw_len {
-                    // \uXXXX
                     let h1: int = -1; let h2: int = -1;
                     let h3: int = -1; let h4: int = -1;
                     let c1 = src[raw_start + i + 2];
@@ -1412,9 +1415,6 @@ fn compile_string_literal(c: Compiler*, node: AstNode*) -> u8 {
                     }
                 }
                 if consumed > 0 {
-                    // Encode the code point as UTF-8 into buf. We
-                    // pre-allocated raw_len bytes, which is ≥ the 4-byte
-                    // maximum (\u{XXXXXX} source is 8 chars min).
                     let bp: char* = NULL;
                     let out_off = out;
                     raw { bp = &buf[out_off]; }
@@ -1442,13 +1442,18 @@ fn compile_string_literal(c: Compiler*, node: AstNode*) -> u8 {
             i = i + 1;
         }
     }
-    buf[out] = 0;
+    return out;
+}
 
-    // String literals in source are also deduped through the atom
-    // table — `'hello'` appearing twice in the same program (or
-    // across multiple programs sharing a context) lands on the same
-    // ZjsString*. The take-form adopts our decoded buffer on miss
-    // and frees it on dedup hit, so we never copy.
+fn compile_string_literal(c: Compiler*, node: AstNode*) -> u8 {
+    // node.start/end include the surrounding quotes.
+    let raw_start = node.start + 1;
+    let raw_end   = if node.end > 0 { node.end - 1 } else { node.start + 1 };
+    let raw_len   = if raw_end > raw_start { raw_end - raw_start } else { 0 };
+
+    let buf = alloc_n<char>((usize)(raw_len + 1));
+    let out = decode_string_body(c.source, raw_start, raw_len, buf);
+    buf[out] = (char)0;
     let s = ctx_intern_atom_take(c.ctx, buf, out);
     let val = zjs_cell_from_ptr((void*)s);
     let idx = add_const(c, val);
@@ -1724,27 +1729,14 @@ fn intern_method_name_atom(c: Compiler*, name_start: u32, name_length: u32) -> Z
         let bp: char* = NULL; raw { bp = &buf[0]; }
         return ctx_intern_atom(c.ctx, bp, (u32)len);
     }
-    // StringLit: surrounded by quotes. Strip them; minimal escape
-    // handling (just `\\` and `\"`/`\'` — full escape passes through).
+    // StringLit: surrounded by quotes. Strip them and run the full
+    // string-literal escape decoder (same path as compile_string_literal).
     if first == 34 || first == 39 {     // '"' or '\''
         if ml < 2 { return ctx_intern_atom(c.ctx, (char*)"", 0); }
         let inner_start = name_start + 1;
         let inner_len   = ml - 2;
         let buf = alloc_n<char>((usize)(inner_len + 1));
-        let out: u32 = 0;
-        let i: u32 = 0;
-        while i < inner_len {
-            let ch = c.source[inner_start + i];
-            if ch == 92 && i + 1 < inner_len {        // backslash
-                let nx = c.source[inner_start + i + 1];
-                if nx == 92 || nx == 34 || nx == 39 {  // \\, \", \'
-                    buf[out] = (char)nx; out = out + 1; i = i + 2; continue;
-                }
-                if nx == 110 { buf[out] = (char)10; out = out + 1; i = i + 2; continue; }
-                if nx == 116 { buf[out] = (char)9;  out = out + 1; i = i + 2; continue; }
-            }
-            buf[out] = ch; out = out + 1; i = i + 1;
-        }
+        let out = decode_string_body(c.source, inner_start, inner_len, buf);
         buf[out] = (char)0;
         return ctx_intern_atom_take(c.ctx, buf, out);
     }
