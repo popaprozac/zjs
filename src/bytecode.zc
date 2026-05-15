@@ -226,6 +226,10 @@ enum Op {
     //   are (writable + configurable, NOT enumerable). Used by
     //   class method definitions which spec-mandate non-enumerable.
     DefineMethod,     // a=obj, b=ic_slot, c=val_reg.
+    // SetParentCtor: record regs[b] (the parent constructor) on
+    //   the Function* in regs[a]. Used by class-extends so
+    //   Object.getPrototypeOf(Child) returns Parent.
+    SetParentCtor,    // a=ctor, b=parent.
                       // dst = a string from ECMA-262 §13.5.3
                       // (one of: "undefined" "object" "boolean"
                       // "number" "string" "function").
@@ -358,6 +362,11 @@ struct Function {
     // it has no .prototype property and is not constructible. Read
     // by `is_proto` and the constructibility checks.
     is_method: bool;
+    // For `class Child extends Parent { ... }`: holds the parent
+    // constructor so Object.getPrototypeOf(Child) === Parent. Plain
+    // (non-extended) classes leave this undefined. Marked at class-
+    // create time on the Function*.
+    parent_ctor:          ZjsValue;
 }
 
 fn function_new() -> Function* {
@@ -367,6 +376,7 @@ fn function_new() -> Function* {
     // very subtle bug.
     let f = zalloc<Function>();
     f.header.type_tag = TAG_FUNCTION;
+    f.parent_ctor = zjs_undefined();
     return f;
 }
 

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 21:15 UTC",
+    "when": "2026-05-15 21:20 UTC",
     "total": 13247,
-    "passed": 2576,
-    "failed": 727,
+    "passed": 2577,
+    "failed": 726,
     "skipped": 9944
   },
   "failures": [
@@ -730,10 +730,6 @@
     {
       "path": "test/language/statements/class/definition/setters-restricted-ids.js",
       "reason": "zjs: throw: Test262Error: The value of `x` is `3`"
-    },
-    {
-      "path": "test/language/statements/class/definition/side-effects-in-extends.js",
-      "reason": "zjs: throw: Test262Error: `Object.getPrototypeOf(D)` returns `C`"
     },
     {
       "path": "test/language/statements/class/definition/this-access-restriction-2.js",

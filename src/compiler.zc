@@ -1893,9 +1893,10 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         mi = mi + 1;
     }
 
-    // `extends Parent`: chain Child.prototype.[[Prototype]] = Parent.prototype.
-    // Evaluated AFTER methods are attached so the methods land on the
-    // child's own prototype (not the parent's).
+    // `extends Parent`: chain Child.prototype.[[Prototype]] = Parent.prototype
+    // AND record the parent constructor on the Function* so
+    // Object.getPrototypeOf(Child) === Parent. Evaluated AFTER methods
+    // are attached so the methods land on the child's own prototype.
     if cls_node.right != NULL {
         let parent_reg = compile_expr(c, cls_node.right);
         let parent_proto_ic = alloc_ic_slot(c, ctx_intern_atom(c.ctx, (char*)"prototype", 9));
@@ -1904,6 +1905,7 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
             emit(c, make_inst_abc(Op::LoadProp, parent_proto_reg, parent_reg, (u8)parent_proto_ic));
             emit(c, make_inst_ab(Op::SetProto, parent_proto_reg, proto_reg));
         }
+        emit(c, make_inst_ab(Op::SetParentCtor, ctor_reg, parent_reg));
         release_reg(c, parent_proto_reg);
         if parent_reg + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
     }

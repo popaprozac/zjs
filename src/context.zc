@@ -700,6 +700,7 @@ fn gc_mark_value(v: ZjsValue) -> void {
         if f.props != NULL {
             gc_mark_value(zjs_cell_from_ptr((void*)f.props));
         }
+        gc_mark_value(f.parent_ctor);
         return;
     }
 }
@@ -2549,7 +2550,20 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         if ctx.function_proto == NULL { return zjs_null(); }
         return zjs_cell_from_ptr((void*)ctx.function_proto);
     }
-    if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 {
+    if zjs_is_function(v) != 0 {
+        let fp = zjs_cell_as_ptr(v);
+        let ff: Function* = NULL;
+        raw { ff = (Function*)fp; }
+        if zjs_is_undefined(ff.parent_ctor) == 0 { return ff.parent_ctor; }
+        if ctx.function_proto == NULL { return zjs_null(); }
+        return zjs_cell_from_ptr((void*)ctx.function_proto);
+    }
+    if zjs_is_closure(v) != 0 {
+        let cl = zjs_as_closure(v);
+        let fp2 = cl.function;
+        let ff2: Function* = NULL;
+        raw { ff2 = (Function*)fp2; }
+        if zjs_is_undefined(ff2.parent_ctor) == 0 { return ff2.parent_ctor; }
         if ctx.function_proto == NULL { return zjs_null(); }
         return zjs_cell_from_ptr((void*)ctx.function_proto);
     }
