@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 08:36 UTC",
+    "when": "2026-05-15 08:41 UTC",
     "total": 4821,
-    "passed": 2124,
-    "failed": 671,
+    "passed": 2126,
+    "failed": 669,
     "skipped": 2026
   },
   "failures": [
@@ -1772,10 +1772,6 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/built-ins/JSON/stringify/replacer-array-duplicates.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/built-ins/JSON/stringify/replacer-array-number-object.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
@@ -1830,10 +1826,6 @@
     {
       "path": "test/built-ins/JSON/stringify/value-number-object.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/value-object-abrupt.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/JSON/stringify/value-object-circular.js",

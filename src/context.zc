@@ -3626,9 +3626,14 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
                     let slot = class_find_slot(o.cls, kname);
                     if slot >= 0 {
                         let attrs = object_get_attrs(o, (u32)slot);
-                        let val = o.slots[(u32)slot];
-                        if (attrs & PROP_ENUMERABLE) != 0 && zjs_is_deleted(val) == 0 {
+                        let raw_slot = o.slots[(u32)slot];
+                        if (attrs & PROP_ENUMERABLE) != 0 && zjs_is_deleted(raw_slot) == 0 {
+                            // Route through property_get so accessor
+                            // getters fire (and their throws propagate).
+                            let val = property_get(ctx, v, kv);
+                            if ctx.pending_throw_active { return; }
                             let processed = json_apply_replacer(ctx, jc, kv, val);
+                            if ctx.pending_throw_active { return; }
                             if zjs_is_undefined(processed) == 0
                                && !(zjs_cell_tag(processed) == TAG_FUNCTION
                                     || zjs_cell_tag(processed) == TAG_CLOSURE
@@ -3651,8 +3656,12 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
                     let attrs = object_get_attrs(o, i);
                     if (attrs & PROP_ENUMERABLE) != 0 && zjs_is_deleted(o.slots[i]) == 0 {
                         let key_v = zjs_cell_from_ptr((void*)n);
-                        let val = o.slots[i];
+                        // property_get fires accessors and lets their
+                        // throws propagate (value-object-abrupt-style).
+                        let val = property_get(ctx, v, key_v);
+                        if ctx.pending_throw_active { return; }
                         let processed = json_apply_replacer(ctx, jc, key_v, val);
+                        if ctx.pending_throw_active { return; }
                         // Skip undefined and callable values (spec).
                         let is_callable: bool =
                                zjs_is_function(processed) != 0
