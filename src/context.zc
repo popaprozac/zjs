@@ -16,6 +16,11 @@ raw {
     #include <stdio.h>
     #include <stdlib.h>
     #include <string.h>
+    // Forward decl — defined in eval.zc; lets host_function_ctor /
+    // similar runtime-compile paths reach it without a circular import.
+    typedef struct ZjsValue ZjsValue;
+    typedef struct ZjsContext ZjsContext;
+    ZjsValue zjs_eval(ZjsContext* ctx, char* source);
 }
 
 struct GlobalEntry {
@@ -6816,6 +6821,91 @@ fn host_eval_stub(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_undefined();
 }
 
+// new Function(p1, p2, ..., body) — compile a function whose
+// parameter list is the leading args and whose body is the last arg.
+// Top-level Function() and `new Function()` share semantics here
+// (we ignore `this`). Per spec the function's [[Environment]] is the
+// global environment, which matches our "no closure capture" model
+// for compiled-at-runtime code.
+fn host_function_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // Stringify each argument; collect into a single source buffer
+    // shaped like `(function anonymous(p1, p2) {\n body \n})`.
+    let body_v: ZjsValue = ctx_intern_string(ctx, (char*)"", 0);
+    if argc >= 1 {
+        body_v = args[argc - 1];
+        if zjs_is_string(body_v) == 0 {
+            body_v = zjs_to_string(ctx, body_v);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        }
+    }
+    let body_s = zjs_as_string(body_v);
+
+    // Build parameter list (concat by ",").
+    let comma = ctx_intern_string(ctx, (char*)",", 1);
+    let params_v: ZjsValue = ctx_intern_string(ctx, (char*)"", 0);
+    let i: u32 = 0;
+    let pn: u32 = if argc > 0 { argc - 1 } else { 0 };
+    while i < pn {
+        let av = args[i];
+        if zjs_is_string(av) == 0 {
+            av = zjs_to_string(ctx, av);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        }
+        if i > 0 {
+            params_v = zjs_string_concat(ctx, params_v, comma);
+        }
+        params_v = zjs_string_concat(ctx, params_v, av);
+        i = i + 1;
+    }
+    let params_s = zjs_as_string(params_v);
+
+    // Build the source. Total: "(function anonymous(" + params + "){\n" + body + "\n})\0"
+    let prefix_len: u32 = 20;     // "(function anonymous("
+    let mid_len: u32    = 3;      // "){\n"
+    let suffix_len: u32 = 3;      // "\n})"
+    let total: u32 = prefix_len + params_s.length + mid_len + body_s.length + suffix_len + 1;
+    let buf = alloc_n<char>((usize)total);
+    let cursor: u32 = 0;
+    raw {
+        memcpy(buf + cursor, "(function anonymous(", 20);
+    }
+    cursor = cursor + prefix_len;
+    if params_s.length > 0 {
+        let pd = params_s.data;
+        mem_copy<char>(buf + cursor, pd, (usize)params_s.length);
+        cursor = cursor + params_s.length;
+    }
+    raw {
+        memcpy(buf + cursor, "){\n", 3);
+    }
+    cursor = cursor + mid_len;
+    if body_s.length > 0 {
+        let bd = body_s.data;
+        mem_copy<char>(buf + cursor, bd, (usize)body_s.length);
+        cursor = cursor + body_s.length;
+    }
+    raw {
+        memcpy(buf + cursor, "\n})", 3);
+    }
+    cursor = cursor + suffix_len;
+    buf[cursor] = (char)0;
+
+    // zjs_eval the wrapped expression. The function value is its result.
+    let result = zjs_eval(ctx, buf);
+    dealloc(buf);
+    // zjs_eval routes parse / compile errors through ctx.had_error +
+    // ctx.last_error. Convert them to the JS-visible throw channel.
+    if ctx.had_error {
+        let err = ctx.last_error;
+        ctx.had_error = false;
+        ctx.last_error = zjs_undefined();
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return result;
+}
+
 // --- Global Number-coercion helpers (Phase 3.8b) -------------------
 
 fn host_is_nan(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -7124,10 +7214,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Stub globals for unsupported features. Their tests use the
     // names without expecting full semantics — registering them as
     // host-function no-ops at least avoids ReferenceError-on-load.
-    // Function constructor stub — body-string compile not yet wired,
-    // but expose a real `.prototype` so `Function.prototype` and
-    // `Object.getPrototypeOf(<any callable>)` agree.
-    let function_ctor_v = ctx_register_host_function(ctx, (char*)"Function", eval_ptr);
+    // Function constructor: runtime-compile the body string into a
+    // real callable, with [[Prototype]] = Function.prototype so
+    // `Object.getPrototypeOf(<any callable>) === Function.prototype`.
+    let fn_ctor_ptr: void* = NULL; raw { fn_ctor_ptr = (void*)host_function_ctor; }
+    let function_ctor_v = ctx_register_host_function(ctx, (char*)"Function", fn_ctor_ptr);
     let function_ctor_hf = zjs_as_host_function(function_ctor_v);
     function_ctor_hf.prototype = ctx.function_proto;
     if ctx.function_proto != NULL {

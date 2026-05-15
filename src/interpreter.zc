@@ -2194,11 +2194,16 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             if did_throw {
                 throwing = true; thrown = call_result; exit_reason = 3; break;
             }
-            // Use callee's return if it returned an object; else the new one.
+            // Use callee's return if it returned an Object (per ECMA-262
+            // — any object-typed value, including callables produced by
+            // `new Function(...)`).
             if zjs_is_object(call_result) != 0
                 || zjs_is_array(call_result) != 0
                 || zjs_is_promise(call_result) != 0
-                || zjs_is_regexp(call_result) != 0 {
+                || zjs_is_regexp(call_result) != 0
+                || zjs_is_function(call_result) != 0
+                || zjs_is_closure(call_result) != 0
+                || zjs_is_host_function(call_result) != 0 {
                 regs[dst] = call_result;
             } else {
                 regs[dst] = new_obj_v;

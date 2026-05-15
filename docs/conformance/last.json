@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 18:00 UTC",
+    "when": "2026-05-15 18:09 UTC",
     "total": 4821,
-    "passed": 2301,
-    "failed": 494,
+    "passed": 2309,
+    "failed": 486,
     "skipped": 2026
   },
   "failures": [
@@ -152,10 +152,6 @@
       "reason": "zjs: throw: Test262Error: typeof x === \"number\""
     },
     {
-      "path": "test/language/expressions/typeof/native-call.js",
-      "reason": "zjs: throw: Test262Error: typeof new Function() === \"function\""
-    },
-    {
       "path": "test/language/expressions/typeof/string.js",
       "reason": "zjs: throw: Test262Error: typeof Date() === \"string\""
     },
@@ -180,48 +176,20 @@
       "reason": "zjs: throw: Test262Error: #1: ({})\\u0009instanceof\\u0009Object === true"
     },
     {
-      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T1.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+      "path": "test/language/expressions/instanceof/S11.8.6_A7_T3.js",
+      "reason": "zjs: throw: Test262Error: #2: If instanceof returns true then GetValue(RelationalExpression) was constructed with ShiftE"
     },
     {
-      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T2.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T3.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T4.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T5.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T6.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T7.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T8.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+      "path": "test/language/expressions/instanceof/S15.3.5.3_A2_T2.js",
+      "reason": "zjs: throw: Test262Error: #1.1: O is not an object, throw a TypeError exception"
     },
     {
       "path": "test/language/expressions/instanceof/S15.3.5.3_A2_T5.js",
-      "reason": "zjs: throw: Test262Error: #2: instance.constructor === FACTORY"
+      "reason": "zjs: throw: Test262Error: #1.1: O is not an object, throw a TypeError exception"
     },
     {
-      "path": "test/language/expressions/instanceof/S15.3.5.3_A3_T1.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S15.3.5.3_A3_T2.js",
-      "reason": "zjs: throw: TypeError: Right-hand side of instanceof is not callable\u0000"
+      "path": "test/language/expressions/instanceof/S15.3.5.3_A2_T6.js",
+      "reason": "zjs: throw: Test262Error: #1.1: O is not an object, throw a TypeError exception"
     },
     {
       "path": "test/language/expressions/instanceof/symbol-hasinstance-get-err.js",
@@ -253,7 +221,7 @@
     },
     {
       "path": "test/language/expressions/this/S11.1.1_A4.2.js",
-      "reason": "zjs: throw: Test262Error: #1: var MyFunction = new Function(\"this.THIS = this\"); var MyObject = new MyFunction(); MyObje"
+      "reason": "zjs: throw: Test262Error: #2: var MyFunction = new Function(\"this.THIS = eval('this')\"); var MyObject = new MyFunction()"
     },
     {
       "path": "test/language/statements/if/S12.5_A2.js",
