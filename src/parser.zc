@@ -924,7 +924,11 @@ fn parse_class_body(p: Parser*) -> ParamList {
 fn parse_class_decl(p: Parser*) -> AstNode* {
     let kw = advance(p);   // 'class'
     let name_tok = peek(p);
-    if name_tok.kind != TokenKind::Identifier { p.had_error = true; return NULL; }
+    // Class names allow the same broad "binding identifier" set as
+    // other declarations: plain Identifier plus contextual keywords
+    // (`await`, `yield`, `let`, `of`, `async`, …) when not in a
+    // module / async context where they'd be reserved.
+    if !is_binding_ident(name_tok.kind) { p.had_error = true; return NULL; }
     // Class bodies are strict-mode code by spec. The class name may
     // not be a strict-reserved identifier.
     if is_strict_reserved_name(p.source + name_tok.start, name_tok.length) {
