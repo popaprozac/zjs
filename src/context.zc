@@ -3504,7 +3504,45 @@ fn host_json_stringify(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         if zjs_is_function(r) != 0 || zjs_is_closure(r) != 0 || zjs_is_host_function(r) != 0 {
             jc.replacer_fn = r;
         } else if zjs_is_array(r) != 0 {
-            jc.replacer_arr = r;
+            // ECMA-262 §25.5.2.1 step 4: build PropertyList from the
+            // replacer array. Each item must be a String or a Number
+            // (or a wrapper of either); convert Numbers via ToString;
+            // skip duplicates and unsupported entries. We allocate a
+            // fresh dedup'd array and use that as the filter to keep
+            // the inner loop in json_stringify_value clean.
+            let src = zjs_as_array(r);
+            let out_v = ctx_new_array(ctx, 0);
+            let out = zjs_as_array(out_v);
+            let i: u32 = 0;
+            while i < src.length {
+                let item = src.elements[i];
+                let key_str_v: ZjsValue = zjs_undefined();
+                if zjs_is_string(item) != 0 {
+                    key_str_v = item;
+                } else if zjs_is_number(item) != 0 {
+                    key_str_v = zjs_to_string(ctx, item);
+                }
+                // Skip undefined / unsupported types (objects without
+                // a String/Number internal slot).
+                if zjs_is_string(key_str_v) != 0 {
+                    let kname = zjs_as_string(key_str_v);
+                    let seen: bool = false;
+                    let j: u32 = 0;
+                    while j < out.length {
+                        let pj = out.elements[j];
+                        if zjs_is_string(pj) != 0 {
+                            if zjs_string_equals(zjs_as_string(pj), kname) != 0 {
+                                seen = true; j = out.length;
+                            } else { j = j + 1; }
+                        } else { j = j + 1; }
+                    }
+                    if !seen {
+                        array_set(out, out.length, key_str_v);
+                    }
+                }
+                i = i + 1;
+            }
+            jc.replacer_arr = out_v;
         }
     }
     // Apply the top-level replacer call. Spec wraps the input in a

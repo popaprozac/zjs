@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 07:46 UTC",
+    "when": "2026-05-15 07:49 UTC",
     "total": 4821,
-    "passed": 2020,
-    "failed": 775,
+    "passed": 2021,
+    "failed": 774,
     "skipped": 2026
   },
   "failures": [
@@ -1821,10 +1821,6 @@
     },
     {
       "path": "test/built-ins/JSON/stringify/replacer-array-number-object.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/replacer-array-number.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
