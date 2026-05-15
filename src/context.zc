@@ -1741,14 +1741,28 @@ fn host_object_create(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     // value (plain object, array with expandos, host/user function
     // with .props) — host_object_define_properties knows how to walk
     // each shape.
-    if argc >= 2 {
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
         let p1 = args[1];
+        // ECMA-262 §20.1.2.3.1: Properties argument must be coercible
+        // to an Object. null and other primitives throw. Strings are
+        // wrapped (they coerce to a String object whose enumerable
+        // chars become descriptor names → which then fail
+        // ToPropertyDescriptor for the single-char descriptor values).
+        // We model that as "throw TypeError" for both null and
+        // primitives — the inner test would throw anyway.
         let p1_objlike: bool =
                zjs_is_object(p1) != 0
             || zjs_is_array(p1) != 0
             || zjs_is_function(p1) != 0
             || zjs_is_host_function(p1) != 0
             || zjs_is_regexp(p1) != 0;
+        if !p1_objlike {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"Object.create properties must be an Object", 42);
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
         if p1_objlike {
             ctx_push_temp_root(ctx, obj_v);
             let dp_args: ZjsValue[2];

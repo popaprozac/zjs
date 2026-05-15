@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 08:44 UTC",
+    "when": "2026-05-15 08:48 UTC",
     "total": 4821,
-    "passed": 2136,
-    "failed": 659,
+    "passed": 2139,
+    "failed": 656,
     "skipped": 2026
   },
   "failures": [
@@ -1560,10 +1560,6 @@
       "reason": "zjs: throw: TypeError: Property descriptor must be an object"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-3.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-300.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
@@ -1602,14 +1598,6 @@
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-96.js",
       "reason": "zjs: throw: Test262Error: accessed !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/properties-arg-to-object-non-empty-string.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Object/create/properties-arg-to-object-null.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-1.js",
