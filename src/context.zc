@@ -3841,6 +3841,14 @@ fn host_json_stringify(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     // verbatim. Anything else is ignored.
     if argc >= 3 {
         let sp = args[2];
+        // ECMA-262 §25.5.2.1 step 7: if space is a Number / String
+        // wrapper object, unwrap via ToPrimitive. Tests use
+        // `new Number(5)` where valueOf returns 5.
+        if zjs_is_object(sp) != 0 {
+            let prim = zjs_to_primitive(ctx, sp, false);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            sp = prim;
+        }
         if zjs_is_int32(sp) != 0 || zjs_is_double(sp) != 0 {
             let n = zjs_to_double(sp);
             let nclamp: u32 = 0;

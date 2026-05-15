@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 09:32 UTC",
+    "when": "2026-05-15 09:36 UTC",
     "total": 4821,
-    "passed": 2159,
-    "failed": 636,
+    "passed": 2161,
+    "failed": 634,
     "skipped": 2026
   },
   "failures": [
@@ -1672,16 +1672,8 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/built-ins/JSON/stringify/space-number-float.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/space-number-object.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/built-ins/JSON/stringify/space-string-object.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
+      "reason": "zjs: throw: Test262Error: should not be called"
     },
     {
       "path": "test/built-ins/JSON/stringify/value-array-circular.js",
