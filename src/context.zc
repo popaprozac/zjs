@@ -4081,6 +4081,15 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
         json_buf_putc(b, '}');
         return;
     }
+    // RegExp: an Object with no own enumerable string properties.
+    // Emit empty-object braces — matches what real engines do. (Use
+    // putc'd braces; the Zen-c lexer mistakes `{` inside a (char*)
+    // literal for an expression start.)
+    if zjs_is_regexp(v) != 0 {
+        json_buf_putc(b, '{');
+        json_buf_putc(b, '}');
+        return;
+    }
     // Functions, closures, host functions, hidden classes — not
     // serializable. Real JSON.stringify returns undefined for these at
     // top level; inside containers it emits null. MVP: emit null.
@@ -4162,6 +4171,21 @@ fn host_json_stringify(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
                     key_str_v = item;
                 } else if zjs_is_number(item) != 0 {
                     key_str_v = zjs_to_string(ctx, item);
+                } else if zjs_is_object(item) != 0 {
+                    // ECMA-262 §25.5.2.1 step 4.b.i-iv: a Number /
+                    // String wrapper in the replacer array is
+                    // unboxed and stringified. Detect by the
+                    // __zjs_primitive__ slot we use for wrappers.
+                    let wo = zjs_as_object(item);
+                    let wkey = ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN);
+                    let prim = object_get(wo, wkey);
+                    if zjs_is_string(prim) != 0 {
+                        key_str_v = zjs_to_string(ctx, item);
+                        if ctx.pending_throw_active { return zjs_undefined(); }
+                    } else if zjs_is_number(prim) != 0 {
+                        key_str_v = zjs_to_string(ctx, item);
+                        if ctx.pending_throw_active { return zjs_undefined(); }
+                    }
                 }
                 // Skip undefined / unsupported types (objects without
                 // a String/Number internal slot).
@@ -5549,13 +5573,30 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
 // Promise.prototype.catch(onRejected) ≡ this.then(undefined, onRejected).
 fn host_promise_catch(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // ECMA-262 §27.2.5.1: Return ? Invoke(this, "then", «undefined, onRejected»).
+    // Generic over the receiver — any thenable works.
+    let this_val = ctx.host_this;
     let on_r = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let then_atom = ctx_intern_atom(ctx, (char*)"then", 4);
+    let then_v = property_get(ctx, this_val, zjs_cell_from_ptr((void*)then_atom));
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let is_callable = zjs_is_function(then_v) != 0
+                     || zjs_is_closure(then_v) != 0
+                     || zjs_is_host_function(then_v) != 0;
+    if !is_callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Promise.prototype.catch: receiver has no callable then", 54);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
     let two_args: ZjsValue[2];
     two_args[0] = zjs_undefined();
     two_args[1] = on_r;
     let argp: ZjsValue* = NULL;
     raw { argp = &two_args[0]; }
-    return host_promise_then(ctx, argp, 2);
+    let r: ZjsValue = zjs_undefined();
+    raw { r = zjs_call_value_with_this(ctx, then_v, this_val, argp, 2); }
+    return r;
 }
 
 // Promise.prototype.finally(onFinally): calls onFinally with no args
@@ -5598,12 +5639,19 @@ fn host_promise_finally_helper(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
 }
 
 fn host_promise_finally(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // ECMA-262 §27.2.5.3: Invoke(this, "then", «onFinally', onFinally'»).
+    // Generic over the receiver — any thenable works.
     let this_val = ctx.host_this;
-    if zjs_is_promise(this_val) == 0 {
+    let then_atom = ctx_intern_atom(ctx, (char*)"then", 4);
+    let then_v = property_get(ctx, this_val, zjs_cell_from_ptr((void*)then_atom));
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let is_callable = zjs_is_function(then_v) != 0
+                     || zjs_is_closure(then_v) != 0
+                     || zjs_is_host_function(then_v) != 0;
+    if !is_callable {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Promise.prototype.finally called on non-promise", 47);
-        ctx.pending_throw_active = true;
-        ctx.pending_throw_value = err;
+                                    (char*)"Promise.prototype.finally: receiver has no callable then", 56);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
         return zjs_undefined();
     }
     let handler = if argc >= 1 { args[0] } else { zjs_undefined() };
@@ -5625,7 +5673,9 @@ fn host_promise_finally(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     two[0] = wrap_f; two[1] = wrap_r;
     let argp: ZjsValue* = NULL;
     raw { argp = &two[0]; }
-    return host_promise_then(ctx, argp, 2);
+    let r: ZjsValue = zjs_undefined();
+    raw { r = zjs_call_value_with_this(ctx, then_v, this_val, argp, 2); }
+    return r;
 }
 
 // --- console.log (Phase 3.8a) -------------------------------------
