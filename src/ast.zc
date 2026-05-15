@@ -29,6 +29,7 @@ enum NodeKind {
     UndefinedExpr,
     ThisExpr,
     IdentExpr,              // (start..end is the identifier text)
+    RegexExpr,              // (start..end is the full /pattern/flags slice)
 
     // Operators
     Binary,                 // op, left, right

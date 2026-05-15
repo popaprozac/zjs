@@ -560,6 +560,7 @@ def TAG_HIDDEN_CLASS:  u8 = 5;
 def TAG_CLOSURE:       u8 = 6;
 def TAG_ACCESSOR:      u8 = 7;   // Phase 3.9b: { get, set } pair stored in an object slot
 def TAG_PROMISE:       u8 = 8;   // Phase 3.10: ECMA-262 Promise
+def TAG_REGEXP:        u8 = 9;   // Phase 3.11: ECMA-262 RegExp (delegated to Zen-c std/regex)
 
 // Promise states.
 def PROMISE_PENDING:   u8 = 0;
@@ -734,6 +735,55 @@ fn zjs_promise_new() -> ZjsPromise* {
     p.state = PROMISE_PENDING;
     p.value = zjs_undefined();
     return p;
+}
+
+// JS regex flag bits. `g` and `y` are stateful (lastIndex tracking),
+// the others only affect compilation. Matches the convention used by
+// most engines so byte ordering is recognisable in dumps.
+def REGEX_FLAG_GLOBAL:      u8 = 0x01;     // g
+def REGEX_FLAG_IGNORE_CASE: u8 = 0x02;     // i
+def REGEX_FLAG_MULTILINE:   u8 = 0x04;     // m
+def REGEX_FLAG_DOTALL:      u8 = 0x08;     // s
+def REGEX_FLAG_UNICODE:     u8 = 0x10;     // u (parsed but not honored — POSIX has no Unicode-aware mode)
+def REGEX_FLAG_STICKY:      u8 = 0x20;     // y
+def REGEX_FLAG_HAS_INDICES: u8 = 0x40;     // d (parsed only)
+
+// Runtime RegExp object. Compilation is lazy — `preg` stays NULL
+// until the first match call, then std/regex's Regex::compile
+// allocates a regex_t (1024 bytes) and we cache the pointer.
+// `source` and `flags_str` are JS-visible via .source / .flags;
+// they're interned strings owned by the atom table.
+struct ZjsRegExp {
+    header:     CellHeader;     // { type_tag = TAG_REGEXP }
+    source:     ZjsString*;     // pattern between the slashes (JS syntax)
+    flags_str:  ZjsString*;     // raw flag letters in source order
+    flags:      u8;             // bitset of REGEX_FLAG_*
+    preg:       void*;          // compiled TRE regex_t* (NULL = not yet compiled, or compile failed)
+    compiled:   bool;           // true once we've attempted compile (regardless of success)
+    last_index: u32;            // lastIndex — used by g and y flags
+    // Expando bag — JS allows arbitrary properties on a RegExp
+    // instance (`re.foo = 1`). Some test262 tests use this to carry
+    // descriptor values on a RegExp passed to Object.create. Same
+    // lazy-alloc shape as ZjsArray.props / ZjsHostFunction.props.
+    props:      ZjsObject*;
+}
+
+fn zjs_is_regexp(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_REGEXP { return 1; }
+    return 0;
+}
+
+fn zjs_as_regexp(v: ZjsValue) -> ZjsRegExp* {
+    let p = zjs_cell_as_ptr(v);
+    let r: ZjsRegExp* = NULL;
+    raw { r = (ZjsRegExp*)p; }
+    return r;
+}
+
+fn zjs_regexp_new() -> ZjsRegExp* {
+    let r = zalloc<ZjsRegExp>();
+    r.header.type_tag = TAG_REGEXP;
+    return r;
 }
 
 fn promise_free_void(p: void*) -> void {

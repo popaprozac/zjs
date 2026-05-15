@@ -18,6 +18,24 @@ struct Lexer {
     pos:    usize;
     len:    usize;
     line:   u32;
+    // ECMA-262 §12.2.1 — InputElementDiv vs InputElementRegExp. Whether
+    // the next `/` should lex as division or as a regex literal depends
+    // on what the previous significant token expects to be followed by:
+    // after a value-producing token (identifier / number / string / `)`
+    // / `]` / `++` / `--` / `}`) we expect a binary operator, so `/` is
+    // division; after almost everything else we expect a fresh
+    // expression, so `/` starts a regex literal. Updated after each
+    // token by `expect_regex_after`.
+    expect_regex: bool;
+    // The kind of the most-recently-emitted token. Used to refine the
+    // `} /...` ambiguity: a `}` that's followed by a newline before
+    // `/` is almost certainly the end of a block statement (function
+    // body, if-block, etc.) where ASI inserts a `;` and the next
+    // statement starts with a regex literal — `function f() { return
+    // /x/.test }\n /y/.test(...)`. Without the newline, `}/` is much
+    // more likely an object-literal followed by division.
+    prev_kind: TokenKind;
+    crossed_newline: bool;
 }
 
 impl Lexer {
@@ -27,6 +45,11 @@ impl Lexer {
             pos:    0,
             len:    len,
             line:   1,
+            // At source start we're expecting an expression, so a
+            // leading `/foo/` is a regex literal.
+            expect_regex: true,
+            prev_kind: TokenKind::Eof,
+            crossed_newline: false,
         };
     }
 
@@ -63,9 +86,11 @@ impl Lexer {
     // --- Whitespace + comments --------------------------------------
 
     fn skip_trivia(self) -> void {
+        self.crossed_newline = false;
         while !self.at_end() {
             let c = self.peek();
             if c == (u8)' ' || c == (u8)'\t' || c == (u8)'\r' || c == (u8)'\n' {
+                if c == (u8)'\n' { self.crossed_newline = true; }
                 self.advance();
             } else if c == (u8)'/' && self.peek_at(1) == (u8)'/' {
                 // line comment: consume until newline (don't eat the newline itself —
@@ -96,6 +121,13 @@ impl Lexer {
     // --- Top-level entry --------------------------------------------
 
     fn next_token(self) -> Token {
+        let t = self.next_token_inner();
+        self.expect_regex = expect_regex_after(t.kind);
+        self.prev_kind = t.kind;
+        return t;
+    }
+
+    fn next_token_inner(self) -> Token {
         self.skip_trivia();
         if self.at_end() {
             return token_eof((u32)self.pos);
@@ -298,6 +330,22 @@ impl Lexer {
         }
 
         if c == (u8)'/' {
+            // Contextual: regex literal vs division. `expect_regex` is
+            // set/cleared after every token by next_token's post-pass.
+            // The opening `/` has already been consumed by the
+            // `let c = self.advance()` at the top of this fn.
+            //
+            // Special case for `}` followed by a newline-then-`/` — this
+            // is the ASI-disambiguated "end of block statement, then a
+            // new expression statement starting with a regex literal"
+            // pattern. The plain `}/` case (no newline) is left as
+            // division because `{}/x` is the more common shape.
+            let force_regex: bool =
+                self.expect_regex
+                || (self.prev_kind == TokenKind::RBrace && self.crossed_newline);
+            if force_regex {
+                return self.scan_regex_body(start);
+            }
             if self.match_char((u8)'=') { return self.tok_n(TokenKind::SlashEq, start); }
             return self.tok1(TokenKind::Slash, start);
         }
@@ -333,6 +381,45 @@ impl Lexer {
         return token_invalid(start);
     }
 
+    // --- Regex literal ---------------------------------------------------
+
+    // Consume `pattern/flags` after the opening `/` has already been
+    // eaten. Stops on: closing `/`, raw newline (invalid — ECMA-262
+    // disallows LineTerminator in a regex body), or EOF. Tracks
+    // character-class depth so that `/` inside `[...]` is literal.
+    // Backslash escapes the next char (including `/` and the class
+    // brackets). The whole literal — including the surrounding slashes
+    // and any flag letters after the closing slash — is returned as one
+    // RegexLit token; the parser carves out source/flags.
+    fn scan_regex_body(self, start: u32) -> Token {
+        let in_class: bool = false;
+        while !self.at_end() {
+            let c = self.peek();
+            if c == (u8)'\n' || c == (u8)'\r' { return token_invalid(start); }
+            if c == (u8)'\\' {
+                self.advance();
+                if !self.at_end() {
+                    let nc = self.peek();
+                    if nc == (u8)'\n' || nc == (u8)'\r' { return token_invalid(start); }
+                    self.advance();
+                }
+                continue;
+            }
+            if c == (u8)'[' { in_class = true; self.advance(); continue; }
+            if c == (u8)']' { in_class = false; self.advance(); continue; }
+            if c == (u8)'/' && !in_class {
+                self.advance();   // closing slash
+                // Flags: greedy run of identifier-part chars (g/i/m/s/u/y/d).
+                while !self.at_end() && is_id_part(self.peek()) {
+                    self.advance();
+                }
+                return self.tok_n(TokenKind::RegexLit, start);
+            }
+            self.advance();
+        }
+        return token_invalid(start);
+    }
+
     // --- Token constructors (after the cursor has advanced) ---------
 
     fn tok1(self, kind: TokenKind, start: u32) -> Token {
@@ -349,6 +436,55 @@ impl Lexer {
 // count emitted (always includes a trailing Eof). Stops if buf would
 // overflow; caller can detect by comparing returned count to capacity.
 // =====================================================================
+
+// Whether the *next* `/` should lex as a regex literal, given the
+// kind of token that was just emitted. Anything that produces a
+// value (literal, identifier, postfix increment, closing
+// paren/bracket, closing brace) blocks regex-mode; everything else
+// (binary ops, opening punctuators, keywords that take an
+// expression, `;`, etc.) leaves it on.
+//
+// `}` is treated as div-mode: the strict rule depends on whether
+// the `}` closes a block statement (next `/` is regex — `function f()
+// { return /x/ }`) vs an object literal (next `/` is division —
+// `({}) / 2`). The lexer can't tell, but div-mode is the more common
+// real-world case, and the regex case still works with the standard
+// `; /x/` form. Most test262 regex tests put the literal at the
+// start of an expression statement, not after a bare `}`.
+fn expect_regex_after(kind: TokenKind) -> bool {
+    if kind == TokenKind::Identifier
+       || kind == TokenKind::NumberLit
+       || kind == TokenKind::StringLit
+       || kind == TokenKind::RegexLit
+       || kind == TokenKind::RParen
+       || kind == TokenKind::RBracket
+       || kind == TokenKind::RBrace
+       || kind == TokenKind::PlusPlus
+       || kind == TokenKind::MinusMinus
+       || kind == TokenKind::KwTrue
+       || kind == TokenKind::KwFalse
+       || kind == TokenKind::KwNull
+       || kind == TokenKind::KwUndefined
+       || kind == TokenKind::KwThis
+       || kind == TokenKind::KwSuper
+       // Contextual keywords that can also stand in as identifiers
+       // (`let of = 6; instance/of/g` is a chain of divisions). The
+       // lexer can't tell the difference without parser feedback;
+       // treating these as value-producers is the right call because
+       // the genuine keyword positions (`for ... of`, `import ... as ...`,
+       // `async ()=>`) never sit directly before `/`.
+       || kind == TokenKind::KwOf
+       || kind == TokenKind::KwAs
+       || kind == TokenKind::KwFrom
+       || kind == TokenKind::KwGet
+       || kind == TokenKind::KwSet
+       || kind == TokenKind::KwAsync
+       || kind == TokenKind::KwAwait
+       || kind == TokenKind::KwYield {
+        return false;
+    }
+    return true;
+}
 
 fn tokenize_into(source: char*, len: usize, out: Token*, cap: usize) -> usize {
     let lex = Lexer::new(source, len);

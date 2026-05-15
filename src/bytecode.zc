@@ -159,6 +159,11 @@ enum Op {
                       //   dst = current closure's env (or undefined if no closure).
 
     // Heap-cell creation + access (Phase 3.1b).
+    NewRegex,         // a=dst, b=src_const_idx, c=flags_const_idx.
+                      // Builds a fresh RegExp from two constant-pool
+                      // strings (JS source between the slashes and the
+                      // raw flag letters). Each evaluation creates a new
+                      // instance so .lastIndex is independent.
     NewObject,        // a=dst. Creates an empty {} object.
     NewArray,         // a=dst, b=base, c=count.
                       // Builds an array containing regs[base..base+count).

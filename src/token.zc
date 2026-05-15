@@ -15,6 +15,7 @@ enum TokenKind {
     Identifier,
     NumberLit,
     StringLit,
+    RegexLit,               // /pattern/flags — contextually lexed
 
     // --- Keywords (full ES2023 set — parser uses what it needs) ------
     KwVar, KwLet, KwConst,

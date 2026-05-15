@@ -1483,6 +1483,11 @@ fn parse_primary(p: Parser*) -> AstNode* {
         advance(p);
         return new_node(&p.tracker, NodeKind::StringExpr, t.start, t.start + t.length);
     }
+    if k == TokenKind::RegexLit {
+        // Source slice is `/pattern/flags` — the compiler splits it.
+        advance(p);
+        return new_node(&p.tracker, NodeKind::RegexExpr, t.start, t.start + t.length);
+    }
     if k == TokenKind::KwTrue {
         advance(p);
         let node = new_node(&p.tracker, NodeKind::BoolExpr, t.start, t.start + t.length);

@@ -317,6 +317,66 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
+    // RegExp cell — `.source`, `.flags`, `.global`, `.ignoreCase`,
+    // `.multiline`, `.lastIndex` are read from the cell; everything
+    // else (test, exec, ...) flows through RegExp.prototype.
+    if zjs_is_regexp(obj) != 0 && zjs_is_string(key) != 0 {
+        let r = zjs_as_regexp(obj);
+        let ks = zjs_as_string(key);
+        let kd = ks.data;
+        let kn = ks.length;
+        let is_source: int = 0;
+        let is_flags:  int = 0;
+        let is_global: int = 0;
+        let is_icase:  int = 0;
+        let is_mline:  int = 0;
+        let is_sticky: int = 0;
+        let is_dotall: int = 0;
+        let is_last:   int = 0;
+        raw {
+            is_source = (kn == 6  && memcmp(kd, "source",     6)  == 0) ? 1 : 0;
+            is_flags  = (kn == 5  && memcmp(kd, "flags",      5)  == 0) ? 1 : 0;
+            is_global = (kn == 6  && memcmp(kd, "global",     6)  == 0) ? 1 : 0;
+            is_icase  = (kn == 10 && memcmp(kd, "ignoreCase", 10) == 0) ? 1 : 0;
+            is_mline  = (kn == 9  && memcmp(kd, "multiline",  9)  == 0) ? 1 : 0;
+            is_sticky = (kn == 6  && memcmp(kd, "sticky",     6)  == 0) ? 1 : 0;
+            is_dotall = (kn == 6  && memcmp(kd, "dotAll",     6)  == 0) ? 1 : 0;
+            is_last   = (kn == 9  && memcmp(kd, "lastIndex",  9)  == 0) ? 1 : 0;
+        }
+        if is_source != 0 {
+            if r.source == NULL { return ctx_intern_string(ctx, (char*)"", 0); }
+            return zjs_cell_from_ptr((void*)r.source);
+        }
+        if is_flags != 0 {
+            if r.flags_str == NULL { return ctx_intern_string(ctx, (char*)"", 0); }
+            return zjs_cell_from_ptr((void*)r.flags_str);
+        }
+        if is_global != 0 { return zjs_bool(if (r.flags & REGEX_FLAG_GLOBAL)      != 0 { 1 } else { 0 }); }
+        if is_icase  != 0 { return zjs_bool(if (r.flags & REGEX_FLAG_IGNORE_CASE) != 0 { 1 } else { 0 }); }
+        if is_mline  != 0 { return zjs_bool(if (r.flags & REGEX_FLAG_MULTILINE)   != 0 { 1 } else { 0 }); }
+        if is_sticky != 0 { return zjs_bool(if (r.flags & REGEX_FLAG_STICKY)      != 0 { 1 } else { 0 }); }
+        if is_dotall != 0 { return zjs_bool(if (r.flags & REGEX_FLAG_DOTALL)      != 0 { 1 } else { 0 }); }
+        if is_last   != 0 { return zjs_int32((i32)r.last_index); }
+        // Expando bag — user-set keys win over inherited methods.
+        if r.props != NULL {
+            let pv = object_get(r.props, ks);
+            if zjs_is_undefined(pv) == 0 { return pv; }
+        }
+        // Methods + everything else through the prototype.
+        if ctx.regexp_proto != NULL {
+            let cur = ctx.regexp_proto;
+            while cur != NULL {
+                let slot = class_find_slot(cur.cls, ks);
+                if slot >= 0 {
+                    let v = cur.slots[(u32)slot];
+                    if zjs_is_deleted(v) == 0 { return v; }
+                }
+                cur = cur.proto;
+            }
+        }
+        return zjs_undefined();
+    }
+
     // Primitives: no property access in MVP.
     return zjs_undefined();
 }
@@ -462,6 +522,38 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
             hf.props = zjs_as_object(pv);
         }
         object_set(ctx, hf.props, ks, value);
+        return;
+    }
+    if zjs_is_regexp(obj) != 0 && zjs_is_string(key) != 0 {
+        let r = zjs_as_regexp(obj);
+        let ks = zjs_as_string(key);
+        let kd = ks.data;
+        let kn = ks.length;
+        let is_last: int = 0;
+        raw { is_last = (kn == 9 && memcmp(kd, "lastIndex", 9) == 0) ? 1 : 0; }
+        if is_last != 0 {
+            // ToInteger-ish: only int / non-negative-double accepted;
+            // anything else clamps to 0 (matches our MVP coercion).
+            if zjs_is_int32(value) != 0 {
+                let n = zjs_as_int32(value);
+                if n < 0 { r.last_index = 0; } else { r.last_index = (u32)n; }
+            } else if zjs_is_double(value) != 0 {
+                let d = zjs_as_double(value);
+                if d >= 0.0 { r.last_index = (u32)d; } else { r.last_index = 0; }
+            } else {
+                r.last_index = 0;
+            }
+            return;
+        }
+        // Other keys (including `source`, `flags`, etc.) land on the
+        // expando bag — spec treats those as non-writable own
+        // properties, but until we model the read-only attribute on
+        // built-in slots, the expando layer hides them.
+        if r.props == NULL {
+            let pv = ctx_new_object(ctx);
+            r.props = zjs_as_object(pv);
+        }
+        object_set(ctx, r.props, ks, value);
         return;
     }
     // Primitives: silently ignored (real JS throws in strict mode).
@@ -1552,6 +1644,13 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             }
         } else if op == Op::NewObject {
             regs[inst.a] = ctx_new_object(ctx);
+        } else if op == Op::NewRegex {
+            // a=dst, b=pattern_const_idx, c=flags_const_idx.
+            // Fresh instance per execution so `g`/`y` lastIndex is
+            // independent across `for (...) /pat/g.test(x)` iterations.
+            let pat_v   = f.constants[(u32)inst.b];
+            let flags_v = f.constants[(u32)inst.c];
+            regs[inst.a] = ctx_new_regexp(ctx, pat_v, flags_v);
         } else if op == Op::NewArray {
             let dst = inst.a;
             let base = inst.b;
@@ -1889,7 +1988,8 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             // Use callee's return if it returned an object; else the new one.
             if zjs_is_object(call_result) != 0
                 || zjs_is_array(call_result) != 0
-                || zjs_is_promise(call_result) != 0 {
+                || zjs_is_promise(call_result) != 0
+                || zjs_is_regexp(call_result) != 0 {
                 regs[dst] = call_result;
             } else {
                 regs[dst] = new_obj_v;

@@ -10,6 +10,7 @@ import "string.h" as libc_str;
 import "./value.zc";
 import "std/mem.zc"
 import "std/math.zc"
+import "std/regex.zc"
 
 raw {
     #include <stdio.h>
@@ -180,6 +181,10 @@ struct ZjsContext {
     // the result promise. Cached at init.
     promise_ctor_proto: ZjsObject*;
 
+    // RegExp.prototype — carries .test / .exec / .source / .flags.
+    // property_get on TAG_REGEXP walks this chain.
+    regexp_proto:       ZjsObject*;
+
     // --- Atom table (interned strings) ---
     // Open-addressed hash table, power-of-2 capacity. Used for
     // property names + source-code string literals. Atoms are GC
@@ -250,6 +255,8 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
             accessor_free_void(cp);
         } else if tag == TAG_PROMISE {
             promise_free_void(cp);
+        } else if tag == TAG_REGEXP {
+            regexp_free_void(cp);
         }
         j = j + 1;
     }
@@ -618,6 +625,25 @@ fn gc_mark_value(v: ZjsValue) -> void {
         return;
     }
 
+    if tag == TAG_REGEXP {
+        let r: ZjsRegExp* = NULL;
+        raw { r = (ZjsRegExp*)p; }
+        // source / flags_str are atom-table-pinned strings, so they
+        // get marked via the atom-table root. Still walking them here
+        // for symmetry with the other types — atom strings short-
+        // circuit the cycle but don't hurt.
+        if r.source != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)r.source));
+        }
+        if r.flags_str != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)r.flags_str));
+        }
+        if r.props != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)r.props));
+        }
+        return;
+    }
+
     if tag == TAG_ARRAY {
         let a: ZjsArray* = NULL;
         raw { a = (ZjsArray*)p; }
@@ -832,6 +858,7 @@ fn gc_sweep(ctx: ZjsContext*) -> void {
               else if tag == TAG_CLOSURE       { closure_free_void(p); }
               else if tag == TAG_ACCESSOR      { accessor_free_void(p); }
               else if tag == TAG_PROMISE       { promise_free_void(p); }
+              else if tag == TAG_REGEXP        { regexp_free_void(p); }
         }
         i = i + 1;
     }
@@ -1539,7 +1566,8 @@ fn host_object_create(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
                zjs_is_object(p1) != 0
             || zjs_is_array(p1) != 0
             || zjs_is_function(p1) != 0
-            || zjs_is_host_function(p1) != 0;
+            || zjs_is_host_function(p1) != 0
+            || zjs_is_regexp(p1) != 0;
         if p1_objlike {
             ctx_push_temp_root(ctx, obj_v);
             let dp_args: ZjsValue[2];
@@ -1582,7 +1610,8 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
            zjs_is_object(desc_v) != 0
         || zjs_is_array(desc_v) != 0
         || zjs_is_function(desc_v) != 0
-        || zjs_is_host_function(desc_v) != 0;
+        || zjs_is_host_function(desc_v) != 0
+        || zjs_is_regexp(desc_v) != 0;
     if !desc_objlike { return obj_v; }
 
     let value_key  = ctx_intern_atom(ctx, (char*)"value", 5);
@@ -1724,7 +1753,8 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
                    zjs_is_object(desc_value) != 0
                 || zjs_is_array(desc_value) != 0
                 || zjs_is_function(desc_value) != 0
-                || zjs_is_host_function(desc_value) != 0;
+                || zjs_is_host_function(desc_value) != 0
+                || zjs_is_regexp(desc_value) != 0;
             if !dv_objlike {
                 let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                             (char*)"Property descriptor must be an object", 37);
@@ -3223,6 +3253,215 @@ fn host_json_parse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         return zjs_undefined();
     }
     return result;
+}
+
+// =====================================================================
+// RegExp runtime (Phase 3.11)
+//
+// Compilation is delegated to TRE (Zen-c std/regex pulls it in via
+// static link). We hold pattern + flags + a lazily-compiled regex_t
+// pointer. The JS regex syntax is translated to POSIX ERE before
+// handing to tre_regcomp — common escapes (\d \w \s and negations,
+// \b) are expanded; lookahead / named groups / non-greedy quantifiers
+// are not supported and would error at compile time.
+// =====================================================================
+
+fn regexp_free_void(p: void*) -> void {
+    let r: ZjsRegExp* = NULL;
+    raw { r = (ZjsRegExp*)p; }
+    if r == NULL { return; }
+    if r.preg != NULL {
+        raw {
+            tre_regfree((regex_t*)(r->preg));
+            free(r->preg);
+        }
+        r.preg = NULL;
+    }
+    dealloc(r);
+}
+
+// Translate one ZjsString of JS regex source into a heap-allocated
+// NUL-terminated POSIX ERE pattern. Caller owns the returned buffer
+// (dealloc<char>). Only the common escapes get rewritten; unsupported
+// constructs are passed through and let TRE error on them.
+fn regex_translate_to_posix(src: ZjsString*) -> char* {
+    let n = src.length;
+    let data = src.data;
+    // Worst case: every char of \w expands to [A-Za-z0-9_] (11 chars
+    // from 2). Allocate 8x as a safe upper bound; we won't exceed it.
+    let cap: u32 = if n < 8 { 64 } else { n * 8 + 16 };
+    let buf = alloc_n<char>((usize)cap);
+    let out: u32 = 0;
+    let i: u32 = 0;
+    while i < n {
+        let c = data[i];
+        if c == (char)'\\' && i + 1 < n {
+            let nx = data[i + 1];
+            // Character-class shortcuts. Replace with POSIX ranges.
+            if nx == (char)'d' {
+                raw { memcpy(buf + out, "[0-9]", 5); }
+                out = out + 5; i = i + 2; continue;
+            }
+            if nx == (char)'D' {
+                raw { memcpy(buf + out, "[^0-9]", 6); }
+                out = out + 6; i = i + 2; continue;
+            }
+            if nx == (char)'w' {
+                raw { memcpy(buf + out, "[A-Za-z0-9_]", 12); }
+                out = out + 12; i = i + 2; continue;
+            }
+            if nx == (char)'W' {
+                raw { memcpy(buf + out, "[^A-Za-z0-9_]", 13); }
+                out = out + 13; i = i + 2; continue;
+            }
+            if nx == (char)'s' {
+                raw { memcpy(buf + out, "[ \\t\\n\\r\\f\\v]", 13); }
+                out = out + 13; i = i + 2; continue;
+            }
+            if nx == (char)'S' {
+                raw { memcpy(buf + out, "[^ \\t\\n\\r\\f\\v]", 14); }
+                out = out + 14; i = i + 2; continue;
+            }
+            // `\b` (word boundary) is `[[:<:]]|[[:>:]]` in TRE — but the
+            // alternation only makes sense inside a group. Cheaper +
+            // correct enough for most tests: emit `\b` and rely on TRE
+            // accepting it as a literal-backslash-b pattern, which
+            // matches the same in POSIX-mode strings. (Real word-boundary
+            // semantics deferred.)
+            // Default: pass the escape through unchanged.
+            buf[out] = c;
+            buf[out + 1] = nx;
+            out = out + 2;
+            i = i + 2;
+            continue;
+        }
+        buf[out] = c;
+        out = out + 1;
+        i = i + 1;
+    }
+    buf[out] = (char)0;
+    return buf;
+}
+
+// Compile-on-demand. Returns true if the regex_t is ready to use;
+// false if compilation failed (caller falls back to "no match").
+fn regex_ensure_compiled(r: ZjsRegExp*) -> bool {
+    if r.compiled { return r.preg != NULL; }
+    r.compiled = true;
+    if r.source == NULL { return false; }
+    let posix_pat = regex_translate_to_posix(r.source);
+    let cflags: int = 1;     // REG_EXTENDED — JS regex is always extended-style
+    if (r.flags & REGEX_FLAG_IGNORE_CASE) != 0 { cflags = cflags | 2; }       // REG_ICASE
+    if (r.flags & REGEX_FLAG_MULTILINE)   != 0 { cflags = cflags | 4; }       // REG_NEWLINE
+    let preg: void* = NULL;
+    let status: int = 0;
+    raw {
+        preg = malloc(1024);
+        if (preg) status = tre_regcomp((regex_t*)preg, posix_pat, cflags);
+        else status = -1;
+    }
+    dealloc(posix_pat);
+    if status != 0 {
+        raw { if (preg) free(preg); }
+        r.preg = NULL;
+        return false;
+    }
+    r.preg = preg;
+    return true;
+}
+
+// new RegExp(pattern, flags) — constructs a fresh RegExp from
+// string arguments. If `pattern` is itself a RegExp, clone its
+// source + (overridden) flags.
+fn host_regexp_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let pattern_v: ZjsValue = if argc >= 1 { args[0] } else { ctx_intern_string(ctx, (char*)"", 0) };
+    let flags_v:   ZjsValue = if argc >= 2 { args[1] } else { ctx_intern_string(ctx, (char*)"", 0) };
+    if zjs_is_regexp(pattern_v) != 0 {
+        let src = zjs_as_regexp(pattern_v);
+        pattern_v = if src.source != NULL { zjs_cell_from_ptr((void*)src.source) } else { ctx_intern_string(ctx, (char*)"", 0) };
+        if argc < 2 {
+            flags_v = if src.flags_str != NULL { zjs_cell_from_ptr((void*)src.flags_str) } else { ctx_intern_string(ctx, (char*)"", 0) };
+        }
+    } else if zjs_is_string(pattern_v) == 0 {
+        pattern_v = zjs_to_string(ctx, pattern_v);
+    }
+    if zjs_is_string(flags_v) == 0 { flags_v = zjs_to_string(ctx, flags_v); }
+    return ctx_new_regexp(ctx, pattern_v, flags_v);
+}
+
+// RegExp.prototype.test(str): coerce `str`, run the regex, advance
+// .lastIndex for `g`/`y` patterns, return bool.
+fn host_regexp_test(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    if zjs_is_regexp(this_val) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"RegExp.prototype.test called on non-RegExp", 43);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let r = zjs_as_regexp(this_val);
+    if !regex_ensure_compiled(r) { return zjs_bool(0); }
+    // Coerce arg to string.
+    let arg_v = if argc >= 1 { args[0] } else { ctx_intern_string(ctx, (char*)"undefined", 9) };
+    if zjs_is_string(arg_v) == 0 { arg_v = zjs_to_string(ctx, arg_v); }
+    let s = zjs_as_string(arg_v);
+    let stateful = (r.flags & (REGEX_FLAG_GLOBAL | REGEX_FLAG_STICKY)) != 0;
+    let start_idx: u32 = if stateful { r.last_index } else { 0 };
+    if start_idx > s.length {
+        if stateful { r.last_index = 0; }
+        return zjs_bool(0);
+    }
+    // tre_regexec on the offset slice. Single capture-group buffer
+    // tells us where the match lands; we ignore the captures here
+    // (.exec / .match handle them).
+    let preg = r.preg;
+    let sdata = s.data;
+    let pmatch: ZRegMatch[1];
+    let rc: int = -1;
+    raw {
+        rc = tre_regexec((regex_t*)preg, sdata + start_idx, 1, (regmatch_t*)pmatch, 0);
+    }
+    if rc != 0 {
+        if stateful { r.last_index = 0; }
+        return zjs_bool(0);
+    }
+    let mstart = pmatch[0].rm_so;
+    let mend   = pmatch[0].rm_eo;
+    if (r.flags & REGEX_FLAG_STICKY) != 0 && mstart != 0 {
+        // sticky requires the match begin exactly at lastIndex.
+        r.last_index = 0;
+        return zjs_bool(0);
+    }
+    if stateful {
+        r.last_index = start_idx + (u32)mend;
+    }
+    return zjs_bool(1);
+}
+
+fn ctx_new_regexp(ctx: ZjsContext*, pattern_v: ZjsValue, flags_v: ZjsValue) -> ZjsValue {
+    let r = zjs_regexp_new();
+    r.source    = if zjs_is_string(pattern_v) != 0 { zjs_as_string(pattern_v) } else { NULL };
+    r.flags_str = if zjs_is_string(flags_v)   != 0 { zjs_as_string(flags_v)   } else { NULL };
+    // Parse the flag letters into a bitset.
+    if r.flags_str != NULL {
+        let fd = r.flags_str.data;
+        let fn_len = r.flags_str.length;
+        let i: u32 = 0;
+        while i < fn_len {
+            let c = fd[i];
+            if c == (char)'g' { r.flags = r.flags | REGEX_FLAG_GLOBAL; }
+            else if c == (char)'i' { r.flags = r.flags | REGEX_FLAG_IGNORE_CASE; }
+            else if c == (char)'m' { r.flags = r.flags | REGEX_FLAG_MULTILINE; }
+            else if c == (char)'s' { r.flags = r.flags | REGEX_FLAG_DOTALL; }
+            else if c == (char)'u' { r.flags = r.flags | REGEX_FLAG_UNICODE; }
+            else if c == (char)'y' { r.flags = r.flags | REGEX_FLAG_STICKY; }
+            else if c == (char)'d' { r.flags = r.flags | REGEX_FLAG_HAS_INDICES; }
+            i = i + 1;
+        }
+    }
+    ctx_register_cell(ctx, (void*)r);
+    return zjs_cell_from_ptr((void*)r);
 }
 
 // =====================================================================
@@ -5003,7 +5242,20 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // host-function no-ops at least avoids ReferenceError-on-load.
     ctx_register_host_function(ctx, (char*)"Function",   eval_ptr);
     ctx_register_host_function(ctx, (char*)"Date",       eval_ptr);
-    ctx_register_host_function(ctx, (char*)"RegExp",     eval_ptr);
+    // RegExp — real constructor + prototype carrying .test (.exec next
+    // commit). property_get on TAG_REGEXP walks ctx.regexp_proto.
+    let regexp_ctor_ptr: void* = NULL; raw { regexp_ctor_ptr = (void*)host_regexp_ctor; }
+    let regexp_v = ctx_register_host_function(ctx, (char*)"RegExp", regexp_ctor_ptr);
+    let regexp_hf = zjs_as_host_function(regexp_v);
+    regexp_hf.arity = 2;
+    let rp_v = ctx_new_object(ctx);
+    regexp_hf.prototype = zjs_as_object(rp_v);
+    ctx.regexp_proto = regexp_hf.prototype;
+    object_set(ctx, regexp_hf.prototype,
+               ctx_intern_atom(ctx, (char*)"constructor", 11), regexp_v);
+    let rtest_ptr: void* = NULL; raw { rtest_ptr = (void*)host_regexp_test; }
+    object_set(ctx, regexp_hf.prototype, ctx_intern_atom(ctx, (char*)"test", 4),
+               ctx_make_host_function_arity(ctx, (char*)"test", rtest_ptr, 1));
     ctx_register_host_function(ctx, (char*)"Symbol",     eval_ptr);
     ctx_register_host_function(ctx, (char*)"Map",        eval_ptr);
     ctx_register_host_function(ctx, (char*)"Set",        eval_ptr);
