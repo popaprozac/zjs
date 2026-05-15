@@ -338,14 +338,13 @@ unsupported features or harness includes.</p>
       svg += `<text x="${{P-6}}" y="${{y+3}}" text-anchor="end" fill="#888" font-size="10">${{v}}</text>`;
     }}
 
-    // One series helper. Plots a polyline + dots + last-value label.
+    // One series helper. Plots a polyline + last-value label.
+    // (Drop per-point circles — once enough runs accumulate they fuzz
+    // into a band and the polyline reads cleaner on its own.)
     function series(key, color) {{
       const pts = history.map((r, i) => ({{ x: xs(i), y: ys(r[key]), v: r[key], when: r.when }}));
       const d = pts.map(p => `${{p.x}},${{p.y}}`).join(' ');
-      let out = `<polyline points="${{d}}" fill="none" stroke="${{color}}" stroke-width="2"/>`;
-      for (const p of pts) {{
-        out += `<circle cx="${{p.x}}" cy="${{p.y}}" r="2.5" fill="${{color}}"><title>${{p.when}}: ${{p.v}} ${{key}}</title></circle>`;
-      }}
+      let out = `<polyline points="${{d}}" fill="none" stroke="${{color}}" stroke-width="1.5"/>`;
       const last = pts[pts.length - 1];
       out += `<text x="${{last.x + 6}}" y="${{last.y + 4}}" font-size="11" fill="${{color}}">${{last.v}}</text>`;
       return out;
