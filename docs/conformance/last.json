@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 21:38 UTC",
+    "when": "2026-05-15 21:42 UTC",
     "total": 13247,
-    "passed": 2586,
-    "failed": 717,
+    "passed": 2587,
+    "failed": 716,
     "skipped": 9944
   },
   "failures": [
@@ -134,10 +134,6 @@
     {
       "path": "test/language/statements/while/let-identifier-with-newline.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for/cptn-expr-expr-iter.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/language/statements/for/head-const-bound-names-in-stmt.js",

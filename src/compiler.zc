@@ -2934,11 +2934,14 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::ForStmt {
+        // init
+        if node.left != NULL { compile_stmt_or_expr(c, node.left); }
+        // Reset AFTER init: ECMA-262 ForBodyEvaluation step 1 sets
+        // V to undefined; the init's expression value doesn't leak
+        // into the loop's completion.
         if !c.is_function && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
-        // init
-        if node.left != NULL { compile_stmt_or_expr(c, node.left); }
         let loop_top = (u32)c.code_count;
         // Pushed with continue_target = loop_top; we update to the
         // update-step offset below so `continue` runs the increment.
