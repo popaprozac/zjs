@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 07:26 UTC",
+    "when": "2026-05-15 07:30 UTC",
     "total": 4821,
-    "passed": 1993,
-    "failed": 802,
+    "passed": 1999,
+    "failed": 796,
     "skipped": 2026
   },
   "failures": [
@@ -2044,7 +2044,11 @@
       "reason": "zjs: throw: Test262Error: String.prototype.slice throws in its toprimitive step."
     },
     {
-      "path": "test/built-ins/String/prototype/split/argument-is-new-reg-exp-and-instance-is-string-hello.js",
+      "path": "test/built-ins/String/prototype/split/argument-is-reg-exp-a-z-and-instance-is-string-abc.js",
+      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
+    },
+    {
+      "path": "test/built-ins/String/prototype/split/argument-is-regexp-a-z-and-instance-is-string-abc.js",
       "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
     },
     {
@@ -2060,31 +2064,7 @@
       "reason": "zjs: throw: Test262Error: The value of __split.length is 0"
     },
     {
-      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-1-and-instance-is-string-hello.js",
-      "reason": "zjs: throw: Test262Error: The value of __split[0] is expected to equal the value of __expected[0]"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-2-and-instance-is-string-hello.js",
-      "reason": "zjs: throw: Test262Error: The value of __split[index] is expected to equal the value of __expected[index]"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-3-and-instance-is-string-hello.js",
-      "reason": "zjs: throw: Test262Error: The value of __split[index] is expected to equal the value of __expected[index]"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-4-and-instance-is-string-hello.js",
-      "reason": "zjs: throw: Test262Error: The value of __split[index] is expected to equal the value of __expected[index]"
-    },
-    {
       "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-hi-and-instance-is-string-hello.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-undefined-and-instance-is-string-hello.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/arguments-are-new-reg-exp-and-void-0-and-instance-is-string-hello.js",
       "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
     },
     {
@@ -2138,10 +2118,6 @@
     {
       "path": "test/built-ins/String/prototype/split/call-split-l-na-n-instance-is-string-hello.js",
       "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __expected.length"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/call-split-new-reg-exp.js",
-      "reason": "zjs: throw: Test262Error: The value of __split.length is expected to equal the value of __string.length"
     },
     {
       "path": "test/built-ins/String/prototype/split/checking-by-using-eval.js",

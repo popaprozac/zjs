@@ -2784,6 +2784,20 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             let mstart = scan + (u32)pmatch_buf[0].rm_so;
             let mend   = scan + (u32)pmatch_buf[0].rm_eo;
             if mstart >= hay_n { break; }
+            // Empty match at `cursor` is special: ECMA-262 advances one
+            // input char and emits a single-char piece. This is what
+            // makes `"abc".split(new RegExp())` give ["a","b","c"]
+            // rather than ["", "a", "b", "c"].
+            if mstart == cursor && mend == mstart {
+                if cursor >= hay_n { break; }
+                let pbuf = alloc_n<char>(2);
+                pbuf[0] = hay_d[cursor];
+                pbuf[1] = (char)0;
+                array_set(arr, arr.length, ctx_intern_string_take(ctx, pbuf, 1));
+                cursor = cursor + 1;
+                scan = cursor;
+                continue;
+            }
             let piece_len = mstart - cursor;
             let pbuf = alloc_n<char>((usize)(piece_len + 1));
             if piece_len > 0 {
@@ -2794,17 +2808,19 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             pbuf[piece_len] = (char)0;
             array_set(arr, arr.length, ctx_intern_string_take(ctx, pbuf, piece_len));
             cursor = mend;
-            // Empty-match advance: avoid infinite loops on /(?=x)/ etc.
+            // Avoid infinite loops on /(?=x)/-style empty matches.
             scan = if mend > scan { mend } else { scan + 1 };
         }
-        if arr.length < limit_u32 {
+        // Trailing piece. For the empty-regex / split-into-chars case
+        // we've already emitted all chars, so cursor == hay_n and the
+        // remainder is empty — skip emitting it (would add a spurious
+        // "" otherwise).
+        if arr.length < limit_u32 && cursor < hay_n {
             let tlen = hay_n - cursor;
             let tbuf = alloc_n<char>((usize)(tlen + 1));
-            if tlen > 0 {
-                let src: char* = NULL;
-                raw { src = &hay_d[cursor]; }
-                mem_copy<char>(tbuf, src, (usize)tlen);
-            }
+            let src: char* = NULL;
+            raw { src = &hay_d[cursor]; }
+            mem_copy<char>(tbuf, src, (usize)tlen);
             tbuf[tlen] = (char)0;
             array_set(arr, arr.length, ctx_intern_string_take(ctx, tbuf, tlen));
         }
