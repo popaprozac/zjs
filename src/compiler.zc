@@ -96,6 +96,13 @@ struct Compiler {
     // arguments array, populated by Op::BuildArguments at fn entry.
     arguments_reg: i32;
 
+    // 2026-05-15 — enclosing class context for super references.
+    // Set by compile_class_value before recursing into a method
+    // compile (via compile_function's `parent` chain). super() in
+    // the method body re-uses this expression to resolve the parent
+    // constructor at runtime.
+    enclosing_class_parent: AstNode*;
+
     // Phase 3.8a — loop context stack for break / continue.
     // Pushed on entry to a loop, popped on exit. `continue_target` is
     // the bytecode offset to jump to on `continue` (loop test for
@@ -1453,6 +1460,9 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     let c = compiler_new(parent_ctx, source);
     c.is_function = true;
     c.parent = parent;
+    // Inherit the enclosing class context so super() inside a class
+    // method can find its parent expression at compile time.
+    if parent != NULL { c.enclosing_class_parent = parent.enclosing_class_parent; }
 
     // 1. Allocate registers for parameters. They sit at the bottom of
     //    the register file so callers can place args contiguously.
@@ -1686,6 +1696,8 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     // Compile the constructor function. MethodDef shares the FunctionExpr
     // shape (children=params, left=body, name=name) so compile_function
     // accepts it directly. If absent, synthesize an empty node.
+    let saved_class_parent = c.enclosing_class_parent;
+    c.enclosing_class_parent = cls_node.right;
     let ctor_fn: Function* = NULL;
     if ctor_node != NULL {
         ctor_fn = compile_function(c.ctx, c.source, ctor_node, c);
@@ -1763,7 +1775,11 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
                 let m_atom = ctx_intern_atom(c.ctx, mn, ml);
                 let m_ic = alloc_ic_slot(c, m_atom);
                 if m_ic <= 255 {
-                    emit(c, make_inst_abc(Op::StoreProp, proto_reg, (u8)m_ic, mreg));
+                    // static methods attach to the constructor itself
+                    // (so `Foo.method(...)` works); instance methods go
+                    // on the prototype as before.
+                    let target = if m.bool_value { ctor_reg } else { proto_reg };
+                    emit(c, make_inst_abc(Op::StoreProp, target, (u8)m_ic, mreg));
                 }
                 release_reg(c, mreg);
             }
@@ -1771,7 +1787,23 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         mi = mi + 1;
     }
 
+    // `extends Parent`: chain Child.prototype.[[Prototype]] = Parent.prototype.
+    // Evaluated AFTER methods are attached so the methods land on the
+    // child's own prototype (not the parent's).
+    if cls_node.right != NULL {
+        let parent_reg = compile_expr(c, cls_node.right);
+        let parent_proto_ic = alloc_ic_slot(c, ctx_intern_atom(c.ctx, (char*)"prototype", 9));
+        let parent_proto_reg = alloc_reg(c);
+        if parent_proto_ic <= 255 {
+            emit(c, make_inst_abc(Op::LoadProp, parent_proto_reg, parent_reg, (u8)parent_proto_ic));
+            emit(c, make_inst_ab(Op::SetProto, parent_proto_reg, proto_reg));
+        }
+        release_reg(c, parent_proto_reg);
+        if parent_reg + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+    }
+
     release_reg(c, proto_reg);
+    c.enclosing_class_parent = saved_class_parent;
     return ctor_reg;
 }
 
@@ -1897,6 +1929,41 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
     let is_method = callee != NULL && (callee.kind == NodeKind::Member || callee.kind == NodeKind::Computed);
 
     let arg_count: u8 = (u8)node.children_count;
+
+    // super(...) in a derived-class constructor: emit Op::SuperCall
+    // which preserves the current `this` and new-target. Resolves the
+    // parent expression through the enclosing-class context.
+    if callee != NULL && callee.kind == NodeKind::SuperExpr {
+        if c.enclosing_class_parent == NULL {
+            c.had_error = true;
+            return alloc_reg(c);
+        }
+        let base = c.next_reg;
+        let slots_needed: u8 = 1 + arg_count;
+        let r: u8 = 0;
+        while r < slots_needed { alloc_reg(c); r = r + 1; }
+        // Parent ctor into regs[base].
+        let parent_r = compile_expr(c, c.enclosing_class_parent);
+        if parent_r != base {
+            emit(c, make_inst_ab(Op::Mov, base, parent_r));
+            if parent_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        }
+        // Args into regs[base+1..].
+        let j: u8 = 0;
+        while j < arg_count {
+            let arg_r = compile_expr(c, node.children[j]);
+            let target = base + 1 + j;
+            if arg_r != target {
+                emit(c, make_inst_ab(Op::Mov, target, arg_r));
+                if arg_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+            j = j + 1;
+        }
+        emit(c, make_inst_abc(Op::SuperCall, base, base, arg_count));
+        c.next_reg = base + 1;
+        if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+        return base;
+    }
 
     if is_method {
         // Method call: regs[base]=method, regs[base+1]=receiver,

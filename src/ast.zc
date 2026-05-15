@@ -90,10 +90,13 @@ enum NodeKind {
     ClassDecl,              // name_start/length = class name, children = MethodDefs
                             // (the constructor, if any, is one of the children
                             // — distinguished by its method name being "constructor")
+                            // right = parent expression for `extends Parent` (or NULL)
     ClassExpr,              // same shape as ClassDecl but used in expression position
     MethodDef,              // name_start/length = method name, children = params,
-                            // left = body (BlockStmt), op = TokenKind::Eq sentinel.
-                            // (No static / getter / setter distinction in MVP.)
+                            // left = body (BlockStmt). bool_value = true for `static`.
+    SuperExpr,              // bare `super` reference; used in SuperCall (parent fn
+                            // contextual lookup) and SuperMember (left = property name).
+    SuperCall,              // children = args. Implicit ctor lookup.
 }
 
 struct AstNode {

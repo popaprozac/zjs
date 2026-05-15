@@ -1623,6 +1623,67 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             let llen: u32 = 0;
             raw { llen = (uint32_t)strlen(label); }
             regs[inst.a] = ctx_intern_string(ctx, label, llen);
+        } else if op == Op::SetProto {
+            // a = proto, b = obj. Wire obj.proto = proto (both must be
+            // Objects; non-object args are silently no-ops).
+            let proto_v = regs[inst.a];
+            let obj_v   = regs[inst.b];
+            if zjs_is_object(obj_v) != 0 {
+                let o = zjs_as_object(obj_v);
+                if zjs_is_object(proto_v) != 0 {
+                    o.proto = zjs_as_object(proto_v);
+                } else if zjs_is_null(proto_v) != 0 {
+                    o.proto = NULL;
+                }
+            }
+        } else if op == Op::SuperCall {
+            // super(...): call parent ctor with the in-flight `this`
+            // and new_target_active preserved.
+            let dst = inst.a;
+            let base = inst.b;
+            let argc = (u32)inst.c;
+            let parent = regs[base];
+            let argv_ptr: ZjsValue* = NULL;
+            if argc > 0 { raw { argv_ptr = &regs[base + 1]; } }
+            // Some host ctors (Promise, RegExp, ...) allocate a special
+            // cell rather than reusing host_this — model this as `new
+            // parent(...)` so the result is treated as the freshly
+            // constructed instance. For TAG_FUNCTION / TAG_CLOSURE the
+            // user ctor mutates host_this in place; we pass that through.
+            let parent_is_host = zjs_is_host_function(parent) != 0;
+            let r: ZjsValue = zjs_undefined();
+            let saved_nt = ctx.new_target_active;
+            ctx.new_target_active = true;
+            if parent_is_host {
+                let saved_th = ctx.host_this;
+                raw { r = zjs_call_value_with_this(ctx, parent, ctx->host_this, argv_ptr, argc); }
+                ctx.host_this = saved_th;
+            } else {
+                raw { r = zjs_call_value_with_this(ctx, parent, ctx->host_this, argv_ptr, argc); }
+            }
+            ctx.new_target_active = saved_nt;
+            if ctx.pending_throw_active {
+                throwing = true;
+                thrown = consume_pending_throw(ctx);
+                exit_reason = 3; break;
+            }
+            // If the parent ctor handed us a freshly-allocated cell
+            // (Promise / RegExp / etc.) rather than mutating host_this,
+            // rebind host_this to it so the rest of the derived ctor +
+            // NewInvoke's result-selection see the parent's instance.
+            // We also overwrite the current frame's saved_host_this so
+            // pop_call_frame on Op::Return propagates the new this back
+            // up to the NewInvoke caller (otherwise the pop restores
+            // host_this to new_obj_v and we lose the special cell).
+            let r_is_special_cell: bool = zjs_is_promise(r) != 0
+                                         || zjs_is_regexp(r) != 0;
+            if r_is_special_cell {
+                ctx.host_this = r;
+                if ctx.frame_count > 0 {
+                    ctx.frames[ctx.frame_count - 1].saved_host_this = r;
+                }
+            }
+            regs[dst] = r;
         } else if op == Op::Throw {
             throwing = true;
             thrown = regs[inst.a];
@@ -2230,6 +2291,10 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                     call_result = consume_pending_throw(ctx);
                 }
             }
+            // Capture whatever super() may have rebound `this` to
+            // before restoring (e.g. Promise ctor handing back a
+            // freshly-allocated TAG_PROMISE).
+            let final_this = ctx.host_this;
             ctx.host_this = saved_this;
             ctx.new_target_active = saved_nt;
             if did_throw {
@@ -2246,6 +2311,14 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 || zjs_is_closure(call_result) != 0
                 || zjs_is_host_function(call_result) != 0 {
                 regs[dst] = call_result;
+            } else if final_this.bits != new_obj_v.bits
+                      && (zjs_is_promise(final_this) != 0
+                          || zjs_is_regexp(final_this) != 0) {
+                // super() rebound `this` to a parent-allocated special
+                // cell — use it as the constructor's result. This is
+                // how `class Foo extends Promise { constructor(e) {
+                // super(e); } }` produces a real TAG_PROMISE.
+                regs[dst] = final_this;
             } else {
                 regs[dst] = new_obj_v;
             }

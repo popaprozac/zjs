@@ -209,6 +209,19 @@ enum Op {
 
     // Type introspection (Phase 3.1e).
     Typeof,           // a=dst, b=src.
+    // Class machinery (2026-05-15).
+    // SetProto: assign regs[b]'s prototype to be regs[a].
+    //   regs[a] must be an Object (typically a constructor's
+    //   .prototype); regs[b] must be an Object too. Used by the
+    //   class-extends path to wire Child.prototype.[[Prototype]] =
+    //   Parent.prototype after the methods are attached.
+    SetProto,         // a=proto, b=obj.
+    // SuperCall: call regs[b] (the parent constructor) with the
+    //   current ctx.host_this and ctx.new_target_active preserved,
+    //   args at regs[b+1 .. b+c]. Used to compile super(...) in a
+    //   derived-class constructor. Unlike Op::Invoke this DOES NOT
+    //   reset host_this to undefined/global.
+    SuperCall,        // a=dst, b=base, c=argc.
                       // dst = a string from ECMA-262 §13.5.3
                       // (one of: "undefined" "object" "boolean"
                       // "number" "string" "function").

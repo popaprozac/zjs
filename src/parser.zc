@@ -787,8 +787,25 @@ fn parse_function_decl(p: Parser*) -> AstNode* {
 // compiler distinguishes the constructor by name.
 
 fn parse_method_body_pair(p: Parser*) -> AstNode* {
+    let mut_start = peek(p).start;
+    // Optional `static` prefix. We only treat it as the static keyword
+    // when followed by another property-name token (the actual method
+    // name). `static() {}` keeps `static` as the method name.
+    let is_static: bool = false;
+    let first = peek(p);
+    if first.kind == TokenKind::Identifier && first.length == 6 {
+        let nd = p.source + first.start;
+        let is_kw_static: int = 0;
+        raw { is_kw_static = (memcmp(nd, "static", 6) == 0) ? 1 : 0; }
+        if is_kw_static != 0 && is_property_name_start(peek_kind2(p)) {
+            advance(p);
+            is_static = true;
+        }
+    }
+    // Method name: Identifier OR a contextual / reserved word usable as
+    // a property name (`of`, `static`, `let`, ...).
     let name_tok = peek(p);
-    if name_tok.kind != TokenKind::Identifier { p.had_error = true; return NULL; }
+    if !is_property_name_start(name_tok.kind) { p.had_error = true; return NULL; }
     advance(p);
 
     if !expect_kind(p, TokenKind::LParen) { return NULL; }
@@ -801,9 +818,10 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     p.function_depth = p.function_depth - 1;
     if body == NULL { return NULL; }
 
-    let node = new_node(&p.tracker, NodeKind::MethodDef, name_tok.start, body.end);
+    let node = new_node(&p.tracker, NodeKind::MethodDef, mut_start, body.end);
     node.name_start  = name_tok.start;
     node.name_length = name_tok.length;
+    node.bool_value  = is_static;
     node.left = body;
     node.children = params.arr;
     node.children_count = params.count;
@@ -845,12 +863,21 @@ fn parse_class_decl(p: Parser*) -> AstNode* {
     if name_tok.kind != TokenKind::Identifier { p.had_error = true; return NULL; }
     advance(p);
 
+    // Optional `extends <LeftHandSideExpression>`.
+    let parent: AstNode* = NULL;
+    if peek_kind(p) == TokenKind::KwExtends {
+        advance(p);
+        parent = parse_call_member(p);
+        if parent == NULL { return NULL; }
+    }
+
     let body = parse_class_body(p);
     let end_pos = if body.count > 0 { body.arr[body.count - 1].end } else { peek(p).start };
 
     let node = new_node(&p.tracker, NodeKind::ClassDecl, kw.start, end_pos);
     node.name_start  = name_tok.start;
     node.name_length = name_tok.length;
+    node.right       = parent;
     node.children = body.arr;
     node.children_count = body.count;
     return node;
@@ -865,12 +892,19 @@ fn parse_class_expr(p: Parser*) -> AstNode* {
         name_start  = nt.start;
         name_length = nt.length;
     }
+    let parent: AstNode* = NULL;
+    if peek_kind(p) == TokenKind::KwExtends {
+        advance(p);
+        parent = parse_call_member(p);
+        if parent == NULL { return NULL; }
+    }
     let body = parse_class_body(p);
     let end_pos = if body.count > 0 { body.arr[body.count - 1].end } else { peek(p).start };
 
     let node = new_node(&p.tracker, NodeKind::ClassExpr, kw.start, end_pos);
     node.name_start  = name_start;
     node.name_length = name_length;
+    node.right       = parent;
     node.children = body.arr;
     node.children_count = body.count;
     return node;
@@ -1551,6 +1585,13 @@ fn parse_primary(p: Parser*) -> AstNode* {
     if k == TokenKind::KwThis {
         advance(p);
         return new_node(&p.tracker, NodeKind::ThisExpr, t.start, t.start + t.length);
+    }
+    if k == TokenKind::KwSuper {
+        advance(p);
+        // Bare `super` is only valid in a class method context; the
+        // distinction (call vs member) is made by parse_call_member
+        // when it sees the trailing `(` / `.` / `[`.
+        return new_node(&p.tracker, NodeKind::SuperExpr, t.start, t.start + t.length);
     }
     if is_binding_ident(k) {
         // Identifier OR a contextual keyword being used as a reference
