@@ -1821,7 +1821,8 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             }
         } else if op == Op::LeaveTry {
             ctx_try_pop(ctx);
-        } else if op == Op::DefineGetter || op == Op::DefineSetter {
+        } else if op == Op::DefineGetter || op == Op::DefineSetter
+                  || op == Op::DefineMethodGetter || op == Op::DefineMethodSetter {
             // Install (or merge into existing) an accessor slot on
             // `regs[a]` at key `regs[b]` (an atom-string), with the
             // function `regs[c]` as the getter or setter.
@@ -1875,12 +1876,21 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                         cur_set = acc.set;
                     }
                 }
-                let new_get = if op == Op::DefineGetter { fn_v } else { cur_get };
-                let new_set = if op == Op::DefineSetter { fn_v } else { cur_set };
+                let is_getter = (op == Op::DefineGetter || op == Op::DefineMethodGetter);
+                let new_get = if is_getter { fn_v } else { cur_get };
+                let new_set = if is_getter { cur_set } else { fn_v };
                 let acc = zjs_accessor_new(new_get, new_set);
                 ctx_register_cell(ctx, (void*)acc);
                 let av = zjs_cell_from_ptr((void*)acc);
-                object_set(ctx, o, key_atom, av);
+                // Class accessors are non-enumerable; object-literal
+                // accessors keep the default enumerable attrs.
+                let is_method = (op == Op::DefineMethodGetter || op == Op::DefineMethodSetter);
+                if is_method {
+                    object_define_property_slot(ctx, o, key_atom, av,
+                                                PROP_CONFIGURABLE);
+                } else {
+                    object_set(ctx, o, key_atom, av);
+                }
             }
         } else if op == Op::MakeClosure {
             // a = dst, b = function-value reg, c = env-object reg

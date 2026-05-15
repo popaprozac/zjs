@@ -154,6 +154,10 @@ enum Op {
     //   c = fn_reg
     DefineGetter,
     DefineSetter,
+    // 2026-05-15: class get/set accessors. Same shape as DefineGetter
+    // /Setter but installs the property as non-enumerable per spec.
+    DefineMethodGetter,
+    DefineMethodSetter,
 
     MakeClosure,      // a=dst, b=fn_reg, c=env_reg
                       //   wraps regs[b] (a function value) with regs[c] (an env object)
