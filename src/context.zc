@@ -572,6 +572,7 @@ fn gc_mark_value(v: ZjsValue) -> void {
             gc_mark_value(pv);
         }
         gc_mark_value(hf.bound);
+        gc_mark_value(hf.proto_override);
         return;
     }
 
@@ -6134,7 +6135,7 @@ raw {
     #include <stdio.h>
 }
 
-fn console_write_value(v: ZjsValue, stream_is_stderr: bool) -> void {
+fn console_write_value(ctx: ZjsContext*, v: ZjsValue, stream_is_stderr: bool) -> void {
     if zjs_is_undefined(v) != 0 {
         raw {
             if (stream_is_stderr) fputs("undefined", stderr);
@@ -6190,12 +6191,6 @@ fn console_write_value(v: ZjsValue, stream_is_stderr: bool) -> void {
     if zjs_is_array(v) != 0 || zjs_is_object(v) != 0 {
         let b: JsonBuf;
         b.data = NULL; b.len = 0; b.cap = 0;
-        // We need a context for atom interning during stringify. The
-        // value isn't context-tagged, but json_stringify_value only
-        // reads ctx for ToString of doubles inside numbers — none of
-        // which happen for plain dump. Pass NULL and rely on the
-        // cell-shape walk being self-contained.
-        let nullctx: ZjsContext* = NULL;
         let nojc: JsonCtx;
         nojc.replacer_fn = zjs_undefined();
         nojc.replacer_arr = zjs_undefined();
@@ -6203,7 +6198,10 @@ fn console_write_value(v: ZjsValue, stream_is_stderr: bool) -> void {
         nojc.indent_len = 0;
         nojc.depth = 0;
         nojc.stack_depth = 0;
-        json_stringify_value(nullctx, &nojc, &b, v);
+        // Pass the real ctx — json_stringify_value reaches into the
+        // atom table (toJSON dispatch, wrapper unboxing) and calls
+        // ToPrimitive on Number/String wrappers.
+        json_stringify_value(ctx, &nojc, &b, v);
         let bd = b.data;
         let bn = b.len;
         raw {
@@ -6235,7 +6233,7 @@ fn console_emit(ctx: ZjsContext*, args: ZjsValue*, argc: u32, stderr_stream: boo
                 else fputc(' ', stdout);
             }
         }
-        console_write_value(args[i], stderr_stream);
+        console_write_value(ctx, args[i], stderr_stream);
         i = i + 1;
     }
     raw {
