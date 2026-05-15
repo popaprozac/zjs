@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 17:41 UTC",
+    "when": "2026-05-15 17:45 UTC",
     "total": 4821,
-    "passed": 2290,
-    "failed": 505,
+    "passed": 2293,
+    "failed": 502,
     "skipped": 2026
   },
   "failures": [
@@ -1040,10 +1040,6 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-12.js",
-      "reason": "zjs: throw: Test262Error: testResult[0]"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-15.js",
       "reason": "zjs: throw: Test262Error: testResult[1]"
     },
@@ -1152,10 +1148,6 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-12.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-15.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
@@ -1222,10 +1214,6 @@
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-8-10.js",
       "reason": "zjs: throw: Test262Error: callCnt"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-12.js",
-      "reason": "zjs: throw: Test262Error: result !== true"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-124.js",

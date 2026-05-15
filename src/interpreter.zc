@@ -2083,6 +2083,20 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
+                } else if zjs_is_regexp(val) != 0 {
+                    let cur = ctx.regexp_proto;
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
+                } else if zjs_is_function(val) != 0 || zjs_is_closure(val) != 0
+                          || zjs_is_host_function(val) != 0 {
+                    // Every callable implicitly inherits from Function.prototype.
+                    let cur = ctx.function_proto;
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
                 }
             }
             regs[inst.a] = zjs_bool(result);
