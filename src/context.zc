@@ -3646,6 +3646,66 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return result_v;
 }
 
+// Array.prototype.keys / values / entries — MVP returns a snapshot
+// array suitable for our for-of model (which iterates by numeric
+// index). Not a true Iterator object — `.next()` isn't supported, but
+// `for (x of arr.keys())` works because for-of just walks length and
+// indexes. Holes contribute null for entries / values too, matching
+// ECMA-262 IteratorStep on a sparse array.
+fn host_array_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_array_coercible_this(ctx) { return zjs_undefined(); }
+    let this_val = ctx.host_this;
+    let len: u32 = read_length_u32(ctx, this_val);
+    let out_v = ctx_new_array(ctx, len);
+    let out = zjs_as_array(out_v);
+    let i: u32 = 0;
+    while i < len {
+        array_set(out, i, zjs_int32((i32)i));
+        i = i + 1;
+    }
+    return out_v;
+}
+
+fn host_array_values(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_array_coercible_this(ctx) { return zjs_undefined(); }
+    let this_val = ctx.host_this;
+    let len: u32 = read_length_u32(ctx, this_val);
+    let out_v = ctx_new_array(ctx, len);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    let out = zjs_as_array(out_v);
+    let i: u32 = 0;
+    while i < len {
+        let v = property_get(ctx, this_val, zjs_int32((i32)i));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        array_set(out, i, v);
+        i = i + 1;
+    }
+    return out_v;
+}
+
+fn host_array_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_array_coercible_this(ctx) { return zjs_undefined(); }
+    let this_val = ctx.host_this;
+    let len: u32 = read_length_u32(ctx, this_val);
+    let out_v = ctx_new_array(ctx, len);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    let out = zjs_as_array(out_v);
+    let i: u32 = 0;
+    while i < len {
+        let v = property_get(ctx, this_val, zjs_int32((i32)i));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let pair_v = ctx_new_array(ctx, 2);
+        let pair = zjs_as_array(pair_v);
+        array_set(pair, 0, zjs_int32((i32)i));
+        array_set(pair, 1, v);
+        array_set(out, i, pair_v);
+        i = i + 1;
+    }
+    return out_v;
+}
+
 fn host_array_join(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_array_coercible_this(ctx) { return zjs_undefined(); }
     let this_val = ctx.host_this;
@@ -7209,6 +7269,16 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"slice", aslice_ptr, 2));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"concat", 6),
                ctx_make_host_function_arity(ctx, (char*)"concat", aconc_ptr, 1));
+    // Array iterator methods (snapshot — see host_array_keys docs).
+    let akeys_ptr:  void* = NULL; raw { akeys_ptr  = (void*)host_array_keys; }
+    let avals_ptr:  void* = NULL; raw { avals_ptr  = (void*)host_array_values; }
+    let aents_ptr:  void* = NULL; raw { aents_ptr  = (void*)host_array_entries; }
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"keys", 4),
+               ctx_make_host_function_arity(ctx, (char*)"keys", akeys_ptr, 0));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"values", 6),
+               ctx_make_host_function_arity(ctx, (char*)"values", avals_ptr, 0));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"entries", 7),
+               ctx_make_host_function_arity(ctx, (char*)"entries", aents_ptr, 0));
     ctx.array_proto = array_proto;
     // Unify with the Array constructor's .prototype (set lazily here so
     // `Array.prototype.push.call(arr, x)` and similar find our method

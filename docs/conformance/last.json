@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 16:57 UTC",
+    "when": "2026-05-15 17:01 UTC",
     "total": 4821,
-    "passed": 2273,
-    "failed": 522,
+    "passed": 2275,
+    "failed": 520,
     "skipped": 2026
   },
   "failures": [
@@ -526,14 +526,6 @@
     {
       "path": "test/language/statements/for-in/var-eval-strict.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
-    },
-    {
-      "path": "test/language/statements/for-of/Array.prototype.entries.js",
-      "reason": "zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/language/statements/for-of/Array.prototype.keys.js",
-      "reason": "zjs: throw: TypeError: for-of on null or undefined"
     },
     {
       "path": "test/language/statements/for-of/arguments-mapped-aliasing.js",
