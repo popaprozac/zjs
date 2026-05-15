@@ -539,6 +539,16 @@ fn finish_for_in_or_of(p: Parser*, kw_tok: Token, binding: AstNode*, op_kind: To
         if binding.children_count != 1 { p.had_error = true; return NULL; }
         let decl0 = binding.children[0];
         if decl0 != NULL && decl0.left != NULL { p.had_error = true; return NULL; }
+        // Spec: a `let` / `const` ForDeclaration may not bind the
+        // identifier `let`.  `for (let let of ...)` and the const
+        // version are SyntaxErrors. Bare `var let` is still fine.
+        if decl0 != NULL && decl0.name_length == 3
+           && (binding.op == TokenKind::KwLet || binding.op == TokenKind::KwConst) {
+            let nm = p.source + decl0.name_start;
+            let is_let: int = 0;
+            raw { is_let = (memcmp(nm, "let", 3) == 0) ? 1 : 0; }
+            if is_let != 0 { p.had_error = true; return NULL; }
+        }
     }
     advance(p);    // consume 'in' or 'of'
     // ECMA-262: for-of's RHS is an AssignmentExpression (no comma);

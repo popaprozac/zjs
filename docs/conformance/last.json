@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 17:48 UTC",
+    "when": "2026-05-15 17:50 UTC",
     "total": 4821,
-    "passed": 2296,
-    "failed": 499,
+    "passed": 2300,
+    "failed": 495,
     "skipped": 2026
   },
   "failures": [
@@ -432,19 +432,11 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
-      "path": "test/language/statements/for-in/head-const-bound-names-let.js",
-      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
-    },
-    {
       "path": "test/language/statements/for-in/head-let-bound-names-fordecl-tdz.js",
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
       "path": "test/language/statements/for-in/head-let-bound-names-in-stmt.js",
-      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
-    },
-    {
-      "path": "test/language/statements/for-in/head-let-bound-names-let.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
@@ -556,10 +548,6 @@
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
-      "path": "test/language/statements/for-of/head-const-bound-names-let.js",
-      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
-    },
-    {
       "path": "test/language/statements/for-of/head-const-fresh-binding-per-iteration.js",
       "reason": "zjs: throw: Test262Error: `f[0]()` returns `1`"
     },
@@ -569,10 +557,6 @@
     },
     {
       "path": "test/language/statements/for-of/head-let-bound-names-in-stmt.js",
-      "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
-    },
-    {
-      "path": "test/language/statements/for-of/head-let-bound-names-let.js",
       "reason": "expected SyntaxError, got zjs: throw: Test262Error: test should not have been evaluated"
     },
     {
