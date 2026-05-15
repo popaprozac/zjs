@@ -3642,7 +3642,14 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // still short-circuits to an empty array per step 8.
     let limit_u32: u32 = 0xffffffff;
     if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
-        let lim = zjs_to_double(args[1]);
+        let lim_v = args[1];
+        // ToUint32 → ToNumber → ToPrimitive("number"). Object args
+        // route through valueOf / toString — their throws abort split.
+        if zjs_is_object(lim_v) != 0 || zjs_is_array(lim_v) != 0 {
+            lim_v = zjs_to_primitive(ctx, lim_v, false);
+            if ctx.pending_throw_active { return ctx_new_array(ctx, 0); }
+        }
+        let lim = zjs_to_double(lim_v);
         if ctx.pending_throw_active { return ctx_new_array(ctx, 0); }
         let is_nan_l: int = 0; raw { is_nan_l = isnan(lim) ? 1 : 0; }
         if is_nan_l != 0 { lim = 0.0; }
