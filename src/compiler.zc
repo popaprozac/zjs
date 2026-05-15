@@ -3076,19 +3076,27 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     if root != NULL && root.kind == NodeKind::Program {
         // Hoist top-level declarations into globals so forward references
         // and "defined-via-conditional-branch" var declarations resolve
-        // without ReferenceError. We recurse through the whole tree but
-        // stop at function/class bodies — those have their own scope.
-        //
-        // ECMA-262: `var` declarations hoist to function-or-program scope
-        // regardless of textual placement (inside if/try/catch/loops are
-        // still program-scoped). `let`/`const` are block-scoped, but our
-        // current model conflates them with globals at the top level —
-        // good enough for the test262 cases that fail right now (we'll
-        // tighten TDZ later).
+        // without ReferenceError.
         hoist_program_decls(c, root);
+        // ECMA-262 §10.2.11: function declarations are evaluated at
+        // scope entry, so calling them before their textual position is
+        // valid. Two-pass compilation of the top level: emit
+        // FunctionDecl statements first (in source order), then emit
+        // the rest of the body skipping the already-emitted FunctionDecls.
+        let i1: u32 = 0;
+        while i1 < root.children_count && !c.had_error {
+            let child = root.children[i1];
+            if child != NULL && child.kind == NodeKind::FunctionDecl {
+                compile_stmt(c, child);
+            }
+            i1 = i1 + 1;
+        }
         let i2: u32 = 0;
         while i2 < root.children_count && !c.had_error {
-            compile_stmt(c, root.children[i2]);
+            let child = root.children[i2];
+            if child != NULL && child.kind != NodeKind::FunctionDecl {
+                compile_stmt(c, child);
+            }
             i2 = i2 + 1;
         }
     } else {

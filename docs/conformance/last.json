@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 11:14 UTC",
+    "when": "2026-05-15 11:30 UTC",
     "total": 4821,
-    "passed": 2183,
-    "failed": 612,
+    "passed": 2186,
+    "failed": 609,
     "skipped": 2026
   },
   "failures": [
@@ -424,12 +424,8 @@
       "reason": "zjs: throw: Test262Error: #2: __str === __evaluated. Actual:  __str ==="
     },
     {
-      "path": "test/language/statements/for-in/S12.6.4_A7_T1.js",
-      "reason": "zjs: throw: Test262Error: #2: __accum.indexOf(\"ba2\") === -1. Actual:  __accum.indexOf(\"ba2\") ===3"
-    },
-    {
       "path": "test/language/statements/for-in/S12.6.4_A7_T2.js",
-      "reason": "zjs: throw: Test262Error: Unexpected value: 'aa1ba2ca3'"
+      "reason": "zjs: throw: Test262Error: Unexpected value: 'aa1baundefinedca3'"
     },
     {
       "path": "test/language/statements/for-in/cptn-decl-abrupt-empty.js",
@@ -1668,10 +1664,6 @@
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A4_T5.js",
-      "reason": "zjs: throw: Test262Error: #1.1: Exception === \"intostr\". Actual: [object Object]"
-    },
-    {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A7.js",
       "reason": "zjs: throw: Test262Error: #1.2: var __FACTORY = String.prototype.indexOf; \"__instance = new __FACTORY\" throw a TypeError"
     },
@@ -1682,10 +1674,6 @@
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",
       "reason": "zjs: throw: Test262Error: #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A3_T4.js",
-      "reason": "zjs: throw: Test262Error: #1: __instance.slice(0,100) === \"undefined\". Actual: undefined"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A7.js",
