@@ -105,6 +105,11 @@ struct ZjsContext {
     // Set by Op::MethodInvoke before dispatch and restored after. Host
     // builtins like Array.prototype.push read it via zjs_get_host_this().
     host_this: ZjsValue;
+    // Op::NewInvoke sets this to true before calling the constructor;
+    // plain Invoke / MethodInvoke leave it false. Host functions can
+    // read it to distinguish `new F(...)` from `F(...)` / `F.call(...)`
+    // and throw TypeError on the latter when spec requires it.
+    new_target_active: bool;
 
     // Cached "prototype" objects for built-in cell types (Phase 3.5).
     // Lazily populated by ctx_init_builtins. property_get on TAG_ARRAY
@@ -5433,6 +5438,14 @@ fn host_promise_with_resolvers(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
 // resolve/reject closures, and runs the executor synchronously.
 // If the executor throws, the promise is rejected with the thrown value.
 fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // ECMA-262 §27.2.3.1 step 1: throw TypeError if NewTarget is
+    // undefined — i.e. Promise(...) called without `new`.
+    if !ctx.new_target_active {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Promise constructor cannot be invoked without 'new'", 51);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
     let executor = if argc >= 1 { args[0] } else { zjs_undefined() };
     let p = zjs_promise_new();
     ctx_register_cell(ctx, (void*)p);
@@ -5458,10 +5471,13 @@ fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         || zjs_is_closure(executor) != 0
         || zjs_is_host_function(executor) != 0;
     if !callable {
+        // ECMA-262 §27.2.3.1 step 2 — synchronous TypeError, not a
+        // rejected promise.
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                     (char*)"Promise resolver is not a function", 34);
-        promise_settle(ctx, pv, err, false);
-        return pv;
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
     }
     let exec_args: ZjsValue[2];
     exec_args[0] = resolve_fn;

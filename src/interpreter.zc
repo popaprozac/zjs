@@ -2160,7 +2160,9 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             new_obj.proto = proto_obj;
 
             let saved_this = ctx.host_this;
+            let saved_nt = ctx.new_target_active;
             ctx.host_this = new_obj_v;
+            ctx.new_target_active = true;
 
             let call_result: ZjsValue = zjs_undefined();
             let did_throw: bool = false;
@@ -2205,6 +2207,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 }
             }
             ctx.host_this = saved_this;
+            ctx.new_target_active = saved_nt;
             if did_throw {
                 throwing = true; thrown = call_result; exit_reason = 3; break;
             }
