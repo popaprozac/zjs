@@ -5439,6 +5439,35 @@ fn build_type_error(ctx: ZjsContext*, msg: char*) -> ZjsValue {
 
 // Object.prototype.hasOwnProperty(key) — checks own properties only,
 // not the proto chain. Reads ctx.host_this for the receiver.
+// Object.prototype.isPrototypeOf(V): walk V's prototype chain looking
+// for `this`. Returns true if found, false otherwise. Non-object V
+// always returns false.
+fn host_is_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_bool(0); }
+    let this_val = ctx.host_this;
+    let v = args[0];
+    // We need a way to compare `this_val` (a ZjsObject) against each
+    // proto in V's chain. Only object-ish `this` can be a proto.
+    let proto_target: ZjsObject* = NULL;
+    if zjs_is_object(this_val) != 0 { proto_target = zjs_as_object(this_val); }
+    else { return zjs_bool(0); }
+    // V must have a proto chain we can walk — objects/arrays are
+    // covered uniformly via getPrototypeOf-style logic.
+    let cur: ZjsObject* = NULL;
+    if zjs_is_object(v) != 0 {
+        cur = zjs_as_object(v).proto;
+    } else if zjs_is_array(v) != 0 {
+        cur = ctx.array_proto;
+    } else {
+        return zjs_bool(0);
+    }
+    while cur != NULL {
+        if cur == proto_target { return zjs_bool(1); }
+        cur = cur.proto;
+    }
+    return zjs_bool(0);
+}
+
 fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 { return zjs_bool(0); }
     let this_val = ctx.host_this;
@@ -6032,11 +6061,15 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let obj_proto_v = ctx_new_object(ctx);
     ctx.object_proto = zjs_as_object(obj_proto_v);
     let hop_ptr: void* = NULL; raw { hop_ptr = (void*)host_has_own_property; }
+    let ipo_ptr: void* = NULL; raw { ipo_ptr = (void*)host_is_prototype_of; }
     let ots_ptr: void* = NULL; raw { ots_ptr = (void*)host_object_to_string; }
     let ovo_ptr: void* = NULL; raw { ovo_ptr = (void*)host_object_value_of; }
     object_set(ctx, ctx.object_proto,
                ctx_intern_atom(ctx, (char*)"hasOwnProperty", 14),
-               ctx_make_host_function(ctx, (char*)"hasOwnProperty", hop_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"hasOwnProperty", hop_ptr, 1));
+    object_set(ctx, ctx.object_proto,
+               ctx_intern_atom(ctx, (char*)"isPrototypeOf", 13),
+               ctx_make_host_function_arity(ctx, (char*)"isPrototypeOf", ipo_ptr, 1));
     object_set(ctx, ctx.object_proto,
                ctx_intern_atom(ctx, (char*)"toString", 8),
                ctx_make_host_function(ctx, (char*)"toString", ots_ptr));

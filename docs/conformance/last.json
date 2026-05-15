@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 09:07 UTC",
+    "when": "2026-05-15 09:13 UTC",
     "total": 4821,
-    "passed": 2154,
-    "failed": 641,
+    "passed": 2157,
+    "failed": 638,
     "skipped": 2026
   },
   "failures": [
@@ -1468,14 +1468,6 @@
       "reason": "zjs: throw: Test262Error: Property not found"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-3-1.js",
-      "reason": "zjs: throw: Test262Error: b.isPrototypeOf(d)"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-1.js",
-      "reason": "zjs: throw: Test262Error: b.isPrototypeOf(d)"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-12.js",
       "reason": "zjs: throw: Test262Error: result !== true"
     },
@@ -1574,10 +1566,6 @@
     {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-17.js",
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(URIError)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-2.js",
-      "reason": "zjs: throw: Test262Error: x.isPrototypeOf(d)"
     },
     {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-20.js",
