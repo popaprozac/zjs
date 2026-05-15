@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 11:52 UTC",
+    "when": "2026-05-15 15:59 UTC",
     "total": 4821,
-    "passed": 2214,
-    "failed": 581,
+    "passed": 2235,
+    "failed": 560,
     "skipped": 2026
   },
   "failures": [
@@ -178,10 +178,6 @@
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A1.js",
       "reason": "zjs: throw: Test262Error: #1: ({})\\u0009instanceof\\u0009Object === true"
-    },
-    {
-      "path": "test/language/expressions/instanceof/S11.8.6_A7_T3.js",
-      "reason": "zjs: throw: Test262Error: #2: If instanceof returns true then GetValue(RelationalExpression) was constructed with ShiftE"
     },
     {
       "path": "test/language/expressions/instanceof/S15.3.5.3_A1_T1.js",
@@ -1364,80 +1360,12 @@
       "reason": "zjs: throw: Test262Error: accessed !== true"
     },
     {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-1.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Boolean)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-10.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(RegExp)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-11.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Error)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-12.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(EvalError)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-13.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(RangeError)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-14.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(ReferenceError)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-15.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(SyntaxError)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-16.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(TypeError)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-17.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(URIError)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-20.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(obj)"
-    },
-    {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-28.js",
       "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(obj)"
     },
     {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-3.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Object)"
-    },
-    {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-30.js",
       "reason": "zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-4.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Function)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-5.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Array)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-6.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(String)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-7.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Number)"
-    },
-    {
-      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-9.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(Date)"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/builtin.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(\"JSON.parse\") must return the value of Function.prototype"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-array-get-prop-from-prototype.js",
@@ -1462,10 +1390,6 @@
     {
       "path": "test/built-ins/JSON/parse/reviver-object-get-prop-from-prototype.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/builtin.js",
-      "reason": "zjs: throw: Test262Error: Object.getPrototypeOf(JSON.stringify) must return the value of Function.prototype"
     },
     {
       "path": "test/built-ins/JSON/stringify/property-order.js",
@@ -2244,10 +2168,6 @@
       "reason": "zjs: throw: Test262Error: expected throw"
     },
     {
-      "path": "test/built-ins/Promise/reject-function-prototype.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
-    },
-    {
       "path": "test/built-ins/Promise/resolve/arg-uniq-ctor.js",
       "reason": "zjs: throw: Test262Error: sameValue failed"
     },
@@ -2286,10 +2206,6 @@
     {
       "path": "test/built-ins/Promise/resolve-function-nonconstructor.js",
       "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-function-prototype.js",
-      "reason": "zjs: throw: Test262Error: sameValue failed"
     },
     {
       "path": "test/built-ins/Promise/try/ctx-ctor-throws.js",

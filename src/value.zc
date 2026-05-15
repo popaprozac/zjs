@@ -662,6 +662,11 @@ struct ZjsHostFunction {
     // hf->arity = N. Read by property_get when the user asks for
     // host_fn.length.
     arity:     u32;
+    // 2026-05-15 — explicit [[Prototype]] override. NULL means default
+    // to ctx.function_proto. Used for the error-subclass constructors
+    // (EvalError, TypeError, ...) whose [[Prototype]] is Error itself,
+    // matching the spec's `class EvalError extends Error`.
+    proto_override: ZjsValue;
 }
 
 // Closure: a function template paired with a captured environment.

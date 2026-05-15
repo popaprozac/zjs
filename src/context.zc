@@ -117,6 +117,11 @@ struct ZjsContext {
     // these when key == "call" / "apply" so f.call(thisArg, ...) works.
     fn_call_v:      ZjsValue;
     fn_apply_v:     ZjsValue;
+    // 2026-05-15 — real Function.prototype. Every callable's
+    // [[Prototype]] resolves to this object; `Function.prototype`
+    // returns it; property_get on a callable walks it before
+    // object_proto. Created in ctx_init_builtins.
+    function_proto: ZjsObject*;
 
     // Phase 3.5b — temp-root stack. Host functions that invoke JS
     // callbacks (Array.prototype.map / forEach) need to keep
@@ -772,6 +777,10 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         let op_val = zjs_cell_from_ptr((void*)ctx.object_proto);
         gc_mark_value(op_val);
     }
+    if ctx.function_proto != NULL {
+        let fp_val = zjs_cell_from_ptr((void*)ctx.function_proto);
+        gc_mark_value(fp_val);
+    }
     // Phase 3.8d cached helpers
     gc_mark_value(ctx.fn_call_v);
     gc_mark_value(ctx.fn_apply_v);
@@ -1179,6 +1188,7 @@ fn ctx_register_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> Z
     let name_copy = alloc_n<char>(name_len + 1);
     mem_copy<char>(name_copy, name, name_len + 1);
     hf.name = name_copy;
+    hf.proto_override = zjs_undefined();
 
     ctx_register_cell(ctx, (void*)hf);
     let val = zjs_cell_from_ptr((void*)hf);
@@ -1203,6 +1213,9 @@ fn ctx_make_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> ZjsVa
     let name_copy = alloc_n<char>(name_len + 1);
     mem_copy<char>(name_copy, name, name_len + 1);
     hf.name = name_copy;
+    // proto_override defaults to undefined — Object.getPrototypeOf
+    // then falls back to ctx.function_proto.
+    hf.proto_override = zjs_undefined();
 
     ctx_register_cell(ctx, (void*)hf);
     return zjs_cell_from_ptr((void*)hf);
@@ -2313,18 +2326,17 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         return zjs_cell_from_ptr((void*)ctx.array_proto);
     }
     if zjs_is_host_function(v) != 0 {
-        // Constructor / host fn's own prototype field is its
-        // .prototype value, NOT its [[Prototype]]. The [[Prototype]]
-        // of every callable is Function.prototype — but we don't have
-        // a real Function.prototype yet. Return null for now;
-        // refining this is the path to passing tests that compare
-        // ctor [[Prototype]] === Function.prototype.
+        // Host fns may carry an explicit override (used for error
+        // subclasses whose [[Prototype]] is Error itself). Otherwise
+        // every callable's [[Prototype]] is Function.prototype.
         let hf = zjs_as_host_function(v);
-        if hf.prototype == NULL { return zjs_null(); }
-        return zjs_null();
+        if zjs_is_undefined(hf.proto_override) == 0 { return hf.proto_override; }
+        if ctx.function_proto == NULL { return zjs_null(); }
+        return zjs_cell_from_ptr((void*)ctx.function_proto);
     }
     if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 {
-        return zjs_null();
+        if ctx.function_proto == NULL { return zjs_null(); }
+        return zjs_cell_from_ptr((void*)ctx.function_proto);
     }
     if zjs_is_regexp(v) != 0 && ctx.regexp_proto != NULL {
         return zjs_cell_from_ptr((void*)ctx.regexp_proto);
@@ -6442,6 +6454,17 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_intern_atom(ctx, (char*)"valueOf", 7),
                ctx_make_host_function(ctx, (char*)"valueOf", ovo_ptr));
 
+    // --- Function.prototype (2026-05-15) ---
+    // The [[Prototype]] for every callable. Carries the already-built
+    // call/apply helpers so `Function.prototype.call` is reachable AND
+    // a prototype-chain walk from any callable finds them.
+    let function_proto_v = ctx_new_object(ctx);
+    ctx.function_proto = zjs_as_object(function_proto_v);
+    object_set(ctx, ctx.function_proto,
+               ctx_intern_atom(ctx, (char*)"call", 4),  ctx.fn_call_v);
+    object_set(ctx, ctx.function_proto,
+               ctx_intern_atom(ctx, (char*)"apply", 5), ctx.fn_apply_v);
+
     // --- Error ---
     let err_ptr: void* = NULL;
     raw { err_ptr = (void*)host_error; }
@@ -6584,7 +6607,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
             let ets_ptr: void* = NULL; raw { ets_ptr = (void*)host_error_to_string; }
             object_set(ctx, err_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
                        ctx_make_host_function(ctx, (char*)"toString", ets_ptr));
-            // Subclass each *Error.prototype to inherit from Error.prototype.
+            // Subclass each *Error.prototype to inherit from Error.prototype,
+            // AND set [[Prototype]] = Error so `Object.getPrototypeOf(TypeError)
+            // === Error` per spec.
             let subs: ZjsValue[3];
             subs[0] = referr_v; subs[1] = typerr_v; subs[2] = rngerr_v;
             let i: u32 = 0;
@@ -6597,6 +6622,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                         hf.prototype = zjs_as_object(pp_v);
                     }
                     hf.prototype.proto = err_proto;
+                    hf.proto_override = err_v;
                 }
                 i = i + 1;
             }
@@ -6607,7 +6633,16 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Stub globals for unsupported features. Their tests use the
     // names without expecting full semantics — registering them as
     // host-function no-ops at least avoids ReferenceError-on-load.
-    ctx_register_host_function(ctx, (char*)"Function",   eval_ptr);
+    // Function constructor stub — body-string compile not yet wired,
+    // but expose a real `.prototype` so `Function.prototype` and
+    // `Object.getPrototypeOf(<any callable>)` agree.
+    let function_ctor_v = ctx_register_host_function(ctx, (char*)"Function", eval_ptr);
+    let function_ctor_hf = zjs_as_host_function(function_ctor_v);
+    function_ctor_hf.prototype = ctx.function_proto;
+    if ctx.function_proto != NULL {
+        object_set(ctx, ctx.function_proto,
+                   ctx_intern_atom(ctx, (char*)"constructor", 11), function_ctor_v);
+    }
     ctx_register_host_function(ctx, (char*)"Date",       eval_ptr);
     // RegExp — real constructor + prototype carrying .test (.exec next
     // commit). property_get on TAG_REGEXP walks ctx.regexp_proto.
@@ -6718,6 +6753,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                             hf.prototype = zjs_as_object(pp_v);
                         }
                         hf.prototype.proto = err_hf2.prototype;
+                        hf.proto_override = err_v2;
                     }
                     i = i + 1;
                 }
