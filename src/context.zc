@@ -3426,7 +3426,7 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         // stays a hole.
         let present: bool = false;
         let src: ZjsValue = zjs_undefined();
-        if zjs_is_array(this_val) != 0 {
+        if zjs_is_array(this_val) != 0 && zjs_as_array(this_val).props == NULL {
             let arr = zjs_as_array(this_val);
             if i < arr.length {
                 let raw_v = arr.elements[i];
@@ -3436,12 +3436,12 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
                 }
             }
         } else {
-            // Generic-this — we don't track holes on non-array objects,
-            // so treat every in-range index as present and read through
-            // property_get (handles function expandos, regex props,
-            // wrapper-prototype chains for primitives, etc.).
+            // Generic-this (or array with expando bag — defineProperty
+            // installed accessors that must fire). Treat every in-range
+            // index as present and read through property_get.
             present = true;
             src = property_get(ctx, this_val, zjs_int32((i32)i));
+            if ctx.pending_throw_active { return result_v; }
         }
         if present {
             let cb_args: ZjsValue[3];
@@ -3613,7 +3613,9 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
 
     // Fast path: real array — direct .elements[] access. Skip holes
     // per spec (HasProperty check before the callback invocation).
-    if zjs_is_array(this_val) != 0 {
+    // Bail to the generic-property_get path when arr.props is set
+    // so defineProperty-installed accessors fire correctly.
+    if zjs_is_array(this_val) != 0 && zjs_as_array(this_val).props == NULL {
         let arr = zjs_as_array(this_val);
         let len = arr.length;
         let i: u32 = 0;
