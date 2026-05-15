@@ -3430,8 +3430,28 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // Spec order: a length-getter throw fires BEFORE the IsCallable
     // check on the callback, so 4-10-style tests see the original
     // Test262Error rather than a missing-callback TypeError.
-    let len = read_length_u32(ctx, this_val);
+    let len_atom_map = ctx_intern_atom(ctx, (char*)"length", 6);
+    let len_v = property_get(ctx, this_val, zjs_cell_from_ptr((void*)len_atom_map));
     if ctx.pending_throw_active { return zjs_undefined(); }
+    if zjs_is_object(len_v) != 0 || zjs_is_array(len_v) != 0 {
+        len_v = zjs_to_primitive(ctx, len_v, false);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
+    let len_d = zjs_to_double(len_v);
+    let is_nan_len: int = 0;
+    raw { is_nan_len = isnan(len_d) ? 1 : 0; }
+    if is_nan_len != 0 { len_d = 0.0; }
+    if len_d < 0.0 { len_d = 0.0; }
+    // ECMA-262 §10.4.2.4 / ArraySpeciesCreate: a Number length that
+    // doesn't fit in a u32 (including +Infinity) throws RangeError
+    // before any callback runs.
+    if len_d > 4294967295.0 {
+        let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                                    (char*)"Invalid array length", 20);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let len = (u32)len_d;
     if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
     let cb = args[0];
     let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-15 11:40 UTC",
+    "when": "2026-05-15 11:49 UTC",
     "total": 4821,
-    "passed": 2206,
-    "failed": 589,
+    "passed": 2211,
+    "failed": 584,
     "skipped": 2026
   },
   "failures": [
@@ -1128,22 +1128,6 @@
       "reason": "zjs: throw: Test262Error: testResult[1]"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-3-14.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-3-28.js",
-      "reason": "timeout"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-3-29.js",
-      "reason": "timeout"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-3-8.js",
-      "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-1.js",
       "reason": "zjs: throw: Test262Error: resArr[0]"
     },
@@ -1214,10 +1198,6 @@
     {
       "path": "test/built-ins/Array/prototype/map/create-ctor-poisoned.js",
       "reason": "zjs: throw: Test262Error: expected throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/create-non-array-invalid-len.js",
-      "reason": "timeout"
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-proto-from-ctor-realm-non-array.js",
