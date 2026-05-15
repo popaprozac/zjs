@@ -228,7 +228,13 @@ fn write_value(v: ZjsValue, quoted: bool) -> void {
         let i: u32 = 0;
         while i < a.length {
             if i > 0 { raw { fputs(", ", stdout); } }
-            write_value(a.elements[i], true);
+            let slot = a.elements[i];
+            // Array holes display as the empty position — print
+            // nothing for the slot (the comma separator already
+            // appears for non-leading positions).
+            if zjs_is_deleted(slot) == 0 {
+                write_value(slot, true);
+            }
             i = i + 1;
         }
         raw { fputc(']', stdout); }

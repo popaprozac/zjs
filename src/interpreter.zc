@@ -342,13 +342,15 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
                     raw { ok = (isfinite(d) && d >= 0.0) ? 1 : 0; }
                     if ok != 0 { new_len = (u32)d; }
                 }
-                // Clear elements above the new length so they don't
-                // leak when length is extended again later.
+                // Truncation: mark the dropped slots as holes so a
+                // later length extension reveals them as absent, not
+                // as undefined values.
                 let old_len = arr.length;
                 if new_len < old_len {
                     let i: u32 = new_len;
+                    let hole = zjs_deleted();
                     while i < old_len {
-                        arr.elements[i] = zjs_undefined();
+                        arr.elements[i] = hole;
                         i = i + 1;
                     }
                 }
@@ -1576,7 +1578,8 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let a = zjs_as_array(obj);
                 let idx = zjs_to_array_index(key);
                 if idx >= 0 && (u32)idx < a.length {
-                    present = 1;
+                    // Holes are not "in" the array per spec.
+                    if array_has_index(a, (u32)idx) != 0 { present = 1; }
                 } else if zjs_is_string(key) != 0 {
                     // Falls back through length / array_proto.
                     let pv = property_get(ctx, obj, key);
@@ -1810,7 +1813,9 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let a = zjs_as_array(obj_v);
                 let idx = zjs_to_array_index(key);
                 if idx >= 0 && (u32)idx < a.length {
-                    a.elements[(u32)idx] = zjs_undefined();
+                    // `delete arr[i]` leaves a hole — the slot is no
+                    // longer "in" the array for HasProperty purposes.
+                    a.elements[(u32)idx] = zjs_deleted();
                 }
             }
             regs[dst] = zjs_bool(ok);

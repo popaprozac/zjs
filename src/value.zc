@@ -901,7 +901,12 @@ fn hidden_class_free_void(p: void*) -> void {
     dealloc(c);
 }
 
-// Allocate a new array with `length` slots, all initialized to undefined.
+// Allocate a new array with `length` slots, all initialized to HOLE
+// (zjs_deleted()). ECMA-262 distinguishes "the slot is not present"
+// (a hole) from "the slot contains undefined" — `new Array(3)` has
+// three holes; `[undefined, undefined, undefined]` has three undefined
+// values. forEach / map / etc. skip holes; reads through array_get
+// coerce holes to undefined transparently.
 fn zjs_array_new(length: u32) -> ZjsArray* {
     let a = alloc<ZjsArray>();
     a.header.type_tag = TAG_ARRAY;
@@ -909,10 +914,10 @@ fn zjs_array_new(length: u32) -> ZjsArray* {
     let cap: u32 = if length < 4 { 4 } else { length };
     a.cap = cap;
     let buf = alloc_n<ZjsValue>((usize)cap);
-    let und: ZjsValue = zjs_undefined();
+    let hole: ZjsValue = zjs_deleted();
     let i: u32 = 0;
     while i < cap {
-        buf[i] = und;
+        buf[i] = hole;
         i = i + 1;
     }
     a.elements = buf;
@@ -1021,7 +1026,19 @@ fn object_set_existing(obj: ZjsObject*, name: ZjsString*, value: ZjsValue) -> in
 
 fn array_get(arr: ZjsArray*, idx: u32) -> ZjsValue {
     if idx >= arr.length { return zjs_undefined(); }
-    return arr.elements[idx];
+    let v = arr.elements[idx];
+    // Hole sentinel reads as undefined to JS code.
+    if zjs_is_deleted(v) != 0 { return zjs_undefined(); }
+    return v;
+}
+
+// True if `idx` is in range and the slot is not a hole. Used by
+// Array.prototype methods that follow the spec's HasProperty step
+// (forEach / map / indexOf / etc. skip absent indices entirely).
+fn array_has_index(arr: ZjsArray*, idx: u32) -> int {
+    if idx >= arr.length { return 0; }
+    if zjs_is_deleted(arr.elements[idx]) != 0 { return 0; }
+    return 1;
 }
 
 fn array_set(arr: ZjsArray*, idx: u32, value: ZjsValue) -> void {
@@ -1036,10 +1053,13 @@ fn array_set(arr: ZjsArray*, idx: u32, value: ZjsValue) -> void {
         let old = arr.elements;
         let new_buf: ZjsValue* = NULL;
         raw { new_buf = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
-        let und: ZjsValue = zjs_undefined();
+        // New slots are holes (zjs_deleted()) — not undefined. Sparse
+        // arrays (`a[100] = 1`) leave 0..99 as holes, which forEach
+        // and friends must skip.
+        let hole: ZjsValue = zjs_deleted();
         let i = arr.cap;
         while i < new_cap {
-            new_buf[i] = und;
+            new_buf[i] = hole;
             i = i + 1;
         }
         arr.elements = new_buf;

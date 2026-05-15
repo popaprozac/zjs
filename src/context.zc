@@ -1249,8 +1249,9 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
         // are surfaced normally because their cls chain stops above
         // object_proto.
         if zjs_is_array(src) != 0 {
-            // Arrays: enumerate the index keys as strings "0", "1", ...
-            // Doesn't include array prototype methods (non-enumerable).
+            // Arrays: enumerate the present index keys as strings
+            // "0", "1", ... (skips holes per spec — for-in iterates
+            // own enumerable string keys, and a hole is not "own").
             let a = zjs_as_array(src);
             let arr_v = ctx_new_array(ctx, 0);
             ctx_push_temp_root(ctx, arr_v);
@@ -1258,12 +1259,14 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
             let arr = zjs_as_array(arr_v);
             let i: u32 = 0;
             while i < a.length {
-                let buf: char[16];
-                let key_len: int = 0;
-                raw { key_len = snprintf(&buf[0], 16, "%u", (unsigned)i); }
-                let kp: char* = NULL;
-                raw { kp = &buf[0]; }
-                array_set(arr, i, ctx_intern_string(ctx, kp, (u32)key_len));
+                if zjs_is_deleted(a.elements[i]) == 0 {
+                    let buf: char[16];
+                    let key_len: int = 0;
+                    raw { key_len = snprintf(&buf[0], 16, "%u", (unsigned)i); }
+                    let kp: char* = NULL;
+                    raw { kp = &buf[0]; }
+                    array_set(arr, arr.length, ctx_intern_string(ctx, kp, (u32)key_len));
+                }
                 i = i + 1;
             }
             return arr_v;
@@ -1332,7 +1335,8 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
         return ctx_new_array(ctx, 0);
     }
 
-    // for-of: element values.
+    // for-of: element values. Spec: %ArrayIteratorPrototype%.next does
+    // Get(O, ToString(k)) — holes surface as undefined to the loop.
     if zjs_is_array(src) != 0 {
         // Snapshot a copy so the user can't mutate the source mid-iteration.
         let a = zjs_as_array(src);
@@ -1340,7 +1344,7 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
         let copy = zjs_as_array(copy_v);
         let i: u32 = 0;
         while i < a.length {
-            copy.elements[i] = a.elements[i];
+            copy.elements[i] = array_get(a, i);  // hole → undefined
             i = i + 1;
         }
         copy.length = a.length;
@@ -1614,6 +1618,10 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
         }
         let idx = zjs_to_array_index(key_v);
         if idx >= 0 && (u32)idx < arr.length {
+            // Spec: getOwnPropertyDescriptor on a hole returns undefined.
+            if zjs_is_deleted(arr.elements[(u32)idx]) != 0 {
+                return zjs_undefined();
+            }
             let r_v = ctx_new_object(ctx);
             let r = zjs_as_object(r_v);
             object_set(ctx, r, ctx_intern_atom(ctx, (char*)"value", 5), arr.elements[(u32)idx]);
@@ -1726,16 +1734,21 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         let n = a.length;
         let out_v = ctx_new_array(ctx, n);
         let out_arr = zjs_as_array(out_v);
+        let out_idx: u32 = 0;
         let i: u32 = 0;
         while i < n {
-            let buf: char[16];
-            let blen: int = 0;
-            raw { blen = snprintf(&buf[0], 16, "%u", (unsigned)i); }
-            let bp: char* = NULL; raw { bp = &buf[0]; }
-            out_arr.elements[i] = ctx_intern_string(ctx, bp, (u32)blen);
+            // Skip holes — Object.keys reports only present indices.
+            if zjs_is_deleted(a.elements[i]) == 0 {
+                let buf: char[16];
+                let blen: int = 0;
+                raw { blen = snprintf(&buf[0], 16, "%u", (unsigned)i); }
+                let bp: char* = NULL; raw { bp = &buf[0]; }
+                out_arr.elements[out_idx] = ctx_intern_string(ctx, bp, (u32)blen);
+                out_idx = out_idx + 1;
+            }
             i = i + 1;
         }
-        out_arr.length = n;
+        out_arr.length = out_idx;
         return out_v;
     }
     if zjs_is_object(args[0]) == 0 {
@@ -1896,8 +1909,10 @@ fn host_array_pop(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if zjs_is_array(this_val) != 0 {
         let arr = zjs_as_array(this_val);
         if arr.length == 0 { return zjs_undefined(); }
-        let last = arr.elements[arr.length - 1];
-        arr.elements[arr.length - 1] = zjs_undefined();
+        // Read through array_get so the hole sentinel coerces to
+        // undefined; leave the popped slot as a hole.
+        let last = array_get(arr, arr.length - 1);
+        arr.elements[arr.length - 1] = zjs_deleted();
         arr.length = arr.length - 1;
         return last;
     }
@@ -1943,8 +1958,14 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         }
         let i: u32 = from;
         while i < len {
-            if zjs_strict_eq(arr.elements[i], needle) != 0 {
-                return zjs_int32((i32)i);
+            // Spec checks HasProperty(O, k) before the strict-equality
+            // step — holes never compare equal to anything, including
+            // undefined. Skip them.
+            let slot = arr.elements[i];
+            if zjs_is_deleted(slot) == 0 {
+                if zjs_strict_eq(slot, needle) != 0 {
+                    return zjs_int32((i32)i);
+                }
             }
             i = i + 1;
         }
@@ -2295,22 +2316,39 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
     let i: u32 = 0;
     while i < len {
+        // Spec checks HasProperty before invoking callback — holes are
+        // skipped entirely and the corresponding slot in the result
+        // stays a hole.
+        let present: bool = false;
         let src: ZjsValue = zjs_undefined();
         if zjs_is_array(this_val) != 0 {
-            src = zjs_as_array(this_val).elements[i];
+            let arr = zjs_as_array(this_val);
+            if i < arr.length {
+                let raw_v = arr.elements[i];
+                if zjs_is_deleted(raw_v) == 0 {
+                    present = true;
+                    src = raw_v;
+                }
+            }
         } else {
+            // Generic-this — we don't track holes on plain objects yet,
+            // so treat every in-range index as present (matches our
+            // current behavior; spec would HasProperty-check).
+            present = true;
             src = obj_get_indexed(ctx, zjs_as_object(this_val), i);
         }
-        let cb_args: ZjsValue[3];
-        cb_args[0] = src;
-        cb_args[1] = zjs_int32((i32)i);
-        cb_args[2] = this_val;
-        let cb_args_ptr: ZjsValue* = NULL;
-        raw { cb_args_ptr = &cb_args[0]; }
-        let mapped: ZjsValue = zjs_undefined();
-        raw { mapped = zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
-        if ctx.had_error { return result_v; }
-        array_set(result, i, mapped);
+        if present {
+            let cb_args: ZjsValue[3];
+            cb_args[0] = src;
+            cb_args[1] = zjs_int32((i32)i);
+            cb_args[2] = this_val;
+            let cb_args_ptr: ZjsValue* = NULL;
+            raw { cb_args_ptr = &cb_args[0]; }
+            let mapped: ZjsValue = zjs_undefined();
+            raw { mapped = zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
+            if ctx.had_error { return result_v; }
+            array_set(result, i, mapped);
+        }
         i = i + 1;
     }
     result.length = len;
@@ -2345,7 +2383,10 @@ fn host_array_join(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             ctx_replace_top_temp_root(ctx, result);
         }
         let elem: ZjsValue = zjs_undefined();
-        if arr != NULL { elem = arr.elements[i]; }
+        // Spec: holes / undefined / null contribute "" to the join.
+        // array_get already coerces holes to undefined; we then check
+        // for both undefined and null to suppress the ToString call.
+        if arr != NULL { elem = array_get(arr, i); }
         else if zjs_is_object(this_val) != 0 { elem = obj_get_indexed(ctx, zjs_as_object(this_val), i); }
         if zjs_is_undefined(elem) == 0 && zjs_is_null(elem) == 0 {
             if zjs_is_string(elem) == 0 { elem = zjs_to_string(ctx, elem); }
@@ -2453,14 +2494,20 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     // becomes `this` in the callback. Pass undefined when absent.
     let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
 
-    // Fast path: real array — direct .elements[] access.
+    // Fast path: real array — direct .elements[] access. Skip holes
+    // per spec (HasProperty check before the callback invocation).
     if zjs_is_array(this_val) != 0 {
         let arr = zjs_as_array(this_val);
         let len = arr.length;
         let i: u32 = 0;
         while i < len {
+            let slot = arr.elements[i];
+            if zjs_is_deleted(slot) != 0 {
+                i = i + 1;
+                continue;
+            }
             let cb_args: ZjsValue[3];
-            cb_args[0] = arr.elements[i];
+            cb_args[0] = slot;
             cb_args[1] = zjs_int32((i32)i);
             cb_args[2] = this_val;
             let cb_args_ptr: ZjsValue* = NULL;
@@ -2618,7 +2665,13 @@ fn json_stringify_value(ctx: ZjsContext*, b: JsonBuf*, v: ZjsValue) -> void {
         let i: u32 = 0;
         while i < a.length {
             if i > 0 { json_buf_putc(b, ','); }
-            json_stringify_value(ctx, b, a.elements[i]);
+            // ECMA-262 SerializeJSONArray: holes emit "null", not "".
+            let slot = a.elements[i];
+            if zjs_is_deleted(slot) != 0 {
+                json_buf_puts(b, (char*)"null", 4);
+            } else {
+                json_stringify_value(ctx, b, slot);
+            }
             i = i + 1;
         }
         json_buf_putc(b, ']');
@@ -3304,7 +3357,7 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let onf_ptr: void* = NULL; raw { onf_ptr = (void*)host_promise_all_on_fulfill; }
     let i: u32 = 0;
     while i < arr.length {
-        let item = arr.elements[i];
+        let item = array_get(arr, i);  // hole → undefined
         // Per-element on-fulfill closure with bound = state-shape that
         // also carries the slot index.
         let per_state_v = ctx_new_object(ctx);
@@ -3385,7 +3438,7 @@ fn host_promise_race(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
     let i: u32 = 0;
     while i < arr.length {
-        let item = arr.elements[i];
+        let item = array_get(arr, i);  // hole → undefined
         let item_pv = if zjs_is_promise(item) != 0 { item } else {
             let pp = zjs_promise_new();
             ctx_register_cell(ctx, (void*)pp);
@@ -3491,7 +3544,7 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
     let onr_ptr: void* = NULL; raw { onr_ptr = (void*)host_promise_all_settled_on_reject; }
     let i: u32 = 0;
     while i < arr.length {
-        let item = arr.elements[i];
+        let item = array_get(arr, i);  // hole → undefined
         let per_state_v = ctx_new_object(ctx);
         let per_state = zjs_as_object(per_state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
@@ -3621,7 +3674,7 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let onr_ptr: void* = NULL; raw { onr_ptr = (void*)host_promise_any_on_reject; }
     let i: u32 = 0;
     while i < arr.length {
-        let item = arr.elements[i];
+        let item = array_get(arr, i);  // hole → undefined
         let per_state_v = ctx_new_object(ctx);
         let per_state = zjs_as_object(per_state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
@@ -3941,7 +3994,8 @@ fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     if zjs_is_array(this_val) != 0 {
         let a = zjs_as_array(this_val);
         let idx = zjs_to_array_index(key);
-        if idx >= 0 && (u32)idx < a.length { return zjs_bool(1); }
+        // Holes report as absent (HasOwnProperty is false for them).
+        if idx >= 0 && array_has_index(a, (u32)idx) != 0 { return zjs_bool(1); }
         if zjs_is_string(key) != 0 {
             let ks = zjs_as_string(key);
             let kd = ks.data;
@@ -5158,13 +5212,14 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
         // Array → comma-joined elements, no surrounding []. Spec's
         // Array.prototype.toString delegates to Array.prototype.join.
         // We don't have join inlined here, so build it locally.
+        // Holes / undefined / null contribute "" to the join.
         let arr = zjs_as_array(v);
         let total: u32 = 0;
         let i_a: u32 = 0;
         // First pass: total byte count.
         while i_a < arr.length {
             if i_a > 0 { total = total + 1; } // comma
-            let el = arr.elements[i_a];
+            let el = array_get(arr, i_a);  // hole → undefined
             if zjs_is_undefined(el) == 0 && zjs_is_null(el) == 0 {
                 let es = zjs_to_string(ctx, el);
                 if zjs_is_string(es) != 0 {
@@ -5181,7 +5236,7 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
                 big[off] = ',';
                 off = off + 1;
             }
-            let el = arr.elements[i_b];
+            let el = array_get(arr, i_b);
             if zjs_is_undefined(el) == 0 && zjs_is_null(el) == 0 {
                 let es = zjs_to_string(ctx, el);
                 if zjs_is_string(es) != 0 {
