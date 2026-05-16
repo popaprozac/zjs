@@ -3316,12 +3316,36 @@ fn maybe_infer_anon_name(c: Compiler*, init_expr: AstNode*, val_reg: u8,
                          target_name: char*, target_name_len: u32) -> void {
     if init_expr == NULL { return; }
     if target_name_len == 0 { return; }
-    let k = init_expr.kind;
+    // Spec NamedEvaluation peels through ParenthesizedExpression but
+    // not through Sequence / Assignment / anything that yields a
+    // *value* rather than the function/class itself. `(function(){})`
+    // names; `(0, function(){})` doesn't.
+    let expr = init_expr;
+    while expr != NULL && expr.kind == NodeKind::Paren {
+        expr = expr.left;
+    }
+    if expr == NULL { return; }
+    let k = expr.kind;
     let is_anon: bool = false;
-    if k == NodeKind::FunctionExpr && init_expr.name_length == 0 { is_anon = true; }
+    if k == NodeKind::FunctionExpr && expr.name_length == 0 { is_anon = true; }
     else if k == NodeKind::ArrowFunc { is_anon = true; }
-    else if k == NodeKind::ClassExpr && init_expr.name_length == 0 { is_anon = true; }
+    else if k == NodeKind::ClassExpr && expr.name_length == 0 { is_anon = true; }
     if !is_anon { return; }
+    // ClassExpr with an explicit static "name" member already has the
+    // own .name property; spec says NamedEvaluation must NOT override it.
+    if k == NodeKind::ClassExpr {
+        let ci: u32 = 0;
+        while ci < expr.children_count {
+            let m = expr.children[ci];
+            if m != NULL && m.bool_value && m.name_length == 4 {
+                let mn = c.source + m.name_start;
+                let is_name: int = 0;
+                raw { is_name = (memcmp(mn, "name", 4) == 0) ? 1 : 0; }
+                if is_name != 0 { return; }
+            }
+            ci = ci + 1;
+        }
+    }
     let name_atom = ctx_intern_atom(c.ctx, (char*)"name", 4);
     let ic = alloc_ic_slot(c, name_atom);
     let name_str_reg = emit_load_name_string(c, target_name, target_name_len);

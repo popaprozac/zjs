@@ -2203,7 +2203,19 @@ fn host_array_at_iterator(ctx: ZjsContext*) -> ZjsValue {
     let next_fn = ctx_make_host_function(ctx, (char*)"next", (void*)host_array_iter_next);
     let next_atom = ctx_intern_atom(ctx, (char*)"next", 4);
     object_set(ctx, w, next_atom, next_fn);
+    // %ArrayIteratorPrototype% has @@iterator returning self, so user
+    // code can do `for (const v of arr[Symbol.iterator]())`. Install
+    // it on the wrapper itself for now — a real prototype chain is
+    // overkill until iterators grow more shape.
+    let self_iter_fn = ctx_make_host_function(ctx, (char*)"[Symbol.iterator]", (void*)host_self_iter);
+    object_set(ctx, w, ctx_intern_atom(ctx, (char*)"@@iterator", 10), self_iter_fn);
     return wrapper;
+}
+
+// `function() { return this; }` — used as @@iterator on iterators
+// (per spec, iterators are themselves iterable, returning themselves).
+fn host_self_iter(ctx: ZjsContext*) -> ZjsValue {
+    return zjs_get_host_this(ctx);
 }
 
 // Host-side next() for the synthetic array/string iterator built by
