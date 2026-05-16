@@ -214,11 +214,23 @@ so we don't lose them.
 
 ### Destructuring
 
-- Both **binding** (`const { a, b } = obj`,
-  `for (const [x, y] of pairs)`, `function ({ a, b }) {}`) and
-  **assignment** (`[a, b] = arr`). Sweeping ES6+ feature. Combined
-  ~2400 skipped tests; the single biggest remaining gap besides
-  generators.
+- **Binding** (`const { a, b } = obj`, `for (const [x, y] of pairs)`,
+  `function ({ a, b }) {}`) is in (shipped 2026-05-15 / 16).
+- **Assignment** (`[a, b] = arr` as an expression, including LHS member
+  targets like `[obj.x, arr[i]] = src`) is still missing. Needs the
+  parser's cover-grammar treatment to retroactively reinterpret an
+  ObjectLiteral / ArrayLiteral expression as an AssignmentPattern
+  on encountering `=`.
+- **Array-pattern iterator semantics.** Current impl indexes via
+  LoadElem (works for arrays); generators and other iterables need
+  the spec's GetIterator + IteratorClose dance. Open: 12+ "iteration
+  occurred as expected" test262 failures cluster here.
+- **Object-rest computed-key omission.** `let { [k]: v, ...rest } = obj`
+  currently omits only statically-named keys from `rest`. Computed
+  keys would need a runtime "omit set" tracked alongside the rest
+  build.
+- **Pattern in `for-await-of`** — same shape as for-of, will land
+  with full async-iteration.
 
 ### Built-ins
 
