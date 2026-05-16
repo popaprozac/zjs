@@ -1121,6 +1121,210 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 }
                 regs[inst.a] = zjs_bool(zjs_cmp_le(bv, av));
             }
+        } else if op == Op::JmpIfNotLt {
+            let av = regs[inst.a]; let bv = regs[inst.b];
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 && zjs_is_int32(bv) != 0 {
+                cond_true = zjs_as_int32(av) < zjs_as_int32(bv);
+            } else {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                cond_true = zjs_cmp_lt(av, bv);
+            }
+            if !cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfNotLe {
+            let av = regs[inst.a]; let bv = regs[inst.b];
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 && zjs_is_int32(bv) != 0 {
+                cond_true = zjs_as_int32(av) <= zjs_as_int32(bv);
+            } else {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                cond_true = zjs_cmp_le(av, bv);
+            }
+            if !cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfNotGt {
+            let av = regs[inst.a]; let bv = regs[inst.b];
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 && zjs_is_int32(bv) != 0 {
+                cond_true = zjs_as_int32(av) > zjs_as_int32(bv);
+            } else {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                cond_true = zjs_cmp_lt(bv, av);
+            }
+            if !cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfNotGe {
+            let av = regs[inst.a]; let bv = regs[inst.b];
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 && zjs_is_int32(bv) != 0 {
+                cond_true = zjs_as_int32(av) >= zjs_as_int32(bv);
+            } else {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                cond_true = zjs_cmp_le(bv, av);
+            }
+            if !cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfNotLtImm {
+            let av = regs[inst.a];
+            let imm: i32 = (i32)(i8)inst.b;
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 {
+                cond_true = zjs_as_int32(av) < imm;
+            } else {
+                let bv = zjs_int32(imm);
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                cond_true = zjs_cmp_lt(av, bv);
+            }
+            if !cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfNotLeImm {
+            let av = regs[inst.a];
+            let imm: i32 = (i32)(i8)inst.b;
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 {
+                cond_true = zjs_as_int32(av) <= imm;
+            } else {
+                let bv = zjs_int32(imm);
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                cond_true = zjs_cmp_le(av, bv);
+            }
+            if !cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfNotGtImm {
+            let av = regs[inst.a];
+            let imm: i32 = (i32)(i8)inst.b;
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 {
+                cond_true = zjs_as_int32(av) > imm;
+            } else {
+                let bv = zjs_int32(imm);
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                cond_true = zjs_cmp_lt(bv, av);
+            }
+            if !cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfNotGeImm {
+            let av = regs[inst.a];
+            let imm: i32 = (i32)(i8)inst.b;
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 {
+                cond_true = zjs_as_int32(av) >= imm;
+            } else {
+                let bv = zjs_int32(imm);
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                cond_true = zjs_cmp_le(bv, av);
+            }
+            if !cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
         } else if op == Op::Mul {
             let av = regs[inst.b]; let bv = regs[inst.c];
             if is_object_like(av) != 0 || is_object_like(bv) != 0 {

@@ -75,6 +75,23 @@ enum Op {
     JmpIfNotNullish,  // a=src, bc=offset — used by ??; jumps when src
                       // is anything other than null or undefined.
 
+    // Fused compare-and-branch — collapses Cmp + JmpIfFalse (the
+    // standard while/for/if loop-exit shape) into a single dispatch.
+    // Two-instruction encoding: the op carries the operands (a=lhs,
+    // b=rhs reg OR i8 imm), and the next instruction's bc bytes hold
+    // the i16 branch offset (relative to inst[J+2], same convention
+    // as a plain Jmp at J+1). Branches when the comparison is *false*.
+    // Falls through to the spec ToPrimitive-then-numeric path when
+    // operands aren't both int32 (same shape as CmpLtImm fast paths).
+    JmpIfNotLt,       // a=lhs_reg, b=rhs_reg ; next.bc = i16 offset
+    JmpIfNotLe,
+    JmpIfNotGt,
+    JmpIfNotGe,
+    JmpIfNotLtImm,    // a=lhs_reg, b=imm_i8 ; next.bc = i16 offset
+    JmpIfNotLeImm,
+    JmpIfNotGtImm,
+    JmpIfNotGeImm,
+
     // Universal return — exits interpret() with regs[a] as the value.
     Return,
 

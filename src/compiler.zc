@@ -432,16 +432,83 @@ fn reset_temps(c: Compiler*) -> void {
 // Forward jumps emit a placeholder offset (0) and remember the
 // instruction index so we can fix the offset once the target is known.
 
+fn is_fused_branch_op(op: Op) -> bool {
+    if op == Op::JmpIfNotLt  || op == Op::JmpIfNotLe
+    || op == Op::JmpIfNotGt  || op == Op::JmpIfNotGe
+    || op == Op::JmpIfNotLtImm || op == Op::JmpIfNotLeImm
+    || op == Op::JmpIfNotGtImm || op == Op::JmpIfNotGeImm {
+        return true;
+    }
+    return false;
+}
+
 fn patch_jump(c: Compiler*, jmp_idx: u32) -> void {
     // Offset is target - (jmp_idx + 1) — we set the offset relative to
     // the instruction *after* the jump, since the interpreter increments
     // ip after each instruction and *then* adds the offset.
     let here: i32 = (i32)c.code_count;
+    let inst = c.code[jmp_idx];
+    if is_fused_branch_op(inst.op) {
+        // 2-inst sequence: operands in inst[J], offset in inst[J+1].bc.
+        // The runtime applies the offset relative to inst[J+2].
+        let off2: i32 = here - ((i32)jmp_idx + 2);
+        let p = c.code[jmp_idx + 1];
+        c.code[jmp_idx + 1] = make_inst_i16(p.op, off2);
+        return;
+    }
     let from: i32 = (i32)jmp_idx + 1;
     let off: i32 = here - from;
-    let inst = c.code[jmp_idx];
     let patched: Inst = make_inst_a_i16(inst.op, inst.a, off);
     c.code[jmp_idx] = patched;
+}
+
+// Try to fuse a comparison condition into a single compare-and-branch
+// dispatch (Cmp + JmpIfFalse → JmpIfNot*). Two-inst encoding: emits
+// the fused op followed by a placeholder for the offset (patch_jump
+// fills it in later). Returns the index of the fused op so the caller
+// can patch via patch_jump(c, idx). Returns -1 when the cond isn't a
+// simple <, <=, >, >= comparison; caller falls back to the normal
+// compile_expr + Op::JmpIfFalse path.
+fn try_emit_cmp_branch_if_false(c: Compiler*, cond: AstNode*) -> i32 {
+    if cond == NULL || cond.kind != NodeKind::Binary { return -1; }
+    let op_kind = binary_op(cond.op);
+    if op_kind != Op::CmpLt && op_kind != Op::CmpLe
+       && op_kind != Op::CmpGt && op_kind != Op::CmpGe {
+        return -1;
+    }
+    // RHS small-int literal fast path: fused JmpIfNot*Imm.
+    if cond.right != NULL && cond.right.kind == NodeKind::NumberExpr {
+        let v = cond.right.num;
+        let iv = (i32)v;
+        let is_int: bool = false;
+        raw { is_int = ((double)iv == v) ? true : false; }
+        if is_int && iv >= -128 && iv <= 127 {
+            let src = compile_expr(c, cond.left);
+            let imm_byte: u8 = (u8)(i8)iv;
+            let fused_op = Op::Halt;
+            if      op_kind == Op::CmpLt { fused_op = Op::JmpIfNotLtImm; }
+            else if op_kind == Op::CmpLe { fused_op = Op::JmpIfNotLeImm; }
+            else if op_kind == Op::CmpGt { fused_op = Op::JmpIfNotGtImm; }
+            else                         { fused_op = Op::JmpIfNotGeImm; }
+            let idx = emit(c, make_inst_abc(fused_op, src, imm_byte, 0));
+            // Placeholder for the 16-bit offset; patch_jump fills it.
+            emit(c, make_inst_i16(Op::Jmp, 0));
+            release_reg(c, src);
+            return (i32)idx;
+        }
+    }
+    let l = compile_expr(c, cond.left);
+    let r = compile_expr(c, cond.right);
+    let fused_op = Op::Halt;
+    if      op_kind == Op::CmpLt { fused_op = Op::JmpIfNotLt; }
+    else if op_kind == Op::CmpLe { fused_op = Op::JmpIfNotLe; }
+    else if op_kind == Op::CmpGt { fused_op = Op::JmpIfNotGt; }
+    else                         { fused_op = Op::JmpIfNotGe; }
+    let idx = emit(c, make_inst_abc(fused_op, l, r, 0));
+    emit(c, make_inst_i16(Op::Jmp, 0));
+    release_reg(c, r);
+    release_reg(c, l);
+    return (i32)idx;
 }
 
 fn emit_jump_back(c: Compiler*, op_: Op, target_idx: u32) -> void {
@@ -2738,9 +2805,15 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         if !c.is_function && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
-        let cond_reg = compile_expr(c, node.left);
-        let jmp_else = emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_reg, 0));
-        release_reg(c, cond_reg);
+        let fused = try_emit_cmp_branch_if_false(c, node.left);
+        let jmp_else: u32 = 0;
+        if fused >= 0 {
+            jmp_else = (u32)fused;
+        } else {
+            let cond_reg = compile_expr(c, node.left);
+            jmp_else = emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_reg, 0));
+            release_reg(c, cond_reg);
+        }
         reset_temps(c);
 
         compile_stmt(c, node.right);   // then branch
@@ -2762,9 +2835,15 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         let loop_top = (u32)c.code_count;
         loop_push(c);
         loop_set_continue(c, loop_top);
-        let cond_reg = compile_expr(c, node.left);
-        let jmp_exit = emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_reg, 0));
-        release_reg(c, cond_reg);
+        let fused_w = try_emit_cmp_branch_if_false(c, node.left);
+        let jmp_exit: u32 = 0;
+        if fused_w >= 0 {
+            jmp_exit = (u32)fused_w;
+        } else {
+            let cond_reg = compile_expr(c, node.left);
+            jmp_exit = emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_reg, 0));
+            release_reg(c, cond_reg);
+        }
         reset_temps(c);
 
         compile_stmt(c, node.right);    // body
@@ -3003,9 +3082,14 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // test
         let jmp_exit_idx: i32 = -1;
         if node.right != NULL {
-            let cond_reg = compile_expr(c, node.right);
-            jmp_exit_idx = (i32)emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_reg, 0));
-            release_reg(c, cond_reg);
+            let fused_f = try_emit_cmp_branch_if_false(c, node.right);
+            if fused_f >= 0 {
+                jmp_exit_idx = fused_f;
+            } else {
+                let cond_reg = compile_expr(c, node.right);
+                jmp_exit_idx = (i32)emit(c, make_inst_a_i16(Op::JmpIfFalse, cond_reg, 0));
+                release_reg(c, cond_reg);
+            }
             reset_temps(c);
         }
         // body
