@@ -1423,14 +1423,18 @@ fn compile_assignment_to_property(c: Compiler*, target: AstNode*, op_tok: TokenK
                                         target.name_length);
         let ic = alloc_ic_slot(c, name_atom);
         if ic <= 255 {
-            // Borrow obj_r if the RHS is provably side-effect-free.
-            // Common case: `this.x = this.y + 1` — obj_r is the
-            // hoisted this register; no Mov needed.
+            // StoreProp reads obj+value before writing — borrow is
+            // always safe for obj_r, and safe for v when the LHS
+            // (obj_r's compile_expr) is itself pure.
             let saved_borrow = c.borrow_local_ok;
-            if expr_is_simple_pure(rhs) { c.borrow_local_ok = true; }
+            let rhs_pure = expr_is_simple_pure(rhs);
+            let lhs_pure = expr_is_simple_pure(target.left);
+            if rhs_pure { c.borrow_local_ok = true; }
             let obj_r = compile_expr(c, target.left);
-            c.borrow_local_ok = saved_borrow;
+            if lhs_pure { c.borrow_local_ok = true; }
+            else        { c.borrow_local_ok = saved_borrow; }
             let v = compile_expr(c, rhs);
+            c.borrow_local_ok = saved_borrow;
             emit(c, make_inst_abc(Op::StoreProp, obj_r, (u8)ic, v));
             return v;
         }
