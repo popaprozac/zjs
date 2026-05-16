@@ -1893,6 +1893,21 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
         destructure_pattern(c, rest_binding.third, rest_reg);
     }
 
+    // 3z. Generator prologue terminator. ECMA-262 calls
+    // FunctionDeclarationInstantiation (= the prologue above) at the
+    // INITIAL call to a generator, then returns the iterator suspended
+    // at GeneratorStart. The body only runs on first .next().
+    // Emit a marker the interpreter's initial-call path catches.
+    let kind_is_generator: bool = false;
+    if node.kind == NodeKind::MethodDef {
+        kind_is_generator = node.num == 4.0 || node.num == 5.0;
+    } else {
+        kind_is_generator = node.num == 3.0;
+    }
+    if kind_is_generator {
+        emit(c, make_inst_a(Op::GeneratorStart, 0));
+    }
+
     // 4. Compile body. Arrow concise body is an expression; everything
     //    else is a BlockStmt.
     if node.left != NULL {

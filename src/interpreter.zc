@@ -1569,6 +1569,50 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let val  = regs[inst.a];
                 object_set(ctx, ctx.current_module.exports, name, val);
             }
+        } else if op == Op::GeneratorStart {
+            // End of the generator's prologue at initial call. Snapshot
+            // frame state into the (pre-attached) generator, set state
+            // to GEN_YIELDED so first .next() resumes here, and unwind.
+            // The generator value lands in the caller's dst slot (the
+            // call's frame return_dst).
+            let gen = ctx.frames[cur_idx].generator;
+            if gen == NULL {
+                // Should never happen — the call sites always attach a
+                // generator before pushing. If it does, just LeaveTry-
+                // style continue past.
+                ip = ip + 1;
+                continue;
+            }
+            let n = ctx.frames[cur_idx].reg_count;
+            if gen.saved_regs == NULL || gen.reg_count != n {
+                if gen.saved_regs != NULL { dealloc(gen.saved_regs); }
+                gen.saved_regs = alloc_n<ZjsValue>((usize)n);
+                gen.reg_count = n;
+            }
+            let i: u32 = 0;
+            while i < n {
+                gen.saved_regs[i] = regs[i];
+                i = i + 1;
+            }
+            gen.saved_ip = ip + 1;
+            // First .next() resumes the body; no value is delivered to
+            // a yield's dst register (there is none yet). Mark as
+            // GEN_INITIAL so the resume path skips the resume_value
+            // write — same convention as a make_generator_iter-built
+            // iter that hasn't been stepped yet.
+            gen.resume_dst = 0;
+            gen.state = GEN_INITIAL;
+            let ret_dst = pop_call_frame(ctx);
+            let gen_v = zjs_cell_from_ptr((void*)gen);
+            if ctx.frame_count <= entry_frame {
+                final_result = gen_v;
+            } else {
+                let cidx = ctx.frame_count - 1;
+                let cb = ctx.frames[cidx].regs_base;
+                ctx.reg_stack[cb + (u32)ret_dst] = gen_v;
+            }
+            exit_reason = 1;
+            break;
         } else if op == Op::Yield {
             // `yield expr` inside a generator body. Build the
             // iterator-result object, snapshot the frame state onto
@@ -1978,19 +2022,24 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let target: Function* = NULL;
                 raw { target = (Function*)fp; }
                 if target.is_generator {
-                    // Generator method: build the iterator without
-                    // running the body. Captures the explicit args
-                    // (the receiver is set when iter.next() runs).
-                    let argv_ptr: ZjsValue* = NULL;
-                    raw { argv_ptr = &regs[base + 2]; }
-                    let iter_v = make_generator_iter(ctx, target, argv_ptr, argc);
-                    // The generator inherits the method's receiver — so
-                    // re-entry into the body via .next() sees the
-                    // expected `this`. Stash on the iterator.
-                    zjs_as_generator(iter_v).saved_host_this = new_this;
-                    regs[dst] = iter_v;
-                    ip = ip + 1;
-                    continue;
+                    // Generator method: push a frame and run the
+                    // PROLOGUE only (default-init + pattern fan-out).
+                    // The compiler emits Op::GeneratorStart at the end
+                    // of the prologue, which captures state into a
+                    // fresh generator and unwinds back here.
+                    let gen = zjs_generator_new();
+                    ctx_register_cell(ctx, (void*)gen);
+                    gen.function = target;
+                    gen.reg_count = target.register_count;
+                    gen.state = GEN_RUNNING;
+                    gen.saved_host_this = new_this;
+                    ctx.frames[cur_idx].ip = ip + 1;
+                    push_call_frame_inplace(ctx, target, regs_base + (u32)base + 2, argc, dst);
+                    let new_fi = ctx.frame_count - 1;
+                    ctx.frames[new_fi].generator = gen;
+                    ctx.host_this = new_this;
+                    exit_reason = 2;
+                    break;
                 }
                 ctx.frames[cur_idx].ip = ip + 1;
                 // Use the in-place push: source args live at
@@ -2010,14 +2059,21 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let target2: Function* = NULL;
                 raw { target2 = (Function*)fp2; }
                 if target2.is_generator {
-                    let argv_ptr: ZjsValue* = NULL;
-                    raw { argv_ptr = &regs[base + 2]; }
-                    let iter_v = make_generator_iter(ctx, target2, argv_ptr, argc);
-                    zjs_as_generator(iter_v).saved_host_this = new_this;
-                    zjs_as_generator(iter_v).saved_current_closure = cl;
-                    regs[dst] = iter_v;
-                    ip = ip + 1;
-                    continue;
+                    let gen = zjs_generator_new();
+                    ctx_register_cell(ctx, (void*)gen);
+                    gen.function = target2;
+                    gen.reg_count = target2.register_count;
+                    gen.state = GEN_RUNNING;
+                    gen.saved_host_this = new_this;
+                    gen.saved_current_closure = cl;
+                    ctx.frames[cur_idx].ip = ip + 1;
+                    push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 2, argc, dst);
+                    let new_fi = ctx.frame_count - 1;
+                    ctx.frames[new_fi].generator = gen;
+                    ctx.host_this = new_this;
+                    ctx.current_closure = cl;
+                    exit_reason = 2;
+                    break;
                 }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 2, argc, dst);
@@ -2072,14 +2128,26 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     ctx.frames[cur_idx].ip = ip + 1; break;
                 }
                 if target.is_generator {
-                    // Generator-function call: build iterator instead
-                    // of pushing a frame.
-                    let argv_ptr: ZjsValue* = NULL;
-                    raw { argv_ptr = &regs[base + 1]; }
-                    let iter_v = make_generator_iter(ctx, target, argv_ptr, argc);
-                    regs[dst] = iter_v;
-                    ip = ip + 1;
-                    continue;
+                    // Generator-function call: push frame to run the
+                    // prologue; Op::GeneratorStart at end of prologue
+                    // captures state into a fresh generator and unwinds.
+                    let gen = zjs_generator_new();
+                    ctx_register_cell(ctx, (void*)gen);
+                    gen.function = target;
+                    gen.reg_count = target.register_count;
+                    gen.state = GEN_RUNNING;
+                    gen.saved_host_this = ctx.host_this;
+                    ctx.frames[cur_idx].ip = ip + 1;
+                    push_call_frame_inplace(ctx, target, regs_base + (u32)base + 1, argc, dst);
+                    let new_fi = ctx.frame_count - 1;
+                    ctx.frames[new_fi].generator = gen;
+                    if ctx.global_this_obj != NULL {
+                        ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                    } else {
+                        ctx.host_this = zjs_undefined();
+                    }
+                    exit_reason = 2;
+                    break;
                 }
                 ctx.frames[cur_idx].ip = ip + 1;
                 // In-place push: source args at reg_stack[regs_base+base+1..].
@@ -2103,13 +2171,25 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let target2: Function* = NULL;
                 raw { target2 = (Function*)fp2; }
                 if target2.is_generator {
-                    let argv_ptr: ZjsValue* = NULL;
-                    raw { argv_ptr = &regs[base + 1]; }
-                    let iter_v = make_generator_iter(ctx, target2, argv_ptr, argc);
-                    zjs_as_generator(iter_v).saved_current_closure = cl;
-                    regs[dst] = iter_v;
-                    ip = ip + 1;
-                    continue;
+                    let gen = zjs_generator_new();
+                    ctx_register_cell(ctx, (void*)gen);
+                    gen.function = target2;
+                    gen.reg_count = target2.register_count;
+                    gen.state = GEN_RUNNING;
+                    gen.saved_host_this = ctx.host_this;
+                    gen.saved_current_closure = cl;
+                    ctx.frames[cur_idx].ip = ip + 1;
+                    push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 1, argc, dst);
+                    let new_fi = ctx.frame_count - 1;
+                    ctx.frames[new_fi].generator = gen;
+                    if ctx.global_this_obj != NULL {
+                        ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                    } else {
+                        ctx.host_this = zjs_undefined();
+                    }
+                    ctx.current_closure = cl;
+                    exit_reason = 2;
+                    break;
                 }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 1, argc, dst);

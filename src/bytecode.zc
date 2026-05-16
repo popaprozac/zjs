@@ -189,6 +189,12 @@ enum Op {
     // out to the iter.next() host caller. resume puts the .next(arg)
     // value into regs[a].
     Yield,            // a=resume_dst, b=value_reg
+    // Emitted at the end of a generator function's prologue (after
+    // default-init / pattern-param fan-out). Initial call to the
+    // generator runs through the prologue and hits this op, which
+    // snapshots state and unwinds — caller receives the generator
+    // iterator. First .next() resumes at the instruction after this.
+    GeneratorStart,   // no operands
 
     // Spread support (2026-05-15).
     // Append the value in regs[b] to the array in regs[a]. Used by
