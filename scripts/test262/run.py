@@ -171,15 +171,34 @@ def should_skip(meta, cfg):
 
 LOCAL_HARNESS = REPO_ROOT / "scripts" / "test262" / "zjs_harness.js"
 
-def build_source(test262_root, test_src, meta):
-    """Prepend our minimal local harness + listed harness includes; return the full source.
+# zjs CLI prints uncaught throws as:
+#     zjs: throw: <ErrorTypeName>: <message>
+# This regex pulls out the type name for exact-match negative tests.
+ZJS_ERROR_TYPE_RE = re.compile(r"^zjs:\s*throw:\s*([A-Za-z][A-Za-z0-9_]*)", re.M)
 
-    test262's own sta.js / assert.js use features (switch, .call) we
-    don't implement, so we substitute a minimal shim covering the
-    common assertions. Tests that need a richer harness (compareArray,
-    etc.) are skipped via config.json's skip_includes.
+# Markers in stderr that indicate the throw originated from the parse
+# phase (lexer / parser / compiler) rather than runtime evaluation.
+PARSE_PHASE_MARKERS = ("parse error", "compile error")
+
+def extract_error_type(stderr: str) -> str:
+    m = ZJS_ERROR_TYPE_RE.search(stderr or "")
+    return m.group(1) if m else ""
+
+def is_parse_phase_error(stderr: str) -> bool:
+    s = stderr or ""
+    return any(mk in s for mk in PARSE_PHASE_MARKERS)
+
+def build_source(test262_root, test_src, meta, *, strict_mode: bool):
+    """Prepend the harness (shim + listed includes) and, in strict mode,
+    a `"use strict";` pragma. The pragma goes BEFORE the harness so the
+    whole concatenated source runs in strict mode (matching spec —
+    per INTERPRETING.md the directive prefix applies to the entire
+    test source, including harness includes).
     """
-    parts = [LOCAL_HARNESS.read_text()]
+    parts = []
+    if strict_mode:
+        parts.append('"use strict";')
+    parts.append(LOCAL_HARNESS.read_text())
     harness = test262_root / "harness"
     for inc in meta.get("includes", []):
         if inc in ("sta.js", "assert.js"):
@@ -189,6 +208,21 @@ def build_source(test262_root, test_src, meta):
             parts.append(f.read_text())
     parts.append(test_src)
     return "\n".join(parts)
+
+def execution_modes(meta):
+    """Per INTERPRETING.md §"Strict Mode", each test runs twice (sloppy
+    then strict) unless a flag says otherwise:
+      - raw:        sloppy only, no harness (handled separately)
+      - module:     module code, no strict-prefix transform
+      - noStrict:   sloppy only
+      - onlyStrict: strict only
+    """
+    flags = set(meta.get("flags", []))
+    if "raw" in flags:    return ["sloppy"]   # raw also skips harness
+    if "module" in flags: return ["sloppy"]   # modules implicitly strict; we don't add the pragma
+    if "onlyStrict" in flags: return ["strict"]
+    if "noStrict" in flags:   return ["sloppy"]
+    return ["sloppy", "strict"]
 
 def run_one(zjs_bin, source, timeout_s):
     """Run zjs on the given source. Returns (exit_code, stderr_text)."""
@@ -209,16 +243,28 @@ def run_one(zjs_bin, source, timeout_s):
         except OSError: pass
 
 def classify(meta, exit_code, stderr):
-    """Map (engine outcome, expected outcome) → 'pass' or 'fail (reason)'."""
+    """Map (engine outcome, expected outcome) → 'pass' or 'fail (reason)'.
+
+    Negative tests gate on both the error TYPE (exact match against the
+    constructor name in the runner's stderr) and the PHASE (parse
+    vs runtime — phase: parse requires the throw to come from the
+    parser/compiler, not from running code).
+    """
     threw = (exit_code != 0)
     if exit_code == -1:
         return ("fail", "timeout")
     if meta.get("negative"):
-        expected_type = (meta["negative"].get("type") or "").strip()
+        expected_type  = (meta["negative"].get("type")  or "").strip()
+        expected_phase = (meta["negative"].get("phase") or "").strip()
         if not threw:
-            return ("fail", f"expected throw of {expected_type}, no throw")
-        if expected_type and expected_type not in stderr:
-            return ("fail", f"expected {expected_type}, got {stderr.strip()[:80]}")
+            return ("fail", f"expected {expected_phase or 'any'}-phase throw of {expected_type}, no throw")
+        got_type = extract_error_type(stderr)
+        if expected_type and got_type != expected_type:
+            return ("fail", f"expected {expected_type}, got {got_type or stderr.strip()[:60]}")
+        if expected_phase == "parse" and not is_parse_phase_error(stderr):
+            return ("fail", f"expected parse-phase {expected_type}, got runtime throw")
+        if expected_phase == "runtime" and is_parse_phase_error(stderr):
+            return ("fail", f"expected runtime {expected_type}, got parse-phase throw")
         return ("pass", "")
     # Positive test: should not throw.
     if threw:
@@ -420,16 +466,32 @@ def main():
             skipped_counts[skip_reason] = skipped_counts.get(skip_reason, 0) + 1
             continue
 
-        full = build_source(args.test262, src, meta)
-        exit_code, stderr = run_one(ZJS_BIN, full, args.timeout)
-        verdict, reason = classify(meta, exit_code, stderr)
+        # Per INTERPRETING.md: run each test in every applicable mode
+        # (sloppy + strict by default; flags can restrict to one). A
+        # test PASSES only when every scheduled mode passes. The first
+        # failing mode determines the reported reason.
+        modes = execution_modes(meta)
+        verdict = "pass"
+        reason  = ""
+        failing_mode = ""
+        for mode in modes:
+            full = build_source(args.test262, src, meta,
+                                strict_mode=(mode == "strict"))
+            exit_code, stderr = run_one(ZJS_BIN, full, args.timeout)
+            v, r = classify(meta, exit_code, stderr)
+            if v != "pass":
+                verdict = v
+                reason  = r
+                failing_mode = mode
+                break
         if verdict == "pass":
             passed += 1
         else:
             failed += 1
-            failure_log.append({"path": rel, "reason": reason})
+            tagged_reason = f"[{failing_mode}] {reason}" if len(modes) > 1 else reason
+            failure_log.append({"path": rel, "reason": tagged_reason})
             if not args.quiet:
-                print(f"FAIL {rel}\n   {reason}")
+                print(f"FAIL {rel}\n   {tagged_reason}")
 
         if (i + 1) % 100 == 0:
             print(f"... {i+1}/{len(tests)}  pass={passed} fail={failed} skip={skipped}",
