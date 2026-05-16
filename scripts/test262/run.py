@@ -254,6 +254,20 @@ function print(msg) {
   }
   try { console.log(msg); } catch (e) {}
 }
+// $DONE: ECMAScript-shaped callback used by promiseHelper.js and
+// many async tests in place of print. $DONE() → success;
+// $DONE(error) → failure carrying the thrown value.
+function $DONE(error) {
+  if (error) {
+    var name = (error && typeof error === 'object' && 'name' in error)
+                 ? error.name : 'Test262Error';
+    var msg  = (error && typeof error === 'object' && 'message' in error)
+                 ? error.message : String(error);
+    print('Test262:AsyncTestFailure:' + name + ': ' + msg);
+  } else {
+    print('Test262:AsyncTestComplete');
+  }
+}
 """
 
 def execution_modes(meta):

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-16 03:30 UTC",
+    "when": "2026-05-16 03:32 UTC",
     "total": 13247,
-    "passed": 2800,
-    "failed": 897,
+    "passed": 2895,
+    "failed": 802,
     "skipped": 9550
   },
   "failures": [
@@ -1785,7 +1785,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -2340,40 +2340,8 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
     },
     {
-      "path": "test/built-ins/Promise/all/S25.4.4.1_A2.3_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/all/S25.4.4.1_A2.3_T2.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/all/S25.4.4.1_A2.3_T3.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/all/S25.4.4.1_A3.1_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/all/S25.4.4.1_A3.1_T2.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
       "path": "test/built-ins/Promise/all/S25.4.4.1_A4.1_T1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/all/S25.4.4.1_A7.1_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/all/S25.4.4.1_A8.2_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/all/S25.4.4.1_A8.2_T2.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
     },
     {
       "path": "test/built-ins/Promise/all/call-resolve-element-after-return.js",
@@ -2408,16 +2376,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Promise/all/does-not-invoke-array-setters.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
       "path": "test/built-ins/Promise/all/invoke-resolve-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-resolve-get-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-resolve-get-once-multiple-calls.js",
@@ -2433,11 +2397,11 @@
     },
     {
       "path": "test/built-ins/Promise/all/invoke-resolve-on-promises-every-iteration-of-promise.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-resolve-on-values-every-iteration-of-promise.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-resolve-return.js",
@@ -2449,11 +2413,11 @@
     },
     {
       "path": "test/built-ins/Promise/all/invoke-then-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-then-get-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-then.js",
@@ -2465,14 +2429,6 @@
     },
     {
       "path": "test/built-ins/Promise/all/reject-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/reject-ignored-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/reject-ignored-immed.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -2509,19 +2465,15 @@
     },
     {
       "path": "test/built-ins/Promise/all/resolve-ignores-late-rejection-deferred.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/all/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-non-thenable.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/all/resolve-not-callable-reject-with-typeerror.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/all/resolve-poisoned-then.js",
@@ -2572,16 +2524,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Promise/allSettled/does-not-invoke-array-setters.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
       "path": "test/built-ins/Promise/allSettled/invoke-resolve-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-resolve-get-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-resolve-get-once-multiple-calls.js",
@@ -2597,11 +2545,11 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-resolve-on-promises-every-iteration-of-promise.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-resolve-on-values-every-iteration-of-promise.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-resolve-return.js",
@@ -2613,11 +2561,11 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-then-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-then-get-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-then.js",
@@ -2633,7 +2581,7 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-deferred.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-element-function-extensible.js",
@@ -2657,11 +2605,11 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-ignored-deferred.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-ignored-immed.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-element-function-extensible.js",
@@ -2681,15 +2629,15 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-ignores-late-rejection-deferred.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-not-callable-reject-with-typeerror.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-poisoned-then.js",
@@ -2697,7 +2645,7 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-thenable.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-throws-iterator-return-is-not-callable.js",
@@ -2706,10 +2654,6 @@
     {
       "path": "test/built-ins/Promise/allSettled/resolve-throws-iterator-return-null-or-undefined.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/resolves-to-array.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
     },
     {
       "path": "test/built-ins/Promise/allSettledKeyed/extensible.js",
@@ -2745,11 +2689,11 @@
     },
     {
       "path": "test/built-ins/Promise/any/invoke-resolve-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-resolve-get-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-resolve-on-promises-every-iteration-of-custom.js",
@@ -2757,7 +2701,7 @@
     },
     {
       "path": "test/built-ins/Promise/any/invoke-resolve-on-promises-every-iteration-of-promise.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-resolve-on-values-every-iteration-of-custom.js",
@@ -2765,39 +2709,35 @@
     },
     {
       "path": "test/built-ins/Promise/any/invoke-resolve-on-values-every-iteration-of-promise.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-resolve-return.js",
       "reason": "[sloppy] zjs: throw: (unknown): new `then` method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Promise/any/invoke-resolve.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
       "path": "test/built-ins/Promise/any/invoke-then-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-then-get-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-then-on-promises-every-iteration.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-then.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/iter-arg-is-empty-iterable-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/iter-arg-is-empty-string-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/iter-arg-is-error-object-reject.js",
@@ -2832,12 +2772,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): p1.then call count Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Promise/any/reject-all-mixed.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
       "path": "test/built-ins/Promise/any/reject-deferred.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/reject-element-function-extensible.js",
@@ -2864,10 +2800,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/built-ins/Promise/any/reject-ignored-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/built-ins/Promise/any/reject-immed.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -2880,28 +2812,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): callCount after call to any() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Promise/any/resolve-from-reject-catch.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/any/resolve-from-resolve-reject-catch.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
       "path": "test/built-ins/Promise/any/resolve-ignores-late-rejection-deferred.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/any/resolve-non-thenable.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/resolve-not-callable-reject-with-typeerror.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/any/resolve-throws-iterator-return-is-not-callable.js",
@@ -2913,11 +2833,11 @@
     },
     {
       "path": "test/built-ins/Promise/exception-after-resolve-in-executor.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/exception-after-resolve-in-thenable-job.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/exec-args.js",
@@ -2940,14 +2860,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
-      "path": "test/built-ins/Promise/prototype/catch/S25.4.5.1_A3.1_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/catch/S25.4.5.1_A3.1_T2.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
       "path": "test/built-ins/Promise/prototype/finally/invokes-then-with-non-function.js",
       "reason": "[sloppy] zjs: throw: (unknown): Invokes `then` method exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
@@ -2961,7 +2873,7 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/species-constructor.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/subclass-reject-count.js",
@@ -2986,22 +2898,6 @@
     {
       "path": "test/built-ins/Promise/prototype/finally/this-value-then-throws.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A4.1_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A4.1_T2.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A4.2_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/S25.4.5.3_A4.2_T2.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/capability-executor-called-twice.js",
@@ -3036,67 +2932,11 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/built-ins/Promise/prototype/then/prfm-fulfilled.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/prfm-pending-fulfulled.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/prfm-pending-rejected.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/prfm-rejected.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/reject-pending-fulfilled.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/reject-pending-rejected.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/reject-settled-fulfilled.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/reject-settled-rejected.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-pending-fulfilled-non-obj.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-pending-fulfilled-non-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/built-ins/Promise/prototype/then/resolve-pending-fulfilled-poisoned-then.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/resolve-pending-fulfilled-prms-cstm-then.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-pending-fulfilled-self.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-pending-fulfilled-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-pending-rejected-non-obj.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-pending-rejected-non-thenable.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -3108,43 +2948,11 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/built-ins/Promise/prototype/then/resolve-pending-rejected-self.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-pending-rejected-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-settled-fulfilled-non-obj.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-settled-fulfilled-non-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/built-ins/Promise/prototype/then/resolve-settled-fulfilled-poisoned-then.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/resolve-settled-fulfilled-prms-cstm-then.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-settled-fulfilled-self.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-settled-fulfilled-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-settled-rejected-non-obj.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-settled-rejected-non-thenable.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -3156,76 +2964,12 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/built-ins/Promise/prototype/then/resolve-settled-rejected-self.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-settled-rejected-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/rxn-handler-fulfilled-invoke-nonstrict.js",
-      "reason": "async test never signaled completion"
-    },
-    {
       "path": "test/built-ins/Promise/prototype/then/rxn-handler-fulfilled-invoke-strict.js",
-      "reason": "async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/rxn-handler-fulfilled-next-abrupt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/rxn-handler-fulfilled-next.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/rxn-handler-fulfilled-return-abrupt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/rxn-handler-fulfilled-return-normal.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/rxn-handler-identity.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/rxn-handler-rejected-invoke-nonstrict.js",
       "reason": "async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/rxn-handler-rejected-invoke-strict.js",
       "reason": "async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/rxn-handler-rejected-next-abrupt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/rxn-handler-rejected-next.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/rxn-handler-rejected-return-abrupt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/rxn-handler-rejected-return-normal.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/rxn-handler-thrower.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/race/S25.4.4.3_A2.2_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/race/S25.4.4.3_A2.2_T2.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
     },
     {
       "path": "test/built-ins/Promise/race/S25.4.4.3_A3.1_T1.js",
@@ -3234,18 +2978,6 @@
     {
       "path": "test/built-ins/Promise/race/S25.4.4.3_A3.1_T2.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/race/S25.4.4.3_A5.1_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/race/S25.4.4.3_A7.3_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/race/S25.4.4.3_A7.3_T2.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
     },
     {
       "path": "test/built-ins/Promise/race/capability-executor-called-twice.js",
@@ -3269,7 +3001,7 @@
     },
     {
       "path": "test/built-ins/Promise/race/invoke-resolve-get-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/race/invoke-resolve-get-once-multiple-calls.js",
@@ -3285,11 +3017,11 @@
     },
     {
       "path": "test/built-ins/Promise/race/invoke-resolve-on-promises-every-iteration-of-promise.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/race/invoke-resolve-on-values-every-iteration-of-promise.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/race/invoke-resolve-return.js",
@@ -3301,11 +3033,11 @@
     },
     {
       "path": "test/built-ins/Promise/race/invoke-then-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/race/invoke-then-get-error-reject.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/race/invoke-then.js",
@@ -3316,20 +3048,12 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/built-ins/Promise/race/reject-ignored-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/race/reject-ignored-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/built-ins/Promise/race/reject-immed.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/race/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/race/resolve-non-obj.js",
@@ -3364,20 +3088,12 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Promise/race/resolved-then-catch-finally.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
       "path": "test/built-ins/Promise/race/same-reject-function.js",
       "reason": "[sloppy] zjs: throw: (unknown): p1.then call count Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/race/same-resolve-function.js",
       "reason": "[sloppy] zjs: throw: (unknown): p1.then call count Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/reject/S25.4.4.4_A2.1_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
     },
     {
       "path": "test/built-ins/Promise/reject/S25.4.4.4_A3.1_T1.js",
@@ -3412,64 +3128,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/built-ins/Promise/reject-ignored-via-abrupt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/reject-ignored-via-fn-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/reject-ignored-via-fn-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/reject-via-abrupt-queue.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/reject-via-abrupt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/reject-via-fn-deferred-queue.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/reject-via-fn-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/reject-via-fn-immed-queue.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/reject-via-fn-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve/S25.4.4.5_A2.2_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve/S25.4.4.5_A2.3_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve/S25.4.4.5_A4.1_T1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
       "path": "test/built-ins/Promise/resolve/S25.Promise_resolve_foreign_thenable_1.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve/arg-non-thenable.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/resolve/arg-poisoned-then.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: $DONE is not defined"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/resolve/arg-uniq-ctor.js",
@@ -3500,14 +3164,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): callCount after call to resolve() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Promise/resolve/resolve-non-obj.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve/resolve-non-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/built-ins/Promise/resolve/resolve-poisoned-then.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -3528,30 +3184,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/built-ins/Promise/resolve-ignored-via-fn-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-ignored-via-fn-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-non-obj-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-non-obj-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-non-thenable-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-non-thenable-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/built-ins/Promise/resolve-poisoned-then-deferred.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -3565,18 +3197,6 @@
     },
     {
       "path": "test/built-ins/Promise/resolve-prms-cstm-then-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-self.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-thenable-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-thenable-immed.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
