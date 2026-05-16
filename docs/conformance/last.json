@@ -1,10 +1,10 @@
 {
   "summary": {
-    "when": "2026-05-16 03:42 UTC",
+    "when": "2026-05-16 03:46 UTC",
     "total": 13247,
-    "passed": 2934,
-    "failed": 763,
-    "skipped": 9550
+    "passed": 2948,
+    "failed": 819,
+    "skipped": 9480
   },
   "failures": [
     {
@@ -1636,6 +1636,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): New arrayLike.length is 2**53 - 1 Expected SameValue(\u00ab0\u00bb, \u00ab9007199254740991\u00bb) to be true"
     },
     {
+      "path": "test/built-ins/Array/prototype/push/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
       "path": "test/built-ins/Array/prototype/push/set-length-array-is-frozen.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
@@ -1686,6 +1690,10 @@
     {
       "path": "test/built-ins/Array/prototype/pop/length-near-integer-limit.js",
       "reason": "[sloppy] zjs: throw: (unknown): arrayLike['9007199254740990'] is returned from pop() Expected SameValue(\u00abundefined\u00bb, \u00ab\"9007199254"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/pop/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/set-length-array-is-frozen.js",
@@ -1796,6 +1804,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): Length should be checked before ToInteger(fromIndex)."
     },
     {
+      "path": "test/built-ins/Array/prototype/indexOf/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
       "path": "test/built-ins/Array/prototype/indexOf/resizable-buffer-special-float-values.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true"
     },
@@ -1896,12 +1908,20 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/built-ins/Array/prototype/map/create-species-non-ctor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): a.map(cb) throws a TypeError exception Expected a TypeError to be thrown but no exception was thr"
+    },
+    {
       "path": "test/built-ins/Array/prototype/map/create-species-poisoned.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-species.js",
       "reason": "[sloppy] zjs: throw: (unknown): Constructor invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/built-ins/Array/prototype/map/resizable-buffer-grow-mid-iteration.js",
@@ -1992,6 +2012,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): callCnt Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
+      "path": "test/built-ins/Array/prototype/forEach/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
       "path": "test/built-ins/Array/prototype/forEach/resizable-buffer-grow-mid-iteration.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents."
     },
@@ -2002,6 +2026,10 @@
     {
       "path": "test/built-ins/Array/prototype/forEach/resizable-buffer.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents."
+    },
+    {
+      "path": "test/built-ins/Object/keys/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/built-ins/Object/keys/order-after-define-property-with-function.js",
@@ -2032,8 +2060,20 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/built-ins/Object/create/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-28.js",
       "reason": "[sloppy] zjs: throw: (unknown): Object.getPrototypeOf(obj) Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/JSON/parse/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-array-get-prop-from-prototype.js",
@@ -2064,6 +2104,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab3\u00bb) to be true"
     },
     {
+      "path": "test/built-ins/JSON/stringify/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
       "path": "test/built-ins/JSON/stringify/property-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"{\\\"p1\\\":\\\"p1\\\",\\\"p2\\\":\\\"p2\\\",\\\"add\\\":\\\"add\\\",\\\"p4\\\":\\\"p4\\\",\\\"2\\\":\\\"2\\\",\\\"0\\\""
     },
@@ -2088,6 +2132,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): #2: delete String.prototype.indexOf.length; String.prototype.indexOf.hasOwnProperty('length') ret"
     },
     {
+      "path": "test/built-ins/String/prototype/indexOf/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",
       "reason": "[sloppy] zjs: throw: (unknown): #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: [obje"
     },
@@ -2098,6 +2146,10 @@
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A9.js",
       "reason": "[sloppy] zjs: throw: (unknown): #2: delete String.prototype.slice.length; String.prototype.slice.hasOwnProperty('length') return "
+    },
+    {
+      "path": "test/built-ins/String/prototype/slice/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/built-ins/String/prototype/slice/this-value-tostring-throws-toprimitive.js",
@@ -2128,6 +2180,10 @@
       "reason": "[sloppy] zjs: throw: ReferenceError: n is not defined"
     },
     {
+      "path": "test/built-ins/String/prototype/split/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
       "path": "test/built-ins/String/prototype/split/separator-regexp.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [x] and expected [, ] should have the same contents. \"x\".split(/[^]/) must return [\"\", \"\"]"
     },
@@ -2140,20 +2196,156 @@
       "reason": "[sloppy] zjs: throw: (unknown): The result of `(e instanceof TypeError)` is true"
     },
     {
+      "path": "test/built-ins/Math/abs/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/acos/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/acosh/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/asin/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/asinh/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/atan/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/atan2/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/atanh/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/cbrt/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/ceil/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/clz32/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/cos/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/cosh/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/exp/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/expm1/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/f16round/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
+    },
+    {
+      "path": "test/built-ins/Math/floor/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/fround/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/hypot/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/imul/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/log/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/log10/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/log1p/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/log2/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
       "path": "test/built-ins/Math/max/Math.max_each-element-coerced.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Math/max/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/built-ins/Math/min/Math.min_each-element-coerced.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
+      "path": "test/built-ins/Math/min/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
       "path": "test/built-ins/Math/pow/applying-the-exp-operator_A1.js",
       "reason": "[sloppy] zjs: throw: (unknown): 1 Expected SameValue(\u00ab1\u00bb, \u00abNaN\u00bb) to be true"
     },
     {
+      "path": "test/built-ins/Math/pow/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/random/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
       "path": "test/built-ins/Math/round/S15.8.2.15_A7.js",
       "reason": "[sloppy] zjs: throw: (unknown): The result of evaluating (1 / Math.round(x)) is expected to be 1 / 0 Expected SameValue(\u00ab1\u00bb, \u00abInf"
+    },
+    {
+      "path": "test/built-ins/Math/round/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/sign/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/sin/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/sinh/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/sqrt/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/sumPrecise/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
     },
     {
       "path": "test/built-ins/Math/sumPrecise/sum-is-NaN.js",
@@ -2174,6 +2366,18 @@
     {
       "path": "test/built-ins/Math/sumPrecise/throws-on-non-number.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Math/tan/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/tanh/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Math/trunc/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/built-ins/Promise/Symbol.species/return-value.js",
@@ -2344,6 +2548,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
     },
     {
+      "path": "test/built-ins/Promise/allKeyed/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
+    },
+    {
       "path": "test/built-ins/Promise/allKeyed/proto.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
@@ -2502,6 +2710,10 @@
     {
       "path": "test/built-ins/Promise/allSettledKeyed/extensible.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettledKeyed/not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
     },
     {
       "path": "test/built-ins/Promise/allSettledKeyed/proto.js",
@@ -2696,12 +2908,24 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
     },
     {
+      "path": "test/built-ins/Promise/executor-function-not-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
+    },
+    {
       "path": "test/built-ins/Promise/executor-function-property-order.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
       "path": "test/built-ins/Promise/executor-function-prototype.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
+    },
+    {
+      "path": "test/built-ins/Promise/is-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Promise) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/finally/invokes-then-with-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): The value of `callCount` is 1 Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/invokes-then-with-non-function.js",
@@ -3090,7 +3314,6 @@
     "feature:WeakSet": 4,
     "feature:SharedArrayBuffer": 2,
     "feature:WeakRef": 2,
-    "include:isConstructor.js": 70,
     "feature:well-formed-json-stringify": 1,
     "include:byteConversionValues.js": 1,
     "include:promiseHelper.js": 53,

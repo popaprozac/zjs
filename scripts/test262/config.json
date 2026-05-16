@@ -131,6 +131,7 @@
     "doneprintHandle.js",
     "promiseHelper.js",
     "asyncHelpers.js",
+    "propertyHelper.js",
     "fnGlobalObject.js",
     "regExpUtils.js",
     "wellKnownIntrinsicObjects.js",
@@ -142,9 +143,7 @@
     "decimalToHexString.js",
     "deepEqual.js",
     "tcoHelper.js",
-    "isConstructor.js",
     "proxyTrapsHelper.js",
-    "propertyHelper.js",
     "nativeFunctionMatcher.js",
     "Compiler.js"
   ]
