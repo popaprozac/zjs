@@ -1002,22 +1002,36 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
             is_static = true;
         }
     }
+    // Optional `async` prefix: `async method() {}` (or
+    // `static async method() {}`). Same lookahead rule as `static` and
+    // `get`/`set` — only consume when followed by a property-name token.
+    // Generators (`async * method`) aren't supported yet — skip when
+    // we see the `*`.
+    let is_async_method: bool = false;
+    if peek_kind(p) == TokenKind::KwAsync && is_property_name_start(peek_kind2(p)) {
+        advance(p);
+        is_async_method = true;
+    }
     // Optional `get` / `set` accessor prefix. Same rule as `static`:
     // only treat as the contextual keyword when followed by another
     // property name (so `get() {}` defines a method called `get`).
+    // `async get`/`async set` aren't valid syntax; we don't accept them
+    // here either.
     let acc_kind: TokenKind = TokenKind::Eq;   // sentinel for "regular method"
-    let id2 = peek(p);
-    if id2.kind == TokenKind::Identifier && id2.length == 3 {
-        let nd = p.source + id2.start;
-        let is_get: int = 0;
-        let is_set: int = 0;
-        raw {
-            is_get = (memcmp(nd, "get", 3) == 0) ? 1 : 0;
-            is_set = (memcmp(nd, "set", 3) == 0) ? 1 : 0;
-        }
-        if (is_get != 0 || is_set != 0) && is_property_name_start(peek_kind2(p)) {
-            advance(p);
-            acc_kind = if is_get != 0 { TokenKind::KwGet } else { TokenKind::KwSet };
+    if !is_async_method {
+        let id2 = peek(p);
+        if id2.kind == TokenKind::Identifier && id2.length == 3 {
+            let nd = p.source + id2.start;
+            let is_get: int = 0;
+            let is_set: int = 0;
+            raw {
+                is_get = (memcmp(nd, "get", 3) == 0) ? 1 : 0;
+                is_set = (memcmp(nd, "set", 3) == 0) ? 1 : 0;
+            }
+            if (is_get != 0 || is_set != 0) && is_property_name_start(peek_kind2(p)) {
+                advance(p);
+                acc_kind = if is_get != 0 { TokenKind::KwGet } else { TokenKind::KwSet };
+            }
         }
     }
     // Method name: Identifier OR a contextual / reserved word usable as
@@ -1031,9 +1045,12 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     if !expect_kind(p, TokenKind::RParen) { return NULL; }
 
     if peek_kind(p) != TokenKind::LBrace { p.had_error = true; return NULL; }
+    let saved_async = p.in_async;
+    p.in_async = is_async_method;
     p.function_depth = p.function_depth + 1;
     let body = parse_block(p);
     p.function_depth = p.function_depth - 1;
+    p.in_async = saved_async;
     if body == NULL { return NULL; }
 
     let node = new_node(&p.tracker, NodeKind::MethodDef, mut_start, body.end);
@@ -1044,6 +1061,10 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     node.left = body;
     node.children = params.arr;
     node.children_count = params.count;
+    // Reuse `num` to stash the async flag — class methods don't use
+    // num for anything else, and adding a dedicated bool would ripple
+    // through every AstNode.
+    if is_async_method { node.num = 1.0; } else { node.num = 0.0; }
     return node;
 }
 

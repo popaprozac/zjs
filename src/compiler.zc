@@ -1806,7 +1806,15 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     f.ic_count = c.ic_count;
     f.uses_arguments = c.arguments_reg >= 0;
     f.has_rest_param = has_rest;
-    f.is_async = node.bool_value;
+    // For ordinary functions / arrow funcs the parser stashes the
+    // async flag in bool_value. For MethodDef, bool_value already
+    // carries is_static — so we keep the async flag in `num` instead
+    // and merge here.
+    if node.kind == NodeKind::MethodDef {
+        f.is_async = node.num != 0.0;
+    } else {
+        f.is_async = node.bool_value;
+    }
 
     c.code = NULL;
     c.constants = NULL;

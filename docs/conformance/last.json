@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-16 03:36 UTC",
+    "when": "2026-05-16 03:42 UTC",
     "total": 13247,
-    "passed": 2926,
-    "failed": 771,
+    "passed": 2934,
+    "failed": 763,
     "skipped": 9550
   },
   "failures": [
@@ -560,60 +560,44 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a ReferenceError"
     },
     {
-      "path": "test/language/statements/class/async-method/dflt-params-abrupt.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/class/async-method/await-as-binding-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-method/dflt-params-arg-val-not-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/class/async-method/await-as-binding-identifier.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-method/dflt-params-arg-val-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/class/async-method/await-as-identifier-reference-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/async-method/await-as-label-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/async-method/dflt-params-duplicates.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/async-method/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/async-method/dflt-params-ref-prior.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/async-method/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/async-method/dflt-params-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/async-method/forbidden-ext/b1/cls-decl-async-meth-forbidden-ext-direct-access-prop-arguments.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/class/async-method/rest-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-method/forbidden-ext/b1/cls-decl-async-meth-forbidden-ext-direct-access-prop-caller.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/async-method/forbidden-ext/b2/cls-decl-async-meth-forbidden-ext-indirect-access-own-prop-caller-get.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/async-method/forbidden-ext/b2/cls-decl-async-meth-forbidden-ext-indirect-access-own-prop-caller-value.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/async-method/forbidden-ext/b2/cls-decl-async-meth-forbidden-ext-indirect-access-prop-caller.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/async-method/params-trailing-comma-multiple.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/async-method/params-trailing-comma-single.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/class/async-method/rest-params-trailing-comma-early-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
@@ -629,7 +613,7 @@
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-function-returns-arguments-from-own-function.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-function-returns-newtarget.js",
@@ -637,55 +621,47 @@
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-function.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/statements/class/async-method-static/dflt-params-abrupt.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/class/async-method-static/await-as-binding-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-method-static/dflt-params-arg-val-not-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/class/async-method-static/await-as-binding-identifier.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-method-static/dflt-params-arg-val-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/class/async-method-static/await-as-identifier-reference-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/async-method-static/await-as-label-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/async-method-static/dflt-params-duplicates.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/async-method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/async-method-static/dflt-params-ref-prior.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/async-method-static/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/async-method-static/dflt-params-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/async-method-static/forbidden-ext/b2/cls-decl-async-meth-static-forbidden-ext-indirect-access-own-prop-caller-get.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/class/async-method-static/rest-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-method-static/forbidden-ext/b2/cls-decl-async-meth-static-forbidden-ext-indirect-access-own-prop-caller-value.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/async-method-static/forbidden-ext/b2/cls-decl-async-meth-static-forbidden-ext-indirect-access-prop-caller.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/async-method-static/params-trailing-comma-multiple.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/async-method-static/params-trailing-comma-single.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/class/async-method-static/rest-params-trailing-comma-early-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/async-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
@@ -700,15 +676,7 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/async-method-static/returns-async-function-returns-arguments-from-own-function.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/language/statements/class/async-method-static/returns-async-function-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/async-method-static/returns-async-function.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
@@ -728,36 +696,56 @@
       "reason": "[sloppy] zjs: throw: (unknown): The value of `E.name` is `'E'` Expected SameValue(\u00abundefined\u00bb, \u00ab\"E\"\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/definition/class-method-returns-promise.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/language/statements/class/definition/constructor-strict-by-default.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/class/definition/early-errors-class-async-method-duplicate-parameters.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/definition/early-errors-class-method-NSPL-with-USD.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/definition/early-errors-class-method-arguments-in-formal-parameters.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/definition/early-errors-class-method-await-in-formals-default.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/definition/early-errors-class-method-await-in-formals.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/definition/early-errors-class-method-body-contains-super-call.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/definition/early-errors-class-method-duplicate-parameters.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
+      "path": "test/language/statements/class/definition/early-errors-class-method-eval-in-formal-parameters.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/definition/early-errors-class-method-formals-contains-super-call.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
       "path": "test/language/statements/class/definition/methods-async-super-call-body.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/definition/methods-async-super-call-param.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/definition/methods-named-eval-arguments.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `C.eval()` returns `3` Expected SameValue(\u00ab[object]\u00bb, \u00ab3\u00bb) to be true"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/definition/methods-restricted-properties.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/class/definition/methods.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `C.staticMethod()` returns `2`. Defined as `static staticMethod() { return 2; }` Expected SameVal"
     },
     {
       "path": "test/language/statements/class/definition/numeric-property-names.js",
@@ -788,6 +776,10 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-contains-super-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-contains-super-get.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -800,11 +792,23 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-ctor-async-meth.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-ctor-get.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-ctor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-async-meth-prototype.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-async-meth-super.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -837,7 +841,7 @@
     },
     {
       "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-async-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",
@@ -870,10 +874,6 @@
     {
       "path": "test/language/statements/class/method/rest-params-trailing-comma-early-error.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/method-static/dflt-params-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/class/method-static/dflt-params-duplicates.js",
@@ -921,7 +921,7 @@
     },
     {
       "path": "test/language/statements/class/params-dflt-meth-static-ref-arguments.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: ReferenceError: arguments is not defined"
     },
     {
       "path": "test/language/statements/class/restricted-properties.js",
@@ -1136,10 +1136,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')"
     },
     {
-      "path": "test/language/statements/class/subclass/superclass-static-method-override.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `C.staticM()` returns `1` Expected SameValue(\u00ab[object]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/subclass-builtins/subclass-AggregateError.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: AggregateError is not defined"
     },
@@ -1260,60 +1256,44 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/async-method/dflt-params-abrupt.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/class/async-method/await-as-binding-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/async-method/dflt-params-arg-val-not-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/class/async-method/await-as-binding-identifier.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/async-method/dflt-params-arg-val-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/class/async-method/await-as-identifier-reference-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/async-method/await-as-label-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/async-method/dflt-params-duplicates.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/async-method/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/dflt-params-ref-prior.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/async-method/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/async-method/dflt-params-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/async-method/forbidden-ext/b1/cls-expr-async-meth-forbidden-ext-direct-access-prop-arguments.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/class/async-method/rest-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/async-method/forbidden-ext/b1/cls-expr-async-meth-forbidden-ext-direct-access-prop-caller.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/forbidden-ext/b2/cls-expr-async-meth-forbidden-ext-indirect-access-own-prop-caller-get.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/forbidden-ext/b2/cls-expr-async-meth-forbidden-ext-indirect-access-own-prop-caller-value.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/forbidden-ext/b2/cls-expr-async-meth-forbidden-ext-indirect-access-prop-caller.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/params-trailing-comma-multiple.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/params-trailing-comma-single.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/class/async-method/rest-params-trailing-comma-early-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
@@ -1329,7 +1309,7 @@
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-function-returns-arguments-from-own-function.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-function-returns-newtarget.js",
@@ -1337,63 +1317,47 @@
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-function.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/expressions/class/async-method-static/dflt-params-abrupt.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/class/async-method-static/await-as-binding-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/async-method-static/dflt-params-arg-val-not-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/class/async-method-static/await-as-binding-identifier.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/async-method-static/dflt-params-arg-val-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/class/async-method-static/await-as-identifier-reference-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/async-method-static/await-as-label-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/async-method-static/dflt-params-duplicates.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/async-method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method-static/dflt-params-ref-prior.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/async-method-static/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/async-method-static/dflt-params-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/async-method-static/forbidden-ext/b1/cls-expr-async-meth-static-forbidden-ext-direct-access-prop-arguments.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/class/async-method-static/rest-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/async-method-static/forbidden-ext/b1/cls-expr-async-meth-static-forbidden-ext-direct-access-prop-caller.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method-static/forbidden-ext/b2/cls-expr-async-meth-static-forbidden-ext-indirect-access-own-prop-caller-get.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method-static/forbidden-ext/b2/cls-expr-async-meth-static-forbidden-ext-indirect-access-own-prop-caller-value.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method-static/forbidden-ext/b2/cls-expr-async-meth-static-forbidden-ext-indirect-access-prop-caller.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method-static/params-trailing-comma-multiple.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method-static/params-trailing-comma-single.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/class/async-method-static/rest-params-trailing-comma-early-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/async-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
@@ -1408,15 +1372,7 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/async-method-static/returns-async-function-returns-arguments-from-own-function.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/language/expressions/class/async-method-static/returns-async-function-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method-static/returns-async-function.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
@@ -1444,6 +1400,10 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-get.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -1456,11 +1416,23 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-async-meth.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-get.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-async-meth-prototype.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-async-meth-super.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -1493,7 +1465,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-async-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",
@@ -1536,10 +1508,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/method-static/dflt-params-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/expressions/class/method-static/dflt-params-duplicates.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -1569,7 +1537,7 @@
     },
     {
       "path": "test/language/expressions/class/params-dflt-meth-static-ref-arguments.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: ReferenceError: arguments is not defined"
     },
     {
       "path": "test/language/expressions/class/restricted-properties.js",
