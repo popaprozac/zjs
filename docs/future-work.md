@@ -140,3 +140,97 @@ These are noted in phase docs but worth restating in one place:
   caller (it gets dropped). Needs a `ctx.pending_throw` field and
   check sites in `Op::Invoke` / `Op::MethodInvoke` after each
   host-function call.
+
+## Follow-ups carried over from the May 2026 feature push
+
+Items deliberately left undone in the recent landings — captured here
+so we don't lose them.
+
+### ES modules
+
+- **Live bindings.** Current implementation copies the export value
+  into the importer's local at link/eval time; mutations in the
+  source module after import don't propagate. Spec semantics require
+  imports to be live references — `import { count } from "./a.mjs"`
+  followed by an `inc()` from `a.mjs` should see the new `count` on
+  the next read. Fix likely needs an indirection through the
+  exporter's slot table or a per-import getter cell.
+- **Top-level `await`** in module bodies (current parser only allows
+  `await` inside an async-function body via `p.in_async`).
+- **`export *`** wildcard re-export. Parser doesn't accept it yet;
+  runtime needs a "copy all enumerable string keys of source.exports
+  except `default`" step.
+- **Dynamic `import()`** as an expression — returns a Promise of the
+  module's exports namespace.
+- **True cycle handling.** Circular imports return the
+  partially-populated record; sibling modules see `undefined` for
+  not-yet-set names. Spec defines a topological-sort + bind-imports
+  phase that supports cycles for non-TDZ accesses.
+- **test262 module-flag tests.** Runner skips them — it writes a
+  temp-file with the test source and zjs uses filesystem paths for
+  relative imports. Either inline-prepend per the spec or
+  generate a temp directory and resolve from there.
+
+### async/await
+
+- **`for await ... of`** async iteration. Skipped feature.
+- **Async generators.** Skipped feature.
+- **Top-level await** (see modules above — same suspend/resume infra
+  needs to extend to module bodies).
+
+### Classes
+
+- **Extends + instance fields + no explicit constructor.** Parser
+  synthesizes an empty ctor when fields exist without an explicit
+  one; fine for base classes but a derived class also needs a
+  synthesized `super(...args)` before the field inits run. The
+  rest-binding AST synthesis is what's missing.
+- **Private fields / methods** (`#name`). Skipped feature
+  (`class-fields-private`, `class-methods-private`, plus the static
+  forms — together ~3000 tests).
+- **Computed-name accessors** (`class { get [k]() {} set [k](v) {} }`).
+  Today's computed-method path uses `StoreElem`, which doesn't
+  install an accessor pair. Needs a runtime-keyed
+  `DefineGetter/Setter` analogue.
+- **Class static blocks** (`class { static { /* code */ } }`).
+- **`new.target`** in class methods. Skipped feature.
+
+### Iteration protocol / Symbols / generators
+
+- **Real `Symbol`** values with the spec's well-known symbols
+  (`Symbol.iterator`, `Symbol.asyncIterator`, `Symbol.hasInstance`,
+  ...). Today our string keys coerce a Symbol value to
+  `[object Function]`; tests depending on Symbol-keyed dispatch all
+  fail.
+- **`Symbol.iterator` protocol** wiring on for-of / spread / array
+  destructuring so non-array iterables (generators, Maps, Sets,
+  user objects) work end-to-end. ~1000 tests skipped on the
+  iterator part alone.
+- **Generators** (`function* () { yield ... }`) — 1500+ test262
+  tests skipped. Suspend/resume infra can reuse the ZjsAsyncCont
+  pattern from async/await; `yield` is the equivalent of `await`,
+  iterator-result `{ value, done }` envelopes are the public
+  surface.
+
+### Destructuring
+
+- Both **binding** (`const { a, b } = obj`,
+  `for (const [x, y] of pairs)`, `function ({ a, b }) {}`) and
+  **assignment** (`[a, b] = arr`). Sweeping ES6+ feature. Combined
+  ~2400 skipped tests; the single biggest remaining gap besides
+  generators.
+
+### Built-ins
+
+- **`Map` / `Set`** — needed by ~30 for-of tests directly and
+  indirectly by many spec-conformance tests.
+- **`Date`** — currently a stub.
+- **`Object.freeze` / `Object.preventExtensions`** — many
+  Array.prototype tests check for the TypeError these should throw.
+- **Real `globalThis`** binding — `ctx.global_this_obj` exists but
+  isn't registered under that name.
+
+### Operators
+
+- **Optional chaining `?.`** — partial; nullish coalescing operates
+  but optional member / call chains still trip on edge cases.
