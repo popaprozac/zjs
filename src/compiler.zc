@@ -68,6 +68,14 @@ struct Compiler {
     // unsafe.
     borrow_local_ok: bool;
 
+    // 2026-05-16 — hoisted `this` for hot method bodies. When the
+    // function body actually references `this`, compile_function
+    // emits a single LoadThis at entry into this register and
+    // compile_expr's ThisExpr returns it directly afterward. Saves
+    // N-1 LoadThis dispatches per call (LoadThis was 15% of
+    // method_call's profile). -1 = not allocated.
+    this_reg: i32;
+
     // Closure support (Phase 3.3). `parent` points to the enclosing
     // function's compiler — NULL for the top-level program. The
     // capture pre-scan flips `needs_env` on if any nested function
@@ -164,6 +172,7 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.source = source;
     c.last_expr_reg = -1;
     c.arguments_reg = -1;
+    c.this_reg = -1;
     return c;
 }
 
@@ -1023,16 +1032,24 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         return dst;
     }
     if k == NodeKind::ThisExpr {
-        let dst = alloc_reg(c);
         if node.bool_value {
-            // `new.target` — load undefined when not under `new`, or
-            // the in-flight ctor's host_this otherwise. Encoded as a
-            // dedicated op so we can revise the semantics later
-            // without touching the parser.
+            // `new.target` — read fresh; not hoistable because the
+            // ctor-call flag can flip across nested calls.
+            let dst = alloc_reg(c);
             emit(c, make_inst_a(Op::LoadNewTarget, dst));
-        } else {
-            emit(c, make_inst_a(Op::LoadThis, dst));
+            return dst;
         }
+        // Plain `this` — return the function-entry hoisted register
+        // when available (most method bodies). Otherwise fall back to
+        // a fresh LoadThis.
+        if c.this_reg >= 0 {
+            if c.borrow_local_ok { return (u8)c.this_reg; }
+            let dst = alloc_reg(c);
+            emit(c, make_inst_ab(Op::Mov, dst, (u8)c.this_reg));
+            return dst;
+        }
+        let dst = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadThis, dst));
         return dst;
     }
     if k == NodeKind::ClassExpr {
@@ -1294,15 +1311,16 @@ fn emit_load_atom(c: Compiler*, atom: ZjsString*) -> u8 {
 }
 
 fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
-    // Intern the property name as an atom and reserve an IC slot for
-    // this access site. The interpreter's LoadProp handler uses the
-    // IC to skip the property_get walk when the object's class
-    // matches the cached one.
+    // LoadProp / LoadElem read obj before writing dst, so the object
+    // expression can always borrow (we'd never mutate the receiver
+    // before using it).
+    let saved_borrow = c.borrow_local_ok;
+    c.borrow_local_ok = true;
     let name_atom = ctx_intern_atom(c.ctx, c.source + node.name_start, node.name_length);
     let ic = alloc_ic_slot(c, name_atom);
     if ic > 255 {
-        // Out of IC slots — fall back to the LoadElem path.
         let obj_r = compile_expr(c, node.left);
+        c.borrow_local_ok = saved_borrow;
         let key_r = emit_load_name_string(c, c.source + node.name_start, node.name_length);
         let dst = alloc_reg(c);
         emit(c, make_inst_abc(Op::LoadElem, dst, obj_r, key_r));
@@ -1313,6 +1331,7 @@ fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
     }
 
     let obj_r = compile_expr(c, node.left);
+    c.borrow_local_ok = saved_borrow;
     let dst = alloc_reg(c);
     emit(c, make_inst_abc(Op::LoadProp, dst, obj_r, (u8)ic));
     release_reg(c, obj_r);
@@ -1361,7 +1380,13 @@ fn compile_assignment_to_property(c: Compiler*, target: AstNode*, op_tok: TokenK
                                         target.name_length);
         let ic = alloc_ic_slot(c, name_atom);
         if ic <= 255 {
+            // Borrow obj_r if the RHS is provably side-effect-free.
+            // Common case: `this.x = this.y + 1` — obj_r is the
+            // hoisted this register; no Mov needed.
+            let saved_borrow = c.borrow_local_ok;
+            if expr_is_simple_pure(rhs) { c.borrow_local_ok = true; }
             let obj_r = compile_expr(c, target.left);
+            c.borrow_local_ok = saved_borrow;
             let v = compile_expr(c, rhs);
             emit(c, make_inst_abc(Op::StoreProp, obj_r, (u8)ic, v));
             return v;
@@ -1863,6 +1888,13 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
         c.arguments_reg = (i32)alloc_reg(c);
     }
 
+    // 2e. Hoist `this` if the body references it. One LoadThis at
+    //     entry instead of one per occurrence.
+    let need_this = node.left != NULL && body_uses_this(node.left);
+    if need_this {
+        c.this_reg = (i32)alloc_reg(c);
+    }
+
     // 3. Locals are now fixed; temps live above this watermark.
     c.fixed_regs = c.next_reg;
 
@@ -1872,6 +1904,9 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     //     body get stored when their VarDecl executes.
     if c.arguments_reg >= 0 {
         emit(c, make_inst_a(Op::BuildArguments, (u8)c.arguments_reg));
+    }
+    if c.this_reg >= 0 {
+        emit(c, make_inst_a(Op::LoadThis, (u8)c.this_reg));
     }
     if has_rest {
         // Build rest array from args_base[regular_param_count..argc].
@@ -2651,6 +2686,29 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
 
 // Does any IdentExpr in this function's body reference `arguments`,
 // not counting nested functions (which have their own arguments)?
+// Scan a function body for any non-new.target `this` reference. Skips
+// nested non-arrow functions (those have their own `this`). Arrow
+// functions inherit lexically — they're scanned through.
+fn body_uses_this(node: AstNode*) -> bool {
+    if node == NULL { return false; }
+    let k = node.kind;
+    if k == NodeKind::FunctionDecl || k == NodeKind::FunctionExpr {
+        return false;
+    }
+    if k == NodeKind::ThisExpr {
+        return !node.bool_value;   // bool_value = new.target, not this
+    }
+    if node.left  != NULL && body_uses_this(node.left)  { return true; }
+    if node.right != NULL && body_uses_this(node.right) { return true; }
+    if node.third != NULL && body_uses_this(node.third) { return true; }
+    let i: u32 = 0;
+    while i < node.children_count {
+        if body_uses_this(node.children[i]) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
 fn body_uses_arguments(c: Compiler*, node: AstNode*) -> bool {
     if node == NULL { return false; }
     let k = node.kind;

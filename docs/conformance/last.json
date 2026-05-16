@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-16 23:25 UTC",
+    "when": "2026-05-16 23:45 UTC",
     "total": 14428,
-    "passed": 6166,
-    "failed": 1745,
+    "passed": 6165,
+    "failed": 1746,
     "skipped": 6517
   },
   "failures": [
@@ -1472,12 +1472,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/language/statements/class/definition/this-access-restriction-2.js",
+      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before using 'this' in derived constructor"
+    },
+    {
       "path": "test/language/statements/class/definition/this-access-restriction.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/statements/class/definition/this-check-ordering.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of `baseCalled` is `1` Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before using 'this' in derived constructor"
     },
     {
       "path": "test/language/statements/class/dstr/gen-meth-ary-init-iter-get-err-array-prototype.js",
@@ -2173,7 +2177,7 @@
     },
     {
       "path": "test/language/statements/class/subclass/derived-class-return-override-with-this.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of `calls` is `1`, because `super()` Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before using 'this' in derived constructor"
     },
     {
       "path": "test/language/statements/class/subclass/derived-class-return-override-with-undefined.js",
@@ -4002,10 +4006,6 @@
     {
       "path": "test/built-ins/Promise/all/reject-immed.js",
       "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-before-loop-exit-from-same.js",
-      "reason": "[sloppy] zjs: throw: (unknown): callCount after resolving p1 Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     }
   ],
   "skip_counts": {
