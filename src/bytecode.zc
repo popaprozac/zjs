@@ -202,6 +202,10 @@ enum Op {
     // Object spread: copies own enumerable string-keyed properties
     // from regs[b] onto regs[a]. Used by `{ ...obj, k: v }`.
     ObjectSpread,     // a=target_obj, b=source
+    // Array-rest slice for destructuring: build a fresh array
+    // containing regs[b][c .. length]. Empty when src is non-array or
+    // shorter than `c`. Used by `let [..., ...rest] = src`.
+    ArrayRestFrom,    // a=dst, b=src_arr, c=start_index
 
     // Variadic-call dispatch — used when an argument list contains
     // `...arr`. Args live in the array at regs[b+1] (plain SpreadInvoke)

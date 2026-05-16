@@ -122,6 +122,21 @@ enum NodeKind {
     //     bool_value = true marks `yield*` (delegating yield).
     YieldExpr,
 
+    // Destructuring (2026-05-15).
+    //   ObjectPattern / ArrayPattern: children = pattern entries.
+    //   PatternEntry (used inside both):
+    //     - name_start/length: source key (or 0/0 for array elem /
+    //       computed key)
+    //     - third: computed key expression (object patterns only)
+    //     - left: target binding (IdentExpr or nested pattern, or
+    //             NULL for an array elision / hole)
+    //     - right: default expression (NULL if no default)
+    //     - bool_value = true: rest binding (`...name`); the rest's
+    //       `left` is the target (IdentExpr).
+    ObjectPattern,
+    ArrayPattern,
+    PatternEntry,
+
     // Public class fields (2026-05-15).
     //   ClassField:
     //     - name_start/length: field name (or 0/0 for computed)

@@ -344,6 +344,177 @@ fn is_property_name_start(k: TokenKind) -> bool {
     return is_keyword_token(k);
 }
 
+// A "binding target" is either an identifier (the common case) or a
+// destructuring pattern (`{...}` / `[...]`). Returns NULL on parse
+// error. Callers slot the returned node either into Declarator
+// (variable decls) or as a function parameter.
+fn parse_binding_target(p: Parser*) -> AstNode* {
+    let k = peek_kind(p);
+    if k == TokenKind::LBrace  { return parse_object_pattern(p); }
+    if k == TokenKind::LBracket { return parse_array_pattern(p); }
+    let t = peek(p);
+    if !is_binding_ident(t.kind) { p.had_error = true; return NULL; }
+    advance(p);
+    let node = new_node(&p.tracker, NodeKind::IdentExpr, t.start, t.start + t.length);
+    node.name_start  = t.start;
+    node.name_length = t.length;
+    return node;
+}
+
+// `{ a, b: rename, c = default, ...rest }`
+fn parse_object_pattern(p: Parser*) -> AstNode* {
+    let lb = advance(p);            // '{'
+    let cap: u32 = 4;
+    let count: u32 = 0;
+    let buf = alloc_n<AstNode*>((usize)cap);
+    let seen_rest: bool = false;
+    while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
+        if seen_rest { p.had_error = true; break; }
+        let entry_start = peek(p).start;
+        // Rest: `...name` (target must be an identifier; spec says
+        // restricted, no nested pattern).
+        if peek_kind(p) == TokenKind::Ellipsis {
+            advance(p);
+            let id = peek(p);
+            if !is_binding_ident(id.kind) { p.had_error = true; break; }
+            advance(p);
+            let ident = new_node(&p.tracker, NodeKind::IdentExpr, id.start, id.start + id.length);
+            ident.name_start  = id.start;
+            ident.name_length = id.length;
+            let r = new_node(&p.tracker, NodeKind::PatternEntry, entry_start, id.start + id.length);
+            r.name_start  = 0;
+            r.name_length = 0;
+            r.left        = ident;
+            r.right       = NULL;
+            r.third       = NULL;
+            r.bool_value  = true;       // rest sentinel
+            if count >= cap { let oc = cap; cap = cap * 2; buf = realloc_n<AstNode*>(buf, (usize)oc, (usize)cap); }
+            buf[count] = r; count = count + 1;
+            seen_rest = true;
+            // Allow trailing comma per spec? No — rest must be last,
+            // no trailing comma. Break.
+            break;
+        }
+        // Computed key: `[expr]: target`
+        let computed_key: AstNode* = NULL;
+        let key_start: u32 = 0;
+        let key_len: u32 = 0;
+        if peek_kind(p) == TokenKind::LBracket {
+            advance(p);
+            computed_key = parse_assignment(p);
+            if computed_key == NULL { break; }
+            if !expect_kind(p, TokenKind::RBracket) { break; }
+        } else {
+            let key_tok = peek(p);
+            if !is_property_name_start(key_tok.kind) { p.had_error = true; break; }
+            advance(p);
+            key_start = key_tok.start;
+            key_len   = key_tok.length;
+        }
+        // Optional `: target` (rename or nested pattern); otherwise
+        // shorthand — the key doubles as the local binding name.
+        let target: AstNode* = NULL;
+        if match_kind(p, TokenKind::Colon) {
+            target = parse_binding_target(p);
+            if target == NULL { break; }
+        } else if computed_key != NULL {
+            // Computed key without a target — spec error.
+            p.had_error = true; break;
+        } else {
+            // Shorthand: target = IdentExpr matching the key.
+            target = new_node(&p.tracker, NodeKind::IdentExpr, key_start, key_start + key_len);
+            target.name_start  = key_start;
+            target.name_length = key_len;
+        }
+        // Optional default: `target = init`.
+        let default_expr: AstNode* = NULL;
+        if match_kind(p, TokenKind::Eq) {
+            default_expr = parse_assignment(p);
+            if default_expr == NULL { break; }
+        }
+        let entry_end = if default_expr != NULL { default_expr.end } else { target.end };
+        let entry = new_node(&p.tracker, NodeKind::PatternEntry, entry_start, entry_end);
+        entry.name_start  = key_start;
+        entry.name_length = key_len;
+        entry.third       = computed_key;
+        entry.left        = target;
+        entry.right       = default_expr;
+        entry.bool_value  = false;
+        if count >= cap { let oc = cap; cap = cap * 2; buf = realloc_n<AstNode*>(buf, (usize)oc, (usize)cap); }
+        buf[count] = entry; count = count + 1;
+        if !match_kind(p, TokenKind::Comma) { break; }
+    }
+    let rb_tok = peek(p);
+    if !expect_kind(p, TokenKind::RBrace) { dealloc(buf); return NULL; }
+    if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
+    else         { dealloc(buf); buf = NULL; }
+    let node = new_node(&p.tracker, NodeKind::ObjectPattern, lb.start, rb_tok.start + rb_tok.length);
+    node.children = buf;
+    node.children_count = count;
+    return node;
+}
+
+// `[a, , b = default, ...tail]`
+fn parse_array_pattern(p: Parser*) -> AstNode* {
+    let lb = advance(p);           // '['
+    let cap: u32 = 4;
+    let count: u32 = 0;
+    let buf = alloc_n<AstNode*>((usize)cap);
+    let seen_rest: bool = false;
+    while peek_kind(p) != TokenKind::RBracket && peek_kind(p) != TokenKind::Eof {
+        if seen_rest { p.had_error = true; break; }
+        let entry_start = peek(p).start;
+        // Hole: bare comma — `[a, , c]` skips index 1.
+        if peek_kind(p) == TokenKind::Comma {
+            let h = new_node(&p.tracker, NodeKind::PatternEntry, entry_start, entry_start);
+            h.left = NULL;     // elision sentinel
+            h.right = NULL;
+            h.third = NULL;
+            h.name_start  = 0;
+            h.name_length = 0;
+            h.bool_value  = false;
+            if count >= cap { let oc = cap; cap = cap * 2; buf = realloc_n<AstNode*>(buf, (usize)oc, (usize)cap); }
+            buf[count] = h; count = count + 1;
+            advance(p);    // consume comma; loop continues
+            continue;
+        }
+        // Rest: `...target` (target may be an ident OR a nested pattern,
+        // though most code uses an ident).
+        let is_rest: bool = false;
+        if peek_kind(p) == TokenKind::Ellipsis {
+            advance(p);
+            is_rest = true;
+        }
+        let target = parse_binding_target(p);
+        if target == NULL { break; }
+        let default_expr: AstNode* = NULL;
+        if !is_rest && match_kind(p, TokenKind::Eq) {
+            default_expr = parse_assignment(p);
+            if default_expr == NULL { break; }
+        }
+        let entry_end = if default_expr != NULL { default_expr.end } else { target.end };
+        let entry = new_node(&p.tracker, NodeKind::PatternEntry, entry_start, entry_end);
+        entry.name_start  = 0;
+        entry.name_length = 0;
+        entry.third       = NULL;
+        entry.left        = target;
+        entry.right       = default_expr;
+        entry.bool_value  = is_rest;
+        if count >= cap { let oc = cap; cap = cap * 2; buf = realloc_n<AstNode*>(buf, (usize)oc, (usize)cap); }
+        buf[count] = entry; count = count + 1;
+        if is_rest { seen_rest = true; break; }
+        if !match_kind(p, TokenKind::Comma) { break; }
+    }
+    let rb_tok = peek(p);
+    if !expect_kind(p, TokenKind::RBracket) { dealloc(buf); return NULL; }
+    if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
+    else         { dealloc(buf); buf = NULL; }
+    let node = new_node(&p.tracker, NodeKind::ArrayPattern, lb.start, rb_tok.start + rb_tok.length);
+    node.children = buf;
+    node.children_count = count;
+    return node;
+}
+
 fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
     let kw = advance(p);   // var / let / const
 
@@ -353,17 +524,33 @@ fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
 
     let last_end: u32 = kw.start + kw.length;
     while true {
-        let name_tok = peek(p);
-        if !is_binding_ident(name_tok.kind) {
-            p.had_error = true;
-            break;
+        let k = peek_kind(p);
+        let is_pattern: bool = k == TokenKind::LBrace || k == TokenKind::LBracket;
+        let decl_start: u32 = peek(p).start;
+        let decl: AstNode* = new_node(&p.tracker, NodeKind::Declarator,
+                                       decl_start, decl_start);
+        if is_pattern {
+            let pat = parse_binding_target(p);
+            if pat == NULL { break; }
+            // Pattern bindings use name_length = 0 as the sentinel;
+            // `third` carries the pattern node. compile_stmt /
+            // collect_locals dispatch on that.
+            decl.name_start  = 0;
+            decl.name_length = 0;
+            decl.third       = pat;
+            decl.end         = pat.end;
+        } else {
+            let name_tok = peek(p);
+            if !is_binding_ident(name_tok.kind) {
+                p.had_error = true;
+                break;
+            }
+            advance(p);
+            decl.start       = name_tok.start;
+            decl.end         = name_tok.start + name_tok.length;
+            decl.name_start  = name_tok.start;
+            decl.name_length = name_tok.length;
         }
-        advance(p);
-
-        let decl = new_node(&p.tracker, NodeKind::Declarator,
-                            name_tok.start, name_tok.start + name_tok.length);
-        decl.name_start = name_tok.start;
-        decl.name_length = name_tok.length;
 
         if match_kind(p, TokenKind::Eq) {
             let init = parse_assignment(p);
@@ -855,15 +1042,38 @@ fn parse_param_list(p: Parser*) -> ParamList {
             advance(p);
             is_rest = true;
         }
-        let name_tok = peek(p);
-        if !is_binding_ident(name_tok.kind) {
-            p.had_error = true;
-            break;
+        // Param target: identifier OR destructuring pattern. Patterns
+        // get wrapped in an IdentExpr placeholder whose name_length = 0
+        // and whose `third` points to the pattern node — same shape
+        // the var-declarator uses.
+        let pk = peek_kind(p);
+        let is_pattern: bool = pk == TokenKind::LBrace || pk == TokenKind::LBracket;
+        let ident: AstNode* = NULL;
+        let ident_start: u32 = 0;
+        let ident_end:   u32 = 0;
+        if is_pattern {
+            if is_rest { p.had_error = true; break; }  // rest with pattern: not yet
+            let pat = parse_binding_target(p);
+            if pat == NULL { break; }
+            ident_start = pat.start;
+            ident_end   = pat.end;
+            ident = new_node(&p.tracker, NodeKind::IdentExpr, ident_start, ident_end);
+            ident.name_start  = 0;
+            ident.name_length = 0;
+            ident.third       = pat;
+        } else {
+            let name_tok = peek(p);
+            if !is_binding_ident(name_tok.kind) {
+                p.had_error = true;
+                break;
+            }
+            advance(p);
+            ident_start = name_tok.start;
+            ident_end   = name_tok.start + name_tok.length;
+            ident = new_node(&p.tracker, NodeKind::IdentExpr, ident_start, ident_end);
+            ident.name_start  = ident_start;
+            ident.name_length = name_tok.length;
         }
-        advance(p);
-        let ident_start = name_tok.start;
-        let ident_end   = name_tok.start + name_tok.length;
-        let ident = new_node(&p.tracker, NodeKind::IdentExpr, ident_start, ident_end);
 
         let param: AstNode* = ident;
         if is_rest {

@@ -3651,6 +3651,30 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     if throwing { break; }
                 }
             }
+        } else if op == Op::ArrayRestFrom {
+            // Destructuring `let [..., ...rest] = src` — build a fresh
+            // array of src[c..length]. Non-array src yields an empty
+            // array (matches `Array.from(src).slice(c)` for the common
+            // array case; full iterator-protocol rest is a follow-up).
+            let src_v = regs[inst.b];
+            let start: u32 = (u32)inst.c;
+            if zjs_is_array(src_v) != 0 {
+                let s_arr = zjs_as_array(src_v);
+                let rest_len: u32 = if s_arr.length > start { s_arr.length - start } else { 0 };
+                let arr_v = ctx_new_array(ctx, rest_len);
+                let arr = zjs_as_array(arr_v);
+                let ri: u32 = 0;
+                while ri < rest_len {
+                    let v = s_arr.elements[start + ri];
+                    if zjs_is_deleted(v) != 0 { v = zjs_undefined(); }
+                    arr.elements[ri] = v;
+                    ri = ri + 1;
+                }
+                arr.length = rest_len;
+                regs[inst.a] = arr_v;
+            } else {
+                regs[inst.a] = ctx_new_array(ctx, 0);
+            }
         } else if op == Op::IterPrepare {
             regs[inst.a] = iter_prepare(ctx, regs[inst.b], (u32)inst.c);
             if ctx.pending_throw_active {

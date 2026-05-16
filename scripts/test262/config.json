@@ -77,7 +77,6 @@
     "class-static-fields-private",
     "class-methods-private",
     "class-static-methods-private",
-    "destructuring-binding",
     "destructuring-assignment",
     "template",
     "optional-chaining",

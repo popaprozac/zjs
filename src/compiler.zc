@@ -1672,6 +1672,10 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     let rest_binding: AstNode* = NULL;
     let regular_param_count: u32 = 0;
     let rest_reg: u8 = 0;
+    // Pass 1: allocate the parameter registers contiguously at the
+    // bottom of the register file. Destructuring params record a
+    // zero-length-name *placeholder* local so the default-init /
+    // env-mirroring loops below can keep their param-order indexing.
     let i: u32 = 0;
     while i < total_children {
         let p = node.children[i];
@@ -1681,14 +1685,45 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
             has_rest = true;
         } else {
             let reg = alloc_reg(c);
-            add_local(c, p.start, p.end - p.start, reg);
+            if p.name_length == 0 && p.third != NULL {
+                add_local(c, p.start, 0, reg);
+            } else {
+                add_local(c, p.start, p.end - p.start, reg);
+            }
             regular_param_count = regular_param_count + 1;
         }
         i = i + 1;
     }
     if has_rest && rest_binding != NULL {
         rest_reg = alloc_reg(c);
-        add_local(c, rest_binding.start, rest_binding.end - rest_binding.start, rest_reg);
+        if rest_binding.kind == NodeKind::IdentExpr
+           && rest_binding.name_length == 0
+           && rest_binding.third != NULL {
+            add_local(c, rest_binding.start, 0, rest_reg);
+        } else {
+            add_local(c, rest_binding.start, rest_binding.end - rest_binding.start, rest_reg);
+        }
+    }
+    // Pass 2: inner pattern-binding locals come after all param
+    // registers so the caller's arg-passing layout (args_base[0..N))
+    // stays contiguous. analyze_captures (below) walks these and
+    // marks the captured ones; destructure_pattern fans the param
+    // value into them after default-init.
+    let pi: u32 = 0;
+    while pi < total_children {
+        let pp = node.children[pi];
+        if pp.kind != NodeKind::RestParam
+           && pp.name_length == 0
+           && pp.third != NULL {
+            collect_pattern_locals(c, pp.third);
+        }
+        pi = pi + 1;
+    }
+    if has_rest && rest_binding != NULL
+       && rest_binding.kind == NodeKind::IdentExpr
+       && rest_binding.name_length == 0
+       && rest_binding.third != NULL {
+        collect_pattern_locals(c, rest_binding.third);
     }
     let param_count = regular_param_count;
 
@@ -1789,7 +1824,10 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
         while j < c.local_count {
             // Params first — they all have indices < param_count.
             // We mirror captured-param values into env at entry.
-            if j < param_count && c.locals[j].captured {
+            // Skip destructuring-param placeholders (name_length=0):
+            // their inner-binding locals get mirrored by
+            // destructure_pattern below via bind_destructure_target.
+            if j < param_count && c.locals[j].captured && c.locals[j].name_length > 0 {
                 let name_atom = ctx_intern_atom(c.ctx,
                                                 c.source + c.locals[j].name_start,
                                                 c.locals[j].name_length);
@@ -1798,6 +1836,28 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
             }
             j = j + 1;
         }
+    }
+
+    // Pattern-param fan-out. Runs AFTER env init so bind_destructure_target
+    // can StoreProp into env_reg for captured inner-bindings.
+    let dpat_i: u32 = 0;
+    let dpat_local: u32 = 0;
+    while dpat_i < total_children {
+        let pp2 = node.children[dpat_i];
+        if pp2.kind != NodeKind::RestParam {
+            if pp2.name_length == 0 && pp2.third != NULL {
+                let param_r = c.locals[dpat_local].reg;
+                destructure_pattern(c, pp2.third, param_r);
+            }
+            dpat_local = dpat_local + 1;
+        }
+        dpat_i = dpat_i + 1;
+    }
+    if has_rest && rest_binding != NULL
+       && rest_binding.kind == NodeKind::IdentExpr
+       && rest_binding.name_length == 0
+       && rest_binding.third != NULL {
+        destructure_pattern(c, rest_binding.third, rest_reg);
     }
 
     // 4. Compile body. Arrow concise body is an expression; everything
@@ -3093,6 +3153,187 @@ fn analyze_captures(c: Compiler*, node: AstNode*) -> void {
 // Hoist var/let/const and nested FunctionDecl name bindings into the
 // current compiler's locals. Does NOT descend into nested function
 // bodies (each has its own compile_function pass).
+// Walk a binding pattern and register each contained name as a
+// module/function-scope local. Used by collect_locals' VarDecl
+// branch + function-param entry. Nested patterns recurse.
+fn collect_pattern_locals(c: Compiler*, pat: AstNode*) -> void {
+    if pat == NULL { return; }
+    let k = pat.kind;
+    if k == NodeKind::IdentExpr {
+        let reg = alloc_reg(c);
+        add_local(c, pat.name_start, pat.name_length, reg);
+        return;
+    }
+    if k == NodeKind::ObjectPattern || k == NodeKind::ArrayPattern {
+        let i: u32 = 0;
+        while i < pat.children_count {
+            let entry = pat.children[i];
+            if entry.left != NULL {
+                collect_pattern_locals(c, entry.left);
+            }
+            i = i + 1;
+        }
+        return;
+    }
+}
+
+// Forward decls: the destructure helpers are mutually recursive with
+// bind_destructure_target (which recurses back through nested patterns).
+fn destructure_pattern(c: Compiler*, pat: AstNode*, src_reg: u8) -> void;
+fn destructure_object(c: Compiler*, pat: AstNode*, src_reg: u8) -> void;
+fn destructure_array(c: Compiler*, pat: AstNode*, src_reg: u8) -> void;
+
+// Bind a value (in val_reg) to a destructuring target. The target is
+// either an IdentExpr (resolve as a function-local or module global)
+// or a nested pattern (recurse). Mirrors the assign-to-ident path in
+// compile_assignment, minus support for outer-scope captures (let/
+// const declarators are always introduced in our own scope).
+fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void {
+    if target == NULL { return; }
+    let k = target.kind;
+    if k == NodeKind::ObjectPattern || k == NodeKind::ArrayPattern {
+        destructure_pattern(c, target, val_reg);
+        return;
+    }
+    if k != NodeKind::IdentExpr {
+        c.had_error = true;
+        return;
+    }
+    let name = c.source + target.name_start;
+    let name_len = target.name_length;
+    if c.is_function {
+        let lidx = find_local_index(c, name, name_len);
+        if lidx < 0 { c.had_error = true; return; }
+        if c.locals[(u32)lidx].captured {
+            let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+            let ic = alloc_ic_slot(c, name_atom);
+            emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, val_reg));
+        } else {
+            emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, val_reg));
+        }
+    } else {
+        let slot = ctx_intern_global(c.ctx, name, name_len);
+        emit(c, make_inst_a_u16(Op::DefineGlobal, val_reg, (u16)slot));
+    }
+}
+
+// If the entry carries `= default`, emit:
+//   if (v_r === undefined) v_r = default;
+// in place. v_r is already a temp owned by the caller.
+fn apply_destructure_default(c: Compiler*, v_r: u8, default_expr: AstNode*) -> void {
+    if default_expr == NULL { return; }
+    let tmp = alloc_reg(c);
+    let undef_r = alloc_reg(c);
+    emit(c, make_inst_a(Op::LoadUndefined, undef_r));
+    emit(c, make_inst_abc(Op::CmpStrictEq, tmp, v_r, undef_r));
+    release_reg(c, undef_r);
+    let skip = emit(c, make_inst_a_i16(Op::JmpIfFalse, tmp, 0));
+    release_reg(c, tmp);
+    let init = compile_expr(c, default_expr);
+    if init != v_r { emit(c, make_inst_ab(Op::Mov, v_r, init)); }
+    patch_jump(c, skip);
+}
+
+fn destructure_pattern(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
+    if pat == NULL { return; }
+    if pat.kind == NodeKind::ObjectPattern {
+        destructure_object(c, pat, src_reg);
+        return;
+    }
+    if pat.kind == NodeKind::ArrayPattern {
+        destructure_array(c, pat, src_reg);
+        return;
+    }
+    c.had_error = true;
+}
+
+fn destructure_object(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
+    let i: u32 = 0;
+    while i < pat.children_count {
+        let entry = pat.children[i];
+        if entry.bool_value {
+            // Object-rest `...name`: copy own enumerable props of src,
+            // then delete each statically-named key declared before
+            // this rest binding. Computed-key omissions aren't tracked.
+            let saved = c.next_reg;
+            let dst_r = alloc_reg(c);
+            emit(c, make_inst_a(Op::NewObject, dst_r));
+            emit(c, make_inst_ab(Op::ObjectSpread, dst_r, src_reg));
+            let j: u32 = 0;
+            while j < i {
+                let prev = pat.children[j];
+                if prev.bool_value == false && prev.name_length > 0 {
+                    let key_r = emit_load_name_string(c,
+                                                     c.source + prev.name_start,
+                                                     prev.name_length);
+                    let trash = alloc_reg(c);
+                    emit(c, make_inst_abc(Op::DeleteElem, trash, dst_r, key_r));
+                    release_reg(c, trash);
+                    release_reg(c, key_r);
+                }
+                j = j + 1;
+            }
+            bind_destructure_target(c, entry.left, dst_r);
+            c.next_reg = saved;
+            i = i + 1;
+            continue;
+        }
+
+        let v_r = alloc_reg(c);
+        if entry.name_length > 0 {
+            let name_atom = ctx_intern_atom(c.ctx,
+                                            c.source + entry.name_start,
+                                            entry.name_length);
+            let ic = alloc_ic_slot(c, name_atom);
+            emit(c, make_inst_abc(Op::LoadProp, v_r, src_reg, (u8)ic));
+        } else if entry.third != NULL {
+            let key_r = compile_expr(c, entry.third);
+            emit(c, make_inst_abc(Op::LoadElem, v_r, src_reg, key_r));
+            release_reg(c, key_r);
+        } else {
+            c.had_error = true;
+            release_reg(c, v_r);
+            i = i + 1;
+            continue;
+        }
+        apply_destructure_default(c, v_r, entry.right);
+        bind_destructure_target(c, entry.left, v_r);
+        release_reg(c, v_r);
+        i = i + 1;
+    }
+}
+
+fn destructure_array(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
+    let i: u32 = 0;
+    while i < pat.children_count {
+        let entry = pat.children[i];
+        if entry.bool_value {
+            // ...rest at array position i — slice src[i..].
+            let saved = c.next_reg;
+            let dst_r = alloc_reg(c);
+            emit(c, make_inst_abc(Op::ArrayRestFrom, dst_r, src_reg, (u8)i));
+            bind_destructure_target(c, entry.left, dst_r);
+            c.next_reg = saved;
+            i = i + 1;
+            continue;
+        }
+        if entry.left == NULL {
+            // Elision (`,` slot).
+            i = i + 1;
+            continue;
+        }
+        let key_r = alloc_reg(c);
+        emit(c, make_inst_a_i16(Op::LoadInt, key_r, (i16)i));
+        let v_r = alloc_reg(c);
+        emit(c, make_inst_abc(Op::LoadElem, v_r, src_reg, key_r));
+        release_reg(c, key_r);
+        apply_destructure_default(c, v_r, entry.right);
+        bind_destructure_target(c, entry.left, v_r);
+        release_reg(c, v_r);
+        i = i + 1;
+    }
+}
+
 fn collect_locals(c: Compiler*, node: AstNode*) -> void {
     if node == NULL { return; }
     let k = node.kind;
@@ -3125,8 +3366,14 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
         let i: u32 = 0;
         while i < node.children_count {
             let decl = node.children[i];
-            let reg = alloc_reg(c);
-            add_local(c, decl.name_start, decl.name_length, reg);
+            if decl.name_length > 0 {
+                let reg = alloc_reg(c);
+                add_local(c, decl.name_start, decl.name_length, reg);
+            } else if decl.third != NULL {
+                // Destructuring pattern. Walk it and register every
+                // binding name as a local.
+                collect_pattern_locals(c, decl.third);
+            }
             i = i + 1;
         }
         return;
@@ -3211,6 +3458,20 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         let i: u32 = 0;
         while i < node.children_count {
             let decl = node.children[i];
+            // Destructuring declarator: name_length==0 + decl.third is
+            // the pattern, decl.left is the initializer.
+            if decl.name_length == 0 && decl.third != NULL {
+                if decl.left != NULL {
+                    let r = compile_expr(c, decl.left);
+                    destructure_pattern(c, decl.third, r);
+                    release_reg(c, r);
+                }
+                // `let { a } = undefined` would throw at runtime; for
+                // initializer-less pattern declarators (`let { a };`
+                // — invalid in spec) we silently no-op.
+                i = i + 1;
+                continue;
+            }
             let name = c.source + decl.name_start;
             let name_len = decl.name_length;
             if c.is_function {
@@ -4057,6 +4318,27 @@ fn compile_stmt_or_expr(c: Compiler*, node: AstNode*) -> void {
 // Recurse into the AST and hoist every `var` declaration + top-level
 // function/class declaration into the global table. Stops at function,
 // class, and arrow boundaries — those introduce their own scope.
+// Walk a destructuring pattern at module top-level and pre-declare
+// every contained binding name as a global.
+fn hoist_pattern_globals(c: Compiler*, pat: AstNode*) -> void {
+    if pat == NULL { return; }
+    if pat.kind == NodeKind::IdentExpr {
+        if pat.name_length > 0 {
+            let slot = ctx_intern_global(c.ctx, c.source + pat.name_start, pat.name_length);
+            c.ctx.globals[slot].defined = true;
+        }
+        return;
+    }
+    if pat.kind == NodeKind::ObjectPattern || pat.kind == NodeKind::ArrayPattern {
+        let i: u32 = 0;
+        while i < pat.children_count {
+            let entry = pat.children[i];
+            if entry.left != NULL { hoist_pattern_globals(c, entry.left); }
+            i = i + 1;
+        }
+    }
+}
+
 fn hoist_program_decls(c: Compiler*, node: AstNode*) -> void {
     if node == NULL { return; }
     let k = node.kind;
@@ -4084,11 +4366,17 @@ fn hoist_program_decls(c: Compiler*, node: AstNode*) -> void {
         let j: u32 = 0;
         while j < node.children_count {
             let decl = node.children[j];
-            if decl != NULL && decl.name_length > 0 {
-                let nm = c.source + decl.name_start;
-                let nl = decl.name_length;
-                let slot = ctx_intern_global(c.ctx, nm, nl);
-                c.ctx.globals[slot].defined = true;
+            if decl != NULL {
+                if decl.name_length > 0 {
+                    let nm = c.source + decl.name_start;
+                    let nl = decl.name_length;
+                    let slot = ctx_intern_global(c.ctx, nm, nl);
+                    c.ctx.globals[slot].defined = true;
+                } else if decl.third != NULL {
+                    // Destructuring declarator at module scope —
+                    // hoist every contained binding name.
+                    hoist_pattern_globals(c, decl.third);
+                }
             }
             j = j + 1;
         }
