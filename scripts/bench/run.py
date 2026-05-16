@@ -258,10 +258,21 @@ def write_compare_html(out_path, summary, bench_names, engine_names):
   td.bench {{ font-family: ui-monospace, SFMono-Regular, monospace; }}
   td.ms {{ text-align: right; font-variant-numeric: tabular-nums; }}
   td.ratio {{ text-align: right; font-variant-numeric: tabular-nums; color: #888; }}
+  /* zjs/engine ratio cell coloring: <1 means zjs is faster (green),
+     >1 means zjs is slower (red). Saturation scales with magnitude
+     so a 0.5x win reads stronger than a 0.9x. */
+  td.ratio.faster {{ color: #1f7a3a; font-weight: 500; }}
+  td.ratio.slower {{ color: #b8311a; font-weight: 500; }}
   .legend {{ display: flex; gap: 1.25em; font-size: 12px; color: #555;
              margin: 0.4em 0 0.8em; flex-wrap: wrap; }}
+  .legend .item {{ cursor: pointer; user-select: none;
+                   padding: 2px 4px; border-radius: 3px;
+                   transition: opacity 0.12s; }}
+  .legend .item.off {{ opacity: 0.35; text-decoration: line-through; }}
+  .legend .item:hover {{ background: #eee; }}
   .legend .sw {{ display: inline-block; width: 10px; height: 10px;
                  margin-right: 4px; vertical-align: middle; border-radius: 2px; }}
+  .legend .hint {{ color: #888; font-style: italic; margin-left: 0.5em; }}
   .toggle {{ font-size: 12px; color: #666; margin-bottom: 0.6em; }}
   .toggle label {{ margin-right: 1em; cursor: pointer; }}
   svg text.bench-label {{ font: 12px ui-monospace, SFMono-Regular, monospace;
@@ -322,7 +333,13 @@ in our scripts are too short to repay JIT cost.</p>
       const o = row.engines[e];
       if (zjs_v && o) {{
         const ratio = zjs_v / o;
-        html += `<td class="ratio">${{ratio.toFixed(1)}}×</td>`;
+        // <1: zjs is faster (green). >1: zjs is slower (red).
+        // 5% deadband around 1.0 stays neutral gray so near-ties
+        // don't read as a meaningful win/loss.
+        const cls = ratio < 0.95 ? 'faster'
+                  : ratio > 1.05 ? 'slower'
+                  : '';
+        html += `<td class="ratio ${{cls}}">${{ratio.toFixed(2)}}×</td>`;
       }} else {{
         html += `<td class="ratio">—</td>`;
       }}
@@ -350,11 +367,32 @@ in our scripts are too short to repay JIT cost.</p>
     return palette[engine] || fallbackPalette[idx % fallbackPalette.length];
   }}
 
+  // Engine visibility — clicking a legend item hides that engine's
+  // bars and drops it from the auto-scale calculation. State lives in
+  // a Set; the bar chart redraws on each toggle.
+  const visible = new Set(engines);
   const legend = document.getElementById('legend');
-  legend.innerHTML = engines.map((e, i) => {{
-    const c = colorFor(e, i);
-    return `<span><span class="sw" style="background:${{c}}"></span>${{e}}</span>`;
-  }}).join('');
+  function renderLegend() {{
+    legend.innerHTML = engines.map((e, i) => {{
+      const c = colorFor(e, i);
+      const off = visible.has(e) ? '' : ' off';
+      return `<span class="item${{off}}" data-engine="${{e}}">`
+           + `<span class="sw" style="background:${{c}}"></span>${{e}}</span>`;
+    }}).join('') + `<span class="hint">click to toggle</span>`;
+    for (const el of legend.querySelectorAll('.item')) {{
+      el.addEventListener('click', () => {{
+        const name = el.getAttribute('data-engine');
+        if (visible.has(name)) {{
+          if (visible.size > 1) visible.delete(name); // keep at least one
+        }} else {{
+          visible.add(name);
+        }}
+        renderLegend();
+        drawChart();
+      }});
+    }}
+  }}
+  renderLegend();
 
   const svg = document.getElementById('chart');
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -375,10 +413,12 @@ in our scripts are too short to repay JIT cost.</p>
   function drawChart() {{
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     const scaleMode = document.querySelector('input[name=scale]:checked').value;
+    const shownEngines = engines.filter(e => visible.has(e));
 
-    // Layout constants.
+    // Layout constants. rowH shrinks when engines are hidden so the
+    // chart compacts vertically.
     const padL = 130, padR = 40, padT = 24, padB = 28;
-    const rowH = 18 * engines.length + 12;
+    const rowH = 18 * shownEngines.length + 12;
     const width  = 1040;
     const innerW = width - padL - padR;
     const height = padT + rowH * benches.length + padB;
@@ -386,11 +426,13 @@ in our scripts are too short to repay JIT cost.</p>
     svg.setAttribute('height', height);
     svg.setAttribute('viewBox', `0 0 ${{width}} ${{height}}`);
 
-    // Find the slowest reading across all benches/engines for scale.
+    // Find the slowest reading across all benches and *visible* engines
+    // for scale — hiding kiesel rescales the chart to the remaining
+    // engines, which is the main reason to toggle in the first place.
     let maxMs = 0;
     for (const name of benches) {{
       const v = getValues(name);
-      for (const e of engines) {{
+      for (const e of shownEngines) {{
         if (v[e] != null && v[e] * 1000 > maxMs) maxMs = v[e] * 1000;
       }}
     }}
@@ -448,17 +490,18 @@ in our scripts are too short to repay JIT cost.</p>
         'text-anchor': 'end', 'dominant-baseline': 'middle',
       }}, name));
 
-      engines.forEach((e, ei) => {{
+      shownEngines.forEach((e, ei) => {{
         const ms = v[e] != null ? v[e] * 1000 : null;
         const yy = y0 + 6 + ei * 18;
         if (ms == null) return;
         const xEnd = xFor(ms);
-        const x0   = xFor(scaleMode === 'log' ? Math.max(ms, minLog) * 0 + minLog : 0);
-        const x    = (scaleMode === 'log') ? padL : padL;
         const w    = Math.max(1, xEnd - padL);
+        // Palette index is the original engine position so colors
+        // stay stable across toggles.
+        const origIdx = engines.indexOf(e);
         svg.appendChild(el('rect', {{
-          x: x, y: yy, width: w, height: 14,
-          fill: colorFor(e, ei), rx: 2, ry: 2,
+          x: padL, y: yy, width: w, height: 14,
+          fill: colorFor(e, origIdx), rx: 2, ry: 2,
         }}));
         svg.appendChild(el('text', {{
           class: 'bar-val', x: xEnd + 4, y: yy + 11,

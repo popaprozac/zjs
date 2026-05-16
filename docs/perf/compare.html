@@ -16,10 +16,21 @@
   td.bench { font-family: ui-monospace, SFMono-Regular, monospace; }
   td.ms { text-align: right; font-variant-numeric: tabular-nums; }
   td.ratio { text-align: right; font-variant-numeric: tabular-nums; color: #888; }
+  /* zjs/engine ratio cell coloring: <1 means zjs is faster (green),
+     >1 means zjs is slower (red). Saturation scales with magnitude
+     so a 0.5x win reads stronger than a 0.9x. */
+  td.ratio.faster { color: #1f7a3a; font-weight: 500; }
+  td.ratio.slower { color: #b8311a; font-weight: 500; }
   .legend { display: flex; gap: 1.25em; font-size: 12px; color: #555;
              margin: 0.4em 0 0.8em; flex-wrap: wrap; }
+  .legend .item { cursor: pointer; user-select: none;
+                   padding: 2px 4px; border-radius: 3px;
+                   transition: opacity 0.12s; }
+  .legend .item.off { opacity: 0.35; text-decoration: line-through; }
+  .legend .item:hover { background: #eee; }
   .legend .sw { display: inline-block; width: 10px; height: 10px;
                  margin-right: 4px; vertical-align: middle; border-radius: 2px; }
+  .legend .hint { color: #888; font-style: italic; margin-left: 0.5em; }
   .toggle { font-size: 12px; color: #666; margin-bottom: 0.6em; }
   .toggle label { margin-right: 1em; cursor: pointer; }
   svg text.bench-label { font: 12px ui-monospace, SFMono-Regular, monospace;
@@ -52,8 +63,8 @@ in our scripts are too short to repay JIT cost.</p>
   <svg id="chart" width="1040" height="40" role="img" aria-label="bench comparison"></svg>
 </div>
 
-<script id="data" type="application/json">{"when": "2026-05-16 00:02 UTC", "sha": "1cfe865465", "results": [{"name": "array_iterate", "engines": {"zjs": 0.004392415750771761, "qjs": 0.005236499942839146, "boa": 0.027438958175480366, "kiesel": 0.3494149171747267, "node": 0.018482542131096125, "bun": 0.008760957978665829, "deno": 0.02315308293327689}}, {"name": "closure_call", "engines": {"zjs": 0.008009041659533978, "qjs": 0.00776091730222106, "boa": 0.051179041154682636, "kiesel": 0.5873895827680826, "node": 0.017603333108127117, "bun": 0.00883270800113678, "deno": 0.021021041087806225}}, {"name": "double_loop", "engines": {"zjs": 0.008147874847054482, "qjs": 0.010300791822373867, "boa": 0.055543709080666304, "kiesel": 0.6971086668781936, "node": 0.0177153330296278, "bun": 0.008425666950643063, "deno": 0.020659666042774916}}, {"name": "fib_recursive", "engines": {"zjs": 0.14257966727018356, "qjs": 0.11000166600570083, "boa": 1.1460437919013202, "kiesel": 19.56271795881912, "node": 0.029027209151536226, "bun": 0.016046457923948765, "deno": 0.031846166122704744}}, {"name": "hash_count", "engines": {"zjs": 0.004349041264504194, "qjs": 0.0061102090403437614, "boa": 0.023455332964658737, "kiesel": 0.24372174963355064, "node": 0.019248957745730877, "bun": 0.010290541220456362, "deno": 0.021475249901413918}}, {"name": "int_loop", "engines": {"zjs": 0.014342125039547682, "qjs": 0.021544666960835457, "boa": 0.10574170760810375, "kiesel": 1.4477244168519974, "node": 0.019588999915868044, "bun": 0.01254495931789279, "deno": 0.02524583414196968}}, {"name": "int_loop_big", "engines": {"zjs": 0.12614708440378308, "qjs": 0.18977758288383484, "boa": 0.9742867080494761, "kiesel": 14.146667624823749, "node": 0.02436529193073511, "bun": 0.02971191704273224, "deno": 0.06889612507075071}}, {"name": "json_roundtrip", "engines": {"zjs": 0.015673000365495682, "qjs": 0.031196667347103357, "boa": 0.11206150008365512, "kiesel": 0.48696570843458176, "node": 0.021780333016067743, "bun": 0.011670832987874746, "deno": 0.023115457966923714}}, {"name": "mandelbrot", "engines": {"zjs": 0.06187879107892513, "qjs": 0.05696266610175371, "boa": 0.2709273328073323, "kiesel": 5.061332582961768, "node": 0.02064020885154605, "bun": 0.011928124818950891, "deno": 0.026459333021193743}}, {"name": "method_call", "engines": {"zjs": 0.008847750257700682, "qjs": 0.008879540953785181, "boa": 0.06288104085251689, "kiesel": 0.6507467501796782, "node": 0.017701166216284037, "bun": 0.008733833208680153, "deno": 0.02053845813497901}}, {"name": "nbody", "engines": {"zjs": 0.0983493342064321, "qjs": 0.08230820903554559, "boa": 0.556324708275497, "kiesel": 7.692275583278388, "node": 0.022701959125697613, "bun": 0.01286891708150506, "deno": 0.02534091705456376}}, {"name": "object_alloc", "engines": {"zjs": 0.014845790807157755, "qjs": 0.023786417208611965, "boa": 0.051155457738786936, "kiesel": 0.60996999964118, "node": 0.019130792003124952, "bun": 0.010429250076413155, "deno": 0.022058417089283466}}, {"name": "property_mono", "engines": {"zjs": 0.01092837518081069, "qjs": 0.01471187500283122, "boa": 0.08367158379405737, "kiesel": 1.0142866671085358, "node": 0.01970854215323925, "bun": 0.012543583754450083, "deno": 0.023044417146593332}}, {"name": "property_poly", "engines": {"zjs": 0.013057792093604803, "qjs": 0.00991241680458188, "boa": 0.058865166269242764, "kiesel": 0.842377542052418, "node": 0.01886583399027586, "bun": 0.010184000246226788, "deno": 0.02124299993738532}}, {"name": "quicksort", "engines": {"zjs": 0.012523708399385214, "qjs": 0.022798500023782253, "boa": 0.10271058278158307, "kiesel": 8.28676616633311, "node": 0.021409375127404928, "bun": 0.011511165648698807, "deno": 0.025104708038270473}}, {"name": "regex_match", "engines": {"zjs": 0.006592083256691694, "qjs": 0.13104554219171405, "boa": 0.16475120792165399, "kiesel": 13.622734874952585, "node": 0.030020250007510185, "bun": 0.017926666885614395, "deno": 0.03417524974793196}}, {"name": "richards", "engines": {"zjs": 0.19421591609716415, "qjs": 0.16606937488541007, "boa": 1.1676240842789412, "kiesel": 14.246937249787152, "node": 0.025376500096172094, "bun": 0.018905249889940023, "deno": 0.026002416852861643}}, {"name": "sieve", "engines": {"zjs": 0.01291508274152875, "qjs": 0.019512000028043985, "boa": 0.10034450003877282, "kiesel": 1.320905250031501, "node": 0.020452874712646008, "bun": 0.010418124962598085, "deno": 0.022660041693598032}}, {"name": "splay", "engines": {"zjs": 0.20619574980810285, "qjs": 0.25527895893901587, "boa": 0.8477479577995837, "kiesel": 6.958328542299569, "node": 0.050324083771556616, "bun": 0.022812374867498875, "deno": 0.041590208653360605}}, {"name": "string_concat", "engines": {"zjs": 0.0025054998695850372, "qjs": 0.0029437923803925514, "boa": 0.007041333243250847, "kiesel": 0.040266749914735556, "node": 0.016000958159565926, "bun": 0.007456457708030939, "deno": 0.019291208125650883}}, {"name": "try_overhead", "engines": {"zjs": 0.005687457975000143, "qjs": 0.006560333073139191, "boa": 0.02661716565489769, "kiesel": 0.3250063327141106, "node": 0.017858707811683416, "bun": 0.009243374690413475, "deno": 0.021595750004053116}}]}</script>
-<script id="benches" type="application/json">["array_iterate", "closure_call", "double_loop", "fib_recursive", "hash_count", "int_loop", "int_loop_big", "json_roundtrip", "mandelbrot", "method_call", "nbody", "object_alloc", "property_mono", "property_poly", "quicksort", "regex_match", "richards", "sieve", "splay", "string_concat", "try_overhead"]</script>
+<script id="data" type="application/json">{"when": "2026-05-16 00:12 UTC", "sha": "d29642058b", "results": [{"name": "splay", "engines": {"zjs": 0.2057508327998221, "qjs": 0.2534839170984924, "boa": 0.8513837084174156, "kiesel": 6.892690749838948, "node": 0.0526167917996645, "bun": 0.033145375084131956, "deno": 0.14560854202136397}}]}</script>
+<script id="benches" type="application/json">["splay"]</script>
 <script id="engines" type="application/json">["zjs", "qjs", "boa", "kiesel", "node", "bun", "deno"]</script>
 <script>
   const data    = JSON.parse(document.getElementById('data').textContent);
@@ -80,7 +91,13 @@ in our scripts are too short to repay JIT cost.</p>
       const o = row.engines[e];
       if (zjs_v && o) {
         const ratio = zjs_v / o;
-        html += `<td class="ratio">${ratio.toFixed(1)}×</td>`;
+        // <1: zjs is faster (green). >1: zjs is slower (red).
+        // 5% deadband around 1.0 stays neutral gray so near-ties
+        // don't read as a meaningful win/loss.
+        const cls = ratio < 0.95 ? 'faster'
+                  : ratio > 1.05 ? 'slower'
+                  : '';
+        html += `<td class="ratio ${cls}">${ratio.toFixed(2)}×</td>`;
       } else {
         html += `<td class="ratio">—</td>`;
       }
@@ -108,11 +125,32 @@ in our scripts are too short to repay JIT cost.</p>
     return palette[engine] || fallbackPalette[idx % fallbackPalette.length];
   }
 
+  // Engine visibility — clicking a legend item hides that engine's
+  // bars and drops it from the auto-scale calculation. State lives in
+  // a Set; the bar chart redraws on each toggle.
+  const visible = new Set(engines);
   const legend = document.getElementById('legend');
-  legend.innerHTML = engines.map((e, i) => {
-    const c = colorFor(e, i);
-    return `<span><span class="sw" style="background:${c}"></span>${e}</span>`;
-  }).join('');
+  function renderLegend() {
+    legend.innerHTML = engines.map((e, i) => {
+      const c = colorFor(e, i);
+      const off = visible.has(e) ? '' : ' off';
+      return `<span class="item${off}" data-engine="${e}">`
+           + `<span class="sw" style="background:${c}"></span>${e}</span>`;
+    }).join('') + `<span class="hint">click to toggle</span>`;
+    for (const el of legend.querySelectorAll('.item')) {
+      el.addEventListener('click', () => {
+        const name = el.getAttribute('data-engine');
+        if (visible.has(name)) {
+          if (visible.size > 1) visible.delete(name); // keep at least one
+        } else {
+          visible.add(name);
+        }
+        renderLegend();
+        drawChart();
+      });
+    }
+  }
+  renderLegend();
 
   const svg = document.getElementById('chart');
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -133,10 +171,12 @@ in our scripts are too short to repay JIT cost.</p>
   function drawChart() {
     while (svg.firstChild) svg.removeChild(svg.firstChild);
     const scaleMode = document.querySelector('input[name=scale]:checked').value;
+    const shownEngines = engines.filter(e => visible.has(e));
 
-    // Layout constants.
+    // Layout constants. rowH shrinks when engines are hidden so the
+    // chart compacts vertically.
     const padL = 130, padR = 40, padT = 24, padB = 28;
-    const rowH = 18 * engines.length + 12;
+    const rowH = 18 * shownEngines.length + 12;
     const width  = 1040;
     const innerW = width - padL - padR;
     const height = padT + rowH * benches.length + padB;
@@ -144,11 +184,13 @@ in our scripts are too short to repay JIT cost.</p>
     svg.setAttribute('height', height);
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
 
-    // Find the slowest reading across all benches/engines for scale.
+    // Find the slowest reading across all benches and *visible* engines
+    // for scale — hiding kiesel rescales the chart to the remaining
+    // engines, which is the main reason to toggle in the first place.
     let maxMs = 0;
     for (const name of benches) {
       const v = getValues(name);
-      for (const e of engines) {
+      for (const e of shownEngines) {
         if (v[e] != null && v[e] * 1000 > maxMs) maxMs = v[e] * 1000;
       }
     }
@@ -206,17 +248,18 @@ in our scripts are too short to repay JIT cost.</p>
         'text-anchor': 'end', 'dominant-baseline': 'middle',
       }, name));
 
-      engines.forEach((e, ei) => {
+      shownEngines.forEach((e, ei) => {
         const ms = v[e] != null ? v[e] * 1000 : null;
         const yy = y0 + 6 + ei * 18;
         if (ms == null) return;
         const xEnd = xFor(ms);
-        const x0   = xFor(scaleMode === 'log' ? Math.max(ms, minLog) * 0 + minLog : 0);
-        const x    = (scaleMode === 'log') ? padL : padL;
         const w    = Math.max(1, xEnd - padL);
+        // Palette index is the original engine position so colors
+        // stay stable across toggles.
+        const origIdx = engines.indexOf(e);
         svg.appendChild(el('rect', {
-          x: x, y: yy, width: w, height: 14,
-          fill: colorFor(e, ei), rx: 2, ry: 2,
+          x: padL, y: yy, width: w, height: 14,
+          fill: colorFor(e, origIdx), rx: 2, ry: 2,
         }));
         svg.appendChild(el('text', {
           class: 'bar-val', x: xEnd + 4, y: yy + 11,
