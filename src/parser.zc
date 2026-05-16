@@ -48,6 +48,9 @@ struct Parser {
     // level parse as ESM declarations; when false they're contextual
     // identifiers per script grammar.
     is_module: bool;
+    // ECMA-262 [+Yield] grammar parameter: true inside a generator
+    // body. Gates the `yield` operator (otherwise a contextual ident).
+    in_generator: bool;
 }
 
 struct ParseResult {
@@ -76,6 +79,7 @@ fn parse_program_with(source: char*, source_len: usize, is_module: bool) -> Pars
     p.tracker = alloc_list_new();
     p.had_error = false;
     p.in_async = false;
+    p.in_generator = false;
     p.is_module = is_module;
 
     // Lex everything into a buffer.
@@ -900,6 +904,14 @@ fn parse_param_list(p: Parser*) -> ParamList {
 
 fn parse_function_decl(p: Parser*, is_async: bool) -> AstNode* {
     let kw = advance(p);     // 'function'
+    // Generator marker: `function* g() {}` or `async function* () {}`.
+    // We don't fully support async generators yet — flag the parse but
+    // compile path treats async-and-generator as async-only for now.
+    let is_generator: bool = false;
+    if peek_kind(p) == TokenKind::Star {
+        advance(p);
+        is_generator = true;
+    }
 
     let name_tok = peek(p);
     if name_tok.kind != TokenKind::Identifier {
@@ -917,11 +929,14 @@ fn parse_function_decl(p: Parser*, is_async: bool) -> AstNode* {
         return NULL;
     }
     let saved_async = p.in_async;
+    let saved_gen   = p.in_generator;
     p.in_async = is_async;
+    p.in_generator = is_generator;
     p.function_depth = p.function_depth + 1;
     let body = parse_block(p);
     p.function_depth = p.function_depth - 1;
     p.in_async = saved_async;
+    p.in_generator = saved_gen;
     if body == NULL { return NULL; }
 
     let node = new_node(&p.tracker, NodeKind::FunctionDecl, kw.start, body.end);
@@ -931,6 +946,7 @@ fn parse_function_decl(p: Parser*, is_async: bool) -> AstNode* {
     node.children = params.arr;
     node.children_count = params.count;
     node.bool_value = is_async;
+    if is_generator { node.num = 3.0; }
     return node;
 }
 
@@ -1541,6 +1557,11 @@ fn parse_class_expr(p: Parser*) -> AstNode* {
 // Function expressions live in expression context. Name is optional.
 fn parse_function_expr(p: Parser*, is_async: bool) -> AstNode* {
     let kw = advance(p);     // 'function'
+    let is_generator: bool = false;
+    if peek_kind(p) == TokenKind::Star {
+        advance(p);
+        is_generator = true;
+    }
 
     let name_start: u32 = 0;
     let name_length: u32 = 0;
@@ -1559,11 +1580,14 @@ fn parse_function_expr(p: Parser*, is_async: bool) -> AstNode* {
         return NULL;
     }
     let saved_async = p.in_async;
+    let saved_gen   = p.in_generator;
     p.in_async = is_async;
+    p.in_generator = is_generator;
     p.function_depth = p.function_depth + 1;
     let body = parse_block(p);
     p.function_depth = p.function_depth - 1;
     p.in_async = saved_async;
+    p.in_generator = saved_gen;
     if body == NULL { return NULL; }
 
     let node = new_node(&p.tracker, NodeKind::FunctionExpr, kw.start, body.end);
@@ -1573,6 +1597,7 @@ fn parse_function_expr(p: Parser*, is_async: bool) -> AstNode* {
     node.children = params.arr;
     node.children_count = params.count;
     node.bool_value = is_async;
+    if is_generator { node.num = 3.0; }
     return node;
 }
 
@@ -2201,6 +2226,34 @@ fn parse_primary(p: Parser*) -> AstNode* {
         if inner == NULL { return NULL; }
         let node = new_node(&p.tracker, NodeKind::AwaitExpr, kw_t.start, inner.end);
         node.left = inner;
+        return node;
+    }
+    // `yield expr` / `yield* iterable` / `yield` — only inside a generator
+    // body. Argument is optional and right-associative at
+    // AssignmentExpression precedence per spec. We approximate by
+    // bailing on tokens that obviously end the operand (comma, semi,
+    // close-bracket / paren / brace).
+    if k == TokenKind::KwYield && p.in_generator {
+        let kw_t = advance(p);
+        let is_delegate: bool = false;
+        if peek_kind(p) == TokenKind::Star {
+            advance(p);
+            is_delegate = true;
+        }
+        let node = new_node(&p.tracker, NodeKind::YieldExpr, kw_t.start, kw_t.start + kw_t.length);
+        node.bool_value = is_delegate;
+        node.left = NULL;
+        let next = peek_kind(p);
+        if next != TokenKind::Comma && next != TokenKind::Semicolon
+           && next != TokenKind::RParen && next != TokenKind::RBracket
+           && next != TokenKind::RBrace && next != TokenKind::Colon
+           && next != TokenKind::Eof {
+            let arg = parse_assignment(p);
+            if arg != NULL {
+                node.left = arg;
+                node.end = arg.end;
+            }
+        }
         return node;
     }
     if k == TokenKind::KwClass    { return parse_class_expr(p); }

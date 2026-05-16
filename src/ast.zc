@@ -114,6 +114,14 @@ enum NodeKind {
     // operator — left = the awaited expression.
     AwaitExpr,
 
+    // Generators (2026-05-15).
+    //   FunctionDecl / FunctionExpr stash is_generator on `num`
+    //   (value 3.0; distinct from the async sentinel 1.0 / synth-
+    //   ctor sentinel 2.0 on MethodDef).
+    //   YieldExpr: left = operand (or NULL for bare `yield`).
+    //     bool_value = true marks `yield*` (delegating yield).
+    YieldExpr,
+
     // Public class fields (2026-05-15).
     //   ClassField:
     //     - name_start/length: field name (or 0/0 for computed)

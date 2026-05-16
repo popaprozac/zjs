@@ -25,6 +25,19 @@ raw {
 // =====================================================================
 
 fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
+    // Generator iterators have no own state-exposed props; everything
+    // (.next, .return, .throw, Symbol.iterator) lives on the shared
+    // generator_proto. Walk it directly.
+    if zjs_is_generator(obj) != 0 && ctx.generator_proto != NULL {
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        let name = zjs_as_string(key);
+        let slot = class_find_slot(ctx.generator_proto.cls, name);
+        if slot >= 0 {
+            let v = ctx.generator_proto.slots[(u32)slot];
+            if zjs_is_deleted(v) == 0 { return v; }
+        }
+        return zjs_undefined();
+    }
     // Array: integer index OR "length", with prototype-method fallback.
     if zjs_is_array(obj) != 0 {
         let arr = zjs_as_array(obj);
@@ -785,8 +798,61 @@ fn wire_async_call(ctx: ZjsContext*, target: Function*, caller_regs_base: u32, d
     ctx.frames[ctx.frame_count - 1].outer_promise = p_v;
 }
 
+// Build a generator iterator for a generator-function call. Captures
+// the arg list into the iterator's reg snapshot at the parameter
+// slots (matching push_call_frame's normal arg-copy semantics) so
+// .next() can resume from ip=0 with the right param values. Returns
+// the iterator cell as a ZjsValue.
+fn make_generator_iter(ctx: ZjsContext*, target: Function*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let g = zjs_generator_new();
+    ctx_register_cell(ctx, (void*)g);
+    g.function = target;
+    g.reg_count = target.register_count;
+    g.saved_ip = 0;
+    g.state = GEN_INITIAL;
+    g.saved_host_this = ctx.host_this;
+    g.saved_current_closure = ctx.current_closure;
+    // Heap-allocate the snapshot buffer and prime it like a freshly
+    // pushed frame would: copy min(argc, param_count) args into the
+    // first registers; init the rest to undefined.
+    g.saved_regs = alloc_n<ZjsValue>((usize)target.register_count);
+    let copy_count: u32 = if argc < target.param_count { argc } else { target.param_count };
+    let i: u32 = 0;
+    while i < copy_count {
+        g.saved_regs[i] = args[i];
+        i = i + 1;
+    }
+    let undef = zjs_undefined();
+    let j: u32 = i;
+    while j < target.register_count {
+        g.saved_regs[j] = undef;
+        j = j + 1;
+    }
+    return zjs_cell_from_ptr((void*)g);
+}
+
+// Build the iterator-result object `{ value, done }`.
+fn build_iter_result(ctx: ZjsContext*, value: ZjsValue, done: bool) -> ZjsValue {
+    let obj_v = ctx_new_object(ctx);
+    let obj = zjs_as_object(obj_v);
+    object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"value", 5), value);
+    object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"done", 4), zjs_bool(if done { 1 } else { 0 }));
+    return obj_v;
+}
+
 fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u32) -> InterpretResult {
     return interpret_inner(ctx, entry_f, args, arg_count, NULL);
+}
+
+// Resume a suspended generator. Hands off to interpret_inner_full
+// with the gen parameter set; the dispatch loop then yields-or-
+// returns its iter-result up via final_result.
+fn interpret_resume_generator(ctx: ZjsContext*, gen: ZjsGenerator*,
+                              resume_value: ZjsValue, is_throw: bool) -> InterpretResult {
+    if gen == NULL || gen.function == NULL {
+        return InterpretResult{ is_throw: false, value: zjs_undefined() };
+    }
+    return interpret_inner_full(ctx, gen.function, NULL, 0, NULL, gen, resume_value, is_throw);
 }
 
 // Resume a suspended async-function frame. The continuation owns the
@@ -807,16 +873,17 @@ fn interpret_resume(ctx: ZjsContext*, cont: ZjsAsyncCont*,
 
 fn interpret_inner_resume(ctx: ZjsContext*, cont: ZjsAsyncCont*,
                           resolved_value: ZjsValue, is_throw_in: bool) -> InterpretResult {
-    return interpret_inner_full(ctx, cont.function, NULL, 0, cont, resolved_value, is_throw_in);
+    return interpret_inner_full(ctx, cont.function, NULL, 0, cont, NULL, resolved_value, is_throw_in);
 }
 
 fn interpret_inner(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u32, cont: ZjsAsyncCont*) -> InterpretResult {
-    return interpret_inner_full(ctx, entry_f, args, arg_count, cont, zjs_undefined(), false);
+    return interpret_inner_full(ctx, entry_f, args, arg_count, cont, NULL, zjs_undefined(), false);
 }
 
 fn interpret_inner_full(ctx: ZjsContext*,
                         entry_f: Function*, args: ZjsValue*, arg_count: u32,
                         cont: ZjsAsyncCont*,
+                        gen: ZjsGenerator*,
                         resume_value: ZjsValue, resume_is_throw: bool) -> InterpretResult {
     if entry_f == NULL { return InterpretResult{ is_throw: false, value: zjs_undefined() }; }
 
@@ -865,6 +932,28 @@ fn interpret_inner_full(ctx: ZjsContext*,
             ctx.reg_stack[r_base + (u32)cont.await_dst] = resume_value;
         }
     }
+    // Generator resume mirrors cont-resume but onto a ZjsGenerator.
+    if gen != NULL {
+        let pf_idx = ctx.frame_count - 1;
+        let r_base = ctx.frames[pf_idx].regs_base;
+        let n = gen.reg_count;
+        let i: u32 = 0;
+        while i < n {
+            ctx.reg_stack[r_base + i] = gen.saved_regs[i];
+            i = i + 1;
+        }
+        ctx.frames[pf_idx].ip = gen.saved_ip;
+        ctx.frames[pf_idx].generator = gen;
+        ctx.host_this = gen.saved_host_this;
+        ctx.current_closure = gen.saved_current_closure;
+        // On resumption from a `yield`, .next(arg) feeds arg into the
+        // dst register of the suspended Op::Yield. Initial .next has
+        // nothing meaningful to feed (state == GEN_INITIAL on entry).
+        if gen.state == GEN_YIELDED && !resume_is_throw {
+            ctx.reg_stack[r_base + (u32)gen.resume_dst] = resume_value;
+        }
+        gen.state = GEN_RUNNING;
+    }
 
     let throwing:    bool     = false;
     let thrown:      ZjsValue = zjs_undefined();
@@ -872,7 +961,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
     // Resume of an async fn with a rejected await: seed the throw
     // channel so the dispatch loop unwinds the body's try/catch (or
     // converts to a Promise rejection on the way out).
-    if cont != NULL && resume_is_throw {
+    if (cont != NULL || gen != NULL) && resume_is_throw {
         throwing = true;
         thrown   = resume_value;
     }
@@ -981,6 +1070,15 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 ctx.frames[cur_idx].ip = ip; break;
             }
             let rv = regs[inst.a];
+            // Generator return: wrap rv in { value, done: true } and
+            // mark the iterator completed. The iter.next() host caller
+            // receives this iter-result as the return of its
+            // trampoline-interpret.
+            let gen_self = ctx.frames[cur_idx].generator;
+            if f.is_generator && gen_self != NULL {
+                gen_self.state = GEN_COMPLETED;
+                rv = build_iter_result(ctx, rv, true);
+            }
             // async function return: settle the outer Promise (already
             // written into the caller's dst at call time) with rv.
             // The caller's reg slot keeps the Promise; rv is the
@@ -1471,6 +1569,51 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let val  = regs[inst.a];
                 object_set(ctx, ctx.current_module.exports, name, val);
             }
+        } else if op == Op::Yield {
+            // `yield expr` inside a generator body. Build the
+            // iterator-result object, snapshot the frame state onto
+            // the owning generator, then pop the frame and surface
+            // the iter-result as the inner-interpret's return value
+            // back to the iter.next() host handler.
+            let gen = ctx.frames[cur_idx].generator;
+            if gen == NULL {
+                let err = build_typed_error(ctx, (char*)"SyntaxError", 11,
+                                            (char*)"yield outside generator body", 28);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
+            // Snapshot regs.
+            let n = ctx.frames[cur_idx].reg_count;
+            if gen.saved_regs == NULL || gen.reg_count != n {
+                if gen.saved_regs != NULL { dealloc(gen.saved_regs); }
+                gen.saved_regs = alloc_n<ZjsValue>((usize)n);
+                gen.reg_count = n;
+            }
+            let i: u32 = 0;
+            while i < n {
+                gen.saved_regs[i] = regs[i];
+                i = i + 1;
+            }
+            gen.saved_ip = ip + 1;
+            gen.resume_dst = inst.a;
+            gen.saved_host_this = ctx.host_this;
+            gen.saved_current_closure = ctx.current_closure;
+            gen.state = GEN_YIELDED;
+
+            let yielded_value = regs[inst.b];
+            let iter_result = build_iter_result(ctx, yielded_value, false);
+            // Pop the frame and treat the iter-result as the return
+            // value to the caller (the iter.next() host trampoline).
+            let ret_dst = pop_call_frame(ctx);
+            if ctx.frame_count <= entry_frame {
+                final_result = iter_result;
+            } else {
+                let cidx = ctx.frame_count - 1;
+                let cb = ctx.frames[cidx].regs_base;
+                ctx.reg_stack[cb + (u32)ret_dst] = iter_result;
+            }
+            exit_reason = 1;
+            break;
         } else if op == Op::Await {
             // Resolve the awaited value:
             //   - non-Promise:       pass through (already resolved)
@@ -1834,6 +1977,21 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let fp = zjs_cell_as_ptr(callee);
                 let target: Function* = NULL;
                 raw { target = (Function*)fp; }
+                if target.is_generator {
+                    // Generator method: build the iterator without
+                    // running the body. Captures the explicit args
+                    // (the receiver is set when iter.next() runs).
+                    let argv_ptr: ZjsValue* = NULL;
+                    raw { argv_ptr = &regs[base + 2]; }
+                    let iter_v = make_generator_iter(ctx, target, argv_ptr, argc);
+                    // The generator inherits the method's receiver — so
+                    // re-entry into the body via .next() sees the
+                    // expected `this`. Stash on the iterator.
+                    zjs_as_generator(iter_v).saved_host_this = new_this;
+                    regs[dst] = iter_v;
+                    ip = ip + 1;
+                    continue;
+                }
                 ctx.frames[cur_idx].ip = ip + 1;
                 // Use the in-place push: source args live at
                 // reg_stack[regs_base + base + 2..] (the receiver lives
@@ -1851,6 +2009,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let fp2 = cl.function;
                 let target2: Function* = NULL;
                 raw { target2 = (Function*)fp2; }
+                if target2.is_generator {
+                    let argv_ptr: ZjsValue* = NULL;
+                    raw { argv_ptr = &regs[base + 2]; }
+                    let iter_v = make_generator_iter(ctx, target2, argv_ptr, argc);
+                    zjs_as_generator(iter_v).saved_host_this = new_this;
+                    zjs_as_generator(iter_v).saved_current_closure = cl;
+                    regs[dst] = iter_v;
+                    ip = ip + 1;
+                    continue;
+                }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 2, argc, dst);
                 wire_async_call(ctx, target2, regs_base, dst);
@@ -1903,6 +2071,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     throwing = true; thrown = err; exit_reason = 3;
                     ctx.frames[cur_idx].ip = ip + 1; break;
                 }
+                if target.is_generator {
+                    // Generator-function call: build iterator instead
+                    // of pushing a frame.
+                    let argv_ptr: ZjsValue* = NULL;
+                    raw { argv_ptr = &regs[base + 1]; }
+                    let iter_v = make_generator_iter(ctx, target, argv_ptr, argc);
+                    regs[dst] = iter_v;
+                    ip = ip + 1;
+                    continue;
+                }
                 ctx.frames[cur_idx].ip = ip + 1;
                 // In-place push: source args at reg_stack[regs_base+base+1..].
                 // Push before reassigning host_this so the new frame's
@@ -1924,6 +2102,15 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let fp2 = cl.function;
                 let target2: Function* = NULL;
                 raw { target2 = (Function*)fp2; }
+                if target2.is_generator {
+                    let argv_ptr: ZjsValue* = NULL;
+                    raw { argv_ptr = &regs[base + 1]; }
+                    let iter_v = make_generator_iter(ctx, target2, argv_ptr, argc);
+                    zjs_as_generator(iter_v).saved_current_closure = cl;
+                    regs[dst] = iter_v;
+                    ip = ip + 1;
+                    continue;
+                }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 1, argc, dst);
                 wire_async_call(ctx, target2, regs_base, dst);
@@ -3400,11 +3587,30 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         si = si + 1;
                     }
                 } else {
-                    // Non-iterable: TypeError per spec.
-                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                                (char*)"Spread source is not iterable", 29);
-                    throwing = true; thrown = err; exit_reason = 3;
-                    ctx.frames[cur_idx].ip = ip; break;
+                    // Fall through to iter_prepare which handles the
+                    // @@iterator protocol (generators, user
+                    // iterables). It materializes into a fresh array
+                    // we can then walk like the array case above.
+                    let collected = iter_prepare(ctx, src, 1);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                    if zjs_is_array(collected) != 0 {
+                        let s_arr2 = zjs_as_array(collected);
+                        let si2: u32 = 0;
+                        while si2 < s_arr2.length {
+                            let v2 = s_arr2.elements[si2];
+                            if zjs_is_deleted(v2) != 0 { v2 = zjs_undefined(); }
+                            array_set(arr, arr.length, v2);
+                            si2 = si2 + 1;
+                        }
+                    } else {
+                        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                    (char*)"Spread source is not iterable", 29);
+                        throwing = true; thrown = err; exit_reason = 3;
+                        ctx.frames[cur_idx].ip = ip; break;
+                    }
                 }
             }
         } else if op == Op::ObjectSpread {
@@ -3489,6 +3695,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let async_outer = ctx.frames[ctx.frame_count - 1].outer_promise;
             let is_async_top = f_top != NULL && f_top.is_async && zjs_is_promise(async_outer) != 0;
             let implicit_rv: ZjsValue = zjs_undefined();
+            // Generator implicit return: { value: undefined, done: true }.
+            let gen_top = ctx.frames[ctx.frame_count - 1].generator;
+            if f_top != NULL && f_top.is_generator && gen_top != NULL {
+                gen_top.state = GEN_COMPLETED;
+                implicit_rv = build_iter_result(ctx, zjs_undefined(), true);
+            }
             if is_async_top {
                 promise_resolve_with(ctx, async_outer, implicit_rv);
                 implicit_rv = async_outer;

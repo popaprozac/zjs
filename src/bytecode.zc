@@ -183,6 +183,13 @@ enum Op {
     //                      frame-suspension semantics are a follow-up.
     Await,            // a=dst, b=src
 
+    // Generators (2026-05-15).
+    // Inside a generator body: build { value: regs[b], done: false },
+    // save the frame snapshot onto the current generator, then unwind
+    // out to the iter.next() host caller. resume puts the .next(arg)
+    // value into regs[a].
+    Yield,            // a=resume_dst, b=value_reg
+
     // Spread support (2026-05-15).
     // Append the value in regs[b] to the array in regs[a]. Used by
     // array literals when at least one element is `...expr` — those
@@ -462,6 +469,10 @@ struct Function {
     // body's return value in a Promise (resolve on return / reject on
     // throw); the body's Op::Await ops are gated by this flag.
     is_async: bool;
+    // True when the source was `function* g() {}`. Call sites build
+    // a generator iterator (TAG_GENERATOR) without running the body —
+    // iter.next() drives execution and Op::Yield suspends back to it.
+    is_generator: bool;
 }
 
 fn function_new() -> Function* {

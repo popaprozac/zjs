@@ -565,6 +565,12 @@ def TAG_ASYNC_CONT:    u8 = 10;  // 2026-05-15: suspended async-function frame
                                  //   (saved regs + ip + outer Promise; resumed
                                  //   from a microtask when the awaited
                                  //   Promise settles).
+def TAG_GENERATOR:     u8 = 11;  // 2026-05-15: generator iterator. Wraps a
+                                 //   suspended frame the same way as
+                                 //   TAG_ASYNC_CONT but resumed
+                                 //   synchronously via .next() / .return()
+                                 //   / .throw() rather than from a
+                                 //   microtask.
 
 // Promise states.
 def PROMISE_PENDING:   u8 = 0;
@@ -782,6 +788,62 @@ fn zjs_async_cont_new() -> ZjsAsyncCont* {
     c.saved_current_closure = NULL;
     c.outer_promise = zjs_undefined();
     return c;
+}
+
+// Generator iterator. State machine:
+//   GEN_INITIAL   — created but never run; .next() starts the body
+//   GEN_YIELDED   — paused at a `yield`; .next() resumes with the arg
+//                   value written into resume_dst
+//   GEN_RUNNING   — body is currently executing (re-entrant .next()
+//                   while running is a TypeError per spec)
+//   GEN_COMPLETED — body returned; .next() returns
+//                   { value: undefined, done: true } forever after
+def GEN_INITIAL:   u8 = 0;
+def GEN_YIELDED:   u8 = 1;
+def GEN_RUNNING:   u8 = 2;
+def GEN_COMPLETED: u8 = 3;
+
+struct ZjsGenerator {
+    header:                 CellHeader;     // type_tag = TAG_GENERATOR
+    function:               Function*;      // generator body
+    saved_regs:             ZjsValue*;      // heap-owned reg snapshot
+    reg_count:              u32;
+    saved_ip:               usize;          // resume point (right after Op::Yield)
+    resume_dst:             u8;             // reg that receives .next(arg)'s arg
+    saved_host_this:        ZjsValue;
+    saved_current_closure:  ZjsClosure*;
+    state:                  u8;
+    // Cached object instance returned by iter[Symbol.iterator]() — most
+    // tests just call iter.next() on the iterator itself, so this stays
+    // NULL until something asks for the iterable view.
+    self_iter_obj:          ZjsObject*;
+}
+
+fn zjs_is_generator(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_GENERATOR { return 1; }
+    return 0;
+}
+
+fn zjs_as_generator(v: ZjsValue) -> ZjsGenerator* {
+    let p = zjs_cell_as_ptr(v);
+    let g: ZjsGenerator* = NULL;
+    raw { g = (ZjsGenerator*)p; }
+    return g;
+}
+
+fn zjs_generator_new() -> ZjsGenerator* {
+    let g = alloc<ZjsGenerator>();
+    g.header.type_tag = TAG_GENERATOR;
+    g.function = NULL;
+    g.saved_regs = NULL;
+    g.reg_count = 0;
+    g.saved_ip = 0;
+    g.resume_dst = 0;
+    g.saved_host_this = zjs_undefined();
+    g.saved_current_closure = NULL;
+    g.state = GEN_INITIAL;
+    g.self_iter_obj = NULL;
+    return g;
 }
 
 fn zjs_promise_new() -> ZjsPromise* {
