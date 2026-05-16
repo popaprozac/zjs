@@ -76,6 +76,16 @@ struct Compiler {
     // method_call's profile). -1 = not allocated.
     this_reg: i32;
 
+    // 2026-05-16 — "preferred destination" hint for compile_expr.
+    // When a caller knows where an expression's result should land
+    // (e.g. assignment to a local: `i = i + 1`), it sets this to the
+    // target reg before the call. The first op in the compiled
+    // expression that allocates a dst consumes the hint and writes
+    // directly, sparing the trailing Mov. compile_expr clears the
+    // hint as it reads it, so nested sub-expressions allocate fresh.
+    // -1 = no preference.
+    preferred_dst: i32;
+
     // Closure support (Phase 3.3). `parent` points to the enclosing
     // function's compiler — NULL for the top-level program. The
     // capture pre-scan flips `needs_env` on if any nested function
@@ -173,6 +183,7 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.last_expr_reg = -1;
     c.arguments_reg = -1;
     c.this_reg = -1;
+    c.preferred_dst = -1;
     return c;
 }
 
@@ -446,6 +457,18 @@ fn alloc_reg(c: Compiler*) -> u8 {
     c.next_reg = c.next_reg + 1;
     if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
     return r;
+}
+
+// Returns the caller-preferred dst register if one is queued, else
+// a freshly-allocated temp. Always clears the hint so nested
+// sub-expressions allocate their own scratch space.
+fn alloc_dst(c: Compiler*) -> u8 {
+    if c.preferred_dst >= 0 {
+        let r = (u8)c.preferred_dst;
+        c.preferred_dst = -1;
+        return r;
+    }
+    return alloc_reg(c);
 }
 
 // Quick predicate for "this subtree has no observable writes /
@@ -995,13 +1018,17 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
                     else if op_kind == Op::CmpLe { fused_op = Op::CmpLeImm; }
                     else if op_kind == Op::CmpGt { fused_op = Op::CmpGtImm; }
                     else if op_kind == Op::CmpGe { fused_op = Op::CmpGeImm; }
-                    // RHS is a literal — no side effects can touch LHS,
-                    // so LHS can borrow a local reg.
+                    // Honor caller's preferred dst BEFORE recursing,
+                    // because compile_expr(node.left) might also see a
+                    // preferred_dst hint we'd otherwise leak inwards.
+                    let saved_pd = c.preferred_dst;
+                    c.preferred_dst = -1;
                     let saved_borrow = c.borrow_local_ok;
                     c.borrow_local_ok = true;
                     let src = compile_expr(c, node.left);
                     c.borrow_local_ok = saved_borrow;
-                    let dst = alloc_reg(c);
+                    c.preferred_dst = saved_pd;
+                    let dst = alloc_dst(c);
                     emit(c, make_inst_abc(fused_op, dst, src, imm_byte));
                     release_reg(c, src);
                     if c.next_reg <= dst { c.next_reg = dst + 1; }
@@ -1015,6 +1042,8 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         // around both compile_expr calls.
         let rhs_pure = expr_is_simple_pure(node.right);
         let lhs_pure = expr_is_simple_pure(node.left);
+        let saved_pd = c.preferred_dst;
+        c.preferred_dst = -1;
         let saved_borrow = c.borrow_local_ok;
         if rhs_pure { c.borrow_local_ok = true; }
         let l = compile_expr(c, node.left);
@@ -1022,7 +1051,8 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         if lhs_pure { c.borrow_local_ok = true; }
         let r = compile_expr(c, node.right);
         c.borrow_local_ok = saved_borrow;
-        let dst = alloc_reg(c);
+        c.preferred_dst = saved_pd;
+        let dst = alloc_dst(c);
         emit(c, make_inst_abc(op_kind, dst, l, r));
         // Clean up temps once we've emitted; conservative dst placement.
         release_reg(c, r);
@@ -1192,13 +1222,26 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     }
 
     if op_tok == TokenKind::Eq {
+        // For local target, hand the RHS a preferred-dst hint so the
+        // final ALU op writes straight into local_reg — skips the
+        // tail Mov on `local = expr` patterns (the assignment loop's
+        // dominant Mov source).
+        let saved_pd = c.preferred_dst;
+        if local_idx >= 0 && !captured_local {
+            c.preferred_dst = (i32)local_reg;
+        } else {
+            c.preferred_dst = -1;
+        }
         let r = compile_expr(c, node.right);
+        c.preferred_dst = saved_pd;
         if local_idx >= 0 {
             if captured_local {
                 let name_atom = ctx_intern_atom(c.ctx, name, name_len);
                 let ic = alloc_ic_slot(c, name_atom);
                 emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, r));
-            } else {
+            } else if r != local_reg {
+                // RHS didn't take our hint (e.g. it was a bare ident
+                // returning a borrowed reg) — fall back to Mov.
                 emit(c, make_inst_ab(Op::Mov, local_reg, r));
             }
         } else if outer_depth > 0 {
