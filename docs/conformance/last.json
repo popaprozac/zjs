@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-16 03:32 UTC",
+    "when": "2026-05-16 03:36 UTC",
     "total": 13247,
-    "passed": 2895,
-    "failed": 802,
+    "passed": 2926,
+    "failed": 771,
     "skipped": 9550
   },
   "failures": [
@@ -2066,130 +2066,6 @@
     {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-28.js",
       "reason": "[sloppy] zjs: throw: (unknown): Object.getPrototypeOf(obj) Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-5.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-6.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-0-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g1-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): <TAB> should produce a syntax error as whitespace results in two tokens Expected a SyntaxError bu"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g1-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): <CR> should produce a syntax error as whitespace results in two tokens Expected a SyntaxError but"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g1-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): <LF> should produce a syntax error as whitespace results in two tokens Expected a SyntaxError but"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g1-4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): <SP> should produce a syntax error as whitespace results in two tokens Expected a SyntaxError but"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g2-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g2-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g2-4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g4-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g4-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g4-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g4-4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g5-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.1.1-g5-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-10.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-5.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-6.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/15.12.2-2-9.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a Error"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/invalid-whitespace.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \\u1680 Expected a SyntaxError but got a Error"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-array-get-prop-from-prototype.js",

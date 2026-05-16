@@ -7914,6 +7914,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                         }
                         hf.prototype.proto = err_hf2.prototype;
                         hf.proto_override = err_v2;
+                        // Same constructor self-link as the first
+                        // *Error block — (new SyntaxError()).constructor
+                        // === SyntaxError, etc.
+                        object_set(ctx, hf.prototype,
+                                   ctx_intern_atom(ctx, (char*)"constructor", 11), hv);
                     }
                     i = i + 1;
                 }
