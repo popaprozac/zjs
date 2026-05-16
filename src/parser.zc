@@ -3016,7 +3016,8 @@ fn parse_object(p: Parser*) -> AstNode* {
                 let after = peek_kind2(p);
                 if after == TokenKind::Identifier
                     || after == TokenKind::StringLit
-                    || after == TokenKind::NumberLit {
+                    || after == TokenKind::NumberLit
+                    || after == TokenKind::LBracket {
                     is_accessor = true;
                     is_setter = s_match != 0;
                 }
@@ -3033,7 +3034,15 @@ fn parse_object(p: Parser*) -> AstNode* {
         // getter/setter function shape.
         if is_accessor {
             let real_name_tok = peek(p);
-            advance(p);
+            let acc_computed_key: AstNode* = NULL;
+            if real_name_tok.kind == TokenKind::LBracket {
+                advance(p);                      // consume '['
+                acc_computed_key = parse_assignment(p);
+                if acc_computed_key == NULL { break; }
+                if !expect_kind(p, TokenKind::RBracket) { break; }
+            } else {
+                advance(p);
+            }
             if !expect_kind(p, TokenKind::LParen) { break; }
             let params = parse_param_list(p);
             if !expect_kind(p, TokenKind::RParen) { break; }
@@ -3045,16 +3054,25 @@ fn parse_object(p: Parser*) -> AstNode* {
 
             let accessor_fn = new_node(&p.tracker, NodeKind::FunctionExpr,
                                        real_name_tok.start, body.end);
-            accessor_fn.name_start  = real_name_tok.start;
-            accessor_fn.name_length = real_name_tok.length;
+            accessor_fn.name_start  = if acc_computed_key != NULL { 0 } else { real_name_tok.start };
+            accessor_fn.name_length = if acc_computed_key != NULL { 0 } else { real_name_tok.length };
             accessor_fn.left = body;
             accessor_fn.children = params.arr;
             accessor_fn.children_count = params.count;
 
             let prop = new_node(&p.tracker, NodeKind::ObjectProp,
                                 key_tok.start, body.end);
-            prop.name_start = real_name_tok.start;
-            prop.name_length = real_name_tok.length;
+            if acc_computed_key != NULL {
+                // Computed-key accessor — same sentinel object-literal
+                // already uses for computed plain props: name_length=0
+                // with the key expression on `third`.
+                prop.name_start  = 0;
+                prop.name_length = 0;
+                prop.third       = acc_computed_key;
+            } else {
+                prop.name_start = real_name_tok.start;
+                prop.name_length = real_name_tok.length;
+            }
             prop.left = accessor_fn;
             // op carries the accessor kind so compile_object can wire
             // it through Op::SetGet / Op::SetSet (or whatever path).

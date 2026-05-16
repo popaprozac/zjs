@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-16 18:22 UTC",
+    "when": "2026-05-16 18:31 UTC",
     "total": 14428,
-    "passed": 6097,
-    "failed": 1802,
+    "passed": 6101,
+    "failed": 1798,
     "skipped": 6529
   },
   "failures": [
@@ -3801,7 +3801,7 @@
     },
     {
       "path": "test/built-ins/Promise/all/invoke-resolve-get-error.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-resolve-get-once-multiple-calls.js",
@@ -3992,10 +3992,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/built-ins/Promise/all/resolve-non-callable.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Promise/all/resolve-not-callable-reject-with-typeerror.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -4006,6 +4002,10 @@
     {
       "path": "test/built-ins/Promise/all/resolve-thenable.js",
       "reason": "[sloppy] async test never signaled completion"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-throws-iterator-return-is-not-callable.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     }
   ],
   "skip_counts": {

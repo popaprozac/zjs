@@ -2717,8 +2717,10 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 target_o = hf_dg.props;
             }
             if target_o != NULL {
-                // Coerce non-string keys (computed-name accessors:
-                // `get [1 + 1]() {}` lands here with key_v as a number).
+                // Symbol → use its internal `key` string so the slot
+                // matches subsequent `obj[Symbol.iterator]` reads. Other
+                // non-string keys (`get [1+1]()`) ToString-coerce.
+                key_v = symbol_key_coerce(key_v);
                 if zjs_is_string(key_v) == 0 { key_v = zjs_to_string(ctx, key_v); }
             }
             if target_o != NULL && zjs_is_string(key_v) != 0 {
