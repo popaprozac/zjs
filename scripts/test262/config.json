@@ -122,9 +122,7 @@
   "_skip_flags_comment": "Tests whose flags include any of these are skipped. We don't support modules or async test stubs.",
 
   "skip_flags": [
-    "module",
-    "async",
-    "raw"
+    "module"
   ],
 
   "_skip_includes_comment": "Harness includes we don't support. Tests requiring these are skipped.",

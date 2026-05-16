@@ -194,11 +194,27 @@ def build_source(test262_root, test_src, meta, *, strict_mode: bool):
     whole concatenated source runs in strict mode (matching spec —
     per INTERPRETING.md the directive prefix applies to the entire
     test source, including harness includes).
+
+    raw flag: prepend nothing. The test runs as-is with no assertions
+    library and no Test262Error class — typical for tests that exercise
+    behavior of the implementation's bare globals.
     """
+    flags = set(meta.get("flags", []))
+    if "raw" in flags:
+        return test_src
     parts = []
     if strict_mode:
         parts.append('"use strict";')
     parts.append(LOCAL_HARNESS.read_text())
+    if "async" in flags:
+        # Test262 async protocol: the test completes when print() is
+        # called with the magic 'Test262:AsyncTestComplete' line, or
+        # fails when 'Test262:AsyncTestFailure:...' is printed. We don't
+        # have a host `print`, so install one that throws on the failure
+        # signature and otherwise records completion in a side flag the
+        # runner can grep for via stdout. The CLI prints flag-state to
+        # stdout for us to inspect post-run.
+        parts.append(LOCAL_ASYNC_HARNESS)
     harness = test262_root / "harness"
     for inc in meta.get("includes", []):
         if inc in ("sta.js", "assert.js"):
@@ -208,6 +224,29 @@ def build_source(test262_root, test_src, meta, *, strict_mode: bool):
             parts.append(f.read_text())
     parts.append(test_src)
     return "\n".join(parts)
+
+# Tiny print shim for async-flag tests. The test calls
+# print('Test262:AsyncTestComplete') on success; we surface that to
+# stdout so the runner can detect it. Failures call
+# print('Test262:AsyncTestFailure:<msg>') and we convert to a throw so
+# our normal "uncaught throw → fail" path kicks in.
+LOCAL_ASYNC_HARNESS = r"""
+var __test262_async_done = false;
+function print(msg) {
+  if (typeof msg === 'string') {
+    if (msg.indexOf('Test262:AsyncTestFailure:') === 0) {
+      throw new Test262Error(msg);
+    }
+    if (msg === 'Test262:AsyncTestComplete') {
+      __test262_async_done = true;
+      // also echo via console so the runner can see it on stdout
+      try { console.log('Test262:AsyncTestComplete'); } catch (e) {}
+      return;
+    }
+  }
+  try { console.log(msg); } catch (e) {}
+}
+"""
 
 def execution_modes(meta):
     """Per INTERPRETING.md §"Strict Mode", each test runs twice (sloppy
@@ -225,7 +264,7 @@ def execution_modes(meta):
     return ["sloppy", "strict"]
 
 def run_one(zjs_bin, source, timeout_s):
-    """Run zjs on the given source. Returns (exit_code, stderr_text)."""
+    """Run zjs on the given source. Returns (exit_code, stderr_text, stdout_text)."""
     with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
         f.write(source)
         path = f.name
@@ -235,20 +274,25 @@ def run_one(zjs_bin, source, timeout_s):
             capture_output=True, text=True,
             timeout=timeout_s,
         )
-        return r.returncode, r.stderr
+        return r.returncode, r.stderr, r.stdout
     except subprocess.TimeoutExpired:
-        return -1, "TIMEOUT"
+        return -1, "TIMEOUT", ""
     finally:
         try: os.unlink(path)
         except OSError: pass
 
-def classify(meta, exit_code, stderr):
+def classify(meta, exit_code, stderr, stdout=""):
     """Map (engine outcome, expected outcome) → 'pass' or 'fail (reason)'.
 
     Negative tests gate on both the error TYPE (exact match against the
     constructor name in the runner's stderr) and the PHASE (parse
     vs runtime — phase: parse requires the throw to come from the
     parser/compiler, not from running code).
+
+    Async-flag tests follow test262's print()-based protocol: the test
+    completes when stdout contains 'Test262:AsyncTestComplete'; a
+    'Test262:AsyncTestFailure:' prefix or absence of the completion line
+    is a failure.
     """
     threw = (exit_code != 0)
     if exit_code == -1:
@@ -265,6 +309,12 @@ def classify(meta, exit_code, stderr):
             return ("fail", f"expected parse-phase {expected_type}, got runtime throw")
         if expected_phase == "runtime" and is_parse_phase_error(stderr):
             return ("fail", f"expected runtime {expected_type}, got parse-phase throw")
+        return ("pass", "")
+    if "async" in (meta.get("flags") or []):
+        if threw:
+            return ("fail", stderr.strip()[:120])
+        if "Test262:AsyncTestComplete" not in (stdout or ""):
+            return ("fail", "async test never signaled completion")
         return ("pass", "")
     # Positive test: should not throw.
     if threw:
@@ -477,8 +527,8 @@ def main():
         for mode in modes:
             full = build_source(args.test262, src, meta,
                                 strict_mode=(mode == "strict"))
-            exit_code, stderr = run_one(ZJS_BIN, full, args.timeout)
-            v, r = classify(meta, exit_code, stderr)
+            exit_code, stderr, stdout = run_one(ZJS_BIN, full, args.timeout)
+            v, r = classify(meta, exit_code, stderr, stdout)
             if v != "pass":
                 verdict = v
                 reason  = r
