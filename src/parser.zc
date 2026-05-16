@@ -306,6 +306,51 @@ fn parse_block(p: Parser*) -> AstNode* {
 // `of`, `let`, `static`, `async`, `yield`, `await` can be binding
 // identifiers in sloppy mode. We accept them broadly; strict-mode tests
 // for these would need a separate gate (not implemented yet).
+// ECMA-262 §15.1.5: a FormalParameterList is "simple" iff every entry
+// is a plain BindingIdentifier without an initializer (no patterns, no
+// defaults, no rest). A function whose params aren't simple must NOT
+// contain a "use strict" directive — that's a parse-time SyntaxError.
+fn params_are_simple(params: ParamList) -> bool {
+    let i: u32 = 0;
+    while i < params.count {
+        let p: AstNode* = params.arr[i];
+        if p == NULL                              { return false; }
+        if p.kind == NodeKind::RestParam          { return false; }
+        if p.kind != NodeKind::IdentExpr          { return false; }
+        if p.name_length == 0                     { return false; }   // pattern stub
+        if p.right != NULL                        { return false; }   // has default
+        i = i + 1;
+    }
+    return true;
+}
+
+// Detect a `"use strict"` directive prologue at the top of a function
+// body. Walks past empty-statement noise but does not look past any
+// non-string statements (per spec, directives are a prologue that ends
+// at the first non-string-literal statement).
+fn body_has_use_strict_directive(body: AstNode*, source: char*) -> bool {
+    if body == NULL || body.kind != NodeKind::BlockStmt { return false; }
+    let i: u32 = 0;
+    while i < body.children_count {
+        let stmt = body.children[i];
+        if stmt == NULL { return false; }
+        if stmt.kind != NodeKind::StringExpr { return false; }
+        let span = stmt.end - stmt.start;
+        if span == 12 {
+            let s = source + stmt.start;
+            let matches: int = 0;
+            raw {
+                matches = ((s[0] == '"' || s[0] == '\'')
+                           && memcmp(s + 1, "use strict", 10) == 0
+                           && s[11] == s[0]) ? 1 : 0;
+            }
+            if matches != 0 { return true; }
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
 fn is_binding_ident(k: TokenKind) -> bool {
     if k == TokenKind::Identifier { return true; }
     if k == TokenKind::KwOf       { return true; }
@@ -1170,6 +1215,9 @@ fn parse_function_decl(p: Parser*, is_async: bool) -> AstNode* {
     p.in_async = saved_async;
     p.in_generator = saved_gen;
     if body == NULL { return NULL; }
+    if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
+        p.had_error = true; return NULL;
+    }
 
     let node = new_node(&p.tracker, NodeKind::FunctionDecl, kw.start, body.end);
     node.name_start = name_tok.start;
@@ -1354,6 +1402,9 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     p.in_async = saved_async;
     p.in_generator = saved_gen;
     if body == NULL { return NULL; }
+    if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
+        p.had_error = true; return NULL;
+    }
 
     let node = new_node(&p.tracker, NodeKind::MethodDef, mut_start, body.end);
     if computed_key != NULL {
@@ -1843,6 +1894,9 @@ fn parse_function_expr(p: Parser*, is_async: bool) -> AstNode* {
     p.in_async = saved_async;
     p.in_generator = saved_gen;
     if body == NULL { return NULL; }
+    if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
+        p.had_error = true; return NULL;
+    }
 
     let node = new_node(&p.tracker, NodeKind::FunctionExpr, kw.start, body.end);
     node.name_start = name_start;
