@@ -405,6 +405,66 @@ fn reg_stack_release(ctx: ZjsContext*, n: u32) -> void {
 // register window. The first min(argc, param_count) args are also
 // copied into regs[0..param_count]; remaining regs init to undefined
 // (load-bearing — GC walks the whole window).
+// Like push_call_frame, but the source args live in reg_stack at
+// src_offset..src_offset+argc instead of in a separate buffer. The
+// usual caller does `Op::Invoke regs[base+1..]` → push_call_frame; that
+// path used to detour through ctx.invoke_arg_buffer to survive a
+// realloc inside reg_stack_reserve. reg_stack_reserve preserves
+// contents, so src_offset stays valid across the reserve — we can
+// skip the intermediate copy entirely and write directly from the
+// caller's reg window into the callee's. Saves argc stores per call.
+// Caller must ensure src_offset + argc <= current reg_stack top
+// BEFORE the reserve (i.e. the source is in an already-allocated
+// frame); since we always APPEND a new frame above, src and dst
+// regions never overlap.
+fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc: u32, ret_dst: u8) -> u32 {
+    if ctx.frame_count >= ctx.frame_cap {
+        let new_cap: u32 = if ctx.frame_cap == 0 { 64 } else { ctx.frame_cap * 2 };
+        ctx.frames = realloc_n<CallFrame>(ctx.frames, (usize)ctx.frame_cap, (usize)new_cap);
+        ctx.frame_cap = new_cap;
+    }
+    let reg_count: u32 = f.register_count;
+    let total: u32 = argc + reg_count;
+    let args_base = reg_stack_reserve(ctx, total);
+    let regs_base = args_base + argc;
+
+    if f.uses_arguments {
+        let a: u32 = 0;
+        while a < argc {
+            ctx.reg_stack[args_base + a] = ctx.reg_stack[src_offset + a];
+            a = a + 1;
+        }
+    }
+
+    let copy_count: u32 = if argc < f.param_count { argc } else { f.param_count };
+    let i: u32 = 0;
+    while i < copy_count {
+        ctx.reg_stack[regs_base + i] = ctx.reg_stack[src_offset + i];
+        i = i + 1;
+    }
+    let undef: ZjsValue = zjs_undefined();
+    let j: u32 = i;
+    while j < reg_count {
+        ctx.reg_stack[regs_base + j] = undef;
+        j = j + 1;
+    }
+
+    let idx = ctx.frame_count;
+    ctx.frames[idx].f = f;
+    ctx.frames[idx].ip = 0;
+    ctx.frames[idx].args_base = args_base;
+    ctx.frames[idx].argc = argc;
+    ctx.frames[idx].regs_base = regs_base;
+    ctx.frames[idx].reg_count = reg_count;
+    ctx.frames[idx].return_dst = ret_dst;
+    ctx.frames[idx].saved_host_this = ctx.host_this;
+    ctx.frames[idx].saved_current_closure = ctx.current_closure;
+    ctx.frames[idx].try_depth_at_entry = ctx.ctx_try_depth;
+    ctx.frames[idx].super_called = false;
+    ctx.frame_count = ctx.frame_count + 1;
+    return idx;
+}
+
 fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, ret_dst: u8) -> u32 {
     if ctx.frame_count >= ctx.frame_cap {
         let new_cap: u32 = if ctx.frame_cap == 0 { 64 } else { ctx.frame_cap * 2 };
@@ -416,11 +476,16 @@ fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, r
     let args_base = reg_stack_reserve(ctx, total);
     let regs_base = args_base + argc;
 
-    // Copy the FULL passed args list into the args slot.
-    let a: u32 = 0;
-    while a < argc {
-        ctx.reg_stack[args_base + a] = args[a];
-        a = a + 1;
+    // Copy the FULL passed args list into the args slot — but only
+    // when the function will actually read it (Op::BuildArguments).
+    // Most functions don't touch `arguments`, and skipping this saves
+    // argc stores per call (≈3% on fib_recursive).
+    if f.uses_arguments {
+        let a: u32 = 0;
+        while a < argc {
+            ctx.reg_stack[args_base + a] = args[a];
+            a = a + 1;
+        }
     }
 
     // Copy the first min(argc, param_count) args into regs[0..]; init
@@ -505,10 +570,12 @@ fn tail_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32) -
     let args_base = reg_stack_reserve(ctx, new_total);
     let regs_base = args_base + argc;
 
-    let a: u32 = 0;
-    while a < argc {
-        ctx.reg_stack[args_base + a] = args[a];
-        a = a + 1;
+    if f.uses_arguments {
+        let a: u32 = 0;
+        while a < argc {
+            ctx.reg_stack[args_base + a] = args[a];
+            a = a + 1;
+        }
     }
     let copy_count: u32 = if argc < f.param_count { argc } else { f.param_count };
     let i: u32 = 0;

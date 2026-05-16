@@ -1665,6 +1665,7 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     f.param_count = param_count;
     f.ics = c.ics;
     f.ic_count = c.ic_count;
+    f.uses_arguments = c.arguments_reg >= 0;
 
     c.code = NULL;
     c.constants = NULL;

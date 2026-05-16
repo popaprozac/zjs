@@ -392,6 +392,11 @@ struct Function {
     // Parent {}`. Op::NewInvoke detects this and forwards its args
     // directly to parent_ctor instead of interpreting an empty body.
     is_default_derived_ctor: bool;
+    // True when the body references `arguments` (compiler emits
+    // Op::BuildArguments at entry). When false, push_call_frame skips
+    // the args_base population loop — the only consumer of those
+    // slots is BuildArguments, which is never emitted in that case.
+    uses_arguments: bool;
 }
 
 fn function_new() -> Function* {

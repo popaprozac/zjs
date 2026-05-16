@@ -1614,23 +1614,14 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let fp = zjs_cell_as_ptr(callee);
                 let target: Function* = NULL;
                 raw { target = (Function*)fp; }
-                // Snapshot args into a C-stack buffer before push (the
-                // push may realloc reg_stack, invalidating `regs`).
-                // Use the context's reusable arg buffer instead of
-                // alloca — alloca inside a loop accumulates across
-                // iterations (no per-iteration free).
-                if ctx.invoke_arg_buffer == NULL {
-                    ctx.invoke_arg_buffer = alloc_n<ZjsValue>((usize)CTX_INVOKE_ARG_CAP);
-                    ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
-                }
-                let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
-                let ai: u32 = 0;
-                while ai < argc { argv_buf[ai] = regs[base + 2 + (u8)ai]; ai = ai + 1; }
                 ctx.frames[cur_idx].ip = ip + 1;
-                // push_call_frame snapshots ctx.host_this into the new
-                // frame's saved_host_this — push BEFORE we overwrite
-                // host_this, so pop restores the caller's `this`.
-                push_call_frame(ctx, target, argv_buf, argc, dst);
+                // Use the in-place push: source args live at
+                // reg_stack[regs_base + base + 2..] (the receiver lives
+                // at base+1; explicit args follow). push_call_frame_inplace
+                // copies directly into the new frame, no intermediate buf.
+                // Push BEFORE overwriting host_this so pop restores the
+                // caller's `this`.
+                push_call_frame_inplace(ctx, target, regs_base + (u32)base + 2, argc, dst);
                 ctx.host_this = new_this;
                 exit_reason = 2;
                 break;
@@ -1639,18 +1630,8 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let fp2 = cl.function;
                 let target2: Function* = NULL;
                 raw { target2 = (Function*)fp2; }
-                // Use the context's reusable arg buffer instead of
-                // alloca — alloca inside a loop accumulates across
-                // iterations (no per-iteration free).
-                if ctx.invoke_arg_buffer == NULL {
-                    ctx.invoke_arg_buffer = alloc_n<ZjsValue>((usize)CTX_INVOKE_ARG_CAP);
-                    ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
-                }
-                let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
-                let ai: u32 = 0;
-                while ai < argc { argv_buf[ai] = regs[base + 2 + (u8)ai]; ai = ai + 1; }
                 ctx.frames[cur_idx].ip = ip + 1;
-                push_call_frame(ctx, target2, argv_buf, argc, dst);
+                push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 2, argc, dst);
                 ctx.host_this = new_this;
                 ctx.current_closure = cl;
                 exit_reason = 2;
@@ -1700,20 +1681,11 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                     throwing = true; thrown = err; exit_reason = 3;
                     ctx.frames[cur_idx].ip = ip + 1; break;
                 }
-                // Use the context's reusable arg buffer instead of
-                // alloca — alloca inside a loop accumulates across
-                // iterations (no per-iteration free).
-                if ctx.invoke_arg_buffer == NULL {
-                    ctx.invoke_arg_buffer = alloc_n<ZjsValue>((usize)CTX_INVOKE_ARG_CAP);
-                    ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
-                }
-                let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
-                let ai: u32 = 0;
-                while ai < argc { argv_buf[ai] = regs[base + 1 + (u8)ai]; ai = ai + 1; }
                 ctx.frames[cur_idx].ip = ip + 1;
+                // In-place push: source args at reg_stack[regs_base+base+1..].
                 // Push before reassigning host_this so the new frame's
                 // saved_host_this records the caller's `this`.
-                push_call_frame(ctx, target, argv_buf, argc, dst);
+                push_call_frame_inplace(ctx, target, regs_base + (u32)base + 1, argc, dst);
                 // Non-strict default `this` is the global object per
                 // ECMA-262 OrdinaryCallBindThis step 6. We don't track
                 // strict-mode-per-function yet; default to global.
@@ -1729,18 +1701,8 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 let fp2 = cl.function;
                 let target2: Function* = NULL;
                 raw { target2 = (Function*)fp2; }
-                // Use the context's reusable arg buffer instead of
-                // alloca — alloca inside a loop accumulates across
-                // iterations (no per-iteration free).
-                if ctx.invoke_arg_buffer == NULL {
-                    ctx.invoke_arg_buffer = alloc_n<ZjsValue>((usize)CTX_INVOKE_ARG_CAP);
-                    ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
-                }
-                let argv_buf: ZjsValue* = ctx.invoke_arg_buffer;
-                let ai: u32 = 0;
-                while ai < argc { argv_buf[ai] = regs[base + 1 + (u8)ai]; ai = ai + 1; }
                 ctx.frames[cur_idx].ip = ip + 1;
-                push_call_frame(ctx, target2, argv_buf, argc, dst);
+                push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 1, argc, dst);
                 if ctx.global_this_obj != NULL {
                     ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
                 } else {
