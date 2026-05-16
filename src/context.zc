@@ -126,6 +126,12 @@ struct ZjsContext {
     // read it to distinguish `new F(...)` from `F(...)` / `F.call(...)`
     // and throw TypeError on the latter when spec requires it.
     new_target_active: bool;
+    // ECMA-262 [[NewTarget]]: the actual constructor function the
+    // current call entered through. Op::LoadNewTarget reads this when
+    // new_target_active is set. Stored as a ZjsValue so callees (and
+    // arrow-funcs inheriting from their enclosing ctor) can return it
+    // unchanged. Reset to undefined when new_target_active is false.
+    new_target_value:  ZjsValue;
 
     // Cached "prototype" objects for built-in cell types (Phase 3.5).
     // Lazily populated by ctx_init_builtins. property_get on TAG_ARRAY

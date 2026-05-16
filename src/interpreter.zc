@@ -2654,7 +2654,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let parent_is_host = zjs_is_host_function(parent) != 0;
             let r: ZjsValue = zjs_undefined();
             let saved_nt = ctx.new_target_active;
+            let saved_ntv = ctx.new_target_value;
             ctx.new_target_active = true;
+            ctx.new_target_value = parent;
             if parent_is_host {
                 let saved_th = ctx.host_this;
                 raw { r = zjs_call_value_with_this(ctx, parent, ctx->host_this, argv_ptr, argc); }
@@ -2663,6 +2665,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 raw { r = zjs_call_value_with_this(ctx, parent, ctx->host_this, argv_ptr, argc); }
             }
             ctx.new_target_active = saved_nt;
+            ctx.new_target_value = saved_ntv;
             if ctx.pending_throw_active {
                 throwing = true;
                 thrown = consume_pending_throw(ctx);
@@ -3073,6 +3076,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 ctx.frames[cur_idx].ip = ip; break;
             }
             regs[inst.a] = ctx.host_this;
+        } else if op == Op::LoadNewTarget {
+            if ctx.new_target_active {
+                regs[inst.a] = ctx.new_target_value;
+            } else {
+                regs[inst.a] = zjs_undefined();
+            }
         } else if op == Op::In {
             // key in obj — ECMA-262 §13.10.1: obj must be an Object,
             // else throw TypeError. Our "Object" notion includes plain
@@ -3416,8 +3425,10 @@ fn interpret_inner_full(ctx: ZjsContext*,
             new_obj.proto = proto_obj;
             let saved_this = ctx.host_this;
             let saved_nt = ctx.new_target_active;
+            let saved_ntv = ctx.new_target_value;
             ctx.host_this = new_obj_v;
             ctx.new_target_active = true;
+            ctx.new_target_value = callee;
             let call_result: ZjsValue = zjs_undefined();
             let did_throw: bool = false;
             // After the in-place copy above, regs[base+1..] holds the
@@ -3475,6 +3486,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let final_this = ctx.host_this;
             ctx.host_this = saved_this;
             ctx.new_target_active = saved_nt;
+            ctx.new_target_value = saved_ntv;
             if did_throw {
                 throwing = true; thrown = call_result; exit_reason = 3; break;
             }
@@ -3581,8 +3593,10 @@ fn interpret_inner_full(ctx: ZjsContext*,
 
             let saved_this = ctx.host_this;
             let saved_nt = ctx.new_target_active;
+            let saved_ntv = ctx.new_target_value;
             ctx.host_this = new_obj_v;
             ctx.new_target_active = true;
+            ctx.new_target_value = callee;
 
             let call_result: ZjsValue = zjs_undefined();
             let did_throw: bool = false;
@@ -3655,6 +3669,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let final_this = ctx.host_this;
             ctx.host_this = saved_this;
             ctx.new_target_active = saved_nt;
+            ctx.new_target_value = saved_ntv;
             if did_throw {
                 throwing = true; thrown = call_result; exit_reason = 3; break;
             }

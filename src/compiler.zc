@@ -965,7 +965,15 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
     }
     if k == NodeKind::ThisExpr {
         let dst = alloc_reg(c);
-        emit(c, make_inst_a(Op::LoadThis, dst));
+        if node.bool_value {
+            // `new.target` — load undefined when not under `new`, or
+            // the in-flight ctor's host_this otherwise. Encoded as a
+            // dedicated op so we can revise the semantics later
+            // without touching the parser.
+            emit(c, make_inst_a(Op::LoadNewTarget, dst));
+        } else {
+            emit(c, make_inst_a(Op::LoadThis, dst));
+        }
         return dst;
     }
     if k == NodeKind::ClassExpr {

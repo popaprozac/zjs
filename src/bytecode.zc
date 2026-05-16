@@ -322,6 +322,11 @@ enum Op {
     In,               // a=dst, b=key_reg, c=obj_reg
     Instanceof,       // a=dst, b=val_reg, c=ctor_reg
     LoadThis,         // a=dst
+    // `new.target` — when ctx.new_target_active is true, the current
+    // call entered via `new` (or super()), and ctx.host_this is the
+    // newly-allocated instance. Returns that instance. Otherwise
+    // returns undefined.
+    LoadNewTarget,    // a=dst
     NewInvoke,        // a=dst, b=base, c=arg_count
 
     // Type introspection (Phase 3.1e).

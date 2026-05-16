@@ -111,7 +111,6 @@
     "string-matchAll",
     "string-replaceAll",
     "import.meta",
-    "new.target",
     "super"
   ],
 
