@@ -2558,6 +2558,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
                 target_o = hf_dg.props;
             }
+            if target_o != NULL {
+                // Coerce non-string keys (computed-name accessors:
+                // `get [1 + 1]() {}` lands here with key_v as a number).
+                if zjs_is_string(key_v) == 0 { key_v = zjs_to_string(ctx, key_v); }
+            }
             if target_o != NULL && zjs_is_string(key_v) != 0 {
                 let o = target_o;
                 let key_s = zjs_as_string(key_v);

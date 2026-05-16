@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-16 16:08 UTC",
+    "when": "2026-05-16 16:14 UTC",
     "total": 13247,
-    "passed": 5349,
-    "failed": 1644,
+    "passed": 5409,
+    "failed": 1584,
     "skipped": 6254
   },
   "failures": [
@@ -1064,32 +1064,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): `get` accessor Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/statements/class/accessor-name-inst/computed.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"get string\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/accessor-name-inst/literal-numeric-non-canonical.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get string\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/accessor-name-inst-computed-yield-expr.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"get yield\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/computed-err-to-prop-key.js",
       "reason": "[sloppy] zjs: throw: (unknown): `get` accessor Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/statements/class/accessor-name-static/computed.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get string\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/accessor-name-static/literal-numeric-non-canonical.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get string\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/accessor-name-static-computed-yield-expr.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get yield\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/arguments/default-constructor.js",
@@ -1248,112 +1232,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-additive-expression-add.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-additive-expression-subtract.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab0\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-arrow-function-expression.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-assignment-expression-assignment.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-assignment-expression-bitwise-or.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-async-arrow-function-expression.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-condition-expression-false.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-condition-expression-true.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-decimal-e-notational-literal.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-decimal-literal.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-exponetiation-expression.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab4\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-function-declaration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-function-expression.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-generator-function-declaration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"2\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-integer-e-notational-literal.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-integer-separators.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-math.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2.999232\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-multiplicative-expression-div.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-multiplicative-expression-mult.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00abnull\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-numeric-literal.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-string-literal.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"2\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-yield-expression.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab9\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-integer-separators.js",
@@ -2900,10 +2780,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): `get` accessor Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/accessor-name-inst/computed.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"get string\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-non-canonical.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get string\"\u00bb) to be true"
     },
@@ -2912,16 +2788,8 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/accessor-name-inst-computed-yield-expr.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"get yield\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/accessor-name-static/computed-err-to-prop-key.js",
       "reason": "[sloppy] zjs: throw: (unknown): `get` accessor Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/expressions/class/accessor-name-static/computed.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get string\"\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-numeric-non-canonical.js",
@@ -2930,10 +2798,6 @@
     {
       "path": "test/language/expressions/class/accessor-name-static-computed-in.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/accessor-name-static-computed-yield-expr.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get yield\"\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/async-method/array-destructuring-param-strict-body.js",
@@ -3092,112 +2956,8 @@
       "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before using 'this' in derived constructor"
     },
     {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-additive-expression-add.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-additive-expression-subtract.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab0\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-arrow-function-expression.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-assignment-expression-assignment.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-assignment-expression-bitwise-or.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-async-arrow-function-expression.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-condition-expression-false.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-condition-expression-true.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-decimal-e-notational-literal.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-decimal-literal.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-exponetiation-expression.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab4\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-function-declaration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-function-expression.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-generator-function-declaration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"2\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-integer-e-notational-literal.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-integer-separators.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-math.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2.999232\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-multiplicative-expression-div.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-multiplicative-expression-mult.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00abnull\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-numeric-literal.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-string-literal.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"2\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-yield-expression.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab9\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/cpn-class-expr-computed-property-name-from-integer-separators.js",
@@ -4006,6 +3766,246 @@
     {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-meth-super.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-set-meth-prototype.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-set-meth-super.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/valid/grammar-field-classelementname-initializer-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/valid/grammar-field-classelementname-initializer.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/valid/grammar-field-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/valid/grammar-field-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-accessor-meth-valid.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-async-meth-valid.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-gen-meth-valid.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/language/expressions/class/elements/ternary-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/typeof-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-field-identifier-initializer.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-field-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/array-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/dflt-params-abrupt.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/dflt-params-duplicates.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/dflt-params-ref-later.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/dflt-params-ref-self.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/dflt-params-trailing-comma.js",
+      "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/object-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/rest-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/rest-params-trailing-comma-early-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/yield-as-binding-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/yield-as-binding-identifier.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/yield-as-identifier-reference-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/yield-as-identifier-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/yield-as-label-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method/yield-identifier-strict.js",
+      "reason": "expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-param-dflt-yield.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/array-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/dflt-params-abrupt.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/dflt-params-duplicates.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/dflt-params-ref-later.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/dflt-params-ref-self.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/dflt-params-trailing-comma.js",
+      "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/object-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/rest-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/rest-params-trailing-comma-early-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/yield-as-binding-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/yield-as-binding-identifier.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/yield-as-identifier-reference-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/yield-as-identifier-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/yield-as-label-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/gen-method-static/yield-identifier-strict.js",
+      "reason": "expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/getter-param-dflt.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/heritage-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/heritage-async-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/method/array-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/method/dflt-params-duplicates.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/method/dflt-params-ref-later.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/method/dflt-params-ref-self.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/method/dflt-params-trailing-comma.js",
+      "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/method/object-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/method/rest-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/method/rest-params-trailing-comma-early-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/method-param-dflt-yield.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/method-static/array-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/method-static/dflt-params-duplicates.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/method-static/dflt-params-ref-later.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     }
   ],
   "skip_counts": {
