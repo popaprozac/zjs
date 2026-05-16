@@ -201,14 +201,15 @@ zjs-vs-zjs over time. Numbers are median of N iterations.</p>
     out_path.write_text(html)
 
 DEFAULT_OTHER_ENGINES = [
-    # name,    binary (resolved via PATH),  extra args before script
+    # name,    binary (resolved via PATH),       extra args before script
     # Peer interpreters first (similar design space — no JIT by default,
     # embeddable), then JIT engines for the absolute-ceiling reference.
-    ("qjs",    "qjs",    []),
-    ("boa",    "boa",    []),
-    ("kiesel", "kiesel", []),
-    ("node",   "node",   []),
-    ("bun",    "bun",    []),
+    ("qjs",    "qjs",                            []),
+    ("boa",    "boa",                            []),
+    ("kiesel", "kiesel",                         []),
+    ("node",   "node",                           []),
+    ("bun",    "bun",                            []),
+    ("deno",   str(Path.home() / ".deno/bin/deno"), ["run", "-q"]),
 ]
 
 def time_engine(label, bin_path, extra_args, script_path, iters):
@@ -342,6 +343,7 @@ in our scripts are too short to repay JIT cost.</p>
     kiesel: '#f59e0b',
     node:   '#10b981',
     bun:    '#a855f7',
+    deno:   '#000000',
   }};
   const fallbackPalette = ['#888', '#666', '#444', '#bbb'];
   function colorFor(engine, idx) {{
@@ -479,7 +481,7 @@ def main():
     ap.add_argument("--filter", type=str, default=None)
     ap.add_argument("--no-record", action="store_true")
     ap.add_argument("--compare", action="store_true",
-                    help="also run benches under qjs/boa/kiesel/node/bun (whichever are on PATH); write docs/perf/compare.html")
+                    help="also run benches under qjs/boa/kiesel/node/bun/deno (whichever are available); write docs/perf/compare.html")
     args = ap.parse_args()
 
     if not ZJS_BIN.exists():
