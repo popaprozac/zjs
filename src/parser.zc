@@ -997,18 +997,17 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
         let nd = p.source + first.start;
         let is_kw_static: int = 0;
         raw { is_kw_static = (memcmp(nd, "static", 6) == 0) ? 1 : 0; }
-        if is_kw_static != 0 && is_property_name_start(peek_kind2(p)) {
+        if is_kw_static != 0 && (is_property_name_start(peek_kind2(p)) || peek_kind2(p) == TokenKind::LBracket) {
             advance(p);
             is_static = true;
         }
     }
     // Optional `async` prefix: `async method() {}` (or
     // `static async method() {}`). Same lookahead rule as `static` and
-    // `get`/`set` — only consume when followed by a property-name token.
-    // Generators (`async * method`) aren't supported yet — skip when
-    // we see the `*`.
+    // `get`/`set` — only consume when followed by a property-name token
+    // (or a computed `[`).
     let is_async_method: bool = false;
-    if peek_kind(p) == TokenKind::KwAsync && is_property_name_start(peek_kind2(p)) {
+    if peek_kind(p) == TokenKind::KwAsync && (is_property_name_start(peek_kind2(p)) || peek_kind2(p) == TokenKind::LBracket) {
         advance(p);
         is_async_method = true;
     }
@@ -1035,10 +1034,19 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
         }
     }
     // Method name: Identifier OR a contextual / reserved word usable as
-    // a property name (`of`, `static`, `let`, ...).
+    // a property name (`of`, `static`, `let`, ...) OR a computed
+    // `[expr]` form.
+    let computed_key: AstNode* = NULL;
     let name_tok = peek(p);
-    if !is_property_name_start(name_tok.kind) { p.had_error = true; return NULL; }
-    advance(p);
+    if name_tok.kind == TokenKind::LBracket {
+        advance(p);
+        computed_key = parse_assignment(p);
+        if computed_key == NULL { return NULL; }
+        if !expect_kind(p, TokenKind::RBracket) { return NULL; }
+    } else {
+        if !is_property_name_start(name_tok.kind) { p.had_error = true; return NULL; }
+        advance(p);
+    }
 
     if !expect_kind(p, TokenKind::LParen) { return NULL; }
     let params = parse_param_list(p);
@@ -1054,8 +1062,14 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     if body == NULL { return NULL; }
 
     let node = new_node(&p.tracker, NodeKind::MethodDef, mut_start, body.end);
-    node.name_start  = name_tok.start;
-    node.name_length = name_tok.length;
+    if computed_key != NULL {
+        node.name_start  = 0;
+        node.name_length = 0;        // sentinel: computed
+        node.third       = computed_key;
+    } else {
+        node.name_start  = name_tok.start;
+        node.name_length = name_tok.length;
+    }
     node.bool_value  = is_static;
     node.op          = acc_kind;
     node.left = body;
@@ -2201,10 +2215,56 @@ fn parse_object(p: Parser*) -> AstNode* {
             if !match_kind(p, TokenKind::Comma) { break; }
             continue;
         }
+        // Computed property name: `{ [expr]: value }` or
+        // `{ [expr](args) { body } }`. The key expression is evaluated
+        // at object-build time and ToPropertyKey'd.
+        if peek_kind(p) == TokenKind::LBracket {
+            let lb = advance(p);
+            let key_expr = parse_assignment(p);
+            if key_expr == NULL { break; }
+            if !expect_kind(p, TokenKind::RBracket) { break; }
+
+            let value: AstNode* = NULL;
+            if match_kind(p, TokenKind::Colon) {
+                value = parse_assignment(p);
+                if value == NULL { break; }
+            } else if peek_kind(p) == TokenKind::LParen {
+                // Method shorthand with computed name.
+                advance(p);
+                let params = parse_param_list(p);
+                if !expect_kind(p, TokenKind::RParen) { break; }
+                if peek_kind(p) != TokenKind::LBrace { p.had_error = true; break; }
+                p.function_depth = p.function_depth + 1;
+                let body = parse_block(p);
+                p.function_depth = p.function_depth - 1;
+                if body == NULL { break; }
+                let mfn = new_node(&p.tracker, NodeKind::FunctionExpr, lb.start, body.end);
+                mfn.left = body;
+                mfn.children = params.arr;
+                mfn.children_count = params.count;
+                value = mfn;
+            } else {
+                p.had_error = true; break;
+            }
+
+            let prop = new_node(&p.tracker, NodeKind::ObjectProp, lb.start, value.end);
+            prop.name_start = 0;
+            prop.name_length = 0;          // sentinel: computed key
+            prop.left  = value;
+            prop.third = key_expr;          // computed key lives here
+            if count >= cap {
+                let old_cap = cap;
+                cap = cap * 2;
+                buf = realloc_n<AstNode*>(buf, (usize)old_cap, (usize)cap);
+            }
+            buf[count] = prop;
+            count = count + 1;
+            if !match_kind(p, TokenKind::Comma) { break; }
+            continue;
+        }
         let key_tok = peek(p);
         // Key: any IdentifierName (Identifier or reserved word),
-        // string literal, or numeric literal. Computed-key
-        // [expr] forms are TODO.
+        // string literal, or numeric literal.
         if !is_property_name_start(key_tok.kind) {
             p.had_error = true;
             break;

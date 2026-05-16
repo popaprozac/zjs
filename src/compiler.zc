@@ -1329,6 +1329,19 @@ fn compile_object_literal(c: Compiler*, node: AstNode*) -> u8 {
             continue;
         }
 
+        // Computed-key form: `{ [expr]: value }`. name_length == 0 is
+        // the sentinel; the expression to evaluate at runtime is on
+        // prop.third. StoreElem coerces the key to a string at runtime.
+        if prop.name_length == 0 && prop.third != NULL {
+            let key_r = compile_expr(c, prop.third);
+            let val_r = compile_expr(c, prop.left);
+            emit(c, make_inst_abc(Op::StoreElem, dst, key_r, val_r));
+            release_reg(c, val_r);
+            release_reg(c, key_r);
+            i = i + 1;
+            continue;
+        }
+
         // Key: identifier bytes, OR a quoted-string-literal slice with
         // the quotes stripped. (Real escape decoding is still TODO — we
         // handle only the common no-escape case.)
@@ -2272,8 +2285,13 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         let m = cls_node.children[mi];
         let mn = c.source + m.name_start;
         let ml = m.name_length;
+        // Computed-name methods are never the constructor (the
+        // constructor is matched by the literal name "constructor").
+        let is_computed_name = m.name_length == 0 && m.third != NULL;
         let is_ctor: int = 0;
-        raw { is_ctor = (ml == 11 && memcmp(mn, "constructor", 11) == 0) ? 1 : 0; }
+        if !is_computed_name {
+            raw { is_ctor = (ml == 11 && memcmp(mn, "constructor", 11) == 0) ? 1 : 0; }
+        }
         if is_ctor == 0 {
             // Compile method body as a function.
             let mfn = compile_function(c.ctx, c.source, m, c);
@@ -2295,6 +2313,20 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
                     mreg = mcls;
                 }
                 let target = if m.bool_value { ctor_reg } else { proto_reg };
+                if is_computed_name {
+                    // Computed key — evaluate at runtime, install via
+                    // StoreElem. Accessor / getter / setter variants of
+                    // computed names aren't yet routed through
+                    // DefineMethodGetter/Setter (they'd need a runtime-
+                    // key DefineGetter analogue); for V1 a plain
+                    // StoreElem covers the most common case.
+                    let key_r = compile_expr(c, m.third);
+                    emit(c, make_inst_abc(Op::StoreElem, target, key_r, mreg));
+                    release_reg(c, key_r);
+                    release_reg(c, mreg);
+                    mi = mi + 1;
+                    continue;
+                }
                 // Canonicalize the method name — handles NumberLit and
                 // StringLit name forms (`get 0x10()` / `set "foo"()`).
                 let m_atom = intern_method_name_atom(c, m.name_start, ml);

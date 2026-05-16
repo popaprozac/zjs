@@ -1,10 +1,10 @@
 {
   "summary": {
-    "when": "2026-05-16 03:46 UTC",
+    "when": "2026-05-16 03:56 UTC",
     "total": 13247,
-    "passed": 2948,
-    "failed": 819,
-    "skipped": 9480
+    "passed": 2995,
+    "failed": 884,
+    "skipped": 9368
   },
   "failures": [
     {
@@ -49,7 +49,7 @@
     },
     {
       "path": "test/language/expressions/equals/to-prim-hint.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/less-than/S11.8.1_A4.12_T1.js",
@@ -692,6 +692,130 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-additive-expression-add.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-additive-expression-subtract.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-arrow-function-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-assignment-expression-assignment.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-assignment-expression-bitwise-or.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-async-arrow-function-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-condition-expression-false.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-condition-expression-true.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-decimal-e-notational-literal.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-decimal-literal.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-exponetiation-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-expression-coalesce.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-expression-logical-and.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-expression-logical-or.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-function-declaration.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-function-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-generator-function-declaration.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-integer-e-notational-literal.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-integer-separators.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-math.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-multiplicative-expression-div.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-multiplicative-expression-mult.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-null.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-numeric-literal.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-string-literal.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-yield-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-async-arrow-function-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-generator-function-declaration.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-integer-separators.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-yield-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
       "path": "test/language/statements/class/definition/basics.js",
       "reason": "[sloppy] zjs: throw: (unknown): The value of `E.name` is `'E'` Expected SameValue(\u00abundefined\u00bb, \u00ab\"E\"\u00bb) to be true"
     },
@@ -1009,7 +1133,7 @@
     },
     {
       "path": "test/language/statements/class/static-method-non-configurable-err.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/class/strict-mode/arguments-callee.js",
@@ -1121,11 +1245,11 @@
     },
     {
       "path": "test/language/statements/class/subclass/derived-class-return-override-for-of-arrow.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/class/subclass/derived-class-return-override-for-of.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined but got a TypeError"
     },
     {
       "path": "test/language/statements/class/subclass/private-class-field-on-nonextensible-return-override.js",
@@ -1190,10 +1314,6 @@
     {
       "path": "test/language/statements/class/syntax/class-body-method-definition-super-property.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/syntax/class-declaration-computed-method-definition.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/syntax/class-declaration-computed-method-generator-definition.js",
@@ -1394,6 +1514,130 @@
     {
       "path": "test/language/expressions/class/class-name-ident-yield-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-additive-expression-add.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-additive-expression-subtract.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-arrow-function-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-assignment-expression-assignment.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-assignment-expression-bitwise-or.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-async-arrow-function-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-condition-expression-false.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-condition-expression-true.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-decimal-e-notational-literal.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-decimal-literal.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-exponetiation-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-expression-coalesce.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-expression-logical-and.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-expression-logical-or.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-function-declaration.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-function-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-generator-function-declaration.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-integer-e-notational-literal.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-integer-separators.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-math.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-multiplicative-expression-div.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-multiplicative-expression-mult.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-null.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-numeric-literal.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-string-literal.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-yield-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-computed-property-name-from-async-arrow-function-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-computed-property-name-from-generator-function-declaration.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-computed-property-name-from-integer-separators.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/cpn-class-expr-computed-property-name-from-yield-expression.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-class-body-ctor-duplicate.js",
@@ -2136,6 +2380,22 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/built-ins/String/prototype/indexOf/position-tointeger-toprimitive.js",
+      "reason": "[sloppy] zjs: throw: (unknown):"
+    },
+    {
+      "path": "test/built-ins/String/prototype/indexOf/position-tointeger-wrapped-values.js",
+      "reason": "[sloppy] zjs: throw: (unknown): ToInteger: @@toPrimitive => true => 1 Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/String/prototype/indexOf/searchstring-tostring-toprimitive.js",
+      "reason": "[sloppy] zjs: throw: (unknown):"
+    },
+    {
+      "path": "test/built-ins/String/prototype/indexOf/searchstring-tostring-wrapped-values.js",
+      "reason": "[sloppy] zjs: throw: (unknown): ToPrimitive: @@toPrimitive Expected SameValue(\u00ab-1\u00bb, \u00ab2\u00bb) to be true"
+    },
+    {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",
       "reason": "[sloppy] zjs: throw: (unknown): #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: [obje"
     },
@@ -2537,7 +2797,7 @@
     },
     {
       "path": "test/built-ins/Promise/all/resolve-throws-iterator-return-null-or-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/all/same-reject-function.js",
@@ -2705,7 +2965,7 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-throws-iterator-return-null-or-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/allSettledKeyed/extensible.js",
@@ -2885,7 +3145,7 @@
     },
     {
       "path": "test/built-ins/Promise/any/resolve-throws-iterator-return-null-or-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/exception-after-resolve-in-executor.js",
@@ -3153,7 +3413,7 @@
     },
     {
       "path": "test/built-ins/Promise/race/resolve-throws-iterator-return-null-or-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/race/same-reject-function.js",
@@ -3301,10 +3561,10 @@
     "feature:destructuring-assignment": 2,
     "feature:TypedArray": 48,
     "include:asyncHelpers.js": 21,
-    "flag:module": 6,
+    "flag:module": 10,
     "feature:object-spread": 32,
-    "feature:class-fields-public": 591,
-    "feature:computed-property-names": 252,
+    "feature:class-fields-public": 703,
+    "feature:logical-assignment-operators": 24,
     "feature:decorators": 24,
     "include:propertyHelper.js": 282,
     "feature:class-static-fields-private": 300,

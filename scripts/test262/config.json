@@ -85,7 +85,6 @@
     "destructuring-binding",
     "destructuring-assignment",
     "template",
-    "computed-property-names",
     "optional-chaining",
     "nullish-coalescing",
     "decorators",
