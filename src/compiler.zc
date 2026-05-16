@@ -58,6 +58,16 @@ struct Compiler {
     // the global table so script-mode globalThis semantics survive.
     is_script:     bool;
 
+    // 2026-05-16 — perf opt. When set, compile_expr's IdentExpr path
+    // may return a local's reg DIRECTLY instead of emitting a
+    // defensive `Mov dst, local_reg`. Callers set this only at sites
+    // where they can prove the expression's other operands have no
+    // side effects that mutate the read local (mostly: NumberExpr /
+    // pure-Ident / IdentExpr-local-read on the RHS of an op). Reset
+    // by the caller before nested compile_expr calls that might be
+    // unsafe.
+    borrow_local_ok: bool;
+
     // Closure support (Phase 3.3). `parent` points to the enclosing
     // function's compiler — NULL for the top-level program. The
     // capture pre-scan flips `needs_env` on if any nested function
@@ -429,11 +439,30 @@ fn alloc_reg(c: Compiler*) -> u8 {
     return r;
 }
 
+// Quick predicate for "this subtree has no observable writes /
+// calls / coercions that could mutate a sibling local". Conservative
+// — used to gate borrow_local_ok in compile_expr.
+fn expr_is_simple_pure(n: AstNode*) -> bool {
+    if n == NULL { return true; }
+    let k = n.kind;
+    if k == NodeKind::NumberExpr    { return true; }
+    if k == NodeKind::StringExpr    { return true; }
+    if k == NodeKind::BoolExpr      { return true; }
+    if k == NodeKind::NullExpr      { return true; }
+    if k == NodeKind::UndefinedExpr { return true; }
+    if k == NodeKind::ThisExpr      { return true; }
+    if k == NodeKind::IdentExpr     { return true; }
+    if k == NodeKind::Member        { return expr_is_simple_pure(n.left); }
+    return false;
+}
+
 fn release_reg(c: Compiler*, r: u8) -> void {
-    // High-water-mark allocator: only release if it's the top register.
-    // Otherwise the temp is part of a holding expression — we'll release
-    // it when its containing expression finishes.
-    if r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+    // High-water-mark allocator: only release if it's the top register
+    // AND it's a temp (above fixed_regs). The second guard matters for
+    // the Mov-elision fast path — compile_expr may hand back a local's
+    // reg directly; releasing that reg would shrink next_reg into the
+    // locals area and let the next alloc clobber the local.
+    if r + 1 == c.next_reg && r >= c.fixed_regs { c.next_reg = c.next_reg - 1; }
 }
 
 fn reset_temps(c: Compiler*) -> void {
@@ -595,15 +624,23 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         // 1. Try our own locals first.
         let local_idx = find_local_index(c, name, name_len);
         if local_idx >= 0 {
-            let dst = alloc_reg(c);
             if c.locals[(u32)local_idx].captured {
                 // Captured local — read through env via an IC.
+                let dst = alloc_reg(c);
                 let name_atom = ctx_intern_atom(c.ctx, name, name_len);
                 let ic = alloc_ic_slot(c, name_atom);
                 emit(c, make_inst_abc(Op::LoadProp, dst, c.env_reg, (u8)ic));
-            } else {
-                emit(c, make_inst_ab(Op::Mov, dst, c.locals[(u32)local_idx].reg));
+                return dst;
             }
+            // Non-captured local — hand back the local's reg directly
+            // when c.borrow_local_ok is set (the caller has proven the
+            // surrounding expression won't mutate this local before
+            // its result is consumed). Otherwise emit a defensive Mov.
+            if c.borrow_local_ok {
+                return c.locals[(u32)local_idx].reg;
+            }
+            let dst = alloc_reg(c);
+            emit(c, make_inst_ab(Op::Mov, dst, c.locals[(u32)local_idx].reg));
             return dst;
         }
 
@@ -949,7 +986,12 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
                     else if op_kind == Op::CmpLe { fused_op = Op::CmpLeImm; }
                     else if op_kind == Op::CmpGt { fused_op = Op::CmpGtImm; }
                     else if op_kind == Op::CmpGe { fused_op = Op::CmpGeImm; }
+                    // RHS is a literal — no side effects can touch LHS,
+                    // so LHS can borrow a local reg.
+                    let saved_borrow = c.borrow_local_ok;
+                    c.borrow_local_ok = true;
                     let src = compile_expr(c, node.left);
+                    c.borrow_local_ok = saved_borrow;
                     let dst = alloc_reg(c);
                     emit(c, make_inst_abc(fused_op, dst, src, imm_byte));
                     release_reg(c, src);
@@ -958,8 +1000,19 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
                 }
             }
         }
+        // Borrow optimization: if the RHS is side-effect-free we can
+        // hand back LHS's local reg directly. Then the LHS read may
+        // also borrow if its operands are pure, so set the flag
+        // around both compile_expr calls.
+        let rhs_pure = expr_is_simple_pure(node.right);
+        let lhs_pure = expr_is_simple_pure(node.left);
+        let saved_borrow = c.borrow_local_ok;
+        if rhs_pure { c.borrow_local_ok = true; }
         let l = compile_expr(c, node.left);
+        if !rhs_pure { c.borrow_local_ok = saved_borrow; }
+        if lhs_pure { c.borrow_local_ok = true; }
         let r = compile_expr(c, node.right);
+        c.borrow_local_ok = saved_borrow;
         let dst = alloc_reg(c);
         emit(c, make_inst_abc(op_kind, dst, l, r));
         // Clean up temps once we've emitted; conservative dst placement.
