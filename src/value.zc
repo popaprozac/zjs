@@ -561,6 +561,10 @@ def TAG_CLOSURE:       u8 = 6;
 def TAG_ACCESSOR:      u8 = 7;   // Phase 3.9b: { get, set } pair stored in an object slot
 def TAG_PROMISE:       u8 = 8;   // Phase 3.10: ECMA-262 Promise
 def TAG_REGEXP:        u8 = 9;   // Phase 3.11: ECMA-262 RegExp (delegated to Zen-c std/regex)
+def TAG_ASYNC_CONT:    u8 = 10;  // 2026-05-15: suspended async-function frame
+                                 //   (saved regs + ip + outer Promise; resumed
+                                 //   from a microtask when the awaited
+                                 //   Promise settles).
 
 // Promise states.
 def PROMISE_PENDING:   u8 = 0;
@@ -732,6 +736,52 @@ fn zjs_as_promise(v: ZjsValue) -> ZjsPromise* {
     let pr: ZjsPromise* = NULL;
     raw { pr = (ZjsPromise*)p; }
     return pr;
+}
+
+// Suspended async-function frame. Created at Op::Await when the
+// awaited Promise is pending; resumed when it settles, via a host
+// function whose .bound points back at the continuation.
+//
+// `saved_regs` is a heap-allocated copy of the function's register
+// window — the actual reg_stack slots are released when the frame
+// pops at suspension time, so we have to own a stable copy. On
+// resume, the contents are copied back into a freshly-pushed frame.
+struct ZjsAsyncCont {
+    header:                 CellHeader;     // { type_tag = TAG_ASYNC_CONT }
+    function:               Function*;      // the bytecode to resume
+    saved_regs:             ZjsValue*;      // owned, length = reg_count
+    reg_count:              u32;
+    saved_ip:               usize;          // instruction right after Op::Await
+    await_dst:              u8;             // dst reg for the resolved value
+    saved_host_this:        ZjsValue;
+    saved_current_closure:  ZjsClosure*;
+    outer_promise:          ZjsValue;       // Promise to settle on resumed-frame return
+}
+
+fn zjs_is_async_cont(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_ASYNC_CONT { return 1; }
+    return 0;
+}
+
+fn zjs_as_async_cont(v: ZjsValue) -> ZjsAsyncCont* {
+    let p = zjs_cell_as_ptr(v);
+    let r: ZjsAsyncCont* = NULL;
+    raw { r = (ZjsAsyncCont*)p; }
+    return r;
+}
+
+fn zjs_async_cont_new() -> ZjsAsyncCont* {
+    let c = alloc<ZjsAsyncCont>();
+    c.header.type_tag = TAG_ASYNC_CONT;
+    c.function = NULL;
+    c.saved_regs = NULL;
+    c.reg_count = 0;
+    c.saved_ip = 0;
+    c.await_dst = 0;
+    c.saved_host_this = zjs_undefined();
+    c.saved_current_closure = NULL;
+    c.outer_promise = zjs_undefined();
+    return c;
 }
 
 fn zjs_promise_new() -> ZjsPromise* {

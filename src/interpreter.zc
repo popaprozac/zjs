@@ -770,7 +770,54 @@ struct TryFrame {
 
 def MAX_TRY_DEPTH: usize = 32;
 
+// Called right after push_call_frame{_inplace} when the target turned
+// out to be an async function. Allocates the outer Promise, parks it
+// on the newly-pushed frame, and pre-writes it into the caller's dst
+// reg so the caller already has its Promise back even if the callee
+// suspends on its very first await.
+fn wire_async_call(ctx: ZjsContext*, target: Function*, caller_regs_base: u32, dst: u8) -> void {
+    if target == NULL { return; }
+    if !target.is_async { return; }
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let p_v = zjs_cell_from_ptr((void*)p);
+    ctx.reg_stack[caller_regs_base + (u32)dst] = p_v;
+    ctx.frames[ctx.frame_count - 1].outer_promise = p_v;
+}
+
 fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u32) -> InterpretResult {
+    return interpret_inner(ctx, entry_f, args, arg_count, NULL);
+}
+
+// Resume a suspended async-function frame. The continuation owns the
+// saved register window + ip + outer Promise; we push a fresh frame,
+// repopulate it from the snapshot, then run the dispatch loop normally
+// until the async fn returns/throws (settling outer_promise) or hits
+// another await.
+fn interpret_resume(ctx: ZjsContext*, cont: ZjsAsyncCont*,
+                    resolved_value: ZjsValue, is_throw: bool) -> InterpretResult {
+    if cont == NULL || cont.function == NULL {
+        return InterpretResult{ is_throw: false, value: zjs_undefined() };
+    }
+    // Stash the resolved value and the throw flag onto the continuation
+    // so interpret_inner can pick them up after it pushes the frame.
+    cont.saved_host_this = cont.saved_host_this; // no-op; keep for clarity
+    return interpret_inner_resume(ctx, cont, resolved_value, is_throw);
+}
+
+fn interpret_inner_resume(ctx: ZjsContext*, cont: ZjsAsyncCont*,
+                          resolved_value: ZjsValue, is_throw_in: bool) -> InterpretResult {
+    return interpret_inner_full(ctx, cont.function, NULL, 0, cont, resolved_value, is_throw_in);
+}
+
+fn interpret_inner(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u32, cont: ZjsAsyncCont*) -> InterpretResult {
+    return interpret_inner_full(ctx, entry_f, args, arg_count, cont, zjs_undefined(), false);
+}
+
+fn interpret_inner_full(ctx: ZjsContext*,
+                        entry_f: Function*, args: ZjsValue*, arg_count: u32,
+                        cont: ZjsAsyncCont*,
+                        resume_value: ZjsValue, resume_is_throw: bool) -> InterpretResult {
     if entry_f == NULL { return InterpretResult{ is_throw: false, value: zjs_undefined() }; }
 
     // Phase 3.9h: non-recursive JS-to-JS calls. We push an initial
@@ -785,13 +832,50 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
     // `entry_frame` so its outer loop only walks the frames it
     // pushed — frames from a host caller's outer interpret() are
     // invisible to this one.
+    //
+    // When `cont` is non-NULL, this is a RESUME: push the frame with
+    // no args, then immediately repopulate it from the continuation
+    // (regs, ip, host_this, closure, outer_promise) before the outer
+    // loop runs. If the resume is for a rejected await, seed the
+    // throw channel so the dispatch loop unwinds into the async body's
+    // try/catch (or the outer fn's reject path).
     let entry_frame: u32 = ctx.frame_count;
     push_call_frame(ctx, entry_f, args, arg_count, 0);
     defer pop_call_frames_to(ctx, entry_frame);
+    if cont != NULL {
+        let pf_idx = ctx.frame_count - 1;
+        let r_base = ctx.frames[pf_idx].regs_base;
+        let n = cont.reg_count;
+        let i: u32 = 0;
+        while i < n {
+            ctx.reg_stack[r_base + i] = cont.saved_regs[i];
+            i = i + 1;
+        }
+        ctx.frames[pf_idx].ip = cont.saved_ip;
+        ctx.frames[pf_idx].outer_promise = cont.outer_promise;
+        // Drop the frame's saved_host_this in favor of the continuation's
+        // — pop_call_frame restores whatever the resumer (microtask
+        // drain handler) had set ctx.host_this to before we ran, which
+        // is what we want.
+        ctx.host_this = cont.saved_host_this;
+        ctx.current_closure = cont.saved_current_closure;
+        // Write the resolved value into the await's dst register so
+        // the body sees `let x = await ...` as the awaited result.
+        if !resume_is_throw {
+            ctx.reg_stack[r_base + (u32)cont.await_dst] = resume_value;
+        }
+    }
 
     let throwing:    bool     = false;
     let thrown:      ZjsValue = zjs_undefined();
     let final_result: ZjsValue = zjs_undefined();
+    // Resume of an async fn with a rejected await: seed the throw
+    // channel so the dispatch loop unwinds the body's try/catch (or
+    // converts to a Promise rejection on the way out).
+    if cont != NULL && resume_is_throw {
+        throwing = true;
+        thrown   = resume_value;
+    }
 
     // ---------- Outer loop ----------
     while ctx.frame_count > entry_frame {
@@ -823,19 +907,19 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 }
             }
             if !caught {
-                // async function bubbling out an exception: convert to
-                // a rejected Promise and hand THAT to the caller as the
-                // function's return value. The caller's frame must not
-                // see this as a throw — async fns always return a Promise.
+                // async function bubbling out an exception: settle the
+                // outer Promise as rejected. The caller's reg already
+                // holds that Promise (written at call time), so we
+                // don't write again on pop. Top-level async fns are
+                // handled by the entry-frame final_result path.
                 let top_f = ctx.frames[top_idx].f;
-                if top_f != NULL && top_f.is_async && ctx.frame_count > entry_frame + 1 {
-                    let p_obj = zjs_promise_new();
-                    let p_v = zjs_cell_from_ptr((void*)p_obj);
-                    promise_settle(ctx, p_v, thrown, false);
-                    let ret_dst = pop_call_frame(ctx);
-                    let cidx = ctx.frame_count - 1;
-                    let cb = ctx.frames[cidx].regs_base;
-                    ctx.reg_stack[cb + (u32)ret_dst] = p_v;
+                let outer = ctx.frames[top_idx].outer_promise;
+                if top_f != NULL && top_f.is_async && zjs_is_promise(outer) != 0 {
+                    promise_settle(ctx, outer, thrown, false);
+                    let _ = pop_call_frame(ctx);
+                    if ctx.frame_count <= entry_frame {
+                        final_result = outer;
+                    }
                     throwing = false;
                     continue;
                 }
@@ -897,21 +981,23 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 ctx.frames[cur_idx].ip = ip; break;
             }
             let rv = regs[inst.a];
-            // async function return: wrap the return value in a fresh
-            // resolved Promise. (Pending awaits are not supported yet,
-            // so the body always reaches Return synchronously.)
-            if f.is_async {
-                let p_obj = zjs_promise_new();
-                let p_v = zjs_cell_from_ptr((void*)p_obj);
-                promise_resolve_with(ctx, p_v, rv);
-                rv = p_v;
+            // async function return: settle the outer Promise (already
+            // written into the caller's dst at call time) with rv.
+            // The caller's reg slot keeps the Promise; rv is the
+            // resolution value.
+            let async_outer: ZjsValue = ctx.frames[cur_idx].outer_promise;
+            let is_async_frame: bool = f.is_async && zjs_is_promise(async_outer) != 0;
+            if is_async_frame {
+                promise_resolve_with(ctx, async_outer, rv);
+                rv = async_outer;
             }
             let ret_dst = pop_call_frame(ctx);
             if ctx.frame_count <= entry_frame {
                 final_result = rv;
-            } else {
-                // Write into the caller's reg via index (regs/frame_ptr
-                // are now invalidated by the pop).
+            } else if !is_async_frame {
+                // Sync return: write the actual value into the caller's
+                // reg. Async return leaves the pre-written Promise in
+                // place.
                 let cidx = ctx.frame_count - 1;
                 let cb = ctx.frames[cidx].regs_base;
                 ctx.reg_stack[cb + (u32)ret_dst] = rv;
@@ -1351,28 +1437,75 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 ip = ip + 1;
             }
         } else if op == Op::Await {
-            // Sync-only await: extract a resolved Promise's value, or
-            // pass the value through if it's not a thenable. Pending
-            // promises are drained once and re-checked; if still
-            // pending, throw — full frame-suspension semantics land in
-            // a follow-up so async functions can await real I/O.
+            // Resolve the awaited value:
+            //   - non-Promise:       pass through (already resolved)
+            //   - fulfilled Promise: extract value
+            //   - rejected  Promise: throw the reason
+            //   - pending   Promise: SUSPEND. Build a ZjsAsyncCont from
+            //     the current frame, register host_async_resume_* as the
+            //     Promise's then-reactions, pop the frame, and exit the
+            //     dispatch loop. The microtask drain will fire the
+            //     resume handler when the Promise settles.
             let v = regs[inst.b];
             if zjs_is_promise(v) != 0 {
                 let p = zjs_as_promise(v);
-                if p.state == PROMISE_PENDING {
-                    drain_microtasks(ctx);
-                }
                 if p.state == PROMISE_FULFILLED {
                     regs[inst.a] = p.value;
                 } else if p.state == PROMISE_REJECTED {
                     throwing = true; thrown = p.value;
                     exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 } else {
-                    // Still pending after drain — no frame suspension yet.
-                    let err = build_typed_error(ctx, (char*)"Error", 5,
-                                                (char*)"await on a pending Promise is not yet supported", 47);
-                    throwing = true; thrown = err; exit_reason = 3;
-                    ctx.frames[cur_idx].ip = ip; break;
+                    // Pending — full suspension. Require that we're in
+                    // an async fn (else there's no outer_promise to
+                    // hand back to the caller).
+                    let frame_outer = ctx.frames[cur_idx].outer_promise;
+                    if zjs_is_promise(frame_outer) == 0 {
+                        let err = build_typed_error(ctx, (char*)"SyntaxError", 11,
+                                                    (char*)"await is only valid in async functions", 39);
+                        throwing = true; thrown = err; exit_reason = 3;
+                        ctx.frames[cur_idx].ip = ip; break;
+                    }
+                    // Build the continuation.
+                    let cont = zjs_async_cont_new();
+                    ctx_register_cell(ctx, (void*)cont);
+                    cont.function = f;
+                    cont.reg_count = ctx.frames[cur_idx].reg_count;
+                    cont.saved_regs = alloc_n<ZjsValue>((usize)cont.reg_count);
+                    let ri: u32 = 0;
+                    while ri < cont.reg_count {
+                        cont.saved_regs[ri] = regs[ri];
+                        ri = ri + 1;
+                    }
+                    cont.saved_ip = ip + 1;
+                    cont.await_dst = inst.a;
+                    cont.saved_host_this = ctx.host_this;
+                    cont.saved_current_closure = ctx.current_closure;
+                    cont.outer_promise = frame_outer;
+                    let cont_v = zjs_cell_from_ptr((void*)cont);
+
+                    // Wire two host functions (fulfilled / rejected) into
+                    // the awaited Promise's reactions. Each carries the
+                    // continuation in its .bound slot.
+                    let on_f_ptr: void* = NULL;
+                    let on_r_ptr: void* = NULL;
+                    raw {
+                        on_f_ptr = (void*)host_async_resume_fulfilled;
+                        on_r_ptr = (void*)host_async_resume_rejected;
+                    }
+                    let on_f = ctx_make_host_function_arity(ctx, (char*)"async_resume_fulfilled", on_f_ptr, 1);
+                    let on_r = ctx_make_host_function_arity(ctx, (char*)"async_resume_rejected",  on_r_ptr, 1);
+                    zjs_as_host_function(on_f).bound = cont_v;
+                    zjs_as_host_function(on_r).bound = cont_v;
+                    promise_attach_reaction(ctx, p, on_f, on_r, zjs_undefined());
+
+                    // Suspend: pop our frame and exit the inner loop.
+                    // The outer dispatch loop's top is now the caller's
+                    // frame; the caller already received the outer
+                    // Promise at the original call site so it sees this
+                    // suspension as the call having "returned" a Promise.
+                    pop_call_frame(ctx);
+                    exit_reason = 1;
+                    break;
                 }
             } else {
                 regs[inst.a] = v;
@@ -1674,6 +1807,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 // Push BEFORE overwriting host_this so pop restores the
                 // caller's `this`.
                 push_call_frame_inplace(ctx, target, regs_base + (u32)base + 2, argc, dst);
+                wire_async_call(ctx, target, regs_base, dst);
                 ctx.host_this = new_this;
                 exit_reason = 2;
                 break;
@@ -1684,6 +1818,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 raw { target2 = (Function*)fp2; }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 2, argc, dst);
+                wire_async_call(ctx, target2, regs_base, dst);
                 ctx.host_this = new_this;
                 ctx.current_closure = cl;
                 exit_reason = 2;
@@ -1738,6 +1873,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 // Push before reassigning host_this so the new frame's
                 // saved_host_this records the caller's `this`.
                 push_call_frame_inplace(ctx, target, regs_base + (u32)base + 1, argc, dst);
+                wire_async_call(ctx, target, regs_base, dst);
                 // Non-strict default `this` is the global object per
                 // ECMA-262 OrdinaryCallBindThis step 6. We don't track
                 // strict-mode-per-function yet; default to global.
@@ -1755,6 +1891,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 raw { target2 = (Function*)fp2; }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 1, argc, dst);
+                wire_async_call(ctx, target2, regs_base, dst);
                 if ctx.global_this_obj != NULL {
                     ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
                 } else {
@@ -1824,6 +1961,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame(ctx, target, argv_ptr, argc, dst);
+                wire_async_call(ctx, target, regs_base, dst);
                 if is_method {
                     ctx.host_this = new_this;
                 } else if ctx.global_this_obj != NULL {
@@ -1840,6 +1978,7 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 raw { target2 = (Function*)fp2; }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame(ctx, target2, argv_ptr, argc, dst);
+                wire_async_call(ctx, target2, regs_base, dst);
                 if is_method {
                     ctx.host_this = new_this;
                 } else if ctx.global_this_obj != NULL {
@@ -3312,17 +3451,17 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
         if exit_reason == 0 {
             // Ran off end of code — implicit return undefined.
             let f_top = ctx.frames[ctx.frame_count - 1].f;
+            let async_outer = ctx.frames[ctx.frame_count - 1].outer_promise;
+            let is_async_top = f_top != NULL && f_top.is_async && zjs_is_promise(async_outer) != 0;
             let implicit_rv: ZjsValue = zjs_undefined();
-            if f_top != NULL && f_top.is_async {
-                let p_obj = zjs_promise_new();
-                let p_v = zjs_cell_from_ptr((void*)p_obj);
-                promise_resolve_with(ctx, p_v, implicit_rv);
-                implicit_rv = p_v;
+            if is_async_top {
+                promise_resolve_with(ctx, async_outer, implicit_rv);
+                implicit_rv = async_outer;
             }
             let ret_dst = pop_call_frame(ctx);
             if ctx.frame_count <= entry_frame {
                 final_result = implicit_rv;
-            } else {
+            } else if !is_async_top {
                 let cidx = ctx.frame_count - 1;
                 let cb = ctx.frames[cidx].regs_base;
                 ctx.reg_stack[cb + (u32)ret_dst] = implicit_rv;

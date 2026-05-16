@@ -59,6 +59,13 @@ struct CallFrame {
     // called super() (so `this` is bound). Pre-super reads of `this`
     // and a return-without-super both throw ReferenceError per spec.
     super_called:           bool;
+    // Async function machinery (2026-05-15). Holds the outer Promise
+    // that this async fn returns to its caller. Op::Return / implicit
+    // return / throw-unwinding settles it; Op::Await on a pending
+    // Promise suspends the frame and returns this Promise's cell
+    // (already written to the caller's dst at call time).
+    // Plain TAG_UNDEFINED for non-async frames.
+    outer_promise:          ZjsValue;
 }
 
 // Phase 3.9h. Shared across all CallFrames once the migration lands —
@@ -461,6 +468,7 @@ fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc
     ctx.frames[idx].saved_current_closure = ctx.current_closure;
     ctx.frames[idx].try_depth_at_entry = ctx.ctx_try_depth;
     ctx.frames[idx].super_called = false;
+    ctx.frames[idx].outer_promise = zjs_undefined();
     ctx.frame_count = ctx.frame_count + 1;
     return idx;
 }
@@ -518,6 +526,7 @@ fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, r
     // for derived-class ctors. Default false; non-derived ctors and
     // plain calls treat it as a no-op.
     ctx.frames[idx].super_called = false;
+    ctx.frames[idx].outer_promise = zjs_undefined();
     ctx.frame_count = ctx.frame_count + 1;
     return idx;
 }
@@ -720,6 +729,24 @@ fn gc_mark_value(v: ZjsValue) -> void {
         return;
     }
 
+    if tag == TAG_ASYNC_CONT {
+        let ac: ZjsAsyncCont* = NULL;
+        raw { ac = (ZjsAsyncCont*)p; }
+        gc_mark_value(ac.saved_host_this);
+        gc_mark_value(ac.outer_promise);
+        let i: u32 = 0;
+        while i < ac.reg_count {
+            gc_mark_value(ac.saved_regs[i]);
+            i = i + 1;
+        }
+        if ac.saved_current_closure != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)ac.saved_current_closure));
+        }
+        // function is owned by the context's function registry — no
+        // separate mark needed.
+        return;
+    }
+
     if tag == TAG_REGEXP {
         let r: ZjsRegExp* = NULL;
         raw { r = (ZjsRegExp*)p; }
@@ -915,6 +942,7 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     let fi: u32 = 0;
     while fi < ctx.frame_count {
         gc_mark_value(ctx.frames[fi].saved_host_this);
+        gc_mark_value(ctx.frames[fi].outer_promise);
         if ctx.frames[fi].saved_current_closure != NULL {
             let cv = zjs_cell_from_ptr((void*)ctx.frames[fi].saved_current_closure);
             gc_mark_value(cv);
@@ -963,6 +991,12 @@ fn gc_sweep(ctx: ZjsContext*) -> void {
               else if tag == TAG_ACCESSOR      { accessor_free_void(p); }
               else if tag == TAG_PROMISE       { promise_free_void(p); }
               else if tag == TAG_REGEXP        { regexp_free_void(p); }
+              else if tag == TAG_ASYNC_CONT    {
+                  let ac: ZjsAsyncCont* = NULL;
+                  raw { ac = (ZjsAsyncCont*)p; }
+                  if ac.saved_regs != NULL { dealloc(ac.saved_regs); }
+                  dealloc(ac);
+              }
         }
         i = i + 1;
     }
@@ -5722,6 +5756,59 @@ fn drain_microtasks(ctx: ZjsContext*) -> void {
 }
 
 // --- Host fns: Promise.resolve / Promise.reject helpers --------------
+
+// Resume handlers wired into a pending awaited Promise's reactions.
+// Both read the ZjsAsyncCont via .bound and re-enter the interpreter
+// at the saved ip with the resolved value in the await's dst register
+// (fulfilled path) or the rejection threaded through the throw channel
+// (rejected path).
+fn host_async_resume_fulfilled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let cont_v: ZjsValue = zjs_undefined();
+    if ctx.current_host_fn != NULL {
+        let hf: ZjsHostFunction* = NULL;
+        raw { hf = (ZjsHostFunction*)ctx->current_host_fn; }
+        cont_v = hf.bound;
+    }
+    if zjs_is_async_cont(cont_v) == 0 { return zjs_undefined(); }
+    let cont = zjs_as_async_cont(cont_v);
+    let val = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let is_throw_out: bool = false;
+    let thrown_val:   ZjsValue = zjs_undefined();
+    raw {
+        extern InterpretResult interpret_resume(ZjsContext* ctx, ZjsAsyncCont* cont, ZjsValue v, bool is_throw);
+        InterpretResult r = interpret_resume(ctx, cont, val, 0);
+        is_throw_out = r.is_throw;
+        thrown_val   = r.value;
+    }
+    if is_throw_out {
+        promise_settle(ctx, cont.outer_promise, thrown_val, false);
+    }
+    return zjs_undefined();
+}
+
+fn host_async_resume_rejected(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let cont_v: ZjsValue = zjs_undefined();
+    if ctx.current_host_fn != NULL {
+        let hf: ZjsHostFunction* = NULL;
+        raw { hf = (ZjsHostFunction*)ctx->current_host_fn; }
+        cont_v = hf.bound;
+    }
+    if zjs_is_async_cont(cont_v) == 0 { return zjs_undefined(); }
+    let cont = zjs_as_async_cont(cont_v);
+    let reason = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let is_throw_out: bool = false;
+    let thrown_val:   ZjsValue = zjs_undefined();
+    raw {
+        extern InterpretResult interpret_resume(ZjsContext* ctx, ZjsAsyncCont* cont, ZjsValue v, bool is_throw);
+        InterpretResult r = interpret_resume(ctx, cont, reason, 1);
+        is_throw_out = r.is_throw;
+        thrown_val   = r.value;
+    }
+    if is_throw_out {
+        promise_settle(ctx, cont.outer_promise, thrown_val, false);
+    }
+    return zjs_undefined();
+}
 
 fn host_promise_resolve_fn(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // Per-instance bound = the target promise.
