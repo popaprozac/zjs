@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-16 16:00 UTC",
+    "when": "2026-05-16 16:08 UTC",
     "total": 13247,
-    "passed": 5340,
-    "failed": 1653,
+    "passed": 5349,
+    "failed": 1644,
     "skipped": 6254
   },
   "failures": [
@@ -130,10 +130,6 @@
     {
       "path": "test/language/expressions/conditional/coalesce-expr-ternary.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() ?? false ? 0 : 42 Expected SameValue(\u00ab42\u00bb, \u00ab0\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/conditional/in-branch-1.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/expressions/conditional/symbol-conditional-evaluation.js",
@@ -1153,7 +1149,7 @@
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-arrow-returns-newtarget.js",
@@ -1161,7 +1157,7 @@
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-arrow.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-function-returns-arguments-from-own-function.js",
@@ -1225,14 +1221,10 @@
     },
     {
       "path": "test/language/statements/class/async-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/async-method-static/returns-async-arrow-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/async-method-static/returns-async-arrow.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
@@ -1277,7 +1269,7 @@
     },
     {
       "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-async-arrow-function-expression.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-condition-expression-false.js",
@@ -1364,15 +1356,7 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab9\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-async-arrow-function-expression.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-integer-separators.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-async-arrow-function-expression.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
@@ -1382,10 +1366,6 @@
     {
       "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-yield-expression.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-async-arrow-function-expression.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-integer-separators.js",
@@ -3005,7 +2985,7 @@
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-arrow-returns-newtarget.js",
@@ -3013,7 +2993,7 @@
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-arrow.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-function-returns-arguments-from-own-function.js",
@@ -3077,14 +3057,10 @@
     },
     {
       "path": "test/language/expressions/class/async-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/async-method-static/returns-async-arrow-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/async-method-static/returns-async-arrow.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
@@ -3137,7 +3113,7 @@
     },
     {
       "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-async-arrow-function-expression.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-condition-expression-false.js",
@@ -3224,15 +3200,7 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab9\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/cpn-class-expr-computed-property-name-from-async-arrow-function-expression.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/language/expressions/class/cpn-class-expr-computed-property-name-from-integer-separators.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-async-arrow-function-expression.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
@@ -3242,10 +3210,6 @@
     {
       "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-yield-expression.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-async-arrow-function-expression.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-integer-separators.js",
@@ -4005,6 +3969,42 @@
     },
     {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-async-meth-prototype.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-async-meth-super.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-gen-meth-prototype.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-gen-meth-super.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-get-meth-prototype.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-get-meth-super.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-meth-prototype.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-meth-super.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     }
   ],

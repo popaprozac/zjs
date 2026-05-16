@@ -1857,7 +1857,9 @@ fn parse_function_expr(p: Parser*, is_async: bool) -> AstNode* {
 // Arrow function body: a block (preserves explicit return semantics)
 // OR a single AssignmentExpression (concise body — implicit return).
 // Both forms count as entering a function for `return` purposes.
-fn parse_arrow_body(p: Parser*) -> AstNode* {
+fn parse_arrow_body(p: Parser*, is_async: bool) -> AstNode* {
+    let saved_async = p.in_async;
+    p.in_async = is_async;
     p.function_depth = p.function_depth + 1;
     let r: AstNode* = NULL;
     if peek_kind(p) == TokenKind::LBrace {
@@ -1866,43 +1868,50 @@ fn parse_arrow_body(p: Parser*) -> AstNode* {
         r = parse_assignment(p);
     }
     p.function_depth = p.function_depth - 1;
+    p.in_async = saved_async;
     return r;
 }
 
-// Single-identifier arrow: `x => body`
-fn parse_arrow_single(p: Parser*) -> AstNode* {
+// Single-identifier arrow: `x => body` (or `async x => body`)
+fn parse_arrow_single(p: Parser*, is_async: bool) -> AstNode* {
+    let start_pos = peek(p).start;
     let name_tok = advance(p);     // identifier
     advance(p);                    // '=>'
 
     let param = new_node(&p.tracker, NodeKind::IdentExpr,
                          name_tok.start, name_tok.start + name_tok.length);
+    param.name_start  = name_tok.start;
+    param.name_length = name_tok.length;
     let arr: AstNode** = NULL;
     arr = alloc_n<AstNode*>(1);
     arr[0] = param;
     alloc_list_push(&p.tracker, (void*)arr);
 
-    let body = parse_arrow_body(p);
+    let body = parse_arrow_body(p, is_async);
     if body == NULL { return NULL; }
 
-    let node = new_node(&p.tracker, NodeKind::ArrowFunc, name_tok.start, body.end);
+    let node = new_node(&p.tracker, NodeKind::ArrowFunc, start_pos, body.end);
     node.left = body;
     node.children = arr;
     node.children_count = 1;
+    node.bool_value = is_async;
     return node;
 }
 
-// Paren-list arrow: `(a, b) => body`, `() => body`
-fn parse_arrow_paren(p: Parser*) -> AstNode* {
-    let lparen = advance(p);     // '('
+// Paren-list arrow: `(a, b) => body`, `() => body` (or `async (...) => body`)
+fn parse_arrow_paren(p: Parser*, is_async: bool) -> AstNode* {
+    let start_pos = peek(p).start;
+    advance(p);                  // '('
     let params = parse_param_list(p);
     if !expect_kind(p, TokenKind::RParen) { return NULL; }
     if !expect_kind(p, TokenKind::Arrow)  { return NULL; }
-    let body = parse_arrow_body(p);
+    let body = parse_arrow_body(p, is_async);
     if body == NULL { return NULL; }
-    let node = new_node(&p.tracker, NodeKind::ArrowFunc, lparen.start, body.end);
+    let node = new_node(&p.tracker, NodeKind::ArrowFunc, start_pos, body.end);
     node.left = body;
     node.children = params.arr;
     node.children_count = params.count;
+    node.bool_value = is_async;
     return node;
 }
 
@@ -2100,10 +2109,27 @@ fn parse_assignment(p: Parser*) -> AstNode* {
     // expression path, because `x => body` and `(a, b) => body` would
     // otherwise be eagerly consumed as Identifier / Paren expressions.
     if peek_kind(p) == TokenKind::Identifier && peek_at(p, 1).kind == TokenKind::Arrow {
-        return parse_arrow_single(p);
+        return parse_arrow_single(p, false);
     }
     if peek_kind(p) == TokenKind::LParen && lookahead_arrow_paren(p) {
-        return parse_arrow_paren(p);
+        return parse_arrow_paren(p, false);
+    }
+    // `async x => body` / `async (...) => body` — async arrow.
+    if peek_kind(p) == TokenKind::KwAsync {
+        let next = peek_at(p, 1);
+        if next.kind == TokenKind::Identifier && peek_at(p, 2).kind == TokenKind::Arrow {
+            advance(p);                              // consume `async`
+            return parse_arrow_single(p, true);
+        }
+        if next.kind == TokenKind::LParen {
+            // Save / restore in case the LParen turns out to be a call.
+            let saved_pos = p.pos;
+            advance(p);                              // consume `async`
+            if lookahead_arrow_paren(p) {
+                return parse_arrow_paren(p, true);
+            }
+            p.pos = saved_pos;                       // rewind to `async`
+        }
     }
 
     let left = parse_conditional(p);
@@ -2156,7 +2182,14 @@ fn parse_conditional(p: Parser*) -> AstNode* {
     let cond = parse_nullish(p);
     if cond == NULL { return NULL; }
     if !match_kind(p, TokenKind::Question) { return cond; }
+    // ECMA-262: the consequent branch's grammar parameter is [+In] even
+    // when the outer context is [~In] — so `cond ? 'k' in obj : alt`
+    // parses in a `for(...)` head. The alternate branch inherits the
+    // outer flag.
+    let saved_no_in = p.no_in;
+    p.no_in = false;
     let conseq = parse_assignment(p);
+    p.no_in = saved_no_in;
     if conseq == NULL { return NULL; }
     if !expect_kind(p, TokenKind::Colon) { return NULL; }
     let alt = parse_assignment(p);
