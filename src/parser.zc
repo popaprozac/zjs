@@ -1223,7 +1223,12 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
         let nd = p.source + first.start;
         let is_kw_static: int = 0;
         raw { is_kw_static = (memcmp(nd, "static", 6) == 0) ? 1 : 0; }
-        if is_kw_static != 0 && (is_property_name_start(peek_kind2(p)) || peek_kind2(p) == TokenKind::LBracket) {
+        // `static` can be followed by a property-name, `[` (computed),
+        // `*` (generator method), or — once we add it — `async` for an
+        // async method.
+        if is_kw_static != 0 && (is_property_name_start(peek_kind2(p))
+                                 || peek_kind2(p) == TokenKind::LBracket
+                                 || peek_kind2(p) == TokenKind::Star) {
             advance(p);
             is_static = true;
         }
@@ -1236,6 +1241,14 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     if peek_kind(p) == TokenKind::KwAsync && (is_property_name_start(peek_kind2(p)) || peek_kind2(p) == TokenKind::LBracket) {
         advance(p);
         is_async_method = true;
+    }
+    // Optional `*` — generator method (or async generator). Async
+    // generators (`async *method`) parse but aren't fully supported
+    // yet; we tag them so they at least don't trip the parser.
+    let is_gen_method: bool = false;
+    if peek_kind(p) == TokenKind::Star {
+        advance(p);
+        is_gen_method = true;
     }
     // Optional `get` / `set` accessor prefix. Same rule as `static`:
     // only treat as the contextual keyword when followed by another
@@ -1277,7 +1290,7 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     // Disambiguate method vs field. A `(` here means method; anything
     // else (`=`, `;`, `}`, or the next class-element name on a new
     // line) is a public class field.
-    if peek_kind(p) != TokenKind::LParen && acc_kind == TokenKind::Eq && !is_async_method {
+    if peek_kind(p) != TokenKind::LParen && acc_kind == TokenKind::Eq && !is_async_method && !is_gen_method {
         // Field: `name = expr`, `name;`, or bare `name` (ASI).
         let init_expr: AstNode* = NULL;
         if peek_kind(p) == TokenKind::Eq {
@@ -1309,11 +1322,14 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
 
     if peek_kind(p) != TokenKind::LBrace { p.had_error = true; return NULL; }
     let saved_async = p.in_async;
+    let saved_gen = p.in_generator;
     p.in_async = is_async_method;
+    p.in_generator = is_gen_method;
     p.function_depth = p.function_depth + 1;
     let body = parse_block(p);
     p.function_depth = p.function_depth - 1;
     p.in_async = saved_async;
+    p.in_generator = saved_gen;
     if body == NULL { return NULL; }
 
     let node = new_node(&p.tracker, NodeKind::MethodDef, mut_start, body.end);
@@ -1330,10 +1346,15 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     node.left = body;
     node.children = params.arr;
     node.children_count = params.count;
-    // Reuse `num` to stash the async flag — class methods don't use
-    // num for anything else, and adding a dedicated bool would ripple
-    // through every AstNode.
-    if is_async_method { node.num = 1.0; } else { node.num = 0.0; }
+    // Reuse `num` to stash function-kind flags. Class methods don't
+    // use num for anything else, and adding dedicated bools would
+    // ripple through every AstNode.
+    //   1.0 = async, 4.0 = generator, 5.0 = async generator (parsed
+    //   but treated as plain generator below the parser).
+    if is_async_method && is_gen_method { node.num = 5.0; }
+    else if is_async_method            { node.num = 1.0; }
+    else if is_gen_method              { node.num = 4.0; }
+    else                               { node.num = 0.0; }
     return node;
 }
 

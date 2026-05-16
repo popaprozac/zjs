@@ -1919,7 +1919,9 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     // (MethodDef num is overloaded with the async / synth-ctor
     // sentinels; generator methods aren't supported yet).
     if node.kind == NodeKind::MethodDef {
-        f.is_async = node.num == 1.0;
+        // num: 0 = plain, 1 = async, 4 = generator, 5 = async generator.
+        f.is_async = node.num == 1.0 || node.num == 5.0;
+        f.is_generator = node.num == 4.0 || node.num == 5.0;
     } else {
         f.is_async = node.bool_value;
         f.is_generator = node.num == 3.0;
