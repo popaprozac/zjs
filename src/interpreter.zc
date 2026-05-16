@@ -38,6 +38,40 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         }
         return zjs_undefined();
     }
+    // Map / Set: methods + accessor "size" live on the shared proto.
+    // The host_*_size_getter functions read the receiver's count, so
+    // we expose .size by detecting the key here and dispatching to
+    // the accessor — saves us from wiring real getter slots.
+    if zjs_is_map(obj) != 0 && ctx.map_proto != NULL {
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        let name = zjs_as_string(key);
+        let kd = name.data;
+        let kn = name.length;
+        let is_size: int = 0;
+        raw { is_size = (kn == 4 && memcmp(kd, "size", 4) == 0) ? 1 : 0; }
+        if is_size != 0 { return zjs_int32((i32)zjs_as_map(obj).size); }
+        let slot = class_find_slot(ctx.map_proto.cls, name);
+        if slot >= 0 {
+            let v = ctx.map_proto.slots[(u32)slot];
+            if zjs_is_deleted(v) == 0 { return v; }
+        }
+        return zjs_undefined();
+    }
+    if zjs_is_set(obj) != 0 && ctx.set_proto != NULL {
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        let name = zjs_as_string(key);
+        let kd = name.data;
+        let kn = name.length;
+        let is_size: int = 0;
+        raw { is_size = (kn == 4 && memcmp(kd, "size", 4) == 0) ? 1 : 0; }
+        if is_size != 0 { return zjs_int32((i32)zjs_as_set(obj).size); }
+        let slot = class_find_slot(ctx.set_proto.cls, name);
+        if slot >= 0 {
+            let v = ctx.set_proto.slots[(u32)slot];
+            if zjs_is_deleted(v) == 0 { return v; }
+        }
+        return zjs_undefined();
+    }
     // Array: integer index OR "length", with prototype-method fallback.
     if zjs_is_array(obj) != 0 {
         let arr = zjs_as_array(obj);
@@ -3157,6 +3191,18 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
+                } else if zjs_is_map(val) != 0 {
+                    let cur = ctx.map_proto;
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
+                } else if zjs_is_set(val) != 0 {
+                    let cur = ctx.set_proto;
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
                 }
             }
             regs[inst.a] = zjs_bool(result);
@@ -3352,7 +3398,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 || zjs_is_regexp(call_result) != 0
                 || zjs_is_function(call_result) != 0
                 || zjs_is_closure(call_result) != 0
-                || zjs_is_host_function(call_result) != 0;
+                || zjs_is_host_function(call_result) != 0
+                || zjs_is_map(call_result) != 0
+                || zjs_is_set(call_result) != 0;
             if result_is_object {
                 regs[dst2] = call_result;
             } else if final_this.bits != new_obj_v.bits
@@ -3529,7 +3577,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 || zjs_is_regexp(call_result) != 0
                 || zjs_is_function(call_result) != 0
                 || zjs_is_closure(call_result) != 0
-                || zjs_is_host_function(call_result) != 0;
+                || zjs_is_host_function(call_result) != 0
+                || zjs_is_map(call_result) != 0
+                || zjs_is_set(call_result) != 0;
             // Derived-class ctor: a non-undefined non-Object return is
             // a TypeError. Base ctors silently coerce to `this`.
             let callee_is_derived: bool = false;

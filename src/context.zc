@@ -225,6 +225,11 @@ struct ZjsContext {
     // property_get on TAG_GENERATOR walks this chain.
     generator_proto:    ZjsObject*;
 
+    // Map / Set prototypes (2026-05-16). property_get on TAG_MAP /
+    // TAG_SET walks these chains.
+    map_proto:          ZjsObject*;
+    set_proto:          ZjsObject*;
+
     // --- Atom table (interned strings) ---
     // Open-addressed hash table, power-of-2 capacity. Used for
     // property names + source-code string literals. Atoms are GC
@@ -802,6 +807,33 @@ fn gc_mark_value(v: ZjsValue) -> void {
         return;
     }
 
+    if tag == TAG_MAP {
+        let mm: ZjsMap* = NULL;
+        raw { mm = (ZjsMap*)p; }
+        let mi: u32 = 0;
+        while mi < mm.count {
+            if !mm.entries[mi].deleted {
+                gc_mark_value(mm.entries[mi].key);
+                gc_mark_value(mm.entries[mi].value);
+            }
+            mi = mi + 1;
+        }
+        return;
+    }
+
+    if tag == TAG_SET {
+        let ss: ZjsSet* = NULL;
+        raw { ss = (ZjsSet*)p; }
+        let si: u32 = 0;
+        while si < ss.count {
+            if !ss.entries[si].deleted {
+                gc_mark_value(ss.entries[si].value);
+            }
+            si = si + 1;
+        }
+        return;
+    }
+
     if tag == TAG_REGEXP {
         let r: ZjsRegExp* = NULL;
         raw { r = (ZjsRegExp*)p; }
@@ -1017,6 +1049,12 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     if ctx.generator_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.generator_proto));
     }
+    if ctx.map_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.map_proto));
+    }
+    if ctx.set_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.set_proto));
+    }
     // Interned atoms — they live for the context's lifetime.
     let a: u32 = 0;
     while a < ctx.atom_cap {
@@ -1060,6 +1098,18 @@ fn gc_sweep(ctx: ZjsContext*) -> void {
                   raw { g = (ZjsGenerator*)p; }
                   if g.saved_regs != NULL { dealloc(g.saved_regs); }
                   dealloc(g);
+              }
+              else if tag == TAG_MAP           {
+                  let mm: ZjsMap* = NULL;
+                  raw { mm = (ZjsMap*)p; }
+                  if mm.entries != NULL { dealloc(mm.entries); }
+                  dealloc(mm);
+              }
+              else if tag == TAG_SET           {
+                  let ss: ZjsSet* = NULL;
+                  raw { ss = (ZjsSet*)p; }
+                  if ss.entries != NULL { dealloc(ss.entries); }
+                  dealloc(ss);
               }
         }
         i = i + 1;
@@ -6207,6 +6257,444 @@ fn host_generator_throw(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     return r;
 }
 
+// =====================================================================
+// Map host functions (2026-05-16). Storage = linear ZjsMapEntry array
+// with tombstones; lookups are O(n). Spec semantics: insertion-order
+// iteration, SameValueZero key comparison, .size excludes tombstones.
+// =====================================================================
+
+fn map_find_slot(m: ZjsMap*, key: ZjsValue) -> i32 {
+    let i: u32 = 0;
+    while i < m.count {
+        let e = m.entries + i;
+        if !e.deleted && zjs_same_value_zero(e.key, key) != 0 {
+            return (i32)i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn map_ensure_cap(m: ZjsMap*, want: u32) -> void {
+    if want <= m.cap { return; }
+    let new_cap: u32 = if m.cap == 0 { 8 } else { m.cap * 2 };
+    while new_cap < want { new_cap = new_cap * 2; }
+    m.entries = realloc_n<ZjsMapEntry>(m.entries, (usize)m.cap, (usize)new_cap);
+    m.cap = new_cap;
+}
+
+fn map_set_entry(m: ZjsMap*, key: ZjsValue, val: ZjsValue) -> void {
+    let slot = map_find_slot(m, key);
+    if slot >= 0 {
+        m.entries[(u32)slot].value = val;
+        return;
+    }
+    map_ensure_cap(m, m.count + 1);
+    m.entries[m.count] = ZjsMapEntry{ key: key, value: val, deleted: false };
+    m.count = m.count + 1;
+    m.size = m.size + 1;
+}
+
+fn map_require_this(ctx: ZjsContext*) -> ZjsMap* {
+    let this_v = ctx.host_this;
+    if zjs_is_map(this_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Map method called on non-Map", 28);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return NULL;
+    }
+    return zjs_as_map(this_v);
+}
+
+fn host_map_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let m = zjs_map_new();
+    ctx_register_cell(ctx, (void*)m);
+    let m_v = zjs_cell_from_ptr((void*)m);
+    // Optional iterable arg — each entry must itself be an iterable of
+    // [key, value].
+    if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
+        let iter = iter_get(ctx, args[0]);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        ctx_push_temp_root(ctx, m_v);
+        let safety: u32 = 0;
+        while safety < 100000000 {
+            let step = iter_step(ctx, iter);
+            if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if step.done { break; }
+            // Pull [key, value] off step.value via property indexing.
+            // Spec requires Object coercion; we use property_get which
+            // handles arrays directly.
+            let k = property_get(ctx, step.value, zjs_int32(0));
+            if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            let v = property_get(ctx, step.value, zjs_int32(1));
+            if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            map_set_entry(m, k, v);
+            safety = safety + 1;
+        }
+        ctx_pop_temp_root(ctx);
+    }
+    return m_v;
+}
+
+fn host_map_get(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let m = map_require_this(ctx);
+    if m == NULL { return zjs_undefined(); }
+    if argc == 0 { return zjs_undefined(); }
+    let slot = map_find_slot(m, args[0]);
+    if slot < 0 { return zjs_undefined(); }
+    return m.entries[(u32)slot].value;
+}
+
+fn host_map_set(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let m = map_require_this(ctx);
+    if m == NULL { return zjs_undefined(); }
+    let k = if argc > 0 { args[0] } else { zjs_undefined() };
+    let v = if argc > 1 { args[1] } else { zjs_undefined() };
+    map_set_entry(m, k, v);
+    return ctx.host_this;
+}
+
+fn host_map_has(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let m = map_require_this(ctx);
+    if m == NULL { return zjs_undefined(); }
+    if argc == 0 { return zjs_bool(false); }
+    let slot = map_find_slot(m, args[0]);
+    if slot < 0 { return zjs_bool(false); }
+    return zjs_bool(true);
+}
+
+fn host_map_delete(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let m = map_require_this(ctx);
+    if m == NULL { return zjs_undefined(); }
+    if argc == 0 { return zjs_bool(false); }
+    let slot = map_find_slot(m, args[0]);
+    if slot < 0 { return zjs_bool(false); }
+    m.entries[(u32)slot].deleted = true;
+    m.entries[(u32)slot].key = zjs_undefined();
+    m.entries[(u32)slot].value = zjs_undefined();
+    m.size = m.size - 1;
+    return zjs_bool(true);
+}
+
+fn host_map_clear(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let m = map_require_this(ctx);
+    if m == NULL { return zjs_undefined(); }
+    m.count = 0;
+    m.size = 0;
+    return zjs_undefined();
+}
+
+fn host_map_size_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let m = map_require_this(ctx);
+    if m == NULL { return zjs_undefined(); }
+    return zjs_int32((i32)m.size);
+}
+
+fn host_map_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let m = map_require_this(ctx);
+    if m == NULL { return zjs_undefined(); }
+    if argc == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Map.prototype.forEach requires a callback", 41);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let cb = args[0];
+    let this_arg = if argc > 1 { args[1] } else { zjs_undefined() };
+    let nullp: ZjsValue* = NULL;
+    let map_v = ctx.host_this;
+    let i: u32 = 0;
+    while i < m.count {
+        let e = m.entries + i;
+        if !e.deleted {
+            // Build a small arg buffer: (value, key, map).
+            let local_args: ZjsValue[3];
+            local_args[0] = e.value;
+            local_args[1] = e.key;
+            local_args[2] = map_v;
+            let lp: ZjsValue* = NULL;
+            raw { lp = &local_args[0]; }
+            zjs_call_value_with_this(ctx, cb, this_arg, lp, 3);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        }
+        i = i + 1;
+    }
+    return zjs_undefined();
+}
+
+// Build an iterator over the map's live entries. `kind`:
+//   0 = keys, 1 = values, 2 = entries [k,v]
+fn build_map_iterator(ctx: ZjsContext*, m_v: ZjsValue, kind: u32) -> ZjsValue {
+    let it = ctx_new_object(ctx);
+    let o = zjs_as_object(it);
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"_map", 4), m_v);
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"_i", 2),   zjs_int32(0));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"_kind", 5), zjs_int32((i32)kind));
+    let next_ptr: void* = NULL; raw { next_ptr = (void*)host_map_iter_next; }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"next", 4),
+               ctx_make_host_function(ctx, (char*)"next", next_ptr));
+    let self_ptr: void* = NULL; raw { self_ptr = (void*)host_self_iter; }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
+               ctx_make_host_function(ctx, (char*)"[Symbol.iterator]", self_ptr));
+    return it;
+}
+
+fn host_map_iter_next(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let recv = zjs_get_host_this(ctx);
+    if zjs_is_object(recv) == 0 {
+        return build_iter_result_helper(ctx, zjs_undefined(), true);
+    }
+    let m_v = property_get(ctx, recv, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"_map", 4)));
+    let i_v = property_get(ctx, recv, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"_i",   2)));
+    let k_v = property_get(ctx, recv, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"_kind",5)));
+    if zjs_is_map(m_v) == 0 { return build_iter_result_helper(ctx, zjs_undefined(), true); }
+    let m = zjs_as_map(m_v);
+    let i: u32 = if zjs_is_int32(i_v) != 0 { (u32)zjs_as_int32(i_v) } else { 0 };
+    let kind: u32 = if zjs_is_int32(k_v) != 0 { (u32)zjs_as_int32(k_v) } else { 2 };
+    while i < m.count {
+        let e = m.entries + i;
+        i = i + 1;
+        if e.deleted { continue; }
+        object_set(ctx, zjs_as_object(recv),
+                   ctx_intern_atom(ctx, (char*)"_i", 2), zjs_int32((i32)i));
+        if kind == 0 { return build_iter_result_helper(ctx, e.key, false); }
+        if kind == 1 { return build_iter_result_helper(ctx, e.value, false); }
+        // entries — pair as a fresh array.
+        let pair = ctx_new_array(ctx, 2);
+        let pa = zjs_as_array(pair);
+        pa.elements[0] = e.key;
+        pa.elements[1] = e.value;
+        pa.length = 2;
+        return build_iter_result_helper(ctx, pair, false);
+    }
+    object_set(ctx, zjs_as_object(recv),
+               ctx_intern_atom(ctx, (char*)"_i", 2), zjs_int32((i32)m.count));
+    return build_iter_result_helper(ctx, zjs_undefined(), true);
+}
+
+fn host_map_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if map_require_this(ctx) == NULL { return zjs_undefined(); }
+    return build_map_iterator(ctx, ctx.host_this, 0);
+}
+
+fn host_map_values(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if map_require_this(ctx) == NULL { return zjs_undefined(); }
+    return build_map_iterator(ctx, ctx.host_this, 1);
+}
+
+fn host_map_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if map_require_this(ctx) == NULL { return zjs_undefined(); }
+    return build_map_iterator(ctx, ctx.host_this, 2);
+}
+
+// =====================================================================
+// Set host functions (2026-05-16). Same storage shape minus the value.
+// =====================================================================
+
+fn set_find_slot(s: ZjsSet*, v: ZjsValue) -> i32 {
+    let i: u32 = 0;
+    while i < s.count {
+        let e = s.entries + i;
+        if !e.deleted && zjs_same_value_zero(e.value, v) != 0 {
+            return (i32)i;
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn set_ensure_cap(s: ZjsSet*, want: u32) -> void {
+    if want <= s.cap { return; }
+    let new_cap: u32 = if s.cap == 0 { 8 } else { s.cap * 2 };
+    while new_cap < want { new_cap = new_cap * 2; }
+    s.entries = realloc_n<ZjsSetEntry>(s.entries, (usize)s.cap, (usize)new_cap);
+    s.cap = new_cap;
+}
+
+fn set_add_entry(s: ZjsSet*, v: ZjsValue) -> void {
+    let slot = set_find_slot(s, v);
+    if slot >= 0 { return; }
+    set_ensure_cap(s, s.count + 1);
+    s.entries[s.count] = ZjsSetEntry{ value: v, deleted: false };
+    s.count = s.count + 1;
+    s.size = s.size + 1;
+}
+
+fn set_require_this(ctx: ZjsContext*) -> ZjsSet* {
+    let this_v = ctx.host_this;
+    if zjs_is_set(this_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Set method called on non-Set", 28);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return NULL;
+    }
+    return zjs_as_set(this_v);
+}
+
+fn host_set_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s = zjs_set_new();
+    ctx_register_cell(ctx, (void*)s);
+    let s_v = zjs_cell_from_ptr((void*)s);
+    if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
+        let iter = iter_get(ctx, args[0]);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        ctx_push_temp_root(ctx, s_v);
+        let safety: u32 = 0;
+        while safety < 100000000 {
+            let step = iter_step(ctx, iter);
+            if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if step.done { break; }
+            set_add_entry(s, step.value);
+            safety = safety + 1;
+        }
+        ctx_pop_temp_root(ctx);
+    }
+    return s_v;
+}
+
+fn host_set_add(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s = set_require_this(ctx);
+    if s == NULL { return zjs_undefined(); }
+    let v = if argc > 0 { args[0] } else { zjs_undefined() };
+    set_add_entry(s, v);
+    return ctx.host_this;
+}
+
+fn host_set_has(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s = set_require_this(ctx);
+    if s == NULL { return zjs_undefined(); }
+    if argc == 0 { return zjs_bool(false); }
+    let slot = set_find_slot(s, args[0]);
+    if slot < 0 { return zjs_bool(false); }
+    return zjs_bool(true);
+}
+
+fn host_set_delete(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s = set_require_this(ctx);
+    if s == NULL { return zjs_undefined(); }
+    if argc == 0 { return zjs_bool(false); }
+    let slot = set_find_slot(s, args[0]);
+    if slot < 0 { return zjs_bool(false); }
+    s.entries[(u32)slot].deleted = true;
+    s.entries[(u32)slot].value = zjs_undefined();
+    s.size = s.size - 1;
+    return zjs_bool(true);
+}
+
+fn host_set_clear(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s = set_require_this(ctx);
+    if s == NULL { return zjs_undefined(); }
+    s.count = 0;
+    s.size = 0;
+    return zjs_undefined();
+}
+
+fn host_set_size_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s = set_require_this(ctx);
+    if s == NULL { return zjs_undefined(); }
+    return zjs_int32((i32)s.size);
+}
+
+fn host_set_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s = set_require_this(ctx);
+    if s == NULL { return zjs_undefined(); }
+    if argc == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Set.prototype.forEach requires a callback", 41);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let cb = args[0];
+    let this_arg = if argc > 1 { args[1] } else { zjs_undefined() };
+    let set_v = ctx.host_this;
+    let i: u32 = 0;
+    while i < s.count {
+        let e = s.entries + i;
+        if !e.deleted {
+            let local_args: ZjsValue[3];
+            // Spec: forEach passes (value, value, set) — value duplicated
+            // to match Map's (value, key, map) shape.
+            local_args[0] = e.value;
+            local_args[1] = e.value;
+            local_args[2] = set_v;
+            let lp: ZjsValue* = NULL;
+            raw { lp = &local_args[0]; }
+            zjs_call_value_with_this(ctx, cb, this_arg, lp, 3);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        }
+        i = i + 1;
+    }
+    return zjs_undefined();
+}
+
+fn build_set_iterator(ctx: ZjsContext*, s_v: ZjsValue, kind: u32) -> ZjsValue {
+    let it = ctx_new_object(ctx);
+    let o = zjs_as_object(it);
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"_set", 4), s_v);
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"_i", 2),   zjs_int32(0));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"_kind", 5), zjs_int32((i32)kind));
+    let next_ptr: void* = NULL; raw { next_ptr = (void*)host_set_iter_next; }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"next", 4),
+               ctx_make_host_function(ctx, (char*)"next", next_ptr));
+    let self_ptr: void* = NULL; raw { self_ptr = (void*)host_self_iter; }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
+               ctx_make_host_function(ctx, (char*)"[Symbol.iterator]", self_ptr));
+    return it;
+}
+
+fn host_set_iter_next(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let recv = zjs_get_host_this(ctx);
+    if zjs_is_object(recv) == 0 {
+        return build_iter_result_helper(ctx, zjs_undefined(), true);
+    }
+    let s_v = property_get(ctx, recv, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"_set", 4)));
+    let i_v = property_get(ctx, recv, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"_i",   2)));
+    let k_v = property_get(ctx, recv, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"_kind",5)));
+    if zjs_is_set(s_v) == 0 { return build_iter_result_helper(ctx, zjs_undefined(), true); }
+    let s = zjs_as_set(s_v);
+    let i: u32 = if zjs_is_int32(i_v) != 0 { (u32)zjs_as_int32(i_v) } else { 0 };
+    let kind: u32 = if zjs_is_int32(k_v) != 0 { (u32)zjs_as_int32(k_v) } else { 1 };
+    while i < s.count {
+        let e = s.entries + i;
+        i = i + 1;
+        if e.deleted { continue; }
+        object_set(ctx, zjs_as_object(recv),
+                   ctx_intern_atom(ctx, (char*)"_i", 2), zjs_int32((i32)i));
+        if kind == 2 {
+            // entries — [value, value] pair (Set has no separate key).
+            let pair = ctx_new_array(ctx, 2);
+            let pa = zjs_as_array(pair);
+            pa.elements[0] = e.value;
+            pa.elements[1] = e.value;
+            pa.length = 2;
+            return build_iter_result_helper(ctx, pair, false);
+        }
+        return build_iter_result_helper(ctx, e.value, false);
+    }
+    object_set(ctx, zjs_as_object(recv),
+               ctx_intern_atom(ctx, (char*)"_i", 2), zjs_int32((i32)s.count));
+    return build_iter_result_helper(ctx, zjs_undefined(), true);
+}
+
+fn host_set_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if set_require_this(ctx) == NULL { return zjs_undefined(); }
+    return build_set_iterator(ctx, ctx.host_this, 0);
+}
+
+fn host_set_values(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if set_require_this(ctx) == NULL { return zjs_undefined(); }
+    return build_set_iterator(ctx, ctx.host_this, 1);
+}
+
+fn host_set_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if set_require_this(ctx) == NULL { return zjs_undefined(); }
+    return build_set_iterator(ctx, ctx.host_this, 2);
+}
+
 fn host_async_resume_fulfilled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let cont_v: ZjsValue = zjs_undefined();
     if ctx.current_host_fn != NULL {
@@ -8328,6 +8816,79 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                        ctx_intern_string(ctx, (char*)"@@asyncIterator", 15));
         }
     }
+    // Map (2026-05-16).
+    let map_ctor_ptr:    void* = NULL; raw { map_ctor_ptr    = (void*)host_map_ctor; }
+    let map_get_ptr:     void* = NULL; raw { map_get_ptr     = (void*)host_map_get; }
+    let map_set_ptr:     void* = NULL; raw { map_set_ptr     = (void*)host_map_set; }
+    let map_has_ptr:     void* = NULL; raw { map_has_ptr     = (void*)host_map_has; }
+    let map_delete_ptr:  void* = NULL; raw { map_delete_ptr  = (void*)host_map_delete; }
+    let map_clear_ptr:   void* = NULL; raw { map_clear_ptr   = (void*)host_map_clear; }
+    let map_foreach_ptr: void* = NULL; raw { map_foreach_ptr = (void*)host_map_for_each; }
+    let map_keys_ptr:    void* = NULL; raw { map_keys_ptr    = (void*)host_map_keys; }
+    let map_vals_ptr:    void* = NULL; raw { map_vals_ptr    = (void*)host_map_values; }
+    let map_ents_ptr:    void* = NULL; raw { map_ents_ptr    = (void*)host_map_entries; }
+    let map_ctor_v = ctx_register_host_function(ctx, (char*)"Map", map_ctor_ptr);
+    let map_proto_v = ctx_new_object(ctx);
+    ctx.map_proto = zjs_as_object(map_proto_v);
+    zjs_as_host_function(map_ctor_v).prototype = ctx.map_proto;
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), map_ctor_v);
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"get",      3),
+               ctx_make_host_function_arity(ctx, (char*)"get",      map_get_ptr,     1));
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"set",      3),
+               ctx_make_host_function_arity(ctx, (char*)"set",      map_set_ptr,     2));
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"has",      3),
+               ctx_make_host_function_arity(ctx, (char*)"has",      map_has_ptr,     1));
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"delete",   6),
+               ctx_make_host_function_arity(ctx, (char*)"delete",   map_delete_ptr,  1));
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"clear",    5),
+               ctx_make_host_function_arity(ctx, (char*)"clear",    map_clear_ptr,   0));
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"forEach",  7),
+               ctx_make_host_function_arity(ctx, (char*)"forEach",  map_foreach_ptr, 1));
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"keys",     4),
+               ctx_make_host_function_arity(ctx, (char*)"keys",     map_keys_ptr,    0));
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"values",   6),
+               ctx_make_host_function_arity(ctx, (char*)"values",   map_vals_ptr,    0));
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"entries",  7),
+               ctx_make_host_function_arity(ctx, (char*)"entries",  map_ents_ptr,    0));
+    // @@iterator on Map.prototype === entries.
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
+               ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", map_ents_ptr, 0));
+
+    // Set (2026-05-16).
+    let set_ctor_ptr:    void* = NULL; raw { set_ctor_ptr    = (void*)host_set_ctor; }
+    let set_add_ptr:     void* = NULL; raw { set_add_ptr     = (void*)host_set_add; }
+    let set_has_ptr:     void* = NULL; raw { set_has_ptr     = (void*)host_set_has; }
+    let set_delete_ptr:  void* = NULL; raw { set_delete_ptr  = (void*)host_set_delete; }
+    let set_clear_ptr:   void* = NULL; raw { set_clear_ptr   = (void*)host_set_clear; }
+    let set_foreach_ptr: void* = NULL; raw { set_foreach_ptr = (void*)host_set_for_each; }
+    let set_keys_ptr:    void* = NULL; raw { set_keys_ptr    = (void*)host_set_keys; }
+    let set_vals_ptr:    void* = NULL; raw { set_vals_ptr    = (void*)host_set_values; }
+    let set_ents_ptr:    void* = NULL; raw { set_ents_ptr    = (void*)host_set_entries; }
+    let set_ctor_v = ctx_register_host_function(ctx, (char*)"Set", set_ctor_ptr);
+    let set_proto_v = ctx_new_object(ctx);
+    ctx.set_proto = zjs_as_object(set_proto_v);
+    zjs_as_host_function(set_ctor_v).prototype = ctx.set_proto;
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), set_ctor_v);
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"add",      3),
+               ctx_make_host_function_arity(ctx, (char*)"add",      set_add_ptr,     1));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"has",      3),
+               ctx_make_host_function_arity(ctx, (char*)"has",      set_has_ptr,     1));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"delete",   6),
+               ctx_make_host_function_arity(ctx, (char*)"delete",   set_delete_ptr,  1));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"clear",    5),
+               ctx_make_host_function_arity(ctx, (char*)"clear",    set_clear_ptr,   0));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"forEach",  7),
+               ctx_make_host_function_arity(ctx, (char*)"forEach",  set_foreach_ptr, 1));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"keys",     4),
+               ctx_make_host_function_arity(ctx, (char*)"keys",     set_keys_ptr,    0));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"values",   6),
+               ctx_make_host_function_arity(ctx, (char*)"values",   set_vals_ptr,    0));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"entries",  7),
+               ctx_make_host_function_arity(ctx, (char*)"entries",  set_ents_ptr,    0));
+    // @@iterator on Set.prototype === values (per spec).
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
+               ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", set_vals_ptr, 0));
+
     ctx_register_host_function(ctx, (char*)"Proxy",      eval_ptr);
     ctx_register_host_function(ctx, (char*)"ArrayBuffer", eval_ptr);
     ctx_register_host_function(ctx, (char*)"Uint8Array",  eval_ptr);
@@ -8757,6 +9318,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     mark_proto_methods_non_constructor(ctx, ctx.regexp_proto);
     mark_proto_methods_non_constructor(ctx, ctx.promise_ctor_proto);
     mark_proto_methods_non_constructor(ctx, ctx.generator_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.map_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.set_proto);
     // Wrapper prototypes (Number.prototype, Boolean.prototype) and
     // Math live as the .prototype of their constructor or as a plain
     // global. Walk via the global table.

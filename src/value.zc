@@ -397,6 +397,23 @@ fn zjs_strict_eq(a: ZjsValue, b: ZjsValue) -> int {
     return 0;
 }
 
+// SameValueZero (ECMA-262 §7.2.11) — used by Map / Set key comparison
+// and Array.prototype.includes. Differs from strict equality only in
+// that NaN matches NaN. (SameValue also differentiates +0 / -0; we
+// don't need that variant yet.)
+fn zjs_same_value_zero(a: ZjsValue, b: ZjsValue) -> int {
+    if zjs_is_number(a) != 0 && zjs_is_number(b) != 0 {
+        let af = zjs_to_double(a);
+        let bf = zjs_to_double(b);
+        // NaN === NaN under SameValueZero. IEEE comparison says false;
+        // detect via self-inequality.
+        if af != af && bf != bf { return 1; }
+        if af == bf { return 1; }
+        return 0;
+    }
+    return zjs_strict_eq(a, b);
+}
+
 fn zjs_loose_eq(a: ZjsValue, b: ZjsValue) -> int {
     // ECMA-262 §7.2.13 IsLooselyEqual. The bracket sequence here mirrors
     // the spec steps: same-type strict-eq, null-undefined, cross-type
@@ -571,6 +588,12 @@ def TAG_GENERATOR:     u8 = 11;  // 2026-05-15: generator iterator. Wraps a
                                  //   synchronously via .next() / .return()
                                  //   / .throw() rather than from a
                                  //   microtask.
+def TAG_MAP:           u8 = 12;  // 2026-05-16: ECMA-262 Map. Linear
+                                 //   insertion-ordered entries with
+                                 //   tombstone-on-delete; SameValueZero
+                                 //   keys. Iterators view live entries.
+def TAG_SET:           u8 = 13;  // 2026-05-16: ECMA-262 Set. Same shape as
+                                 //   ZjsMap minus the value slot.
 
 // Promise states.
 def PROMISE_PENDING:   u8 = 0;
@@ -856,6 +879,85 @@ fn zjs_generator_new() -> ZjsGenerator* {
     g.state = GEN_INITIAL;
     g.self_iter_obj = NULL;
     return g;
+}
+
+// =====================================================================
+// Map / Set (2026-05-16). Spec semantics:
+//   * Iteration order = insertion order.
+//   * Keys compared via SameValueZero (NaN equals NaN; +0 equals -0).
+//   * `delete` tombstones rather than shifting so live iterators keep
+//     their cursor stable; `size` tracks live entries.
+// =====================================================================
+
+struct ZjsMapEntry {
+    key:     ZjsValue;
+    value:   ZjsValue;
+    deleted: bool;          // tombstone — skipped by iterators / .size
+}
+
+struct ZjsMap {
+    header:  CellHeader;    // type_tag = TAG_MAP
+    entries: ZjsMapEntry*;
+    count:   u32;           // entries.len (incl. tombstones)
+    cap:     u32;
+    size:    u32;           // live (non-tombstone) entry count
+}
+
+fn zjs_is_map(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_MAP { return 1; }
+    return 0;
+}
+
+fn zjs_as_map(v: ZjsValue) -> ZjsMap* {
+    let p = zjs_cell_as_ptr(v);
+    let m: ZjsMap* = NULL;
+    raw { m = (ZjsMap*)p; }
+    return m;
+}
+
+fn zjs_map_new() -> ZjsMap* {
+    let m = alloc<ZjsMap>();
+    m.header.type_tag = TAG_MAP;
+    m.entries = NULL;
+    m.count = 0;
+    m.cap = 0;
+    m.size = 0;
+    return m;
+}
+
+struct ZjsSetEntry {
+    value:   ZjsValue;
+    deleted: bool;
+}
+
+struct ZjsSet {
+    header:  CellHeader;    // type_tag = TAG_SET
+    entries: ZjsSetEntry*;
+    count:   u32;
+    cap:     u32;
+    size:    u32;
+}
+
+fn zjs_is_set(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_SET { return 1; }
+    return 0;
+}
+
+fn zjs_as_set(v: ZjsValue) -> ZjsSet* {
+    let p = zjs_cell_as_ptr(v);
+    let s: ZjsSet* = NULL;
+    raw { s = (ZjsSet*)p; }
+    return s;
+}
+
+fn zjs_set_new() -> ZjsSet* {
+    let s = alloc<ZjsSet>();
+    s.header.type_tag = TAG_SET;
+    s.entries = NULL;
+    s.count = 0;
+    s.cap = 0;
+    s.size = 0;
+    return s;
 }
 
 fn zjs_promise_new() -> ZjsPromise* {

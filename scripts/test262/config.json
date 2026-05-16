@@ -52,7 +52,9 @@
     "test/built-ins/String/prototype/slice",
     "test/built-ins/String/prototype/split",
     "test/built-ins/Math",
-    "test/built-ins/Promise"
+    "test/built-ins/Promise",
+    "test/built-ins/Map",
+    "test/built-ins/Set"
   ],
 
   "_skip_features_comment": "Tests whose `features` frontmatter intersects this list are skipped (counted as 'skipped'). Update as the engine grows.",
