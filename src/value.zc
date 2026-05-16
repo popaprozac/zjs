@@ -597,6 +597,11 @@ def TAG_SET:           u8 = 13;  // 2026-05-16: ECMA-262 Set. Same shape as
 def TAG_DATE:          u8 = 14;  // 2026-05-16: ECMA-262 Date. Internal slot
                                  //   is a single f64 ms-since-epoch (NaN for
                                  //   "invalid date").
+def TAG_ARRAY_ITER:    u8 = 16;  // 2026-05-16: pristine-Array iterator
+                                 //   fast path. Skips the generic
+                                 //   @@iterator/next host-call cycle when
+                                 //   for-of sees an Array (or String) with
+                                 //   the standard prototype iterator.
 def TAG_SYMBOL:        u8 = 15;  // 2026-05-16: ECMA-262 Symbol. Each Symbol
                                  //   carries a description (for toString) and a
                                  //   unique underlying property-key string used
@@ -996,6 +1001,39 @@ fn zjs_date_new(time_ms: f64) -> ZjsDate* {
     d.header.type_tag = TAG_DATE;
     d.time_ms = time_ms;
     return d;
+}
+
+// Fast-path iterator for arrays / strings. Bypasses the
+// @@iterator host-call dance when the source is a pristine array
+// (the common case). iter_step inspects this tag and walks src by
+// index inline. Falls back to the wrapper-object path the moment
+// user code overrides Array.prototype[@@iterator].
+struct ZjsArrayIter {
+    header: CellHeader;     // type_tag = TAG_ARRAY_ITER
+    src:    ZjsValue;        // TAG_ARRAY or TAG_STRING
+    index:  u32;
+    done:   bool;
+}
+
+fn zjs_is_array_iter(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_ARRAY_ITER { return 1; }
+    return 0;
+}
+
+fn zjs_as_array_iter(v: ZjsValue) -> ZjsArrayIter* {
+    let p = zjs_cell_as_ptr(v);
+    let ai: ZjsArrayIter* = NULL;
+    raw { ai = (ZjsArrayIter*)p; }
+    return ai;
+}
+
+fn zjs_array_iter_new(src: ZjsValue) -> ZjsArrayIter* {
+    let a = alloc<ZjsArrayIter>();
+    a.header.type_tag = TAG_ARRAY_ITER;
+    a.src = src;
+    a.index = 0;
+    a.done = false;
+    return a;
 }
 
 // =====================================================================

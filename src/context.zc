@@ -238,6 +238,11 @@ struct ZjsContext {
     set_proto:          ZjsObject*;
     date_proto:         ZjsObject*;
     symbol_proto:       ZjsObject*;
+    // Cached pristine Array/String @@iterator host fn. Used by iter_get
+    // to short-circuit to the TAG_ARRAY_ITER fast path when the lookup
+    // would yield this exact function (i.e. user code hasn't overridden
+    // Array.prototype[Symbol.iterator] / inserted an own @@iterator).
+    array_iter_host_fn: ZjsValue;
     // Monotonic counter for fresh symbol identity (used to derive each
     // Symbol's unique internal key string).
     symbol_counter:     u32;
@@ -858,6 +863,13 @@ fn gc_mark_value(v: ZjsValue) -> void {
         return;
     }
 
+    if tag == TAG_ARRAY_ITER {
+        let ai: ZjsArrayIter* = NULL;
+        raw { ai = (ZjsArrayIter*)p; }
+        gc_mark_value(ai.src);
+        return;
+    }
+
     if tag == TAG_SYMBOL {
         let sym: ZjsSymbol* = NULL;
         raw { sym = (ZjsSymbol*)p; }
@@ -1095,6 +1107,7 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     if ctx.symbol_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.symbol_proto));
     }
+    gc_mark_value(ctx.array_iter_host_fn);
     // Symbol.for registry — both keys and the symbols themselves stay
     // alive as long as the context does.
     let sfi: u32 = 0;
@@ -1170,6 +1183,11 @@ fn gc_sweep(ctx: ZjsContext*) -> void {
                   let sm: ZjsSymbol* = NULL;
                   raw { sm = (ZjsSymbol*)p; }
                   dealloc(sm);
+              }
+              else if tag == TAG_ARRAY_ITER    {
+                  let aa: ZjsArrayIter* = NULL;
+                  raw { aa = (ZjsArrayIter*)p; }
+                  dealloc(aa);
               }
         }
         i = i + 1;
@@ -2275,6 +2293,16 @@ fn iter_get(ctx: ZjsContext*, src: ZjsValue) -> ZjsValue {
         || zjs_is_closure(getter) != 0
         || zjs_is_host_function(getter) != 0;
     if getter_callable {
+        // Fast path: pristine Array / String iterator. The @@iterator
+        // lookup resolved to our cached host fn AND src is the right
+        // shape — skip the wrapper-object dance and just hand back a
+        // TAG_ARRAY_ITER, which iter_step indexes directly.
+        if getter.bits == ctx.array_iter_host_fn.bits
+           && (zjs_is_array(src) != 0 || zjs_is_string(src) != 0) {
+            let ai = zjs_array_iter_new(src);
+            ctx_register_cell(ctx, (void*)ai);
+            return zjs_cell_from_ptr((void*)ai);
+        }
         let nullp: ZjsValue* = NULL;
         let iter: ZjsValue = zjs_undefined();
         raw { iter = zjs_call_value_with_this(ctx, getter, src, nullp, 0); }
@@ -2300,6 +2328,40 @@ fn iter_get(ctx: ZjsContext*, src: ZjsValue) -> ZjsValue {
 // abrupt completion sets ctx.pending_throw_active and returns
 // {undefined, true} (treat as done so callers stop).
 fn iter_step(ctx: ZjsContext*, iter: ZjsValue) -> IterStep {
+    // Fast path for the pristine-array iterator. Index walk, no
+    // property_get, no host call. Recovers the ~3x array_iterate
+    // regression introduced by switching for-of to the live protocol.
+    if zjs_is_array_iter(iter) != 0 {
+        let ai = zjs_as_array_iter(iter);
+        if ai.done { return IterStep{ value: zjs_undefined(), done: true }; }
+        if zjs_is_array(ai.src) != 0 {
+            let arr = zjs_as_array(ai.src);
+            if ai.index >= arr.length {
+                ai.done = true;
+                return IterStep{ value: zjs_undefined(), done: true };
+            }
+            let v = arr.elements[ai.index];
+            if zjs_is_deleted(v) != 0 { v = zjs_undefined(); }
+            ai.index = ai.index + 1;
+            return IterStep{ value: v, done: false };
+        }
+        if zjs_is_string(ai.src) != 0 {
+            let s = zjs_as_string(ai.src);
+            if ai.index >= s.length {
+                ai.done = true;
+                return IterStep{ value: zjs_undefined(), done: true };
+            }
+            let buf = alloc_n<char>((usize)2);
+            buf[0] = s.data[ai.index];
+            buf[1] = (char)0;
+            let piece = ctx_intern_string_take(ctx, buf, 1);
+            ai.index = ai.index + 1;
+            return IterStep{ value: piece, done: false };
+        }
+        // Shouldn't happen, but fall through to done.
+        ai.done = true;
+        return IterStep{ value: zjs_undefined(), done: true };
+    }
     let nullp: ZjsValue* = NULL;
     let next_atom = ctx_intern_atom(ctx, (char*)"next", 4);
     let next_fn = property_get(ctx, iter, zjs_cell_from_ptr((void*)next_atom));
@@ -2328,6 +2390,8 @@ fn iter_step(ctx: ZjsContext*, iter: ZjsValue) -> IterStep {
 // don't distinguish; a throwing return() surfaces directly.
 fn iter_close(ctx: ZjsContext*, iter: ZjsValue) -> void {
     if zjs_is_undefined(iter) != 0 || zjs_is_null(iter) != 0 { return; }
+    // Fast-path iterators have no .return() — nothing to do.
+    if zjs_is_array_iter(iter) != 0 { return; }
     let nullp: ZjsValue* = NULL;
     let ret_atom = ctx_intern_atom(ctx, (char*)"return", 6);
     let ret_fn = property_get(ctx, iter, zjs_cell_from_ptr((void*)ret_atom));
@@ -9830,8 +9894,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // ordinary @@iterator lookup means `delete Array.prototype[@@iterator]`
     // breaks for-of and array-destructure per spec.
     let aiter_ptr: void* = NULL; raw { aiter_ptr = (void*)host_array_at_iterator; }
-    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
-               ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", aiter_ptr, 0));
+    let array_iter_v = ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", aiter_ptr, 0);
+    // Cache for the iter_get fast-path detection (pristine Array /
+    // String @@iterator lookups resolve to this exact host fn).
+    ctx.array_iter_host_fn = array_iter_v;
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10), array_iter_v);
     ctx.array_proto = array_proto;
     // Unify with the Array constructor's .prototype (set lazily here so
     // `Array.prototype.push.call(arr, x)` and similar find our method
@@ -9895,9 +9962,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // String.prototype[Symbol.iterator] — character iteration via the
     // same synthetic wrapper (host_array_iter_next branches on string
     // sources).
-    let siter_ptr: void* = NULL; raw { siter_ptr = (void*)host_array_at_iterator; }
+    // Reuse the SAME host-function cell installed on Array.prototype
+    // so the fast-path identity check in iter_get matches strings too.
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
-               ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", siter_ptr, 0));
+               ctx.array_iter_host_fn);
     ctx.string_proto = string_proto;
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), strv_full);
     // Unify with the String constructor's .prototype so
