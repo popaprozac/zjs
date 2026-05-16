@@ -1947,6 +1947,18 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     f.register_count = (u32)(c.max_reg + 1);
     if f.register_count < param_count { f.register_count = param_count; }
     f.param_count = param_count;
+    // ExpectedArgumentCount — walk params left-to-right, stop at the
+    // first with a default initializer or the rest binding.
+    let eac: u32 = 0;
+    let eac_i: u32 = 0;
+    while eac_i < total_children {
+        let pp = node.children[eac_i];
+        if pp.kind == NodeKind::RestParam { break; }
+        if pp.right != NULL { break; }
+        eac = eac + 1;
+        eac_i = eac_i + 1;
+    }
+    f.expected_arg_count = eac;
     f.ics = c.ics;
     f.ic_count = c.ic_count;
     f.uses_arguments = c.arguments_reg >= 0;

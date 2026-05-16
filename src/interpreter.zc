@@ -349,7 +349,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 let fp = zjs_cell_as_ptr(obj);
                 let f: Function* = NULL;
                 raw { f = (Function*)fp; }
-                return zjs_int32((i32)f.param_count);
+                return zjs_int32((i32)f.expected_arg_count);
             }
             // Expando bag — fires before Object.prototype so user-set
             // properties shadow inherited methods (`fn.toString = ...`
@@ -418,6 +418,37 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
             if is_call  != 0 { return ctx.fn_call_v; }
             if is_apply != 0 { return ctx.fn_apply_v; }
+            // Closure .length / .name fall through to the wrapped
+            // Function*. (Function.prototype walked below covers the
+            // rest of Function.prototype.*.)
+            let is_length: int = 0;
+            let is_name:   int = 0;
+            raw {
+                is_length = (kn == 6 && memcmp(kd, "length", 6) == 0) ? 1 : 0;
+                is_name   = (kn == 4 && memcmp(kd, "name",   4) == 0) ? 1 : 0;
+            }
+            if is_length != 0 {
+                let cl_l = zjs_as_closure(obj);
+                let fp_l = cl_l.function;
+                let f_l: Function* = NULL;
+                raw { f_l = (Function*)fp_l; }
+                return zjs_int32((i32)f_l.expected_arg_count);
+            }
+            if is_name != 0 {
+                let cl_n = zjs_as_closure(obj);
+                let fp_n = cl_n.function;
+                let f_n: Function* = NULL;
+                raw { f_n = (Function*)fp_n; }
+                if f_n.props != NULL {
+                    let nm_atom = ctx_intern_atom(ctx, (char*)"name", 4);
+                    let s_nm = class_find_slot(f_n.props.cls, nm_atom);
+                    if s_nm >= 0 {
+                        let nv = f_n.props.slots[(u32)s_nm];
+                        if zjs_is_deleted(nv) == 0 { return nv; }
+                    }
+                }
+                return ctx_intern_string(ctx, (char*)"", 0);
+            }
             // Same proto walk as TAG_FUNCTION — Function.prototype first.
             if ctx.function_proto != NULL {
                 let cur = ctx.function_proto;

@@ -446,6 +446,10 @@ struct Function {
     const_count:    u32;
     register_count: u32;       // size of the register file the interpreter must allocate
     param_count:    u32;       // 0 for the top-level program
+    // ECMA-262 ExpectedArgumentCount — index of the first parameter
+    // with a default initializer or rest binding (or = param_count if
+    // none). Read by Function.length / host-func length getters.
+    expected_arg_count: u32;
 
     // Inline-cache table for LoadProp / StoreProp (Phase 3.2b).
     ics:            ICEntry*;
