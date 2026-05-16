@@ -802,6 +802,12 @@ def GEN_INITIAL:   u8 = 0;
 def GEN_YIELDED:   u8 = 1;
 def GEN_RUNNING:   u8 = 2;
 def GEN_COMPLETED: u8 = 3;
+// Transient state used during the initial bytecode-Invoke of a
+// generator function: the prologue is running, Op::GeneratorStart will
+// fire at its end to capture state + unwind. Distinguished from
+// GEN_RUNNING so the GeneratorStart handler can tell "initial call"
+// from "subsequent .next() resume that's running past the prologue".
+def GEN_STARTING:  u8 = 4;
 
 struct ZjsGenerator {
     header:                 CellHeader;     // type_tag = TAG_GENERATOR

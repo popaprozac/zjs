@@ -1570,16 +1570,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 object_set(ctx, ctx.current_module.exports, name, val);
             }
         } else if op == Op::GeneratorStart {
-            // End of the generator's prologue at initial call. Snapshot
-            // frame state into the (pre-attached) generator, set state
-            // to GEN_YIELDED so first .next() resumes here, and unwind.
-            // The generator value lands in the caller's dst slot (the
-            // call's frame return_dst).
+            // End of the generator's prologue. Only the INITIAL call
+            // from bytecode-Invoke (state == GEN_STARTING) suspends
+            // here; .next()-driven resumes (state == GEN_RUNNING)
+            // sail past so the body runs to its first yield.
             let gen = ctx.frames[cur_idx].generator;
-            if gen == NULL {
-                // Should never happen — the call sites always attach a
-                // generator before pushing. If it does, just LeaveTry-
-                // style continue past.
+            if gen == NULL || gen.state != GEN_STARTING {
                 ip = ip + 1;
                 continue;
             }
@@ -2031,7 +2027,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     ctx_register_cell(ctx, (void*)gen);
                     gen.function = target;
                     gen.reg_count = target.register_count;
-                    gen.state = GEN_RUNNING;
+                    gen.state = GEN_STARTING;
                     gen.saved_host_this = new_this;
                     ctx.frames[cur_idx].ip = ip + 1;
                     push_call_frame_inplace(ctx, target, regs_base + (u32)base + 2, argc, dst);
@@ -2063,7 +2059,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     ctx_register_cell(ctx, (void*)gen);
                     gen.function = target2;
                     gen.reg_count = target2.register_count;
-                    gen.state = GEN_RUNNING;
+                    gen.state = GEN_STARTING;
                     gen.saved_host_this = new_this;
                     gen.saved_current_closure = cl;
                     ctx.frames[cur_idx].ip = ip + 1;
@@ -2135,7 +2131,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     ctx_register_cell(ctx, (void*)gen);
                     gen.function = target;
                     gen.reg_count = target.register_count;
-                    gen.state = GEN_RUNNING;
+                    gen.state = GEN_STARTING;
                     gen.saved_host_this = ctx.host_this;
                     ctx.frames[cur_idx].ip = ip + 1;
                     push_call_frame_inplace(ctx, target, regs_base + (u32)base + 1, argc, dst);
@@ -2175,7 +2171,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     ctx_register_cell(ctx, (void*)gen);
                     gen.function = target2;
                     gen.reg_count = target2.register_count;
-                    gen.state = GEN_RUNNING;
+                    gen.state = GEN_STARTING;
                     gen.saved_host_this = ctx.host_this;
                     gen.saved_current_closure = cl;
                     ctx.frames[cur_idx].ip = ip + 1;
