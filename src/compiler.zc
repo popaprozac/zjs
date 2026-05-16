@@ -634,6 +634,43 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         return compile_call(c, node);
     }
     if k == NodeKind::New {
+        // Detect `new Foo(...args)` spread in `new` argument list and
+        // route to the variadic path. Args go into a single array,
+        // SpreadNewInvoke reads argc from it at runtime.
+        let n_has_spread: bool = false;
+        let n_si: u32 = 0;
+        while n_si < node.children_count {
+            if node.children[n_si].kind == NodeKind::Spread { n_has_spread = true; break; }
+            n_si = n_si + 1;
+        }
+        if n_has_spread {
+            let n_base = c.next_reg;
+            alloc_reg(c); alloc_reg(c); // callee, args_array
+            let cr = compile_expr(c, node.left);
+            if cr != n_base {
+                emit(c, make_inst_ab(Op::Mov, n_base, cr));
+                if cr + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+            emit(c, make_inst_abc(Op::NewArray, n_base + 1, 0, 0));
+            let nj: u32 = 0;
+            while nj < node.children_count {
+                let ch = node.children[nj];
+                if ch.kind == NodeKind::Spread {
+                    let src_r = compile_expr(c, ch.left);
+                    emit(c, make_inst_ab(Op::ArraySpread, n_base + 1, src_r));
+                    if src_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                } else {
+                    let val_r = compile_expr(c, ch);
+                    emit(c, make_inst_ab(Op::ArrayPush, n_base + 1, val_r));
+                    if val_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                }
+                nj = nj + 1;
+            }
+            emit(c, make_inst_abc(Op::SpreadNewInvoke, n_base, n_base, 0));
+            c.next_reg = n_base + 1;
+            if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+            return n_base;
+        }
         // `new Foo(args)`: reserve a contiguous slot for callee + args,
         // then emit Op::NewInvoke (sets up { proto, this } and calls).
         let arg_count: u8 = (u8)node.children_count;
@@ -1271,6 +1308,14 @@ fn compile_object_literal(c: Compiler*, node: AstNode*) -> u8 {
     let i: u32 = 0;
     while i < node.children_count {
         let prop = node.children[i];
+        // `{ ...src }` — copy own enumerable string-keyed props from src.
+        if prop.kind == NodeKind::Spread {
+            let src_r = compile_expr(c, prop.left);
+            emit(c, make_inst_ab(Op::ObjectSpread, dst, src_r));
+            if src_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            i = i + 1;
+            continue;
+        }
         if prop.kind != NodeKind::ObjectProp {
             c.had_error = true;
             i = i + 1;
@@ -1314,7 +1359,7 @@ fn compile_object_literal(c: Compiler*, node: AstNode*) -> u8 {
 }
 
 fn compile_array_literal(c: Compiler*, node: AstNode*) -> u8 {
-    let count: u8 = (u8)node.children_count;
+    let count: u32 = node.children_count;
 
     if count == 0 {
         let dst = alloc_reg(c);
@@ -1322,27 +1367,60 @@ fn compile_array_literal(c: Compiler*, node: AstNode*) -> u8 {
         return dst;
     }
 
+    // Spread element check: if any child is Spread, switch to the
+    // dynamic-build path (NewArray + ArrayPush / ArraySpread). The
+    // fixed-shape path below packs elements into consecutive regs
+    // and lets NewArray slurp them in one shot — faster, but only
+    // works when the element count is known at compile time.
+    let has_spread: bool = false;
+    let s_i: u32 = 0;
+    while s_i < count {
+        if node.children[s_i].kind == NodeKind::Spread { has_spread = true; break; }
+        s_i = s_i + 1;
+    }
+
+    if has_spread {
+        let dst = alloc_reg(c);
+        emit(c, make_inst_abc(Op::NewArray, dst, 0, 0));
+        let j: u32 = 0;
+        while j < count {
+            let ch = node.children[j];
+            if ch.kind == NodeKind::Spread {
+                let src_r = compile_expr(c, ch.left);
+                emit(c, make_inst_ab(Op::ArraySpread, dst, src_r));
+                if src_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            } else {
+                let val_r = compile_expr(c, ch);
+                emit(c, make_inst_ab(Op::ArrayPush, dst, val_r));
+                if val_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+            j = j + 1;
+        }
+        return dst;
+    }
+
     // Reserve consecutive slots for elements. Result reuses base (the
     // interpreter copies elements out before writing dst).
+    let cnt: u8 = (u8)count;
     let base = c.next_reg;
     let i: u8 = 0;
-    while i < count {
+    while i < cnt {
         alloc_reg(c);
         i = i + 1;
     }
 
-    let j: u8 = 0;
-    while j < count {
-        let elem_r = compile_expr(c, node.children[j]);
-        let target = base + j;
+    let j2: u8 = 0;
+    while j2 < cnt {
+        let elem_r = compile_expr(c, node.children[j2]);
+        let target = base + j2;
         if elem_r != target {
             emit(c, make_inst_ab(Op::Mov, target, elem_r));
             if elem_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
         }
-        j = j + 1;
+        j2 = j2 + 1;
     }
 
-    emit(c, make_inst_abc(Op::NewArray, base, base, count));
+    emit(c, make_inst_abc(Op::NewArray, base, base, cnt));
     c.next_reg = base + 1;
     if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
     return base;
@@ -2258,6 +2336,80 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
     let is_method = callee != NULL && (callee.kind == NodeKind::Member || callee.kind == NodeKind::Computed);
 
     let arg_count: u8 = (u8)node.children_count;
+
+    // Spread detection: any `...expr` arg switches the whole call to
+    // the variadic SpreadInvoke / SpreadMethodInvoke path. Args get
+    // materialized into a single array (using ArrayPush/ArraySpread),
+    // then the variadic op reads argc from the array at runtime.
+    let has_spread_arg: bool = false;
+    let sa_i: u32 = 0;
+    while sa_i < node.children_count {
+        if node.children[sa_i].kind == NodeKind::Spread {
+            has_spread_arg = true; break;
+        }
+        sa_i = sa_i + 1;
+    }
+    if has_spread_arg && callee != NULL && callee.kind != NodeKind::SuperExpr {
+        let slots_needed: u8 = if is_method { 3 } else { 2 };
+        let base = c.next_reg;
+        let r: u8 = 0;
+        while r < slots_needed { alloc_reg(c); r = r + 1; }
+
+        // Place callee + receiver in the standard layout.
+        if is_method {
+            let recv_r = compile_expr(c, callee.left);
+            if recv_r != base + 1 {
+                emit(c, make_inst_ab(Op::Mov, base + 1, recv_r));
+                if recv_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+            if callee.kind == NodeKind::Member {
+                let name_atom = ctx_intern_atom(c.ctx, c.source + callee.name_start, callee.name_length);
+                let ic = alloc_ic_slot(c, name_atom);
+                if ic > 255 {
+                    let key_r = emit_load_name_string(c, c.source + callee.name_start, callee.name_length);
+                    emit(c, make_inst_abc(Op::LoadElem, base, base + 1, key_r));
+                    if key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                } else {
+                    emit(c, make_inst_abc(Op::LoadProp, base, base + 1, (u8)ic));
+                }
+            } else {
+                let key_r = compile_expr(c, callee.right);
+                emit(c, make_inst_abc(Op::LoadElem, base, base + 1, key_r));
+                if key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+        } else {
+            let r2 = compile_expr(c, callee);
+            if r2 != base {
+                emit(c, make_inst_ab(Op::Mov, base, r2));
+                if r2 + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+        }
+
+        // Build args array dynamically — ArrayPush for plain args,
+        // ArraySpread for `...expr`.
+        let args_slot: u8 = if is_method { base + 2 } else { base + 1 };
+        emit(c, make_inst_abc(Op::NewArray, args_slot, 0, 0));
+        let j: u32 = 0;
+        while j < node.children_count {
+            let ch = node.children[j];
+            if ch.kind == NodeKind::Spread {
+                let src_r = compile_expr(c, ch.left);
+                emit(c, make_inst_ab(Op::ArraySpread, args_slot, src_r));
+                if src_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            } else {
+                let val_r = compile_expr(c, ch);
+                emit(c, make_inst_ab(Op::ArrayPush, args_slot, val_r));
+                if val_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+            j = j + 1;
+        }
+
+        let dispatch_op = if is_method { Op::SpreadMethodInvoke } else { Op::SpreadInvoke };
+        emit(c, make_inst_abc(dispatch_op, base, base, 0));
+        c.next_reg = base + 1;
+        if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+        return base;
+    }
 
     // super(...) in a derived-class constructor: emit Op::SuperCall
     // which preserves the current `this` and new-target. Resolves the

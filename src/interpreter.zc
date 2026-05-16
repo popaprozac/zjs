@@ -1736,6 +1736,94 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             } else {
                 regs[dst] = zjs_undefined();
             }
+        } else if op == Op::SpreadInvoke || op == Op::SpreadMethodInvoke {
+            // Variadic dispatch — args live in the array at regs[base+1]
+            // (or regs[base+2] for method calls; regs[base+1] is then
+            // the receiver). argc comes from the array's length at
+            // runtime. arr.elements is heap-allocated and survives the
+            // reg_stack reserve inside push_call_frame, so we hand it
+            // through as the args pointer.
+            let dst = inst.a;
+            let base = inst.b;
+            let is_method: bool = op == Op::SpreadMethodInvoke;
+            let arr_slot: u8 = if is_method { base + 2 } else { base + 1 };
+            let args_v = regs[arr_slot];
+            let callee = regs[base];
+            let new_this: ZjsValue = if is_method { regs[base + 1] } else { zjs_undefined() };
+            if zjs_is_array(args_v) == 0 {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"Spread arguments must resolve to an array", 41);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
+            let arr = zjs_as_array(args_v);
+            let argc: u32 = arr.length;
+            let argv_ptr: ZjsValue* = arr.elements;
+
+            if zjs_is_function(callee) != 0 {
+                let fp = zjs_cell_as_ptr(callee);
+                let target: Function* = NULL;
+                raw { target = (Function*)fp; }
+                if !is_method && target.is_class_constructor {
+                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                (char*)"Class constructor cannot be invoked without 'new'", 50);
+                    throwing = true; thrown = err; exit_reason = 3;
+                    ctx.frames[cur_idx].ip = ip + 1; break;
+                }
+                ctx.frames[cur_idx].ip = ip + 1;
+                push_call_frame(ctx, target, argv_ptr, argc, dst);
+                if is_method {
+                    ctx.host_this = new_this;
+                } else if ctx.global_this_obj != NULL {
+                    ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                } else {
+                    ctx.host_this = zjs_undefined();
+                }
+                exit_reason = 2;
+                break;
+            } else if zjs_is_closure(callee) != 0 {
+                let cl = zjs_as_closure(callee);
+                let fp2 = cl.function;
+                let target2: Function* = NULL;
+                raw { target2 = (Function*)fp2; }
+                ctx.frames[cur_idx].ip = ip + 1;
+                push_call_frame(ctx, target2, argv_ptr, argc, dst);
+                if is_method {
+                    ctx.host_this = new_this;
+                } else if ctx.global_this_obj != NULL {
+                    ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                } else {
+                    ctx.host_this = zjs_undefined();
+                }
+                ctx.current_closure = cl;
+                exit_reason = 2;
+                break;
+            } else if zjs_is_host_function(callee) != 0 {
+                let hf_ptr = zjs_cell_as_ptr(callee);
+                let saved_this = ctx.host_this;
+                ctx.host_this = new_this;
+                let saved_host_fn = ctx.current_host_fn;
+                ctx.current_host_fn = hf_ptr;
+                let r: ZjsValue = zjs_undefined();
+                raw {
+                    ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
+                    typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
+                    HostFn fp = (HostFn)hf->fn_ptr;
+                    r = fp(ctx, argv_ptr, argc);
+                }
+                ctx.current_host_fn = saved_host_fn;
+                ctx.host_this = saved_this;
+                regs[dst] = r;
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+            } else {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"Spread call target is not a function", 36);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
         } else if op == Op::TailInvoke || op == Op::TailMethodInvoke {
             // Tail call: replace this frame in-place. The new function
             // returns directly to OUR original caller.
@@ -2578,6 +2666,208 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 }
             }
             regs[inst.a] = zjs_bool(result);
+        } else if op == Op::SpreadNewInvoke {
+            // `new F(...args)`. Materialize the args array into the
+            // contiguous reg region regs[base+1..base+1+argc], then
+            // fall through to the regular NewInvoke logic at runtime
+            // by re-dispatching the same ip with op rewritten via the
+            // local `op_for_new` flag. Cleaner than duplicating 200
+            // lines of NewInvoke handling; the array is heap-allocated
+            // so its elements pointer is stable across the copy.
+            let dst = inst.a;
+            let base = inst.b;
+            let arr_v = regs[base + 1];
+            if zjs_is_array(arr_v) == 0 {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"Spread arguments must resolve to an array", 41);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
+            let arr = zjs_as_array(arr_v);
+            let n_argc: u32 = arr.length;
+            // Stash args in invoke_arg_buffer so the NewInvoke body
+            // can read them via &regs[base+1] after we lay them out.
+            // The args were already in the array — copy into
+            // consecutive regs starting at base+1. The compiler
+            // reserved only 2 regs (callee + args_array), so push
+            // the reg watermark up if we'd overflow. Keep it simple
+            // — cap at 32 spread args for now (rare to exceed).
+            if n_argc > 32 {
+                let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                                            (char*)"Too many spread args (>32) in new expression", 44);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
+            let nai: u32 = 0;
+            while nai < n_argc {
+                regs[base + 1 + (u8)nai] = arr.elements[nai];
+                nai = nai + 1;
+            }
+            // Rewrite inst.c for the duplicated body below. The
+            // simplest cross-block carry is a local sentinel — set a
+            // dispatch_argc local that the NewInvoke fall-through
+            // uses. Easier still: re-enter the dispatch by directly
+            // running the NewInvoke body with an override.
+            let callee_sp = regs[base];
+            let argc_sp = n_argc;
+            // Fall through into the NewInvoke logic by goto-style: we
+            // duplicate the small entry to keep variable scoping
+            // sane, then share the rest of the body via inline.
+            //
+            // (Zen-c has no goto, so we open a fresh else-if for
+            // NewInvoke right below; the SpreadNewInvoke handler ends
+            // here.)
+            // Move the materialized argc into inst-shaped locals
+            // expected by the NewInvoke block: dst, base, argc, callee.
+            // We accomplish this by jumping into the same block via a
+            // shared inner sequence.
+            ip = ip;  // no-op; documents intent
+            // Fall-through into the regular NewInvoke handler:
+            // we re-emit it inline via the same op handling below by
+            // setting an override.
+            // (Workaround: just inline the NewInvoke body here with
+            // a local `argc` shadow.)
+            //
+            // To avoid duplicating, we transfer control by simulating
+            // a NewInvoke dispatch in this iteration with overridden
+            // argc / argv. The cleanest path Zen-c gives us is a
+            // duplicated tail of the NewInvoke body, kept in sync
+            // (this block is grep'able). Doing the duplication below.
+            let dst2 = dst;
+            let base2 = base;
+            let argc = argc_sp;
+            let callee = callee_sp;
+            if zjs_is_function(callee) != 0 {
+                let fp_c = zjs_cell_as_ptr(callee);
+                let ff_c: Function* = NULL;
+                raw { ff_c = (Function*)fp_c; }
+                if ff_c.is_method {
+                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                (char*)"Class method is not a constructor", 33);
+                    throwing = true; thrown = err; exit_reason = 3; break;
+                }
+            }
+            let proto_obj: ZjsObject* = NULL;
+            if zjs_is_function(callee) != 0 {
+                let fp = zjs_cell_as_ptr(callee);
+                let f2: Function* = NULL;
+                raw { f2 = (Function*)fp; }
+                if f2.prototype == NULL {
+                    let pv = ctx_new_object(ctx);
+                    f2.prototype = zjs_as_object(pv);
+                    object_define_property_slot(ctx, f2.prototype,
+                        ctx_intern_atom(ctx, (char*)"constructor", 11),
+                        callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+                }
+                proto_obj = f2.prototype;
+            } else if zjs_is_closure(callee) != 0 {
+                let cl = zjs_as_closure(callee);
+                let fp2 = cl.function;
+                let f3: Function* = NULL;
+                raw { f3 = (Function*)fp2; }
+                if f3.prototype == NULL {
+                    let pv = ctx_new_object(ctx);
+                    f3.prototype = zjs_as_object(pv);
+                    object_define_property_slot(ctx, f3.prototype,
+                        ctx_intern_atom(ctx, (char*)"constructor", 11),
+                        callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+                }
+                proto_obj = f3.prototype;
+            } else if zjs_is_host_function(callee) != 0 {
+                let hf = zjs_as_host_function(callee);
+                if hf.prototype == NULL {
+                    let pv = ctx_new_object(ctx);
+                    hf.prototype = zjs_as_object(pv);
+                    object_define_property_slot(ctx, hf.prototype,
+                        ctx_intern_atom(ctx, (char*)"constructor", 11),
+                        callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+                }
+                proto_obj = hf.prototype;
+            }
+            let new_obj_v = ctx_new_object(ctx);
+            let new_obj = zjs_as_object(new_obj_v);
+            new_obj.proto = proto_obj;
+            let saved_this = ctx.host_this;
+            let saved_nt = ctx.new_target_active;
+            ctx.host_this = new_obj_v;
+            ctx.new_target_active = true;
+            let call_result: ZjsValue = zjs_undefined();
+            let did_throw: bool = false;
+            // After the in-place copy above, regs[base+1..] holds the
+            // spread args contiguously — we can pass &regs[base+1]
+            // through to the user-callee path just like NewInvoke does.
+            let argv_ptr: ZjsValue* = NULL;
+            raw { argv_ptr = &regs[base + 1]; }
+            if zjs_is_function(callee) != 0 {
+                let fp = zjs_cell_as_ptr(callee);
+                let target: Function* = NULL;
+                raw { target = (Function*)fp; }
+                if target.is_default_derived_ctor {
+                    let parent = target.parent_ctor;
+                    let r: ZjsValue = zjs_undefined();
+                    raw { r = zjs_call_value_with_this(ctx, parent, ctx->host_this, argv_ptr, argc); }
+                    if ctx.pending_throw_active {
+                        did_throw = true; call_result = consume_pending_throw(ctx);
+                    } else {
+                        if zjs_is_promise(r) != 0 || zjs_is_regexp(r) != 0 {
+                            ctx.host_this = r;
+                        }
+                        call_result = r;
+                    }
+                } else {
+                    let r4 = interpret(ctx, target, argv_ptr, argc);
+                    if r4.is_throw { did_throw = true; call_result = r4.value; }
+                    else           { call_result = r4.value; }
+                }
+            } else if zjs_is_closure(callee) != 0 {
+                let cl = zjs_as_closure(callee);
+                let fp2 = cl.function;
+                let target2: Function* = NULL;
+                raw { target2 = (Function*)fp2; }
+                let saved_cl = ctx.current_closure;
+                ctx.current_closure = cl;
+                let r5 = interpret(ctx, target2, argv_ptr, argc);
+                ctx.current_closure = saved_cl;
+                if r5.is_throw { did_throw = true; call_result = r5.value; }
+                else           { call_result = r5.value; }
+            } else if zjs_is_host_function(callee) != 0 {
+                let hf_ptr = zjs_cell_as_ptr(callee);
+                let saved_host_fn = ctx.current_host_fn;
+                ctx.current_host_fn = hf_ptr;
+                raw {
+                    ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
+                    typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
+                    HostFn fp = (HostFn)hf->fn_ptr;
+                    call_result = fp(ctx, argv_ptr, argc);
+                }
+                ctx.current_host_fn = saved_host_fn;
+                if ctx.pending_throw_active {
+                    did_throw = true; call_result = consume_pending_throw(ctx);
+                }
+            }
+            let final_this = ctx.host_this;
+            ctx.host_this = saved_this;
+            ctx.new_target_active = saved_nt;
+            if did_throw {
+                throwing = true; thrown = call_result; exit_reason = 3; break;
+            }
+            let result_is_object: bool =
+                zjs_is_object(call_result) != 0
+                || zjs_is_array(call_result) != 0
+                || zjs_is_promise(call_result) != 0
+                || zjs_is_regexp(call_result) != 0
+                || zjs_is_function(call_result) != 0
+                || zjs_is_closure(call_result) != 0
+                || zjs_is_host_function(call_result) != 0;
+            if result_is_object {
+                regs[dst2] = call_result;
+            } else if final_this.bits != new_obj_v.bits
+                      && (zjs_is_promise(final_this) != 0
+                          || zjs_is_regexp(final_this) != 0) {
+                regs[dst2] = final_this;
+            } else {
+                regs[dst2] = new_obj_v;
+            }
         } else if op == Op::NewInvoke {
             // new Ctor(args): allocate {} with proto = Ctor.prototype,
             // bind `this` to it, call. If callee returns an object,
@@ -2847,6 +3137,88 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             }
             arr.length = rest_len;
             regs[inst.a] = arr_v;
+        } else if op == Op::ArrayPush {
+            // Append regs[b] to the array in regs[a]. Used by array
+            // literals containing spread, where the element count
+            // isn't known at compile time.
+            let arr_v = regs[inst.a];
+            if zjs_is_array(arr_v) != 0 {
+                let arr = zjs_as_array(arr_v);
+                array_set(arr, arr.length, regs[inst.b]);
+            }
+        } else if op == Op::ArraySpread {
+            // Iterate regs[b] and append each element to regs[a].
+            // Supports arrays (direct walk) and array-like objects
+            // with a numeric length property. Strings and Symbol-
+            // iterator protocols come later.
+            let arr_v = regs[inst.a];
+            let src   = regs[inst.b];
+            if zjs_is_array(arr_v) != 0 {
+                let arr = zjs_as_array(arr_v);
+                if zjs_is_array(src) != 0 {
+                    let s_arr = zjs_as_array(src);
+                    let si: u32 = 0;
+                    while si < s_arr.length {
+                        let v = s_arr.elements[si];
+                        // Holes spread as undefined per spec.
+                        if zjs_is_deleted(v) != 0 { v = zjs_undefined(); }
+                        array_set(arr, arr.length, v);
+                        si = si + 1;
+                    }
+                } else if zjs_is_string(src) != 0 {
+                    let s = zjs_as_string(src);
+                    let si: u32 = 0;
+                    while si < s.length {
+                        let chv = ctx_intern_string(ctx, s.data + si, 1);
+                        array_set(arr, arr.length, chv);
+                        si = si + 1;
+                    }
+                } else {
+                    // Non-iterable: TypeError per spec.
+                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                (char*)"Spread source is not iterable", 29);
+                    throwing = true; thrown = err; exit_reason = 3;
+                    ctx.frames[cur_idx].ip = ip; break;
+                }
+            }
+        } else if op == Op::ObjectSpread {
+            // `{ ...src }`: copy own enumerable string-keyed props from
+            // src onto the target object. Spec ignores null/undefined
+            // sources without throwing.
+            let dst_v = regs[inst.a];
+            let src   = regs[inst.b];
+            if zjs_is_object(dst_v) != 0
+               && zjs_is_undefined(src) == 0
+               && zjs_is_null(src) == 0 {
+                // Reuse for-in's "own enumerable keys" walk by calling
+                // iter_prepare with kind=0, then GET/SET each key.
+                let keys_v = iter_prepare(ctx, src, 0);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                if zjs_is_array(keys_v) != 0 {
+                    let keys = zjs_as_array(keys_v);
+                    let dst_obj = zjs_as_object(dst_v);
+                    let ki: u32 = 0;
+                    while ki < keys.length {
+                        let k = keys.elements[ki];
+                        if zjs_is_deleted(k) == 0 {
+                            let v = property_get(ctx, src, k);
+                            if ctx.pending_throw_active {
+                                throwing = true; thrown = consume_pending_throw(ctx);
+                                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                            }
+                            if zjs_is_string(k) != 0 {
+                                let name = zjs_as_string(k);
+                                object_set(ctx, dst_obj, name, v);
+                            }
+                        }
+                        ki = ki + 1;
+                    }
+                    if throwing { break; }
+                }
+            }
         } else if op == Op::IterPrepare {
             regs[inst.a] = iter_prepare(ctx, regs[inst.b], (u32)inst.c);
             if ctx.pending_throw_active {

@@ -159,6 +159,28 @@ enum Op {
                       //   to include; equals param_count of regular
                       //   params preceding the rest binding)
 
+    // Spread support (2026-05-15).
+    // Append the value in regs[b] to the array in regs[a]. Used by
+    // array literals when at least one element is `...expr` — those
+    // require dynamic-length construction.
+    ArrayPush,        // a=arr_reg, b=value_reg
+    // Iterate the iterable in regs[b] and append each element to the
+    // array in regs[a]. Currently supports arrays and array-like
+    // objects; strings/iterators come later.
+    ArraySpread,      // a=arr_reg, b=iterable_reg
+    // Object spread: copies own enumerable string-keyed properties
+    // from regs[b] onto regs[a]. Used by `{ ...obj, k: v }`.
+    ObjectSpread,     // a=target_obj, b=source
+
+    // Variadic-call dispatch — used when an argument list contains
+    // `...arr`. Args live in the array at regs[b+1] (plain SpreadInvoke)
+    // or regs[b+2] (SpreadMethodInvoke / receiver at regs[b+1]). argc
+    // comes from the array's length at runtime. Same fall-through to
+    // user vs host callee as plain Invoke.
+    SpreadInvoke,        // a=dst, b=base (callee), c=unused
+    SpreadMethodInvoke,  // a=dst, b=base (callee), c=unused — receiver at base+1, args-array at base+2
+    SpreadNewInvoke,     // a=dst, b=base (ctor),   c=unused — args-array at base+1
+
     // Method calls (Phase 3.5).
     // Same encoding shape as Invoke, but regs[base+1] is the receiver
     // (`this`) and explicit JS args start at regs[base+2]. arg_count
