@@ -1436,6 +1436,41 @@ fn interpret_inner_full(ctx: ZjsContext*,
             } else {
                 ip = ip + 1;
             }
+        } else if op == Op::ImportBind {
+            // Resolve `b` (specifier atom) against ctx.current_module's
+            // abs_path, load that module if not yet cached, then read
+            // its exports[name] (`c` atom) into regs[a]. A "*" name
+            // means namespace import — return the exports object itself.
+            let spec_v = f.constants[inst.b];
+            let name_v = f.constants[inst.c];
+            if zjs_is_string(spec_v) == 0 || zjs_is_string(name_v) == 0 {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"ImportBind operand not a string", 31);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
+            let target_v: ZjsValue = zjs_undefined();
+            raw {
+                extern ZjsValue ctx_module_import_value(ZjsContext* ctx, ZjsValue spec, ZjsValue name);
+                target_v = ctx_module_import_value(ctx, spec_v, name_v);
+            }
+            if ctx.pending_throw_active {
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+            regs[inst.a] = target_v;
+        } else if op == Op::ExportBind {
+            // Write regs[a] into ctx.current_module.exports[name].
+            let name_v = f.constants[inst.b];
+            if zjs_is_string(name_v) == 0 || ctx.current_module == NULL {
+                // Silently ignore — defensive. ExportBind is only ever
+                // emitted in module-mode top-level, so a missing
+                // current_module is a runner bug.
+            } else {
+                let name = zjs_as_string(name_v);
+                let val  = regs[inst.a];
+                object_set(ctx, ctx.current_module.exports, name, val);
+            }
         } else if op == Op::Await {
             // Resolve the awaited value:
             //   - non-Promise:       pass through (already resolved)

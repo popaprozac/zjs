@@ -223,6 +223,31 @@ struct ZjsContext {
     atoms:          AtomEntry*;
     atom_count:     u32;
     atom_cap:       u32;
+
+    // ES modules (2026-05-15). Linear array of cached records keyed
+    // by absolute path. Small N — most programs touch a handful of
+    // modules — so linear scan is fine for now.
+    module_cache:       ZjsModuleRecord**;
+    module_cache_count: u32;
+    module_cache_cap:   u32;
+    // Module currently being evaluated. Imports resolve specifiers
+    // relative to this module's abs_path; exports write into this
+    // module's exports object. NULL when not in a module body.
+    current_module:     ZjsModuleRecord*;
+}
+
+def MODULE_STATE_UNRESOLVED: u8 = 0;
+def MODULE_STATE_LOADING:    u8 = 1;
+def MODULE_STATE_EVALUATING: u8 = 2;
+def MODULE_STATE_EVALUATED:  u8 = 3;
+def MODULE_STATE_ERRORED:    u8 = 4;
+
+struct ZjsModuleRecord {
+    abs_path:  ZjsString*;       // canonical key for the cache
+    function:  Function*;        // compiled module body (NULL until compiled)
+    exports:   ZjsObject*;       // populated by Op-emitted export calls
+    state:     u8;
+    error:     ZjsValue;         // when state == ERRORED
 }
 
 fn zjs_new_context() -> ZjsContext* {
@@ -8504,4 +8529,287 @@ fn ctx_intern_global(ctx: ZjsContext*, name: char*, name_len: u32) -> u32 {
     ctx.globals[idx].value = zjs_undefined();
     ctx.global_count = ctx.global_count + 1;
     return idx;
+}
+
+// =====================================================================
+// ES modules — file-based loader.
+// =====================================================================
+
+// Path-resolution helper. `spec` is the literal specifier from
+// `import ... from 'spec'`. If it starts with './' or '../', resolve
+// against the *directory* of `base_abs_path`; otherwise treat as
+// already-absolute (extension-only resolution can come later). Returns
+// a freshly-interned ZjsString*; NULL on out-of-bounds buffer.
+fn module_resolve_specifier(ctx: ZjsContext*, base_abs_path: ZjsString*, spec: ZjsString*) -> ZjsString* {
+    if spec == NULL { return NULL; }
+    let sd = spec.data;
+    let sl = spec.length;
+    let is_relative: bool = false;
+    raw {
+        is_relative = (sl >= 2 && sd[0] == '.' && (sd[1] == '/' || (sd[1] == '.' && sl >= 3 && sd[2] == '/'))) ? true : false;
+    }
+    if !is_relative {
+        // Treat as already a usable path. Real ESM resolution (URL
+        // schemes, package.json, node_modules) is out of scope for now.
+        return spec;
+    }
+    if base_abs_path == NULL {
+        // Relative spec with no base: assume cwd (rare; only happens
+        // when the entry module's own abs_path wasn't set).
+        return spec;
+    }
+    // Dirname of base.
+    let bd = base_abs_path.data;
+    let bl = base_abs_path.length;
+    let dir_len: u32 = bl;
+    raw {
+        while (dir_len > 0 && bd[dir_len - 1] != '/') { dir_len--; }
+    }
+    let total: u32 = dir_len + sl;
+    let buf = alloc_n<char>((usize)(total + 1));
+    raw {
+        memcpy(buf, bd, dir_len);
+        memcpy(buf + dir_len, sd, sl);
+        buf[total] = 0;
+        // Normalize `./` and `../` segments in place.
+        char* out = buf;
+        char* in_ = buf;
+        while (*in_) {
+            if (in_[0] == '/' && in_[1] == '.' && in_[2] == '/') {
+                in_ += 2;        // skip the "./" — the leading slash stays at *out
+                continue;
+            }
+            if (in_[0] == '/' && in_[1] == '.' && in_[2] == '.' && (in_[3] == '/' || in_[3] == 0)) {
+                // Roll output back to the previous '/' to drop the prior segment.
+                if (out > buf) out--;
+                while (out > buf && *(out - 1) != '/') out--;
+                in_ += 3;
+                continue;
+            }
+            *out++ = *in_++;
+        }
+        *out = 0;
+        total = (uint32_t)(out - buf);
+    }
+    let s = ctx_intern_atom_take(ctx, buf, total);
+    return s;
+}
+
+fn module_cache_find(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {
+    let i: u32 = 0;
+    while i < ctx.module_cache_count {
+        let m = ctx.module_cache[i];
+        if m.abs_path == abs_path { return m; }
+        // Atom-interning should have already deduped — but fall back
+        // to a byte compare for safety.
+        if m.abs_path != NULL && abs_path != NULL
+           && m.abs_path.length == abs_path.length {
+            let eq: bool = true;
+            raw {
+                if (memcmp(m->abs_path->data, abs_path->data, abs_path->length) != 0) eq = false;
+            }
+            if eq { return m; }
+        }
+        i = i + 1;
+    }
+    return NULL;
+}
+
+fn module_cache_push(ctx: ZjsContext*, m: ZjsModuleRecord*) -> void {
+    if ctx.module_cache_count >= ctx.module_cache_cap {
+        let new_cap: u32 = if ctx.module_cache_cap == 0 { 8 } else { ctx.module_cache_cap * 2 };
+        ctx.module_cache = realloc_n<ZjsModuleRecord*>(ctx.module_cache, (usize)ctx.module_cache_cap, (usize)new_cap);
+        ctx.module_cache_cap = new_cap;
+    }
+    ctx.module_cache[ctx.module_cache_count] = m;
+    ctx.module_cache_count = ctx.module_cache_count + 1;
+}
+
+fn read_file_to_string(path: char*) -> char* {
+    let out: char* = NULL;
+    raw {
+        FILE* f = fopen(path, "rb");
+        if (!f) return NULL;
+        fseek(f, 0, SEEK_END);
+        long sz = ftell(f);
+        if (sz < 0) { fclose(f); return NULL; }
+        fseek(f, 0, SEEK_SET);
+        out = (char*)malloc((size_t)sz + 1);
+        if (!out) { fclose(f); return NULL; }
+        size_t n = fread(out, 1, (size_t)sz, f);
+        out[n] = 0;
+        fclose(f);
+    }
+    return out;
+}
+
+// The bytecode compiler + interpreter live in sibling .zc files; the
+// loader needs to call into them. Forward-declare with extern.
+raw {
+    extern Function* compile_program(ZjsContext* ctx, char* source, AstNode* root);
+    extern InterpretResult interpret(ZjsContext* ctx, Function* entry_f, ZjsValue* args, uint32_t arg_count);
+    extern ParseResult parse_module(char* source, size_t source_len);
+    extern void parser_free_result(ParseResult pr);
+}
+
+// Load + (recursively) evaluate the module at `abs_path`. Returns the
+// cached record on subsequent calls.
+fn ctx_load_module(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {
+    if abs_path == NULL { return NULL; }
+    let existing = module_cache_find(ctx, abs_path);
+    if existing != NULL {
+        if existing.state == MODULE_STATE_EVALUATED { return existing; }
+        if existing.state == MODULE_STATE_EVALUATING {
+            // Circular import — surface a real error once cycle support
+            // lands. For MVP, return the (partially populated) record;
+            // the in-flight body sees `undefined` for not-yet-set names.
+            return existing;
+        }
+        if existing.state == MODULE_STATE_ERRORED {
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = existing.error;
+            return existing;
+        }
+    }
+
+    // Read file.
+    let path_c: char* = NULL;
+    let path_buf = alloc_n<char>((usize)(abs_path.length + 1));
+    raw {
+        memcpy(path_buf, abs_path->data, abs_path->length);
+        path_buf[abs_path->length] = 0;
+        path_c = path_buf;
+    }
+    let src = read_file_to_string(path_c);
+    dealloc(path_buf);
+    if src == NULL {
+        let err = build_typed_error(ctx, (char*)"Error", 5,
+                                    (char*)"module not found", 16);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return NULL;
+    }
+
+    // Parse + compile.
+    let src_len: usize = 0;
+    raw { src_len = strlen(src); }
+    let parse: ParseResult = parse_module(src, src_len);
+    if parse.had_error {
+        raw { parser_free_result(parse); free(src); }
+        let err = build_typed_error(ctx, (char*)"SyntaxError", 11,
+                                    (char*)"module parse error", 18);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return NULL;
+    }
+    let f: Function* = NULL;
+    raw {
+        void* root_v = parse.root;
+        f = compile_program(ctx, src, root_v);
+        parser_free_result(parse);
+    }
+    if f == NULL {
+        raw { free(src); }
+        let err = build_typed_error(ctx, (char*)"SyntaxError", 11,
+                                    (char*)"module compile error", 20);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return NULL;
+    }
+    // NOTE: leak src buffer — Function holds offsets into it. A real
+    // module record would adopt the buffer; tracking ownership is a
+    // follow-up. For MVP, accept the per-module leak.
+
+    // Construct + register the record BEFORE evaluating so circular
+    // imports can find the in-flight record (cycle detection then
+    // resolves names via partial exports).
+    let m = alloc<ZjsModuleRecord>();
+    m.abs_path = abs_path;
+    m.function = f;
+    m.exports  = zjs_as_object(ctx_new_object(ctx));
+    m.state    = MODULE_STATE_EVALUATING;
+    m.error    = zjs_undefined();
+    module_cache_push(ctx, m);
+
+    // Evaluate the body with current_module pointed at it so the
+    // ImportBind / ExportBind ops route to the right cache + exports.
+    let saved_cm = ctx.current_module;
+    let saved_th = ctx.host_this;
+    ctx.current_module = m;
+    if ctx.global_this_obj != NULL {
+        ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+    }
+    let r: InterpretResult = zjs_undefined_result();
+    raw {
+        InterpretResult ir = interpret(ctx, f, NULL, 0);
+        r = ir;
+    }
+    ctx.current_module = saved_cm;
+    ctx.host_this = saved_th;
+    if r.is_throw {
+        m.state = MODULE_STATE_ERRORED;
+        m.error = r.value;
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = r.value;
+        return m;
+    }
+    m.state = MODULE_STATE_EVALUATED;
+    return m;
+}
+
+// Called from Op::ImportBind. Returns the value of source.exports[name]
+// — or, when name is "*", the exports object itself (namespace import).
+// On error, sets ctx.pending_throw and returns undefined.
+fn ctx_module_import_value(ctx: ZjsContext*, spec_v: ZjsValue, name_v: ZjsValue) -> ZjsValue {
+    if zjs_is_string(spec_v) == 0 || zjs_is_string(name_v) == 0 {
+        return zjs_undefined();
+    }
+    let spec = zjs_as_string(spec_v);
+    let name = zjs_as_string(name_v);
+    let base = if ctx.current_module != NULL { ctx.current_module.abs_path } else { NULL };
+    let resolved = module_resolve_specifier(ctx, base, spec);
+    if resolved == NULL {
+        let err = build_typed_error(ctx, (char*)"Error", 5,
+                                    (char*)"could not resolve module specifier", 35);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return zjs_undefined();
+    }
+    let m = ctx_load_module(ctx, resolved);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if m == NULL { return zjs_undefined(); }
+    // Namespace import: hand back the exports object directly.
+    if name.length == 1 {
+        let nd = name.data;
+        let star_match: bool = false;
+        raw { star_match = (nd[0] == '*') ? true : false; }
+        if star_match {
+            return zjs_cell_from_ptr((void*)m.exports);
+        }
+    }
+    // Named: look up in exports.
+    let slot = class_find_slot(m.exports.cls, name);
+    if slot < 0 {
+        // Missing export — surface as TypeError for now (spec says
+        // SyntaxError on link; we don't have a true link phase).
+        let buf: char[128];
+        let n: int = 0;
+        let nm_d = name.data;
+        let nm_l = name.length;
+        raw {
+            n = snprintf(&buf[0], 128, "export '%.*s' not found in module",
+                         (int)(nm_l > 64 ? 64 : nm_l), nm_d);
+        }
+        let bp: char* = NULL; raw { bp = &buf[0]; }
+        let err = build_typed_error(ctx, (char*)"SyntaxError", 11, bp, (u32)n);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return zjs_undefined();
+    }
+    return m.exports.slots[(u32)slot];
+}
+
+// Helper used in InterpretResult-returning extern paths.
+fn zjs_undefined_result() -> InterpretResult {
+    return InterpretResult{ is_throw: false, value: zjs_undefined() };
 }

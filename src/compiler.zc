@@ -2003,6 +2003,155 @@ fn intern_ident_atom(ctx: ZjsContext*, src: char*, len: u32) -> ZjsString* {
 // the resulting constructor function value. Caller decides what to do
 // with it (bind to a local / global for ClassDecl, return as expression
 // value for ClassExpr).
+// ES module top-level. Emits Op::ImportBind / Op::ExportBind for each
+// clause. The atoms live in the function's const pool; b/c bytes
+// index that pool (u8 — overflows fail-soft via had_error).
+fn add_atom_const(c: Compiler*, atom: ZjsString*) -> u32 {
+    let v = zjs_cell_from_ptr((void*)atom);
+    return add_const(c, v);
+}
+
+fn intern_string_literal_text(c: Compiler*, start: u32, len: u32) -> ZjsString* {
+    // Strip the surrounding quotes from a StringLit slice.
+    if len < 2 { return ctx_intern_atom(c.ctx, (char*)"", 0); }
+    let inner_start = start + 1;
+    let inner_len   = len - 2;
+    let buf = alloc_n<char>((usize)(inner_len + 1));
+    let out = decode_string_body(c.source, inner_start, inner_len, buf);
+    buf[out] = (char)0;
+    return ctx_intern_atom_take(c.ctx, buf, out);
+}
+
+fn compile_import_decl(c: Compiler*, node: AstNode*) -> void {
+    // Specifier slice includes the quote characters.
+    let spec = intern_string_literal_text(c, node.name_start, node.name_length);
+    let spec_idx = add_atom_const(c, spec);
+    if spec_idx > 255 { c.had_error = true; return; }
+
+    let i: u32 = 0;
+    while i < node.children_count {
+        let cl = node.children[i];
+        // Local binding name from the clause:
+        let local_atom = ctx_intern_atom(c.ctx, c.source + cl.name_start, cl.name_length);
+        // Reserve a register; record as a local hoisted into the module
+        // scope. Imports live for the module's lifetime, so bump
+        // fixed_regs so reset_temps doesn't reuse the slot.
+        let reg = alloc_reg(c);
+        add_local(c, cl.name_start, cl.name_length, reg);
+        if reg + 1 > c.fixed_regs { c.fixed_regs = reg + 1; }
+        // Source export name: KwDefault → "default"; Star → "*";
+        // Eq (named) → cl.third->name_*; bare default already covered.
+        let source_atom: ZjsString* = NULL;
+        if cl.op == TokenKind::KwDefault {
+            source_atom = ctx_intern_atom(c.ctx, (char*)"default", 7);
+        } else if cl.op == TokenKind::Star {
+            source_atom = ctx_intern_atom(c.ctx, (char*)"*", 1);
+        } else if cl.third != NULL {
+            source_atom = ctx_intern_atom(c.ctx, c.source + cl.third.name_start, cl.third.name_length);
+        } else {
+            source_atom = local_atom;
+        }
+        let name_idx = add_atom_const(c, source_atom);
+        if name_idx > 255 { c.had_error = true; return; }
+        emit(c, make_inst_abc(Op::ImportBind, reg, (u8)spec_idx, (u8)name_idx));
+        i = i + 1;
+    }
+}
+
+fn emit_export_one(c: Compiler*, local_reg: u8, name_atom: ZjsString*) -> void {
+    let name_idx = add_atom_const(c, name_atom);
+    if name_idx > 255 { c.had_error = true; return; }
+    emit(c, make_inst_ab(Op::ExportBind, local_reg, (u8)name_idx));
+}
+
+fn find_local_reg(c: Compiler*, name_start: u32, name_length: u32) -> i32 {
+    let src = c.source;
+    let i: u32 = 0;
+    while i < c.local_count {
+        let l = c.locals[i];
+        if l.name_length == name_length {
+            let same: bool = true;
+            let k: u32 = 0;
+            while k < name_length {
+                if src[l.name_start + k] != src[name_start + k] { same = false; break; }
+                k = k + 1;
+            }
+            if same { return (i32)l.reg; }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn compile_export_decl(c: Compiler*, node: AstNode*) -> void {
+    // `export default expr`
+    if node.bool_value {
+        let r = compile_expr(c, node.left);
+        let dflt = ctx_intern_atom(c.ctx, (char*)"default", 7);
+        emit_export_one(c, r, dflt);
+        if r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        return;
+    }
+
+    // `export <decl>` — compile the decl first, then mark every name
+    // it introduced as exported. The exporting clauses sit in the
+    // decl's body via name_start/length (VarDecl declarators, function
+    // / class .name_*).
+    if node.left != NULL {
+        compile_stmt(c, node.left);
+        let d = node.left;
+        if d.kind == NodeKind::VarDecl {
+            let i: u32 = 0;
+            while i < d.children_count {
+                let dl = d.children[i];
+                let lr = find_local_reg(c, dl.name_start, dl.name_length);
+                if lr < 0 { c.had_error = true; return; }
+                let nm = ctx_intern_atom(c.ctx, c.source + dl.name_start, dl.name_length);
+                emit_export_one(c, (u8)lr, nm);
+                i = i + 1;
+            }
+        } else if d.kind == NodeKind::FunctionDecl || d.kind == NodeKind::ClassDecl {
+            let lr = find_local_reg(c, d.name_start, d.name_length);
+            if lr < 0 { c.had_error = true; return; }
+            let nm = ctx_intern_atom(c.ctx, c.source + d.name_start, d.name_length);
+            emit_export_one(c, (u8)lr, nm);
+        }
+        return;
+    }
+
+    // `export { a as b, c }` — re-export from another module if name_start/length is set
+    let is_re_export = node.name_length > 0;
+    let spec_idx: u32 = 0;
+    if is_re_export {
+        let spec = intern_string_literal_text(c, node.name_start, node.name_length);
+        spec_idx = add_atom_const(c, spec);
+        if spec_idx > 255 { c.had_error = true; return; }
+    }
+    let i: u32 = 0;
+    while i < node.children_count {
+        let cl = node.children[i];
+        let export_name_node = cl.third;
+        let export_name_atom = ctx_intern_atom(c.ctx,
+                                                c.source + export_name_node.name_start,
+                                                export_name_node.name_length);
+        if is_re_export {
+            // Pull from source module into a temp reg, then re-export.
+            let src_atom = ctx_intern_atom(c.ctx, c.source + cl.name_start, cl.name_length);
+            let src_idx  = add_atom_const(c, src_atom);
+            if src_idx > 255 { c.had_error = true; return; }
+            let tmp = alloc_reg(c);
+            emit(c, make_inst_abc(Op::ImportBind, tmp, (u8)spec_idx, (u8)src_idx));
+            emit_export_one(c, tmp, export_name_atom);
+            if tmp + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        } else {
+            let lr = find_local_reg(c, cl.name_start, cl.name_length);
+            if lr < 0 { c.had_error = true; return; }
+            emit_export_one(c, (u8)lr, export_name_atom);
+        }
+        i = i + 1;
+    }
+}
+
 fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     // Find the constructor MethodDef among the children.
     let ctor_node: AstNode* = NULL;
@@ -2896,6 +3045,15 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     if node == NULL { return; }
     let k = node.kind;
 
+    if k == NodeKind::ImportDecl {
+        compile_import_decl(c, node);
+        return;
+    }
+    if k == NodeKind::ExportDecl {
+        compile_export_decl(c, node);
+        return;
+    }
+
     if k == NodeKind::BlockStmt {
         let i: u32 = 0;
         while i < node.children_count {
@@ -3702,6 +3860,20 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     let c = compiler_new(ctx, source);
     defer compiler_free(c);
 
+    // Module mode (root.bool_value == true): top-level declarations
+    // become module-scoped locals instead of globals. We flip the
+    // compiler's is_function flag — the existing VarDecl / FunctionDecl
+    // / ClassDecl paths already do the right thing in that mode.
+    let is_module: bool = root != NULL && root.bool_value;
+    if is_module {
+        c.is_function = true;
+        // Also collect locals + analyze captures so nested functions
+        // resolve our module-local names through the normal closure
+        // machinery (LoadEnv / capture chains).
+        collect_locals(c, root);
+        analyze_captures(c, root);
+    }
+
     // Reserve a stable program-result register. Every top-level
     // expression statement Movs into it; the final Return reads from
     // it. This makes the program's return value deterministic even
@@ -3714,8 +3886,10 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     if root != NULL && root.kind == NodeKind::Program {
         // Hoist top-level declarations into globals so forward references
         // and "defined-via-conditional-branch" var declarations resolve
-        // without ReferenceError.
-        hoist_program_decls(c, root);
+        // without ReferenceError. In module mode this is a no-op for
+        // var/let/const (already handled by collect_locals above) but
+        // still hoists function decls.
+        if !is_module { hoist_program_decls(c, root); }
         // ECMA-262 §10.2.11: function declarations are evaluated at
         // scope entry, so calling them before their textual position is
         // valid. Two-pass compilation of the top level: emit

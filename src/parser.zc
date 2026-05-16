@@ -44,6 +44,10 @@ struct Parser {
     // function body. Gates the `await` operator (treated as an
     // identifier otherwise to preserve sloppy-mode names).
     in_async: bool;
+    // Module-source flag. When true, `import` / `export` at top
+    // level parse as ESM declarations; when false they're contextual
+    // identifiers per script grammar.
+    is_module: bool;
 }
 
 struct ParseResult {
@@ -54,13 +58,25 @@ struct ParseResult {
 
 // --- Top-level entry ------------------------------------------------
 
+// Parse the source as an ES module — same shape as parse_program but
+// flags the Parser so top-level import/export are valid.
+fn parse_module(source: char*, source_len: usize) -> ParseResult {
+    let result = parse_program_with(source, source_len, true);
+    return result;
+}
+
 fn parse_program(source: char*, source_len: usize) -> ParseResult {
+    return parse_program_with(source, source_len, false);
+}
+
+fn parse_program_with(source: char*, source_len: usize, is_module: bool) -> ParseResult {
     let p = alloc<Parser>();
     p.source = source;
     p.source_len = source_len;
     p.tracker = alloc_list_new();
     p.had_error = false;
     p.in_async = false;
+    p.is_module = is_module;
 
     // Lex everything into a buffer.
     p.tokens = alloc_n<Token>(MAX_TOKENS);
@@ -69,6 +85,9 @@ fn parse_program(source: char*, source_len: usize) -> ParseResult {
 
     // Parse a sequence of expression statements terminated by `;` or EOF.
     let program = new_node(&p.tracker, NodeKind::Program, 0, (u32)source_len);
+    // bool_value = true marks a module program so the compiler treats
+    // top-level declarations as module-scoped locals (not globals).
+    program.bool_value = is_module;
 
     // Reserve a temporary children buffer on the parser's tracker.
     // We don't know the exact count up front, so grow into a Vec-style
@@ -197,6 +216,11 @@ fn parse_statement(p: Parser*) -> AstNode* {
         advance(p);
         return parse_function_decl(p, true);
     }
+    // ES module top-level: import / export. Only valid when parsing
+    // module source (p.is_module). Script-mode parses see them as
+    // ordinary identifiers (the existing contextual-keyword behavior).
+    if p.is_module && k == TokenKind::KwImport { return parse_import_decl(p); }
+    if p.is_module && k == TokenKind::KwExport { return parse_export_decl(p); }
     if k == TokenKind::KwClass     { return parse_class_decl(p); }
     if k == TokenKind::KwIf        { return parse_if(p); }
     if k == TokenKind::KwReturn    { return parse_return(p); }
@@ -972,6 +996,230 @@ fn parse_class_body(p: Parser*) -> ParamList {
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
     else         { dealloc(buf); buf = NULL; }
     return ParamList{ arr: buf, count: count };
+}
+
+// =====================================================================
+// ES module declarations: import + export.
+// =====================================================================
+
+// `import 'mod'`
+// `import x from 'mod'`
+// `import { a, b as c } from 'mod'`
+// `import * as ns from 'mod'`
+// `import x, { a } from 'mod'`
+// `import x, * as ns from 'mod'`
+fn parse_import_decl(p: Parser*) -> AstNode* {
+    let kw = advance(p);     // 'import'
+    let cap: u32 = 4;
+    let count: u32 = 0;
+    let buf = alloc_n<AstNode*>((usize)cap);
+
+    // Bare `import 'mod'` — side-effect only, no clauses.
+    if peek_kind(p) == TokenKind::StringLit {
+        let spec_tok = advance(p);
+        match_kind(p, TokenKind::Semicolon);
+        let node = new_node(&p.tracker, NodeKind::ImportDecl, kw.start, spec_tok.start + spec_tok.length);
+        node.name_start  = spec_tok.start;
+        node.name_length = spec_tok.length;
+        node.children = NULL;
+        node.children_count = 0;
+        dealloc(buf);
+        return node;
+    }
+
+    // Default binding: `import x` or `import x,` ...
+    if peek_kind(p) == TokenKind::Identifier {
+        let name_tok = advance(p);
+        let cl = new_node(&p.tracker, NodeKind::ImportClause, name_tok.start, name_tok.start + name_tok.length);
+        cl.op = TokenKind::KwDefault;
+        cl.name_start  = name_tok.start;
+        cl.name_length = name_tok.length;
+        buf[count] = cl; count = count + 1;
+        if peek_kind(p) == TokenKind::Comma { advance(p); }
+    }
+
+    // Namespace: `* as ns`
+    if peek_kind(p) == TokenKind::Star {
+        let star_tok = advance(p);
+        if peek_kind(p) != TokenKind::KwAs {
+            p.had_error = true; dealloc(buf); return NULL;
+        }
+        advance(p);
+        let name_tok = peek(p);
+        if !is_binding_ident(name_tok.kind) {
+            p.had_error = true; dealloc(buf); return NULL;
+        }
+        advance(p);
+        let cl = new_node(&p.tracker, NodeKind::ImportClause, star_tok.start, name_tok.start + name_tok.length);
+        cl.op = TokenKind::Star;
+        cl.name_start  = name_tok.start;
+        cl.name_length = name_tok.length;
+        if count >= cap { cap = cap * 2; buf = realloc_n<AstNode*>(buf, (usize)(cap/2), (usize)cap); }
+        buf[count] = cl; count = count + 1;
+    } else if peek_kind(p) == TokenKind::LBrace {
+        // `{ a, b as c }` — named imports.
+        advance(p);
+        while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
+            let src_tok = peek(p);
+            if !is_binding_ident(src_tok.kind) && !is_keyword_token(src_tok.kind) {
+                p.had_error = true; dealloc(buf); return NULL;
+            }
+            advance(p);
+            // Default optional rename: local = source name.
+            let local_start = src_tok.start;
+            let local_len   = src_tok.length;
+            if peek_kind(p) == TokenKind::KwAs {
+                advance(p);
+                let loc_tok = peek(p);
+                if !is_binding_ident(loc_tok.kind) {
+                    p.had_error = true; dealloc(buf); return NULL;
+                }
+                advance(p);
+                local_start = loc_tok.start;
+                local_len   = loc_tok.length;
+            }
+            let cl = new_node(&p.tracker, NodeKind::ImportClause, src_tok.start, local_start + local_len);
+            cl.op = TokenKind::Eq;
+            cl.name_start  = local_start;     // local binding name
+            cl.name_length = local_len;
+            // Source export name carried on a synthetic IdentExpr in `third`.
+            let src_node = new_node(&p.tracker, NodeKind::IdentExpr, src_tok.start, src_tok.start + src_tok.length);
+            src_node.name_start  = src_tok.start;
+            src_node.name_length = src_tok.length;
+            cl.third = src_node;
+            if count >= cap { let oc = cap; cap = cap * 2; buf = realloc_n<AstNode*>(buf, (usize)oc, (usize)cap); }
+            buf[count] = cl; count = count + 1;
+            if !match_kind(p, TokenKind::Comma) { break; }
+        }
+        if !expect_kind(p, TokenKind::RBrace) { dealloc(buf); return NULL; }
+    }
+
+    if peek_kind(p) != TokenKind::KwFrom {
+        p.had_error = true; dealloc(buf); return NULL;
+    }
+    advance(p);
+    let spec_tok = peek(p);
+    if spec_tok.kind != TokenKind::StringLit {
+        p.had_error = true; dealloc(buf); return NULL;
+    }
+    advance(p);
+    match_kind(p, TokenKind::Semicolon);
+
+    if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
+    else         { dealloc(buf); buf = NULL; }
+
+    let node = new_node(&p.tracker, NodeKind::ImportDecl, kw.start, spec_tok.start + spec_tok.length);
+    node.name_start  = spec_tok.start;
+    node.name_length = spec_tok.length;
+    node.children = buf;
+    node.children_count = count;
+    return node;
+}
+
+// `export default expr;`
+// `export default function f() {}`
+// `export default class C {}`
+// `export { a, b as c };`
+// `export { a, b as c } from 'mod';`
+// `export const x = 1;` / `export let x = 1;` / `export var x = 1;`
+// `export function f() {}`
+// `export class C {}`
+fn parse_export_decl(p: Parser*) -> AstNode* {
+    let kw = advance(p);     // 'export'
+
+    if peek_kind(p) == TokenKind::KwDefault {
+        let dflt = advance(p);
+        // `export default function ...` / `class ...` / expr.
+        let value: AstNode* = NULL;
+        let k = peek_kind(p);
+        if k == TokenKind::KwFunction { value = parse_function_expr(p, false); }
+        else if k == TokenKind::KwAsync && peek_kind2(p) == TokenKind::KwFunction {
+            advance(p);
+            value = parse_function_expr(p, true);
+        }
+        else if k == TokenKind::KwClass { value = parse_class_expr(p); }
+        else { value = parse_assignment(p); match_kind(p, TokenKind::Semicolon); }
+        if value == NULL { return NULL; }
+        let node = new_node(&p.tracker, NodeKind::ExportDecl, kw.start, value.end);
+        node.bool_value = true;       // export-default marker
+        node.left = value;
+        return node;
+    }
+
+    // `export { ... }` / `export { ... } from 'mod'`
+    if peek_kind(p) == TokenKind::LBrace {
+        advance(p);
+        let cap: u32 = 4;
+        let count: u32 = 0;
+        let buf = alloc_n<AstNode*>((usize)cap);
+        while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
+            let local_tok = peek(p);
+            if !is_binding_ident(local_tok.kind) && !is_keyword_token(local_tok.kind) {
+                p.had_error = true; break;
+            }
+            advance(p);
+            let export_start = local_tok.start;
+            let export_len   = local_tok.length;
+            if peek_kind(p) == TokenKind::KwAs {
+                advance(p);
+                let e_tok = peek(p);
+                if !is_binding_ident(e_tok.kind) && !is_keyword_token(e_tok.kind) {
+                    p.had_error = true; break;
+                }
+                advance(p);
+                export_start = e_tok.start;
+                export_len   = e_tok.length;
+            }
+            let cl = new_node(&p.tracker, NodeKind::ExportClause, local_tok.start, export_start + export_len);
+            cl.name_start  = local_tok.start;     // local name
+            cl.name_length = local_tok.length;
+            let en = new_node(&p.tracker, NodeKind::IdentExpr, export_start, export_start + export_len);
+            en.name_start  = export_start;
+            en.name_length = export_len;
+            cl.third = en;                         // export-as name
+            if count >= cap { let oc = cap; cap = cap * 2; buf = realloc_n<AstNode*>(buf, (usize)oc, (usize)cap); }
+            buf[count] = cl; count = count + 1;
+            if !match_kind(p, TokenKind::Comma) { break; }
+        }
+        if !expect_kind(p, TokenKind::RBrace) { dealloc(buf); return NULL; }
+        let from_spec_start: u32 = 0;
+        let from_spec_len:   u32 = 0;
+        if peek_kind(p) == TokenKind::KwFrom {
+            advance(p);
+            let spec_tok = peek(p);
+            if spec_tok.kind != TokenKind::StringLit { p.had_error = true; dealloc(buf); return NULL; }
+            advance(p);
+            from_spec_start = spec_tok.start;
+            from_spec_len   = spec_tok.length;
+        }
+        match_kind(p, TokenKind::Semicolon);
+        if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
+        else         { dealloc(buf); buf = NULL; }
+        let node = new_node(&p.tracker, NodeKind::ExportDecl, kw.start, peek(p).start);
+        node.children = buf;
+        node.children_count = count;
+        node.name_start  = from_spec_start;       // 0 when not re-export
+        node.name_length = from_spec_len;
+        return node;
+    }
+
+    // `export <decl>` — decl is var / let / const / function / class.
+    let decl: AstNode* = NULL;
+    let k = peek_kind(p);
+    if      k == TokenKind::KwVar     { decl = parse_var_decl(p, true); }
+    else if k == TokenKind::KwLet     { decl = parse_var_decl(p, true); }
+    else if k == TokenKind::KwConst   { decl = parse_var_decl(p, true); }
+    else if k == TokenKind::KwFunction { decl = parse_function_decl(p, false); }
+    else if k == TokenKind::KwClass    { decl = parse_class_decl(p); }
+    else if k == TokenKind::KwAsync && peek_kind2(p) == TokenKind::KwFunction {
+        advance(p);
+        decl = parse_function_decl(p, true);
+    }
+    else { p.had_error = true; return NULL; }
+    if decl == NULL { return NULL; }
+    let node = new_node(&p.tracker, NodeKind::ExportDecl, kw.start, decl.end);
+    node.left = decl;
+    return node;
 }
 
 fn parse_class_decl(p: Parser*) -> AstNode* {

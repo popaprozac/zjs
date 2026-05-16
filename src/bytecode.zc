@@ -159,6 +159,19 @@ enum Op {
                       //   to include; equals param_count of regular
                       //   params preceding the rest binding)
 
+    // ES modules (2026-05-15).
+    // Emitted in module-mode top-level code only.
+    //   ImportBind reads the source module's exports[name] and writes
+    //     to a local in the current module's scope. The source module
+    //     is resolved at runtime against ctx.current_module's abs_path.
+    //   ExportBind writes a local's current value into the current
+    //     module's exports map under the given name.
+    // Both encode the relevant string atoms in the function's const
+    // pool — b / c index that pool as u8 (cap 256, fine for module
+    // bodies).
+    ImportBind,       // a=dst_reg,    b=spec_const_idx, c=name_const_idx
+    ExportBind,       // a=src_reg,    b=name_const_idx, c=unused
+
     // async / await (2026-05-15).
     // Op::Await reads regs[b] as the awaited value and writes the
     // unwrapped result to regs[a]:

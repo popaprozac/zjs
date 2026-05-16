@@ -113,6 +113,34 @@ enum NodeKind {
     // mark themselves as `async function`. AwaitExpr is the `await x`
     // operator — left = the awaited expression.
     AwaitExpr,
+
+    // ES modules (2026-05-15).
+    //   ImportDecl: children = ImportClause* (Default/Named/Namespace
+    //               specifiers), name_start/length = string-literal slice
+    //               of the source path (incl. quotes). bool_value
+    //               currently unused.
+    //   ImportClause:
+    //     - op == TokenKind::KwDefault: default import, name = local binding
+    //     - op == TokenKind::Star:      namespace import, name = local
+    //     - op == TokenKind::Eq:        named import; name = local binding,
+    //                                   third->name_* = source export name
+    //                                   (left field may be NULL when local
+    //                                   matches export name)
+    //   ExportDecl: top-level export
+    //     - left:  declaration being exported (VarDecl / FunctionDecl /
+    //              ClassDecl) when this is `export <decl>`; NULL for
+    //              `export { ... }` / `export default expr` shapes
+    //     - children: list of ExportClause nodes for `export { ... }`
+    //     - bool_value = true for `export default`
+    //     - When default: left = the expression being exported
+    //     - name_start/length: source-specifier for `export { ... } from "x"`
+    //   ExportClause: a single `{ local as export }` entry
+    //     - name_start/length: the local name being exported
+    //     - third->name_*: the exported-as name (same as local when omitted)
+    ImportDecl,
+    ImportClause,
+    ExportDecl,
+    ExportClause,
 }
 
 struct AstNode {
