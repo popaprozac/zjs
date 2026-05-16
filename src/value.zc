@@ -677,6 +677,12 @@ struct ZjsHostFunction {
     // (EvalError, TypeError, ...) whose [[Prototype]] is Error itself,
     // matching the spec's `class EvalError extends Error`.
     proto_override: ZjsValue;
+    // 2026-05-16 — IsConstructor for built-ins. Default true (matches
+    // legacy behavior for constructors like Array, Number, ...).
+    // Prototype methods and other non-constructable built-ins flip
+    // this to false; Op::NewInvoke / Op::SpreadNewInvoke / Reflect.construct
+    // / etc throw TypeError when constructed.
+    is_constructor: bool;
 }
 
 // Closure: a function template paired with a captured environment.

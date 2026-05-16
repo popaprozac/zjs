@@ -1382,6 +1382,7 @@ fn ctx_register_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> Z
     mem_copy<char>(name_copy, name, name_len + 1);
     hf.name = name_copy;
     hf.proto_override = zjs_undefined();
+    hf.is_constructor = true;
 
     ctx_register_cell(ctx, (void*)hf);
     let val = zjs_cell_from_ptr((void*)hf);
@@ -1409,9 +1410,53 @@ fn ctx_make_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> ZjsVa
     // proto_override defaults to undefined — Object.getPrototypeOf
     // then falls back to ctx.function_proto.
     hf.proto_override = zjs_undefined();
+    // Default IsConstructor = true to match legacy behavior (Array,
+    // Number, ... + tests that did `new f()` on user-defined host
+    // wrappers). Prototype-method registrations flag themselves false
+    // via a post-init sweep over each prototype object.
+    hf.is_constructor = true;
 
     ctx_register_cell(ctx, (void*)hf);
     return zjs_cell_from_ptr((void*)hf);
+}
+
+// Mark every host-function-valued own slot on `proto` as non-
+// constructor. Called after Array.prototype / String.prototype / etc
+// finish wiring their method tables, so `new Array.prototype.push()` and
+// friends throw TypeError per spec.
+fn mark_proto_methods_non_constructor(ctx: ZjsContext*, proto: ZjsObject*) -> void {
+    if proto == NULL { return; }
+    let cls = proto.cls;
+    if cls == NULL { return; }
+    // Walk the transition chain to recover the name for each slot, so
+    // we can skip "constructor" — that slot points back at the host
+    // constructor itself (Array, Number, ...) which IS callable with
+    // `new`.
+    let cur = cls;
+    while cur != NULL && cur.parent != NULL {
+        let slot = cur.transition_slot;
+        let nm = cur.transition_name;
+        let is_ctor: int = 0;
+        if nm != NULL && nm.length == 11 {
+            let nm_data = nm.data;
+            raw { is_ctor = (memcmp(nm_data, "constructor", 11) == 0) ? 1 : 0; }
+        }
+        if is_ctor == 0 {
+            let v = proto.slots[slot];
+            if zjs_is_host_function(v) != 0 {
+                let hf = zjs_as_host_function(v);
+                // Belt-and-suspenders: skip anything that already
+                // looks like a constructor (has its own .prototype
+                // or .props). Shared host functions (e.g. the
+                // wrapper-valueOf used across Number/Boolean/String
+                // prototypes) don't carry these.
+                if hf.prototype == NULL && hf.props == NULL {
+                    hf.is_constructor = false;
+                }
+            }
+        }
+        cur = cur.parent;
+    }
 }
 
 // Variant that lets the caller set the spec-mandated arity for the
@@ -8703,6 +8748,15 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     proto_mark_nonenum(ctx.string_proto);
     proto_mark_nonenum(ctx.regexp_proto);
     proto_mark_nonenum(ctx.promise_ctor_proto);
+    // Prototype methods are not constructors per spec — `new
+    // Array.prototype.push()` should throw TypeError. Mark them now
+    // that the method tables are installed.
+    mark_proto_methods_non_constructor(ctx, ctx.object_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.array_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.string_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.regexp_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.promise_ctor_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.generator_proto);
     // Wrapper prototypes (Number.prototype, Boolean.prototype) and
     // Math live as the .prototype of their constructor or as a plain
     // global. Walk via the global table.
@@ -8711,6 +8765,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         let nv = ctx.globals[num_g].value;
         if zjs_is_host_function(nv) != 0 {
             proto_mark_nonenum(zjs_as_host_function(nv).prototype);
+            mark_proto_methods_non_constructor(ctx, zjs_as_host_function(nv).prototype);
         }
     }
     let bool_g = ctx_find_global(ctx, (char*)"Boolean", 7);
@@ -8718,6 +8773,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         let bv = ctx.globals[bool_g].value;
         if zjs_is_host_function(bv) != 0 {
             proto_mark_nonenum(zjs_as_host_function(bv).prototype);
+            mark_proto_methods_non_constructor(ctx, zjs_as_host_function(bv).prototype);
         }
     }
     let math_g = ctx_find_global(ctx, (char*)"Math", 4);
@@ -8725,6 +8781,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         let mv = ctx.globals[math_g].value;
         if zjs_is_object(mv) != 0 {
             proto_mark_nonenum(zjs_as_object(mv));
+            mark_proto_methods_non_constructor(ctx, zjs_as_object(mv));
         }
     }
     let json_g = ctx_find_global(ctx, (char*)"JSON", 4);
@@ -8732,6 +8789,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         let jv = ctx.globals[json_g].value;
         if zjs_is_object(jv) != 0 {
             proto_mark_nonenum(zjs_as_object(jv));
+            mark_proto_methods_non_constructor(ctx, zjs_as_object(jv));
         }
     }
 }

@@ -3371,11 +3371,10 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let argc = (u32)inst.c;
             let callee = regs[base];
 
-            // Class methods are not constructible. (Built-in host
-            // helpers like String.prototype.slice arguably aren't
-            // either, but distinguishing them from stub ctors like
-            // Date is awkward without a per-function flag — left as
-            // a follow-up.)
+            // Class methods are not constructible. Built-in
+            // prototype methods (`Array.prototype.push`, etc.) are
+            // flagged via ZjsHostFunction.is_constructor = false at
+            // init time — same TypeError shape.
             if zjs_is_function(callee) != 0 {
                 let fp_c = zjs_cell_as_ptr(callee);
                 let ff_c: Function* = NULL;
@@ -3383,6 +3382,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if ff_c.is_method {
                     let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                                 (char*)"Class method is not a constructor", 33);
+                    throwing = true; thrown = err; exit_reason = 3; break;
+                }
+            }
+            if zjs_is_host_function(callee) != 0 {
+                let hf_chk = zjs_as_host_function(callee);
+                if !hf_chk.is_constructor {
+                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                (char*)"function is not a constructor", 29);
                     throwing = true; thrown = err; exit_reason = 3; break;
                 }
             }
