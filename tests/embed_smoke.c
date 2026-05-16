@@ -272,14 +272,14 @@ static void test_atom_interning(void) {
     ZjsContext* ctx = zjs_new_context();
 
     /* Baseline after first object literal — installs atoms "foo", "bar". */
-    zjs_eval(ctx, "let o1 = {foo: 1, bar: 2}");
+    zjs_eval(ctx, "var o1 = {foo: 1, bar: 2}");
     unsigned after_first = zjs_cell_count(ctx);
 
     /* Second object literal with the same property names. Without atom
      * interning each name would have allocated a fresh string; with
      * interning the names hit the table. Only the new object cell + 2
      * value temporaries grow the heap. */
-    zjs_eval(ctx, "let o2 = {foo: 3, bar: 4}");
+    zjs_eval(ctx, "var o2 = {foo: 3, bar: 4}");
     unsigned after_second = zjs_cell_count(ctx);
     unsigned grew = after_second - after_first;
 
@@ -299,9 +299,9 @@ static void test_atom_interning(void) {
      * appearing across two evals lands on the same ZjsString*. We can
      * observe this indirectly — `s1 === s2` is content-equality, but
      * the cell count between the two evals shouldn't grow by a string. */
-    zjs_eval(ctx, "let s1 = 'shared'");
+    zjs_eval(ctx, "var s1 = 'shared'");
     unsigned a = zjs_cell_count(ctx);
-    zjs_eval(ctx, "let s2 = 'shared'");
+    zjs_eval(ctx, "var s2 = 'shared'");
     unsigned b = zjs_cell_count(ctx);
     CHECK(b - a <= 1, "second 'shared' literal should hit the atom table (grew=%u)", b - a);
 
@@ -322,10 +322,10 @@ static void test_hidden_class_sharing(void) {
     ZjsContext* ctx = zjs_new_context();
 
     unsigned before_first = zjs_cell_count(ctx);
-    zjs_eval(ctx, "let p1 = {x: 1, y: 2}");
+    zjs_eval(ctx, "var p1 = {x: 1, y: 2}");
     unsigned after_first = zjs_cell_count(ctx);
 
-    zjs_eval(ctx, "let p2 = {x: 3, y: 4}");
+    zjs_eval(ctx, "var p2 = {x: 3, y: 4}");
     unsigned after_second = zjs_cell_count(ctx);
 
     unsigned first_delta  = after_first  - before_first;
@@ -419,7 +419,7 @@ static void test_inline_caches(void) {
     /* GC across an IC. After GC, the cached class must still be
      * reachable through the function's IC table — so the next access
      * either hits the cache or repopulates it correctly. */
-    zjs_eval(ctx, "let q = {a: 1, b: 2}; q.a; q.b");
+    zjs_eval(ctx, "var q = {a: 1, b: 2}; q.a; q.b");
     zjs_gc(ctx);
     ZjsValue after = zjs_eval(ctx, "q.a + q.b");
     CHECK(zjs_is_int32(after) && zjs_as_int32(after) == 3, "IC survives GC");
@@ -435,7 +435,7 @@ static void test_gc(void) {
      * once the next loop body assigns to s. After enough iterations
      * the cell count should rise above baseline. */
     for (int i = 0; i < 200; i++) {
-        zjs_eval(ctx, "let s = 'iter' + 99");
+        zjs_eval(ctx, "var s = 'iter' + 99");
     }
     unsigned grown = zjs_cell_count(ctx);
     CHECK(grown > baseline, "cells should accumulate (baseline=%u, grown=%u)",
@@ -452,7 +452,7 @@ static void test_gc(void) {
 
     /* Liveness: values held via globals survive collection. The most
      * direct test is to allocate something, GC, then read it back. */
-    zjs_eval(ctx, "let keep = []; for (let i = 0; i < 20; i = i + 1) keep[i] = 'item' + i");
+    zjs_eval(ctx, "var keep = []; for (let i = 0; i < 20; i = i + 1) keep[i] = 'item' + i");
     zjs_gc(ctx);
     ZjsValue len = zjs_eval(ctx, "keep.length");
     CHECK(zjs_is_int32(len) && zjs_as_int32(len) == 20,
@@ -462,7 +462,7 @@ static void test_gc(void) {
 
     /* A nested reachable graph: { x: { y: 'deep' } } via global. GC,
      * then reach in. */
-    zjs_eval(ctx, "let nested = { x: { y: 'deep value' } }");
+    zjs_eval(ctx, "var nested = { x: { y: 'deep value' } }");
     zjs_gc(ctx);
     ZjsValue deep = zjs_eval(ctx, "nested.x.y");
     CHECK(zjs_is_string(deep), "deeply nested string survives GC");

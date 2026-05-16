@@ -845,7 +845,10 @@ fn test_global_persistence() -> void {
     let ctx = zjs_new_context();
     defer zjs_free_context(ctx);
 
-    let _ = zjs_eval(ctx, (char*)"let x = 100");
+    // Use `var` for cross-eval persistence — `let`/`const` are now
+    // script-scope lexicals (per ECMA-262) so they're confined to
+    // their own eval call.
+    let _ = zjs_eval(ctx, (char*)"var x = 100");
     let v = zjs_eval(ctx, (char*)"x + 1");
     if zjs_is_int32(v) != 0 && zjs_as_int32(v) == 101 {
         pass((char*)"globals persist across eval");

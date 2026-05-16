@@ -51,6 +51,12 @@ struct Compiler {
     local_count:   u32;
     local_cap:     u32;
     is_function:   bool;
+    // 2026-05-16 — true on the program-level compiler when running a
+    // *script* (not a module). Forces is_function=true so top-level
+    // let/const/class bind to a script-scope lexical environment
+    // (registers), but special-cases `var` and FunctionDecl back to
+    // the global table so script-mode globalThis semantics survive.
+    is_script:     bool;
 
     // Closure support (Phase 3.3). `parent` points to the enclosing
     // function's compiler — NULL for the top-level program. The
@@ -3552,19 +3558,20 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
     let k = node.kind;
 
     if k == NodeKind::FunctionDecl {
-        if c.is_function {
-            // The function's own name binds as a local.
+        // Script-mode top-level FunctionDecl creates a property on
+        // globalThis per spec, NOT a script-scope lexical binding.
+        // Module/function bodies register the function-name local.
+        if c.is_function && !c.is_script {
             let reg = alloc_reg(c);
             add_local(c, node.name_start, node.name_length, reg);
         }
-        // Don't descend into the function body.
         return;
     }
     if k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
-        // Anonymous expression forms have no binding to register.
         return;
     }
     if k == NodeKind::ClassDecl {
+        // ClassDecl is always lexical, even at script-top.
         if c.is_function {
             let reg = alloc_reg(c);
             add_local(c, node.name_start, node.name_length, reg);
@@ -3576,6 +3583,11 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
     }
 
     if k == NodeKind::VarDecl {
+        // Script-top `var x` stays on globalThis; let/const become
+        // script-scope locals. Inside a function, the declaration's
+        // kind doesn't matter — all three are function-scope locals.
+        let is_var_kind = node.op == TokenKind::KwVar;
+        if c.is_script && is_var_kind { return; }
         let i: u32 = 0;
         while i < node.children_count {
             let decl = node.children[i];
@@ -3583,8 +3595,6 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
                 let reg = alloc_reg(c);
                 add_local(c, decl.name_start, decl.name_length, reg);
             } else if decl.third != NULL {
-                // Destructuring pattern. Walk it and register every
-                // binding name as a local.
                 collect_pattern_locals(c, decl.third);
             }
             i = i + 1;
@@ -3696,7 +3706,12 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             }
             let name = c.source + decl.name_start;
             let name_len = decl.name_length;
-            if c.is_function {
+            // Script-top `var x` keeps global semantics; collect_locals
+            // skipped it, so falling into the local path would crash
+            // with "local not found". Treat it like the bare-program
+            // path used to.
+            let is_script_var = c.is_script && node.op == TokenKind::KwVar;
+            if c.is_function && !is_script_var {
                 // Local — register was pre-allocated by collect_locals.
                 let lidx = find_local_index(c, name, name_len);
                 if lidx < 0 { c.had_error = true; return; }
@@ -3777,7 +3792,11 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             r = cls_reg;
         }
 
-        if c.is_function {
+        // Script-top FunctionDecl creates a property on globalThis,
+        // not a script-scope lexical binding. collect_locals skipped
+        // it for c.is_script, so there's no local to find — fall
+        // through to the global-emit path.
+        if c.is_function && !c.is_script {
             // Bind to the pre-allocated local register (or its env entry).
             let lidx = find_local_index(c, c.source + node.name_start, node.name_length);
             if lidx >= 0 {
@@ -3806,7 +3825,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // At top level we reset the result register before the branch
         // so an empty-body if produces undefined (not the prior value).
         // Expression statements inside the branch will overwrite.
-        if !c.is_function && c.last_expr_reg >= 0 {
+        if c.parent == NULL && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
         let fused = try_emit_cmp_branch_if_false(c, node.left);
@@ -3849,7 +3868,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // switch itself, but labeled continues to an outer loop still
         // work via the loop_stack walk — switch doesn't claim a
         // continue target.
-        if !c.is_function && c.last_expr_reg >= 0 {
+        if c.parent == NULL && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
         let disc_r = compile_expr(c, node.left);
@@ -3937,7 +3956,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::WhileStmt {
-        if !c.is_function && c.last_expr_reg >= 0 {
+        if c.parent == NULL && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
         let loop_top = (u32)c.code_count;
@@ -3967,7 +3986,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::DoWhileStmt {
-        if !c.is_function && c.last_expr_reg >= 0 {
+        if c.parent == NULL && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
         let loop_top = (u32)c.code_count;
@@ -3994,7 +4013,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::ForInStmt {
-        if !c.is_function && c.last_expr_reg >= 0 {
+        if c.parent == NULL && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
         // for-in: collect keys snapshot via iter_prepare(kind=0), walk
@@ -4210,7 +4229,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // Reset AFTER init: ECMA-262 ForBodyEvaluation step 1 sets
         // V to undefined; the init's expression value doesn't leak
         // into the loop's completion.
-        if !c.is_function && c.last_expr_reg >= 0 {
+        if c.parent == NULL && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
         let loop_top = (u32)c.code_count;
@@ -4397,7 +4416,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // ECMA-262 14.15.8 step 6: TryStatement returns UpdateEmpty
         // with undefined when the try block produced an empty
         // completion. Mirror the if / while heads.
-        if !c.is_function && c.last_expr_reg >= 0 {
+        if c.parent == NULL && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
         // Catch parameter is a local register. At function scope it's
@@ -4440,7 +4459,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             patch_jump(c, enter_idx);
             // Catch entry: reset the result register so an empty
             // catch body produces undefined (UpdateEmpty per spec).
-            if !c.is_function && c.last_expr_reg >= 0 {
+            if c.parent == NULL && c.last_expr_reg >= 0 {
                 emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
             }
             // Bind the catch parameter for the catch body only.
@@ -4481,7 +4500,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             let skip_catch = emit(c, make_inst_i16(Op::Jmp, 0));
             patch_jump(c, inner_enter);
             // Reset result register on catch entry per UpdateEmpty.
-            if !c.is_function && c.last_expr_reg >= 0 {
+            if c.parent == NULL && c.last_expr_reg >= 0 {
                 emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
             }
             // Catch parameter bound for the catch body only.
@@ -4517,7 +4536,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // before the finally so an empty finally itself doesn't
         // contribute a value.
         let body_save: i32 = -1;
-        if !c.is_function && c.last_expr_reg >= 0 {
+        if c.parent == NULL && c.last_expr_reg >= 0 {
             let save_reg = alloc_reg(c);
             if save_reg + 1 > c.fixed_regs { c.fixed_regs = save_reg + 1; }
             emit(c, make_inst_ab(Op::Mov, save_reg, (u8)c.last_expr_reg));
@@ -4557,7 +4576,13 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     // the call's result, so we just remember the last register for
     // diagnostic purposes.
     let r = compile_expr(c, node);
-    if !c.is_function && c.last_expr_reg >= 0 {
+    // At the program top-level (script or module) we Mov each
+    // expression-statement's result into the reserved result_reg so
+    // the final Return picks up the LAST one. c.parent == NULL
+    // marks "this IS the program compile" — inside any nested
+    // function, c.parent points to its enclosing compiler.
+    let is_program_top = c.parent == NULL;
+    if is_program_top && c.last_expr_reg >= 0 {
         let dst = (u8)c.last_expr_reg;
         if r != dst { emit(c, make_inst_ab(Op::Mov, dst, r)); }
     } else {
@@ -4575,7 +4600,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
 //   * break / abrupt completion call iter.return() per spec.
 //   * Spec-mandated iter.next() call count matches.
 fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
-    if !c.is_function && c.last_expr_reg >= 0 {
+    if c.parent == NULL && c.last_expr_reg >= 0 {
         emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
     }
 
@@ -4802,15 +4827,21 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     let is_module: bool = root != NULL && root.bool_value;
     if is_module {
         c.is_function = true;
-        // Also collect locals + analyze captures so nested functions
-        // resolve our module-local names through the normal closure
-        // machinery (LoadEnv / capture chains).
         collect_locals(c, root);
         analyze_captures(c, root);
-        // If anything was marked captured, allocate the env register
-        // BEFORE result_reg so it sits below fixed_regs (env lives
-        // for the module's lifetime, like a closure's env in a
-        // function body).
+        if c.needs_env {
+            c.env_reg = alloc_reg(c);
+        }
+    } else {
+        // Script mode (the common case). Top-level let/const/class go
+        // into a script-scope lexical env (= register slots, just like
+        // a function frame). `var` and FunctionDecls still create
+        // properties on globalThis per spec — the collect_locals path
+        // below sees c.is_script and skips them.
+        c.is_function = true;
+        c.is_script   = true;
+        if root != NULL { collect_locals(c, root); }
+        if root != NULL { analyze_captures(c, root); }
         if c.needs_env {
             c.env_reg = alloc_reg(c);
         }
@@ -4825,10 +4856,10 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     c.fixed_regs = result_reg + 1;
     c.last_expr_reg = (i32)result_reg;
 
-    // Module env construction: instantiate the env object right after
-    // the result-reg prologue so subsequent ImportBind / VarDecl
-    // emissions can StoreProp captured locals into it.
-    if is_module && c.needs_env {
+    // Module/script env construction: instantiate the env object
+    // right after the result-reg prologue so subsequent ImportBind /
+    // VarDecl emissions can StoreProp captured locals into it.
+    if c.needs_env {
         emit(c, make_inst_a(Op::NewObject, c.env_reg));
     }
 

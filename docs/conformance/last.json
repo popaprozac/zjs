@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-16 23:03 UTC",
+    "when": "2026-05-16 23:25 UTC",
     "total": 14428,
-    "passed": 6139,
-    "failed": 1772,
+    "passed": 6166,
+    "failed": 1745,
     "skipped": 6517
   },
   "failures": [
@@ -74,10 +74,6 @@
     {
       "path": "test/language/expressions/equals/get-symbol-to-prim-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/expressions/equals/to-prim-hint.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/less-than/S11.8.1_A4.12_T1.js",
@@ -160,8 +156,200 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/language/statements/for/dstr/var-ary-init-iter-close.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
       "path": "test/language/statements/for/dstr/var-ary-init-iter-get-err-array-prototype.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a ReferenceError"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-init-iter-no-close.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-name-iter-val.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-ary-elem-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-ary-elem-iter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-ary-rest-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-ary-rest-iter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-init-exhausted.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-init-fn-name-arrow.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-init-fn-name-class.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-init-fn-name-cover.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-init-fn-name-fn.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-init-fn-name-gen.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-init-hole.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-init-skipped.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-init-undef.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-iter-complete.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-iter-done.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-iter-val-array-prototype.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-iter-val.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-obj-id-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-obj-id.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-obj-prop-id-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-obj-prop-id.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-rest-ary-elem.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-rest-ary-rest.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-rest-id-direct.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-rest-id-elision.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-rest-id-exhausted.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-rest-id.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-rest-obj-id.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-ary-ptrn-rest-obj-prop-id.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-id-init-fn-name-arrow.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-id-init-fn-name-class.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-id-init-fn-name-cover.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-id-init-fn-name-fn.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-id-init-fn-name-gen.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-id-init-skipped.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-id-trailing-comma.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-prop-ary-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-prop-ary-trailing-comma.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-prop-ary.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-prop-id-init-skipped.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-prop-id-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-prop-id-trailing-comma.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-prop-id.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-prop-obj-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for/dstr/var-obj-ptrn-prop-obj.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/statements/for/head-const-bound-names-in-stmt.js",
@@ -190,22 +378,6 @@
     {
       "path": "test/language/statements/for/let-identifier-with-newline.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for/scope-body-lex-boundary.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"second\"\u00bb, \u00ab\"first\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for/scope-body-lex-open.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for/scope-head-lex-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for/scope-head-lex-open.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/for-in/S12.6.4_A7_T2.js",
@@ -296,12 +468,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): binding is block-scoped Expected SameValue(\u00ab\"string\"\u00bb, \u00ab\"undefined\"\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/for-in/head-let-fresh-binding-per-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"c\"\u00bb, \u00ab\"a\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/for-in/head-lhs-let.js",
       "reason": "zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/for-in/head-var-bound-names-dup.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/statements/for-in/identifier-let-allowed-as-lefthandside-expression-not-strict.js",
@@ -330,26 +502,6 @@
     {
       "path": "test/language/statements/for-in/resizable-buffer.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"012\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for-in/scope-body-lex-boundary.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"b\"\u00bb, \u00ab\"b\"\u00bb) to be false"
-    },
-    {
-      "path": "test/language/statements/for-in/scope-body-lex-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"i\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for-in/scope-body-lex-open.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"i\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for-in/scope-head-lex-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/for-in/scope-head-lex-open.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"i\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/for-in/var-arguments-fn-strict.js",
@@ -386,10 +538,6 @@
     {
       "path": "test/language/statements/for-of/dstr/array-elem-init-in.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-init-let.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-init-yield-ident-invalid.js",
@@ -430,14 +578,6 @@
     {
       "path": "test/language/statements/for-of/dstr/array-elem-nested-obj-yield-ident-valid.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-put-let.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-put-unresolvable-strict.js",
@@ -560,14 +700,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/for-of/dstr/array-rest-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-rest-put-let.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/array-rest-put-unresolvable-strict.js",
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
@@ -632,14 +764,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/for-of/dstr/obj-id-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-put-let.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/obj-id-put-unresolvable-strict.js",
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
@@ -650,10 +774,6 @@
     {
       "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-in.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-let.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-yield-ident-invalid.js",
@@ -676,20 +796,204 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/for-of/dstr/obj-prop-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-put-let.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/obj-prop-put-unresolvable-strict.js",
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/language/statements/for-of/dstr/var-ary-init-iter-close.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
       "path": "test/language/statements/for-of/dstr/var-ary-init-iter-get-err-array-prototype.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-init-iter-no-close.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-name-iter-val.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-ary-elem-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-ary-elem-iter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-ary-rest-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-ary-rest-iter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-exhausted.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-fn-name-arrow.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-fn-name-class.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-fn-name-cover.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-fn-name-fn.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-fn-name-gen.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-hole.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-skipped.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-undef.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-iter-complete.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-iter-done.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-iter-val-array-prototype.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-iter-val.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-obj-id-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-obj-id.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-obj-prop-id-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-obj-prop-id.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-rest-ary-elem.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-rest-ary-rest.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-rest-id-direct.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-rest-id-elision.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-rest-id-exhausted.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-rest-id.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-rest-obj-id.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-rest-obj-prop-id.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-id-init-fn-name-arrow.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-id-init-fn-name-class.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-id-init-fn-name-cover.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-id-init-fn-name-fn.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-id-init-fn-name-gen.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-id-init-skipped.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-id-trailing-comma.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-prop-ary-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-prop-ary-trailing-comma.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-prop-ary.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-prop-id-init-skipped.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-prop-id-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-prop-id-trailing-comma.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-prop-id.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-prop-obj-init.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/var-obj-ptrn-prop-obj.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/statements/for-of/generator-close-via-break.js",
@@ -704,10 +1008,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Generator is closed after `return` statement Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/for-of/generator-close-via-throw.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Generator is closed after `throw` statement Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/for-of/head-const-bound-names-dup.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -718,10 +1018,6 @@
     {
       "path": "test/language/statements/for-of/head-const-bound-names-in-stmt.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-of/head-const-fresh-binding-per-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `f[0]()` returns `1` Expected SameValue(\u00ab3\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/for-of/head-let-bound-names-dup.js",
@@ -740,10 +1036,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): binding is block-scoped Expected SameValue(\u00ab\"number\"\u00bb, \u00ab\"undefined\"\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/for-of/head-let-fresh-binding-per-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `f[0]()` returns `1` Expected SameValue(\u00ab3\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/for-of/head-lhs-async-escaped.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab7\u00bb) to be true"
     },
@@ -754,6 +1046,10 @@
     {
       "path": "test/language/statements/for-of/head-using-fresh-binding-per-iteration.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/for-of/head-var-bound-names-dup.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/statements/for-of/iterator-close-non-object.js",
@@ -784,10 +1080,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Iterator is closed after `return` statement Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/for-of/iterator-close-via-throw.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Iterator is closed after `throw` statement Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/for-of/iterator-next-reference.js",
       "reason": "[sloppy] zjs: throw: (unknown): Should not access the `next` method after the iteration prologue."
     },
@@ -806,26 +1098,6 @@
     {
       "path": "test/language/statements/for-of/let-identifier-with-newline.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/scope-body-lex-boundary.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"second\"\u00bb, \u00ab\"first\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for-of/scope-body-lex-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for-of/scope-body-lex-open.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for-of/scope-head-lex-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/for-of/scope-head-lex-open.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/for-of/string-astral-truncated.js",
@@ -872,6 +1144,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): Second iteration: pre-yield Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
     },
     {
+      "path": "test/language/statements/try/12.14-7.js",
+      "reason": "[sloppy] zjs: throw: (unknown): e instanceof ReferenceError"
+    },
+    {
       "path": "test/language/statements/try/S12.14_A14.js",
       "reason": "zjs: throw: (unknown): #1: Exception ===\"ex\". Actual:  Exception ===ReferenceError: with is not defined"
     },
@@ -912,26 +1188,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/try/optional-catch-binding-lexical.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab3\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/try/scope-catch-block-lex-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"outside\"\u00bb, \u00ab\"inside\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/try/scope-catch-block-lex-open.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/try/scope-catch-param-lex-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"outside\"\u00bb, \u00ab\"inside\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/try/scope-catch-param-lex-open.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/try/static-init-await-binding-valid.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
@@ -942,14 +1198,6 @@
     {
       "path": "test/language/statements/block/labeled-continue.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/block/scope-lex-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"outside\"\u00bb, \u00ab\"inside\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/block/scope-lex-open.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/computed-err-to-prop-key.js",
@@ -968,8 +1216,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get string\"\u00bb) to be true"
     },
     {
+      "path": "test/language/statements/class/arguments/access.js",
+      "reason": "[sloppy] zjs: throw: (unknown): The value of `constructCounts.base` is `3` Expected SameValue(\u00ab1\u00bb, \u00ab3\u00bb) to be true"
+    },
+    {
       "path": "test/language/statements/class/arguments/default-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a ReferenceError"
+      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
     },
     {
       "path": "test/language/statements/class/async-meth-escaped-async.js",
@@ -1001,27 +1253,27 @@
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-arrow-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-arrow.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-function-returns-arguments-from-own-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-function-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
       "path": "test/language/statements/class/async-method-static/await-as-binding-identifier-escaped.js",
@@ -1049,7 +1301,27 @@
     },
     {
       "path": "test/language/statements/class/async-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+    },
+    {
+      "path": "test/language/statements/class/async-method-static/returns-async-arrow-returns-newtarget.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+    },
+    {
+      "path": "test/language/statements/class/async-method-static/returns-async-arrow.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+    },
+    {
+      "path": "test/language/statements/class/async-method-static/returns-async-function-returns-arguments-from-own-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+    },
+    {
+      "path": "test/language/statements/class/async-method-static/returns-async-function-returns-newtarget.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+    },
+    {
+      "path": "test/language/statements/class/async-method-static/returns-async-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/class-name-ident-let-escaped.js",
@@ -1094,6 +1366,10 @@
     {
       "path": "test/language/statements/class/definition/constructor-strict-by-default.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/class/definition/constructor.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'constructor')"
     },
     {
       "path": "test/language/statements/class/definition/early-errors-class-async-method-duplicate-parameters.js",
@@ -1196,10 +1472,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/statements/class/definition/this-access-restriction-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of `this.prp` is `a + b` Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/definition/this-access-restriction.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
@@ -1212,16 +1484,40 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/language/statements/class/dstr/gen-meth-ary-ptrn-rest-obj-prop-id.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+    },
+    {
       "path": "test/language/statements/class/dstr/gen-meth-dflt-ary-init-iter-get-err-array-prototype.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/statements/class/dstr/gen-meth-static-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "path": "test/language/statements/class/dstr/gen-meth-dflt-ary-ptrn-rest-obj-prop-id.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
-      "path": "test/language/statements/class/dstr/gen-meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "path": "test/language/statements/class/dstr/gen-meth-static-ary-ptrn-elision-step-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown):"
+    },
+    {
+      "path": "test/language/statements/class/dstr/gen-meth-static-ary-ptrn-rest-id-iter-step-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown):"
+    },
+    {
+      "path": "test/language/statements/class/dstr/gen-meth-static-ary-ptrn-rest-obj-prop-id.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+    },
+    {
+      "path": "test/language/statements/class/dstr/gen-meth-static-dflt-ary-ptrn-elision-step-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown):"
+    },
+    {
+      "path": "test/language/statements/class/dstr/gen-meth-static-dflt-ary-ptrn-rest-id-iter-step-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown):"
+    },
+    {
+      "path": "test/language/statements/class/dstr/gen-meth-static-dflt-ary-ptrn-rest-obj-prop-id.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/dstr/meth-ary-init-iter-get-err-array-prototype.js",
@@ -1232,12 +1528,20 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/statements/class/dstr/meth-static-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "path": "test/language/statements/class/dstr/meth-static-ary-ptrn-elision-step-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown):"
     },
     {
-      "path": "test/language/statements/class/dstr/meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "path": "test/language/statements/class/dstr/meth-static-ary-ptrn-rest-id-iter-step-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown):"
+    },
+    {
+      "path": "test/language/statements/class/dstr/meth-static-dflt-ary-ptrn-elision-step-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown):"
+    },
+    {
+      "path": "test/language/statements/class/dstr/meth-static-dflt-ary-ptrn-rest-id-iter-step-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown):"
     },
     {
       "path": "test/language/statements/class/elements/arrow-body-derived-cls-direct-eval-contains-superproperty-1.js",
@@ -1248,60 +1552,12 @@
       "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before using 'this' in derived constructor"
     },
     {
-      "path": "test/language/statements/class/elements/arrow-body-derived-cls-direct-eval-err-contains-supercall-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/arrow-body-derived-cls-direct-eval-err-contains-supercall-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/arrow-body-derived-cls-direct-eval-err-contains-supercall.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/arrow-body-derived-cls-indirect-eval-contains-superproperty-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/arrow-body-derived-cls-indirect-eval-contains-superproperty-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/arrow-body-derived-cls-indirect-eval-err-contains-supercall-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/arrow-body-derived-cls-indirect-eval-err-contains-supercall-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/arrow-body-derived-cls-indirect-eval-err-contains-supercall.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/arrow-body-direct-eval-err-contains-arguments.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/class/elements/arrow-body-indirect-eval-err-contains-newtarget.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/class/elements/arrow-fnc-init-err-contains-arguments.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/class-field-on-frozen-objects.js",
-      "reason": "zjs: throw: (unknown): Frozen objects can't be changed Expected a TypeError to be thrown but no exception was thrown at "
-    },
-    {
       "path": "test/language/statements/class/elements/comp-name-init-err-contains-arguments.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/computed-property-abrupt-completition.js",
-      "reason": "[sloppy] zjs: throw: (unknown): computed property should have abrupt completion Expected a undefined to be thrown but no exceptio"
     },
     {
       "path": "test/language/statements/class/elements/derived-cls-direct-eval-contains-superproperty-1.js",
@@ -1310,42 +1566,6 @@
     {
       "path": "test/language/statements/class/elements/derived-cls-direct-eval-contains-superproperty-2.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before using 'this' in derived constructor"
-    },
-    {
-      "path": "test/language/statements/class/elements/derived-cls-direct-eval-err-contains-supercall-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/derived-cls-direct-eval-err-contains-supercall-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/derived-cls-direct-eval-err-contains-supercall.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/derived-cls-indirect-eval-contains-superproperty-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/derived-cls-indirect-eval-contains-superproperty-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/derived-cls-indirect-eval-err-contains-supercall-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/derived-cls-indirect-eval-err-contains-supercall-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/derived-cls-indirect-eval-err-contains-supercall.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/direct-eval-err-contains-arguments.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
     },
     {
       "path": "test/language/statements/class/elements/direct-eval-err-contains-newtarget.js",
@@ -1420,10 +1640,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/indirect-eval-err-contains-newtarget.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/class/elements/literal-name-init-err-contains-arguments.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -1444,48 +1660,8 @@
       "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before using 'this' in derived constructor"
     },
     {
-      "path": "test/language/statements/class/elements/nested-derived-cls-direct-eval-err-contains-supercall-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-derived-cls-direct-eval-err-contains-supercall-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-derived-cls-direct-eval-err-contains-supercall.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-derived-cls-indirect-eval-contains-superproperty-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-derived-cls-indirect-eval-contains-superproperty-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-derived-cls-indirect-eval-err-contains-supercall-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-derived-cls-indirect-eval-err-contains-supercall-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-derived-cls-indirect-eval-err-contains-supercall.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-direct-eval-err-contains-arguments.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
       "path": "test/language/statements/class/elements/nested-direct-eval-err-contains-newtarget.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-indirect-eval-err-contains-newtarget.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/class/elements/nested-literal-name-init-err-contains-arguments.js",
@@ -1518,10 +1694,6 @@
     {
       "path": "test/language/statements/class/elements/private-class-field-on-nonextensible-objects.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/public-class-field-initialization-is-visible-to-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined but got a ReferenceError"
     },
     {
       "path": "test/language/statements/class/elements/regular-definitions-rs-field-identifier-initializer.js",
@@ -1700,14 +1872,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/gen-method/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/class/gen-method/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/class/gen-method/yield-as-binding-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -1734,14 +1898,6 @@
     {
       "path": "test/language/statements/class/gen-method-param-dflt-yield.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/gen-method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/class/gen-method-static/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/class/gen-method-static/yield-as-binding-identifier-escaped.js",
@@ -1772,24 +1928,8 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/method/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/class/method/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/class/method-param-yield.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/class/method-static/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/class/name-binding/const.js",
@@ -1824,10 +1964,6 @@
       "reason": "[sloppy] zjs: throw: ReferenceError: arguments is not defined"
     },
     {
-      "path": "test/language/statements/class/restricted-properties.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/class/scope-gen-meth-paramsbody-var-open.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'x')"
     },
@@ -1837,15 +1973,15 @@
     },
     {
       "path": "test/language/statements/class/scope-name-lex-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): from instance method Expected SameValue(\u00abnull\u00bb, \u00ab[object Function]\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'method')"
     },
     {
       "path": "test/language/statements/class/scope-name-lex-open-heritage.js",
-      "reason": "[sloppy] zjs: throw: (unknown): inner binding is independent Expected SameValue(\u00abnull\u00bb, \u00ab[object Function]\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'method')"
     },
     {
       "path": "test/language/statements/class/scope-name-lex-open-no-heritage.js",
-      "reason": "[sloppy] zjs: throw: (unknown): inner binding value Expected SameValue(\u00abnull\u00bb, \u00ab[object Function]\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'probe')"
     },
     {
       "path": "test/language/statements/class/scope-setter-paramsbody-var-open.js",
@@ -1968,6 +2104,10 @@
       "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
+      "path": "test/language/statements/class/subclass/builtin-objects/Boolean/super-must-be-called.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got undefined"
+    },
+    {
       "path": "test/language/statements/class/subclass/builtin-objects/DataView/regular-subclassing.js",
       "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
     },
@@ -1980,48 +2120,40 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abNaN\u00bb, \u00ab1859\u00bb) to be true"
     },
     {
+      "path": "test/language/statements/class/subclass/builtin-objects/Function/super-must-be-called.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got undefined"
+    },
+    {
       "path": "test/language/statements/class/subclass/builtin-objects/GeneratorFunction/regular-subclassing.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: yield is not defined"
+    },
+    {
+      "path": "test/language/statements/class/subclass/builtin-objects/GeneratorFunction/super-must-be-called.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got undefined"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Number/regular-subclassing.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"42.00\"\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/subclass/builtin-objects/Object/constructor-returns-non-object.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/Symbol/new-symbol-with-super-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "path": "test/language/statements/class/subclass/builtin-objects/Promise/regular-subclassing.js",
+      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
     },
     {
       "path": "test/language/statements/class/subclass/builtins.js",
       "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
     },
     {
-      "path": "test/language/statements/class/subclass/class-definition-null-proto-super.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/class/subclass/class-definition-null-proto-this.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError but got a undefined"
-    },
-    {
       "path": "test/language/statements/class/subclass/default-constructor-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of `Subclass2.prototype` is `Object.getPrototypeOf(s2prime)` Expected SameValue(\u00ab[objec"
+      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
+    },
+    {
+      "path": "test/language/statements/class/subclass/default-constructor.js",
+      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
     },
     {
       "path": "test/language/statements/class/subclass/derived-class-return-override-catch-finally-arrow.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
-    },
-    {
-      "path": "test/language/statements/class/subclass/derived-class-return-override-catch-super-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/statements/class/subclass/derived-class-return-override-catch-super.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/class/subclass/derived-class-return-override-finally-super-arrow.js",
@@ -2032,8 +2164,20 @@
       "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
     },
     {
-      "path": "test/language/statements/class/subclass/derived-class-return-override-for-of.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined but got a TypeError"
+      "path": "test/language/statements/class/subclass/derived-class-return-override-with-empty.js",
+      "reason": "[sloppy] zjs: throw: (unknown): The value of `calls` is `1`, because `super()` Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-with-object.js",
+      "reason": "[sloppy] zjs: throw: (unknown): The value of `calls` is `1`, because `super()` Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-with-this.js",
+      "reason": "[sloppy] zjs: throw: (unknown): The value of `calls` is `1`, because `super()` Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/language/statements/class/subclass/derived-class-return-override-with-undefined.js",
+      "reason": "[sloppy] zjs: throw: (unknown): The value of `calls` is `1`, because `super()` Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/subclass/private-class-field-on-nonextensible-return-override.js",
@@ -2161,27 +2305,27 @@
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-arrow-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-arrow.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-function-returns-arguments-from-own-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-function-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
       "path": "test/language/expressions/class/async-method-static/await-as-binding-identifier-escaped.js",
@@ -2209,7 +2353,27 @@
     },
     {
       "path": "test/language/expressions/class/async-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+    },
+    {
+      "path": "test/language/expressions/class/async-method-static/returns-async-arrow-returns-newtarget.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+    },
+    {
+      "path": "test/language/expressions/class/async-method-static/returns-async-arrow.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+    },
+    {
+      "path": "test/language/expressions/class/async-method-static/returns-async-function-returns-arguments-from-own-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+    },
+    {
+      "path": "test/language/expressions/class/async-method-static/returns-async-function-returns-newtarget.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+    },
+    {
+      "path": "test/language/expressions/class/async-method-static/returns-async-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/expressions/class/class-name-ident-await.js",
@@ -2264,16 +2428,32 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/language/expressions/class/dstr/gen-meth-ary-ptrn-rest-obj-prop-id.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+    },
+    {
       "path": "test/language/expressions/class/dstr/gen-meth-dflt-ary-init-iter-get-err-array-prototype.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-dflt-ary-ptrn-rest-obj-prop-id.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/expressions/class/dstr/gen-meth-static-ary-init-iter-get-err-array-prototype.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-ary-ptrn-rest-obj-prop-id.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+    },
+    {
       "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-ary-ptrn-rest-obj-prop-id.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/expressions/class/dstr/meth-ary-init-iter-get-err-array-prototype.js",
@@ -2330,10 +2510,6 @@
     {
       "path": "test/language/expressions/class/elements/arrow-body-derived-cls-indirect-eval-err-contains-supercall.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/expressions/class/elements/arrow-body-direct-eval-err-contains-arguments.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/expressions/class/elements/arrow-body-indirect-eval-err-contains-newtarget.js",
@@ -2529,10 +2705,6 @@
     },
     {
       "path": "test/language/expressions/class/elements/nested-derived-cls-indirect-eval-err-contains-supercall.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
-    },
-    {
-      "path": "test/language/expressions/class/elements/nested-direct-eval-err-contains-arguments.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
     },
     {
@@ -3121,7 +3293,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-shrink.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'BYTES_PER_ELEMENT')"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/length-near-integer-limit.js",
@@ -3249,11 +3421,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/map/resizable-buffer-grow-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents."
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'BYTES_PER_ELEMENT')"
     },
     {
       "path": "test/built-ins/Array/prototype/map/resizable-buffer-shrink-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2] should have the same contents."
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'BYTES_PER_ELEMENT')"
     },
     {
       "path": "test/built-ins/Array/prototype/map/resizable-buffer.js",
@@ -3341,11 +3513,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/resizable-buffer-grow-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents."
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'BYTES_PER_ELEMENT')"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/resizable-buffer-shrink-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2] should have the same contents."
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'BYTES_PER_ELEMENT')"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/resizable-buffer.js",
@@ -3361,7 +3533,7 @@
     },
     {
       "path": "test/built-ins/Object/keys/proxy-keys.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab10\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'name')"
     },
     {
       "path": "test/built-ins/Object/keys/return-order.js",
@@ -3588,14 +3760,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
     },
     {
-      "path": "test/built-ins/Math/max/Math.max_each-element-coerced.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/min/Math.min_each-element-coerced.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Math/pow/applying-the-exp-operator_A1.js",
       "reason": "[sloppy] zjs: throw: (unknown): 1 Expected SameValue(\u00ab1\u00bb, \u00abNaN\u00bb) to be true"
     },
@@ -3696,10 +3860,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/built-ins/Promise/all/invoke-resolve-get-error.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/built-ins/Promise/all/invoke-resolve-get-once-multiple-calls.js",
       "reason": "[sloppy] zjs: throw: (unknown): Got `resolve` only once for each iterated value Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
@@ -3710,14 +3870,6 @@
     {
       "path": "test/built-ins/Promise/all/invoke-resolve-on-promises-every-iteration-of-custom.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
-    },
-    {
-      "path": "test/built-ins/Promise/all/invoke-resolve-on-promises-every-iteration-of-promise.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/invoke-resolve-on-values-every-iteration-of-promise.js",
-      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-resolve-return.js",
@@ -3854,158 +4006,6 @@
     {
       "path": "test/built-ins/Promise/all/resolve-before-loop-exit-from-same.js",
       "reason": "[sloppy] zjs: throw: (unknown): callCount after resolving p1 Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-before-loop-exit.js",
-      "reason": "[sloppy] zjs: throw: (unknown): callCount after call to all() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-element-function-extensible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-element-function-nonconstructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-element-function-property-order.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-element-function-prototype.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-from-same-thenable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): callCount after resolving all elements Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-ignores-late-rejection-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-not-callable-reject-with-typeerror.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-poisoned-then.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-throws-iterator-return-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-throws-iterator-return-null-or-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/same-reject-function.js",
-      "reason": "[sloppy] zjs: throw: (unknown): p1.then call count Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allKeyed/extensible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
-    },
-    {
-      "path": "test/built-ins/Promise/allKeyed/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
-    },
-    {
-      "path": "test/built-ins/Promise/allKeyed/proto.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/capability-executor-called-twice.js",
-      "reason": "[sloppy] zjs: throw: (unknown): executor initially called with no arguments Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"abc\"\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/capability-executor-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): executor not called at all Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/capability-resolve-throws-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/ctx-ctor-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/ctx-ctor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-resolve-error-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-resolve-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-resolve-get-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-resolve-get-error.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-resolve-get-once-multiple-calls.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Got `resolve` only once for each iterated value Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-resolve-get-once-no-calls.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Got `resolve` only once for each iterated value Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-resolve-on-promises-every-iteration-of-custom.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-resolve-on-promises-every-iteration-of-promise.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-resolve-on-values-every-iteration-of-promise.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-resolve-return.js",
-      "reason": "[sloppy] zjs: throw: (unknown): new `then` method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-resolve.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `resolve` invoked once for each iterated value Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-then-error-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-then-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-then-get-error-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-then-get-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/invoke-then.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `then` invoked once for every iterated value Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true"
     }
   ],
   "skip_counts": {
