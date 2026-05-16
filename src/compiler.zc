@@ -1380,6 +1380,14 @@ fn compile_object_literal(c: Compiler*, node: AstNode*) -> u8 {
                                           c.source + name_start,
                                           name_len);
         let val_r = compile_expr(c, prop.left);
+        // Anonymous function/arrow/class on the RHS of `{ key: <init> }`
+        // gets a synthetic `.name = key`. Getters/setters are skipped —
+        // they have their own NamedEvaluation rules (`"get key"` /
+        // `"set key"`), not implemented yet.
+        if prop.op != TokenKind::KwGet && prop.op != TokenKind::KwSet {
+            maybe_infer_anon_name(c, prop.left, val_r,
+                                  c.source + name_start, name_len);
+        }
         if prop.op == TokenKind::KwGet {
             emit(c, make_inst_abc(Op::DefineGetter, dst, key_r, val_r));
         } else if prop.op == TokenKind::KwSet {
@@ -1799,6 +1807,12 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
             let init_r = compile_expr(c, p.right);
             if init_r != param_reg {
                 emit(c, make_inst_ab(Op::Mov, param_reg, init_r));
+            }
+            // NamedEvaluation for `function(x = function(){}) {}` —
+            // applies only to simple-ident params, not destructuring.
+            if p.name_length > 0 {
+                maybe_infer_anon_name(c, p.right, param_reg,
+                                      c.source + p.start, p.end - p.start);
             }
             if init_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
             reset_temps(c);
@@ -3217,10 +3231,36 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
     }
 }
 
+// If the initializer expression is an anonymous function / arrow /
+// class, set the result's `name` property to `target_name`. Implements
+// the parts of NamedEvaluation that apply when binding an anonymous
+// callable to a single-name target (declarators, destructuring
+// entries, default params, ObjectProp values). Skips when the target
+// is itself a pattern or has no source name.
+fn maybe_infer_anon_name(c: Compiler*, init_expr: AstNode*, val_reg: u8,
+                         target_name: char*, target_name_len: u32) -> void {
+    if init_expr == NULL { return; }
+    if target_name_len == 0 { return; }
+    let k = init_expr.kind;
+    let is_anon: bool = false;
+    if k == NodeKind::FunctionExpr && init_expr.name_length == 0 { is_anon = true; }
+    else if k == NodeKind::ArrowFunc { is_anon = true; }
+    else if k == NodeKind::ClassExpr && init_expr.name_length == 0 { is_anon = true; }
+    if !is_anon { return; }
+    let name_atom = ctx_intern_atom(c.ctx, (char*)"name", 4);
+    let ic = alloc_ic_slot(c, name_atom);
+    let name_str_reg = emit_load_name_string(c, target_name, target_name_len);
+    emit(c, make_inst_abc(Op::StoreProp, val_reg, (u8)ic, name_str_reg));
+    release_reg(c, name_str_reg);
+}
+
 // If the entry carries `= default`, emit:
 //   if (v_r === undefined) v_r = default;
-// in place. v_r is already a temp owned by the caller.
-fn apply_destructure_default(c: Compiler*, v_r: u8, default_expr: AstNode*) -> void {
+// in place. v_r is already a temp owned by the caller. When target
+// is a simple ident, NamedEvaluation infers a `name` for anonymous
+// function-ish defaults.
+fn apply_destructure_default(c: Compiler*, v_r: u8, default_expr: AstNode*,
+                              target: AstNode*) -> void {
     if default_expr == NULL { return; }
     let tmp = alloc_reg(c);
     let undef_r = alloc_reg(c);
@@ -3231,6 +3271,10 @@ fn apply_destructure_default(c: Compiler*, v_r: u8, default_expr: AstNode*) -> v
     release_reg(c, tmp);
     let init = compile_expr(c, default_expr);
     if init != v_r { emit(c, make_inst_ab(Op::Mov, v_r, init)); }
+    if target != NULL && target.kind == NodeKind::IdentExpr && target.name_length > 0 {
+        maybe_infer_anon_name(c, default_expr, v_r,
+                              c.source + target.name_start, target.name_length);
+    }
     patch_jump(c, skip);
 }
 
@@ -3300,7 +3344,7 @@ fn destructure_object(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
             i = i + 1;
             continue;
         }
-        apply_destructure_default(c, v_r, entry.right);
+        apply_destructure_default(c, v_r, entry.right, entry.left);
         bind_destructure_target(c, entry.left, v_r);
         release_reg(c, v_r);
         i = i + 1;
@@ -3331,7 +3375,7 @@ fn destructure_array(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
         let v_r = alloc_reg(c);
         emit(c, make_inst_abc(Op::LoadElem, v_r, src_reg, key_r));
         release_reg(c, key_r);
-        apply_destructure_default(c, v_r, entry.right);
+        apply_destructure_default(c, v_r, entry.right, entry.left);
         bind_destructure_target(c, entry.left, v_r);
         release_reg(c, v_r);
         i = i + 1;
@@ -3486,6 +3530,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
                 let lreg = c.locals[(u32)lidx].reg;
                 if decl.left != NULL {
                     let r = compile_expr(c, decl.left);
+                    maybe_infer_anon_name(c, decl.left, r, name, name_len);
                     if cap {
                         // Captured locals live as properties on the env
                         // object — outer's reg slot is unused.
@@ -3505,6 +3550,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
                 let slot = ctx_intern_global(c.ctx, name, name_len);
                 if decl.left != NULL {
                     let r = compile_expr(c, decl.left);
+                    maybe_infer_anon_name(c, decl.left, r, name, name_len);
                     emit(c, make_inst_a_u16(Op::DefineGlobal, r, (u16)slot));
                     release_reg(c, r);
                 }
