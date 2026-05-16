@@ -3652,6 +3652,9 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
 // update `last_expr_reg` when they're expression-statements.
 // =====================================================================
 
+// Forward decl for the live-iter for-of emitter.
+fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void;
+
 fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     if node == NULL { return; }
     let k = node.kind;
@@ -3986,33 +3989,18 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         loop_pop(c);
         return;
     }
-    if k == NodeKind::ForInStmt || k == NodeKind::ForOfStmt {
+    if k == NodeKind::ForOfStmt {
+        compile_for_of_live(c, node);
+        return;
+    }
+    if k == NodeKind::ForInStmt {
         if !c.is_function && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
-        // Desugar to:
-        //   iter = IterPrepare(src, kind)
-        //   one  = 1                       (used to increment i in-loop)
-        //   i    = 0
-        //   loop_top:
-        //     len  = ArrayLength(iter)     (re-read every step so for-of
-        //                                   observes mutations of the
-        //                                   live source array — pops
-        //                                   shorten, pushes extend)
-        //     cond = i < len
-        //     if !cond goto loop_end
-        //     elem = iter[i]
-        //     <binding> = elem
-        //     <body>
-        //     i = i + one
-        //     goto loop_top
-        //   loop_end:
-        //
-        // for-in's iter is a snapshot built by iter_prepare (length is
-        // frozen at prepare-time), so the per-step ArrayLength is just
-        // an extra load — correctness preserved either way. for-of's
-        // iter is the live source array, where re-reading is required.
-        let kind: u8 = if k == NodeKind::ForInStmt { 0 } else { 1 };
+        // for-in: collect keys snapshot via iter_prepare(kind=0), walk
+        // by index. (Spec semantics preserve key-list-snapshot anyway,
+        // so the eager collection is fine for for-in.)
+        let kind: u8 = 0;
 
         // src
         let src_r = compile_expr(c, node.right);
@@ -4580,6 +4568,142 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
 
 // Helper for ForStmt's init slot, which can be either a VarDecl
 // (statement-shaped) or an expression. compile_stmt handles both.
+// for-of with live iterator semantics (2026-05-16). Uses IterGet +
+// IterStep + IterClose so:
+//   * Infinite iterables drive only as many .next() calls as the body
+//     actually consumes (no eager pre-collect → no hangs on break).
+//   * break / abrupt completion call iter.return() per spec.
+//   * Spec-mandated iter.next() call count matches.
+fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
+    if !c.is_function && c.last_expr_reg >= 0 {
+        emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
+    }
+
+    let src_r = compile_expr(c, node.right);
+    let iter_r = alloc_reg(c);
+    emit(c, make_inst_ab(Op::IterGet, iter_r, src_r));
+    if src_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+    let done_r = alloc_reg(c);
+    emit(c, make_inst_a(Op::LoadFalse, done_r));
+
+    let saved_fixed = c.fixed_regs;
+    if done_r + 1 > c.fixed_regs { c.fixed_regs = done_r + 1; }
+
+    let loop_top = (u32)c.code_count;
+    loop_push(c);
+    loop_set_continue(c, loop_top);
+
+    let value_r = alloc_reg(c);
+    emit(c, make_inst_abc(Op::IterStep, value_r, iter_r, done_r));
+    let jmp_exit_idx = emit(c, make_inst_a_i16(Op::JmpIfTrue, done_r, 0));
+
+    // Write `value_r` into the binding. Reuses the binding logic from
+    // the original for-of/in path: Member / Computed targets, plain
+    // ident, VarDecl, and pattern (both binding and assignment mode).
+    let binding = node.left;
+    while binding != NULL && binding.kind == NodeKind::Paren {
+        binding = binding.left;
+    }
+    if binding == NULL { c.had_error = true; return; }
+
+    if binding.kind == NodeKind::Member || binding.kind == NodeKind::Computed {
+        let m_obj_r = compile_expr(c, binding.left);
+        let m_key_r: u8 = 0;
+        if binding.kind == NodeKind::Member {
+            m_key_r = emit_load_name_string(c, c.source + binding.name_start, binding.name_length);
+        } else {
+            m_key_r = compile_expr(c, binding.right);
+        }
+        emit(c, make_inst_abc(Op::StoreElem, m_obj_r, m_key_r, value_r));
+        if m_key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        if m_obj_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        release_reg(c, value_r);
+    } else if binding.kind == NodeKind::ArrayPattern || binding.kind == NodeKind::ObjectPattern {
+        let saved_assign = c.in_dstr_assign;
+        c.in_dstr_assign = true;
+        destructure_pattern(c, binding, value_r);
+        c.in_dstr_assign = saved_assign;
+        release_reg(c, value_r);
+    } else if binding.kind == NodeKind::VarDecl {
+        if binding.children_count != 1 { c.had_error = true; return; }
+        let decl = binding.children[0];
+        if decl.name_length == 0 && decl.third != NULL {
+            destructure_pattern(c, decl.third, value_r);
+            release_reg(c, value_r);
+        } else {
+            let bname = c.source + decl.name_start;
+            let bname_len = decl.name_length;
+            if c.is_function {
+                let lidx = find_local_index(c, bname, bname_len);
+                if lidx >= 0 {
+                    if c.locals[(u32)lidx].captured {
+                        let name_atom = ctx_intern_atom(c.ctx, bname, bname_len);
+                        let ic = alloc_ic_slot(c, name_atom);
+                        emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, value_r));
+                    } else {
+                        emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, value_r));
+                    }
+                } else {
+                    let slot = ctx_intern_global(c.ctx, bname, bname_len);
+                    emit(c, make_inst_a_u16(Op::StoreGlobal, value_r, (u16)slot));
+                }
+            } else {
+                let slot = ctx_intern_global(c.ctx, bname, bname_len);
+                emit(c, make_inst_a_u16(Op::DefineGlobal, value_r, (u16)slot));
+            }
+            release_reg(c, value_r);
+        }
+    } else if binding.kind == NodeKind::IdentExpr {
+        let bname = c.source + binding.start;
+        let bname_len = binding.end - binding.start;
+        if c.is_function {
+            let lidx = find_local_index(c, bname, bname_len);
+            if lidx >= 0 {
+                if c.locals[(u32)lidx].captured {
+                    let name_atom = ctx_intern_atom(c.ctx, bname, bname_len);
+                    let ic = alloc_ic_slot(c, name_atom);
+                    emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, value_r));
+                } else {
+                    emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, value_r));
+                }
+            } else {
+                let slot = ctx_intern_global(c.ctx, bname, bname_len);
+                emit(c, make_inst_a_u16(Op::StoreGlobal, value_r, (u16)slot));
+            }
+        } else {
+            let slot = ctx_intern_global(c.ctx, bname, bname_len);
+            emit(c, make_inst_a_u16(Op::DefineGlobal, value_r, (u16)slot));
+        }
+        release_reg(c, value_r);
+    } else {
+        c.had_error = true; return;
+    }
+
+    if node.children_count > 0 {
+        compile_stmt(c, node.children[0]);
+    }
+
+    emit_jump_back(c, Op::Jmp, loop_top);
+
+    // Patch the natural exit AND any `break` patches to land at the
+    // IterClose. break inside the body needs the close to run before
+    // jumping further out.
+    let close_at = (u32)c.code_count;
+    patch_jump(c, (u32)jmp_exit_idx);
+    let frame_o = c.loop_stack[c.loop_depth - 1];
+    let bi: u32 = 0;
+    while bi < frame_o.break_count {
+        patch_jump(c, frame_o.break_patches[bi]);
+        bi = bi + 1;
+    }
+    emit(c, make_inst_ab(Op::IterClose, iter_r, done_r));
+
+    loop_pop(c);
+    c.fixed_regs = saved_fixed;
+    c.next_reg = saved_fixed;
+    reset_temps(c);
+}
+
 fn compile_stmt_or_expr(c: Compiler*, node: AstNode*) -> void {
     compile_stmt(c, node);
 }
