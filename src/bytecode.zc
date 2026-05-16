@@ -210,6 +210,26 @@ enum Op {
     // the head of destructuring to enforce RequireObjectCoercible.
     AssertCoercible,  // a=src_reg
 
+    // Live iterator protocol (2026-05-16). Used by array destructuring
+    // (and eventually for-of) to step src one .next() at a time
+    // instead of materializing the whole iterable.
+    //   IterGet: regs[a] = GetIterator(regs[b])
+    //   IterStep: regs[a] = value, regs[c] = done (bool). Sets done=true
+    //              and value=undefined on either iterator exhaustion or
+    //              an abrupt completion from iter.next() (latter sets
+    //              pending throw, picked up by the host bridge).
+    //   IterRestCollect: drains regs[b] starting from current position
+    //              into a fresh array at regs[a], setting regs[c]=true
+    //              when complete. Used for the `...rest` element of an
+    //              array pattern.
+    //   IterClose: regs[b] is the done flag — when false, calls
+    //              regs[a].return() (best-effort). Spec
+    //              IteratorClose(NormalCompletion).
+    IterGet,          // a=dst_iter, b=src
+    IterStep,         // a=value_dst, b=iter, c=done_dst
+    IterRestCollect,  // a=dst_arr, b=iter, c=done_reg
+    IterClose,        // a=iter, b=done_reg
+
     // Variadic-call dispatch — used when an argument list contains
     // `...arr`. Args live in the array at regs[b+1] (plain SpreadInvoke)
     // or regs[b+2] (SpreadMethodInvoke / receiver at regs[b+1]). argc

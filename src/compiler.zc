@@ -3354,34 +3354,55 @@ fn destructure_object(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
 }
 
 fn destructure_array(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
+    // Spec: ArrayBindingPattern runs GetIterator(src) and then
+    // IteratorStep / IteratorClose per element. Live iteration matters
+    // for spec correctness (iter.next call counts, iter.return on
+    // early exit) and for infinite-generator support.
+    let iter_r = alloc_reg(c);
+    emit(c, make_inst_ab(Op::IterGet, iter_r, src_reg));
+    let done_r = alloc_reg(c);
+    emit(c, make_inst_a(Op::LoadFalse, done_r));
+
     let i: u32 = 0;
+    let saw_rest: bool = false;
     while i < pat.children_count {
         let entry = pat.children[i];
         if entry.bool_value {
-            // ...rest at array position i — slice src[i..].
-            let saved = c.next_reg;
+            // ...rest: drain remaining elements into a fresh array.
+            let saved_next = c.next_reg;
             let dst_r = alloc_reg(c);
-            emit(c, make_inst_abc(Op::ArrayRestFrom, dst_r, src_reg, (u8)i));
+            emit(c, make_inst_abc(Op::IterRestCollect, dst_r, iter_r, done_r));
             bind_destructure_target(c, entry.left, dst_r);
-            c.next_reg = saved;
+            c.next_reg = saved_next;
+            saw_rest = true;
             i = i + 1;
             continue;
         }
-        if entry.left == NULL {
-            // Elision (`,` slot).
-            i = i + 1;
-            continue;
-        }
-        let key_r = alloc_reg(c);
-        emit(c, make_inst_a_i16(Op::LoadInt, key_r, (i16)i));
+        // Pull the next value from the iterator. IterStep sets v_r to
+        // the value (or undefined when done) and done_r accordingly.
         let v_r = alloc_reg(c);
-        emit(c, make_inst_abc(Op::LoadElem, v_r, src_reg, key_r));
-        release_reg(c, key_r);
+        emit(c, make_inst_abc(Op::IterStep, v_r, iter_r, done_r));
+        if entry.left == NULL {
+            // Elision — drop the value, still consumed the slot.
+            release_reg(c, v_r);
+            i = i + 1;
+            continue;
+        }
         apply_destructure_default(c, v_r, entry.right, entry.left);
         bind_destructure_target(c, entry.left, v_r);
         release_reg(c, v_r);
         i = i + 1;
     }
+
+    // Spec IteratorClose with NormalCompletion: when destructuring
+    // finishes without consuming the whole iterator, call iter.return().
+    // A rest binding always drains, so IterClose is a no-op there;
+    // skipping it also keeps the bytecode tighter.
+    if !saw_rest {
+        emit(c, make_inst_ab(Op::IterClose, iter_r, done_r));
+    }
+    release_reg(c, done_r);
+    release_reg(c, iter_r);
 }
 
 fn collect_locals(c: Compiler*, node: AstNode*) -> void {

@@ -3651,6 +3651,53 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     if throwing { break; }
                 }
             }
+        } else if op == Op::IterGet {
+            regs[inst.a] = iter_get(ctx, regs[inst.b]);
+            if ctx.pending_throw_active {
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+        } else if op == Op::IterStep {
+            let step = iter_step(ctx, regs[inst.b]);
+            regs[inst.a] = step.value;
+            regs[inst.c] = zjs_bool(step.done);
+            if ctx.pending_throw_active {
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+        } else if op == Op::IterRestCollect {
+            let iter = regs[inst.b];
+            let arr_v = ctx_new_array(ctx, 0);
+            let arr = zjs_as_array(arr_v);
+            let safety: u32 = 0;
+            let aborted: bool = false;
+            while safety < 100000000 {
+                let step = iter_step(ctx, iter);
+                if ctx.pending_throw_active {
+                    aborted = true;
+                    break;
+                }
+                if step.done { break; }
+                array_set(arr, arr.length, step.value);
+                safety = safety + 1;
+            }
+            regs[inst.a] = arr_v;
+            regs[inst.c] = zjs_bool(true);
+            if aborted {
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+        } else if op == Op::IterClose {
+            let done_v = regs[inst.b];
+            let already_done: bool = false;
+            if zjs_is_bool(done_v) != 0 { already_done = zjs_as_bool(done_v) != 0; }
+            if !already_done {
+                iter_close(ctx, regs[inst.a]);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+            }
         } else if op == Op::AssertCoercible {
             let v = regs[inst.a];
             if zjs_is_undefined(v) != 0 || zjs_is_null(v) != 0 {
