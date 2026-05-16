@@ -114,6 +114,17 @@ enum NodeKind {
     // operator — left = the awaited expression.
     AwaitExpr,
 
+    // switch statement (2026-05-15).
+    //   SwitchStmt:
+    //     - left: the discriminant expression
+    //     - children: SwitchCase nodes in source order
+    //   SwitchCase:
+    //     - left: the case test expression (NULL for `default`)
+    //     - children: the case body statements
+    //     - bool_value: true for `default` clause
+    SwitchStmt,
+    SwitchCase,
+
     // ES modules (2026-05-15).
     //   ImportDecl: children = ImportClause* (Default/Named/Namespace
     //               specifiers), name_start/length = string-literal slice

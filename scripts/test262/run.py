@@ -205,7 +205,16 @@ def build_source(test262_root, test_src, meta, *, strict_mode: bool):
     parts = []
     if strict_mode:
         parts.append('"use strict";')
-    parts.append(LOCAL_HARNESS.read_text())
+    harness = test262_root / "harness"
+    # Always prepend test262's own sta.js + assert.js — the real harness
+    # defines Test262Error, the canonical SameValue / throws semantics,
+    # NaN / -0 handling, etc. We used a local shim before switch landed
+    # (assert.js uses switch internally). assert.throws verifies
+    # thrown.constructor against the expected ctor — every
+    # *Error.prototype.constructor needs to point back at itself for
+    # that to discriminate (we wire that in ctx_init_builtins).
+    parts.append((harness / "sta.js").read_text())
+    parts.append((harness / "assert.js").read_text())
     if "async" in flags:
         # Test262 async protocol: the test completes when print() is
         # called with the magic 'Test262:AsyncTestComplete' line, or
@@ -215,7 +224,6 @@ def build_source(test262_root, test_src, meta, *, strict_mode: bool):
         # runner can grep for via stdout. The CLI prints flag-state to
         # stdout for us to inspect post-run.
         parts.append(LOCAL_ASYNC_HARNESS)
-    harness = test262_root / "harness"
     for inc in meta.get("includes", []):
         if inc in ("sta.js", "assert.js"):
             continue
@@ -269,12 +277,15 @@ def run_one(zjs_bin, source, timeout_s):
         f.write(source)
         path = f.name
     try:
+        # Capture as bytes so tests with non-UTF8 throws (intentional or
+        # accidental) don't blow up the runner's decoder. Decode with
+        # errors="replace" to keep classify happy.
         r = subprocess.run(
             [str(zjs_bin), "run", path],
-            capture_output=True, text=True,
+            capture_output=True,
             timeout=timeout_s,
         )
-        return r.returncode, r.stderr, r.stdout
+        return r.returncode, r.stderr.decode("utf-8", errors="replace"), r.stdout.decode("utf-8", errors="replace")
     except subprocess.TimeoutExpired:
         return -1, "TIMEOUT", ""
     finally:

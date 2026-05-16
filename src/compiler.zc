@@ -3243,6 +3243,110 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         }
         return;
     }
+    if k == NodeKind::SwitchStmt {
+        // switch (disc) { ... }
+        //   tmp = disc
+        //   for each non-default case i: if (tmp === case_i_test) goto Li
+        //   if default exists:       goto Ldefault
+        //   else:                    goto Lend
+        //   L0: <body0> (falls through to L1 unless `break` jumps to Lend)
+        //   L1: <body1>
+        //   ...
+        //   Ldefault: <default body>
+        //   Lend:
+        //
+        // `break` inside the body jumps to Lend; we reuse the loop_stack
+        // mechanism. `continue` inside switch isn't legal targeting the
+        // switch itself, but labeled continues to an outer loop still
+        // work via the loop_stack walk — switch doesn't claim a
+        // continue target.
+        if !c.is_function && c.last_expr_reg >= 0 {
+            emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
+        }
+        let disc_r = compile_expr(c, node.left);
+        // Eval all case tests up front and emit jumps. We record the
+        // patch index for each case-body label plus the default's.
+        let n = node.children_count;
+        let case_label_patches = alloc_n<u32>((usize)(n + 1));
+        let cj: u32 = 0;
+        let default_idx: i32 = -1;
+        while cj < n {
+            let cnode = node.children[cj];
+            if cnode.bool_value {
+                if default_idx < 0 { default_idx = (i32)cj; }
+                case_label_patches[cj] = 0xffffffff;     // placeholder; default jump emitted last
+            } else {
+                let test_r = compile_expr(c, cnode.left);
+                let cmp_r  = alloc_reg(c);
+                emit(c, make_inst_abc(Op::CmpStrictEq, cmp_r, disc_r, test_r));
+                release_reg(c, test_r);
+                let idx = emit(c, make_inst_a_i16(Op::JmpIfTrue, cmp_r, 0));
+                release_reg(c, cmp_r);
+                case_label_patches[cj] = idx;
+            }
+            cj = cj + 1;
+        }
+        release_reg(c, disc_r);
+        reset_temps(c);
+        // After all case tests, jump to default (or end if no default).
+        let to_default_or_end = emit(c, make_inst_i16(Op::Jmp, 0));
+
+        // Push a loop frame so `break` patches end up here.
+        loop_push(c);
+
+        // Emit each case body, capturing the label position so we can
+        // patch the test-jumps to it.
+        let body_starts = alloc_n<u32>((usize)n);
+        let bi: u32 = 0;
+        while bi < n {
+            body_starts[bi] = (u32)c.code_count;
+            let cnode = node.children[bi];
+            let si: u32 = 0;
+            while si < cnode.children_count {
+                compile_stmt(c, cnode.children[si]);
+                si = si + 1;
+            }
+            bi = bi + 1;
+        }
+        let end_label = (u32)c.code_count;
+
+        // Patch jumps:
+        //   - each non-default case's JmpIfTrue → body_starts[that case]
+        //   - the to_default_or_end Jmp → default body or end_label
+        let pi: u32 = 0;
+        while pi < n {
+            let cnode2 = node.children[pi];
+            if !cnode2.bool_value {
+                let here_save = c.code_count;
+                c.code_count = body_starts[pi];
+                // patch_jump computes offset using c.code_count as
+                // the "here". Reset it temporarily so the math is
+                // correct.
+                c.code_count = here_save;
+                // Manually compute + write the offset.
+                let inst = c.code[case_label_patches[pi]];
+                let off: i32 = (i32)body_starts[pi] - ((i32)case_label_patches[pi] + 1);
+                c.code[case_label_patches[pi]] = make_inst_a_i16(inst.op, inst.a, off);
+            }
+            pi = pi + 1;
+        }
+        let inst2 = c.code[to_default_or_end];
+        let dest = if default_idx >= 0 { body_starts[(u32)default_idx] } else { end_label };
+        let off2: i32 = (i32)dest - ((i32)to_default_or_end + 1);
+        c.code[to_default_or_end] = make_inst_i16(inst2.op, off2);
+
+        // Patch break jumps to end_label.
+        let frame = c.loop_stack[c.loop_depth - 1];
+        let bp: u32 = 0;
+        while bp < frame.break_count {
+            patch_jump(c, frame.break_patches[bp]);
+            bp = bp + 1;
+        }
+        loop_pop(c);
+        dealloc(case_label_patches);
+        dealloc(body_starts);
+        return;
+    }
     if k == NodeKind::WhileStmt {
         if !c.is_function && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));

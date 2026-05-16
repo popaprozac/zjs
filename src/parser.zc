@@ -231,6 +231,7 @@ fn parse_statement(p: Parser*) -> AstNode* {
     if k == TokenKind::KwContinue  { return parse_continue(p); }
     if k == TokenKind::KwThrow     { return parse_throw(p); }
     if k == TokenKind::KwTry       { return parse_try(p); }
+    if k == TokenKind::KwSwitch    { return parse_switch(p); }
     if k == TokenKind::Semicolon {
         let semi = advance(p);
         return new_node(&p.tracker, NodeKind::EmptyStmt, semi.start, semi.start + semi.length);
@@ -685,6 +686,83 @@ fn parse_throw(p: Parser*) -> AstNode* {
     let node = new_node(&p.tracker, NodeKind::ThrowStmt, kw.start, arg.end);
     node.left = arg;
     match_terminator(p);
+    return node;
+}
+
+// switch (expr) { case A: ...; case B: ... break; default: ... }
+// Each case is a SwitchCase node holding a list of body statements.
+// `default` may appear anywhere; not necessarily last. The compiler
+// reorders test/exec to handle that.
+fn parse_switch(p: Parser*) -> AstNode* {
+    let kw = advance(p);     // 'switch'
+    if !expect_kind(p, TokenKind::LParen)  { return NULL; }
+    let disc = parse_expression(p);
+    if disc == NULL { return NULL; }
+    if !expect_kind(p, TokenKind::RParen)  { return NULL; }
+    if !expect_kind(p, TokenKind::LBrace)  { return NULL; }
+
+    let cap: u32 = 4;
+    let cnt: u32 = 0;
+    let cases = alloc_n<AstNode*>((usize)cap);
+
+    while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
+        let head_tok = peek(p);
+        let is_default: bool = false;
+        let test_expr: AstNode* = NULL;
+        if head_tok.kind == TokenKind::KwDefault {
+            advance(p);
+            is_default = true;
+        } else if head_tok.kind == TokenKind::KwCase {
+            advance(p);
+            test_expr = parse_expression(p);
+            if test_expr == NULL { break; }
+        } else {
+            p.had_error = true; break;
+        }
+        if !expect_kind(p, TokenKind::Colon) { break; }
+
+        // Body: any number of statements until the next case/default/}.
+        let bcap: u32 = 4;
+        let bcnt: u32 = 0;
+        let body = alloc_n<AstNode*>((usize)bcap);
+        while peek_kind(p) != TokenKind::KwCase
+              && peek_kind(p) != TokenKind::KwDefault
+              && peek_kind(p) != TokenKind::RBrace
+              && peek_kind(p) != TokenKind::Eof {
+            let s = parse_statement(p);
+            if s == NULL { break; }
+            if bcnt >= bcap {
+                let oc = bcap; bcap = bcap * 2;
+                body = realloc_n<AstNode*>(body, (usize)oc, (usize)bcap);
+            }
+            body[bcnt] = s; bcnt = bcnt + 1;
+        }
+        if bcnt > 0 { alloc_list_push(&p.tracker, (void*)body); }
+        else        { dealloc(body); body = NULL; }
+
+        let case_end = if bcnt > 0 { body[bcnt - 1].end } else { head_tok.start + head_tok.length };
+        let case_node = new_node(&p.tracker, NodeKind::SwitchCase, head_tok.start, case_end);
+        case_node.left = test_expr;
+        case_node.children = body;
+        case_node.children_count = bcnt;
+        case_node.bool_value = is_default;
+
+        if cnt >= cap {
+            let oc = cap; cap = cap * 2;
+            cases = realloc_n<AstNode*>(cases, (usize)oc, (usize)cap);
+        }
+        cases[cnt] = case_node; cnt = cnt + 1;
+    }
+    let close = peek(p);
+    if !expect_kind(p, TokenKind::RBrace) { dealloc(cases); return NULL; }
+
+    if cnt > 0 { alloc_list_push(&p.tracker, (void*)cases); }
+    else       { dealloc(cases); cases = NULL; }
+
+    let node = new_node(&p.tracker, NodeKind::SwitchStmt, kw.start, close.start + close.length);
+    node.left = disc;
+    node.children = cases;
+    node.children_count = cnt;
     return node;
 }
 

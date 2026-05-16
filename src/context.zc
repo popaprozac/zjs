@@ -7773,6 +7773,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                     }
                     hf.prototype.proto = err_proto;
                     hf.proto_override = err_v;
+                    // <Subclass>.prototype.constructor = <Subclass>, so
+                    // `(new TypeError).constructor === TypeError` per
+                    // spec — and so test262's assert.throws can
+                    // discriminate against the constructor.
+                    object_set(ctx, hf.prototype,
+                               ctx_intern_atom(ctx, (char*)"constructor", 11), hv);
                 }
                 i = i + 1;
             }
