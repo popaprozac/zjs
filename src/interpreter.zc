@@ -16,6 +16,92 @@ import "std/mem.zc"
 raw {
     #include <stdlib.h>
     #include <string.h>
+    #include <stdio.h>
+
+    // Op profiling counters — gated on $ZJS_PROFILE_OPS=1 at startup.
+    // Updated per dispatch in interpret_inner_full; dumped via an
+    // atexit handler installed by the first interpret() call when
+    // enabled.
+    int      zjs_profile_ops_enabled = -1;
+    uint64_t zjs_op_counts[256];
+    // Op-name table mirroring the Op enum order in bytecode.zc.
+    // Keep in sync when ops are added. Unknown indices print as
+    // "Op<N>" so the dump is still readable.
+    static const char *zjs_op_names[] = {
+        "Halt",
+        "LoadConst", "LoadInt", "LoadUndefined", "LoadHole", "LoadNull",
+        "LoadTrue", "LoadFalse", "Mov",
+        "DefineGlobal", "LoadGlobal", "StoreGlobal", "LoadGlobalOrUndefined",
+        "Add", "Sub", "Mul", "Div", "Mod", "Pow",
+        "AddImm", "SubImm",
+        "CmpLtImm", "CmpLeImm", "CmpGtImm", "CmpGeImm",
+        "BitAnd", "BitOr", "BitXor",
+        "Shl", "Shr", "UShr",
+        "CmpEq", "CmpNe", "CmpStrictEq", "CmpStrictNe",
+        "CmpLt", "CmpLe", "CmpGt", "CmpGe",
+        "Neg", "BitNot", "LogicalNot",
+        "Jmp", "JmpIfTrue", "JmpIfFalse", "JmpIfNotNullish",
+        "JmpIfNotLt", "JmpIfNotLe", "JmpIfNotGt", "JmpIfNotGe",
+        "JmpIfNotLtImm", "JmpIfNotLeImm", "JmpIfNotGtImm", "JmpIfNotGeImm",
+        "Return", "Invoke", "TailInvoke",
+        "LoadProp", "StoreProp",
+        "IterPrepare", "ArrayLength",
+        "DeleteElem", "BuildArguments", "BuildRestArgs",
+        "ImportBind", "ExportBind",
+        "Await", "Yield", "GeneratorStart",
+        "ArrayPush", "ArraySpread", "ObjectSpread",
+        "ArrayRestFrom", "AssertCoercible",
+        "IterGet", "IterStep", "IterRestCollect", "IterClose",
+        "SpreadInvoke", "SpreadMethodInvoke", "SpreadNewInvoke",
+        "MethodInvoke", "TailMethodInvoke",
+        "DefineGetter", "DefineSetter", "DefineMethodGetter", "DefineMethodSetter",
+        "MakeClosure", "LoadEnv",
+        "NewRegex", "NewObject", "NewArray",
+        "LoadElem", "StoreElem",
+        "Throw", "EnterTry", "LeaveTry",
+        "In", "Instanceof", "LoadThis", "LoadNewTarget",
+        "NewInvoke", "Typeof", "SetProto", "SuperCall",
+        "DefineMethod", "SetParentCtor",
+        NULL,
+    };
+    static const char *zjs_op_name_lookup(int op) {
+        int n = 0;
+        while (zjs_op_names[n] != NULL) n++;
+        if (op >= 0 && op < n) return zjs_op_names[op];
+        static char buf[16];
+        snprintf(buf, sizeof(buf), "Op<%d>", op);
+        return buf;
+    }
+    static void zjs_dump_op_counts(void) {
+        // Sort by count desc, print top 30.
+        int order[256];
+        for (int i = 0; i < 256; i++) order[i] = i;
+        for (int i = 0; i < 256; i++) {
+            for (int j = i + 1; j < 256; j++) {
+                if (zjs_op_counts[order[j]] > zjs_op_counts[order[i]]) {
+                    int t = order[i]; order[i] = order[j]; order[j] = t;
+                }
+            }
+        }
+        uint64_t total = 0;
+        for (int i = 0; i < 256; i++) total += zjs_op_counts[i];
+        if (total == 0) return;
+        fprintf(stderr, "\n=== zjs op profile (%llu total dispatches) ===\n",
+                (unsigned long long)total);
+        for (int i = 0; i < 30; i++) {
+            uint64_t c = zjs_op_counts[order[i]];
+            if (c == 0) break;
+            double pct = 100.0 * (double)c / (double)total;
+            fprintf(stderr, "  %-24s %12llu  %5.1f%%\n",
+                    zjs_op_name_lookup(order[i]), (unsigned long long)c, pct);
+        }
+    }
+    static void zjs_profile_ops_init(void) {
+        if (zjs_profile_ops_enabled != -1) return;
+        const char *e = getenv("ZJS_PROFILE_OPS");
+        zjs_profile_ops_enabled = (e && e[0] == '1') ? 1 : 0;
+        if (zjs_profile_ops_enabled) atexit(zjs_dump_op_counts);
+    }
 }
 
 // =====================================================================
@@ -1164,6 +1250,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
 
         let inst = code[ip];
         let op = inst.op;
+        // Op profiling — gated on $ZJS_PROFILE_OPS=1. atexit dumper
+        // below logs per-op execution counts and per-op nanoseconds.
+        raw {
+            if (zjs_profile_ops_enabled < 0) zjs_profile_ops_init();
+            if (zjs_profile_ops_enabled) {
+                zjs_op_counts[(int)op] += 1;
+            }
+        }
 
         if op == Op::Return {
             // GC safe-point on the way out — only the return value
