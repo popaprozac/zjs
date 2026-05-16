@@ -2129,21 +2129,11 @@ fn iter_get(ctx: ZjsContext*, src: ZjsValue) -> ZjsValue {
         // results as "not iterable" when .next() lookup fails.
         return iter;
     }
-    // Arrays without an explicit @@iterator: build a minimal ad-hoc
-    // iterator { _i: 0, _src: arr, next() { ... } }. Lets array
-    // destructuring stay on the live path uniformly.
-    if zjs_is_array(src) != 0 || zjs_is_string(src) != 0 {
-        let wrapper = ctx_new_object(ctx);
-        let w = zjs_as_object(wrapper);
-        let i_atom = ctx_intern_atom(ctx, (char*)"_i", 2);
-        let src_atom = ctx_intern_atom(ctx, (char*)"_src", 4);
-        object_set(ctx, w, i_atom, zjs_int32(0));
-        object_set(ctx, w, src_atom, src);
-        let next_fn = ctx_make_host_function(ctx, (char*)"next", (void*)host_array_iter_next);
-        let next_atom = ctx_intern_atom(ctx, (char*)"next", 4);
-        object_set(ctx, w, next_atom, next_fn);
-        return wrapper;
-    }
+    // No callable @@iterator — including the case where user code
+    // explicitly deleted it (`delete Array.prototype[Symbol.iterator]`).
+    // Per spec: TypeError, full stop. Earlier impls fell back to a
+    // synthetic wrapper here; that path is dead now that Array.prototype
+    // and String.prototype carry @@iterator.
     let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                 (char*)"value is not iterable", 21);
     ctx.pending_throw_active = true;
@@ -2196,6 +2186,24 @@ fn iter_close(ctx: ZjsContext*, iter: ZjsValue) -> void {
     let _result: ZjsValue = zjs_undefined();
     raw { _result = zjs_call_value_with_this(ctx, ret_fn, iter, nullp, 0); }
     // Pending throw (if any) is left active so the caller propagates.
+}
+
+// `this[@@iterator]()` for arrays and strings — returns the synthetic
+// `{ _src, _i, next }` wrapper. Installed on Array.prototype /
+// String.prototype below so user code (and our own iter_get) sees
+// arrays as natively iterable.
+fn host_array_at_iterator(ctx: ZjsContext*) -> ZjsValue {
+    let recv = zjs_get_host_this(ctx);
+    let wrapper = ctx_new_object(ctx);
+    let w = zjs_as_object(wrapper);
+    let i_atom = ctx_intern_atom(ctx, (char*)"_i", 2);
+    let src_atom = ctx_intern_atom(ctx, (char*)"_src", 4);
+    object_set(ctx, w, i_atom, zjs_int32(0));
+    object_set(ctx, w, src_atom, recv);
+    let next_fn = ctx_make_host_function(ctx, (char*)"next", (void*)host_array_iter_next);
+    let next_atom = ctx_intern_atom(ctx, (char*)"next", 4);
+    object_set(ctx, w, next_atom, next_fn);
+    return wrapper;
 }
 
 // Host-side next() for the synthetic array/string iterator built by
@@ -8549,6 +8557,13 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"values", avals_ptr, 0));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"entries", 7),
                ctx_make_host_function_arity(ctx, (char*)"entries", aents_ptr, 0));
+    // Array.prototype[Symbol.iterator] — string stand-in is "@@iterator".
+    // Returns the synthetic per-array iterator. Picking this up via
+    // ordinary @@iterator lookup means `delete Array.prototype[@@iterator]`
+    // breaks for-of and array-destructure per spec.
+    let aiter_ptr: void* = NULL; raw { aiter_ptr = (void*)host_array_at_iterator; }
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
+               ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", aiter_ptr, 0));
     ctx.array_proto = array_proto;
     // Unify with the Array constructor's .prototype (set lazily here so
     // `Array.prototype.push.call(arr, x)` and similar find our method
@@ -8609,6 +8624,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"endsWith", sew_ptr, 1));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"includes", 8),
                ctx_make_host_function_arity(ctx, (char*)"includes", sinc_ptr, 1));
+    // String.prototype[Symbol.iterator] — character iteration via the
+    // same synthetic wrapper (host_array_iter_next branches on string
+    // sources).
+    let siter_ptr: void* = NULL; raw { siter_ptr = (void*)host_array_at_iterator; }
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
+               ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", siter_ptr, 0));
     ctx.string_proto = string_proto;
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), strv_full);
     // Unify with the String constructor's .prototype so

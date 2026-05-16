@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-16 15:34 UTC",
+    "when": "2026-05-16 15:42 UTC",
     "total": 13247,
-    "passed": 5209,
-    "failed": 1784,
+    "passed": 5224,
+    "failed": 1769,
     "skipped": 6254
   },
   "failures": [
@@ -184,10 +184,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/for/dstr/const-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/for/dstr/const-ary-ptrn-elem-id-init-fn-name-class.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"xCls2\"\u00bb, \u00ab\"xCls2\"\u00bb) to be false"
     },
@@ -208,10 +204,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"cover\"\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/for/dstr/let-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/for/dstr/let-ary-ptrn-elem-id-init-fn-name-class.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"xCls2\"\u00bb, \u00ab\"xCls2\"\u00bb) to be false"
     },
@@ -230,10 +222,6 @@
     {
       "path": "test/language/statements/for/dstr/let-obj-ptrn-id-init-fn-name-cover.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"cover\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for/dstr/var-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a ReferenceError"
     },
     {
       "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-init-fn-name-class.js",
@@ -457,7 +445,7 @@
     },
     {
       "path": "test/language/statements/for-of/Array.prototype.Symbol.iterator.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
+      "reason": "[sloppy] zjs: throw: TypeError: for-of on non-iterable value"
     },
     {
       "path": "test/language/statements/for-of/arguments-mapped-aliasing.js",
@@ -700,10 +688,6 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/for-of/dstr/const-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/const-ary-ptrn-elem-id-init-fn-name-class.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"xCls2\"\u00bb, \u00ab\"xCls2\"\u00bb) to be false"
     },
@@ -722,10 +706,6 @@
     {
       "path": "test/language/statements/for-of/dstr/const-obj-ptrn-id-init-fn-name-cover.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"cover\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/let-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/for-of/dstr/let-ary-ptrn-elem-id-init-fn-name-class.js",
@@ -854,10 +834,6 @@
     {
       "path": "test/language/statements/for-of/dstr/obj-prop-put-unresolvable-strict.js",
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/var-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-init-fn-name-class.js",
@@ -1158,10 +1134,6 @@
     {
       "path": "test/language/statements/try/completion-values-fn-finally-abrupt.js",
       "reason": "[sloppy] zjs: throw: (unknown): 2: fiinally count Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-init-fn-name-class.js",
@@ -2184,10 +2156,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/statements/class/dstr/meth-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/class/dstr/meth-ary-ptrn-elem-id-init-fn-name-class.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"xCls2\"\u00bb, \u00ab\"xCls2\"\u00bb) to be false"
     },
@@ -2198,10 +2166,6 @@
     {
       "path": "test/language/statements/class/dstr/meth-ary-ptrn-elem-id-iter-val-array-prototype.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/statements/class/dstr/meth-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/class/dstr/meth-dflt-ary-ptrn-elem-id-init-fn-name-class.js",
@@ -2232,10 +2196,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"cover\"\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/dstr/meth-static-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/language/statements/class/dstr/meth-static-ary-ptrn-elem-id-init-fn-name-class.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"xCls2\"\u00bb, \u00ab\"xCls2\"\u00bb) to be false"
     },
@@ -2246,10 +2206,6 @@
     {
       "path": "test/language/statements/class/dstr/meth-static-ary-ptrn-elem-id-iter-val-array-prototype.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/statements/class/dstr/meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/class/dstr/meth-static-dflt-ary-ptrn-elem-id-init-fn-name-class.js",
@@ -4006,6 +3962,50 @@
     {
       "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-obj-ptrn-id-init-unresolvable.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-obj-ptrn-list-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-obj-ptrn-prop-ary-value-null.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-obj-ptrn-prop-eval-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-obj-ptrn-prop-id-get-value-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-obj-ptrn-prop-id-init-throws.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-obj-ptrn-prop-id-init-unresolvable.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-obj-ptrn-prop-obj-value-null.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-obj-ptrn-prop-obj-value-undef.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-obj-init-null.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-obj-init-undefined.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/dstr/gen-meth-static-obj-ptrn-id-get-value-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     }
   ],
   "skip_counts": {
