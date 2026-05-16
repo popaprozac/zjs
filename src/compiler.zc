@@ -2033,12 +2033,20 @@ fn compile_import_decl(c: Compiler*, node: AstNode*) -> void {
         let cl = node.children[i];
         // Local binding name from the clause:
         let local_atom = ctx_intern_atom(c.ctx, c.source + cl.name_start, cl.name_length);
-        // Reserve a register; record as a local hoisted into the module
-        // scope. Imports live for the module's lifetime, so bump
-        // fixed_regs so reset_temps doesn't reuse the slot.
-        let reg = alloc_reg(c);
-        add_local(c, cl.name_start, cl.name_length, reg);
-        if reg + 1 > c.fixed_regs { c.fixed_regs = reg + 1; }
+        // The binding was pre-registered by collect_locals (module
+        // mode); look up its register and captured-ness. Falls back to
+        // a fresh alloc for the rare non-module caller.
+        let lidx = find_local_index(c, c.source + cl.name_start, cl.name_length);
+        let reg: u8 = 0;
+        let captured: bool = false;
+        if lidx >= 0 {
+            reg = c.locals[(u32)lidx].reg;
+            captured = c.locals[(u32)lidx].captured;
+        } else {
+            reg = alloc_reg(c);
+            add_local(c, cl.name_start, cl.name_length, reg);
+            if reg + 1 > c.fixed_regs { c.fixed_regs = reg + 1; }
+        }
         // Source export name: KwDefault → "default"; Star → "*";
         // Eq (named) → cl.third->name_*; bare default already covered.
         let source_atom: ZjsString* = NULL;
@@ -2053,7 +2061,18 @@ fn compile_import_decl(c: Compiler*, node: AstNode*) -> void {
         }
         let name_idx = add_atom_const(c, source_atom);
         if name_idx > 255 { c.had_error = true; return; }
-        emit(c, make_inst_abc(Op::ImportBind, reg, (u8)spec_idx, (u8)name_idx));
+        if captured {
+            // Imported binding is captured by a nested closure — its
+            // canonical home is env.<name>, not the bare reg. Emit
+            // ImportBind into a temp, then store into env.
+            let tmp = alloc_reg(c);
+            emit(c, make_inst_abc(Op::ImportBind, tmp, (u8)spec_idx, (u8)name_idx));
+            let ic = alloc_ic_slot(c, local_atom);
+            emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, tmp));
+            release_reg(c, tmp);
+        } else {
+            emit(c, make_inst_abc(Op::ImportBind, reg, (u8)spec_idx, (u8)name_idx));
+        }
         i = i + 1;
     }
 }
@@ -3009,6 +3028,28 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
         return;
     }
 
+    // ES module top-level. Import bindings and export-decl-wrapped
+    // var/let/const/function/class all introduce module-scoped locals
+    // that nested closures may capture; pre-register them here so
+    // analyze_captures (which runs immediately after collect_locals)
+    // sees them.
+    if k == NodeKind::ImportDecl {
+        let i: u32 = 0;
+        while i < node.children_count {
+            let cl = node.children[i];
+            if cl.name_length > 0 {
+                let reg = alloc_reg(c);
+                add_local(c, cl.name_start, cl.name_length, reg);
+            }
+            i = i + 1;
+        }
+        return;
+    }
+    if k == NodeKind::ExportDecl {
+        if node.left != NULL { collect_locals(c, node.left); }
+        return;
+    }
+
     if k == NodeKind::TryStmt {
         // Try/catch: the catch parameter binds as a local. We still
         // descend into both blocks to pick up nested var/let declarations.
@@ -3872,6 +3913,13 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
         // machinery (LoadEnv / capture chains).
         collect_locals(c, root);
         analyze_captures(c, root);
+        // If anything was marked captured, allocate the env register
+        // BEFORE result_reg so it sits below fixed_regs (env lives
+        // for the module's lifetime, like a closure's env in a
+        // function body).
+        if c.needs_env {
+            c.env_reg = alloc_reg(c);
+        }
     }
 
     // Reserve a stable program-result register. Every top-level
@@ -3882,6 +3930,13 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     emit(c, make_inst_a(Op::LoadUndefined, result_reg));
     c.fixed_regs = result_reg + 1;
     c.last_expr_reg = (i32)result_reg;
+
+    // Module env construction: instantiate the env object right after
+    // the result-reg prologue so subsequent ImportBind / VarDecl
+    // emissions can StoreProp captured locals into it.
+    if is_module && c.needs_env {
+        emit(c, make_inst_a(Op::NewObject, c.env_reg));
+    }
 
     if root != NULL && root.kind == NodeKind::Program {
         // Hoist top-level declarations into globals so forward references
