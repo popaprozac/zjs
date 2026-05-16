@@ -968,15 +968,18 @@ fn parse_try(p: Parser*) -> AstNode* {
     let catch_block: AstNode* = NULL;
     let catch_name_start: u32 = 0;
     let catch_name_length: u32 = 0;
+    let catch_pattern: AstNode* = NULL;
     if match_kind(p, TokenKind::KwCatch) {
         if match_kind(p, TokenKind::LParen) {
-            let id = peek(p);
-            if id.kind != TokenKind::Identifier {
-                p.had_error = true; return NULL;
+            // Catch param: bare identifier OR destructuring pattern.
+            let id_or_pat = parse_binding_target(p);
+            if id_or_pat == NULL { return NULL; }
+            if id_or_pat.kind == NodeKind::IdentExpr {
+                catch_name_start = id_or_pat.start;
+                catch_name_length = id_or_pat.end - id_or_pat.start;
+            } else {
+                catch_pattern = id_or_pat;
             }
-            advance(p);
-            catch_name_start = id.start;
-            catch_name_length = id.length;
             if !expect_kind(p, TokenKind::RParen) { return NULL; }
         }
         if peek_kind(p) != TokenKind::LBrace { p.had_error = true; return NULL; }
@@ -1007,6 +1010,16 @@ fn parse_try(p: Parser*) -> AstNode* {
     node.third = finally_block;
     node.name_start  = catch_name_start;
     node.name_length = catch_name_length;
+    // Destructuring catch param lives at children[0] when present.
+    // (name_length == 0 && children_count == 1 distinguishes pattern
+    // from `catch { ... }` parameter-less form, which leaves both
+    // zero.)
+    if catch_pattern != NULL {
+        let kids = new_children(&p.tracker, 1);
+        kids[0] = catch_pattern;
+        node.children = kids;
+        node.children_count = 1;
+    }
     return node;
 }
 

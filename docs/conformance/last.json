@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-16 06:00 UTC",
+    "when": "2026-05-16 06:07 UTC",
     "total": 13247,
-    "passed": 4795,
-    "failed": 2198,
+    "passed": 4861,
+    "failed": 2132,
     "skipped": 6254
   },
   "failures": [
@@ -1961,339 +1961,79 @@
     },
     {
       "path": "test/language/statements/try/dstr/ary-init-iter-close.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/try/dstr/ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/try/dstr/ary-init-iter-get-err.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-init-iter-no-close.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-name-iter-val.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-ary-elem-init.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-ary-elem-iter.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-elem-ary-elision-init.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-ary-elision-iter.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-ary-empty-init.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-ary-empty-iter.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-ary-rest-init.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-ary-rest-iter.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-ary-val-null.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-init-exhausted.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"xCls2\"\u00bb, \u00ab\"xCls2\"\u00bb) to be false"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-init-hole.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-init-throws.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-init-undef.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-init-unresolvable.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-iter-complete.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-iter-done.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"cover\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-iter-step-err.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab3\u00bb, \u00ab42\u00bb) to be true"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-iter-val-err.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-iter-val.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-obj-id-init.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-obj-id.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-obj-prop-id-init.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-obj-prop-id.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-obj-val-null.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-obj-val-undef.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elision-exhausted.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-elision-step-err.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-elision.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-empty.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-rest-ary-elem.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-rest-ary-elision.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-rest-ary-empty.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-rest-ary-rest.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-rest-id-direct.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-rest-id-elision-next-err.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-rest-id-elision.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-rest-id-exhausted.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-rest-id-iter-step-err.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/try/dstr/ary-ptrn-rest-id-iter-val-err.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-rest-id.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-rest-obj-id.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-rest-obj-prop-id.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-init-null.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-init-undefined.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-empty.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-id-get-value-err.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-id-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/try/dstr/obj-ptrn-id-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"xCls2\"\u00bb, \u00ab\"xCls2\"\u00bb) to be false"
     },
     {
       "path": "test/language/statements/try/dstr/obj-ptrn-id-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"cover\"\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/try/dstr/obj-ptrn-id-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-id-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-id-init-throws.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-id-init-unresolvable.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-id-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-list-err.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-ary-init.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-ary-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-ary-value-null.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-ary.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-eval-err.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-id-get-value-err.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-id-init-throws.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-id-init-unresolvable.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-id-init.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-id-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-id.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-obj-init.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-obj-value-null.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-obj-value-undef.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/dstr/obj-ptrn-prop-obj.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/try/early-catch-duplicates.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/try/early-catch-function.js",
@@ -2313,7 +2053,7 @@
     },
     {
       "path": "test/language/statements/try/scope-catch-block-lex-open.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/try/scope-catch-param-lex-close.js",
@@ -2321,11 +2061,7 @@
     },
     {
       "path": "test/language/statements/try/scope-catch-param-lex-open.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/try/scope-catch-param-var-none.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/try/static-init-await-binding-valid.js",
@@ -4005,6 +3741,270 @@
     },
     {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-ctor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-async-meth-prototype.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-async-meth-super.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-gen-meth-prototype.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-gen-meth-super.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-get-meth-prototype.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-get-meth-super.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-meth-prototype.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-meth-super.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-set-meth-prototype.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-set-meth-super.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/valid/grammar-field-classelementname-initializer-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/valid/grammar-field-classelementname-initializer.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/valid/grammar-field-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/valid/grammar-field-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/valid/grammar-field-named-get-followed-by-generator-asi.js",
+      "reason": "[sloppy] zjs: throw: (unknown): (B) The field is installed on class"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/valid/grammar-field-named-set-followed-by-generator-asi.js",
+      "reason": "[sloppy] zjs: throw: (unknown): (B) The field is installed on class"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-accessor-meth-valid.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-async-meth-valid.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-gen-meth-valid.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/language/statements/class/elements/ternary-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/typeof-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-field-identifier-initializer.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-field-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/array-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/dflt-params-abrupt.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/dflt-params-duplicates.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/dflt-params-ref-later.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/dflt-params-ref-self.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/dflt-params-trailing-comma.js",
+      "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/object-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/rest-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/rest-params-trailing-comma-early-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/yield-as-binding-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/yield-as-binding-identifier.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/yield-as-identifier-reference-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/yield-as-identifier-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/yield-as-label-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method/yield-identifier-strict.js",
+      "reason": "expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-param-dflt-yield.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/array-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/dflt-params-abrupt.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/dflt-params-duplicates.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/dflt-params-ref-later.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/dflt-params-ref-self.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/dflt-params-trailing-comma.js",
+      "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/object-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/rest-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/rest-params-trailing-comma-early-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/yield-as-binding-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/yield-as-binding-identifier.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/yield-as-identifier-reference-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/yield-as-identifier-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/yield-as-label-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/gen-method-static/yield-identifier-strict.js",
+      "reason": "expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/getter-param-dflt.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/method/array-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/method/dflt-params-duplicates.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/method/dflt-params-ref-later.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/class/method/dflt-params-ref-self.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/class/method/dflt-params-trailing-comma.js",
+      "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/language/statements/class/method/object-destructuring-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/method/rest-param-strict-body.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/method/rest-params-trailing-comma-early-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/method-param-yield.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/class/method-static/array-destructuring-param-strict-body.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     }
   ],

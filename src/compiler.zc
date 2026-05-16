@@ -3463,6 +3463,12 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
                 add_local(c, node.name_start, node.name_length, reg);
             }
         }
+        // Destructuring catch param (children[0]): each contained name
+        // is a local in the function's scope. Allocate them now so
+        // analyze_captures can see them.
+        if c.is_function && node.children_count == 1 && node.children[0] != NULL {
+            collect_pattern_locals(c, node.children[0]);
+        }
         if node.left  != NULL { collect_locals(c, node.left); }
         if node.right != NULL { collect_locals(c, node.right); }
         return;
@@ -4246,14 +4252,18 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         let catch_reg: u8 = 0;
         let added_catch_local: bool = false;
         let saved_local_count: u32 = c.local_count;
-        if has_catch && node.name_length > 0 {
+        // Pattern catch param lives on children[0]; the inner bindings
+        // are already allocated as locals by collect_pattern_locals.
+        let catch_pattern: AstNode* = NULL;
+        if has_catch && node.children_count == 1 { catch_pattern = node.children[0]; }
+        if has_catch && (node.name_length > 0 || catch_pattern != NULL) {
             // Catch parameter is a fresh binding (ECMA-262 §14.15) that
             // shadows any outer same-named local. Always allocate a new
             // register — never reuse an existing local — so nested
             // try/catch (e.g. `catch(e){ try{}catch(e){} ...e... }`)
             // doesn't clobber the outer binding through register aliasing.
             catch_reg = alloc_reg(c);
-            added_catch_local = true;
+            if node.name_length > 0 { added_catch_local = true; }
             if catch_reg + 1 > c.fixed_regs { c.fixed_regs = catch_reg + 1; }
         }
 
@@ -4272,6 +4282,8 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             // Bind the catch parameter for the catch body only.
             if added_catch_local {
                 add_local(c, node.name_start, node.name_length, catch_reg);
+            } else if catch_pattern != NULL {
+                destructure_pattern(c, catch_pattern, catch_reg);
             }
             compile_stmt(c, node.right);
             if added_catch_local { c.local_count = saved_local_count; }
@@ -4311,6 +4323,8 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             // Catch parameter bound for the catch body only.
             if added_catch_local {
                 add_local(c, node.name_start, node.name_length, catch_reg);
+            } else if catch_pattern != NULL {
+                destructure_pattern(c, catch_pattern, catch_reg);
             }
             compile_stmt(c, node.right);
             if added_catch_local { c.local_count = saved_local_count; }
