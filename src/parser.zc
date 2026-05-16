@@ -324,6 +324,42 @@ fn params_are_simple(params: ParamList) -> bool {
     return true;
 }
 
+// Walk a function's parameter list and flag any duplicate binding
+// names. ECMA-262 §15.1.1: non-simple parameter lists may not contain
+// duplicate identifiers. (Strict-mode bodies also forbid them, but
+// we don't track per-function strict mode yet — non-simple coverage
+// is the bulk of the failing tests.)
+fn params_have_duplicate(params: ParamList, source: char*) -> bool {
+    let i: u32 = 0;
+    while i < params.count {
+        let pi: AstNode* = params.arr[i];
+        let pi_name = pi;
+        if pi != NULL && pi.kind == NodeKind::RestParam { pi_name = pi.left; }
+        if pi_name == NULL { i = i + 1; continue; }
+        if pi_name.kind != NodeKind::IdentExpr || pi_name.name_length == 0 {
+            i = i + 1; continue;
+        }
+        let j: u32 = i + 1;
+        while j < params.count {
+            let pj: AstNode* = params.arr[j];
+            let pj_name = pj;
+            if pj != NULL && pj.kind == NodeKind::RestParam { pj_name = pj.left; }
+            if pj_name != NULL && pj_name.kind == NodeKind::IdentExpr
+               && pj_name.name_length == pi_name.name_length {
+                let a = source + pi_name.name_start;
+                let b = source + pj_name.name_start;
+                let n = pi_name.name_length;
+                let eq: int = 0;
+                raw { eq = (memcmp(a, b, n) == 0) ? 1 : 0; }
+                if eq != 0 { return true; }
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
 // Detect a `"use strict"` directive prologue at the top of a function
 // body. Walks past empty-statement noise but does not look past any
 // non-string statements (per spec, directives are a prologue that ends
@@ -1169,8 +1205,14 @@ fn parse_param_list(p: Parser*) -> ParamList {
         count = count + 1;
 
         if !match_kind(p, TokenKind::Comma) { break; }
-        // Tolerate a single trailing comma before the closing paren
-        // (ES2017 — `function f(a, b,)`).
+        // ES2017 trailing-comma tolerance: `function f(a, b,)` is OK,
+        // but `function f(...a,)` is a SyntaxError — rest params
+        // disallow ANY following token (including the trailing comma)
+        // per UniqueFormalParameters grammar.
+        if seen_rest {
+            p.had_error = true;
+            break;
+        }
         if peek_kind(p) == TokenKind::RParen { break; }
     }
 
@@ -1216,6 +1258,9 @@ fn parse_function_decl(p: Parser*, is_async: bool) -> AstNode* {
     p.in_generator = saved_gen;
     if body == NULL { return NULL; }
     if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
+        p.had_error = true; return NULL;
+    }
+    if !params_are_simple(params) && params_have_duplicate(params, p.source) {
         p.had_error = true; return NULL;
     }
 
@@ -1403,6 +1448,9 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     p.in_generator = saved_gen;
     if body == NULL { return NULL; }
     if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
+        p.had_error = true; return NULL;
+    }
+    if !params_are_simple(params) && params_have_duplicate(params, p.source) {
         p.had_error = true; return NULL;
     }
 
@@ -1895,6 +1943,9 @@ fn parse_function_expr(p: Parser*, is_async: bool) -> AstNode* {
     p.in_generator = saved_gen;
     if body == NULL { return NULL; }
     if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
+        p.had_error = true; return NULL;
+    }
+    if !params_are_simple(params) && params_have_duplicate(params, p.source) {
         p.had_error = true; return NULL;
     }
 

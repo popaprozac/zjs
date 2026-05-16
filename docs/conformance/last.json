@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-16 18:02 UTC",
+    "when": "2026-05-16 18:22 UTC",
     "total": 14428,
-    "passed": 6073,
-    "failed": 1826,
+    "passed": 6097,
+    "failed": 1802,
     "skipped": 6529
   },
   "failures": [
@@ -1072,10 +1072,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-method/dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/async-method/dflt-params-ref-later.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -1086,10 +1082,6 @@
     {
       "path": "test/language/statements/class/async-method/dflt-params-trailing-comma.js",
       "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/async-method/rest-params-trailing-comma-early-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
@@ -1132,10 +1124,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-method-static/dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/async-method-static/dflt-params-ref-later.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -1146,10 +1134,6 @@
     {
       "path": "test/language/statements/class/async-method-static/dflt-params-trailing-comma.js",
       "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/async-method-static/rest-params-trailing-comma-early-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/async-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
@@ -1792,10 +1776,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/gen-method/dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/gen-method/dflt-params-ref-later.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
@@ -1806,10 +1786,6 @@
     {
       "path": "test/language/statements/class/gen-method/dflt-params-trailing-comma.js",
       "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/gen-method/rest-params-trailing-comma-early-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/gen-method/yield-as-binding-identifier-escaped.js",
@@ -1840,10 +1816,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/gen-method-static/dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/gen-method-static/dflt-params-ref-later.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
@@ -1854,10 +1826,6 @@
     {
       "path": "test/language/statements/class/gen-method-static/dflt-params-trailing-comma.js",
       "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/gen-method-static/rest-params-trailing-comma-early-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/gen-method-static/yield-as-binding-identifier-escaped.js",
@@ -1888,10 +1856,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/method/dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/method/dflt-params-ref-later.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
@@ -1904,15 +1868,7 @@
       "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/method/rest-params-trailing-comma-early-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/method-param-yield.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/method-static/dflt-params-duplicates.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -1926,10 +1882,6 @@
     {
       "path": "test/language/statements/class/method-static/dflt-params-trailing-comma.js",
       "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/method-static/rest-params-trailing-comma-early-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/name-binding/const.js",
@@ -2292,10 +2244,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/async-method/dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/async-method/dflt-params-ref-later.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -2306,10 +2254,6 @@
     {
       "path": "test/language/expressions/class/async-method/dflt-params-trailing-comma.js",
       "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/rest-params-trailing-comma-early-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
@@ -2352,10 +2296,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/async-method-static/dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/async-method-static/dflt-params-ref-later.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -2366,10 +2306,6 @@
     {
       "path": "test/language/expressions/class/async-method-static/dflt-params-trailing-comma.js",
       "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/async-method-static/rest-params-trailing-comma-early-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/async-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
@@ -2892,10 +2828,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/gen-method/dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/gen-method/dflt-params-ref-later.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
@@ -2906,10 +2838,6 @@
     {
       "path": "test/language/expressions/class/gen-method/dflt-params-trailing-comma.js",
       "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/gen-method/rest-params-trailing-comma-early-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/gen-method/yield-as-binding-identifier-escaped.js",
@@ -2940,10 +2868,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/gen-method-static/dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/gen-method-static/dflt-params-ref-later.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
@@ -2954,10 +2878,6 @@
     {
       "path": "test/language/expressions/class/gen-method-static/dflt-params-trailing-comma.js",
       "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/gen-method-static/rest-params-trailing-comma-early-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/gen-method-static/yield-as-binding-identifier-escaped.js",
@@ -2996,10 +2916,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/method/dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/method/dflt-params-ref-later.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
@@ -3012,15 +2928,7 @@
       "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/method/rest-params-trailing-comma-early-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/method-param-dflt-yield.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/method-static/dflt-params-duplicates.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -3034,10 +2942,6 @@
     {
       "path": "test/language/expressions/class/method-static/dflt-params-trailing-comma.js",
       "reason": "[sloppy] zjs: throw: (unknown): length is properly set Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/method-static/rest-params-trailing-comma-early-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/params-dflt-gen-meth-ref-arguments.js",
@@ -4005,6 +3909,102 @@
     },
     {
       "path": "test/built-ins/Promise/all/iter-next-val-err-reject.js",
+      "reason": "[sloppy] async test never signaled completion"
+    },
+    {
+      "path": "test/built-ins/Promise/all/iter-returns-false-reject.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/all/iter-returns-null-reject.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/all/iter-returns-number-reject.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/all/iter-returns-string-reject.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/all/iter-returns-symbol-reject.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/all/iter-returns-true-reject.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/all/iter-returns-undefined-reject.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/all/iter-step-err-reject.js",
+      "reason": "[sloppy] async test never signaled completion"
+    },
+    {
+      "path": "test/built-ins/Promise/all/new-resolve-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): p1.then call count Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Promise/all/reject-deferred.js",
+      "reason": "[sloppy] async test never signaled completion"
+    },
+    {
+      "path": "test/built-ins/Promise/all/reject-immed.js",
+      "reason": "[sloppy] async test never signaled completion"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-before-loop-exit-from-same.js",
+      "reason": "[sloppy] zjs: throw: (unknown): callCount after resolving p1 Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-before-loop-exit.js",
+      "reason": "[sloppy] zjs: throw: (unknown): callCount after call to all() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-element-function-extensible.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-element-function-nonconstructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-element-function-property-order.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-element-function-prototype.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-from-same-thenable.js",
+      "reason": "[sloppy] zjs: throw: (unknown): callCount after resolving all elements Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-ignores-late-rejection-deferred.js",
+      "reason": "[sloppy] async test never signaled completion"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-ignores-late-rejection.js",
+      "reason": "[sloppy] async test never signaled completion"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-non-callable.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-not-callable-reject-with-typeerror.js",
+      "reason": "[sloppy] async test never signaled completion"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-poisoned-then.js",
+      "reason": "[sloppy] async test never signaled completion"
+    },
+    {
+      "path": "test/built-ins/Promise/all/resolve-thenable.js",
       "reason": "[sloppy] async test never signaled completion"
     }
   ],
