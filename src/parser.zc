@@ -40,6 +40,10 @@ struct Parser {
     // function / method body, decremented on exit. Top-level
     // (function_depth == 0) bare `return` is a SyntaxError.
     function_depth: u32;
+    // ECMA-262 [+Await] grammar parameter: true inside an `async`
+    // function body. Gates the `await` operator (treated as an
+    // identifier otherwise to preserve sloppy-mode names).
+    in_async: bool;
 }
 
 struct ParseResult {
@@ -56,6 +60,7 @@ fn parse_program(source: char*, source_len: usize) -> ParseResult {
     p.source_len = source_len;
     p.tracker = alloc_list_new();
     p.had_error = false;
+    p.in_async = false;
 
     // Lex everything into a buffer.
     p.tokens = alloc_n<Token>(MAX_TOKENS);
@@ -183,7 +188,15 @@ fn parse_statement(p: Parser*) -> AstNode* {
     if k == TokenKind::KwVar       { return parse_var_decl(p, true); }
     if k == TokenKind::KwLet       { return parse_var_decl(p, true); }
     if k == TokenKind::KwConst     { return parse_var_decl(p, true); }
-    if k == TokenKind::KwFunction  { return parse_function_decl(p); }
+    if k == TokenKind::KwFunction  { return parse_function_decl(p, false); }
+    // `async function f() { ... }` — function declaration with the
+    // is_async marker. ASI consideration: ECMA-262 requires no line
+    // terminator between `async` and `function` for this to be a
+    // declaration; we enforce that.
+    if k == TokenKind::KwAsync && peek_kind2(p) == TokenKind::KwFunction {
+        advance(p);
+        return parse_function_decl(p, true);
+    }
     if k == TokenKind::KwClass     { return parse_class_decl(p); }
     if k == TokenKind::KwIf        { return parse_if(p); }
     if k == TokenKind::KwReturn    { return parse_return(p); }
@@ -783,7 +796,7 @@ fn parse_param_list(p: Parser*) -> ParamList {
     return ParamList{ arr: buf, count: count };
 }
 
-fn parse_function_decl(p: Parser*) -> AstNode* {
+fn parse_function_decl(p: Parser*, is_async: bool) -> AstNode* {
     let kw = advance(p);     // 'function'
 
     let name_tok = peek(p);
@@ -801,9 +814,12 @@ fn parse_function_decl(p: Parser*) -> AstNode* {
         p.had_error = true;
         return NULL;
     }
+    let saved_async = p.in_async;
+    p.in_async = is_async;
     p.function_depth = p.function_depth + 1;
     let body = parse_block(p);
     p.function_depth = p.function_depth - 1;
+    p.in_async = saved_async;
     if body == NULL { return NULL; }
 
     let node = new_node(&p.tracker, NodeKind::FunctionDecl, kw.start, body.end);
@@ -812,6 +828,7 @@ fn parse_function_decl(p: Parser*) -> AstNode* {
     node.left = body;
     node.children = params.arr;
     node.children_count = params.count;
+    node.bool_value = is_async;
     return node;
 }
 
@@ -1020,7 +1037,7 @@ fn parse_class_expr(p: Parser*) -> AstNode* {
 }
 
 // Function expressions live in expression context. Name is optional.
-fn parse_function_expr(p: Parser*) -> AstNode* {
+fn parse_function_expr(p: Parser*, is_async: bool) -> AstNode* {
     let kw = advance(p);     // 'function'
 
     let name_start: u32 = 0;
@@ -1039,9 +1056,12 @@ fn parse_function_expr(p: Parser*) -> AstNode* {
         p.had_error = true;
         return NULL;
     }
+    let saved_async = p.in_async;
+    p.in_async = is_async;
     p.function_depth = p.function_depth + 1;
     let body = parse_block(p);
     p.function_depth = p.function_depth - 1;
+    p.in_async = saved_async;
     if body == NULL { return NULL; }
 
     let node = new_node(&p.tracker, NodeKind::FunctionExpr, kw.start, body.end);
@@ -1050,6 +1070,7 @@ fn parse_function_expr(p: Parser*) -> AstNode* {
     node.left = body;
     node.children = params.arr;
     node.children_count = params.count;
+    node.bool_value = is_async;
     return node;
 }
 
@@ -1663,7 +1684,23 @@ fn parse_primary(p: Parser*) -> AstNode* {
     let t = peek(p);
     let k = t.kind;
 
-    if k == TokenKind::KwFunction { return parse_function_expr(p); }
+    if k == TokenKind::KwFunction { return parse_function_expr(p, false); }
+    // `async function f() {}` / `async function() {}` in expression context.
+    if k == TokenKind::KwAsync && peek_kind2(p) == TokenKind::KwFunction {
+        advance(p);
+        return parse_function_expr(p, true);
+    }
+    // `await expr` — only valid inside an async function body. Otherwise
+    // `await` falls through and is treated as an identifier reference
+    // (the contextual-keyword rule).
+    if k == TokenKind::KwAwait && p.in_async {
+        let kw_t = advance(p);
+        let inner = parse_unary(p);
+        if inner == NULL { return NULL; }
+        let node = new_node(&p.tracker, NodeKind::AwaitExpr, kw_t.start, inner.end);
+        node.left = inner;
+        return node;
+    }
     if k == TokenKind::KwClass    { return parse_class_expr(p); }
 
     if k == TokenKind::NumberLit {

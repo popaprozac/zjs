@@ -823,6 +823,22 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 }
             }
             if !caught {
+                // async function bubbling out an exception: convert to
+                // a rejected Promise and hand THAT to the caller as the
+                // function's return value. The caller's frame must not
+                // see this as a throw — async fns always return a Promise.
+                let top_f = ctx.frames[top_idx].f;
+                if top_f != NULL && top_f.is_async && ctx.frame_count > entry_frame + 1 {
+                    let p_obj = zjs_promise_new();
+                    let p_v = zjs_cell_from_ptr((void*)p_obj);
+                    promise_settle(ctx, p_v, thrown, false);
+                    let ret_dst = pop_call_frame(ctx);
+                    let cidx = ctx.frame_count - 1;
+                    let cb = ctx.frames[cidx].regs_base;
+                    ctx.reg_stack[cb + (u32)ret_dst] = p_v;
+                    throwing = false;
+                    continue;
+                }
                 pop_call_frame(ctx);
                 continue;
             }
@@ -881,6 +897,15 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 ctx.frames[cur_idx].ip = ip; break;
             }
             let rv = regs[inst.a];
+            // async function return: wrap the return value in a fresh
+            // resolved Promise. (Pending awaits are not supported yet,
+            // so the body always reaches Return synchronously.)
+            if f.is_async {
+                let p_obj = zjs_promise_new();
+                let p_v = zjs_cell_from_ptr((void*)p_obj);
+                promise_resolve_with(ctx, p_v, rv);
+                rv = p_v;
+            }
             let ret_dst = pop_call_frame(ctx);
             if ctx.frame_count <= entry_frame {
                 final_result = rv;
@@ -1324,6 +1349,33 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
                 ip = (u32)((i32)ip + 1 + off);
             } else {
                 ip = ip + 1;
+            }
+        } else if op == Op::Await {
+            // Sync-only await: extract a resolved Promise's value, or
+            // pass the value through if it's not a thenable. Pending
+            // promises are drained once and re-checked; if still
+            // pending, throw — full frame-suspension semantics land in
+            // a follow-up so async functions can await real I/O.
+            let v = regs[inst.b];
+            if zjs_is_promise(v) != 0 {
+                let p = zjs_as_promise(v);
+                if p.state == PROMISE_PENDING {
+                    drain_microtasks(ctx);
+                }
+                if p.state == PROMISE_FULFILLED {
+                    regs[inst.a] = p.value;
+                } else if p.state == PROMISE_REJECTED {
+                    throwing = true; thrown = p.value;
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                } else {
+                    // Still pending after drain — no frame suspension yet.
+                    let err = build_typed_error(ctx, (char*)"Error", 5,
+                                                (char*)"await on a pending Promise is not yet supported", 47);
+                    throwing = true; thrown = err; exit_reason = 3;
+                    ctx.frames[cur_idx].ip = ip; break;
+                }
+            } else {
+                regs[inst.a] = v;
             }
         } else if op == Op::Mul {
             let av = regs[inst.b]; let bv = regs[inst.c];
@@ -3259,13 +3311,21 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
         // Inner loop exited. Decide why and how to handle.
         if exit_reason == 0 {
             // Ran off end of code — implicit return undefined.
+            let f_top = ctx.frames[ctx.frame_count - 1].f;
+            let implicit_rv: ZjsValue = zjs_undefined();
+            if f_top != NULL && f_top.is_async {
+                let p_obj = zjs_promise_new();
+                let p_v = zjs_cell_from_ptr((void*)p_obj);
+                promise_resolve_with(ctx, p_v, implicit_rv);
+                implicit_rv = p_v;
+            }
             let ret_dst = pop_call_frame(ctx);
             if ctx.frame_count <= entry_frame {
-                final_result = zjs_undefined();
+                final_result = implicit_rv;
             } else {
                 let cidx = ctx.frame_count - 1;
                 let cb = ctx.frames[cidx].regs_base;
-                ctx.reg_stack[cb + (u32)ret_dst] = zjs_undefined();
+                ctx.reg_stack[cb + (u32)ret_dst] = implicit_rv;
             }
         }
         // exit_reason == 1: Return/Halt already popped + wrote return value

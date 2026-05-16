@@ -159,6 +159,17 @@ enum Op {
                       //   to include; equals param_count of regular
                       //   params preceding the rest binding)
 
+    // async / await (2026-05-15).
+    // Op::Await reads regs[b] as the awaited value and writes the
+    // unwrapped result to regs[a]:
+    //   - non-Promise:     pass through (already resolved)
+    //   - fulfilled:       extract value
+    //   - rejected:        throw the rejection reason
+    //   - pending:         (current impl) drain microtasks once and
+    //                      re-check; throw if still pending. Full
+    //                      frame-suspension semantics are a follow-up.
+    Await,            // a=dst, b=src
+
     // Spread support (2026-05-15).
     // Append the value in regs[b] to the array in regs[a]. Used by
     // array literals when at least one element is `...expr` — those
@@ -434,6 +445,10 @@ struct Function {
     // must populate args_base too. Treated as args_base-needed at
     // push time (same as uses_arguments).
     has_rest_param: bool;
+    // True when the source was `async function`. Call sites wrap the
+    // body's return value in a Promise (resolve on return / reject on
+    // throw); the body's Op::Await ops are gated by this flag.
+    is_async: bool;
 }
 
 fn function_new() -> Function* {

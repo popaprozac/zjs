@@ -725,6 +725,13 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         }
         return last;
     }
+    if k == NodeKind::AwaitExpr {
+        let src = compile_expr(c, node.left);
+        let dst = alloc_reg(c);
+        emit(c, make_inst_ab(Op::Await, dst, src));
+        if src + 1 == c.next_reg && src != dst { c.next_reg = c.next_reg - 1; }
+        return dst;
+    }
     if k == NodeKind::Unary {
         // `delete` needs the receiver + key broken out (not the
         // loaded property value). Special-case BEFORE the normal
@@ -1799,6 +1806,7 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     f.ic_count = c.ic_count;
     f.uses_arguments = c.arguments_reg >= 0;
     f.has_rest_param = has_rest;
+    f.is_async = node.bool_value;
 
     c.code = NULL;
     c.constants = NULL;

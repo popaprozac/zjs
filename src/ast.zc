@@ -107,6 +107,12 @@ enum NodeKind {
     // — `...expr`. Compiler expands the inner iterable at call/build
     // time. left = the expression being spread.
     Spread,
+
+    // async/await (2026-05-15).
+    // FunctionDecl/FunctionExpr/ArrowFunc reuse bool_value = true to
+    // mark themselves as `async function`. AwaitExpr is the `await x`
+    // operator — left = the awaited expression.
+    AwaitExpr,
 }
 
 struct AstNode {

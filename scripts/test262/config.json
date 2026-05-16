@@ -59,9 +59,7 @@
 
   "skip_features": [
     "generators",
-    "async-functions",
     "async-iteration",
-    "async-await",
     "Atomics",
     "BigInt",
     "SharedArrayBuffer",
