@@ -54,7 +54,8 @@
     "test/built-ins/Math",
     "test/built-ins/Promise",
     "test/built-ins/Map",
-    "test/built-ins/Set"
+    "test/built-ins/Set",
+    "test/built-ins/Date"
   ],
 
   "_skip_features_comment": "Tests whose `features` frontmatter intersects this list are skipped (counted as 'skipped'). Update as the engine grows.",

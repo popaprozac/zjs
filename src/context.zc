@@ -16,6 +16,7 @@ raw {
     #include <stdio.h>
     #include <stdlib.h>
     #include <string.h>
+    #include <time.h>
     // Forward decl — defined in eval.zc; lets host_function_ctor /
     // similar runtime-compile paths reach it without a circular import.
     typedef struct ZjsValue ZjsValue;
@@ -229,6 +230,7 @@ struct ZjsContext {
     // TAG_SET walks these chains.
     map_proto:          ZjsObject*;
     set_proto:          ZjsObject*;
+    date_proto:         ZjsObject*;
 
     // --- Atom table (interned strings) ---
     // Open-addressed hash table, power-of-2 capacity. Used for
@@ -834,6 +836,11 @@ fn gc_mark_value(v: ZjsValue) -> void {
         return;
     }
 
+    if tag == TAG_DATE {
+        // Leaf — just a number internally.
+        return;
+    }
+
     if tag == TAG_REGEXP {
         let r: ZjsRegExp* = NULL;
         raw { r = (ZjsRegExp*)p; }
@@ -1055,6 +1062,9 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     if ctx.set_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.set_proto));
     }
+    if ctx.date_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.date_proto));
+    }
     // Interned atoms — they live for the context's lifetime.
     let a: u32 = 0;
     while a < ctx.atom_cap {
@@ -1110,6 +1120,11 @@ fn gc_sweep(ctx: ZjsContext*) -> void {
                   raw { ss = (ZjsSet*)p; }
                   if ss.entries != NULL { dealloc(ss.entries); }
                   dealloc(ss);
+              }
+              else if tag == TAG_DATE          {
+                  let dd: ZjsDate* = NULL;
+                  raw { dd = (ZjsDate*)p; }
+                  dealloc(dd);
               }
         }
         i = i + 1;
@@ -6695,6 +6710,319 @@ fn host_set_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return build_set_iterator(ctx, ctx.host_this, 2);
 }
 
+// =====================================================================
+// Date host functions (2026-05-16). Stores ms since UTC epoch as f64.
+// Year math goes through the C library (gmtime/timegm). Locale-aware
+// formatting is left for an Intl follow-up.
+// =====================================================================
+
+fn host_date_now_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let ms: f64 = 0.0;
+    raw {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ms = (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+    }
+    return zjs_double(ms);
+}
+
+// Format a Date as ISO 8601 — `YYYY-MM-DDTHH:MM:SS.sssZ`. Used by
+// host_date_to_iso_string and toJSON.
+fn format_iso_string(ctx: ZjsContext*, ms: f64) -> ZjsValue {
+    let buf: char[40];
+    raw {
+        if (ms != ms) {  // NaN check
+            snprintf(buf, sizeof(buf), "Invalid Date");
+        } else {
+            int64_t total_ms = (int64_t)ms;
+            int millis = (int)(total_ms % 1000);
+            if (millis < 0) millis += 1000;
+            time_t secs = (time_t)(total_ms / 1000);
+            if (millis != 0 && total_ms < 0) secs -= 1;
+            struct tm tm_utc;
+            gmtime_r(&secs, &tm_utc);
+            snprintf(buf, sizeof(buf),
+                "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
+                tm_utc.tm_year + 1900,
+                tm_utc.tm_mon + 1,
+                tm_utc.tm_mday,
+                tm_utc.tm_hour,
+                tm_utc.tm_min,
+                tm_utc.tm_sec,
+                millis);
+        }
+    }
+    let bp: char* = NULL; raw { bp = &buf[0]; }
+    let len: u32 = 0;
+    raw { len = (uint32_t)strlen(bp); }
+    return ctx_intern_string(ctx, bp, len);
+}
+
+// Compose ms since epoch from broken-down UTC components. Matches
+// the spec's MakeDay / MakeTime / MakeDate. Falls through to NaN for
+// out-of-range inputs.
+fn date_compose_utc_ms(year: f64, month: f64, day: f64,
+                       hour: f64, minute: f64, second: f64,
+                       ms_part: f64) -> f64 {
+    let result: f64 = 0.0;
+    raw {
+        // Spec: year < 100 maps to 1900-relative. ECMA-262 §21.4.1.13.
+        double yr = year;
+        if (yr >= 0.0 && yr <= 99.0) yr += 1900.0;
+        struct tm t;
+        memset(&t, 0, sizeof(t));
+        t.tm_year = (int)yr - 1900;
+        t.tm_mon  = (int)month;
+        t.tm_mday = (int)day;
+        t.tm_hour = (int)hour;
+        t.tm_min  = (int)minute;
+        t.tm_sec  = (int)second;
+        time_t secs = timegm(&t);
+        if (secs == (time_t)-1) {
+            result = 0.0/0.0;   // NaN
+        } else {
+            result = (double)secs * 1000.0 + ms_part;
+        }
+    }
+    return result;
+}
+
+fn host_date_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let ms: f64 = 0.0;
+    if argc == 0 {
+        raw {
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ms = (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+        }
+    } else if argc == 1 {
+        let v = args[0];
+        if zjs_is_string(v) != 0 {
+            // Spec Date.parse — only handle the canonical ISO subset.
+            let s = zjs_as_string(v);
+            let parsed: f64 = 0.0;
+            raw {
+                int Y, Mo, D, H = 0, Mn = 0, S = 0, Ms = 0;
+                int n = sscanf(s->data, "%d-%d-%dT%d:%d:%d.%dZ", &Y, &Mo, &D, &H, &Mn, &S, &Ms);
+                if (n < 3) {
+                    n = sscanf(s->data, "%d-%d-%d", &Y, &Mo, &D);
+                    H = Mn = S = Ms = 0;
+                }
+                if (n >= 3) {
+                    struct tm t;
+                    memset(&t, 0, sizeof(t));
+                    t.tm_year = Y - 1900;
+                    t.tm_mon  = Mo - 1;
+                    t.tm_mday = D;
+                    t.tm_hour = H;
+                    t.tm_min  = Mn;
+                    t.tm_sec  = S;
+                    time_t secs = timegm(&t);
+                    parsed = (double)secs * 1000.0 + (double)Ms;
+                } else {
+                    parsed = 0.0/0.0;
+                }
+            }
+            ms = parsed;
+        } else {
+            ms = zjs_to_double(v);
+        }
+    } else {
+        let y = zjs_to_double(args[0]);
+        let mo = zjs_to_double(args[1]);
+        let d = if argc > 2 { zjs_to_double(args[2]) } else { 1.0 };
+        let h = if argc > 3 { zjs_to_double(args[3]) } else { 0.0 };
+        let mi = if argc > 4 { zjs_to_double(args[4]) } else { 0.0 };
+        let se = if argc > 5 { zjs_to_double(args[5]) } else { 0.0 };
+        let ml = if argc > 6 { zjs_to_double(args[6]) } else { 0.0 };
+        ms = date_compose_utc_ms(y, mo, d, h, mi, se, ml);
+    }
+    let d = zjs_date_new(ms);
+    ctx_register_cell(ctx, (void*)d);
+    return zjs_cell_from_ptr((void*)d);
+}
+
+fn host_date_parse_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_double(0.0/0.0); }
+    let v = args[0];
+    if zjs_is_string(v) == 0 { v = zjs_to_string(ctx, v); }
+    let s = zjs_as_string(v);
+    let parsed: f64 = 0.0;
+    raw {
+        int Y, Mo, D, H = 0, Mn = 0, S = 0, Ms = 0;
+        int n = sscanf(s->data, "%d-%d-%dT%d:%d:%d.%dZ", &Y, &Mo, &D, &H, &Mn, &S, &Ms);
+        if (n < 3) {
+            n = sscanf(s->data, "%d-%d-%d", &Y, &Mo, &D);
+            H = Mn = S = Ms = 0;
+        }
+        if (n >= 3) {
+            struct tm t;
+            memset(&t, 0, sizeof(t));
+            t.tm_year = Y - 1900;
+            t.tm_mon  = Mo - 1;
+            t.tm_mday = D;
+            t.tm_hour = H;
+            t.tm_min  = Mn;
+            t.tm_sec  = S;
+            time_t secs = timegm(&t);
+            parsed = (double)secs * 1000.0 + (double)Ms;
+        } else {
+            parsed = 0.0/0.0;
+        }
+    }
+    return zjs_double(parsed);
+}
+
+fn host_date_utc_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let y = if argc > 0 { zjs_to_double(args[0]) } else { 0.0/0.0 };
+    let mo = if argc > 1 { zjs_to_double(args[1]) } else { 0.0 };
+    let d = if argc > 2 { zjs_to_double(args[2]) } else { 1.0 };
+    let h = if argc > 3 { zjs_to_double(args[3]) } else { 0.0 };
+    let mi = if argc > 4 { zjs_to_double(args[4]) } else { 0.0 };
+    let se = if argc > 5 { zjs_to_double(args[5]) } else { 0.0 };
+    let ml = if argc > 6 { zjs_to_double(args[6]) } else { 0.0 };
+    return zjs_double(date_compose_utc_ms(y, mo, d, h, mi, se, ml));
+}
+
+fn date_require_this(ctx: ZjsContext*) -> ZjsDate* {
+    let this_v = ctx.host_this;
+    if zjs_is_date(this_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Date method called on non-Date", 30);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return NULL;
+    }
+    return zjs_as_date(this_v);
+}
+
+fn host_date_get_time(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    return zjs_double(d.time_ms);
+}
+
+fn host_date_set_time(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    let ms = if argc > 0 { zjs_to_double(args[0]) } else { 0.0/0.0 };
+    d.time_ms = ms;
+    return zjs_double(ms);
+}
+
+fn host_date_value_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return host_date_get_time(ctx, args, argc);
+}
+
+fn host_date_to_iso_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    if d.time_ms != d.time_ms {   // NaN
+        let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                                    (char*)"Invalid time value", 18);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return format_iso_string(ctx, d.time_ms);
+}
+
+fn host_date_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    // toString is locale-formatted in the spec; we emit the ISO form
+    // as a serviceable stand-in until Intl lands.
+    if d.time_ms != d.time_ms {
+        return ctx_intern_string(ctx, (char*)"Invalid Date", 12);
+    }
+    return format_iso_string(ctx, d.time_ms);
+}
+
+fn host_date_to_json(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    if d.time_ms != d.time_ms { return zjs_null(); }
+    return format_iso_string(ctx, d.time_ms);
+}
+
+// Helper for getter methods. Decomposes ms into the requested UTC
+// component (year, month, ...). `field`:
+//   0=fullYear  1=month  2=date  3=day(weekday)  4=hours
+//   5=minutes   6=seconds  7=milliseconds
+fn date_extract_utc(time_ms: f64, field: u32) -> f64 {
+    if time_ms != time_ms { return 0.0/0.0; }
+    let r: f64 = 0.0;
+    raw {
+        int64_t total_ms = (int64_t)time_ms;
+        int millis = (int)(total_ms % 1000);
+        if (millis < 0) millis += 1000;
+        time_t secs = (time_t)(total_ms / 1000);
+        if (millis != 0 && total_ms < 0) secs -= 1;
+        struct tm tm_utc;
+        gmtime_r(&secs, &tm_utc);
+        switch (field) {
+            case 0: r = (double)(tm_utc.tm_year + 1900); break;
+            case 1: r = (double)tm_utc.tm_mon;           break;
+            case 2: r = (double)tm_utc.tm_mday;          break;
+            case 3: r = (double)tm_utc.tm_wday;          break;
+            case 4: r = (double)tm_utc.tm_hour;          break;
+            case 5: r = (double)tm_utc.tm_min;           break;
+            case 6: r = (double)tm_utc.tm_sec;           break;
+            case 7: r = (double)millis;                   break;
+            default: r = 0.0/0.0;                         break;
+        }
+    }
+    return r;
+}
+
+fn host_date_get_year(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    return zjs_double(date_extract_utc(d.time_ms, 0));
+}
+fn host_date_get_month(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    return zjs_double(date_extract_utc(d.time_ms, 1));
+}
+fn host_date_get_date(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    return zjs_double(date_extract_utc(d.time_ms, 2));
+}
+fn host_date_get_day(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    return zjs_double(date_extract_utc(d.time_ms, 3));
+}
+fn host_date_get_hours(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    return zjs_double(date_extract_utc(d.time_ms, 4));
+}
+fn host_date_get_minutes(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    return zjs_double(date_extract_utc(d.time_ms, 5));
+}
+fn host_date_get_seconds(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    return zjs_double(date_extract_utc(d.time_ms, 6));
+}
+fn host_date_get_millis(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    return zjs_double(date_extract_utc(d.time_ms, 7));
+}
+fn host_date_get_tzoffset(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let d = date_require_this(ctx);
+    if d == NULL { return zjs_undefined(); }
+    // We're UTC-only — spec returns the offset in minutes that UTC
+    // is ahead of local. With local=UTC, that's 0.
+    return zjs_int32(0);
+}
+
 fn host_async_resume_fulfilled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let cont_v: ZjsValue = zjs_undefined();
     if ctx.current_host_fn != NULL {
@@ -8708,7 +9036,89 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         object_set(ctx, ctx.function_proto,
                    ctx_intern_atom(ctx, (char*)"constructor", 11), function_ctor_v);
     }
-    ctx_register_host_function(ctx, (char*)"Date",       eval_ptr);
+    // Date (2026-05-16). UTC-only ms-since-epoch; locale-aware
+    // formatting deferred to Intl.
+    let date_ctor_ptr:  void* = NULL; raw { date_ctor_ptr  = (void*)host_date_ctor; }
+    let date_now_ptr:   void* = NULL; raw { date_now_ptr   = (void*)host_date_now_static; }
+    let date_parse_ptr: void* = NULL; raw { date_parse_ptr = (void*)host_date_parse_static; }
+    let date_utc_ptr:   void* = NULL; raw { date_utc_ptr   = (void*)host_date_utc_static; }
+    let date_ctor_v = ctx_register_host_function(ctx, (char*)"Date", date_ctor_ptr);
+    let date_hf = zjs_as_host_function(date_ctor_v);
+    // Statics on Date itself (Date.now / Date.parse / Date.UTC).
+    if date_hf.props == NULL {
+        let pv = ctx_new_object(ctx);
+        date_hf.props = zjs_as_object(pv);
+    }
+    object_set(ctx, date_hf.props, ctx_intern_atom(ctx, (char*)"now", 3),
+               ctx_make_host_function_arity(ctx, (char*)"now",   date_now_ptr,   0));
+    object_set(ctx, date_hf.props, ctx_intern_atom(ctx, (char*)"parse", 5),
+               ctx_make_host_function_arity(ctx, (char*)"parse", date_parse_ptr, 1));
+    object_set(ctx, date_hf.props, ctx_intern_atom(ctx, (char*)"UTC", 3),
+               ctx_make_host_function_arity(ctx, (char*)"UTC",   date_utc_ptr,   7));
+    // Prototype.
+    let date_proto_v = ctx_new_object(ctx);
+    ctx.date_proto = zjs_as_object(date_proto_v);
+    date_hf.prototype = ctx.date_proto;
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), date_ctor_v);
+    let d_gt:  void* = NULL; raw { d_gt  = (void*)host_date_get_time; }
+    let d_st:  void* = NULL; raw { d_st  = (void*)host_date_set_time; }
+    let d_vo:  void* = NULL; raw { d_vo  = (void*)host_date_value_of; }
+    let d_iso: void* = NULL; raw { d_iso = (void*)host_date_to_iso_string; }
+    let d_str: void* = NULL; raw { d_str = (void*)host_date_to_string; }
+    let d_jsn: void* = NULL; raw { d_jsn = (void*)host_date_to_json; }
+    let d_y:   void* = NULL; raw { d_y   = (void*)host_date_get_year; }
+    let d_mo:  void* = NULL; raw { d_mo  = (void*)host_date_get_month; }
+    let d_dt:  void* = NULL; raw { d_dt  = (void*)host_date_get_date; }
+    let d_dy:  void* = NULL; raw { d_dy  = (void*)host_date_get_day; }
+    let d_h:   void* = NULL; raw { d_h   = (void*)host_date_get_hours; }
+    let d_mn:  void* = NULL; raw { d_mn  = (void*)host_date_get_minutes; }
+    let d_s:   void* = NULL; raw { d_s   = (void*)host_date_get_seconds; }
+    let d_ml:  void* = NULL; raw { d_ml  = (void*)host_date_get_millis; }
+    let d_tz:  void* = NULL; raw { d_tz  = (void*)host_date_get_tzoffset; }
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getTime", 7),
+               ctx_make_host_function_arity(ctx, (char*)"getTime", d_gt, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"valueOf", 7),
+               ctx_make_host_function_arity(ctx, (char*)"valueOf", d_vo, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setTime", 7),
+               ctx_make_host_function_arity(ctx, (char*)"setTime", d_st, 1));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"toISOString", 11),
+               ctx_make_host_function_arity(ctx, (char*)"toISOString", d_iso, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
+               ctx_make_host_function_arity(ctx, (char*)"toString", d_str, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6),
+               ctx_make_host_function_arity(ctx, (char*)"toJSON", d_jsn, 1));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getFullYear", 11),
+               ctx_make_host_function_arity(ctx, (char*)"getFullYear", d_y, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCFullYear", 14),
+               ctx_make_host_function_arity(ctx, (char*)"getUTCFullYear", d_y, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getMonth", 8),
+               ctx_make_host_function_arity(ctx, (char*)"getMonth", d_mo, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCMonth", 11),
+               ctx_make_host_function_arity(ctx, (char*)"getUTCMonth", d_mo, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getDate", 7),
+               ctx_make_host_function_arity(ctx, (char*)"getDate", d_dt, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCDate", 10),
+               ctx_make_host_function_arity(ctx, (char*)"getUTCDate", d_dt, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getDay", 6),
+               ctx_make_host_function_arity(ctx, (char*)"getDay", d_dy, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getHours", 8),
+               ctx_make_host_function_arity(ctx, (char*)"getHours", d_h, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCHours", 11),
+               ctx_make_host_function_arity(ctx, (char*)"getUTCHours", d_h, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getMinutes", 10),
+               ctx_make_host_function_arity(ctx, (char*)"getMinutes", d_mn, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCMinutes", 13),
+               ctx_make_host_function_arity(ctx, (char*)"getUTCMinutes", d_mn, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getSeconds", 10),
+               ctx_make_host_function_arity(ctx, (char*)"getSeconds", d_s, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCSeconds", 13),
+               ctx_make_host_function_arity(ctx, (char*)"getUTCSeconds", d_s, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getMilliseconds", 15),
+               ctx_make_host_function_arity(ctx, (char*)"getMilliseconds", d_ml, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCMilliseconds", 18),
+               ctx_make_host_function_arity(ctx, (char*)"getUTCMilliseconds", d_ml, 0));
+    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getTimezoneOffset", 17),
+               ctx_make_host_function_arity(ctx, (char*)"getTimezoneOffset", d_tz, 0));
     // RegExp — real constructor + prototype carrying .test (.exec next
     // commit). property_get on TAG_REGEXP walks ctx.regexp_proto.
     let regexp_ctor_ptr: void* = NULL; raw { regexp_ctor_ptr = (void*)host_regexp_ctor; }
@@ -9320,6 +9730,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     mark_proto_methods_non_constructor(ctx, ctx.generator_proto);
     mark_proto_methods_non_constructor(ctx, ctx.map_proto);
     mark_proto_methods_non_constructor(ctx, ctx.set_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.date_proto);
     // Wrapper prototypes (Number.prototype, Boolean.prototype) and
     // Math live as the .prototype of their constructor or as a plain
     // global. Walk via the global table.

@@ -1,12 +1,16 @@
 {
   "summary": {
-    "when": "2026-05-16 17:25 UTC",
-    "total": 13834,
-    "passed": 5900,
-    "failed": 1555,
-    "skipped": 6379
+    "when": "2026-05-16 17:35 UTC",
+    "total": 14428,
+    "passed": 6043,
+    "failed": 1856,
+    "skipped": 6529
   },
   "failures": [
+    {
+      "path": "test/language/expressions/addition/S11.6.1_A2.2_T2.js",
+      "reason": "[sloppy] zjs: throw: (unknown): #1: var date = new Date(0); date + date === date.toString() + date.toString(). Actual: NaN"
+    },
     {
       "path": "test/language/expressions/addition/coerce-symbol-to-prim-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): error thrown by left-hand side Expected a undefined to be thrown but no exception was thrown at a"
@@ -121,7 +125,7 @@
     },
     {
       "path": "test/language/expressions/typeof/string.js",
-      "reason": "[sloppy] zjs: throw: (unknown): typeof Date() === \"string\" Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"string\"\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): typeof Date() === \"string\" Expected SameValue(\u00ab\"object\"\u00bb, \u00ab\"string\"\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/typeof/symbol.js",
@@ -2165,11 +2169,7 @@
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Date/regular-subclassing.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/Date/super-must-be-called.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abNaN\u00bb, \u00ab1859\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/GeneratorFunction/regular-subclassing.js",
@@ -2253,7 +2253,7 @@
     },
     {
       "path": "test/language/statements/class/subclass-builtins/subclass-Date.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/statements/class/subclass-builtins/subclass-Function.js",
@@ -3217,7 +3217,7 @@
     },
     {
       "path": "test/language/expressions/class/subclass-builtins/subclass-Date.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/class/subclass-builtins/subclass-Function.js",
@@ -3340,6 +3340,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.pop.call('') Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-11.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call(obj, true) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-2-17.js",
       "reason": "[sloppy] zjs: throw: (unknown): func(0, true) !== true"
     },
@@ -3385,7 +3389,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -3434,6 +3438,10 @@
     {
       "path": "test/built-ins/Array/prototype/indexOf/resizable-buffer.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-11.js",
+      "reason": "[sloppy] zjs: throw: (unknown): testResult[0] Expected SameValue(\u00abundefined\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-15.js",
@@ -3560,6 +3568,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-11.js",
+      "reason": "[sloppy] zjs: throw: (unknown): result !== true"
+    },
+    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-15.js",
       "reason": "[sloppy] zjs: throw: (unknown): result !== true"
     },
@@ -3656,11 +3668,35 @@
       "reason": "[sloppy] zjs: throw: (unknown): Actual [p1, p2, p4, 2, 0, 1] and expected [0, 1, 2, p2, p4, p1] should have the same contents."
     },
     {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-11.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Object.create properties must be an Object"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-118.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
+    },
+    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-15.js",
       "reason": "[sloppy] zjs: throw: (unknown): result !== true"
     },
     {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-171.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-197.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-249.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
+    },
+    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-28.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-285.js",
       "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
     },
     {
@@ -3670,6 +3706,10 @@
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-304.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-34.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Object.create properties must be an Object"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-39.js",
@@ -3684,12 +3724,20 @@
       "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
     },
     {
+      "path": "test/built-ins/Object/create/15.2.3.5-4-65.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
+    },
+    {
       "path": "test/built-ins/Object/create/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/built-ins/Object/create/properties-arg-to-object.js",
       "reason": "[sloppy] zjs: throw: TypeError: Object.create properties must be an Object"
+    },
+    {
+      "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-25.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Date method called on non-Date"
     },
     {
       "path": "test/built-ins/Object/getPrototypeOf/15.2.3.2-2-28.js",
@@ -3958,58 +4006,10 @@
     {
       "path": "test/built-ins/Promise/all/invoke-resolve-on-promises-every-iteration-of-custom.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
-    },
-    {
-      "path": "test/built-ins/Promise/all/invoke-resolve-on-promises-every-iteration-of-promise.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/invoke-resolve-on-values-every-iteration-of-promise.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/invoke-resolve-return.js",
-      "reason": "[sloppy] zjs: throw: (unknown): new `then` method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/invoke-resolve.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `resolve` invoked once for each iterated value Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/invoke-then-error-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/invoke-then-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/invoke-then-get-error-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/invoke-then-get-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/invoke-then.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `then` invoked once for every iterated value Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/iter-arg-is-false-reject.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/all/iter-arg-is-null-reject.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/all/iter-arg-is-number-reject.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     }
   ],
   "skip_counts": {
-    "feature:BigInt": 108,
+    "feature:BigInt": 110,
     "feature:tail-call-optimization": 18,
     "feature:Proxy": 33,
     "feature:class-fields-private": 603,
@@ -4019,7 +4019,7 @@
     "feature:object-rest": 192,
     "feature:optional-chaining": 8,
     "feature:destructuring-assignment": 2,
-    "include:propertyHelper.js": 636,
+    "include:propertyHelper.js": 780,
     "feature:TypedArray": 48,
     "include:asyncHelpers.js": 25,
     "flag:module": 15,
@@ -4036,6 +4036,6 @@
     "feature:well-formed-json-stringify": 1,
     "include:byteConversionValues.js": 1,
     "include:promiseHelper.js": 53,
-    "feature:Reflect": 5
+    "feature:Reflect": 9
   }
 }

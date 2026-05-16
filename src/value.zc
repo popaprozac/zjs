@@ -594,6 +594,9 @@ def TAG_MAP:           u8 = 12;  // 2026-05-16: ECMA-262 Map. Linear
                                  //   keys. Iterators view live entries.
 def TAG_SET:           u8 = 13;  // 2026-05-16: ECMA-262 Set. Same shape as
                                  //   ZjsMap minus the value slot.
+def TAG_DATE:          u8 = 14;  // 2026-05-16: ECMA-262 Date. Internal slot
+                                 //   is a single f64 ms-since-epoch (NaN for
+                                 //   "invalid date").
 
 // Promise states.
 def PROMISE_PENDING:   u8 = 0;
@@ -958,6 +961,36 @@ fn zjs_set_new() -> ZjsSet* {
     s.cap = 0;
     s.size = 0;
     return s;
+}
+
+// =====================================================================
+// Date (2026-05-16). One internal slot: time_ms (UTC milliseconds since
+// 1970-01-01). NaN means "Invalid Date" — propagated through all
+// getters / formatters.
+// =====================================================================
+
+struct ZjsDate {
+    header:  CellHeader;        // type_tag = TAG_DATE
+    time_ms: f64;
+}
+
+fn zjs_is_date(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_DATE { return 1; }
+    return 0;
+}
+
+fn zjs_as_date(v: ZjsValue) -> ZjsDate* {
+    let p = zjs_cell_as_ptr(v);
+    let d: ZjsDate* = NULL;
+    raw { d = (ZjsDate*)p; }
+    return d;
+}
+
+fn zjs_date_new(time_ms: f64) -> ZjsDate* {
+    let d = alloc<ZjsDate>();
+    d.header.type_tag = TAG_DATE;
+    d.time_ms = time_ms;
+    return d;
 }
 
 fn zjs_promise_new() -> ZjsPromise* {
