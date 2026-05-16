@@ -764,6 +764,15 @@ fn finish_for_in_or_of(p: Parser*, kw_tok: Token, binding: AstNode*, op_kind: To
     // may not carry an initializer, and must be exactly one binding.
     // `for (let x = 1 of [])` and `for (var x, y in obj)` are both
     // early SyntaxErrors.
+    // Cover-grammar: `for ([a,b] of ...)` / `for ({a} of ...)` parses
+    // the head as an Array/Object literal expression. Reinterpret as
+    // an AssignmentPattern so the for-of compile path can destructure
+    // each element.
+    if binding != NULL
+       && (binding.kind == NodeKind::Array || binding.kind == NodeKind::Object) {
+        binding = reinterpret_as_pattern(p, binding);
+        if binding == NULL { return NULL; }
+    }
     if binding != NULL && binding.kind == NodeKind::VarDecl {
         if binding.children_count != 1 { p.had_error = true; return NULL; }
         let decl0 = binding.children[0];
@@ -1957,6 +1966,135 @@ fn parse_expression(p: Parser*) -> AstNode* {
 
 // Level 17 — assignment (right-associative). Also dispatches to arrow
 // functions, which share the assignment grammar slot in ECMA-262.
+// Cover-grammar reinterpretation: turn an Array / Object literal
+// (parsed as an expression) into the equivalent ArrayPattern /
+// ObjectPattern. Used when the literal turns out to be the LHS of
+// an assignment (`[a, b] = src` or `({a} = src)`) or the binding
+// of a for-of/for-in head (`for ([a, b] of ...)`).
+//
+// Returns NULL and sets p.had_error on shapes that are valid
+// expressions but invalid as assignment patterns (e.g. a NumberLit
+// in an array slot).
+fn reinterpret_as_pattern(p: Parser*, expr: AstNode*) -> AstNode* {
+    if expr == NULL { return NULL; }
+    let k = expr.kind;
+    if k == NodeKind::Array {
+        let pat = new_node(&p.tracker, NodeKind::ArrayPattern, expr.start, expr.end);
+        let n = expr.children_count;
+        let kids = new_children(&p.tracker, n);
+        let i: u32 = 0;
+        while i < n {
+            let elem = expr.children[i];
+            let entry = new_node(&p.tracker, NodeKind::PatternEntry,
+                                 if elem != NULL { elem.start } else { pat.start },
+                                 if elem != NULL { elem.end } else { pat.start });
+            if elem == NULL || elem.kind == NodeKind::HoleExpr {
+                // Elision — entry.left stays NULL, no default.
+            } else if elem.kind == NodeKind::Spread {
+                entry.bool_value = true;
+                let inner = elem.left;
+                let target = reinterpret_assign_target(p, inner);
+                if target == NULL { return NULL; }
+                entry.left = target;
+            } else if elem.kind == NodeKind::Assignment && elem.op == TokenKind::Eq {
+                let target = reinterpret_assign_target(p, elem.left);
+                if target == NULL { return NULL; }
+                entry.left = target;
+                entry.right = elem.right;
+            } else {
+                let target = reinterpret_assign_target(p, elem);
+                if target == NULL { return NULL; }
+                entry.left = target;
+            }
+            kids[i] = entry;
+            i = i + 1;
+        }
+        pat.children = kids;
+        pat.children_count = n;
+        return pat;
+    }
+    if k == NodeKind::Object {
+        let pat = new_node(&p.tracker, NodeKind::ObjectPattern, expr.start, expr.end);
+        let n = expr.children_count;
+        let kids = new_children(&p.tracker, n);
+        let i: u32 = 0;
+        while i < n {
+            let prop = expr.children[i];
+            if prop == NULL { p.had_error = true; return NULL; }
+            let entry = new_node(&p.tracker, NodeKind::PatternEntry, prop.start, prop.end);
+            if prop.kind == NodeKind::Spread {
+                // `{ ...rest }` at object-literal position.
+                entry.bool_value = true;
+                let tgt = reinterpret_assign_target(p, prop.left);
+                if tgt == NULL { return NULL; }
+                entry.left = tgt;
+                kids[i] = entry;
+                i = i + 1;
+                continue;
+            }
+            if prop.kind != NodeKind::ObjectProp { p.had_error = true; return NULL; }
+            entry.name_start  = prop.name_start;
+            entry.name_length = prop.name_length;
+            if prop.third != NULL { entry.third = prop.third; }   // computed key carry-over
+            // prop.left is the value expression. It may carry a
+            // default — `{ a = 5 }` shorthand parses as
+            // ObjectProp(name="a", left=Assignment(Ident "a", "=", 5))
+            // — or a rename — `{ a: x }` → left is the Ident "x". A
+            // nested pattern shows up as a Spread / Array / Object.
+            let val = prop.left;
+            if val != NULL && val.kind == NodeKind::Assignment && val.op == TokenKind::Eq {
+                let tgt = reinterpret_assign_target(p, val.left);
+                if tgt == NULL { return NULL; }
+                entry.left = tgt;
+                entry.right = val.right;
+            } else {
+                let tgt = reinterpret_assign_target(p, val);
+                if tgt == NULL { return NULL; }
+                entry.left = tgt;
+            }
+            kids[i] = entry;
+            i = i + 1;
+        }
+        pat.children = kids;
+        pat.children_count = n;
+        return pat;
+    }
+    if k == NodeKind::Paren {
+        return reinterpret_as_pattern(p, expr.left);
+    }
+    // Already a pattern (from a previous nesting through this same
+    // helper).
+    if k == NodeKind::ArrayPattern || k == NodeKind::ObjectPattern {
+        return expr;
+    }
+    p.had_error = true;
+    return NULL;
+}
+
+// Inner element/property target — either a nested pattern (recurse
+// through reinterpret_as_pattern) or a leaf LHSExpression (Ident /
+// Member / Computed). Anything else is invalid as an assignment
+// target.
+fn reinterpret_assign_target(p: Parser*, expr: AstNode*) -> AstNode* {
+    if expr == NULL { return NULL; }
+    let k = expr.kind;
+    if k == NodeKind::Array || k == NodeKind::Object {
+        return reinterpret_as_pattern(p, expr);
+    }
+    if k == NodeKind::Paren {
+        return reinterpret_assign_target(p, expr.left);
+    }
+    if k == NodeKind::IdentExpr
+       || k == NodeKind::Member
+       || k == NodeKind::Computed
+       || k == NodeKind::ArrayPattern
+       || k == NodeKind::ObjectPattern {
+        return expr;
+    }
+    p.had_error = true;
+    return NULL;
+}
+
 fn parse_assignment(p: Parser*) -> AstNode* {
     // Arrow detection — must come before falling through to the
     // expression path, because `x => body` and `(a, b) => body` would
@@ -1973,11 +2111,20 @@ fn parse_assignment(p: Parser*) -> AstNode* {
     let k = peek_kind(p);
     if is_assignment_op(k) {
         let op_tok = advance(p);
+        // Cover-grammar: for plain `=`, reinterpret an Array/Object
+        // literal LHS as the matching AssignmentPattern. Compound
+        // assignment (`+=` etc.) doesn't permit destructuring per spec.
+        let target = left;
+        if op_tok.kind == TokenKind::Eq
+           && (left.kind == NodeKind::Array || left.kind == NodeKind::Object) {
+            target = reinterpret_as_pattern(p, left);
+            if target == NULL { return NULL; }
+        }
         let right = parse_assignment(p);
         if right == NULL { return NULL; }
-        let node = new_node(&p.tracker, NodeKind::Assignment, left.start, right.end);
+        let node = new_node(&p.tracker, NodeKind::Assignment, target.start, right.end);
         node.op = op_tok.kind;
-        node.left = left;
+        node.left = target;
         node.right = right;
         return node;
     }
@@ -2553,7 +2700,10 @@ fn parse_primary(p: Parser*) -> AstNode* {
         // (`of`, `let`, `yield`, `await`, `async` in non-keyword
         // positions). See is_binding_ident.
         advance(p);
-        return new_node(&p.tracker, NodeKind::IdentExpr, t.start, t.start + t.length);
+        let id_node = new_node(&p.tracker, NodeKind::IdentExpr, t.start, t.start + t.length);
+        id_node.name_start  = t.start;
+        id_node.name_length = t.length;
+        return id_node;
     }
     if k == TokenKind::LParen {
         advance(p);
@@ -2812,11 +2962,21 @@ fn parse_object(p: Parser*) -> AstNode* {
             prop_end = body.end;
         } else {
             // Shorthand: { x } = { x: x }. Only valid if key is an Identifier.
+            // Object-literal cover-grammar also reaches here for the
+            // shorthand `{ x = init }` form (where `x` is both the
+            // property key and a binding/assignment target with a
+            // default). The default carries on prop.right (parsed
+            // below) so reinterpret_as_pattern can lift it.
             if key_tok.kind != TokenKind::Identifier {
                 p.had_error = true;
                 break;
             }
-            value = new_node(&p.tracker, NodeKind::IdentExpr, key_tok.start, key_tok.start + key_tok.length);
+            let ident_node = new_node(&p.tracker, NodeKind::IdentExpr,
+                                      key_tok.start,
+                                      key_tok.start + key_tok.length);
+            ident_node.name_start  = key_tok.start;
+            ident_node.name_length = key_tok.length;
+            value = ident_node;
         }
 
         let prop = new_node(&p.tracker, NodeKind::ObjectProp, prop_start, prop_end);

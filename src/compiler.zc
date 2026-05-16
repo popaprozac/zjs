@@ -103,6 +103,13 @@ struct Compiler {
     // constructor at runtime.
     enclosing_class_parent: AstNode*;
 
+    // 2026-05-16 — destructure_pattern mode flag. False = binding
+    // (let/const/var/param/catch); true = assignment (`[a, b] = src`).
+    // Binding mode assigns to a freshly-declared local/global; assign
+    // mode goes through the normal assignment-target lookup chain so
+    // arbitrary LHSExpressions (Member, Computed) work.
+    in_dstr_assign: bool;
+
     // Phase 3.8a — loop context stack for break / continue.
     // Pushed on entry to a loop, popped on exit. `continue_target` is
     // the bytecode offset to jump to on `continue` (loop test for
@@ -1066,6 +1073,18 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     if target == NULL {
         c.had_error = true;
         return alloc_reg(c);
+    }
+    // Destructuring assignment: `[a, b] = src` / `{ a } = src`. Only
+    // plain `=` permits patterns per spec. The RHS evaluates once;
+    // destructure_pattern in assignment mode dispatches each target
+    // through the normal LHS-expression lookup chain.
+    if target.kind == NodeKind::ArrayPattern || target.kind == NodeKind::ObjectPattern {
+        let r = compile_expr(c, node.right);
+        let saved = c.in_dstr_assign;
+        c.in_dstr_assign = true;
+        destructure_pattern(c, target, r);
+        c.in_dstr_assign = saved;
+        return r;
     }
     if target.kind == NodeKind::Member || target.kind == NodeKind::Computed {
         return compile_assignment_to_property(c, target, op_tok, node.right);
@@ -3211,6 +3230,60 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
         destructure_pattern(c, target, val_reg);
         return;
     }
+    // Assignment mode: target can be any LHSExpression (Member /
+    // Computed / Ident). Binding mode requires Ident — patterns are
+    // recursive, but the leaf targets land in fresh locals/globals.
+    if c.in_dstr_assign {
+        if k == NodeKind::Member {
+            let obj_r = compile_expr(c, target.left);
+            let name = c.source + target.name_start;
+            let name_atom = ctx_intern_atom(c.ctx, name, target.name_length);
+            let ic = alloc_ic_slot(c, name_atom);
+            emit(c, make_inst_abc(Op::StoreProp, obj_r, (u8)ic, val_reg));
+            if obj_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            return;
+        }
+        if k == NodeKind::Computed {
+            let obj_r = compile_expr(c, target.left);
+            let key_r = compile_expr(c, target.right);
+            emit(c, make_inst_abc(Op::StoreElem, obj_r, key_r, val_reg));
+            if key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            if obj_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            return;
+        }
+        // Plain ident in assign-mode: existing binding lookup chain
+        // mirrors compile_assignment's Eq path.
+        if k != NodeKind::IdentExpr {
+            c.had_error = true;
+            return;
+        }
+        let nm = c.source + target.name_start;
+        let nl = target.name_length;
+        let lidx = find_local_index(c, nm, nl);
+        if lidx >= 0 {
+            if c.locals[(u32)lidx].captured {
+                let name_atom = ctx_intern_atom(c.ctx, nm, nl);
+                let ic = alloc_ic_slot(c, name_atom);
+                emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, val_reg));
+            } else {
+                emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, val_reg));
+            }
+            return;
+        }
+        let outer_depth = outer_capture_depth(c, nm, nl);
+        if outer_depth > 0 {
+            c.has_outer_refs = true;
+            let env_r = emit_env_chain_walk(c, outer_depth);
+            let name_atom = ctx_intern_atom(c.ctx, nm, nl);
+            let ic = alloc_ic_slot(c, name_atom);
+            emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, val_reg));
+            release_reg(c, env_r);
+            return;
+        }
+        let slot = ctx_intern_global(c.ctx, nm, nl);
+        emit(c, make_inst_a_u16(Op::StoreGlobal, val_reg, (u16)slot));
+        return;
+    }
     if k != NodeKind::IdentExpr {
         c.had_error = true;
         return;
@@ -3947,12 +4020,16 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             release_reg(c, iter_r);
             return;
         }
-        if binding.kind != NodeKind::VarDecl && binding.kind != NodeKind::IdentExpr {
+        if binding.kind != NodeKind::VarDecl
+           && binding.kind != NodeKind::IdentExpr
+           && binding.kind != NodeKind::ArrayPattern
+           && binding.kind != NodeKind::ObjectPattern {
             c.had_error = true; return;
         }
         let bname_start: u32 = 0;
         let bname_len:   u32 = 0;
         let bpattern:    AstNode* = NULL;
+        let bpattern_assign: bool = false;
         if binding.kind == NodeKind::VarDecl {
             if binding.children_count != 1 { c.had_error = true; return; }
             let decl = binding.children[0];
@@ -3962,16 +4039,25 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
                 bname_start = decl.name_start;
                 bname_len   = decl.name_length;
             }
+        } else if binding.kind == NodeKind::ArrayPattern || binding.kind == NodeKind::ObjectPattern {
+            // Bare-LHS pattern in a for-of/for-in head ⇒ assignment
+            // mode: each entry's target is an already-bound LHSExpr.
+            bpattern = binding;
+            bpattern_assign = true;
         } else {
             bname_start = binding.start;
             bname_len   = binding.end - binding.start;
         }
 
         if bpattern != NULL {
-            // for (let/const <pattern> of/in src): fan elem out via
-            // destructure_pattern. The pattern's contained names were
-            // collected as locals during collect_locals.
+            // for (let/const <pattern> of/in src) — fan elem out via
+            // destructure_pattern. Binding-mode locals were already
+            // allocated by collect_locals; assignment-mode targets
+            // resolve through the existing lookup chain.
+            let saved_assign = c.in_dstr_assign;
+            if bpattern_assign { c.in_dstr_assign = true; }
             destructure_pattern(c, bpattern, elem_r);
+            c.in_dstr_assign = saved_assign;
             release_reg(c, elem_r);
             if node.children_count > 0 {
                 compile_stmt(c, node.children[0]);
