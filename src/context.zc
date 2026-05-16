@@ -9422,8 +9422,48 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
             let wk_async = ctx_alloc_symbol(ctx,
                 ctx_intern_atom(ctx, (char*)"Symbol.asyncIterator", 20),
                 ctx_intern_atom(ctx, (char*)"@@asyncIterator", 15));
+            let wk_toprim = ctx_alloc_symbol(ctx,
+                ctx_intern_atom(ctx, (char*)"Symbol.toPrimitive", 18),
+                ctx_intern_atom(ctx, (char*)"@@toPrimitive", 13));
+            let wk_tostag = ctx_alloc_symbol(ctx,
+                ctx_intern_atom(ctx, (char*)"Symbol.toStringTag", 18),
+                ctx_intern_atom(ctx, (char*)"@@toStringTag", 13));
+            let wk_hasinst = ctx_alloc_symbol(ctx,
+                ctx_intern_atom(ctx, (char*)"Symbol.hasInstance", 18),
+                ctx_intern_atom(ctx, (char*)"@@hasInstance", 13));
+            let wk_isconc = ctx_alloc_symbol(ctx,
+                ctx_intern_atom(ctx, (char*)"Symbol.isConcatSpreadable", 25),
+                ctx_intern_atom(ctx, (char*)"@@isConcatSpreadable", 20));
+            let wk_unscop = ctx_alloc_symbol(ctx,
+                ctx_intern_atom(ctx, (char*)"Symbol.unscopables", 18),
+                ctx_intern_atom(ctx, (char*)"@@unscopables", 13));
+            let wk_split = ctx_alloc_symbol(ctx,
+                ctx_intern_atom(ctx, (char*)"Symbol.split", 12),
+                ctx_intern_atom(ctx, (char*)"@@split", 7));
+            let wk_match = ctx_alloc_symbol(ctx,
+                ctx_intern_atom(ctx, (char*)"Symbol.match", 12),
+                ctx_intern_atom(ctx, (char*)"@@match", 7));
+            let wk_replace = ctx_alloc_symbol(ctx,
+                ctx_intern_atom(ctx, (char*)"Symbol.replace", 14),
+                ctx_intern_atom(ctx, (char*)"@@replace", 9));
+            let wk_search = ctx_alloc_symbol(ctx,
+                ctx_intern_atom(ctx, (char*)"Symbol.search", 13),
+                ctx_intern_atom(ctx, (char*)"@@search", 8));
+            let wk_species = ctx_alloc_symbol(ctx,
+                ctx_intern_atom(ctx, (char*)"Symbol.species", 14),
+                ctx_intern_atom(ctx, (char*)"@@species", 9));
             object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"iterator", 8), wk_iter);
             object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"asyncIterator", 13), wk_async);
+            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"toPrimitive", 11), wk_toprim);
+            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"toStringTag", 11), wk_tostag);
+            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"hasInstance", 11), wk_hasinst);
+            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"isConcatSpreadable", 18), wk_isconc);
+            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"unscopables", 11), wk_unscop);
+            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"split", 5), wk_split);
+            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"match", 5), wk_match);
+            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"replace", 7), wk_replace);
+            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"search", 6), wk_search);
+            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"species", 7), wk_species);
         }
     }
     // Map (2026-05-16).
