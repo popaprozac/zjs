@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-16 15:52 UTC",
+    "when": "2026-05-16 16:00 UTC",
     "total": 13247,
-    "passed": 5317,
-    "failed": 1676,
+    "passed": 5340,
+    "failed": 1653,
     "skipped": 6254
   },
   "failures": [
@@ -182,18 +182,6 @@
     {
       "path": "test/language/statements/while/let-identifier-with-newline.js",
       "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for/dstr/const-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/statements/for/dstr/let-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/statements/for/dstr/var-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
     },
     {
       "path": "test/language/statements/for/head-const-bound-names-in-stmt.js",
@@ -636,14 +624,6 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/for-of/dstr/const-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/let-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/obj-empty-symbol.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot destructure null or undefined"
     },
@@ -750,10 +730,6 @@
     {
       "path": "test/language/statements/for-of/dstr/obj-prop-put-unresolvable-strict.js",
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/var-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
     },
     {
       "path": "test/language/statements/for-of/generator-close-via-break.js",
@@ -1034,10 +1010,6 @@
     {
       "path": "test/language/statements/try/completion-values-fn-finally-abrupt.js",
       "reason": "[sloppy] zjs: throw: (unknown): 2: fiinally count Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/try/dstr/ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
     },
     {
       "path": "test/language/statements/try/early-catch-duplicates.js",
@@ -1568,10 +1540,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/statements/class/dstr/gen-meth-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
       "path": "test/language/statements/class/dstr/gen-meth-ary-ptrn-elem-id-iter-val-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
@@ -1622,10 +1590,6 @@
     {
       "path": "test/language/statements/class/dstr/gen-meth-dflt-ary-ptrn-elem-id-iter-step-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/class/dstr/gen-meth-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
     },
     {
       "path": "test/language/statements/class/dstr/gen-meth-dflt-ary-ptrn-elem-id-iter-val-err.js",
@@ -1784,10 +1748,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/statements/class/dstr/gen-meth-static-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
       "path": "test/language/statements/class/dstr/gen-meth-static-ary-ptrn-elem-id-iter-val-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
@@ -1838,10 +1798,6 @@
     {
       "path": "test/language/statements/class/dstr/gen-meth-static-dflt-ary-ptrn-elem-id-iter-step-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/class/dstr/gen-meth-static-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
     },
     {
       "path": "test/language/statements/class/dstr/gen-meth-static-dflt-ary-ptrn-elem-id-iter-val-err.js",
@@ -1974,22 +1930,6 @@
     {
       "path": "test/language/statements/class/dstr/gen-meth-static-obj-ptrn-prop-obj-value-undef.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/statements/class/dstr/meth-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/statements/class/dstr/meth-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/statements/class/dstr/meth-static-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/statements/class/dstr/meth-static-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
     },
     {
       "path": "test/language/statements/class/elements/arrow-body-derived-cls-direct-eval-contains-superproperty-1.js",
@@ -3340,10 +3280,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/gen-meth-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
       "path": "test/language/expressions/class/dstr/gen-meth-ary-ptrn-elem-id-iter-val-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
@@ -3394,10 +3330,6 @@
     {
       "path": "test/language/expressions/class/dstr/gen-meth-dflt-ary-ptrn-elem-id-iter-step-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/expressions/class/dstr/gen-meth-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
     },
     {
       "path": "test/language/expressions/class/dstr/gen-meth-dflt-ary-ptrn-elem-id-iter-val-err.js",
@@ -3556,10 +3488,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/gen-meth-static-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
       "path": "test/language/expressions/class/dstr/gen-meth-static-ary-ptrn-elem-id-iter-val-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
@@ -3610,10 +3538,6 @@
     {
       "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-ary-ptrn-elem-id-iter-step-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
     },
     {
       "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-ary-ptrn-elem-id-iter-val-err.js",
@@ -3746,22 +3670,6 @@
     {
       "path": "test/language/expressions/class/dstr/gen-meth-static-obj-ptrn-prop-obj-value-undef.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/expressions/class/dstr/meth-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/expressions/class/dstr/meth-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/expressions/class/dstr/meth-static-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/expressions/class/dstr/meth-static-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
     },
     {
       "path": "test/language/expressions/class/elements/arrow-body-derived-cls-direct-eval-contains-superproperty-1.js",
@@ -4005,6 +3913,98 @@
     },
     {
       "path": "test/language/expressions/class/elements/nested-static-literal-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/nested-static-string-literal-name-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/nested-string-literal-name-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/nested-ternary-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/nested-typeof-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-field-identifier-initializer.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-field-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-comp-name-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-field-init-with-this.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined262\"\u00bb, \u00ab\"test262\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-field-redeclaration.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined262\"\u00bb, \u00ab\"test262\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-literal-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-string-literal-name-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/string-literal-name-init-err-contains-arguments.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/super-access-from-arrow-func-on-field.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-class-body-ctor-duplicate.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-fields-same-line-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-async-meth.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-get.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     }
   ],

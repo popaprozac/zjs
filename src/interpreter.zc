@@ -3916,27 +3916,39 @@ fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsVal
         let fp = zjs_cell_as_ptr(callee);
         let target: Function* = NULL;
         raw { target = (Function*)fp; }
-        let rr = interpret(ctx, target, args, argc);
-        if rr.is_throw {
-            ctx.pending_throw_active = true;
-            ctx.pending_throw_value  = rr.value;
+        // Generator function: building the iterator is the entire
+        // call. The body doesn't run until iter.next() — Op::Invoke
+        // gates on this same flag.
+        if target.is_generator {
+            r = make_generator_iter(ctx, target, args, argc);
         } else {
-            r = rr.value;
+            let rr = interpret(ctx, target, args, argc);
+            if rr.is_throw {
+                ctx.pending_throw_active = true;
+                ctx.pending_throw_value  = rr.value;
+            } else {
+                r = rr.value;
+            }
         }
     } else if zjs_is_closure(callee) != 0 {
         let cl = zjs_as_closure(callee);
         let fp2 = cl.function;
         let target2: Function* = NULL;
         raw { target2 = (Function*)fp2; }
-        let saved_cl = ctx.current_closure;
-        ctx.current_closure = cl;
-        let rr = interpret(ctx, target2, args, argc);
-        ctx.current_closure = saved_cl;
-        if rr.is_throw {
-            ctx.pending_throw_active = true;
-            ctx.pending_throw_value  = rr.value;
+        if target2.is_generator {
+            r = make_generator_iter(ctx, target2, args, argc);
+            zjs_as_generator(r).saved_current_closure = cl;
         } else {
-            r = rr.value;
+            let saved_cl = ctx.current_closure;
+            ctx.current_closure = cl;
+            let rr = interpret(ctx, target2, args, argc);
+            ctx.current_closure = saved_cl;
+            if rr.is_throw {
+                ctx.pending_throw_active = true;
+                ctx.pending_throw_value  = rr.value;
+            } else {
+                r = rr.value;
+            }
         }
     } else if zjs_is_host_function(callee) != 0 {
         let hf_ptr = zjs_cell_as_ptr(callee);
@@ -3959,6 +3971,9 @@ fn zjs_call_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc: u32
         let fp = zjs_cell_as_ptr(callee);
         let target: Function* = NULL;
         raw { target = (Function*)fp; }
+        if target.is_generator {
+            return make_generator_iter(ctx, target, args, argc);
+        }
         let r = interpret(ctx, target, args, argc);
         if r.is_throw {
             ctx.pending_throw_active = true;
@@ -3972,6 +3987,11 @@ fn zjs_call_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc: u32
         let fp2 = cl.function;
         let target2: Function* = NULL;
         raw { target2 = (Function*)fp2; }
+        if target2.is_generator {
+            let g = make_generator_iter(ctx, target2, args, argc);
+            zjs_as_generator(g).saved_current_closure = cl;
+            return g;
+        }
         let saved_cl = ctx.current_closure;
         ctx.current_closure = cl;
         let r2 = interpret(ctx, target2, args, argc);
