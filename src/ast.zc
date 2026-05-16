@@ -97,6 +97,16 @@ enum NodeKind {
     SuperExpr,              // bare `super` reference; used in SuperCall (parent fn
                             // contextual lookup) and SuperMember (left = property name).
     SuperCall,              // children = args. Implicit ctor lookup.
+
+    // Function-parameter shapes (2026-05-15).
+    // Plain bindings stay as IdentExpr with `right` carrying the default
+    // initializer (or NULL if none); RestParam wraps the binding for
+    // `...name` and is always the LAST entry in the params list.
+    RestParam,              // left = IdentExpr (the rest binding)
+    // Spread in argument lists, array literals, and object literals
+    // — `...expr`. Compiler expands the inner iterable at call/build
+    // time. left = the expression being spread.
+    Spread,
 }
 
 struct AstNode {

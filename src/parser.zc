@@ -713,23 +713,56 @@ struct ParamList {
     count: u32;
 }
 
-// Parse a comma-separated list of bare identifiers up to (but not
-// including) the closing `)`. Caller owns the parens.
+// Parse a comma-separated list of bindings up to (but not including)
+// the closing `)`. Supports:
+//   - plain identifier:                 function f(a) {}
+//   - default-initialized identifier:   function f(a = 5) {}
+//   - rest parameter (must be last):    function f(...rest) {}
 fn parse_param_list(p: Parser*) -> ParamList {
     let cap: u32 = 4;
     let count: u32 = 0;
     let buf = alloc_n<AstNode*>((usize)cap);
+    let seen_rest: bool = false;
 
     while peek_kind(p) != TokenKind::RParen && peek_kind(p) != TokenKind::Eof {
+        if seen_rest {
+            // `...rest` must be the last entry — no trailing comma, no
+            // more bindings after it.
+            p.had_error = true;
+            break;
+        }
+        let is_rest: bool = false;
+        if peek_kind(p) == TokenKind::Ellipsis {
+            advance(p);
+            is_rest = true;
+        }
         let name_tok = peek(p);
-        if name_tok.kind != TokenKind::Identifier {
+        if !is_binding_ident(name_tok.kind) {
             p.had_error = true;
             break;
         }
         advance(p);
+        let ident_start = name_tok.start;
+        let ident_end   = name_tok.start + name_tok.length;
+        let ident = new_node(&p.tracker, NodeKind::IdentExpr, ident_start, ident_end);
 
-        let param = new_node(&p.tracker, NodeKind::IdentExpr,
-                             name_tok.start, name_tok.start + name_tok.length);
+        let param: AstNode* = ident;
+        if is_rest {
+            // `...name` — rest params can't have a default (per spec).
+            let rest = new_node(&p.tracker, NodeKind::RestParam, ident_start, ident_end);
+            rest.left = ident;
+            param = rest;
+            seen_rest = true;
+        } else if peek_kind(p) == TokenKind::Eq {
+            // `name = expr` — default initializer. Parsed at AssignmentExpr
+            // precedence so commas terminate the list cleanly. Note the
+            // IdentExpr's start/end stay bounded to the name itself —
+            // the compiler reads that range when registering the local.
+            advance(p);
+            let init = parse_assignment(p);
+            if init == NULL { break; }
+            param.right = init;
+        }
 
         if count >= cap {
             let old_cap = cap;
@@ -740,6 +773,9 @@ fn parse_param_list(p: Parser*) -> ParamList {
         count = count + 1;
 
         if !match_kind(p, TokenKind::Comma) { break; }
+        // Tolerate a single trailing comma before the closing paren
+        // (ES2017 — `function f(a, b,)`).
+        if peek_kind(p) == TokenKind::RParen { break; }
     }
 
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }

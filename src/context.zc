@@ -428,7 +428,7 @@ fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc
     let args_base = reg_stack_reserve(ctx, total);
     let regs_base = args_base + argc;
 
-    if f.uses_arguments {
+    if f.uses_arguments || f.has_rest_param {
         let a: u32 = 0;
         while a < argc {
             ctx.reg_stack[args_base + a] = ctx.reg_stack[src_offset + a];
@@ -480,7 +480,7 @@ fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, r
     // when the function will actually read it (Op::BuildArguments).
     // Most functions don't touch `arguments`, and skipping this saves
     // argc stores per call (≈3% on fib_recursive).
-    if f.uses_arguments {
+    if f.uses_arguments || f.has_rest_param {
         let a: u32 = 0;
         while a < argc {
             ctx.reg_stack[args_base + a] = args[a];
@@ -570,7 +570,7 @@ fn tail_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32) -
     let args_base = reg_stack_reserve(ctx, new_total);
     let regs_base = args_base + argc;
 
-    if f.uses_arguments {
+    if f.uses_arguments || f.has_rest_param {
         let a: u32 = 0;
         while a < argc {
             ctx.reg_stack[args_base + a] = args[a];

@@ -2831,6 +2831,22 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
             }
             arr.length = frame_argc;
             regs[inst.a] = arr_v;
+        } else if op == Op::BuildRestArgs {
+            // ...rest at the end of a param list. Build an array from
+            // args_base[skip..argc]; empty when argc <= skip.
+            let frame_argc = ctx.frames[cur_idx].argc;
+            let frame_args_base = ctx.frames[cur_idx].args_base;
+            let skip: u32 = (u32)inst.b;
+            let rest_len: u32 = if frame_argc > skip { frame_argc - skip } else { 0 };
+            let arr_v = ctx_new_array(ctx, rest_len);
+            let arr = zjs_as_array(arr_v);
+            let i: u32 = 0;
+            while i < rest_len {
+                arr.elements[i] = ctx.reg_stack[frame_args_base + skip + i];
+                i = i + 1;
+            }
+            arr.length = rest_len;
+            regs[inst.a] = arr_v;
         } else if op == Op::IterPrepare {
             regs[inst.a] = iter_prepare(ctx, regs[inst.b], (u32)inst.c);
             if ctx.pending_throw_active {

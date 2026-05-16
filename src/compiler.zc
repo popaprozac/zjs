@@ -1547,14 +1547,34 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
 
     // 1. Allocate registers for parameters. They sit at the bottom of
     //    the register file so callers can place args contiguously.
-    let param_count = node.children_count;
+    //    Rest param (always last if present) gets a register too but
+    //    is initialized via Op::BuildRestArgs in the prologue rather
+    //    than receiving an arg from the caller — `param_count` reflects
+    //    only the regular params for arg-distribution purposes.
+    let total_children = node.children_count;
+    let has_rest: bool = false;
+    let rest_binding: AstNode* = NULL;
+    let regular_param_count: u32 = 0;
+    let rest_reg: u8 = 0;
     let i: u32 = 0;
-    while i < param_count {
+    while i < total_children {
         let p = node.children[i];
-        let reg = alloc_reg(c);
-        add_local(c, p.start, p.end - p.start, reg);
+        if p.kind == NodeKind::RestParam {
+            // Spec: rest must be last and unique. Parser enforces both.
+            rest_binding = p.left;
+            has_rest = true;
+        } else {
+            let reg = alloc_reg(c);
+            add_local(c, p.start, p.end - p.start, reg);
+            regular_param_count = regular_param_count + 1;
+        }
         i = i + 1;
     }
+    if has_rest && rest_binding != NULL {
+        rest_reg = alloc_reg(c);
+        add_local(c, rest_binding.start, rest_binding.end - rest_binding.start, rest_reg);
+    }
+    let param_count = regular_param_count;
 
     // 2. Hoist var/let/const declarations from the body into fixed
     //    locals, plus nested-FunctionDecl name bindings.
@@ -1601,6 +1621,40 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     //     body get stored when their VarDecl executes.
     if c.arguments_reg >= 0 {
         emit(c, make_inst_a(Op::BuildArguments, (u8)c.arguments_reg));
+    }
+    if has_rest {
+        // Build rest array from args_base[regular_param_count..argc].
+        emit(c, make_inst_ab(Op::BuildRestArgs, rest_reg, (u8)regular_param_count));
+    }
+    // Default initializers for regular params: `param === undefined
+    // ? init : param`. Run in declaration order.
+    let dp_i: u32 = 0;
+    let local_idx: u32 = 0;
+    while dp_i < total_children {
+        let p = node.children[dp_i];
+        if p.kind == NodeKind::RestParam {
+            dp_i = dp_i + 1;
+            continue;
+        }
+        if p.right != NULL {
+            let param_reg = c.locals[local_idx].reg;
+            let tmp = alloc_reg(c);
+            let undef_r = alloc_reg(c);
+            emit(c, make_inst_a(Op::LoadUndefined, undef_r));
+            emit(c, make_inst_abc(Op::CmpStrictEq, tmp, param_reg, undef_r));
+            release_reg(c, undef_r);
+            let skip_idx = emit(c, make_inst_a_i16(Op::JmpIfFalse, tmp, 0));
+            release_reg(c, tmp);
+            let init_r = compile_expr(c, p.right);
+            if init_r != param_reg {
+                emit(c, make_inst_ab(Op::Mov, param_reg, init_r));
+            }
+            if init_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            reset_temps(c);
+            patch_jump(c, skip_idx);
+        }
+        local_idx = local_idx + 1;
+        dp_i = dp_i + 1;
     }
     if c.needs_env {
         emit(c, make_inst_a(Op::NewObject, c.env_reg));
@@ -1666,6 +1720,7 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     f.ics = c.ics;
     f.ic_count = c.ic_count;
     f.uses_arguments = c.arguments_reg >= 0;
+    f.has_rest_param = has_rest;
 
     c.code = NULL;
     c.constants = NULL;

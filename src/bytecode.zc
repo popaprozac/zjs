@@ -149,6 +149,16 @@ enum Op {
     // regs[a]. Reads interp()'s `args` + `arg_count` parameters.
     BuildArguments,   // a=dst
 
+    // Rest parameter (2026-05-15).
+    // Emitted at function entry when the param list ends with `...name`.
+    // Builds an array from args_base[skip..argc] — the overflow args
+    // beyond the regular declared params. Always read from args_base,
+    // so the function's Function.has_rest_param flag opts into the
+    // args_base population in push_call_frame.
+    BuildRestArgs,    // a=dst, b=skip_count (u8 — index of first arg
+                      //   to include; equals param_count of regular
+                      //   params preceding the rest binding)
+
     // Method calls (Phase 3.5).
     // Same encoding shape as Invoke, but regs[base+1] is the receiver
     // (`this`) and explicit JS args start at regs[base+2]. arg_count
@@ -397,6 +407,11 @@ struct Function {
     // the args_base population loop — the only consumer of those
     // slots is BuildArguments, which is never emitted in that case.
     uses_arguments: bool;
+    // True when the param list ends with `...rest`. Op::BuildRestArgs
+    // reads args_base[param_count..argc] at entry, so push_call_frame
+    // must populate args_base too. Treated as args_base-needed at
+    // push time (same as uses_arguments).
+    has_rest_param: bool;
 }
 
 fn function_new() -> Function* {
