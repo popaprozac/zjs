@@ -3236,6 +3236,10 @@ fn apply_destructure_default(c: Compiler*, v_r: u8, default_expr: AstNode*) -> v
 
 fn destructure_pattern(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
     if pat == NULL { return; }
+    // Spec: at the head of every destructuring step the value must be
+    // RequireObjectCoercible — null/undefined throw TypeError before
+    // any property extraction.
+    emit(c, make_inst_a(Op::AssertCoercible, src_reg));
     if pat.kind == NodeKind::ObjectPattern {
         destructure_object(c, pat, src_reg);
         return;
@@ -3873,14 +3877,46 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         }
         let bname_start: u32 = 0;
         let bname_len:   u32 = 0;
+        let bpattern:    AstNode* = NULL;
         if binding.kind == NodeKind::VarDecl {
             if binding.children_count != 1 { c.had_error = true; return; }
             let decl = binding.children[0];
-            bname_start = decl.name_start;
-            bname_len   = decl.name_length;
+            if decl.name_length == 0 && decl.third != NULL {
+                bpattern = decl.third;
+            } else {
+                bname_start = decl.name_start;
+                bname_len   = decl.name_length;
+            }
         } else {
             bname_start = binding.start;
             bname_len   = binding.end - binding.start;
+        }
+
+        if bpattern != NULL {
+            // for (let/const <pattern> of/in src): fan elem out via
+            // destructure_pattern. The pattern's contained names were
+            // collected as locals during collect_locals.
+            destructure_pattern(c, bpattern, elem_r);
+            release_reg(c, elem_r);
+            if node.children_count > 0 {
+                compile_stmt(c, node.children[0]);
+            }
+            let inc_at_p = (u32)c.code_count;
+            loop_set_continue(c, inc_at_p);
+            emit(c, make_inst_abc(Op::Add, i_r, i_r, one_r));
+            emit_jump_back(c, Op::Jmp, loop_top);
+            patch_jump(c, (u32)jmp_exit_idx);
+            let frame_p = c.loop_stack[c.loop_depth - 1];
+            let bi_p: u32 = 0;
+            while bi_p < frame_p.break_count {
+                patch_jump(c, frame_p.break_patches[bi_p]);
+                bi_p = bi_p + 1;
+            }
+            loop_pop(c);
+            c.fixed_regs = saved_fixed;
+            c.next_reg = saved_fixed;
+            reset_temps(c);
+            return;
         }
         let bname = c.source + bname_start;
 

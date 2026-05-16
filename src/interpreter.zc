@@ -3651,6 +3651,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     if throwing { break; }
                 }
             }
+        } else if op == Op::AssertCoercible {
+            let v = regs[inst.a];
+            if zjs_is_undefined(v) != 0 || zjs_is_null(v) != 0 {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"Cannot destructure null or undefined", 36);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
         } else if op == Op::ArrayRestFrom {
             // Destructuring `let [..., ...rest] = src` — build a fresh
             // array of src[c..length]. Non-array src yields an empty
