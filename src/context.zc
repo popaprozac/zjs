@@ -231,6 +231,17 @@ struct ZjsContext {
     map_proto:          ZjsObject*;
     set_proto:          ZjsObject*;
     date_proto:         ZjsObject*;
+    symbol_proto:       ZjsObject*;
+    // Monotonic counter for fresh symbol identity (used to derive each
+    // Symbol's unique internal key string).
+    symbol_counter:     u32;
+    // Symbol.for / Symbol.keyFor registry. Two parallel lists:
+    // symbol_for_keys[i] is the user-visible key string, symbol_for_syms[i]
+    // is the interned Symbol value. Linear scan for now.
+    symbol_for_keys:    ZjsString**;
+    symbol_for_syms:    ZjsSymbol**;
+    symbol_for_count:   u32;
+    symbol_for_cap:     u32;
 
     // --- Atom table (interned strings) ---
     // Open-addressed hash table, power-of-2 capacity. Used for
@@ -841,6 +852,16 @@ fn gc_mark_value(v: ZjsValue) -> void {
         return;
     }
 
+    if tag == TAG_SYMBOL {
+        let sym: ZjsSymbol* = NULL;
+        raw { sym = (ZjsSymbol*)p; }
+        // description / key are atom-pinned strings, but mark for
+        // symmetry with other types.
+        if sym.description != NULL { sym.description.header.mark = 1; }
+        if sym.key != NULL         { sym.key.header.mark = 1; }
+        return;
+    }
+
     if tag == TAG_REGEXP {
         let r: ZjsRegExp* = NULL;
         raw { r = (ZjsRegExp*)p; }
@@ -1065,6 +1086,19 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     if ctx.date_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.date_proto));
     }
+    if ctx.symbol_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.symbol_proto));
+    }
+    // Symbol.for registry — both keys and the symbols themselves stay
+    // alive as long as the context does.
+    let sfi: u32 = 0;
+    while sfi < ctx.symbol_for_count {
+        if ctx.symbol_for_keys[sfi] != NULL { ctx.symbol_for_keys[sfi].header.mark = 1; }
+        if ctx.symbol_for_syms[sfi] != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)ctx.symbol_for_syms[sfi]));
+        }
+        sfi = sfi + 1;
+    }
     // Interned atoms — they live for the context's lifetime.
     let a: u32 = 0;
     while a < ctx.atom_cap {
@@ -1125,6 +1159,11 @@ fn gc_sweep(ctx: ZjsContext*) -> void {
                   let dd: ZjsDate* = NULL;
                   raw { dd = (ZjsDate*)p; }
                   dealloc(dd);
+              }
+              else if tag == TAG_SYMBOL        {
+                  let sm: ZjsSymbol* = NULL;
+                  raw { sm = (ZjsSymbol*)p; }
+                  dealloc(sm);
               }
         }
         i = i + 1;
@@ -7023,6 +7062,129 @@ fn host_date_get_tzoffset(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
     return zjs_int32(0);
 }
 
+// =====================================================================
+// Symbol host functions (2026-05-16). User-created Symbols get a unique
+// `key` string ("@@sym:<id>") derived from ctx.symbol_counter; the
+// engine internals use that string when the Symbol is used as a
+// property key. Well-known symbols (Symbol.iterator, ...) reuse the
+// "@@iterator"-style sentinels the engine already understands.
+// =====================================================================
+
+fn ctx_alloc_symbol(ctx: ZjsContext*, description: ZjsString*, key: ZjsString*) -> ZjsValue {
+    let s = zjs_symbol_new(description, key);
+    ctx_register_cell(ctx, (void*)s);
+    return zjs_cell_from_ptr((void*)s);
+}
+
+fn ctx_fresh_symbol_key(ctx: ZjsContext*) -> ZjsString* {
+    ctx.symbol_counter = ctx.symbol_counter + 1;
+    let buf: char[32];
+    raw { snprintf(buf, sizeof(buf), "@@sym:%u", (unsigned)ctx->symbol_counter); }
+    let bp: char* = NULL; raw { bp = &buf[0]; }
+    let len: u32 = 0; raw { len = (uint32_t)strlen(bp); }
+    return ctx_intern_atom(ctx, bp, len);
+}
+
+fn host_symbol_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // ECMA-262: `new Symbol()` throws TypeError, plain call returns
+    // a fresh primitive. We don't distinguish here yet — both work.
+    let desc: ZjsString* = NULL;
+    if argc > 0 && zjs_is_undefined(args[0]) == 0 {
+        let dv = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+        if zjs_is_string(dv) != 0 { desc = zjs_as_string(dv); }
+    }
+    let key = ctx_fresh_symbol_key(ctx);
+    return ctx_alloc_symbol(ctx, desc, key);
+}
+
+fn host_symbol_for(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let kv = if argc > 0 { args[0] } else { zjs_undefined() };
+    if zjs_is_string(kv) == 0 { kv = zjs_to_string(ctx, kv); }
+    let key_str = zjs_as_string(kv);
+    let i: u32 = 0;
+    while i < ctx.symbol_for_count {
+        if zjs_string_equals(ctx.symbol_for_keys[i], key_str) != 0 {
+            return zjs_cell_from_ptr((void*)ctx.symbol_for_syms[i]);
+        }
+        i = i + 1;
+    }
+    // Symbol.for-created symbols are user-visible under the supplied
+    // key, but their internal property-key (for `obj[Symbol.for("x")]`
+    // round-trips) needs to be the same string used downstream. Use
+    // the registry key directly as the property key — same key implies
+    // same Symbol instance per spec.
+    let sym = zjs_symbol_new(key_str, key_str);
+    ctx_register_cell(ctx, (void*)sym);
+    if ctx.symbol_for_count >= ctx.symbol_for_cap {
+        let new_cap: u32 = if ctx.symbol_for_cap == 0 { 8 } else { ctx.symbol_for_cap * 2 };
+        ctx.symbol_for_keys = realloc_n<ZjsString*>(ctx.symbol_for_keys, (usize)ctx.symbol_for_cap, (usize)new_cap);
+        ctx.symbol_for_syms = realloc_n<ZjsSymbol*>(ctx.symbol_for_syms, (usize)ctx.symbol_for_cap, (usize)new_cap);
+        ctx.symbol_for_cap = new_cap;
+    }
+    ctx.symbol_for_keys[ctx.symbol_for_count] = key_str;
+    ctx.symbol_for_syms[ctx.symbol_for_count] = sym;
+    ctx.symbol_for_count = ctx.symbol_for_count + 1;
+    return zjs_cell_from_ptr((void*)sym);
+}
+
+fn host_symbol_keyfor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 || zjs_is_symbol(args[0]) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Symbol.keyFor expects a Symbol", 30);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let sym = zjs_as_symbol(args[0]);
+    let i: u32 = 0;
+    while i < ctx.symbol_for_count {
+        if ctx.symbol_for_syms[i] == sym {
+            return zjs_cell_from_ptr((void*)ctx.symbol_for_keys[i]);
+        }
+        i = i + 1;
+    }
+    return zjs_undefined();
+}
+
+fn host_symbol_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_symbol(this_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Symbol.prototype.toString called on non-Symbol", 46);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let sym = zjs_as_symbol(this_v);
+    let desc_len: u32 = if sym.description != NULL { sym.description.length } else { 0 };
+    let desc_ptr: char* = NULL;
+    if sym.description != NULL { desc_ptr = sym.description.data; }
+    let total: u32 = desc_len + 8;   // "Symbol(" + desc + ")"
+    let buf = alloc_n<char>((usize)(total + 1));
+    raw {
+        if (desc_ptr) {
+            snprintf(buf, total + 1, "Symbol(%.*s)", (int)desc_len, desc_ptr);
+        } else {
+            snprintf(buf, total + 1, "Symbol()");
+        }
+    }
+    let actual_len: u32 = 0;
+    raw { actual_len = (uint32_t)strlen(buf); }
+    return ctx_intern_string_take(ctx, buf, actual_len);
+}
+
+fn host_symbol_value_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_symbol(this_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Symbol.prototype.valueOf called on non-Symbol", 45);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return this_v;
+}
+
 fn host_async_resume_fulfilled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let cont_v: ZjsValue = zjs_undefined();
     if ctx.current_host_fn != NULL {
@@ -9136,7 +9298,33 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let rexec_ptr: void* = NULL; raw { rexec_ptr = (void*)host_regexp_exec; }
     object_set(ctx, regexp_hf.prototype, ctx_intern_atom(ctx, (char*)"exec", 4),
                ctx_make_host_function_arity(ctx, (char*)"exec", rexec_ptr, 1));
-    ctx_register_host_function(ctx, (char*)"Symbol",     eval_ptr);
+    let sym_ctor_ptr:  void* = NULL; raw { sym_ctor_ptr  = (void*)host_symbol_ctor; }
+    let sym_for_ptr:   void* = NULL; raw { sym_for_ptr   = (void*)host_symbol_for; }
+    let sym_keyf_ptr:  void* = NULL; raw { sym_keyf_ptr  = (void*)host_symbol_keyfor; }
+    let sym_tostr_ptr: void* = NULL; raw { sym_tostr_ptr = (void*)host_symbol_to_string; }
+    let sym_valof_ptr: void* = NULL; raw { sym_valof_ptr = (void*)host_symbol_value_of; }
+    let sym_ctor_v = ctx_register_host_function(ctx, (char*)"Symbol", sym_ctor_ptr);
+    zjs_as_host_function(sym_ctor_v).is_constructor = false;  // Symbol() only, not `new Symbol`
+    let sym_hf2 = zjs_as_host_function(sym_ctor_v);
+    if sym_hf2.props == NULL {
+        let pv = ctx_new_object(ctx);
+        sym_hf2.props = zjs_as_object(pv);
+    }
+    object_set(ctx, sym_hf2.props, ctx_intern_atom(ctx, (char*)"for", 3),
+               ctx_make_host_function_arity(ctx, (char*)"for", sym_for_ptr, 1));
+    object_set(ctx, sym_hf2.props, ctx_intern_atom(ctx, (char*)"keyFor", 6),
+               ctx_make_host_function_arity(ctx, (char*)"keyFor", sym_keyf_ptr, 1));
+    // Symbol.prototype.
+    let sym_proto_v = ctx_new_object(ctx);
+    ctx.symbol_proto = zjs_as_object(sym_proto_v);
+    sym_hf2.prototype = ctx.symbol_proto;
+    object_set(ctx, ctx.symbol_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
+               ctx_make_host_function_arity(ctx, (char*)"toString", sym_tostr_ptr, 0));
+    object_set(ctx, ctx.symbol_proto, ctx_intern_atom(ctx, (char*)"valueOf", 7),
+               ctx_make_host_function_arity(ctx, (char*)"valueOf", sym_valof_ptr, 0));
+    object_set(ctx, ctx.symbol_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), sym_ctor_v);
+    // Well-known symbols installed below replace the prior string
+    // sentinels so `typeof Symbol.iterator === "symbol"`.
     ctx_register_host_function(ctx, (char*)"Map",        eval_ptr);
     ctx_register_host_function(ctx, (char*)"Set",        eval_ptr);
     ctx_register_host_function(ctx, (char*)"WeakMap",    eval_ptr);
@@ -9208,9 +9396,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let self_iter_v = ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", gen_self_ptr, 0);
     object_set(ctx, ctx.generator_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10), self_iter_v);
 
-    // Expose Symbol.iterator as a string sentinel until real Symbols
-    // land. `Symbol.iterator` resolves to "@@iterator" so user code
-    // can use the canonical name (e.g. `obj[Symbol.iterator]`).
+    // Well-known symbols. Each is a TAG_SYMBOL whose internal `key`
+    // string matches the "@@xxx" sentinel the rest of the engine uses
+    // for these property keys — so installing user methods via
+    // `obj[Symbol.iterator]` lands in the same slot as the existing
+    // "@@iterator" shim path.
     let sym_slot = ctx_find_global(ctx, (char*)"Symbol", 6);
     if sym_slot >= 0 {
         let sym_v = ctx.globals[sym_slot].value;
@@ -9220,10 +9410,14 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                 let pv = ctx_new_object(ctx);
                 sym_hf.props = zjs_as_object(pv);
             }
-            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"iterator", 8),
-                       ctx_intern_string(ctx, (char*)"@@iterator", 10));
-            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"asyncIterator", 13),
-                       ctx_intern_string(ctx, (char*)"@@asyncIterator", 15));
+            let wk_iter = ctx_alloc_symbol(ctx,
+                ctx_intern_atom(ctx, (char*)"Symbol.iterator", 15),
+                ctx_intern_atom(ctx, (char*)"@@iterator", 10));
+            let wk_async = ctx_alloc_symbol(ctx,
+                ctx_intern_atom(ctx, (char*)"Symbol.asyncIterator", 20),
+                ctx_intern_atom(ctx, (char*)"@@asyncIterator", 15));
+            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"iterator", 8), wk_iter);
+            object_set(ctx, sym_hf.props, ctx_intern_atom(ctx, (char*)"asyncIterator", 13), wk_async);
         }
     }
     // Map (2026-05-16).
@@ -9731,6 +9925,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     mark_proto_methods_non_constructor(ctx, ctx.map_proto);
     mark_proto_methods_non_constructor(ctx, ctx.set_proto);
     mark_proto_methods_non_constructor(ctx, ctx.date_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.symbol_proto);
     // Wrapper prototypes (Number.prototype, Boolean.prototype) and
     // Math live as the .prototype of their constructor or as a plain
     // global. Walk via the global table.

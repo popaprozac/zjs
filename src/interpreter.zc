@@ -24,7 +24,22 @@ raw {
 // reader.
 // =====================================================================
 
+// Symbol keys are an ECMA-262 distinct property-key type. Until our
+// hidden-class slots widen to mixed string/symbol keys, we coerce
+// each Symbol to its precomputed `key` string (set at construction so
+// it's unique per Symbol instance). Well-known symbols like
+// Symbol.iterator pre-populate `key` = "@@iterator", matching the
+// shim string the rest of the engine already understands.
+fn symbol_key_coerce(key: ZjsValue) -> ZjsValue {
+    if zjs_is_symbol(key) != 0 {
+        let sym = zjs_as_symbol(key);
+        if sym.key != NULL { return zjs_cell_from_ptr((void*)sym.key); }
+    }
+    return key;
+}
+
 fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
+    key = symbol_key_coerce(key);
     // Generator iterators have no own state-exposed props; everything
     // (.next, .return, .throw, Symbol.iterator) lives on the shared
     // generator_proto. Walk it directly.
@@ -78,6 +93,26 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let slot = class_find_slot(ctx.date_proto.cls, name);
         if slot >= 0 {
             let v = ctx.date_proto.slots[(u32)slot];
+            if zjs_is_deleted(v) == 0 { return v; }
+        }
+        return zjs_undefined();
+    }
+    if zjs_is_symbol(obj) != 0 && ctx.symbol_proto != NULL {
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        let name = zjs_as_string(key);
+        let kd = name.data;
+        let kn = name.length;
+        // .description exposes the original description string.
+        let is_desc: int = 0;
+        raw { is_desc = (kn == 11 && memcmp(kd, "description", 11) == 0) ? 1 : 0; }
+        if is_desc != 0 {
+            let sym = zjs_as_symbol(obj);
+            if sym.description == NULL { return zjs_undefined(); }
+            return zjs_cell_from_ptr((void*)sym.description);
+        }
+        let slot = class_find_slot(ctx.symbol_proto.cls, name);
+        if slot >= 0 {
+            let v = ctx.symbol_proto.slots[(u32)slot];
             if zjs_is_deleted(v) == 0 { return v; }
         }
         return zjs_undefined();
@@ -625,6 +660,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
 }
 
 fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue) -> void {
+    key = symbol_key_coerce(key);
     if zjs_is_array(obj) != 0 {
         let arr = zjs_as_array(obj);
         if zjs_is_int32(key) != 0 {
@@ -2471,6 +2507,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 label = (char*)"string";
             } else if zjs_is_function(v) != 0 || zjs_is_host_function(v) != 0 || zjs_is_closure(v) != 0 {
                 label = (char*)"function";
+            } else if zjs_is_symbol(v) != 0 {
+                label = (char*)"symbol";
             } else {
                 label = (char*)"object";
             }

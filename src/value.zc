@@ -597,6 +597,11 @@ def TAG_SET:           u8 = 13;  // 2026-05-16: ECMA-262 Set. Same shape as
 def TAG_DATE:          u8 = 14;  // 2026-05-16: ECMA-262 Date. Internal slot
                                  //   is a single f64 ms-since-epoch (NaN for
                                  //   "invalid date").
+def TAG_SYMBOL:        u8 = 15;  // 2026-05-16: ECMA-262 Symbol. Each Symbol
+                                 //   carries a description (for toString) and a
+                                 //   unique underlying property-key string used
+                                 //   internally when the symbol is used to
+                                 //   key an object property.
 
 // Promise states.
 def PROMISE_PENDING:   u8 = 0;
@@ -991,6 +996,43 @@ fn zjs_date_new(time_ms: f64) -> ZjsDate* {
     d.header.type_tag = TAG_DATE;
     d.time_ms = time_ms;
     return d;
+}
+
+// =====================================================================
+// Symbol (2026-05-16). Identity-typed primitive: each Symbol carries a
+// `description` for diagnostic output (Symbol.prototype.toString /
+// .description) and a `key` string used when a Symbol is used as a
+// property key — keeps the rest of the engine on string-keyed
+// hidden classes for now. Well-known symbols (Symbol.iterator etc)
+// pre-populate `key` with the "@@iterator"-style sentinel that the
+// engine already understands, so existing for-of / destructuring
+// paths keep working.
+// =====================================================================
+
+struct ZjsSymbol {
+    header:      CellHeader;     // type_tag = TAG_SYMBOL
+    description: ZjsString*;     // may be NULL (anonymous Symbol())
+    key:         ZjsString*;     // canonical lookup string for prop access
+}
+
+fn zjs_is_symbol(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_SYMBOL { return 1; }
+    return 0;
+}
+
+fn zjs_as_symbol(v: ZjsValue) -> ZjsSymbol* {
+    let p = zjs_cell_as_ptr(v);
+    let s: ZjsSymbol* = NULL;
+    raw { s = (ZjsSymbol*)p; }
+    return s;
+}
+
+fn zjs_symbol_new(description: ZjsString*, key: ZjsString*) -> ZjsSymbol* {
+    let s = alloc<ZjsSymbol>();
+    s.header.type_tag = TAG_SYMBOL;
+    s.description = description;
+    s.key = key;
+    return s;
 }
 
 fn zjs_promise_new() -> ZjsPromise* {
