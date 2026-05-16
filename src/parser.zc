@@ -1048,6 +1048,35 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
         advance(p);
     }
 
+    // Disambiguate method vs field. A `(` here means method; anything
+    // else (`=`, `;`, `}`, or the next class-element name on a new
+    // line) is a public class field.
+    if peek_kind(p) != TokenKind::LParen && acc_kind == TokenKind::Eq && !is_async_method {
+        // Field: `name = expr`, `name;`, or bare `name` (ASI).
+        let init_expr: AstNode* = NULL;
+        if peek_kind(p) == TokenKind::Eq {
+            advance(p);
+            init_expr = parse_assignment(p);
+            if init_expr == NULL { return NULL; }
+        }
+        // Field terminator: explicit `;`, or rely on ASI at `}` / newline.
+        match_kind(p, TokenKind::Semicolon);
+        let field_end: u32 = if init_expr != NULL { init_expr.end }
+                             else if computed_key != NULL { computed_key.end }
+                             else { name_tok.start + name_tok.length };
+        let field = new_node(&p.tracker, NodeKind::ClassField, mut_start, field_end);
+        if computed_key != NULL {
+            field.name_start  = 0;
+            field.name_length = 0;
+            field.third       = computed_key;
+        } else {
+            field.name_start  = name_tok.start;
+            field.name_length = name_tok.length;
+        }
+        field.bool_value = is_static;
+        field.left = init_expr;
+        return field;
+    }
     if !expect_kind(p, TokenKind::LParen) { return NULL; }
     let params = parse_param_list(p);
     if !expect_kind(p, TokenKind::RParen) { return NULL; }
@@ -1105,6 +1134,118 @@ fn parse_class_body(p: Parser*) -> ParamList {
         count = count + 1;
     }
     expect_kind(p, TokenKind::RBrace);
+
+    // Post-process: inject instance-field initializers into the
+    // constructor body. Each instance field `name = init;` desugars to
+    // `this.name = init;` prepended at the constructor's entry. We
+    // only handle the explicit-constructor case here; classes without
+    // an explicit constructor + with instance fields still parse
+    // cleanly but the inits silently no-op for now (V2 work).
+    let ctor_idx: i32 = -1;
+    let any_inst_field: bool = false;
+    let scan: u32 = 0;
+    while scan < count {
+        let m = buf[scan];
+        if m.kind == NodeKind::ClassField && !m.bool_value {
+            any_inst_field = true;
+        }
+        if m.kind == NodeKind::MethodDef && m.name_length == 11 {
+            let mn = p.source + m.name_start;
+            let is_ctor: int = 0;
+            raw { is_ctor = (memcmp(mn, "constructor", 11) == 0) ? 1 : 0; }
+            if is_ctor != 0 && ctor_idx < 0 { ctor_idx = (i32)scan; }
+        }
+        scan = scan + 1;
+    }
+    // Synthesize an empty constructor when fields exist but none was
+    // declared. The compiler recognizes it via a sentinel on `num`
+    // (synth_ctor = 2.0) rather than a source-slice memcmp, so we
+    // don't need to find the literal word "constructor" in source.
+    // (Extends-class without ctor still incomplete here: we don't
+    // synthesize a `super(...args)` call — covered by a follow-up.)
+    if any_inst_field && ctor_idx < 0 {
+        let synth_anchor: u32 = if count > 0 { buf[0].start } else { 0 };
+        let body_block = new_node(&p.tracker, NodeKind::BlockStmt, synth_anchor, synth_anchor);
+        body_block.children = NULL;
+        body_block.children_count = 0;
+        let synth = new_node(&p.tracker, NodeKind::MethodDef, synth_anchor, synth_anchor);
+        synth.name_start  = synth_anchor;
+        synth.name_length = 0;          // 0-length name; sentinel ensures recognition
+        synth.bool_value  = false;
+        synth.op          = TokenKind::Eq;
+        synth.num         = 2.0;        // synth-constructor sentinel
+        synth.left        = body_block;
+        synth.children    = NULL;
+        synth.children_count = 0;
+        if count >= cap {
+            let oc = cap; cap = cap * 2;
+            buf = realloc_n<AstNode*>(buf, (usize)oc, (usize)cap);
+        }
+        buf[count] = synth;
+        ctor_idx = (i32)count;
+        count = count + 1;
+    }
+    if any_inst_field && ctor_idx >= 0 {
+        let ctor = buf[(u32)ctor_idx];
+        let block = ctor.left;       // BlockStmt
+        if block != NULL && block.kind == NodeKind::BlockStmt {
+            // Count field inits.
+            let init_count: u32 = 0;
+            let s2: u32 = 0;
+            while s2 < count {
+                let m2 = buf[s2];
+                if m2.kind == NodeKind::ClassField && !m2.bool_value { init_count = init_count + 1; }
+                s2 = s2 + 1;
+            }
+            // Build new children array: init stmts first, then original body.
+            let new_total: u32 = init_count + block.children_count;
+            let new_children = alloc_n<AstNode*>((usize)new_total);
+            let ni: u32 = 0;
+            let s3: u32 = 0;
+            while s3 < count {
+                let f = buf[s3];
+                if f.kind == NodeKind::ClassField && !f.bool_value {
+                    // Build `this.<name> = <init>` or
+                    // `this[<key>] = <init>` for computed.
+                    let this_e = new_node(&p.tracker, NodeKind::ThisExpr, f.start, f.start);
+                    let target: AstNode* = NULL;
+                    if f.name_length == 0 && f.third != NULL {
+                        let m_node = new_node(&p.tracker, NodeKind::Computed, f.start, f.end);
+                        m_node.left  = this_e;
+                        m_node.right = f.third;
+                        target = m_node;
+                    } else {
+                        let m_node = new_node(&p.tracker, NodeKind::Member, f.start, f.end);
+                        m_node.left  = this_e;
+                        m_node.name_start  = f.name_start;
+                        m_node.name_length = f.name_length;
+                        target = m_node;
+                    }
+                    let init_val = f.left;
+                    if init_val == NULL {
+                        init_val = new_node(&p.tracker, NodeKind::UndefinedExpr, f.start, f.start);
+                    }
+                    let assign = new_node(&p.tracker, NodeKind::Assignment, f.start, init_val.end);
+                    assign.op    = TokenKind::Eq;
+                    assign.left  = target;
+                    assign.right = init_val;
+                    new_children[ni] = assign;
+                    ni = ni + 1;
+                }
+                s3 = s3 + 1;
+            }
+            // Append original body children.
+            let bi: u32 = 0;
+            while bi < block.children_count {
+                new_children[ni] = block.children[bi];
+                ni = ni + 1;
+                bi = bi + 1;
+            }
+            alloc_list_push(&p.tracker, (void*)new_children);
+            block.children = new_children;
+            block.children_count = new_total;
+        }
+    }
 
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
     else         { dealloc(buf); buf = NULL; }

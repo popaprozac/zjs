@@ -114,6 +114,14 @@ enum NodeKind {
     // operator — left = the awaited expression.
     AwaitExpr,
 
+    // Public class fields (2026-05-15).
+    //   ClassField:
+    //     - name_start/length: field name (or 0/0 for computed)
+    //     - third: computed key expression (when name_length == 0)
+    //     - left: initializer expression (NULL if `name;` no-init)
+    //     - bool_value: true for static fields
+    ClassField,
+
     // switch statement (2026-05-15).
     //   SwitchStmt:
     //     - left: the discriminant expression

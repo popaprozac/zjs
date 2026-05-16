@@ -2193,7 +2193,9 @@ fn compile_export_decl(c: Compiler*, node: AstNode*) -> void {
 }
 
 fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
-    // Find the constructor MethodDef among the children.
+    // Find the constructor MethodDef among the children. The parser
+    // may have synthesized one (num == 2.0) when fields exist without
+    // an explicit constructor.
     let ctor_node: AstNode* = NULL;
     let i: u32 = 0;
     while i < cls_node.children_count {
@@ -2202,6 +2204,7 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         let ml = m.name_length;
         let is_ctor: int = 0;
         raw { is_ctor = (ml == 11 && memcmp(mn, "constructor", 11) == 0) ? 1 : 0; }
+        if m.num == 2.0 { is_ctor = 1; }
         if is_ctor != 0 { ctor_node = m; }
         i = i + 1;
     }
@@ -2283,6 +2286,8 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     let mi: u32 = 0;
     while mi < cls_node.children_count {
         let m = cls_node.children[mi];
+        // Class fields are handled in their own pass below; skip here.
+        if m.kind == NodeKind::ClassField { mi = mi + 1; continue; }
         let mn = c.source + m.name_start;
         let ml = m.name_length;
         // Computed-name methods are never the constructor (the
@@ -2292,6 +2297,9 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         if !is_computed_name {
             raw { is_ctor = (ml == 11 && memcmp(mn, "constructor", 11) == 0) ? 1 : 0; }
         }
+        // Parser sentinel for an auto-synthesized constructor (used
+        // when the body has instance fields but no explicit ctor).
+        if m.num == 2.0 { is_ctor = 1; }
         if is_ctor == 0 {
             // Compile method body as a function.
             let mfn = compile_function(c.ctx, c.source, m, c);
@@ -2379,6 +2387,40 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
             release_reg(c, parent_proto_reg);
             if parent_reg + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
         }
+    }
+
+    // Public class fields — STATIC half. For each `static name = init;`
+    // emit `Ctor.name = init` at class-definition time. Instance fields
+    // (`name = init;`) would normally be installed by [[Construct]]
+    // before the user body runs; that path needs constructor-prologue
+    // mutation and isn't wired up yet, so instance fields parse cleanly
+    // but silently no-op at runtime for now.
+    let fi: u32 = 0;
+    while fi < cls_node.children_count {
+        let f = cls_node.children[fi];
+        if f.kind == NodeKind::ClassField && f.bool_value {
+            let val_r: u8 = 0;
+            if f.left != NULL {
+                val_r = compile_expr(c, f.left);
+            } else {
+                val_r = alloc_reg(c);
+                emit(c, make_inst_a(Op::LoadUndefined, val_r));
+            }
+            if f.name_length == 0 && f.third != NULL {
+                // Computed static-field name.
+                let key_r = compile_expr(c, f.third);
+                emit(c, make_inst_abc(Op::StoreElem, ctor_reg, key_r, val_r));
+                release_reg(c, key_r);
+            } else {
+                let name_atom = ctx_intern_atom(c.ctx, c.source + f.name_start, f.name_length);
+                let ic = alloc_ic_slot(c, name_atom);
+                if ic <= 255 {
+                    emit(c, make_inst_abc(Op::StoreProp, ctor_reg, (u8)ic, val_r));
+                }
+            }
+            release_reg(c, val_r);
+        }
+        fi = fi + 1;
     }
 
     release_reg(c, proto_reg);
