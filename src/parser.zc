@@ -2235,6 +2235,12 @@ fn reinterpret_as_pattern(p: Parser*, expr: AstNode*) -> AstNode* {
             if elem == NULL || elem.kind == NodeKind::HoleExpr {
                 // Elision — entry.left stays NULL, no default.
             } else if elem.kind == NodeKind::Spread {
+                // ECMA-262 AssignmentRestElement must be the LAST entry.
+                // `[...x, y]`, `[...x,,]`, `[...x, ...y]` all early-error.
+                if i + 1 != n {
+                    p.had_error = true;
+                    return NULL;
+                }
                 entry.bool_value = true;
                 let inner = elem.left;
                 let target = reinterpret_assign_target(p, inner);
