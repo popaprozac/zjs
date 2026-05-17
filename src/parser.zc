@@ -1548,15 +1548,26 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
         field.left = init_expr;
         return field;
     }
-    if !expect_kind(p, TokenKind::LParen) { return NULL; }
-    let params = parse_param_list(p);
-    if !expect_kind(p, TokenKind::RParen) { return NULL; }
-
-    if peek_kind(p) != TokenKind::LBrace { p.had_error = true; return NULL; }
+    // ECMA-262: an async-method's params are parsed in [+Await] context
+    // and a generator-method's params in [+Yield]; in both modes the
+    // respective keyword is reserved as a BindingIdentifier. Toggle
+    // BEFORE parse_param_list, restore after the body.
     let saved_async = p.in_async;
     let saved_gen = p.in_generator;
     p.in_async = is_async_method;
     p.in_generator = is_gen_method;
+    if !expect_kind(p, TokenKind::LParen) {
+        p.in_async = saved_async; p.in_generator = saved_gen; return NULL;
+    }
+    let params = parse_param_list(p);
+    if !expect_kind(p, TokenKind::RParen) {
+        p.in_async = saved_async; p.in_generator = saved_gen; return NULL;
+    }
+
+    if peek_kind(p) != TokenKind::LBrace {
+        p.in_async = saved_async; p.in_generator = saved_gen;
+        p.had_error = true; return NULL;
+    }
     p.function_depth = p.function_depth + 1;
     let body = parse_block(p);
     p.function_depth = p.function_depth - 1;
