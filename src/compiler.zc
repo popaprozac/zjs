@@ -3532,13 +3532,26 @@ fn analyze_captures(c: Compiler*, node: AstNode*) -> void {
     }
     if k == NodeKind::ClassDecl || k == NodeKind::ClassExpr {
         // Each MethodDef child is its own nested function. Scan their
-        // bodies for outer-name refs.
+        // bodies for outer-name refs. Also scan the parent (extends)
+        // expression as if each method referenced it — methods access
+        // it implicitly via `super.X` / `super.X(...)`, and there's no
+        // explicit IdentExpr for analyze_captures to spot.
+        let parent_expr = node.right;
         let i: u32 = 0;
         while i < node.children_count {
             let m = node.children[i];
             if m.left != NULL { scan_inner_for_captures(c, m, m.left); }
+            if parent_expr != NULL { scan_inner_for_captures(c, m, parent_expr); }
             i = i + 1;
         }
+        // Also walk the parent expr in our own scope — class
+        // declarations evaluate the parent expression at class
+        // creation time, so any names used there are referenced by
+        // the enclosing scope as well (the class itself, not its
+        // methods). The general-fallback recursion below covers this
+        // because the ClassDecl branch returns early; recurse
+        // explicitly to compensate.
+        if parent_expr != NULL { analyze_captures(c, parent_expr); }
         return;
     }
 

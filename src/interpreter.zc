@@ -504,6 +504,31 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
             if is_call  != 0 { return ctx.fn_call_v; }
             if is_apply != 0 { return ctx.fn_apply_v; }
+            // .prototype delegates to the wrapped Function* — same
+            // lazy-create behavior as the Function path so a class
+            // constructor that's been wrapped in a Closure (because
+            // its body references an outer-scope binding) still
+            // exposes its .prototype slot. Without this, class
+            // bodies that capture outer locals silently lose their
+            // method installations because DefineMethod sees an
+            // undefined target.
+            let is_proto: int = 0;
+            raw { is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0; }
+            if is_proto != 0 {
+                let cl_p = zjs_as_closure(obj);
+                let fp_p = cl_p.function;
+                let f_p: Function* = NULL;
+                raw { f_p = (Function*)fp_p; }
+                if f_p.is_method { return zjs_undefined(); }
+                if f_p.prototype == NULL {
+                    let proto_v = ctx_new_object(ctx);
+                    f_p.prototype = zjs_as_object(proto_v);
+                    object_define_property_slot(ctx, f_p.prototype,
+                        ctx_intern_atom(ctx, (char*)"constructor", 11),
+                        obj, PROP_WRITABLE | PROP_CONFIGURABLE);
+                }
+                return zjs_cell_from_ptr((void*)f_p.prototype);
+            }
             // Closure .length / .name fall through to the wrapped
             // Function*. (Function.prototype walked below covers the
             // rest of Function.prototype.*.)
