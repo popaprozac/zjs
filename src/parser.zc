@@ -57,6 +57,10 @@ struct Parser {
     // BindingIdentifier names, treats `yield` as always-reserved, and
     // makes duplicate parameter names a SyntaxError.
     strict_mode: bool;
+    // True only inside the constructor body of a derived class (one
+    // that has `extends ...`). Gates `super(...)` — anywhere else
+    // SuperCall is a parse-time SyntaxError per ECMA-262 §15.7.1.
+    in_derived_constructor: bool;
 }
 
 // Returns true if a name string is "arguments" or "eval" — the two
@@ -1592,7 +1596,7 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     return node;
 }
 
-fn parse_class_body(p: Parser*) -> ParamList {
+fn parse_class_body(p: Parser*, is_derived: bool) -> ParamList {
     if !expect_kind(p, TokenKind::LBrace) {
         return ParamList{ arr: NULL, count: 0 };
     }
@@ -1608,10 +1612,17 @@ fn parse_class_body(p: Parser*) -> ParamList {
     // sibling code alone.
     let saved_strict = p.strict_mode;
     p.strict_mode = true;
+    let saved_derived = p.in_derived_constructor;
 
     while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
         // Skip empty `;` separators (allowed inside class bodies).
         if peek_kind(p) == TokenKind::Semicolon { advance(p); continue; }
+        // Constructor body of a derived class can use `super(...)`;
+        // every other method body cannot. The flag is consumed by the
+        // SuperCall check in parse_call_member and is RESTORED here
+        // each loop iteration so a previous-method context doesn't
+        // leak into the next sibling.
+        p.in_derived_constructor = is_derived && next_method_is_constructor(p);
         let m = parse_method_body_pair(p);
         if m == NULL { p.had_error = true; break; }
         if count >= cap {
@@ -1747,7 +1758,53 @@ fn parse_class_body(p: Parser*) -> ParamList {
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
     else         { dealloc(buf); buf = NULL; }
     p.strict_mode = saved_strict;
+    p.in_derived_constructor = saved_derived;
     return ParamList{ arr: buf, count: count };
+}
+
+// Look ahead at the upcoming method's declarator and report whether
+// it's a non-static `constructor(...) { ... }`. Pure peek — doesn't
+// advance p.pos. Used by parse_class_body to gate the
+// `in_derived_constructor` flag around exactly one method body.
+fn next_method_is_constructor(p: Parser*) -> bool {
+    let i: usize = p.pos;
+    let saw_static: bool = false;
+    let saw_async: bool = false;
+    let saw_gen: bool = false;
+    let saw_accessor: bool = false;
+    while i < p.token_count {
+        let t = p.tokens[i];
+        if t.kind == TokenKind::Identifier && t.length == 6 {
+            let nd = p.source + t.start;
+            let is_static: int = 0;
+            raw { is_static = (memcmp(nd, "static", 6) == 0) ? 1 : 0; }
+            if is_static != 0 { saw_static = true; i = i + 1; continue; }
+        }
+        if t.kind == TokenKind::KwAsync { saw_async = true; i = i + 1; continue; }
+        if t.kind == TokenKind::Star    { saw_gen   = true; i = i + 1; continue; }
+        if t.kind == TokenKind::Identifier && t.length == 3 {
+            let nd = p.source + t.start;
+            let is_acc: int = 0;
+            raw { is_acc = ((memcmp(nd, "get", 3) == 0) || (memcmp(nd, "set", 3) == 0)) ? 1 : 0; }
+            if is_acc != 0 { saw_accessor = true; i = i + 1; continue; }
+        }
+        // Static / async / generator / accessor methods can be named
+        // `constructor` without being THE constructor — those are
+        // ordinary methods. The SuperCall body-context only applies
+        // to a plain non-static, non-accessor `constructor(...) { }`.
+        if saw_static || saw_async || saw_gen || saw_accessor { return false; }
+        if t.kind == TokenKind::Identifier && t.length == 11 {
+            let nd = p.source + t.start;
+            let is_ctor: int = 0;
+            raw { is_ctor = (memcmp(nd, "constructor", 11) == 0) ? 1 : 0; }
+            if is_ctor != 0 {
+                let nxt = if i + 1 < p.token_count { p.tokens[i + 1].kind } else { TokenKind::Eof };
+                return nxt == TokenKind::LParen;
+            }
+        }
+        return false;
+    }
+    return false;
 }
 
 // =====================================================================
@@ -1997,7 +2054,7 @@ fn parse_class_decl(p: Parser*) -> AstNode* {
         if parent == NULL { return NULL; }
     }
 
-    let body = parse_class_body(p);
+    let body = parse_class_body(p, parent != NULL);
     let end_pos = if body.count > 0 { body.arr[body.count - 1].end } else { peek(p).start };
 
     let node = new_node(&p.tracker, NodeKind::ClassDecl, kw.start, end_pos);
@@ -2024,7 +2081,7 @@ fn parse_class_expr(p: Parser*) -> AstNode* {
         parent = parse_call_member(p);
         if parent == NULL { return NULL; }
     }
-    let body = parse_class_body(p);
+    let body = parse_class_body(p, parent != NULL);
     let end_pos = if body.count > 0 { body.arr[body.count - 1].end } else { peek(p).start };
 
     let node = new_node(&p.tracker, NodeKind::ClassExpr, kw.start, end_pos);
@@ -2797,6 +2854,14 @@ fn parse_call_member(p: Parser*) -> AstNode* {
             cnode.right = prop;
             expr = cnode;
         } else if k == TokenKind::LParen {
+            // ECMA-262 §13.3.7 / §15.7.1: SuperCall (`super(...)`) is
+            // only valid in a derived-class constructor body. Anywhere
+            // else (regular methods, async/gen methods, non-derived
+            // ctor, top-level) it's a parse-time SyntaxError.
+            if expr != NULL && expr.kind == NodeKind::SuperExpr && !p.in_derived_constructor {
+                p.had_error = true;
+                return NULL;
+            }
             let args_pair = parse_arguments(p);
             let cnode = new_node(&p.tracker, NodeKind::Call, expr.start, args_pair.end);
             cnode.left = expr;
