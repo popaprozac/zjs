@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-05-16 23:45 UTC",
+    "when": "2026-05-17 01:12 UTC",
     "total": 14428,
     "passed": 6165,
     "failed": 1746,
@@ -3745,7 +3745,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-regexp.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [x] and expected [, ] should have the same contents. \"x\".split(/[^]/) must return [\"\", \"\"]"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [x] and expected [, ] should have the same contents. false"
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-tostring-error.js",
