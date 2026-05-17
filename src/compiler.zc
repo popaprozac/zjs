@@ -1366,7 +1366,11 @@ fn emit_load_atom(c: Compiler*, atom: ZjsString*) -> u8 {
 fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
     // LoadProp / LoadElem read obj before writing dst, so the object
     // expression can always borrow (we'd never mutate the receiver
-    // before using it).
+    // before using it). The dst honors the caller's preferred_dst
+    // hint — if the surrounding op already chose where the value
+    // should land, write straight there.
+    let saved_pd = c.preferred_dst;
+    c.preferred_dst = -1;
     let saved_borrow = c.borrow_local_ok;
     c.borrow_local_ok = true;
     let name_atom = ctx_intern_atom(c.ctx, c.source + node.name_start, node.name_length);
@@ -1375,7 +1379,8 @@ fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
         let obj_r = compile_expr(c, node.left);
         c.borrow_local_ok = saved_borrow;
         let key_r = emit_load_name_string(c, c.source + node.name_start, node.name_length);
-        let dst = alloc_reg(c);
+        c.preferred_dst = saved_pd;
+        let dst = alloc_dst(c);
         emit(c, make_inst_abc(Op::LoadElem, dst, obj_r, key_r));
         release_reg(c, key_r);
         release_reg(c, obj_r);
@@ -1385,7 +1390,8 @@ fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
 
     let obj_r = compile_expr(c, node.left);
     c.borrow_local_ok = saved_borrow;
-    let dst = alloc_reg(c);
+    c.preferred_dst = saved_pd;
+    let dst = alloc_dst(c);
     emit(c, make_inst_abc(Op::LoadProp, dst, obj_r, (u8)ic));
     release_reg(c, obj_r);
     if c.next_reg <= dst { c.next_reg = dst + 1; }
