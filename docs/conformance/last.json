@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-17 14:12 UTC",
+    "when": "2026-05-17 15:08 UTC",
     "total": 14440,
-    "passed": 6426,
-    "failed": 1492,
+    "passed": 6473,
+    "failed": 1445,
     "skipped": 6522
   },
   "failures": [
@@ -812,10 +812,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-method/await-as-binding-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/async-method/await-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -854,10 +850,6 @@
     {
       "path": "test/language/statements/class/async-method/returns-async-function.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
-    },
-    {
-      "path": "test/language/statements/class/async-method-static/await-as-binding-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/async-method-static/await-as-identifier-reference-escaped.js",
@@ -932,22 +924,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'constructor')"
     },
     {
-      "path": "test/language/statements/class/definition/early-errors-class-method-await-in-formals-default.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/definition/early-errors-class-method-await-in-formals.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/definition/early-errors-class-method-body-contains-super-call.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/definition/early-errors-class-method-formals-contains-super-call.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/definition/fn-length-static-precedence-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [name] and expected [length, name, prototype, method] should have the same contents."
     },
@@ -1001,7 +977,7 @@
     },
     {
       "path": "test/language/statements/class/definition/numeric-property-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `C[4]()` returns `4`. Defined as `static 4() { return super[4](); }` Expected SameValue(\u00abundefine"
+      "reason": "[sloppy] zjs: throw: (unknown): `new C()[1]()` returns `1`. Defined as `1() { return super[1](); }` Expected SameValue(\u00abundefined"
     },
     {
       "path": "test/language/statements/class/definition/prototype-getter.js",
@@ -1017,7 +993,7 @@
     },
     {
       "path": "test/language/statements/class/definition/this-access-restriction.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'Base')"
     },
     {
       "path": "test/language/statements/class/definition/this-check-ordering.js",
@@ -1188,26 +1164,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-contains-super-async.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-contains-super-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-contains-super-get.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-contains-super-method.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-contains-super-set.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-ctor-async-meth.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -1228,15 +1184,7 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-async-meth-super.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-gen-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-gen-meth-super.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -1244,23 +1192,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-get-meth-super.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-meth-prototype.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-meth-super.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-set-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-set-meth-super.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -1312,10 +1248,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/gen-method/yield-as-binding-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/gen-method/yield-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -1329,10 +1261,6 @@
     },
     {
       "path": "test/language/statements/class/gen-method-param-dflt-yield.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/gen-method-static/yield-as-binding-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -1704,10 +1632,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/async-method/await-as-binding-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/async-method/await-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -1746,10 +1670,6 @@
     {
       "path": "test/language/expressions/class/async-method/returns-async-function.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
-    },
-    {
-      "path": "test/language/expressions/class/async-method-static/await-as-binding-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/async-method-static/await-as-identifier-reference-escaped.js",
@@ -2092,26 +2012,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-async.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-get.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-method.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-contains-super-set.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-async-meth.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -2132,15 +2032,7 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-async-meth-super.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-gen-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-gen-meth-super.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -2148,23 +2040,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-get-meth-super.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-meth-prototype.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-meth-super.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-set-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-set-meth-super.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -2216,10 +2096,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/gen-method/yield-as-binding-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/gen-method/yield-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -2242,10 +2118,6 @@
     {
       "path": "test/language/expressions/class/gen-method-static/dflt-params-ref-self.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/expressions/class/gen-method-static/yield-as-binding-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/gen-method-static/yield-as-identifier-reference-escaped.js",
@@ -4006,6 +3878,134 @@
     {
       "path": "test/built-ins/Map/groupBy/callback-throws.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Map/groupBy/emptyList.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'size')"
+    },
+    {
+      "path": "test/built-ins/Map/groupBy/evenOdd.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'keys')"
+    },
+    {
+      "path": "test/built-ins/Map/groupBy/groupLength.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'keys')"
+    },
+    {
+      "path": "test/built-ins/Map/groupBy/invalid-callback.js",
+      "reason": "[sloppy] zjs: throw: (unknown): null callback throws TypeError Expected a TypeError to be thrown but no exception was thrown at a"
+    },
+    {
+      "path": "test/built-ins/Map/groupBy/map-instance.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Map/groupBy/negativeZero.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'size')"
+    },
+    {
+      "path": "test/built-ins/Map/groupBy/string.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'keys')"
+    },
+    {
+      "path": "test/built-ins/Map/groupBy/toPropertyKey.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'keys')"
+    },
+    {
+      "path": "test/built-ins/Map/is-a-constructor.js",
+      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Map) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Map/iterable-calls-set.js",
+      "reason": "[sloppy] zjs: throw: (unknown): `Map.prototype.set` called twice. Expected SameValue(\u00ab0\u00bb, \u00ab2\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Map/iterator-close-after-set-failure.js",
+      "reason": "[sloppy] timeout"
+    },
+    {
+      "path": "test/built-ins/Map/iterator-close-failure-after-set-failure.js",
+      "reason": "[sloppy] timeout"
+    },
+    {
+      "path": "test/built-ins/Map/iterator-item-first-entry-returns-abrupt.js",
+      "reason": "[sloppy] zjs: throw: (unknown): The get error closed the iterator Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Map/iterator-item-second-entry-returns-abrupt.js",
+      "reason": "[sloppy] zjs: throw: (unknown): The get error closed the iterator Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Map/iterator-items-are-not-object-close-iterator.js",
+      "reason": "[sloppy] timeout"
+    },
+    {
+      "path": "test/built-ins/Map/iterator-items-are-not-object.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Map/map-iterable-throws-when-set-is-not-callable.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Map/newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): `Object.getPrototypeOf(m1)` returns `Map.prototype` Expected SameValue(\u00abnull\u00bb, \u00ab[object Object]\u00bb)"
+    },
+    {
+      "path": "test/built-ins/Map/properties-of-map-instances.js",
+      "reason": "[sloppy] zjs: throw: (unknown): `Object.getPrototypeOf(new Map())` returns `Map.prototype` Expected SameValue(\u00abnull\u00bb, \u00ab[object Ob"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/forEach/callback-this-strict.js",
+      "reason": "zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/forEach/first-argument-is-not-callable.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/getOrInsertComputed/canonical-key-passed-to-callback.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab-0\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/getOrInsertComputed/check-callback-fn-args.js",
+      "reason": "zjs: throw: (unknown): Expected SameValue(\u00ab[object]\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/getOrInsertComputed/check-state-after-callback-fn-throws.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/getOrInsertComputed/different-types-function-callbackfn-does-not-throw.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Map.prototype.getOrInsertComputed callbackfn is not callable"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/getOrInsertComputed/overwrites-mutation-from-callbackfn.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/getOrInsertComputed/this-not-object-throw.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/size/does-not-have-mapdata-internal-slot-set.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/size/does-not-have-mapdata-internal-slot.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+    },
+    {
+      "path": "test/built-ins/Map/undefined-newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Set/Symbol.species/return-value.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+    },
+    {
+      "path": "test/built-ins/Set/Symbol.species/symbol-species-name.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
     }
   ],
   "skip_counts": {

@@ -39,7 +39,7 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 
 **Tests:** 902 in-tree assertions pass (smoke + lexer + parser + interpreter).
 
-**Conformance:** 81.2% of the test262 included subset (6,426 of 7,918 non-skipped). Live dashboard at `docs/conformance/index.html`.
+**Conformance:** 81.8% of the test262 included subset (6,473 of 7,918 non-skipped). Live dashboard at `docs/conformance/index.html`.
 
 **Perf vs qjs:** zjs ahead on 19 of 21 microbenches (richards, property_poly, int_loop, etc); behind by single digits on nbody + fib_recursive. Live charts at `docs/perf/index.html`.
 
