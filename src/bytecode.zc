@@ -434,6 +434,15 @@ struct ICEntry {
     name:        ZjsString*;            // atom; set at compile time, immutable
     classes:     ZjsHiddenClass*[4];    // cached shapes (NULL = empty slot)
     slots:       u32[4];                // slot index per cached class
+    // Proto-chain caching (Phase 3.9-richards). When `proto_cls[i]` is
+    // NULL the entry is an own-slot hit (read `o.slots[slots[i]]`).
+    // When non-NULL the entry is a direct-prototype hit: validate
+    // `o.proto.cls == proto_cls[i]` then read `o.proto.slots[slots[i]]`.
+    // The holder object itself isn't stored — we derive it from o.proto
+    // at probe time, which restricts caching to depth-1 proto chains
+    // (the dominant case for class-style method dispatch). Deeper
+    // chains route through the slow path every time.
+    proto_cls:   ZjsHiddenClass*[4];
     entry_count: u8;                    // # of populated entries (0..IC_POLY_SIZE)
     megamorphic: bool;                  // once set, fast-path is skipped permanently
 }

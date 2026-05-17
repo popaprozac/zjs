@@ -354,6 +354,7 @@ fn alloc_ic_slot(c: Compiler*, name: ZjsString*) -> u32 {
     while k < IC_POLY_SIZE {
         c.ics[idx].classes[k] = NULL;
         c.ics[idx].slots[k] = 0;
+        c.ics[idx].proto_cls[k] = NULL;
         k = k + 1;
     }
     c.ics[idx].entry_count = 0;
