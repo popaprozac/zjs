@@ -557,7 +557,11 @@ fn try_emit_cmp_branch_if_false(c: Compiler*, cond: AstNode*) -> i32 {
         let is_int: bool = false;
         raw { is_int = ((double)iv == v) ? true : false; }
         if is_int && iv >= -128 && iv <= 127 {
+            // RHS is a literal — LHS is safe to borrow.
+            let saved_borrow_a = c.borrow_local_ok;
+            c.borrow_local_ok = true;
             let src = compile_expr(c, cond.left);
+            c.borrow_local_ok = saved_borrow_a;
             let imm_byte: u8 = (u8)(i8)iv;
             let fused_op = Op::Halt;
             if      op_kind == Op::CmpLt { fused_op = Op::JmpIfNotLtImm; }
@@ -571,8 +575,13 @@ fn try_emit_cmp_branch_if_false(c: Compiler*, cond: AstNode*) -> i32 {
             return (i32)idx;
         }
     }
+    // JmpIfNotXx reads both operands before branching — borrow is
+    // always safe.
+    let saved_borrow_b = c.borrow_local_ok;
+    c.borrow_local_ok = true;
     let l = compile_expr(c, cond.left);
     let r = compile_expr(c, cond.right);
+    c.borrow_local_ok = saved_borrow_b;
     let fused_op = Op::Halt;
     if      op_kind == Op::CmpLt { fused_op = Op::JmpIfNotLt; }
     else if op_kind == Op::CmpLe { fused_op = Op::JmpIfNotLe; }
