@@ -3345,11 +3345,50 @@ fn interpret_inner_full(ctx: ZjsContext*,
             // present=0 for now; revisit if a harness needs it.
             regs[inst.a] = zjs_bool(present);
         } else if op == Op::Instanceof {
-            // val instanceof ctor — ctor.prototype must be in val's chain.
-            // ECMA-262 §13.10.2: if RHS isn't callable (Function /
-            // Closure / HostFunction), throw TypeError.
+            // val instanceof ctor — spec InstanceofOperator:
+            //   1. If Type(ctor) is not Object → TypeError.
+            //   2. Let handler = GetMethod(ctor, @@hasInstance).
+            //   3. If handler != undefined → return ToBoolean(Call(handler, ctor, [val])).
+            //   4. Else OrdinaryHasInstance: ctor must be callable;
+            //      walk val's proto chain looking for ctor.prototype.
             let val = regs[inst.b];
             let ctor = regs[inst.c];
+            // Step 2/3: look up @@hasInstance on the right-hand side
+            // (any object-like value, not just functions). If present
+            // and callable, that overrides the default chain walk —
+            // covers `0 instanceof F` where F is a plain object that
+            // installed F[Symbol.hasInstance] manually.
+            let ctor_objlike: bool =
+                   zjs_is_object(ctor) != 0
+                || zjs_is_function(ctor) != 0
+                || zjs_is_closure(ctor) != 0
+                || zjs_is_host_function(ctor) != 0
+                || zjs_is_array(ctor) != 0;
+            if ctor_objlike {
+                let hi_atom = ctx_intern_atom(ctx, (char*)"@@hasInstance", 13);
+                let handler = property_get(ctx, ctor, zjs_cell_from_ptr((void*)hi_atom));
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; break;
+                }
+                let handler_callable: bool =
+                       zjs_is_function(handler) != 0
+                    || zjs_is_closure(handler) != 0
+                    || zjs_is_host_function(handler) != 0;
+                if handler_callable {
+                    let hi_args: ZjsValue[1];
+                    hi_args[0] = val;
+                    let argp: ZjsValue* = NULL; raw { argp = &hi_args[0]; }
+                    let r = zjs_call_value_with_this(ctx, handler, ctor, argp, 1);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; break;
+                    }
+                    regs[inst.a] = zjs_bool(zjs_to_bool_coerce(r));
+                    ip = ip + 1;
+                    continue;
+                }
+            }
             let proto_obj: ZjsObject* = NULL;
             let ctor_callable: bool = false;
             if zjs_is_function(ctor) != 0 {
