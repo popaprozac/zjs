@@ -51,6 +51,31 @@ struct Parser {
     // ECMA-262 [+Yield] grammar parameter: true inside a generator
     // body. Gates the `yield` operator (otherwise a contextual ident).
     in_generator: bool;
+    // Strict-mode flag. Toggled true for class bodies, modules, and
+    // "use strict" directive scopes (only class bodies + modules
+    // tracked today). Strict mode forbids `arguments` and `eval` as
+    // BindingIdentifier names, treats `yield` as always-reserved, and
+    // makes duplicate parameter names a SyntaxError.
+    strict_mode: bool;
+}
+
+// Returns true if a name string is "arguments" or "eval" — the two
+// names that strict mode forbids as BindingIdentifier. Doesn't take
+// the Parser because callers vary in how they get the name slice.
+fn name_is_arguments_or_eval(source: char*, start: u32, length: u32) -> bool {
+    if length == 9 {
+        let p1 = source + start;
+        let eq: int = 0;
+        raw { eq = (memcmp(p1, "arguments", 9) == 0) ? 1 : 0; }
+        if eq != 0 { return true; }
+    }
+    if length == 4 {
+        let p2 = source + start;
+        let eq: int = 0;
+        raw { eq = (memcmp(p2, "eval", 4) == 0) ? 1 : 0; }
+        if eq != 0 { return true; }
+    }
+    return false;
 }
 
 struct ParseResult {
@@ -397,6 +422,21 @@ fn is_binding_ident(k: TokenKind) -> bool {
     return false;
 }
 
+// Spec-strict version: rejects `yield` inside a generator body and
+// `await` inside an async function body (both become reserved words
+// there). Pass-through to is_binding_ident for everything else. Use
+// this at every BindingIdentifier site (var/let/const declarators,
+// catch parameter, function params, class field name when treated
+// as a binding, import locals, etc.).
+fn is_binding_ident_ctx(p: Parser*, k: TokenKind) -> bool {
+    if k == TokenKind::KwYield && p.in_generator { return false; }
+    if k == TokenKind::KwAwait && p.in_async     { return false; }
+    // Strict mode reserves `yield` unconditionally (even outside a
+    // generator). Modules + class bodies are implicitly strict.
+    if k == TokenKind::KwYield && p.strict_mode  { return false; }
+    return is_binding_ident(k);
+}
+
 // IdentifierName per ECMA-262 §11.6: identifier OR any reserved
 // word. Used wherever the spec allows a keyword as a name —
 // PropertyName in object literals, MemberExpression after `.`, etc.
@@ -434,7 +474,7 @@ fn parse_binding_target(p: Parser*) -> AstNode* {
     if k == TokenKind::LBrace  { return parse_object_pattern(p); }
     if k == TokenKind::LBracket { return parse_array_pattern(p); }
     let t = peek(p);
-    if !is_binding_ident(t.kind) { p.had_error = true; return NULL; }
+    if !is_binding_ident_ctx(p, t.kind) { p.had_error = true; return NULL; }
     advance(p);
     let node = new_node(&p.tracker, NodeKind::IdentExpr, t.start, t.start + t.length);
     node.name_start  = t.start;
@@ -457,7 +497,7 @@ fn parse_object_pattern(p: Parser*) -> AstNode* {
         if peek_kind(p) == TokenKind::Ellipsis {
             advance(p);
             let id = peek(p);
-            if !is_binding_ident(id.kind) { p.had_error = true; break; }
+            if !is_binding_ident_ctx(p, id.kind) { p.had_error = true; break; }
             advance(p);
             let ident = new_node(&p.tracker, NodeKind::IdentExpr, id.start, id.start + id.length);
             ident.name_start  = id.start;
@@ -622,7 +662,7 @@ fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
             decl.end         = pat.end;
         } else {
             let name_tok = peek(p);
-            if !is_binding_ident(name_tok.kind) {
+            if !is_binding_ident_ctx(p, name_tok.kind) {
                 p.had_error = true;
                 break;
             }
@@ -1166,7 +1206,13 @@ fn parse_param_list(p: Parser*) -> ParamList {
             ident.third       = pat;
         } else {
             let name_tok = peek(p);
-            if !is_binding_ident(name_tok.kind) {
+            if !is_binding_ident_ctx(p, name_tok.kind) {
+                p.had_error = true;
+                break;
+            }
+            // ECMA-262 §15.1.1 / §15.2.1.1 strict-mode early error:
+            // FormalParameter name MUST NOT be `arguments` or `eval`.
+            if p.strict_mode && name_is_arguments_or_eval(p.source, name_tok.start, name_tok.length) {
                 p.had_error = true;
                 break;
             }
@@ -1218,6 +1264,35 @@ fn parse_param_list(p: Parser*) -> ParamList {
 
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
     else         { dealloc(buf); buf = NULL; }
+    // ECMA-262 §15.1.1 strict-mode early error: duplicate parameter
+    // names are a SyntaxError. (Also UniqueFormalParameters in arrow
+    // funcs and methods — we approximate by checking when the parser
+    // is in strict mode, which covers class bodies.)
+    if p.strict_mode && count >= 2 {
+        let pi: u32 = 0;
+        while pi < count {
+            let pa = buf[pi];
+            let pa_id: AstNode* = if pa != NULL && pa.kind == NodeKind::RestParam { pa.left } else { pa };
+            if pa_id != NULL && pa_id.kind == NodeKind::IdentExpr && pa_id.name_length > 0 {
+                let pj: u32 = pi + 1;
+                while pj < count {
+                    let pb = buf[pj];
+                    let pb_id: AstNode* = if pb != NULL && pb.kind == NodeKind::RestParam { pb.left } else { pb };
+                    if pb_id != NULL && pb_id.kind == NodeKind::IdentExpr
+                       && pb_id.name_length == pa_id.name_length {
+                        let na = p.source + pa_id.name_start;
+                        let nb = p.source + pb_id.name_start;
+                        let nl: u32 = pa_id.name_length;
+                        let eq: int = 0;
+                        raw { eq = (memcmp(na, nb, (size_t)nl) == 0) ? 1 : 0; }
+                        if eq != 0 { p.had_error = true; }
+                    }
+                    pj = pj + 1;
+                }
+            }
+            pi = pi + 1;
+        }
+    }
     return ParamList{ arr: buf, count: count };
 }
 
@@ -1413,6 +1488,14 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
             advance(p);
             init_expr = parse_assignment(p);
             if init_expr == NULL { return NULL; }
+            // ECMA-262 Static Semantics: ContainsArguments — class field
+            // initializers must not reference `arguments` (recurses into
+            // arrow functions but stops at function expressions which
+            // shadow the binding).
+            if expr_contains_arguments(p, init_expr) {
+                p.had_error = true;
+                return NULL;
+            }
         }
         // Field terminator: explicit `;`, or rely on ASI at `}` / newline.
         match_kind(p, TokenKind::Semicolon);
@@ -1488,6 +1571,14 @@ fn parse_class_body(p: Parser*) -> ParamList {
     let count: u32 = 0;
     let buf: AstNode** = NULL;
     buf = alloc_n<AstNode*>((usize)cap);
+
+    // Class bodies are implicitly strict per ECMA-262 §10.2.1. Toggle
+    // the strict flag so BindingIdentifier checks reject the strict-
+    // mode reserved names inside methods, fields, and their parameter
+    // lists. Restored on exit so nested class declarations leave
+    // sibling code alone.
+    let saved_strict = p.strict_mode;
+    p.strict_mode = true;
 
     while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
         // Skip empty `;` separators (allowed inside class bodies).
@@ -1618,6 +1709,7 @@ fn parse_class_body(p: Parser*) -> ParamList {
 
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
     else         { dealloc(buf); buf = NULL; }
+    p.strict_mode = saved_strict;
     return ParamList{ arr: buf, count: count };
 }
 
@@ -1669,7 +1761,7 @@ fn parse_import_decl(p: Parser*) -> AstNode* {
         }
         advance(p);
         let name_tok = peek(p);
-        if !is_binding_ident(name_tok.kind) {
+        if !is_binding_ident_ctx(p, name_tok.kind) {
             p.had_error = true; dealloc(buf); return NULL;
         }
         advance(p);
@@ -1684,7 +1776,7 @@ fn parse_import_decl(p: Parser*) -> AstNode* {
         advance(p);
         while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
             let src_tok = peek(p);
-            if !is_binding_ident(src_tok.kind) && !is_keyword_token(src_tok.kind) {
+            if !is_binding_ident_ctx(p, src_tok.kind) && !is_keyword_token(src_tok.kind) {
                 p.had_error = true; dealloc(buf); return NULL;
             }
             advance(p);
@@ -1694,7 +1786,7 @@ fn parse_import_decl(p: Parser*) -> AstNode* {
             if peek_kind(p) == TokenKind::KwAs {
                 advance(p);
                 let loc_tok = peek(p);
-                if !is_binding_ident(loc_tok.kind) {
+                if !is_binding_ident_ctx(p, loc_tok.kind) {
                     p.had_error = true; dealloc(buf); return NULL;
                 }
                 advance(p);
@@ -1777,7 +1869,7 @@ fn parse_export_decl(p: Parser*) -> AstNode* {
         let buf = alloc_n<AstNode*>((usize)cap);
         while peek_kind(p) != TokenKind::RBrace && peek_kind(p) != TokenKind::Eof {
             let local_tok = peek(p);
-            if !is_binding_ident(local_tok.kind) && !is_keyword_token(local_tok.kind) {
+            if !is_binding_ident_ctx(p, local_tok.kind) && !is_keyword_token(local_tok.kind) {
                 p.had_error = true; break;
             }
             advance(p);
@@ -1786,7 +1878,7 @@ fn parse_export_decl(p: Parser*) -> AstNode* {
             if peek_kind(p) == TokenKind::KwAs {
                 advance(p);
                 let e_tok = peek(p);
-                if !is_binding_ident(e_tok.kind) && !is_keyword_token(e_tok.kind) {
+                if !is_binding_ident_ctx(p, e_tok.kind) && !is_keyword_token(e_tok.kind) {
                     p.had_error = true; break;
                 }
                 advance(p);
@@ -1852,7 +1944,7 @@ fn parse_class_decl(p: Parser*) -> AstNode* {
     // other declarations: plain Identifier plus contextual keywords
     // (`await`, `yield`, `let`, `of`, `async`, …) when not in a
     // module / async context where they'd be reserved.
-    if !is_binding_ident(name_tok.kind) { p.had_error = true; return NULL; }
+    if !is_binding_ident_ctx(p, name_tok.kind) { p.had_error = true; return NULL; }
     // Class bodies are strict-mode code by spec. The class name may
     // not be a strict-reserved identifier.
     if is_strict_reserved_name(p.source + name_tok.start, name_tok.length) {
@@ -2945,6 +3037,38 @@ fn parse_template_expr_slice(p: Parser*, expr_start: u32, expr_end: u32) -> AstN
     // but the buffer's lifetime should track the AST anyway).
     alloc_list_push(&p.tracker, (void*)toks);
     return expr;
+}
+
+// ECMA-262 Static Semantics: ContainsArguments — used for class field
+// initializer early errors. Returns true if any IdentifierReference
+// named `arguments` appears in the subtree. Recurses through arrow
+// functions (which don't introduce their own `arguments`) but stops
+// at FunctionDecl / FunctionExpr / MethodDef (which do).
+fn expr_contains_arguments(p: Parser*, node: AstNode*) -> bool {
+    if node == NULL { return false; }
+    let k = node.kind;
+    if k == NodeKind::FunctionDecl || k == NodeKind::FunctionExpr || k == NodeKind::MethodDef {
+        return false;
+    }
+    if k == NodeKind::IdentExpr {
+        let n = p.source + node.start;
+        let nl = node.end - node.start;
+        if nl == 9 {
+            let is_arg: int = 0;
+            raw { is_arg = (memcmp(n, "arguments", 9) == 0) ? 1 : 0; }
+            if is_arg != 0 { return true; }
+        }
+        return false;
+    }
+    if node.left  != NULL && expr_contains_arguments(p, node.left)  { return true; }
+    if node.right != NULL && expr_contains_arguments(p, node.right) { return true; }
+    if node.third != NULL && expr_contains_arguments(p, node.third) { return true; }
+    let i: u32 = 0;
+    while i < node.children_count {
+        if expr_contains_arguments(p, node.children[i]) { return true; }
+        i = i + 1;
+    }
+    return false;
 }
 
 // Level 0 — primary.
