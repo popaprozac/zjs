@@ -972,16 +972,25 @@ fn gc_nullify_dead_ics(ctx: ZjsContext*) -> void {
                 let count = (u32)f.ics[j].entry_count;
                 while read_k < count {
                     let cls: ZjsHiddenClass* = f.ics[j].classes[read_k];
-                    let proto_cls: ZjsHiddenClass* = f.ics[j].proto_cls[read_k];
+                    let slot_raw: u32 = f.ics[j].slots[read_k];
+                    let is_proto: u32 = 0;
+                    raw { is_proto = (slot_raw & 0x80000000u) ? 1u : 0u; }
+                    let proto_cls: ZjsHiddenClass* = NULL;
+                    if is_proto != 0 && f.ic_proto_cls != NULL {
+                        proto_cls = f.ic_proto_cls[j * IC_POLY_SIZE + read_k];
+                    }
                     let cls_live: bool = cls != NULL && cls.header.mark != 0;
                     // Proto entries also need their cached proto shape
-                    // alive; own-slot entries (proto_cls == NULL) skip.
-                    let proto_live: bool = proto_cls == NULL || proto_cls.header.mark != 0;
+                    // alive; own-slot entries (no proto flag) skip.
+                    let proto_live: bool = is_proto == 0
+                        || (proto_cls != NULL && proto_cls.header.mark != 0);
                     if cls_live && proto_live {
                         if write_k != read_k {
                             f.ics[j].classes[write_k] = cls;
-                            f.ics[j].slots[write_k] = f.ics[j].slots[read_k];
-                            f.ics[j].proto_cls[write_k] = proto_cls;
+                            f.ics[j].slots[write_k] = slot_raw;
+                            if f.ic_proto_cls != NULL {
+                                f.ic_proto_cls[j * IC_POLY_SIZE + write_k] = proto_cls;
+                            }
                         }
                         write_k = write_k + 1;
                     }
@@ -992,7 +1001,9 @@ fn gc_nullify_dead_ics(ctx: ZjsContext*) -> void {
                 while zk < count {
                     f.ics[j].classes[zk] = NULL;
                     f.ics[j].slots[zk] = 0;
-                    f.ics[j].proto_cls[zk] = NULL;
+                    if f.ic_proto_cls != NULL {
+                        f.ic_proto_cls[j * IC_POLY_SIZE + zk] = NULL;
+                    }
                     zk = zk + 1;
                 }
                 f.ics[j].entry_count = (u8)write_k;

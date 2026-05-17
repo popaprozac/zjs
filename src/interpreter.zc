@@ -2946,28 +2946,27 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if hit_idx >= 0 {
                     let idx = (u32)hit_idx;
                     // Slot index encodes "proto-chain hit" in the top
-                    // bit so the own-slot fast path never has to load
-                    // proto_cls (which lives on a different cache line
-                    // and was a measurable regression on numerical
-                    // benches before the bit-encoding).
+                    // bit. Own-slot hits use the low 31 bits directly
+                    // and never touch the side proto-cls table — that
+                    // keeps numerical own-slot loops (nbody) hot in L1.
                     let slot_raw = ic_ptr.slots[idx];
                     let is_proto: u32 = 0;
                     raw { is_proto = (slot_raw & 0x80000000u) ? 1u : 0u; }
                     if is_proto == 0 {
-                        // Own-slot hit (no proto_cls load).
+                        // Own-slot hit.
                         let raw_v = o.slots[slot_raw];
                         if zjs_is_accessor(raw_v) == 0 && zjs_is_deleted(raw_v) == 0 {
                             regs[dst] = raw_v;
                             took_fast = true;
                         }
-                    } else {
+                    } else if f.ic_proto_cls != NULL {
                         // Direct-proto hit. Validate the receiver hangs
                         // from a prototype with the cached shape — the
                         // cls check alone is insufficient because two
                         // constructors that install the same own
                         // properties produce instances sharing hidden
                         // classes but pointing to different prototypes.
-                        let pc: ZjsHiddenClass* = ic_ptr.proto_cls[idx];
+                        let pc: ZjsHiddenClass* = f.ic_proto_cls[(u32)ic_slot * IC_POLY_SIZE + idx];
                         let p = o.proto;
                         if p != NULL && p.cls == pc {
                             let slot_n: u32 = 0;
@@ -3036,12 +3035,23 @@ fn interpret_inner_full(ctx: ZjsContext*,
                                 f.ics[ic_slot].classes[n2] = recv_cls;
                                 if holder == o {
                                     f.ics[ic_slot].slots[n2] = (u32)found_slot;
-                                    f.ics[ic_slot].proto_cls[n2] = NULL;
                                 } else {
+                                    // Proto-chain hit: tag the slot
+                                    // index and lazily allocate the side
+                                    // proto-cls table.
                                     let tagged: u32 = 0;
                                     raw { tagged = ((uint32_t)found_slot) | 0x80000000u; }
                                     f.ics[ic_slot].slots[n2] = tagged;
-                                    f.ics[ic_slot].proto_cls[n2] = holder.cls;
+                                    if f.ic_proto_cls == NULL {
+                                        let total: usize = (usize)(f.ic_count * IC_POLY_SIZE);
+                                        f.ic_proto_cls = alloc_n<ZjsHiddenClass*>(total);
+                                        let zi: usize = 0;
+                                        while zi < total {
+                                            f.ic_proto_cls[zi] = NULL;
+                                            zi = zi + 1;
+                                        }
+                                    }
+                                    f.ic_proto_cls[(u32)ic_slot * IC_POLY_SIZE + n2] = holder.cls;
                                 }
                                 f.ics[ic_slot].entry_count = (u8)(n2 + 1);
                             } else {

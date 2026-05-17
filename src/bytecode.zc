@@ -433,16 +433,14 @@ def IC_POLY_SIZE: u32 = 4;
 struct ICEntry {
     name:        ZjsString*;            // atom; set at compile time, immutable
     classes:     ZjsHiddenClass*[4];    // cached shapes (NULL = empty slot)
-    slots:       u32[4];                // slot index per cached class
-    // Proto-chain caching (Phase 3.9-richards). When `proto_cls[i]` is
-    // NULL the entry is an own-slot hit (read `o.slots[slots[i]]`).
-    // When non-NULL the entry is a direct-prototype hit: validate
-    // `o.proto.cls == proto_cls[i]` then read `o.proto.slots[slots[i]]`.
-    // The holder object itself isn't stored — we derive it from o.proto
-    // at probe time, which restricts caching to depth-1 proto chains
-    // (the dominant case for class-style method dispatch). Deeper
-    // chains route through the slow path every time.
-    proto_cls:   ZjsHiddenClass*[4];
+    slots:       u32[4];                // slot index per cached class. The
+                                        // top bit (0x80000000) flags a
+                                        // direct-prototype hit; the low 31
+                                        // bits are the slot index. For
+                                        // own-slot entries the flag is
+                                        // clear and the fast path never
+                                        // has to touch the proto side
+                                        // table.
     entry_count: u8;                    // # of populated entries (0..IC_POLY_SIZE)
     megamorphic: bool;                  // once set, fast-path is skipped permanently
 }
@@ -476,6 +474,14 @@ struct Function {
     // Inline-cache table for LoadProp / StoreProp (Phase 3.2b).
     ics:            ICEntry*;
     ic_count:       u32;
+
+    // Proto-chain IC side table (Phase 3.9-richards). NULL until the
+    // first IC site patches a direct-prototype hit; once allocated
+    // it holds `ic_count * IC_POLY_SIZE` ZjsHiddenClass* entries (the
+    // cached proto's shape at patch time). Kept out-of-line so the
+    // common ICEntry stays at 64 bytes for cache locality on
+    // numerical own-slot-heavy benches.
+    ic_proto_cls:   ZjsHiddenClass**;
 
     // Closures (Phase 3.3). `needs_env` means this function should
     // allocate an env object at entry — it has nested functions that
@@ -550,6 +556,7 @@ fn function_free(f: Function*) -> void {
     dealloc(f.code);
     dealloc(f.constants);
     dealloc(f.ics);
+    if f.ic_proto_cls != NULL { dealloc(f.ic_proto_cls); }
     dealloc(f);
 }
 
