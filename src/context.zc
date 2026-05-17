@@ -6678,6 +6678,56 @@ fn host_map_delete(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_bool(true);
 }
 
+// ES2026 Map.prototype.getOrInsert(key, defaultValue) — returns the
+// existing value if `key` is already in the map; otherwise inserts
+// (key, defaultValue) and returns defaultValue.
+fn host_map_get_or_insert(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let m = map_require_this(ctx);
+    if m == NULL { return zjs_undefined(); }
+    let k = if argc > 0 { args[0] } else { zjs_undefined() };
+    let v = if argc > 1 { args[1] } else { zjs_undefined() };
+    let slot = map_find_slot(m, k);
+    if slot >= 0 { return m.entries[(u32)slot].value; }
+    map_set_entry(m, k, v);
+    return v;
+}
+
+// ES2026 Map.prototype.getOrInsertComputed(key, callbackfn) — returns
+// the existing value if present; otherwise calls callbackfn(key),
+// stores (key, result), and returns result. Spec requires the
+// callback to be callable.
+fn host_map_get_or_insert_computed(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let m = map_require_this(ctx);
+    if m == NULL { return zjs_undefined(); }
+    let k = if argc > 0 { args[0] } else { zjs_undefined() };
+    let cb = if argc > 1 { args[1] } else { zjs_undefined() };
+    let cb_callable: bool =
+           zjs_is_function(cb) != 0
+        || zjs_is_closure(cb) != 0
+        || zjs_is_host_function(cb) != 0;
+    if !cb_callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Map.prototype.getOrInsertComputed callbackfn is not callable", 60);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let slot = map_find_slot(m, k);
+    if slot >= 0 { return m.entries[(u32)slot].value; }
+    let cb_args: ZjsValue[1];
+    cb_args[0] = k;
+    let cap: ZjsValue* = NULL; raw { cap = &cb_args[0]; }
+    let result = zjs_call_value(ctx, cb, cap, 1);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    // Spec quirk: re-check after the callback in case it mutated the
+    // map for this key. Insert only if still absent; otherwise return
+    // whatever's now stored.
+    let slot2 = map_find_slot(m, k);
+    if slot2 >= 0 { return m.entries[(u32)slot2].value; }
+    map_set_entry(m, k, result);
+    return result;
+}
+
 fn host_map_clear(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let m = map_require_this(ctx);
     if m == NULL { return zjs_undefined(); }
@@ -9740,6 +9790,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let map_has_ptr:     void* = NULL; raw { map_has_ptr     = (void*)host_map_has; }
     let map_delete_ptr:  void* = NULL; raw { map_delete_ptr  = (void*)host_map_delete; }
     let map_clear_ptr:   void* = NULL; raw { map_clear_ptr   = (void*)host_map_clear; }
+    let map_goi_ptr:     void* = NULL; raw { map_goi_ptr     = (void*)host_map_get_or_insert; }
+    let map_goic_ptr:    void* = NULL; raw { map_goic_ptr    = (void*)host_map_get_or_insert_computed; }
     let map_foreach_ptr: void* = NULL; raw { map_foreach_ptr = (void*)host_map_for_each; }
     let map_keys_ptr:    void* = NULL; raw { map_keys_ptr    = (void*)host_map_keys; }
     let map_vals_ptr:    void* = NULL; raw { map_vals_ptr    = (void*)host_map_values; }
@@ -9759,6 +9811,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"delete",   map_delete_ptr,  1));
     object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"clear",    5),
                ctx_make_host_function_arity(ctx, (char*)"clear",    map_clear_ptr,   0));
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"getOrInsert", 11),
+               ctx_make_host_function_arity(ctx, (char*)"getOrInsert", map_goi_ptr, 2));
+    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"getOrInsertComputed", 19),
+               ctx_make_host_function_arity(ctx, (char*)"getOrInsertComputed", map_goic_ptr, 2));
     object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"forEach",  7),
                ctx_make_host_function_arity(ctx, (char*)"forEach",  map_foreach_ptr, 1));
     object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"keys",     4),
