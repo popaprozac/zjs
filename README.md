@@ -24,22 +24,26 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 | 1     | Jitless-first design study (`docs/jitless-design-study.md`) |
 | 2.1   | NaN-boxed values (JSC layout) |
 | 2.2   | Lexer (full ECMA-262 §12.7) |
-| 2.3   | Parser — expressions |
-| 2.4   | Parser — statements |
-| 2.5   | Parser — functions, arrow functions, for-in/of |
-| 3.0a  | Bytecode compiler + register-machine interpreter — arithmetic, variables, control flow |
-| 3.0b  | Functions, calls, recursion, locals |
-| 3.0c  | test262 conformance scaffolding |
-| 3.1a  | Heap infrastructure + strings (cell-header model, escape decoding, `+` concat) |
-| 3.1b  | Objects, arrays, property access (`obj.x`, `obj[i]`, literals, compound assign) |
-| 3.1c  | `throw` / `try` / `catch`, uncaught-error C ABI, real test262 signal |
-| 3.1e  | Host functions, `new`, `typeof`, built-in `Error` + `Math` namespace |
-| 3.1d  | Mark-sweep GC; cell-tag predicates on the public ABI |
-| 3.1f  | Atom interning for property names + string literals |
-| 3.2a  | Hidden classes (transition trees) — shape-sharing across objects |
-| **3.2b** | **Inline caches — `LoadProp`/`StoreProp` with `{HiddenClass*, slot}` metadata; the jitless-first perf payoff** |
+| 2.3-2.5 | Parser — expressions, statements, functions, arrow funcs, for-in/of |
+| 3.0a-c | Bytecode compiler + register-machine interpreter, test262 scaffolding |
+| 3.1a-f | Heap, strings, objects, arrays, throw/try/catch, host fns, GC, atoms |
+| 3.2a-b | Hidden classes + inline caches (LoadProp/StoreProp `{cls, slot}`) |
+| 3.3    | Closures + env chain |
+| 3.4    | for-in / for-of, iteration protocol |
+| 3.5    | Built-ins — Array / String / JSON / Math / Object / Number / Date |
+| 3.6    | Prototype chain (`new`, `.prototype`, instanceof) |
+| 3.7    | Classes (extends, super, static, methods, accessors, fields) |
+| 3.8    | Strictness sweep, conformance coverage push |
+| 3.9    | Performance pass — async/await, generators, modules, IC poly, instruction fusion, proto-chain IC, register-borrow / preferred-dst threading |
+| **3.9h** | **Non-recursive interpreter — single outer loop with explicit CallFrame stack** |
 
-656 in-tree test assertions pass (smoke + lexer + parser + interpreter). Per-phase plans are in `docs/phases/`.
+**Tests:** 902 in-tree assertions pass (smoke + lexer + parser + interpreter).
+
+**Conformance:** 81.2% of the test262 included subset (6,426 of 7,918 non-skipped). Live dashboard at `docs/conformance/index.html`.
+
+**Perf vs qjs:** zjs ahead on 19 of 21 microbenches (richards, property_poly, int_loop, etc); behind by single digits on nbody + fib_recursive. Live charts at `docs/perf/index.html`.
+
+Per-phase plans live in `docs/phases/`.
 
 **Programs run end-to-end:**
 
@@ -47,11 +51,24 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 $ ./build/zjs eval "function fib(n) { if (n < 2) return n; return fib(n - 1) + fib(n - 2); } fib(10)"
 55
 
-$ ./build/zjs eval "function sum(n) { let s = 0; for (let i = 1; i <= n; i = i + 1) s = s + i; return s; } sum(100)"
-5050
-
 $ ./build/zjs eval "let inc = x => x + 1; inc(41)"
 42
+
+# Classes with extends, fields, methods, accessors
+$ ./build/zjs eval "class Point { constructor(x, y) { this.x = x; this.y = y; } get norm() { return this.x * this.x + this.y * this.y; } } new Point(3, 4).norm"
+25
+
+# Template literals
+$ ./build/zjs eval "let name = 'world'; \`hello \${name}\`"
+hello world
+
+# async / await
+$ ./build/zjs eval "async function f() { return 42; } f().then(v => console.log(v))"
+42
+
+# Destructuring
+$ ./build/zjs eval "let [a, ...rest] = [1, 2, 3, 4]; rest.join(',')"
+2,3,4
 ```
 
 ## Build
