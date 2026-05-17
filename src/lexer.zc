@@ -264,36 +264,42 @@ impl Lexer {
         let c0 = self.peek();
         let c1 = self.peek_at(1);
 
+        // Numeric separator '_': accept inside any digit run (decimal,
+        // hex, binary, octal, exponent). The parser strips them when
+        // converting to f64. We don't enforce the spec edge cases
+        // (consecutive _, leading/trailing _) — tests that exercise
+        // those expect a SyntaxError we don't surface, which is its
+        // own tracked gap.
         if c0 == (u8)'0' && (c1 == (u8)'x' || c1 == (u8)'X') {
             self.advance(); self.advance();
-            while !self.at_end() && is_hex_digit(self.peek()) { self.advance(); }
+            while !self.at_end() && (is_hex_digit(self.peek()) || self.peek() == (u8)'_') { self.advance(); }
             return Token{kind: TokenKind::NumberLit, start: start, length: (u32)self.pos - start};
         }
         if c0 == (u8)'0' && (c1 == (u8)'b' || c1 == (u8)'B') {
             self.advance(); self.advance();
-            while !self.at_end() && (self.peek() == (u8)'0' || self.peek() == (u8)'1') { self.advance(); }
+            while !self.at_end() && (self.peek() == (u8)'0' || self.peek() == (u8)'1' || self.peek() == (u8)'_') { self.advance(); }
             return Token{kind: TokenKind::NumberLit, start: start, length: (u32)self.pos - start};
         }
         if c0 == (u8)'0' && (c1 == (u8)'o' || c1 == (u8)'O') {
             self.advance(); self.advance();
-            while !self.at_end() && self.peek() >= (u8)'0' && self.peek() <= (u8)'7' { self.advance(); }
+            while !self.at_end() && ((self.peek() >= (u8)'0' && self.peek() <= (u8)'7') || self.peek() == (u8)'_') { self.advance(); }
             return Token{kind: TokenKind::NumberLit, start: start, length: (u32)self.pos - start};
         }
 
         // Decimal integer part (may be empty if we started on '.').
-        while !self.at_end() && is_digit(self.peek()) { self.advance(); }
+        while !self.at_end() && (is_digit(self.peek()) || self.peek() == (u8)'_') { self.advance(); }
 
         // Optional fractional part.
         if self.peek() == (u8)'.' {
             self.advance();
-            while !self.at_end() && is_digit(self.peek()) { self.advance(); }
+            while !self.at_end() && (is_digit(self.peek()) || self.peek() == (u8)'_') { self.advance(); }
         }
 
         // Optional exponent.
         if self.peek() == (u8)'e' || self.peek() == (u8)'E' {
             self.advance();
             if self.peek() == (u8)'+' || self.peek() == (u8)'-' { self.advance(); }
-            while !self.at_end() && is_digit(self.peek()) { self.advance(); }
+            while !self.at_end() && (is_digit(self.peek()) || self.peek() == (u8)'_') { self.advance(); }
         }
 
         return Token{kind: TokenKind::NumberLit, start: start, length: (u32)self.pos - start};
