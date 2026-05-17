@@ -328,6 +328,22 @@ fn zjs_arith_div(a: ZjsValue, b: ZjsValue) -> ZjsValue {
 }
 
 fn zjs_arith_mod(a: ZjsValue, b: ZjsValue) -> ZjsValue {
+    // ECMA-262 % uses fmod semantics: result takes the sign of the
+    // dividend. C's integer `%` matches when both operands are int32
+    // and the divisor is non-zero (INT_MIN % -1 is UB in C, so route
+    // that through fmod too).
+    if zjs_is_int32(a) != 0 && zjs_is_int32(b) != 0 {
+        let ai = zjs_as_int32(a);
+        let bi = zjs_as_int32(b);
+        let safe: int = 0;
+        raw { safe = (bi != 0 && !(ai == INT32_MIN && bi == -1)) ? 1 : 0; }
+        if safe != 0 {
+            let r = ai % bi;
+            // JS %: -0 if dividend is negative and result is 0.
+            if r == 0 && ai < 0 { return zjs_double(-0.0); }
+            return zjs_int32(r);
+        }
+    }
     let af = zjs_to_double(a);
     let bf = zjs_to_double(b);
     let r: f64 = 0.0;
