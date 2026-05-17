@@ -450,6 +450,14 @@ struct Function {
     constants:      ZjsValue*; // constant pool
     const_count:    u32;
     register_count: u32;       // size of the register file the interpreter must allocate
+    // Watermark = params + locals + persistent temps (try/catch save
+    // slots, for-loop iter regs, etc). Regs at indices `[fixed_regs,
+    // register_count)` are pure scratch — temp-of-the-moment expression
+    // slots that the compiler guarantees are always written before
+    // read. The frame-setup code can skip the undef init for those
+    // slots, which saves a measurable per-call write on hot leaves
+    // (fib_recursive).
+    fixed_regs:     u32;
     param_count:    u32;       // 0 for the top-level program
     // ECMA-262 ExpectedArgumentCount — index of the first parameter
     // with a default initializer or rest binding (or = param_count if

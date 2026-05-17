@@ -2121,6 +2121,14 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     f.const_count = c.const_count;
     f.register_count = (u32)(c.max_reg + 1);
     if f.register_count < param_count { f.register_count = param_count; }
+    // fixed_regs: params + locals + bumps for persistent temps. The
+    // frame-setup code initializes only `[copy_count, fixed_regs)` to
+    // undefined — scratch temps above this watermark are written
+    // before read by the compiler-emitted ops. Clamp to register_count
+    // for safety (a bump beyond max_reg would otherwise read past the
+    // frame's allocation).
+    f.fixed_regs = (u32)c.fixed_regs;
+    if f.fixed_regs > f.register_count { f.fixed_regs = f.register_count; }
     f.param_count = param_count;
     // ExpectedArgumentCount — walk params left-to-right, stop at the
     // first with a default initializer or the rest binding.
@@ -5125,6 +5133,14 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     f.const_count = c.const_count;
     f.register_count = (u32)(c.max_reg + 1);
     if f.register_count == 0 { f.register_count = 1; }
+    // For the top-level program, init everything — script-scope locals
+    // (declared via top-level let/const) live above the params=0
+    // baseline and are bumped into c.fixed_regs by the compiler, but
+    // there's also the conservative win of just clamping to
+    // register_count when in doubt. The skip is mostly leverage for
+    // hot leaf functions, not the one-shot top-level.
+    f.fixed_regs = (u32)c.fixed_regs;
+    if f.fixed_regs > f.register_count { f.fixed_regs = f.register_count; }
     f.param_count = 0;
     f.ics = c.ics;
     f.ic_count = c.ic_count;

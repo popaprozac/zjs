@@ -513,9 +513,15 @@ fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc
         ctx.reg_stack[regs_base + i] = ctx.reg_stack[src_offset + i];
         i = i + 1;
     }
+    // Init only up to fixed_regs: params + locals + persistent temps.
+    // Scratch temps above the watermark are guaranteed written-before-
+    // read by the compiler, so leaving stale stack data there is safe
+    // and saves a per-call write per scratch slot.
     let undef: ZjsValue = zjs_undefined();
+    let init_to: u32 = f.fixed_regs;
+    if init_to > reg_count { init_to = reg_count; }
     let j: u32 = i;
-    while j < reg_count {
+    while j < init_to {
         ctx.reg_stack[regs_base + j] = undef;
         j = j + 1;
     }
@@ -562,7 +568,7 @@ fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, r
     }
 
     // Copy the first min(argc, param_count) args into regs[0..]; init
-    // remaining regs to undefined.
+    // remaining regs (up to fixed_regs) to undefined.
     let copy_count: u32 = if argc < f.param_count { argc } else { f.param_count };
     let i: u32 = 0;
     while i < copy_count {
@@ -570,8 +576,10 @@ fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, r
         i = i + 1;
     }
     let undef: ZjsValue = zjs_undefined();
+    let init_to: u32 = f.fixed_regs;
+    if init_to > reg_count { init_to = reg_count; }
     let j: u32 = i;
-    while j < reg_count {
+    while j < init_to {
         ctx.reg_stack[regs_base + j] = undef;
         j = j + 1;
     }
