@@ -94,11 +94,10 @@ def write_html(out_path, history, latest):
   td.delta {{ text-align: right; font-variant-numeric: tabular-nums; }}
   td.delta.up   {{ color: #c44; }}   /* slower = bad */
   td.delta.down {{ color: #2c7; }}   /* faster = good */
-  svg {{ display: block; }}
+  svg {{ display: block; overflow: visible; }}
   .charts {{ display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }}
   .chart-box {{ background: #fff; border: 1px solid #eee; padding: 0.5em; border-radius: 4px; }}
   .chart-box h3 {{ font-size: 13px; margin: 0 0 4px 8px; font-family: ui-monospace, monospace; color: #444; }}
-  .chart-box svg {{ overflow: visible; }}
 </style>
 
 <h1>zjs — benchmarks</h1>
@@ -204,9 +203,11 @@ DEFAULT_OTHER_ENGINES = [
     # name,    binary (resolved via PATH),       extra args before script
     # Peer interpreters first (similar design space — no JIT by default,
     # embeddable), then JIT engines for the absolute-ceiling reference.
+    # Kiesel is dropped — orders-of-magnitude slower per run, not a
+    # real competitor on this benchmark suite. Add `kiesel` back here
+    # if a future release closes the gap.
     ("qjs",    "qjs",                            []),
     ("boa",    "boa",                            []),
-    ("kiesel", "kiesel",                         []),
     ("node",   "node",                           []),
     ("bun",    "bun",                            []),
     ("deno",   str(Path.home() / ".deno/bin/deno"), ["run", "-q"]),
@@ -275,6 +276,7 @@ def write_compare_html(out_path, summary, bench_names, engine_names):
   .legend .hint {{ color: #888; font-style: italic; margin-left: 0.5em; }}
   .toggle {{ font-size: 12px; color: #666; margin-bottom: 0.6em; }}
   .toggle label {{ margin-right: 1em; cursor: pointer; }}
+  svg {{ overflow: visible; }}
   svg text.bench-label {{ font: 12px ui-monospace, SFMono-Regular, monospace;
                           fill: #333; }}
   svg text.tick {{ font: 11px sans-serif; fill: #777; }}
