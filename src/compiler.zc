@@ -3024,7 +3024,10 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
         let r: u8 = 0;
         while r < slots_needed { alloc_reg(c); r = r + 1; }
         // Parent ctor into regs[base].
+        let saved_pd_sp = c.preferred_dst;
+        c.preferred_dst = (i32)base;
         let parent_r = compile_expr(c, c.enclosing_class_parent);
+        c.preferred_dst = saved_pd_sp;
         if parent_r != base {
             emit(c, make_inst_ab(Op::Mov, base, parent_r));
             if parent_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
@@ -3032,10 +3035,13 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
         // Args into regs[base+1..].
         let j: u8 = 0;
         while j < arg_count {
+            let target_slot = base + 1 + j;
+            let saved_pd_sa = c.preferred_dst;
+            c.preferred_dst = (i32)target_slot;
             let arg_r = compile_expr(c, node.children[j]);
-            let target = base + 1 + j;
-            if arg_r != target {
-                emit(c, make_inst_ab(Op::Mov, target, arg_r));
+            c.preferred_dst = saved_pd_sa;
+            if arg_r != target_slot {
+                emit(c, make_inst_ab(Op::Mov, target_slot, arg_r));
                 if arg_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
             }
             j = j + 1;
@@ -3055,8 +3061,12 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
         let r: u8 = 0;
         while r < slots_needed { alloc_reg(c); r = r + 1; }
 
-        // Compile receiver into regs[base+1].
+        // Compile receiver into regs[base+1] using preferred_dst so
+        // the recv expression's terminal op writes there directly.
+        let saved_pd_mr = c.preferred_dst;
+        c.preferred_dst = (i32)(base + 1);
         let recv_r = compile_expr(c, callee.left);
+        c.preferred_dst = saved_pd_mr;
         if recv_r != base + 1 {
             emit(c, make_inst_ab(Op::Mov, base + 1, recv_r));
             if recv_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
