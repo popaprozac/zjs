@@ -610,7 +610,9 @@ def main():
                         engine_names.append(ename)
             compare_results.append({"name": name, "engines": engines_data})
             engine_str = "  ".join(
-                f"{e}={engines_data[e]*1000:7.2f}ms" if e in engines_data else f"{e}=    -   "
+                f"{e}={engines_data[e]*1000:7.2f}ms"
+                if e in engines_data and engines_data[e] is not None
+                else f"{e}=    -   "
                 for e in engine_names
             )
             print(f"{name:20s}  {engine_str}")
