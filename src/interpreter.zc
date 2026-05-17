@@ -3660,12 +3660,33 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let fp2 = cl.function;
                 let target2: Function* = NULL;
                 raw { target2 = (Function*)fp2; }
-                let saved_cl = ctx.current_closure;
-                ctx.current_closure = cl;
-                let r5 = interpret(ctx, target2, argv_ptr, argc);
-                ctx.current_closure = saved_cl;
-                if r5.is_throw { did_throw = true; call_result = r5.value; }
-                else           { call_result = r5.value; }
+                if target2.is_default_derived_ctor {
+                    // Mirror the TAG_FUNCTION fast-path: forward args
+                    // straight to the parent ctor rather than running
+                    // the empty synth body (which would fail the
+                    // super-called gate at Op::Return).
+                    let parent = target2.parent_ctor;
+                    let saved_cl = ctx.current_closure;
+                    ctx.current_closure = cl;
+                    let r: ZjsValue = zjs_undefined();
+                    raw { r = zjs_call_value_with_this(ctx, parent, ctx->host_this, argv_ptr, argc); }
+                    ctx.current_closure = saved_cl;
+                    if ctx.pending_throw_active {
+                        did_throw = true; call_result = consume_pending_throw(ctx);
+                    } else {
+                        if zjs_is_promise(r) != 0 || zjs_is_regexp(r) != 0 {
+                            ctx.host_this = r;
+                        }
+                        call_result = r;
+                    }
+                } else {
+                    let saved_cl = ctx.current_closure;
+                    ctx.current_closure = cl;
+                    let r5 = interpret(ctx, target2, argv_ptr, argc);
+                    ctx.current_closure = saved_cl;
+                    if r5.is_throw { did_throw = true; call_result = r5.value; }
+                    else           { call_result = r5.value; }
+                }
             } else if zjs_is_host_function(callee) != 0 {
                 let hf_ptr = zjs_cell_as_ptr(callee);
                 let saved_host_fn = ctx.current_host_fn;
@@ -3837,12 +3858,36 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 raw { target2 = (Function*)fp2; }
                 let argv_ptr2: ZjsValue* = NULL;
                 raw { argv_ptr2 = &regs[base + 1]; }
-                let saved_cl = ctx.current_closure;
-                ctx.current_closure = cl;
-                let r2 = interpret(ctx, target2, argv_ptr2, argc);
-                ctx.current_closure = saved_cl;
-                if r2.is_throw { did_throw = true; call_result = r2.value; }
-                else           { call_result = r2.value; }
+                // Default derived constructor wrapped as a closure
+                // (because the class body captures outer scope). Same
+                // short-circuit as the TAG_FUNCTION branch: forward
+                // straight to the parent ctor instead of interpreting
+                // the empty body, which would fail the spec's
+                // super-called gate at Op::Return.
+                if target2.is_default_derived_ctor {
+                    let parent = target2.parent_ctor;
+                    let saved_cl = ctx.current_closure;
+                    ctx.current_closure = cl;
+                    let r: ZjsValue = zjs_undefined();
+                    raw { r = zjs_call_value_with_this(ctx, parent, ctx->host_this, argv_ptr2, argc); }
+                    ctx.current_closure = saved_cl;
+                    if ctx.pending_throw_active {
+                        did_throw = true;
+                        call_result = consume_pending_throw(ctx);
+                    } else {
+                        if zjs_is_promise(r) != 0 || zjs_is_regexp(r) != 0 {
+                            ctx.host_this = r;
+                        }
+                        call_result = r;
+                    }
+                } else {
+                    let saved_cl = ctx.current_closure;
+                    ctx.current_closure = cl;
+                    let r2 = interpret(ctx, target2, argv_ptr2, argc);
+                    ctx.current_closure = saved_cl;
+                    if r2.is_throw { did_throw = true; call_result = r2.value; }
+                    else           { call_result = r2.value; }
+                }
             } else if zjs_is_host_function(callee) != 0 {
                 let hf_ptr = zjs_cell_as_ptr(callee);
                 let argv_ptr: ZjsValue* = NULL;
