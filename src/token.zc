@@ -16,6 +16,10 @@ enum TokenKind {
     NumberLit,
     StringLit,
     RegexLit,               // /pattern/flags — contextually lexed
+    TemplateLit,            // `...${expr}...` — span covers the entire
+                            //   backtick-delimited literal; the parser
+                            //   walks the slice to split parts and
+                            //   re-parses each ${expr} segment.
 
     // --- Keywords (full ES2023 set — parser uses what it needs) ------
     KwVar, KwLet, KwConst,

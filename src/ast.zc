@@ -24,6 +24,18 @@ enum NodeKind {
     // gets confused if two enums in the same TU share variant names).
     NumberExpr,             // num
     StringExpr,             // (start..end is the slice including quotes)
+    TemplateExpr,           // template literal `a${x}b`. children alternate
+                            //   between TemplatePartExpr (literal segments —
+                            //   N+1 of them) and expression nodes (N of
+                            //   them). A template with no interpolations
+                            //   still has one TemplatePartExpr child.
+                            //   Named *Expr to avoid the TokenKind variant
+                            //   merge — Zen-c codegen collides enums in
+                            //   the same TU (see reference_zen-c.md).
+    TemplatePartExpr,       // raw literal segment — start..end covers just
+                            //   the text (no backtick / ${, no }). Compiler
+                            //   decodes escapes via the same path as regular
+                            //   strings.
     BoolExpr,               // bool_value
     NullExpr,
     UndefinedExpr,

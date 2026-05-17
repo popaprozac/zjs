@@ -655,6 +655,12 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
     if k == NodeKind::StringExpr {
         return compile_string_literal(c, node);
     }
+    if k == NodeKind::TemplatePartExpr {
+        return compile_template_part(c, node);
+    }
+    if k == NodeKind::TemplateExpr {
+        return compile_template_lit(c, node);
+    }
     if k == NodeKind::RegexExpr {
         return compile_regex_literal(c, node);
     }
@@ -1841,6 +1847,55 @@ fn compile_string_literal(c: Compiler*, node: AstNode*) -> u8 {
     let dst = alloc_reg(c);
     emit(c, make_inst_a_u16(Op::LoadConst, dst, idx));
     return dst;
+}
+
+// Template-literal building blocks. A TemplatePart is a raw literal
+// segment (no surrounding backticks, may be empty). A TemplateLit has
+// `N+1` parts interleaved with `N` expressions. We compile it as a
+// left-fold of string concats; the runtime Add op promotes non-string
+// operands via ToString (which throws TypeError on Symbol — that's how
+// `\`${sym}\`` reports the spec-required error).
+fn compile_template_part(c: Compiler*, node: AstNode*) -> u8 {
+    let raw_start = node.start;
+    let raw_end   = node.end;
+    let raw_len   = if raw_end > raw_start { raw_end - raw_start } else { 0 };
+    let buf = alloc_n<char>((usize)(raw_len + 1));
+    let out = decode_string_body(c.source, raw_start, raw_len, buf);
+    buf[out] = (char)0;
+    let s = ctx_intern_atom_take(c.ctx, buf, out);
+    let val = zjs_cell_from_ptr((void*)s);
+    let idx = add_const(c, val);
+    let dst = alloc_reg(c);
+    emit(c, make_inst_a_u16(Op::LoadConst, dst, idx));
+    return dst;
+}
+
+fn compile_template_lit(c: Compiler*, node: AstNode*) -> u8 {
+    if node.children_count == 0 {
+        let dst = alloc_reg(c);
+        let empty = ctx_intern_atom(c.ctx, c.source + node.start, 0);
+        let val = zjs_cell_from_ptr((void*)empty);
+        let idx = add_const(c, val);
+        emit(c, make_inst_a_u16(Op::LoadConst, dst, idx));
+        return dst;
+    }
+    // Compile the first part (always a TemplatePart). Then for each
+    // remaining child, emit Op::Add on the running accumulator. The
+    // children layout is: part, expr, part, expr, ..., part — both
+    // ends are parts (one beyond the number of expressions). For a
+    // template with no interpolations there's exactly one child.
+    let acc = compile_expr(c, node.children[0]);
+    let i: u32 = 1;
+    while i < node.children_count {
+        let next = compile_expr(c, node.children[i]);
+        let dst = alloc_reg(c);
+        emit(c, make_inst_abc(Op::Add, dst, acc, next));
+        if next + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        if acc + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        acc = dst;
+        i = i + 1;
+    }
+    return acc;
 }
 
 // =====================================================================

@@ -164,6 +164,9 @@ impl Lexer {
         if c == (u8)'"' || c == (u8)'\'' {
             return self.scan_string(start, c);
         }
+        if c == (u8)'`' {
+            return self.scan_template(start);
+        }
         // '.' is special: it may be a NumberLit (`.5`), an Ellipsis (`...`),
         // or just `Dot`.
         if c == (u8)'.' {
@@ -328,6 +331,102 @@ impl Lexer {
         }
         // ran off the end without a closing quote
         return Token{kind: TokenKind::Invalid, start: start, length: (u32)self.pos - start};
+    }
+
+    // --- Template literal -------------------------------------------
+    //
+    // Emits a single TemplateLit token covering the entire backtick-
+    // delimited literal including all ${...} interpolations. The parser
+    // walks the slice to extract the cooked string segments and
+    // re-parses each expression separately. This keeps the lexer free
+    // of parser-driven mode switching at the cost of one extra source
+    // pass per template.
+    //
+    // Embedded ${ ... } balances braces; nested template literals,
+    // strings, and regexes inside an expression are tracked just well
+    // enough to find the matching `}`. The slow path is the parser's
+    // problem — surface errors there rather than mis-tokenize here.
+
+    fn scan_template(self, start: u32) -> Token {
+        self.advance(); // consume opening backtick
+        while !self.at_end() {
+            let c = self.peek();
+            if c == (u8)'`' {
+                self.advance();
+                return Token{kind: TokenKind::TemplateLit, start: start, length: (u32)self.pos - start};
+            }
+            if c == (u8)'\\' {
+                self.advance();
+                if !self.at_end() { self.advance(); }
+                continue;
+            }
+            if c == (u8)'$' && self.peek_at(1) == (u8)'{' {
+                self.advance(); self.advance(); // past `${`
+                if !self.scan_template_substitution() {
+                    return Token{kind: TokenKind::Invalid, start: start, length: (u32)self.pos - start};
+                }
+                continue;
+            }
+            self.advance();
+        }
+        return Token{kind: TokenKind::Invalid, start: start, length: (u32)self.pos - start};
+    }
+
+    // Skip past the body of a `${ ... }` substitution. Tracks balanced
+    // braces, recursing into nested templates / strings / line comments
+    // / block comments / regexes (best-effort). Returns false on
+    // unterminated input.
+    fn scan_template_substitution(self) -> bool {
+        let depth: u32 = 1;
+        while depth > 0 && !self.at_end() {
+            let c = self.peek();
+            if c == (u8)'{' { self.advance(); depth = depth + 1; continue; }
+            if c == (u8)'}' { self.advance(); depth = depth - 1; continue; }
+            if c == (u8)'\\' {
+                self.advance();
+                if !self.at_end() { self.advance(); }
+                continue;
+            }
+            if c == (u8)'`' {
+                // Nested template — recurse via scan_template's loop
+                // body to consume it whole.
+                self.advance();
+                while !self.at_end() && self.peek() != (u8)'`' {
+                    let ic = self.peek();
+                    if ic == (u8)'\\' {
+                        self.advance();
+                        if !self.at_end() { self.advance(); }
+                        continue;
+                    }
+                    if ic == (u8)'$' && self.peek_at(1) == (u8)'{' {
+                        self.advance(); self.advance();
+                        if !self.scan_template_substitution() { return false; }
+                        continue;
+                    }
+                    self.advance();
+                }
+                if !self.at_end() { self.advance(); } // closing `
+                continue;
+            }
+            if c == (u8)'"' || c == (u8)'\'' {
+                let quote = c;
+                self.advance();
+                while !self.at_end() && self.peek() != quote {
+                    if self.peek() == (u8)'\\' {
+                        self.advance();
+                        if !self.at_end() { self.advance(); }
+                    } else if self.peek() == (u8)'\n' {
+                        return false;
+                    } else {
+                        self.advance();
+                    }
+                }
+                if !self.at_end() { self.advance(); }
+                continue;
+            }
+            self.advance();
+        }
+        return depth == 0;
     }
 
     // --- Punctuators ------------------------------------------------

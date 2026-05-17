@@ -2758,6 +2758,195 @@ fn parse_arguments(p: Parser*) -> ArgsResult {
     return ArgsResult{ left_arr: buf, count: count, end: close.start + close.length };
 }
 
+// =====================================================================
+// Template literal — `... ${expr} ...`
+//
+// The lexer emits a single TemplateLit token whose slice spans the
+// entire `...` (inclusive). We walk that slice here, splitting on
+// `${ }` to produce alternating TemplatePart (literal) and expression
+// children. Each embedded expression is re-tokenized + parsed in
+// isolation; absolute source offsets are preserved so error messages
+// and decoded constants point at the right place.
+// =====================================================================
+
+fn parse_template_lit(p: Parser*) -> AstNode* {
+    let t = advance(p);
+    let body_start: u32 = t.start + 1;
+    let body_end:   u32 = if t.length >= 2 { t.start + t.length - 1 } else { t.start + 1 };
+    let node = new_node(&p.tracker, NodeKind::TemplateExpr, t.start, t.start + t.length);
+
+    let cap: u32 = 4;
+    let count: u32 = 0;
+    let buf = alloc_n<AstNode*>((usize)cap);
+
+    let cur: u32 = body_start;
+    let seg_start: u32 = cur;
+    while cur < body_end {
+        let c = (u8)p.source[cur];
+        if c == (u8)'\\' {
+            cur = cur + 1;
+            if cur < body_end { cur = cur + 1; }
+            continue;
+        }
+        if c == (u8)'$' && cur + 1 < body_end && (u8)p.source[cur + 1] == (u8)'{' {
+            // Emit the preceding literal part (possibly empty).
+            let part = new_node(&p.tracker, NodeKind::TemplatePartExpr, seg_start, cur);
+            if count >= cap {
+                let oc = cap; cap = cap * 2;
+                buf = realloc_n<AstNode*>(buf, (usize)oc, (usize)cap);
+            }
+            buf[count] = part; count = count + 1;
+
+            // Walk past `${`, balance braces to find the matching `}`.
+            cur = cur + 2;
+            let expr_start: u32 = cur;
+            let depth: u32 = 1;
+            while cur < body_end {
+                let ec = (u8)p.source[cur];
+                if ec == (u8)'\\' {
+                    cur = cur + 1;
+                    if cur < body_end { cur = cur + 1; }
+                    continue;
+                }
+                if ec == (u8)'{' { depth = depth + 1; cur = cur + 1; continue; }
+                if ec == (u8)'}' {
+                    depth = depth - 1;
+                    if depth == 0 { break; }
+                    cur = cur + 1;
+                    continue;
+                }
+                // Quoted strings: skip to matching quote so a `}` inside
+                // a string literal doesn't end the substitution early.
+                if ec == (u8)'"' || ec == (u8)'\'' {
+                    let q = ec;
+                    cur = cur + 1;
+                    while cur < body_end && (u8)p.source[cur] != q {
+                        if (u8)p.source[cur] == (u8)'\\' {
+                            cur = cur + 1;
+                            if cur < body_end { cur = cur + 1; }
+                        } else {
+                            cur = cur + 1;
+                        }
+                    }
+                    if cur < body_end { cur = cur + 1; }
+                    continue;
+                }
+                // Nested template — skip through it as one unit, handling
+                // its own ${ } substitutions recursively (depth-only
+                // tracking; full re-parse happens when the OUTER node's
+                // expression gets parsed).
+                if ec == (u8)'`' {
+                    cur = cur + 1;
+                    while cur < body_end && (u8)p.source[cur] != (u8)'`' {
+                        let tc = (u8)p.source[cur];
+                        if tc == (u8)'\\' {
+                            cur = cur + 1;
+                            if cur < body_end { cur = cur + 1; }
+                            continue;
+                        }
+                        if tc == (u8)'$' && cur + 1 < body_end && (u8)p.source[cur + 1] == (u8)'{' {
+                            // Skip nested ${ ... } at brace depth.
+                            cur = cur + 2;
+                            let nd: u32 = 1;
+                            while cur < body_end && nd > 0 {
+                                let nc = (u8)p.source[cur];
+                                if nc == (u8)'\\' { cur = cur + 1; if cur < body_end { cur = cur + 1; } continue; }
+                                if nc == (u8)'{' { nd = nd + 1; }
+                                if nc == (u8)'}' { nd = nd - 1; if nd == 0 { cur = cur + 1; break; } }
+                                cur = cur + 1;
+                            }
+                            continue;
+                        }
+                        cur = cur + 1;
+                    }
+                    if cur < body_end { cur = cur + 1; }
+                    continue;
+                }
+                cur = cur + 1;
+            }
+            let expr_end: u32 = cur;
+            if cur < body_end { cur = cur + 1; } // past `}`
+
+            // Re-tokenize + parse the expression slice as a standalone
+            // assignment expression. Tokens are produced with offsets
+            // relative to the slice start; bump them to absolute so
+            // downstream identifier/string slicing reads correctly.
+            let expr = parse_template_expr_slice(p, expr_start, expr_end);
+            if expr == NULL {
+                p.had_error = true;
+                node.children = buf;
+                node.children_count = count;
+                return node;
+            }
+            if count >= cap {
+                let oc = cap; cap = cap * 2;
+                buf = realloc_n<AstNode*>(buf, (usize)oc, (usize)cap);
+            }
+            buf[count] = expr; count = count + 1;
+
+            seg_start = cur;
+            continue;
+        }
+        cur = cur + 1;
+    }
+    // Trailing literal part (possibly empty — keeps the
+    // "N+1 parts, N expressions" invariant).
+    let tail = new_node(&p.tracker, NodeKind::TemplatePartExpr, seg_start, body_end);
+    if count >= cap {
+        let oc = cap; cap = cap * 2;
+        buf = realloc_n<AstNode*>(buf, (usize)oc, (usize)cap);
+    }
+    buf[count] = tail; count = count + 1;
+
+    alloc_list_push(&p.tracker, (void*)buf);
+    node.children = buf;
+    node.children_count = count;
+    return node;
+}
+
+// Re-tokenize [expr_start, expr_end) on the parser's source and parse
+// it as an assignment expression. Tokens get their offsets shifted to
+// absolute so the resulting AST keeps real source positions. Restores
+// the parser's token stream + cursor on exit.
+fn parse_template_expr_slice(p: Parser*, expr_start: u32, expr_end: u32) -> AstNode* {
+    let slice_len: usize = (usize)(expr_end - expr_start);
+    let saved_tokens = p.tokens;
+    let saved_token_count = p.token_count;
+    let saved_pos = p.pos;
+    let saved_no_in = p.no_in;
+
+    let cap: usize = 128;
+    let toks = alloc_n<Token>(cap);
+    let slice_src: char* = NULL;
+    raw { slice_src = &(p->source[expr_start]); }
+    let n = tokenize_into(slice_src, slice_len, toks, cap);
+    let i: usize = 0;
+    while i < n {
+        // Shift to absolute offsets so AST + error messages point at
+        // the right place in the outer source.
+        toks[i].start = toks[i].start + expr_start;
+        i = i + 1;
+    }
+
+    p.tokens = toks;
+    p.token_count = n;
+    p.pos = 0;
+    p.no_in = false;
+
+    let expr = parse_assignment(p);
+
+    p.tokens = saved_tokens;
+    p.token_count = saved_token_count;
+    p.pos = saved_pos;
+    p.no_in = saved_no_in;
+
+    // toks buffer is registered with the tracker so it stays alive for
+    // the AST's lifetime (token ranges aren't dereferenced post-parse,
+    // but the buffer's lifetime should track the AST anyway).
+    alloc_list_push(&p.tracker, (void*)toks);
+    return expr;
+}
+
 // Level 0 — primary.
 fn parse_primary(p: Parser*) -> AstNode* {
     let t = peek(p);
@@ -2819,6 +3008,9 @@ fn parse_primary(p: Parser*) -> AstNode* {
     if k == TokenKind::StringLit {
         advance(p);
         return new_node(&p.tracker, NodeKind::StringExpr, t.start, t.start + t.length);
+    }
+    if k == TokenKind::TemplateLit {
+        return parse_template_lit(p);
     }
     if k == TokenKind::RegexLit {
         // Source slice is `/pattern/flags` — the compiler splits it.
