@@ -2250,7 +2250,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 // Push BEFORE overwriting host_this so pop restores the
                 // caller's `this`.
                 push_call_frame_inplace(ctx, target, regs_base + (u32)base + 2, argc, dst);
-                wire_async_call(ctx, target, regs_base, dst);
+                if target.is_async { wire_async_call(ctx, target, regs_base, dst); }
                 ctx.host_this = new_this;
                 exit_reason = 2;
                 break;
@@ -2278,7 +2278,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 2, argc, dst);
-                wire_async_call(ctx, target2, regs_base, dst);
+                if target2.is_async { wire_async_call(ctx, target2, regs_base, dst); }
                 ctx.host_this = new_this;
                 ctx.current_closure = cl;
                 exit_reason = 2;
@@ -2355,7 +2355,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 // Push before reassigning host_this so the new frame's
                 // saved_host_this records the caller's `this`.
                 push_call_frame_inplace(ctx, target, regs_base + (u32)base + 1, argc, dst);
-                wire_async_call(ctx, target, regs_base, dst);
+                if target.is_async { wire_async_call(ctx, target, regs_base, dst); }
                 // Non-strict default `this` is the global object per
                 // ECMA-262 OrdinaryCallBindThis step 6. We don't track
                 // strict-mode-per-function yet; default to global.
@@ -2394,7 +2394,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 1, argc, dst);
-                wire_async_call(ctx, target2, regs_base, dst);
+                if target2.is_async { wire_async_call(ctx, target2, regs_base, dst); }
                 if ctx.global_this_obj != NULL {
                     ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
                 } else {
@@ -2464,7 +2464,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame(ctx, target, argv_ptr, argc, dst);
-                wire_async_call(ctx, target, regs_base, dst);
+                if target.is_async { wire_async_call(ctx, target, regs_base, dst); }
                 if is_method {
                     ctx.host_this = new_this;
                 } else if ctx.global_this_obj != NULL {
@@ -2481,7 +2481,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 raw { target2 = (Function*)fp2; }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame(ctx, target2, argv_ptr, argc, dst);
-                wire_async_call(ctx, target2, regs_base, dst);
+                if target2.is_async { wire_async_call(ctx, target2, regs_base, dst); }
                 if is_method {
                     ctx.host_this = new_this;
                 } else if ctx.global_this_obj != NULL {
