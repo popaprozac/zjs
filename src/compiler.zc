@@ -3143,38 +3143,74 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
         // Method call: regs[base]=method, regs[base+1]=receiver,
         // regs[base+2..]=args. Receiver is the member's object; LoadProp
         // (or LoadElem for computed) reads the method off it.
+        //
+        // Super-rooted member call: `super.m(...)` / `super[expr](...)`.
+        // Spec: receiver is the CURRENT `this`, but the method is
+        // looked up on the enclosing class's parent prototype — we
+        // resolve `enclosing_class_parent.prototype` and read the
+        // method off that.
+        let is_super_member: bool = callee.left != NULL && callee.left.kind == NodeKind::SuperExpr;
         let slots_needed: u8 = 2 + arg_count;
         let base = c.next_reg;
         let r: u8 = 0;
         while r < slots_needed { alloc_reg(c); r = r + 1; }
 
-        // Compile receiver into regs[base+1] using preferred_dst so
-        // the recv expression's terminal op writes there directly.
-        c.preferred_dst = (i32)(base + 1);
-        let recv_r = compile_expr(c, callee.left);
-        c.preferred_dst = -1;
-        if recv_r != base + 1 {
-            emit(c, make_inst_ab(Op::Mov, base + 1, recv_r));
-            if recv_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
-        }
+        if is_super_member {
+            if c.enclosing_class_parent == NULL {
+                c.had_error = true;
+                return base;
+            }
+            // Receiver = current `this`.
+            emit(c, make_inst_a(Op::LoadThis, base + 1));
+            // Method holder = parent.prototype. Load parent, then its
+            // .prototype slot — a regular LoadProp suffices because
+            // the parent is itself either a class or a function whose
+            // `.prototype` is the proto chain root we want.
+            let parent_r = compile_expr(c, c.enclosing_class_parent);
+            let proto_key = emit_load_name_string(c, (char*)"prototype", 9);
+            let holder_r = alloc_reg(c);
+            emit(c, make_inst_abc(Op::LoadElem, holder_r, parent_r, proto_key));
+            if proto_key + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            if parent_r != holder_r && parent_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            if callee.kind == NodeKind::Member {
+                let key2 = emit_load_name_string(c, c.source + callee.name_start, callee.name_length);
+                emit(c, make_inst_abc(Op::LoadElem, base, holder_r, key2));
+                if key2 + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            } else {
+                let key3 = compile_expr(c, callee.right);
+                emit(c, make_inst_abc(Op::LoadElem, base, holder_r, key3));
+                if key3 + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+            if holder_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        } else {
+            // Compile receiver into regs[base+1] using preferred_dst so
+            // the recv expression's terminal op writes there directly.
+            c.preferred_dst = (i32)(base + 1);
+            let recv_r = compile_expr(c, callee.left);
+            c.preferred_dst = -1;
+            if recv_r != base + 1 {
+                emit(c, make_inst_ab(Op::Mov, base + 1, recv_r));
+                if recv_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
 
-        // Load the method into regs[base].
-        if callee.kind == NodeKind::Member {
-            let name_atom = ctx_intern_atom(c.ctx, c.source + callee.name_start, callee.name_length);
-            let ic = alloc_ic_slot(c, name_atom);
-            if ic > 255 {
-                // Out of IC slots: fall back to LoadElem with a name-string key.
-                let key_r = emit_load_name_string(c, c.source + callee.name_start, callee.name_length);
+            // Load the method into regs[base].
+            if callee.kind == NodeKind::Member {
+                let name_atom = ctx_intern_atom(c.ctx, c.source + callee.name_start, callee.name_length);
+                let ic = alloc_ic_slot(c, name_atom);
+                if ic > 255 {
+                    // Out of IC slots: fall back to LoadElem with a name-string key.
+                    let key_r = emit_load_name_string(c, c.source + callee.name_start, callee.name_length);
+                    emit(c, make_inst_abc(Op::LoadElem, base, base + 1, key_r));
+                    if key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                } else {
+                    emit(c, make_inst_abc(Op::LoadProp, base, base + 1, (u8)ic));
+                }
+            } else {
+                // Computed: LoadElem regs[base], recv, key.
+                let key_r = compile_expr(c, callee.right);
                 emit(c, make_inst_abc(Op::LoadElem, base, base + 1, key_r));
                 if key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
-            } else {
-                emit(c, make_inst_abc(Op::LoadProp, base, base + 1, (u8)ic));
             }
-        } else {
-            // Computed: LoadElem regs[base], recv, key.
-            let key_r = compile_expr(c, callee.right);
-            emit(c, make_inst_abc(Op::LoadElem, base, base + 1, key_r));
-            if key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
         }
 
         // Args into regs[base+2..]. Use preferred_dst so the
