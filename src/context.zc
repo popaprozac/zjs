@@ -2367,6 +2367,20 @@ fn iter_step(ctx: ZjsContext*, iter: ZjsValue) -> IterStep {
                 ai.done = true;
                 return IterStep{ value: zjs_undefined(), done: true };
             }
+            // Expando bag present → an indexed accessor may be defined
+            // for this slot (e.g. defineProperty on "0" with a getter).
+            // Route through property_get so the getter fires; otherwise
+            // the spec-required side effects on iteration are silently
+            // skipped. Plain dense arrays (no props) keep the fast path.
+            if arr.props != NULL {
+                let idx_key = zjs_int32((i32)ai.index);
+                let v_slow = property_get(ctx, ai.src, idx_key);
+                if ctx.pending_throw_active {
+                    return IterStep{ value: zjs_undefined(), done: true };
+                }
+                ai.index = ai.index + 1;
+                return IterStep{ value: v_slow, done: false };
+            }
             let v = arr.elements[ai.index];
             if zjs_is_deleted(v) != 0 { v = zjs_undefined(); }
             ai.index = ai.index + 1;
@@ -2587,12 +2601,22 @@ fn host_object_create(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
         // ToPropertyDescriptor for the single-char descriptor values).
         // We model that as "throw TypeError" for both null and
         // primitives — the inner test would throw anyway.
+        // ECMA-262 ToObject(props) accepts any object-coercible value.
+        // For zjs that means any cell value EXCEPT a primitive string
+        // (a string here would coerce to String wrapper but its own
+        // enumerable keys are character indices, none of which are
+        // valid descriptors — net effect = no descriptors applied, no
+        // error). null/undefined are the actual reject case.
         let p1_objlike: bool =
                zjs_is_object(p1) != 0
             || zjs_is_array(p1) != 0
             || zjs_is_function(p1) != 0
             || zjs_is_host_function(p1) != 0
-            || zjs_is_regexp(p1) != 0;
+            || zjs_is_regexp(p1) != 0
+            || zjs_is_date(p1) != 0
+            || zjs_is_map(p1) != 0
+            || zjs_is_set(p1) != 0
+            || zjs_is_symbol(p1) != 0;
         if !p1_objlike {
             let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                         (char*)"Object.create properties must be an Object", 42);
@@ -8737,8 +8761,34 @@ fn host_number(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 }
 
 fn host_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let s: ZjsValue = if argc == 0 { ctx_intern_string(ctx, (char*)"", 0) }
-                      else         { zjs_to_string(ctx, args[0]) };
+    // ECMA-262 §22.1.1.1 String(value): the call form short-circuits
+    // Symbol via SymbolDescriptiveString rather than the generic
+    // ToString (which throws on Symbol). The `new String(symbol)`
+    // construct path STILL throws — but we don't currently distinguish
+    // call vs construct on host fns, and the common case the tests
+    // care about is the call form.
+    let s: ZjsValue;
+    if argc == 0 {
+        s = ctx_intern_string(ctx, (char*)"", 0);
+    } else if zjs_is_symbol(args[0]) != 0 {
+        let sym = zjs_as_symbol(args[0]);
+        let desc_d: char* = NULL;
+        let desc_n: u32 = 0;
+        if sym.description != NULL {
+            desc_d = sym.description.data;
+            desc_n = sym.description.length;
+        }
+        let buf = alloc_n<char>((usize)(desc_n + 9));
+        buf[0] = 'S'; buf[1] = 'y'; buf[2] = 'm'; buf[3] = 'b';
+        buf[4] = 'o'; buf[5] = 'l'; buf[6] = '(';
+        let i: u32 = 0;
+        while i < desc_n { buf[7 + i] = desc_d[i]; i = i + 1; }
+        buf[7 + desc_n] = ')'; buf[8 + desc_n] = (char)0;
+        s = ctx_intern_string_take(ctx, buf, desc_n + 8);
+    } else {
+        s = zjs_to_string(ctx, args[0]);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
     return wrap_primitive_if_new(ctx, s);
 }
 
@@ -10279,7 +10329,9 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
 // on the context.
 fn zjs_string_concat(ctx: ZjsContext*, a: ZjsValue, b: ZjsValue) -> ZjsValue {
     let sa_val = zjs_to_string(ctx, a);
+    if ctx.pending_throw_active { return zjs_undefined(); }
     let sb_val = zjs_to_string(ctx, b);
+    if ctx.pending_throw_active { return zjs_undefined(); }
     let sa = zjs_as_string(sa_val);
     let sb = zjs_as_string(sb_val);
     let total = sa.length + sb.length;

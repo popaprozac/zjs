@@ -3568,7 +3568,18 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
     let name_len = target.name_length;
     if c.is_function {
         let lidx = find_local_index(c, name, name_len);
-        if lidx < 0 { c.had_error = true; return; }
+        if lidx < 0 {
+            // Script-scope `var [x] of ...` (and similar): collect_locals
+            // skips top-level var, so x has no pre-registered local. The
+            // spec puts the binding on globalThis — emit DefineGlobal,
+            // matching what NodeKind::VarDecl does at the same scope.
+            if c.is_script {
+                let slot = ctx_intern_global(c.ctx, name, name_len);
+                emit(c, make_inst_a_u16(Op::DefineGlobal, val_reg, (u16)slot));
+                return;
+            }
+            c.had_error = true; return;
+        }
         if c.locals[(u32)lidx].captured {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
             let ic = alloc_ic_slot(c, name_atom);

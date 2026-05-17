@@ -1392,6 +1392,10 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             if zjs_is_string(av) != 0 || zjs_is_string(bv) != 0 {
                 regs[inst.a] = zjs_string_concat(ctx, av, bv);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
             } else {
                 regs[inst.a] = zjs_arith_add(av, bv);
             }
