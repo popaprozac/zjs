@@ -726,6 +726,14 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         return compile_call(c, node);
     }
     if k == NodeKind::New {
+        // Outer's preferred_dst (if any) refers to the new-expression's
+        // RESULT register — not where the callee/args should land. Clear
+        // it across the body so an inner LoadGlobal alloc_dst doesn't
+        // clobber a destination local that's also referenced by an arg
+        // (e.g. `queue = new Packet(queue, ...)`).
+        let new_outer_pd = c.preferred_dst;
+        c.preferred_dst = -1;
+
         // Detect `new Foo(...args)` spread in `new` argument list and
         // route to the variadic path. Args go into a single array,
         // SpreadNewInvoke reads argc from it at runtime.
@@ -761,6 +769,7 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
             emit(c, make_inst_abc(Op::SpreadNewInvoke, n_base, n_base, 0));
             c.next_reg = n_base + 1;
             if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+            c.preferred_dst = new_outer_pd;
             return n_base;
         }
         // `new Foo(args)`: reserve a contiguous slot for callee + args,
@@ -789,6 +798,7 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         emit(c, make_inst_abc(Op::NewInvoke, base, base, arg_count));
         c.next_reg = base + 1;
         if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+        c.preferred_dst = new_outer_pd;
         return base;
     }
     if k == NodeKind::Member {
@@ -2931,7 +2941,21 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
     return new_reg;
 }
 
+fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8;
+
 fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
+    // Outer's preferred_dst (if any) refers to the call's RESULT
+    // register — not where any internal slot (callee/recv/args)
+    // should go. Save + clear at the boundary so inner compile_expr
+    // calls don't see a stale hint via LoadGlobal alloc_dst.
+    let outer_pd = c.preferred_dst;
+    c.preferred_dst = -1;
+    let r = compile_call_inner(c, node);
+    c.preferred_dst = outer_pd;
+    return r;
+}
+
+fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
     let callee = node.left;
     let is_method = callee != NULL && (callee.kind == NodeKind::Member || callee.kind == NodeKind::Computed);
 
@@ -3063,10 +3087,9 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
 
         // Compile receiver into regs[base+1] using preferred_dst so
         // the recv expression's terminal op writes there directly.
-        let saved_pd_mr = c.preferred_dst;
         c.preferred_dst = (i32)(base + 1);
         let recv_r = compile_expr(c, callee.left);
-        c.preferred_dst = saved_pd_mr;
+        c.preferred_dst = -1;
         if recv_r != base + 1 {
             emit(c, make_inst_ab(Op::Mov, base + 1, recv_r));
             if recv_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
@@ -3096,10 +3119,9 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
         let j: u8 = 0;
         while j < arg_count {
             let target_slot = base + 2 + j;
-            let saved_pd_ma = c.preferred_dst;
             c.preferred_dst = (i32)target_slot;
             let arg_r = compile_expr(c, node.children[j]);
-            c.preferred_dst = saved_pd_ma;
+            c.preferred_dst = -1;
             if arg_r != target_slot {
                 emit(c, make_inst_ab(Op::Mov, target_slot, arg_r));
                 if arg_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
@@ -3124,12 +3146,10 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
 
     // Pass preferred_dst = base so a LoadGlobal/LoadProp/etc callee
     // writes directly into the call slot. compile_expr clears the
-    // hint on first dst alloc, so nested sub-expressions still get
-    // their own scratch.
-    let saved_pd_c = c.preferred_dst;
+    // hint on first dst alloc.
     c.preferred_dst = (i32)base;
     let r = compile_expr(c, node.left);
-    c.preferred_dst = saved_pd_c;
+    c.preferred_dst = -1;
     if r != base {
         emit(c, make_inst_ab(Op::Mov, base, r));
         if r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
@@ -3138,10 +3158,9 @@ fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
     let j: u8 = 0;
     while j < arg_count {
         let target_slot = base + 1 + j;
-        let saved_pd_a = c.preferred_dst;
         c.preferred_dst = (i32)target_slot;
         let arg_r = compile_expr(c, node.children[j]);
-        c.preferred_dst = saved_pd_a;
+        c.preferred_dst = -1;
         if arg_r != target_slot {
             emit(c, make_inst_ab(Op::Mov, target_slot, arg_r));
             if arg_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
