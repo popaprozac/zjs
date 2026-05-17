@@ -3195,6 +3195,58 @@ fn host_object_is(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_bool(zjs_strict_eq(a, b));
 }
 
+// Object.setPrototypeOf(O, proto) — Phase 3.9.
+// Spec: O must be coercible; proto must be Object or null. Sets
+// O.[[Prototype]] and returns O. Primitives are returned unchanged
+// after the type-validation step (no wrapper materialization needed).
+fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let obj_v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_undefined(obj_v) != 0 || zjs_is_null(obj_v) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Object.setPrototypeOf called on null or undefined", 49);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let proto_v = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let proto_ok: bool = zjs_is_null(proto_v) != 0 || zjs_is_object(proto_v) != 0;
+    if !proto_ok {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Object prototype may only be an Object or null", 47);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    if zjs_is_object(obj_v) != 0 {
+        let o = zjs_as_object(obj_v);
+        if zjs_is_null(proto_v) != 0 {
+            o.proto = NULL;
+        } else {
+            let new_proto = zjs_as_object(proto_v);
+            // Cycle check (ECMA-262 OrdinarySetPrototypeOf step 8). Walk
+            // the proposed proto chain; if we reach `o`, the assignment
+            // would create a cycle — throw TypeError. Skip when the new
+            // proto IS the existing one (identity assign is a no-op).
+            if new_proto != o.proto {
+                let p = new_proto;
+                while p != NULL {
+                    if p == o {
+                        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                    (char*)"cyclic __proto__ value", 22);
+                        ctx.pending_throw_active = true;
+                        ctx.pending_throw_value = err;
+                        return zjs_undefined();
+                    }
+                    p = p.proto;
+                }
+            }
+            o.proto = new_proto;
+        }
+    }
+    // Non-object receivers: spec returns the original value unchanged.
+    return obj_v;
+}
+
 fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
     if !require_object_keys_arg(ctx, v) { return zjs_undefined(); }
@@ -3436,26 +3488,100 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         }
         cls = cls.parent;
     }
-    let out: u32 = 0;
+    // ECMA-262 OrdinaryOwnPropertyKeys: array-index keys first, in
+    // ascending numeric order, then string keys in insertion order.
+    // Two-pass: separate integer-index keys, sort, emit; then string
+    // keys in slot (= creation) order.
+    let int_keys: u32[64];
+    let int_names: ZjsString*[64];
+    let int_count: u32 = 0;
     let i: u32 = 0;
     while i < limit {
-        if scratch[i] != NULL {
-            // Skip our internal `__zjs_*` keys (non-enumerable in spec).
-            let nm = scratch[i];
+        let nm = scratch[i];
+        if nm != NULL {
             let is_internal: bool = false;
             if nm.length >= 6 {
                 let nd = nm.data;
                 raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
             }
             if !is_internal {
-                arr.elements[out] = zjs_cell_from_ptr((void*)nm);
-                out = out + 1;
+                let idx_v: i64 = string_as_array_index(nm);
+                if idx_v >= 0 && int_count < 64 {
+                    int_keys[int_count] = (u32)idx_v;
+                    int_names[int_count] = nm;
+                    int_count = int_count + 1;
+                    scratch[i] = NULL; // consumed
+                }
             }
         }
         i = i + 1;
     }
+    // Insertion sort int_keys by numeric value.
+    let si: u32 = 1;
+    while si < int_count {
+        let kv = int_keys[si];
+        let nv = int_names[si];
+        let sj: i32 = (i32)si - 1;
+        while sj >= 0 && int_keys[(u32)sj] > kv {
+            int_keys[(u32)(sj + 1)] = int_keys[(u32)sj];
+            int_names[(u32)(sj + 1)] = int_names[(u32)sj];
+            sj = sj - 1;
+        }
+        int_keys[(u32)(sj + 1)] = kv;
+        int_names[(u32)(sj + 1)] = nv;
+        si = si + 1;
+    }
+    let out: u32 = 0;
+    let ii: u32 = 0;
+    while ii < int_count {
+        arr.elements[out] = zjs_cell_from_ptr((void*)int_names[ii]);
+        out = out + 1;
+        ii = ii + 1;
+    }
+    let j: u32 = 0;
+    while j < limit {
+        if scratch[j] != NULL {
+            let nm2 = scratch[j];
+            let is_internal2: bool = false;
+            if nm2.length >= 6 {
+                let nd2 = nm2.data;
+                raw { is_internal2 = (memcmp(nd2, "__zjs_", 6) == 0) ? true : false; }
+            }
+            if !is_internal2 {
+                arr.elements[out] = zjs_cell_from_ptr((void*)nm2);
+                out = out + 1;
+            }
+        }
+        j = j + 1;
+    }
     arr.length = out;
     return arr_v;
+}
+
+// Returns the numeric value if `name` is a CanonicalNumericIndexString
+// for a non-negative integer in u32 range, else -1.
+fn string_as_array_index(name: ZjsString*) -> i64 {
+    if name == NULL || name.length == 0 { return -1; }
+    let d = name.data;
+    let n = name.length;
+    if n > 10 { return -1; }  // 10 digits = max u32 (4294967295)
+    // Leading-zero disallowed except for the singleton "0".
+    let first: u8 = (u8)d[0];
+    if first == (u8)'0' {
+        if n == 1 { return 0; }
+        return -1;
+    }
+    if first < (u8)'1' || first > (u8)'9' { return -1; }
+    let v: u64 = 0;
+    let i: u32 = 0;
+    while i < n {
+        let c = (u8)d[i];
+        if c < (u8)'0' || c > (u8)'9' { return -1; }
+        v = v * 10 + (u64)(c - (u8)'0');
+        i = i + 1;
+    }
+    if v > 4294967295 { return -1; }
+    return (i64)v;
 }
 
 // --- Array.prototype helpers ---------------------------------------
@@ -9882,6 +10008,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"create", create_ptr, 2));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getPrototypeOf", 14),
                ctx_make_host_function_arity(ctx, (char*)"getPrototypeOf", gpo_ptr, 1));
+    let spo_ptr: void* = NULL; raw { spo_ptr = (void*)host_object_set_prototype_of; }
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"setPrototypeOf", 14),
+               ctx_make_host_function_arity(ctx, (char*)"setPrototypeOf", spo_ptr, 2));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"is", 2),
                ctx_make_host_function_arity(ctx, (char*)"is", ois_ptr, 2));
     // Phase 3.9a — Object.defineProperty / defineProperties /

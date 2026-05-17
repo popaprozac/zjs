@@ -46,6 +46,7 @@
     "test/built-ins/Object/keys",
     "test/built-ins/Object/create",
     "test/built-ins/Object/getPrototypeOf",
+    "test/built-ins/Object/setPrototypeOf",
     "test/built-ins/JSON/parse",
     "test/built-ins/JSON/stringify",
     "test/built-ins/String/prototype/indexOf",
