@@ -39,7 +39,7 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 
 **Tests:** 902 in-tree assertions pass (smoke + lexer + parser + interpreter).
 
-**Conformance:** 81.8% of the test262 included subset (6,473 of 7,918 non-skipped). Live dashboard at `docs/conformance/index.html`.
+**Conformance:** 82.2% of the test262 included subset (6,506 of 7,918 non-skipped). Live dashboard at `docs/conformance/index.html`.
 
 **Perf vs qjs:** zjs ahead on 19 of 21 microbenches (richards, property_poly, int_loop, etc); behind by single digits on nbody + fib_recursive. Live charts at `docs/perf/index.html`.
 
@@ -54,9 +54,9 @@ $ ./build/zjs eval "function fib(n) { if (n < 2) return n; return fib(n - 1) + f
 $ ./build/zjs eval "let inc = x => x + 1; inc(41)"
 42
 
-# Classes with extends, fields, methods, accessors
-$ ./build/zjs eval "class Point { constructor(x, y) { this.x = x; this.y = y; } get norm() { return this.x * this.x + this.y * this.y; } } new Point(3, 4).norm"
-25
+# Classes — extends, super, fields, accessors
+$ ./build/zjs eval "class Animal { speak() { return 'silence'; } } class Dog extends Animal { speak() { return super.speak() + ' broken by a bark'; } } new Dog().speak()"
+silence broken by a bark
 
 # Template literals
 $ ./build/zjs eval "let name = 'world'; \`hello \${name}\`"
