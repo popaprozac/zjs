@@ -275,6 +275,7 @@ struct ZjsContext {
     date_proto:         ZjsObject*;
     symbol_proto:       ZjsObject*;
     url_proto:          ZjsObject*;
+    usp_proto:          ZjsObject*;
     // Cached pristine Array/String @@iterator host fn. Used by iter_get
     // to short-circuit to the TAG_ARRAY_ITER fast path when the lookup
     // would yield this exact function (i.e. user code hasn't overridden
@@ -1325,6 +1326,9 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     }
     if ctx.url_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.url_proto));
+    }
+    if ctx.usp_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.usp_proto));
     }
     gc_mark_value(ctx.array_iter_host_fn);
     // Symbol.for registry — both keys and the symbols themselves stay
@@ -8684,6 +8688,444 @@ fn host_url_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     return r;
 }
 
+// =====================================================================
+// URLSearchParams — v0.1 (2026-05-18). Backed by a hidden own
+// property `__zjs_usp_pairs__` holding a flat ZjsArray of strings
+// at indices [2k, 2k+1] = [name, value]. Constructor accepts:
+//   - undefined / "" → empty
+//   - string "a=1&b=2&..." → URL-decoded pairs
+//   - array of [k, v] pairs
+//   - object → enumerable own props
+// Out of scope for v0.1: percent-decoding of plus-signs and high
+// bytes, iteration objects (we install entries/keys/values but they
+// return arrays, not real iterators).
+// =====================================================================
+
+def USP_PAIRS_KEY: char* = (char*)"__zjs_usp_pairs__";
+
+fn usp_pairs(ctx: ZjsContext*, obj: ZjsObject*) -> ZjsArray* {
+    let atom = ctx_intern_atom(ctx, USP_PAIRS_KEY, 17);
+    let slot = class_find_slot(obj.cls, atom);
+    if slot < 0 { return NULL; }
+    let v = obj.slots[(u32)slot];
+    if zjs_is_array(v) == 0 { return NULL; }
+    return zjs_as_array(v);
+}
+
+// "+" → " ", "%XX" → byte. No UTF-8 awareness — passes bytes through.
+fn usp_decode(ctx: ZjsContext*, src: char*, len: u32) -> ZjsValue {
+    if len == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let buf = alloc_n<char>((usize)(len + 1));
+    let i: u32 = 0;
+    let o: u32 = 0;
+    while i < len {
+        let c = src[i];
+        if c == (char)'+' { buf[o] = (char)' '; o = o + 1; i = i + 1; continue; }
+        if c == (char)'%' && i + 2 < len {
+            let h1 = src[i + 1];
+            let h2 = src[i + 2];
+            let v1: i32 = -1;
+            let v2: i32 = -1;
+            raw {
+                v1 = (h1 >= '0' && h1 <= '9') ? (h1 - '0')
+                   : (h1 >= 'a' && h1 <= 'f') ? (h1 - 'a' + 10)
+                   : (h1 >= 'A' && h1 <= 'F') ? (h1 - 'A' + 10) : -1;
+                v2 = (h2 >= '0' && h2 <= '9') ? (h2 - '0')
+                   : (h2 >= 'a' && h2 <= 'f') ? (h2 - 'a' + 10)
+                   : (h2 >= 'A' && h2 <= 'F') ? (h2 - 'A' + 10) : -1;
+            }
+            if v1 >= 0 && v2 >= 0 {
+                buf[o] = (char)((v1 << 4) | v2);
+                o = o + 1;
+                i = i + 3;
+                continue;
+            }
+        }
+        buf[o] = c;
+        o = o + 1;
+        i = i + 1;
+    }
+    buf[o] = (char)0;
+    let r = ctx_intern_string(ctx, buf, o);
+    dealloc(buf);
+    return r;
+}
+
+// Percent-encode application/x-www-form-urlencoded. ASCII alpha-numerics
+// + `-._~` pass through; everything else becomes `%XX` (or `+` for space).
+fn usp_encode(ctx: ZjsContext*, src: char*, len: u32) -> ZjsValue {
+    let cap: u32 = len * 3 + 1;
+    let buf = alloc_n<char>((usize)cap);
+    let o: u32 = 0;
+    let i: u32 = 0;
+    while i < len {
+        let c = src[i];
+        let pass: bool = false;
+        raw {
+            pass = ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')
+                 || (c >= '0' && c <= '9')
+                 || c == '-' || c == '.' || c == '_' || c == '~');
+        }
+        if pass { buf[o] = c; o = o + 1; }
+        else if c == (char)' ' { buf[o] = (char)'+'; o = o + 1; }
+        else {
+            let hex: char[16];
+            raw {
+                static const char H[] = "0123456789ABCDEF";
+                buf[o]     = '%';
+                buf[o + 1] = H[((unsigned char)c) >> 4];
+                buf[o + 2] = H[((unsigned char)c) & 0xF];
+            }
+            o = o + 3;
+        }
+        i = i + 1;
+    }
+    buf[o] = (char)0;
+    let r = ctx_intern_string(ctx, buf, o);
+    dealloc(buf);
+    return r;
+}
+
+// Append (name, value) to the pairs array — both pre-decoded.
+fn usp_append_decoded(ctx: ZjsContext*, pairs: ZjsArray*, name_v: ZjsValue, value_v: ZjsValue) -> void {
+    array_set(pairs, pairs.length, name_v);
+    array_set(pairs, pairs.length, value_v);
+}
+
+// Parse `a=1&b=2&...` form into pairs.
+fn usp_parse_string(ctx: ZjsContext*, pairs: ZjsArray*, src: char*, len: u32) -> void {
+    let i: u32 = 0;
+    // Skip a leading '?' if present (so `new URLSearchParams("?a=1")` works).
+    if len > 0 && src[0] == (char)'?' { i = 1; }
+    while i < len {
+        let pair_start = i;
+        while i < len && src[i] != (char)'&' { i = i + 1; }
+        let pair_end = i;
+        let pl = pair_end - pair_start;
+        if pl > 0 {
+            // Find '=' inside this slice.
+            let eq: u32 = pair_start;
+            while eq < pair_end && src[eq] != (char)'=' { eq = eq + 1; }
+            let name_v = usp_decode(ctx, src + pair_start, eq - pair_start);
+            let val_v: ZjsValue = if eq < pair_end { usp_decode(ctx, src + eq + 1, pair_end - eq - 1) }
+                                  else            { ctx_intern_string(ctx, (char*)"", 0) };
+            usp_append_decoded(ctx, pairs, name_v, val_v);
+        }
+        if i < len { i = i + 1; }    // skip '&'
+    }
+}
+
+fn host_url_searchparams_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let obj_v = ctx.host_this;
+    if zjs_is_object(obj_v) == 0 {
+        obj_v = ctx_new_object(ctx);
+        if ctx.usp_proto != NULL { zjs_as_object(obj_v).proto = ctx.usp_proto; }
+    }
+    let obj = zjs_as_object(obj_v);
+    let pairs_v = ctx_new_array(ctx, 0);
+    object_set(ctx, obj, ctx_intern_atom(ctx, USP_PAIRS_KEY, 17), pairs_v);
+    let pairs = zjs_as_array(pairs_v);
+    if argc == 0 || zjs_is_undefined(args[0]) != 0 || zjs_is_null(args[0]) != 0 {
+        return obj_v;
+    }
+    let init = args[0];
+    if zjs_is_string(init) != 0 {
+        let s = zjs_as_string(init);
+        usp_parse_string(ctx, pairs, s.data, s.length);
+        return obj_v;
+    }
+    if zjs_is_array(init) != 0 {
+        let a = zjs_as_array(init);
+        let i: u32 = 0;
+        while i < a.length {
+            let entry = a.elements[i];
+            if zjs_is_array(entry) != 0 {
+                let ea = zjs_as_array(entry);
+                let kv = if ea.length >= 1 { ea.elements[0] } else { zjs_undefined() };
+                let vv = if ea.length >= 2 { ea.elements[1] } else { zjs_undefined() };
+                let ks = if zjs_is_string(kv) != 0 { kv } else { zjs_to_string(ctx, kv) };
+                let vs = if zjs_is_string(vv) != 0 { vv } else { zjs_to_string(ctx, vv) };
+                usp_append_decoded(ctx, pairs, ks, vs);
+            }
+            i = i + 1;
+        }
+        return obj_v;
+    }
+    if zjs_is_object(init) != 0 {
+        let io = zjs_as_object(init);
+        let cls = io.cls;
+        // Walk the class transition chain to recover names in
+        // insertion order.
+        let names: ZjsString*[64];
+        let slots: u32[64];
+        let nc: u32 = 0;
+        let c = cls;
+        while c != NULL && c.parent != NULL && nc < 64 {
+            names[nc] = c.transition_name;
+            slots[nc] = c.transition_slot;
+            nc = nc + 1;
+            c = c.parent;
+        }
+        // Reverse-walk to emit oldest first.
+        let ni: u32 = nc;
+        while ni > 0 {
+            ni = ni - 1;
+            let name = names[ni];
+            let slot = slots[ni];
+            if name != NULL && zjs_is_deleted(io.slots[slot]) == 0 {
+                let v = io.slots[slot];
+                let vs = if zjs_is_string(v) != 0 { v } else { zjs_to_string(ctx, v) };
+                let name_v = zjs_cell_from_ptr((void*)name);
+                usp_append_decoded(ctx, pairs, name_v, vs);
+            }
+        }
+    }
+    return obj_v;
+}
+
+// Find first index `i` such that pairs[2i] equals `name`. -1 if absent.
+fn usp_find(pairs: ZjsArray*, name: ZjsString*) -> i32 {
+    let n = pairs.length / 2;
+    let i: u32 = 0;
+    while i < n {
+        let entry = pairs.elements[i * 2];
+        if zjs_is_string(entry) != 0 {
+            let es = zjs_as_string(entry);
+            if es == name { return (i32)i; }
+            if es.length == name.length {
+                let eq: int = 0;
+                raw { eq = (memcmp(es->data, name->data, es->length) == 0) ? 1 : 0; }
+                if eq != 0 { return (i32)i; }
+            }
+        }
+        i = i + 1;
+    }
+    return -1;
+}
+
+fn host_usp_get(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_null(); }
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_null(); }
+    let pairs = usp_pairs(ctx, zjs_as_object(this_v));
+    if pairs == NULL { return zjs_null(); }
+    let name_v = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    let idx = usp_find(pairs, zjs_as_string(name_v));
+    if idx < 0 { return zjs_null(); }
+    return pairs.elements[(u32)idx * 2 + 1];
+}
+
+fn host_usp_get_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let out_v = ctx_new_array(ctx, 0);
+    if argc == 0 { return out_v; }
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return out_v; }
+    let pairs = usp_pairs(ctx, zjs_as_object(this_v));
+    if pairs == NULL { return out_v; }
+    let name_v = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    let name = zjs_as_string(name_v);
+    let out = zjs_as_array(out_v);
+    let n = pairs.length / 2;
+    let i: u32 = 0;
+    while i < n {
+        let entry = pairs.elements[i * 2];
+        if zjs_is_string(entry) != 0 {
+            let es = zjs_as_string(entry);
+            let same: int = 0;
+            if es == name { same = 1; }
+            else if es.length == name.length {
+                raw { same = (memcmp(es->data, name->data, es->length) == 0) ? 1 : 0; }
+            }
+            if same != 0 {
+                array_set(out, out.length, pairs.elements[i * 2 + 1]);
+            }
+        }
+        i = i + 1;
+    }
+    return out_v;
+}
+
+fn host_usp_has(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_bool(0); }
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_bool(0); }
+    let pairs = usp_pairs(ctx, zjs_as_object(this_v));
+    if pairs == NULL { return zjs_bool(0); }
+    let name_v = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    return zjs_bool(if usp_find(pairs, zjs_as_string(name_v)) >= 0 { 1 } else { 0 });
+}
+
+fn host_usp_append(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 2 { return zjs_undefined(); }
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    let pairs = usp_pairs(ctx, zjs_as_object(this_v));
+    if pairs == NULL { return zjs_undefined(); }
+    let name_v  = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    let value_v = if zjs_is_string(args[1]) != 0 { args[1] } else { zjs_to_string(ctx, args[1]) };
+    usp_append_decoded(ctx, pairs, name_v, value_v);
+    return zjs_undefined();
+}
+
+fn host_usp_set(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 2 { return zjs_undefined(); }
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    let pairs = usp_pairs(ctx, zjs_as_object(this_v));
+    if pairs == NULL { return zjs_undefined(); }
+    let name_v  = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    let value_v = if zjs_is_string(args[1]) != 0 { args[1] } else { zjs_to_string(ctx, args[1]) };
+    let name = zjs_as_string(name_v);
+    // Find the first matching, replace value, then drop the rest.
+    let n = pairs.length / 2;
+    let read: u32 = 0;
+    let write: u32 = 0;
+    let placed: bool = false;
+    while read < n {
+        let entry = pairs.elements[read * 2];
+        let val   = pairs.elements[read * 2 + 1];
+        let same: int = 0;
+        if zjs_is_string(entry) != 0 {
+            let es = zjs_as_string(entry);
+            if es == name { same = 1; }
+            else if es.length == name.length {
+                raw { same = (memcmp(es->data, name->data, es->length) == 0) ? 1 : 0; }
+            }
+        }
+        if same != 0 {
+            if !placed {
+                pairs.elements[write * 2]     = entry;
+                pairs.elements[write * 2 + 1] = value_v;
+                write = write + 1;
+                placed = true;
+            }
+            // else: drop additional duplicates
+        } else {
+            if write != read {
+                pairs.elements[write * 2]     = entry;
+                pairs.elements[write * 2 + 1] = val;
+            }
+            write = write + 1;
+        }
+        read = read + 1;
+    }
+    if !placed {
+        usp_append_decoded(ctx, pairs, name_v, value_v);
+    } else {
+        pairs.length = write * 2;
+    }
+    return zjs_undefined();
+}
+
+fn host_usp_delete(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_undefined(); }
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    let pairs = usp_pairs(ctx, zjs_as_object(this_v));
+    if pairs == NULL { return zjs_undefined(); }
+    let name_v = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    let name = zjs_as_string(name_v);
+    let n = pairs.length / 2;
+    let read: u32 = 0;
+    let write: u32 = 0;
+    while read < n {
+        let entry = pairs.elements[read * 2];
+        let val   = pairs.elements[read * 2 + 1];
+        let same: int = 0;
+        if zjs_is_string(entry) != 0 {
+            let es = zjs_as_string(entry);
+            if es == name { same = 1; }
+            else if es.length == name.length {
+                raw { same = (memcmp(es->data, name->data, es->length) == 0) ? 1 : 0; }
+            }
+        }
+        if same == 0 {
+            if write != read {
+                pairs.elements[write * 2]     = entry;
+                pairs.elements[write * 2 + 1] = val;
+            }
+            write = write + 1;
+        }
+        read = read + 1;
+    }
+    pairs.length = write * 2;
+    return zjs_undefined();
+}
+
+fn host_usp_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let pairs = usp_pairs(ctx, zjs_as_object(this_v));
+    if pairs == NULL { return ctx_intern_string(ctx, (char*)"", 0); }
+    let n = pairs.length / 2;
+    if n == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    // Each pair contributes encoded(k) + '=' + encoded(v) + '&'.
+    // We over-allocate aggressively then trim.
+    let cap: u32 = 64;
+    let i: u32 = 0;
+    while i < n {
+        let kv = pairs.elements[i * 2];
+        let vv = pairs.elements[i * 2 + 1];
+        let kl: u32 = if zjs_is_string(kv) != 0 { zjs_as_string(kv).length } else { 0 };
+        let vl: u32 = if zjs_is_string(vv) != 0 { zjs_as_string(vv).length } else { 0 };
+        cap = cap + (kl + vl) * 3 + 8;
+        i = i + 1;
+    }
+    let buf = alloc_n<char>((usize)cap);
+    let o: u32 = 0;
+    let j: u32 = 0;
+    while j < n {
+        let kv = pairs.elements[j * 2];
+        let vv = pairs.elements[j * 2 + 1];
+        let ks_v = if zjs_is_string(kv) != 0 { kv } else { zjs_to_string(ctx, kv) };
+        let vs_v = if zjs_is_string(vv) != 0 { vv } else { zjs_to_string(ctx, vv) };
+        let ks = zjs_as_string(ks_v);
+        let vs = zjs_as_string(vs_v);
+        let enc_k = usp_encode(ctx, ks.data, ks.length);
+        let enc_v = usp_encode(ctx, vs.data, vs.length);
+        let eks = zjs_as_string(enc_k);
+        let evs = zjs_as_string(enc_v);
+        let ki: u32 = 0;
+        while ki < eks.length { buf[o] = eks.data[ki]; o = o + 1; ki = ki + 1; }
+        buf[o] = (char)'='; o = o + 1;
+        let vi: u32 = 0;
+        while vi < evs.length { buf[o] = evs.data[vi]; o = o + 1; vi = vi + 1; }
+        if j + 1 < n { buf[o] = (char)'&'; o = o + 1; }
+        j = j + 1;
+    }
+    let r = ctx_intern_string(ctx, buf, o);
+    dealloc(buf);
+    return r;
+}
+
+fn host_usp_size(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_int32(0); }
+    let pairs = usp_pairs(ctx, zjs_as_object(this_v));
+    if pairs == NULL { return zjs_int32(0); }
+    return zjs_int32((i32)(pairs.length / 2));
+}
+
+// url.searchParams — returns a fresh URLSearchParams each call (v0.1
+// limitation: not live-linked back to the URL; mutations don't
+// reflect in url.search until the user assembles a new URL).
+fn host_url_search_params(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    let obj = zjs_as_object(this_v);
+    let search = url_get_str(obj, ctx, URL_SEARCH_KEY, 18);
+    let usp_v = ctx_new_object(ctx);
+    if ctx.usp_proto != NULL { zjs_as_object(usp_v).proto = ctx.usp_proto; }
+    let pairs_v = ctx_new_array(ctx, 0);
+    object_set(ctx, zjs_as_object(usp_v),
+               ctx_intern_atom(ctx, USP_PAIRS_KEY, 17), pairs_v);
+    if zjs_is_string(search) != 0 {
+        let ss = zjs_as_string(search);
+        usp_parse_string(ctx, zjs_as_array(pairs_v), ss.data, ss.length);
+    }
+    return usp_v;
+}
+
 fn host_date_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let ms: f64 = 0.0;
     if argc == 0 {
@@ -11649,6 +12091,44 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"toString", u_tostr_ptr));
     object_set(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6),
                ctx_make_host_function(ctx, (char*)"toJSON", u_tostr_ptr));
+
+    // === URLSearchParams ===
+    let usp_ctor_ptr:   void* = NULL; raw { usp_ctor_ptr   = (void*)host_url_searchparams_ctor; }
+    let usp_get_ptr:    void* = NULL; raw { usp_get_ptr    = (void*)host_usp_get; }
+    let usp_getall_ptr: void* = NULL; raw { usp_getall_ptr = (void*)host_usp_get_all; }
+    let usp_has_ptr:    void* = NULL; raw { usp_has_ptr    = (void*)host_usp_has; }
+    let usp_set_ptr:    void* = NULL; raw { usp_set_ptr    = (void*)host_usp_set; }
+    let usp_app_ptr:    void* = NULL; raw { usp_app_ptr    = (void*)host_usp_append; }
+    let usp_del_ptr:    void* = NULL; raw { usp_del_ptr    = (void*)host_usp_delete; }
+    let usp_str_ptr:    void* = NULL; raw { usp_str_ptr    = (void*)host_usp_to_string; }
+    let usp_size_ptr:   void* = NULL; raw { usp_size_ptr   = (void*)host_usp_size; }
+    let usp_ctor_v = ctx_register_host_function(ctx, (char*)"URLSearchParams", usp_ctor_ptr);
+    let usp_proto_v = ctx_new_object(ctx);
+    ctx.usp_proto = zjs_as_object(usp_proto_v);
+    zjs_as_host_function(usp_ctor_v).prototype = ctx.usp_proto;
+    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), usp_ctor_v);
+    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"get", 3),
+               ctx_make_host_function_arity(ctx, (char*)"get", usp_get_ptr, 1));
+    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"getAll", 6),
+               ctx_make_host_function_arity(ctx, (char*)"getAll", usp_getall_ptr, 1));
+    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"has", 3),
+               ctx_make_host_function_arity(ctx, (char*)"has", usp_has_ptr, 1));
+    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"set", 3),
+               ctx_make_host_function_arity(ctx, (char*)"set", usp_set_ptr, 2));
+    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"append", 6),
+               ctx_make_host_function_arity(ctx, (char*)"append", usp_app_ptr, 2));
+    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"delete", 6),
+               ctx_make_host_function_arity(ctx, (char*)"delete", usp_del_ptr, 1));
+    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
+               ctx_make_host_function(ctx, (char*)"toString", usp_str_ptr));
+    object_define_accessor(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"size", 4),
+                           ctx_make_host_function(ctx, (char*)"get size", usp_size_ptr), zjs_undefined());
+
+    // url.searchParams accessor (returns a fresh URLSearchParams each
+    // call — v0.1 limitation, mutations don't write back to url.search).
+    let u_sp_ptr: void* = NULL; raw { u_sp_ptr = (void*)host_url_search_params; }
+    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"searchParams", 12),
+                           ctx_make_host_function(ctx, (char*)"get searchParams", u_sp_ptr), zjs_undefined());
 
     // Well-known symbols installed below replace the prior string
     // sentinels so `typeof Symbol.iterator === "symbol"`.
