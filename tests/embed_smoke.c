@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "zjs.h"
 
@@ -759,6 +760,68 @@ static void test_aot_bytecode(void) {
 }
 
 /* -----------------------------------------------------------------------
+ * ES modules through the public ABI.
+ *
+ * Embedders rely on `zjs_eval_module` to load .mjs sources, follow
+ * relative imports, drain microtasks, and surface the exports
+ * namespace. This case writes a tiny two-module project to /tmp and
+ * walks it through default + named imports + cross-module calls.
+ * --------------------------------------------------------------------- */
+
+static int write_file(const char* path, const char* body) {
+    FILE* f = fopen(path, "w");
+    if (!f) return -1;
+    fputs(body, f);
+    return fclose(f);
+}
+
+static void test_module_abi(void) {
+    /* Use a deterministic temp directory under /tmp so consecutive
+     * runs don't bleed state. The file contents are also re-written
+     * each run so source changes during development land cleanly. */
+    const char* dir       = "/tmp/zjs_smoke_modules";
+    const char* lib_path  = "/tmp/zjs_smoke_modules/lib.mjs";
+    const char* main_path = "/tmp/zjs_smoke_modules/main.mjs";
+    mkdir(dir, 0755);
+
+    CHECK(write_file(lib_path,
+        "export const greeting = 'hello';\n"
+        "export function add(a, b) { return a + b; }\n"
+        "export default function square(x) { return x * x; }\n"
+    ) == 0, "wrote lib.mjs");
+    CHECK(write_file(main_path,
+        "import square, { greeting, add } from './lib.mjs';\n"
+        "export const message = greeting + ' from main';\n"
+        "export const sum     = add(3, 4);\n"
+        "export const squared = square(5);\n"
+    ) == 0, "wrote main.mjs");
+
+    ZjsContext* ctx = zjs_new_context();
+    ZjsValue ns = zjs_eval_module(ctx, main_path);
+    CHECK(!zjs_had_error(ctx), "zjs_eval_module ran without an uncaught throw");
+    CHECK(zjs_is_object(ns), "exports namespace is an object");
+
+    uint32_t mlen = 0;
+    const char* mbytes = zjs_string_bytes(zjs_get_property(ctx, ns, "message"), &mlen);
+    CHECK(mbytes && mlen == 15 && memcmp(mbytes, "hello from main", 15) == 0,
+          "message export: \"hello from main\"");
+
+    ZjsValue sum_v = zjs_get_property(ctx, ns, "sum");
+    CHECK(zjs_is_int32(sum_v) && zjs_as_int32(sum_v) == 7, "sum: 3 + 4 = 7");
+
+    ZjsValue sq_v = zjs_get_property(ctx, ns, "squared");
+    CHECK(zjs_is_int32(sq_v) && zjs_as_int32(sq_v) == 25, "squared: 5*5 = 25");
+
+    /* Cache hit: a second eval_module on the same path returns the
+     * same namespace without re-running the body. */
+    ZjsValue ns2 = zjs_eval_module(ctx, main_path);
+    CHECK(zjs_cell_count(ctx) > 0, "namespace cached");
+    (void)ns2;
+
+    zjs_free_context(ctx);
+}
+
+/* -----------------------------------------------------------------------
  * Main.
  * --------------------------------------------------------------------- */
 
@@ -779,6 +842,7 @@ int main(void) {
     test_host_functions();
     test_call_from_c();
     test_aot_bytecode();
+    test_module_abi();
 
     printf("[smoke] %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

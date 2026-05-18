@@ -261,6 +261,34 @@ ZjsValue zjs_eval_bytecode(ZjsContext* ctx, const unsigned char* data, size_t le
  */
 unsigned char* zjs_compile_to_bytecode(ZjsContext* ctx, const char* source, size_t* out_len);
 
+/* -----------------------------------------------------------------------
+ * ES modules.
+ *
+ * Load and evaluate an ES module (import/export). `abs_path` is the
+ * absolute filesystem path to the entry module. The engine reads the
+ * file, parses + compiles, evaluates the body with module semantics,
+ * resolves relative imports against the entry's directory (with `./`
+ * and `../` normalized), and drains the microtask queue.
+ *
+ * Returns the module's exports object on success — properties read
+ * via zjs_get_property correspond to the module's named exports.
+ * On failure (file not found, parse error, throw during evaluation),
+ * zjs_had_error returns true and zjs_get_error carries the thrown
+ * value; the return value in that case is undefined.
+ *
+ * The module cache is keyed by abs_path: a second call with the same
+ * path returns the cached exports without re-evaluating. Cycles are
+ * supported with the "partially-populated exports" model — an
+ * import that re-enters an in-flight module sees `undefined` for
+ * names not yet exported.
+ *
+ * Bare specifiers (`import "lodash"`) are treated as literal paths;
+ * package.json / node_modules resolution is not built in. Embedders
+ * that want node-style resolution should preprocess specifiers before
+ * the import lands at this entry point.
+ * --------------------------------------------------------------------- */
+ZjsValue zjs_eval_module(ZjsContext* ctx, const char* abs_path);
+
 #ifdef __cplusplus
 }
 #endif
