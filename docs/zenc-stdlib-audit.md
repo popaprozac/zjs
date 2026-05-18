@@ -198,12 +198,21 @@ Module surface verified against `.md` docs (not the locally-installed
 
 ### B7 — `fetch` body / Phase D.0
 
-- **zjs:** Not implemented (Phase D.0 about to start).
-- **std/net/http::fetch + std/net/tcp:** http-only today (no TLS,
-  see task #199). `fetch(url) -> Response` is the right shape for the
-  v0.1 implementation.
-- **Verdict — adopt.** Direct backing. Bridges to our async story via
-  worker thread (or zen-c's async/await once that's wired).
+- **zjs:** Native-backed; landed 2026-05-18. See
+  `src/platform/http_native.h` + `src/platform/http_apple.m`.
+- **std/net/http::fetch + std/net/tcp:** initially adopted, then
+  reversed during integration. Two blockers surfaced: (1) HTTPS
+  unsupported (TLS task #199); (2) the body String returned across
+  the boundary into our larger compilation unit came back length-0
+  in the JS-driven path despite working standalone — likely a Drop
+  /move interaction we don't want to debug for what is, at the end,
+  a placeholder.
+- **Verdict — reversed: go platform-native.** Apple
+  `NSURLSession` gives us HTTPS + HTTP/2 + proxy + IPv6 + system
+  trust store for free, with smaller binary footprint than vendoring
+  TLS. Linux (libcurl) and Windows (WinHTTP) impls land later; in
+  the interim `http_stub.c` returns a clean "not configured" error.
+  Recorded design discussion 2026-05-18.
 
 ### B8 — `WebSocket` / Phase E
 
@@ -237,7 +246,7 @@ Module surface verified against `.md` docs (not the locally-installed
 | B4 BigInt | **adopt** when prioritized | large |
 | B5 Math.random | **adopt** std/random | tiny |
 | B6 fs.* / path.* JS | **adopt** when needed | medium |
-| B7 fetch (Phase D.0) | **adopt** std/net/http | medium |
+| B7 fetch (Phase D.0) | **reversed → platform-native** (NSURLSession) | medium |
 | B8 WebSocket (Phase E) | **adopt with caveat** | medium |
 
 ## One actual near-term pick

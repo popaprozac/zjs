@@ -4,6 +4,18 @@
 // the public API surface. Public symbols are exactly the ones declared in
 // include/zjs.h. Their C-level names match the Zen-c function names.
 
+// --- Platform-native networking ---
+// fetch() routes through src/platform/http_native.h's zjs_http_get_sync.
+// On Apple we ship the NSURLSession impl (.m) and link Foundation. On
+// other platforms we link the C stub which returns a "not configured"
+// error — Linux/Windows native backends land in a follow-up.
+//> macos: framework: Foundation
+//> macos: cflags:    src/platform/http_apple.m
+//> ios:   framework: Foundation
+//> ios:   cflags:    src/platform/http_apple.m
+//> linux: cflags:    src/platform/http_stub.c
+//> windows: cflags:  src/platform/http_stub.c
+
 import "./context.zc";
 import "./value.zc";
 import "./token.zc";

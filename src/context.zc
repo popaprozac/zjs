@@ -7,6 +7,17 @@
 
 import "stdlib.h" as libc;
 import "std/time.zc";
+
+// Platform-native HTTP backend — see src/platform/http_native.h
+// and src/platform/http_apple.m. Declared as raw C extern so we
+// don't depend on zen-c's header-import resolution.
+raw {
+    int zjs_http_get_sync(const char* url,
+                          int* status_out,
+                          char** body_out,
+                          size_t* body_len_out,
+                          char** err_out);
+}
 import "string.h" as libc_str;
 import "./value.zc";
 import "std/mem.zc"
@@ -288,6 +299,8 @@ struct ZjsContext {
     url_proto:          ZjsObject*;
     usp_proto:          ZjsObject*;
     uint8_array_proto:  ZjsObject*;
+    headers_proto:      ZjsObject*;
+    response_proto:     ZjsObject*;
 
     // Timer queue (2026-05-18, web-API Phase B). Each entry represents
     // a setTimeout / setInterval reservation. `due_ms` is the
@@ -1368,6 +1381,12 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     }
     if ctx.uint8_array_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.uint8_array_proto));
+    }
+    if ctx.headers_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.headers_proto));
+    }
+    if ctx.response_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.response_proto));
     }
     // Pending timer callbacks + their captured args must stay alive
     // across collections — they're scheduled to run but not yet
@@ -8234,6 +8253,345 @@ fn object_define_accessor(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*,
 
 // =====================================================================
 // =====================================================================
+// fetch / Headers / Response — web-API Phase D.0 (2026-05-18).
+//
+// v0.1 limitations (each will be lifted in a follow-up — see #199
+// for TLS, #200 for the rest):
+//   - GET only. std/net/http::fetch doesn't accept method/body args.
+//   - http:// only. https:// rejected at URL validation; TLS gated
+//     on #199.
+//   - Response body truncated to 4096 bytes — that's the buffer
+//     size in std/net/http::fetch. Real fetch will need a chunked
+//     read loop that we'll build over std/net/tcp when we move
+//     past the std-as-is path.
+//   - Synchronous under the hood. The returned Promise settles
+//     immediately. Promise.all([fetch(a), fetch(b)]) serializes.
+//   - Headers from std/net/http::fetch's response aren't parsed
+//     (the std impl only extracts status + body). Response.headers
+//     is empty for v0.1.
+//   - response.json() isn't here yet — waits on JSON.parse (B1).
+// =====================================================================
+
+def HDR_BAG_KEY: char* = (char*)"__zjs_hdr_bag__";
+
+// Lowercase a name in a fresh ZjsValue string so case-insensitive
+// lookup ("Content-Type" vs "content-type") works.
+fn headers_lower(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
+    let s_v: ZjsValue = if zjs_is_string(v) != 0 { v } else { zjs_to_string(ctx, v) };
+    let s = zjs_as_string(s_v);
+    if s.length == 0 { return s_v; }
+    let buf = alloc_n<char>((usize)(s.length + 1));
+    let i: u32 = 0;
+    while i < s.length {
+        let c = s.data[i];
+        raw {
+            if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
+        }
+        buf[i] = c;
+        i = i + 1;
+    }
+    buf[s.length] = (char)0;
+    let r = ctx_intern_string(ctx, buf, s.length);
+    dealloc(buf);
+    return r;
+}
+
+fn headers_bag(ctx: ZjsContext*, obj: ZjsObject*) -> ZjsObject* {
+    let atom = ctx_intern_atom(ctx, HDR_BAG_KEY, 15);
+    let slot = class_find_slot(obj.cls, atom);
+    if slot < 0 { return NULL; }
+    let v = obj.slots[(u32)slot];
+    if zjs_is_object(v) == 0 { return NULL; }
+    return zjs_as_object(v);
+}
+
+fn host_headers_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let obj_v = ctx.host_this;
+    if zjs_is_object(obj_v) == 0 {
+        obj_v = ctx_new_object(ctx);
+        if ctx.headers_proto != NULL { zjs_as_object(obj_v).proto = ctx.headers_proto; }
+    }
+    let obj = zjs_as_object(obj_v);
+    let bag_v = ctx_new_object(ctx);
+    object_set(ctx, obj, ctx_intern_atom(ctx, HDR_BAG_KEY, 15), bag_v);
+    let bag = zjs_as_object(bag_v);
+    if argc == 0 || zjs_is_undefined(args[0]) != 0 || zjs_is_null(args[0]) != 0 {
+        return obj_v;
+    }
+    let init = args[0];
+    // Array of [name, value] pairs.
+    if zjs_is_array(init) != 0 {
+        let a = zjs_as_array(init);
+        let i: u32 = 0;
+        while i < a.length {
+            let entry = a.elements[i];
+            if zjs_is_array(entry) != 0 {
+                let ea = zjs_as_array(entry);
+                if ea.length >= 2 {
+                    let name_lo = headers_lower(ctx, ea.elements[0]);
+                    let val_s   = if zjs_is_string(ea.elements[1]) != 0 { ea.elements[1] }
+                                  else { zjs_to_string(ctx, ea.elements[1]) };
+                    object_set(ctx, bag, zjs_as_string(name_lo), val_s);
+                }
+            }
+            i = i + 1;
+        }
+        return obj_v;
+    }
+    // Plain object — walk own properties.
+    if zjs_is_object(init) != 0 {
+        let io = zjs_as_object(init);
+        let cls = io.cls;
+        // Reverse-walk class chain to emit names in insertion order.
+        let names: ZjsString*[64];
+        let slots: u32[64];
+        let nc: u32 = 0;
+        let c = cls;
+        while c != NULL && c.parent != NULL && nc < 64 {
+            names[nc] = c.transition_name;
+            slots[nc] = c.transition_slot;
+            nc = nc + 1;
+            c = c.parent;
+        }
+        let ni: u32 = nc;
+        while ni > 0 {
+            ni = ni - 1;
+            let name = names[ni];
+            let slot = slots[ni];
+            if name != NULL && zjs_is_deleted(io.slots[slot]) == 0 {
+                let name_lo = headers_lower(ctx, zjs_cell_from_ptr((void*)name));
+                let val = io.slots[slot];
+                let val_s = if zjs_is_string(val) != 0 { val } else { zjs_to_string(ctx, val) };
+                object_set(ctx, bag, zjs_as_string(name_lo), val_s);
+            }
+        }
+    }
+    return obj_v;
+}
+
+fn host_headers_get(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_null(); }
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_null(); }
+    let bag = headers_bag(ctx, zjs_as_object(this_v));
+    if bag == NULL { return zjs_null(); }
+    let name_lo = headers_lower(ctx, args[0]);
+    let slot = class_find_slot(bag.cls, zjs_as_string(name_lo));
+    if slot < 0 || zjs_is_deleted(bag.slots[(u32)slot]) != 0 { return zjs_null(); }
+    return bag.slots[(u32)slot];
+}
+
+fn host_headers_set(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 2 { return zjs_undefined(); }
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    let bag = headers_bag(ctx, zjs_as_object(this_v));
+    if bag == NULL { return zjs_undefined(); }
+    let name_lo = headers_lower(ctx, args[0]);
+    let val_s   = if zjs_is_string(args[1]) != 0 { args[1] } else { zjs_to_string(ctx, args[1]) };
+    object_set(ctx, bag, zjs_as_string(name_lo), val_s);
+    return zjs_undefined();
+}
+
+fn host_headers_has(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_bool(0); }
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_bool(0); }
+    let bag = headers_bag(ctx, zjs_as_object(this_v));
+    if bag == NULL { return zjs_bool(0); }
+    let name_lo = headers_lower(ctx, args[0]);
+    let slot = class_find_slot(bag.cls, zjs_as_string(name_lo));
+    if slot < 0 || zjs_is_deleted(bag.slots[(u32)slot]) != 0 { return zjs_bool(0); }
+    return zjs_bool(1);
+}
+
+fn host_headers_delete(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_undefined(); }
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    let bag = headers_bag(ctx, zjs_as_object(this_v));
+    if bag == NULL { return zjs_undefined(); }
+    let name_lo = headers_lower(ctx, args[0]);
+    let slot = class_find_slot(bag.cls, zjs_as_string(name_lo));
+    if slot >= 0 { bag.slots[(u32)slot] = zjs_deleted(); }
+    return zjs_undefined();
+}
+
+// =====================================================================
+// Response. Stored on a plain ZjsObject with hidden fields for
+// status/body; .status / .ok / .headers exposed via accessor getters
+// on Response.prototype.
+// =====================================================================
+
+def RESP_STATUS_KEY: char* = (char*)"__zjs_resp_status__";
+def RESP_BODY_KEY:   char* = (char*)"__zjs_resp_body__";
+def RESP_HEADERS_KEY: char* = (char*)"__zjs_resp_headers__";
+def RESP_URL_KEY:    char* = (char*)"__zjs_resp_url__";
+
+fn build_response_object(ctx: ZjsContext*, status: i32, body_v: ZjsValue, headers_v: ZjsValue, url_v: ZjsValue) -> ZjsValue {
+    let obj_v = ctx_new_object(ctx);
+    if ctx.response_proto != NULL { zjs_as_object(obj_v).proto = ctx.response_proto; }
+    let o = zjs_as_object(obj_v);
+    object_set(ctx, o, ctx_intern_atom(ctx, RESP_STATUS_KEY,  19), zjs_int32(status));
+    object_set(ctx, o, ctx_intern_atom(ctx, RESP_BODY_KEY,    17), body_v);
+    object_set(ctx, o, ctx_intern_atom(ctx, RESP_HEADERS_KEY, 20), headers_v);
+    object_set(ctx, o, ctx_intern_atom(ctx, RESP_URL_KEY,     16), url_v);
+    return obj_v;
+}
+
+fn host_response_status(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_int32(0); }
+    let atom = ctx_intern_atom(ctx, RESP_STATUS_KEY, 19);
+    let slot = class_find_slot(zjs_as_object(this_v).cls, atom);
+    if slot < 0 { return zjs_int32(0); }
+    return zjs_as_object(this_v).slots[(u32)slot];
+}
+
+fn host_response_ok(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s = host_response_status(ctx, args, argc);
+    if zjs_is_int32(s) == 0 { return zjs_bool(0); }
+    let v = zjs_as_int32(s);
+    return zjs_bool(if v >= 200 && v < 300 { 1 } else { 0 });
+}
+
+fn host_response_status_text(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s = host_response_status(ctx, args, argc);
+    if zjs_is_int32(s) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let v = zjs_as_int32(s);
+    // Minimal text for the common statuses; everything else is "".
+    if v == 200 { return ctx_intern_string(ctx, (char*)"OK", 2); }
+    if v == 201 { return ctx_intern_string(ctx, (char*)"Created", 7); }
+    if v == 204 { return ctx_intern_string(ctx, (char*)"No Content", 10); }
+    if v == 301 { return ctx_intern_string(ctx, (char*)"Moved Permanently", 17); }
+    if v == 302 { return ctx_intern_string(ctx, (char*)"Found", 5); }
+    if v == 304 { return ctx_intern_string(ctx, (char*)"Not Modified", 12); }
+    if v == 400 { return ctx_intern_string(ctx, (char*)"Bad Request", 11); }
+    if v == 401 { return ctx_intern_string(ctx, (char*)"Unauthorized", 12); }
+    if v == 403 { return ctx_intern_string(ctx, (char*)"Forbidden", 9); }
+    if v == 404 { return ctx_intern_string(ctx, (char*)"Not Found", 9); }
+    if v == 500 { return ctx_intern_string(ctx, (char*)"Internal Server Error", 21); }
+    return ctx_intern_string(ctx, (char*)"", 0);
+}
+
+fn host_response_url(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let atom = ctx_intern_atom(ctx, RESP_URL_KEY, 16);
+    let slot = class_find_slot(zjs_as_object(this_v).cls, atom);
+    if slot < 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    return zjs_as_object(this_v).slots[(u32)slot];
+}
+
+fn host_response_headers_acc(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    let atom = ctx_intern_atom(ctx, RESP_HEADERS_KEY, 20);
+    let slot = class_find_slot(zjs_as_object(this_v).cls, atom);
+    if slot < 0 { return zjs_undefined(); }
+    return zjs_as_object(this_v).slots[(u32)slot];
+}
+
+// Return body as text — Promise<string>. Body is already a string
+// internally (UTF-8 byte-string from zen-c). Resolve immediately.
+fn host_response_text(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    let body_v: ZjsValue = ctx_intern_string(ctx, (char*)"", 0);
+    if zjs_is_object(this_v) != 0 {
+        let atom = ctx_intern_atom(ctx, RESP_BODY_KEY, 17);
+        let slot = class_find_slot(zjs_as_object(this_v).cls, atom);
+        if slot >= 0 { body_v = zjs_as_object(this_v).slots[(u32)slot]; }
+    }
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    promise_resolve_with(ctx, pv, body_v);
+    return pv;
+}
+
+// Return body as a Uint8Array — Promise<Uint8Array>. Copies the
+// byte-string into a fresh Uint8Array.
+fn host_response_array_buffer(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    let body_v: ZjsValue = ctx_intern_string(ctx, (char*)"", 0);
+    if zjs_is_object(this_v) != 0 {
+        let atom = ctx_intern_atom(ctx, RESP_BODY_KEY, 17);
+        let slot = class_find_slot(zjs_as_object(this_v).cls, atom);
+        if slot >= 0 { body_v = zjs_as_object(this_v).slots[(u32)slot]; }
+    }
+    let s = zjs_as_string(body_v);
+    let a = zjs_uint8_array_new(s.length);
+    ctx_register_cell(ctx, (void*)a);
+    let i: u32 = 0;
+    while i < s.length { a.bytes[i] = (u8)s.data[i]; i = i + 1; }
+    let av = zjs_cell_from_ptr((void*)a);
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    promise_resolve_with(ctx, pv, av);
+    return pv;
+}
+
+// fetch(url) — drives std/net/http::fetch synchronously and wraps
+// the result in a Promise.
+fn host_fetch(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let url_v: ZjsValue = ctx_intern_string(ctx, (char*)"", 0);
+    if argc >= 1 {
+        if zjs_is_string(args[0]) != 0 {
+            url_v = args[0];
+        } else if zjs_is_object(args[0]) != 0 && ctx.url_proto != NULL
+                  && zjs_as_object(args[0]).proto == ctx.url_proto {
+            // URL instance — host_url_to_string reads from
+            // ctx.host_this, so swap it in for the call.
+            let saved = ctx.host_this;
+            ctx.host_this = args[0];
+            url_v = host_url_to_string(ctx, NULL, 0);
+            ctx.host_this = saved;
+        } else {
+            url_v = zjs_to_string(ctx, args[0]);
+        }
+    }
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+
+    let us = zjs_as_string(url_v);
+
+    // Native HTTP backend (NSURLSession on Apple; stub elsewhere).
+    // Body comes back as a malloc'd byte buffer that we own and free
+    // after copying into a ZjsString.
+    let status: i32 = 0;
+    let body_ptr: char* = NULL;
+    let body_len: usize = 0;
+    let err_ptr: char* = NULL;
+    let rc: i32 = 0;
+    raw {
+        rc = zjs_http_get_sync(us->data, &status, &body_ptr, &body_len, &err_ptr);
+    }
+    if rc != 0 {
+        let msg: char* = if err_ptr != NULL { err_ptr } else { (char*)"fetch failed" };
+        let msg_len: u32 = 0;
+        raw { msg_len = (uint32_t)strlen(msg); }
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, msg, msg_len);
+        if err_ptr != NULL { raw { free(err_ptr); } }
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+
+    let body_zv: ZjsValue = ctx_intern_string(ctx, body_ptr, (u32)body_len);
+    if body_ptr != NULL { raw { free(body_ptr); } }
+
+    // Headers from the native backend aren't surfaced yet — backend
+    // returns body+status only. Wiring header pass-through is a
+    // follow-up; for now hand callers an empty Headers instance.
+    let hdrs_v = host_headers_ctor(ctx, NULL, 0);
+
+    let resp_v = build_response_object(ctx, status, body_zv, hdrs_v, url_v);
+    promise_resolve_with(ctx, pv, resp_v);
+    return pv;
+}
+
+// =====================================================================
 // Uint8Array (2026-05-18) — first real TypedArray. Byte-buffer backed,
 // not just an Array tag — `bytes instanceof Uint8Array` works, .length /
 // .byteLength match the spec, indexed read/write goes through
@@ -13412,6 +13770,61 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ctx_register_host_function(ctx, (char*)"BigInt",      eval_ptr);
     ctx_register_host_function(ctx, (char*)"Uint8ClampedArray", eval_ptr);
     ctx_register_host_function(ctx, (char*)"BigInt64Array",     eval_ptr);
+
+    // === Headers / Response / fetch — web-API Phase D.0 (2026-05-18). ===
+    let h_ctor_ptr:  void* = NULL; raw { h_ctor_ptr  = (void*)host_headers_ctor; }
+    let h_get_ptr:   void* = NULL; raw { h_get_ptr   = (void*)host_headers_get; }
+    let h_set_ptr:   void* = NULL; raw { h_set_ptr   = (void*)host_headers_set; }
+    let h_has_ptr:   void* = NULL; raw { h_has_ptr   = (void*)host_headers_has; }
+    let h_del_ptr:   void* = NULL; raw { h_del_ptr   = (void*)host_headers_delete; }
+    let h_ctor_v = ctx_register_host_function(ctx, (char*)"Headers", h_ctor_ptr);
+    let h_proto_v = ctx_new_object(ctx);
+    ctx.headers_proto = zjs_as_object(h_proto_v);
+    zjs_as_host_function(h_ctor_v).prototype = ctx.headers_proto;
+    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), h_ctor_v);
+    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"get", 3),
+               ctx_make_host_function_arity(ctx, (char*)"get", h_get_ptr, 1));
+    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"set", 3),
+               ctx_make_host_function_arity(ctx, (char*)"set", h_set_ptr, 2));
+    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"has", 3),
+               ctx_make_host_function_arity(ctx, (char*)"has", h_has_ptr, 1));
+    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"append", 6),
+               ctx_make_host_function_arity(ctx, (char*)"append", h_set_ptr, 2));
+    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"delete", 6),
+               ctx_make_host_function_arity(ctx, (char*)"delete", h_del_ptr, 1));
+
+    let r_status_ptr:   void* = NULL; raw { r_status_ptr   = (void*)host_response_status; }
+    let r_ok_ptr:       void* = NULL; raw { r_ok_ptr       = (void*)host_response_ok; }
+    let r_stext_ptr:    void* = NULL; raw { r_stext_ptr    = (void*)host_response_status_text; }
+    let r_url_ptr:      void* = NULL; raw { r_url_ptr      = (void*)host_response_url; }
+    let r_hdrs_ptr:     void* = NULL; raw { r_hdrs_ptr     = (void*)host_response_headers_acc; }
+    let r_text_ptr:     void* = NULL; raw { r_text_ptr     = (void*)host_response_text; }
+    let r_ab_ptr:       void* = NULL; raw { r_ab_ptr       = (void*)host_response_array_buffer; }
+    // Response has no useful ctor at v0.1 — fetch() is the only
+    // factory. Expose it as a global anyway so `instanceof Response`
+    // and `Response.prototype` work.
+    let r_ctor_v   = ctx_register_host_function(ctx, (char*)"Response", eval_ptr);
+    let r_proto_v  = ctx_new_object(ctx);
+    ctx.response_proto = zjs_as_object(r_proto_v);
+    zjs_as_host_function(r_ctor_v).prototype = ctx.response_proto;
+    object_set(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), r_ctor_v);
+    object_define_accessor(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"status", 6),
+                           ctx_make_host_function(ctx, (char*)"get status", r_status_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"ok", 2),
+                           ctx_make_host_function(ctx, (char*)"get ok", r_ok_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"statusText", 10),
+                           ctx_make_host_function(ctx, (char*)"get statusText", r_stext_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"url", 3),
+                           ctx_make_host_function(ctx, (char*)"get url", r_url_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"headers", 7),
+                           ctx_make_host_function(ctx, (char*)"get headers", r_hdrs_ptr), zjs_undefined());
+    object_set(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"text", 4),
+               ctx_make_host_function(ctx, (char*)"text", r_text_ptr));
+    object_set(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"arrayBuffer", 11),
+               ctx_make_host_function(ctx, (char*)"arrayBuffer", r_ab_ptr));
+
+    let fetch_ptr: void* = NULL; raw { fetch_ptr = (void*)host_fetch; }
+    ctx_register_host_function(ctx, (char*)"fetch", fetch_ptr);
     ctx_register_host_function(ctx, (char*)"BigUint64Array",    eval_ptr);
     ctx_register_host_function(ctx, (char*)"DataView",          eval_ptr);
     ctx_register_host_function(ctx, (char*)"WeakRef",           eval_ptr);

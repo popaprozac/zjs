@@ -6,6 +6,14 @@
 // + an expected sequence of TokenKinds. The harness compares those to
 // what the lexer emits.
 
+// Platform-native HTTP backend — link Apple impl into the test binary.
+//> macos: framework: Foundation
+//> macos: cflags:    src/platform/http_apple.m
+//> ios:   framework: Foundation
+//> ios:   cflags:    src/platform/http_apple.m
+//> linux: cflags:    src/platform/http_stub.c
+//> windows: cflags:  src/platform/http_stub.c
+
 import "../src/lib.zc";
 
 raw {

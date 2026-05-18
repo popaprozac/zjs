@@ -6,6 +6,16 @@
 //   lex <source>           tokenize source, dump the token stream
 //   parse <source>         parse source, dump the AST as an indented tree
 
+// Platform-native HTTP backend (NSURLSession on Apple; stub elsewhere)
+// must be linked into the CLI binary too, since the CLI is its own
+// `zc build` entry point — directives don't propagate via import.
+//> macos: framework: Foundation
+//> macos: cflags:    src/platform/http_apple.m
+//> ios:   framework: Foundation
+//> ios:   cflags:    src/platform/http_apple.m
+//> linux: cflags:    src/platform/http_stub.c
+//> windows: cflags:  src/platform/http_stub.c
+
 import "../src/lib.zc";
 import "string.h" as libc_str;
 import "std/mem.zc"
