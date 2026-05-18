@@ -10588,6 +10588,190 @@ fn host_console_error(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     return console_emit(ctx, args, argc, true);
 }
 
+// .debug/.trace are stdout-bound aliases of .log. We don't carry
+// stack traces yet; .trace just prints its args. A future polish
+// pass can add level tags / stack capture once we have either.
+fn host_console_debug(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return console_emit(ctx, args, argc, false);
+}
+fn host_console_trace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return console_emit(ctx, args, argc, false);
+}
+fn host_console_dir(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return console_emit(ctx, args, argc, false);
+}
+fn host_console_group(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return console_emit(ctx, args, argc, false);
+}
+fn host_console_group_end(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return zjs_undefined();
+}
+fn host_console_assert(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // console.assert(cond, ...msg) — only emits when cond is falsy,
+    // routed to stderr with an "Assertion failed:" prefix-equivalent
+    // (we currently emit raw args; full prefix can come later).
+    if argc == 0 { return zjs_undefined(); }
+    if zjs_to_bool_coerce(args[0]) != 0 { return zjs_undefined(); }
+    return console_emit(ctx, args + 1, argc - 1, true);
+}
+
+// =====================================================================
+// Web-platform Phase A (2026-05-18) — quick wins. Pure CPU, no event
+// loop integration. setTimeout / fetch / etc. follow in Phase B and
+// beyond.
+// =====================================================================
+
+// queueMicrotask(fn) — schedule fn to run after the current sync
+// block, BEFORE the next setTimeout. Routes through the existing
+// microtask queue used by Promise.
+fn host_queue_microtask(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_undefined(); }
+    let cb = args[0];
+    let callable: bool =
+           zjs_is_function(cb) != 0
+        || zjs_is_closure(cb)  != 0
+        || zjs_is_host_function(cb) != 0;
+    if !callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"queueMicrotask requires a function", 34);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    // Use the existing microtask queue. The handler takes no args
+    // (we pass undefined); the result_promise is undefined so
+    // drain_microtasks doesn't try to chain it.
+    microtask_enqueue(ctx, cb, zjs_undefined(), zjs_undefined(), true);
+    return zjs_undefined();
+}
+
+// performance.now() — monotonic high-resolution wall-clock in ms.
+// Origin is unspecified by spec; we use CLOCK_MONOTONIC from program
+// start (i.e. the value is relative, not an epoch). Tests just want
+// "increases monotonically + sub-ms resolution + double-valued".
+fn host_performance_now(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let ms: f64 = 0.0;
+    raw {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        ms = (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+    }
+    return zjs_double(ms);
+}
+
+// btoa(binary_string) — base64 encode each character's low byte.
+// WHATWG semantics: argument is a "binary string" where each code
+// unit must fit in a byte; otherwise throws InvalidCharacterError.
+// We surface as plain DOMException-equivalent (a tagged Error).
+fn host_btoa(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let in_v = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    let s = zjs_as_string(in_v);
+    let n = s.length;
+    // Validate range — each char must be ≤ 0xFF.
+    let i: u32 = 0;
+    while i < n {
+        let cu: u32 = (u32)(u8)s.data[i];
+        if cu > 255 {
+            let err = build_typed_error(ctx, (char*)"InvalidCharacterError", 21,
+                                        (char*)"btoa: argument contains characters outside Latin-1", 50);
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        i = i + 1;
+    }
+    let out_len: u32 = ((n + 2) / 3) * 4;
+    let buf = alloc_n<char>((usize)(out_len + 1));
+    raw {
+        static const char TBL[] =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+        const unsigned char* in_ = (const unsigned char*)s->data;
+        uint32_t inN = n;
+        uint32_t oi = 0;
+        for (uint32_t k = 0; k + 3 <= inN; k += 3) {
+            uint32_t v = ((uint32_t)in_[k] << 16) | ((uint32_t)in_[k+1] << 8) | (uint32_t)in_[k+2];
+            buf[oi+0] = TBL[(v >> 18) & 63];
+            buf[oi+1] = TBL[(v >> 12) & 63];
+            buf[oi+2] = TBL[(v >>  6) & 63];
+            buf[oi+3] = TBL[ v        & 63];
+            oi += 4;
+        }
+        uint32_t rem = inN % 3;
+        if (rem == 1) {
+            uint32_t k = inN - 1;
+            uint32_t v = (uint32_t)in_[k] << 16;
+            buf[oi+0] = TBL[(v >> 18) & 63];
+            buf[oi+1] = TBL[(v >> 12) & 63];
+            buf[oi+2] = '=';
+            buf[oi+3] = '=';
+        } else if (rem == 2) {
+            uint32_t k = inN - 2;
+            uint32_t v = ((uint32_t)in_[k] << 16) | ((uint32_t)in_[k+1] << 8);
+            buf[oi+0] = TBL[(v >> 18) & 63];
+            buf[oi+1] = TBL[(v >> 12) & 63];
+            buf[oi+2] = TBL[(v >>  6) & 63];
+            buf[oi+3] = '=';
+        }
+    }
+    buf[out_len] = (char)0;
+    let r = ctx_intern_string(ctx, buf, out_len);
+    dealloc(buf);
+    return r;
+}
+
+// atob(b64) — inverse. Throws InvalidCharacterError on bad input.
+// Whitespace is stripped per spec.
+fn host_atob(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let in_v = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    let s = zjs_as_string(in_v);
+    // Worst case: every input char is a base64 digit → output is
+    // (n / 4) * 3 bytes. Reserve generously.
+    let buf = alloc_n<char>((usize)(s.length + 4));
+    let out_len: u32 = 0;
+    let bad: int = 0;
+    raw {
+        static int8_t DEC[256];
+        static int dec_init = 0;
+        if (!dec_init) {
+            for (int j = 0; j < 256; j++) DEC[j] = -1;
+            const char* T = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            for (int j = 0; j < 64; j++) DEC[(int)(unsigned char)T[j]] = (int8_t)j;
+            dec_init = 1;
+        }
+        uint32_t accum = 0;
+        uint32_t nbits = 0;
+        const unsigned char* in_ = (const unsigned char*)s->data;
+        uint32_t inN = s->length;
+        for (uint32_t k = 0; k < inN; k++) {
+            unsigned char c = in_[k];
+            if (c == '\t' || c == '\n' || c == '\f' || c == '\r' || c == ' ') continue;
+            if (c == '=') break;
+            int8_t v = DEC[c];
+            if (v < 0) { bad = 1; break; }
+            accum = (accum << 6) | (uint32_t)v;
+            nbits += 6;
+            if (nbits >= 8) {
+                nbits -= 8;
+                buf[out_len++] = (char)((accum >> nbits) & 0xFF);
+            }
+        }
+    }
+    if bad != 0 {
+        dealloc(buf);
+        let err = build_typed_error(ctx, (char*)"InvalidCharacterError", 21,
+                                    (char*)"atob: argument is not valid base64", 34);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    buf[out_len] = (char)0;
+    let r = ctx_intern_string(ctx, buf, out_len);
+    dealloc(buf);
+    return r;
+}
+
 // Build a synthetic { name, message } error object — used to surface
 // parse / compile / lookup failures as JS-visible throws. Also wires
 // the object's proto to the same `<Type>.prototype` the user-callable
@@ -12775,13 +12959,19 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ctx.globals[json_slot].value = json_v;
     ctx.globals[json_slot].defined = true;
 
-    // --- console (Phase 3.8a) ---
+    // --- console (Phase 3.8a + web-API quick wins 2026-05-18) ---
     let console_v = ctx_new_object(ctx);
     let console_o = zjs_as_object(console_v);
     let log_ptr:   void* = NULL; raw { log_ptr   = (void*)host_console_log; }
     let info_ptr:  void* = NULL; raw { info_ptr  = (void*)host_console_info; }
     let warn_ptr:  void* = NULL; raw { warn_ptr  = (void*)host_console_warn; }
     let cerr_ptr:  void* = NULL; raw { cerr_ptr  = (void*)host_console_error; }
+    let debug_ptr: void* = NULL; raw { debug_ptr = (void*)host_console_debug; }
+    let trace_ptr: void* = NULL; raw { trace_ptr = (void*)host_console_trace; }
+    let dir_ptr:   void* = NULL; raw { dir_ptr   = (void*)host_console_dir; }
+    let grp_ptr:   void* = NULL; raw { grp_ptr   = (void*)host_console_group; }
+    let gpe_ptr:   void* = NULL; raw { gpe_ptr   = (void*)host_console_group_end; }
+    let asrt_ptr:  void* = NULL; raw { asrt_ptr  = (void*)host_console_assert; }
     object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"log", 3),
                ctx_make_host_function(ctx, (char*)"log", log_ptr));
     object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"info", 4),
@@ -12790,9 +12980,42 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"warn", warn_ptr));
     object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"error", 5),
                ctx_make_host_function(ctx, (char*)"error", cerr_ptr));
+    object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"debug", 5),
+               ctx_make_host_function(ctx, (char*)"debug", debug_ptr));
+    object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"trace", 5),
+               ctx_make_host_function(ctx, (char*)"trace", trace_ptr));
+    object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"dir", 3),
+               ctx_make_host_function(ctx, (char*)"dir", dir_ptr));
+    object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"group", 5),
+               ctx_make_host_function(ctx, (char*)"group", grp_ptr));
+    object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"groupCollapsed", 14),
+               ctx_make_host_function(ctx, (char*)"groupCollapsed", grp_ptr));
+    object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"groupEnd", 8),
+               ctx_make_host_function(ctx, (char*)"groupEnd", gpe_ptr));
+    object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"assert", 6),
+               ctx_make_host_function(ctx, (char*)"assert", asrt_ptr));
     let console_slot = ctx_intern_global(ctx, (char*)"console", 7);
     ctx.globals[console_slot].value = console_v;
     ctx.globals[console_slot].defined = true;
+
+    // queueMicrotask(fn) — web-platform global.
+    let qmt_ptr: void* = NULL; raw { qmt_ptr = (void*)host_queue_microtask; }
+    ctx_register_host_function(ctx, (char*)"queueMicrotask", qmt_ptr);
+
+    // performance.now() — monotonic high-res clock as a global.
+    let perf_v = ctx_new_object(ctx);
+    let perf_now_ptr: void* = NULL; raw { perf_now_ptr = (void*)host_performance_now; }
+    object_set(ctx, zjs_as_object(perf_v), ctx_intern_atom(ctx, (char*)"now", 3),
+               ctx_make_host_function(ctx, (char*)"now", perf_now_ptr));
+    let perf_slot = ctx_intern_global(ctx, (char*)"performance", 11);
+    ctx.globals[perf_slot].value = perf_v;
+    ctx.globals[perf_slot].defined = true;
+
+    // atob / btoa — base64 (Latin-1 binary strings).
+    let btoa_ptr: void* = NULL; raw { btoa_ptr = (void*)host_btoa; }
+    let atob_ptr: void* = NULL; raw { atob_ptr = (void*)host_atob; }
+    ctx_register_host_function(ctx, (char*)"btoa", btoa_ptr);
+    ctx_register_host_function(ctx, (char*)"atob", atob_ptr);
 
     // Mark every property on every built-in prototype as
     // non-enumerable. Per spec, ALL methods on Object.prototype,
