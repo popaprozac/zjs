@@ -2321,6 +2321,21 @@ struct IterStep {
     done:  bool;
 }
 
+// In JS, "Object" means "anything that isn't a primitive". For the
+// iterator protocol's GetIterator / IteratorStep checks the engine
+// needs to be precise: arrays, functions, closures, host functions,
+// arguments, generators all qualify; numbers / booleans / strings /
+// null / undefined / symbols do not.
+fn value_is_js_object(v: ZjsValue) -> bool {
+    if zjs_is_undefined(v) != 0 { return false; }
+    if zjs_is_null(v)      != 0 { return false; }
+    if zjs_is_bool(v)      != 0 { return false; }
+    if zjs_is_int32(v)     != 0 { return false; }
+    if zjs_is_double(v)    != 0 { return false; }
+    if zjs_is_string(v)    != 0 { return false; }
+    return true;
+}
+
 // Equivalent of spec's GetIterator(src, sync). Returns the iterator
 // object — calling src[@@iterator]() with src as `this`. On error
 // (non-callable @@iterator, throw from the call) sets
@@ -2362,9 +2377,18 @@ fn iter_get(ctx: ZjsContext*, src: ZjsValue) -> ZjsValue {
         let iter: ZjsValue = zjs_undefined();
         raw { iter = zjs_call_value_with_this(ctx, getter, src, nullp, 0); }
         if ctx.pending_throw_active { return zjs_undefined(); }
-        // Spec requires the iterator to be an Object. We don't enforce
-        // strictly here — downstream iter_step will surface non-Object
-        // results as "not iterable" when .next() lookup fails.
+        // Spec GetIterator step "If Type(iterator) is not Object, throw
+        // a TypeError exception." Without this check we'd hand a
+        // primitive back to iter_step, which would silently no-op the
+        // next() call and loop forever. Surfaces as TypeError so the
+        // outer combinator can reject its promise normally.
+        if !value_is_js_object(iter) {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"iterator result is not an object", 32);
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
         return iter;
     }
     // No callable @@iterator — including the case where user code
@@ -2435,9 +2459,33 @@ fn iter_step(ctx: ZjsContext*, iter: ZjsValue) -> IterStep {
     let next_atom = ctx_intern_atom(ctx, (char*)"next", 4);
     let next_fn = property_get(ctx, iter, zjs_cell_from_ptr((void*)next_atom));
     if ctx.pending_throw_active { return IterStep{ value: zjs_undefined(), done: true }; }
+    // Spec IteratorNext: next must be callable. Without this our
+    // zjs_call_value_with_this silently returns undefined when handed
+    // a non-callable, and the loop spins forever interpreting `{ done:
+    // undefined }` as "keep going".
+    let next_callable: bool =
+        zjs_is_function(next_fn) != 0
+        || zjs_is_closure(next_fn) != 0
+        || zjs_is_host_function(next_fn) != 0;
+    if !next_callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"iterator.next is not callable", 29);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return IterStep{ value: zjs_undefined(), done: true };
+    }
     let result_v: ZjsValue = zjs_undefined();
     raw { result_v = zjs_call_value_with_this(ctx, next_fn, iter, nullp, 0); }
     if ctx.pending_throw_active { return IterStep{ value: zjs_undefined(), done: true }; }
+    // Spec IteratorNext: result must be an Object. Otherwise the
+    // protocol can't trust .done / .value and we'd loop or read holes.
+    if !value_is_js_object(result_v) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"iterator result is not an object", 32);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return IterStep{ value: zjs_undefined(), done: true };
+    }
     let done_atom  = ctx_intern_atom(ctx, (char*)"done", 4);
     let value_atom = ctx_intern_atom(ctx, (char*)"value", 5);
     let d_v = property_get(ctx, result_v, zjs_cell_from_ptr((void*)done_atom));
@@ -7920,36 +7968,36 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     ctx_push_temp_root(ctx, rp);
     defer ctx_pop_temp_root(ctx);
 
-    let iter = if argc >= 1 { args[0] } else { zjs_undefined() };
-    if zjs_is_array(iter) == 0 {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Promise.all requires an array", 29);
+    // Drive the input via the iterator protocol so any iterable
+    // (Set, Map, generator, custom @@iterator) settles correctly.
+    // iter_get throws on null/undefined or non-iterable; surface that
+    // as the rejection of `rp` to match Promise.all's "reject on
+    // GetIterator throw" semantics.
+    let iter_arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let iter = iter_get(ctx, iter_arg);
+    if ctx.pending_throw_active {
+        let err = consume_pending_throw(ctx);
         promise_settle(ctx, rp, err, false);
         return rp;
     }
-    let arr = zjs_as_array(iter);
-    if arr.length == 0 {
-        let empty = ctx_new_array(ctx, 0);
-        promise_settle(ctx, rp, empty, true);
-        return rp;
-    }
+    ctx_push_temp_root(ctx, iter);
+    defer ctx_pop_temp_root(ctx);
 
-    let results_v = ctx_new_array(ctx, arr.length);
-    let results = zjs_as_array(results_v);
-    results.length = arr.length;
-    // Pre-fill so the array has the right length even if elements settle out of order.
-    let init: u32 = 0;
-    while init < arr.length {
-        results.elements[init] = zjs_undefined();
-        init = init + 1;
-    }
+    // Results grow as we pull items; index i is the slot.
+    let results_v = ctx_new_array(ctx, 0);
+    ctx_push_temp_root(ctx, results_v);
+    defer ctx_pop_temp_root(ctx);
 
-    // Shared state object that the on-fulfill helpers update.
+    // Remaining-counter dance: start at 1 (the "iteration still running"
+    // sentinel), bump by 1 per pulled item, decrement once after the
+    // pull loop finishes. Each per-element callback decrements; whoever
+    // drops it to 0 settles `rp`. The +1/-1 around iteration prevents
+    // an all-synchronous-fulfilled input from settling mid-pull.
     let state_v = ctx_new_object(ctx);
     let state = zjs_as_object(state_v);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
-    object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32((i32)arr.length));
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(1));
 
     let reject_ptr: void* = NULL; raw { reject_ptr = (void*)host_promise_reject_fn; }
     let reject_fn = ctx_make_host_function(ctx, (char*)"reject", reject_ptr);
@@ -7957,31 +8005,34 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
     let onf_ptr: void* = NULL; raw { onf_ptr = (void*)host_promise_all_on_fulfill; }
     let i: u32 = 0;
-    while i < arr.length {
-        let item = array_get(arr, i);  // hole → undefined
-        // Per-element on-fulfill closure with bound = state-shape that
-        // also carries the slot index.
+    let iter_throw: bool = false;
+    while true {
+        let step = iter_step(ctx, iter);
+        if ctx.pending_throw_active {
+            // iter.next() threw — reject rp with that throw. The
+            // iterator is already done (iter_step sets done on throw),
+            // so iter_close would no-op.
+            iter_throw = true;
+            break;
+        }
+        if step.done { break; }
+        let item = step.value;
+
+        // Bump the remaining counter for this slot.
+        let rem_v = object_get(state, ctx_intern_atom(ctx, PA_REM_KEY, 12));
+        object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12),
+                   zjs_int32(zjs_as_int32(rem_v) + 1));
+
         let per_state_v = ctx_new_object(ctx);
         let per_state = zjs_as_object(per_state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
-        // remaining counter is shared via the outer `state` object,
-        // re-read each callback. Easier: each per-state holds a
-        // reference to `state` and the on-fulfill mutates state.REM.
-        // For simplicity here we copy the same atoms into per_state
-        // BUT remaining is mirrored into the SHARED state.
-        // We do this by aliasing via the same atom on state itself;
-        // each per_state.PA_REM_KEY actually reads from `state`.
-        // Simpler: store all four keys on each per_state pointing into
-        // the shared remaining counter. We do that by storing the same
-        // ZjsObject* (state) under a key and dereferencing.
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_REM_KEY, 12), state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_IDX_KEY, 12), zjs_int32((i32)i));
 
         let onf = ctx_make_host_function(ctx, (char*)"all_onf", onf_ptr);
         zjs_as_host_function(onf).bound = per_state_v;
 
-        // Wrap item as a promise and attach .then(onf, reject_fn).
         let item_pv = if zjs_is_promise(item) != 0 { item } else {
             let pp = zjs_promise_new();
             ctx_register_cell(ctx, (void*)pp);
@@ -7990,26 +8041,30 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             ppv
         };
         let ip = zjs_as_promise(item_pv);
-        // Pass `undefined` as the result promise so drain_microtasks
-        // doesn't auto-settle rp from these helpers' return values —
-        // onf is purely a side-effect updating internal state, and it
-        // settles rp itself when remaining reaches 0.
         if ip.state == PROMISE_FULFILLED {
             microtask_enqueue(ctx, onf, ip.value, zjs_undefined(), true);
         } else if ip.state == PROMISE_REJECTED {
             microtask_enqueue(ctx, reject_fn, ip.value, zjs_undefined(), false);
         } else {
-            // promise_attach_reaction also runs through drain; the
-            // result_promise here doubles as both "linked output" and
-            // "drain target" in our model, so use rp directly for
-            // rejection-propagation but not for the success side.
-            // Simplest: install a SPLIT reaction by attaching twice:
-            //   - onf for fulfilled, with result=undefined (no auto-resolve)
-            //   - reject_fn for rejected, with result=undefined (it settles rp itself)
             promise_attach_reaction(ctx, ip, onf, reject_fn, zjs_undefined());
         }
 
         i = i + 1;
+    }
+    if iter_throw {
+        let err = consume_pending_throw(ctx);
+        promise_settle(ctx, rp, err, false);
+        return rp;
+    }
+
+    // End-of-iteration decrement. If nothing was queued (empty
+    // iterable) or every queued item already settled synchronously,
+    // this is the last decrement and resolves `rp` immediately.
+    let rem_v = object_get(state, ctx_intern_atom(ctx, PA_REM_KEY, 12));
+    let rem_after = zjs_as_int32(rem_v) - 1;
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(rem_after));
+    if rem_after == 0 {
+        promise_resolve_with(ctx, rp, results_v);
     }
     return rp;
 }
@@ -8023,14 +8078,19 @@ fn host_promise_race(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let result = zjs_promise_new();
     ctx_register_cell(ctx, (void*)result);
     let rp = zjs_cell_from_ptr((void*)result);
-    let iter = if argc >= 1 { args[0] } else { zjs_undefined() };
-    if zjs_is_array(iter) == 0 {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Promise.race requires an array", 30);
+    ctx_push_temp_root(ctx, rp);
+    defer ctx_pop_temp_root(ctx);
+
+    let iter_arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let iter = iter_get(ctx, iter_arg);
+    if ctx.pending_throw_active {
+        let err = consume_pending_throw(ctx);
         promise_settle(ctx, rp, err, false);
         return rp;
     }
-    let arr = zjs_as_array(iter);
+    ctx_push_temp_root(ctx, iter);
+    defer ctx_pop_temp_root(ctx);
+
     let resolve_ptr: void* = NULL; raw { resolve_ptr = (void*)host_promise_resolve_fn; }
     let reject_ptr:  void* = NULL; raw { reject_ptr  = (void*)host_promise_reject_fn; }
     let resolve_fn = ctx_make_host_function(ctx, (char*)"resolve", resolve_ptr);
@@ -8038,9 +8098,18 @@ fn host_promise_race(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     zjs_as_host_function(resolve_fn).bound = rp;
     zjs_as_host_function(reject_fn).bound  = rp;
 
-    let i: u32 = 0;
-    while i < arr.length {
-        let item = array_get(arr, i);  // hole → undefined
+    // race has no counter — the first item that settles wins via its
+    // bound resolve/reject. An empty iterable leaves `rp` pending
+    // forever (spec-correct: race([]) never settles).
+    while true {
+        let step = iter_step(ctx, iter);
+        if ctx.pending_throw_active {
+            let err = consume_pending_throw(ctx);
+            promise_settle(ctx, rp, err, false);
+            return rp;
+        }
+        if step.done { break; }
+        let item = step.value;
         let item_pv = if zjs_is_promise(item) != 0 { item } else {
             let pp = zjs_promise_new();
             ctx_register_cell(ctx, (void*)pp);
@@ -8049,8 +8118,6 @@ fn host_promise_race(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             ppv
         };
         let ip = zjs_as_promise(item_pv);
-        // resolve_fn / reject_fn settle rp themselves via their bound;
-        // pass undefined so drain doesn't double-settle.
         if ip.state == PROMISE_FULFILLED {
             microtask_enqueue(ctx, resolve_fn, ip.value, zjs_undefined(), true);
         } else if ip.state == PROMISE_REJECTED {
@@ -8058,7 +8125,6 @@ fn host_promise_race(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         } else {
             promise_attach_reaction(ctx, ip, resolve_fn, reject_fn, zjs_undefined());
         }
-        i = i + 1;
     }
     return rp;
 }
@@ -8118,36 +8184,40 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
     ctx_push_temp_root(ctx, rp);
     defer ctx_pop_temp_root(ctx);
 
-    let iter = if argc >= 1 { args[0] } else { zjs_undefined() };
-    if zjs_is_array(iter) == 0 {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Promise.allSettled requires an array", 36);
+    let iter_arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let iter = iter_get(ctx, iter_arg);
+    if ctx.pending_throw_active {
+        let err = consume_pending_throw(ctx);
         promise_settle(ctx, rp, err, false);
         return rp;
     }
-    let arr = zjs_as_array(iter);
-    if arr.length == 0 {
-        let empty = ctx_new_array(ctx, 0);
-        promise_settle(ctx, rp, empty, true);
-        return rp;
-    }
-    let results_v = ctx_new_array(ctx, arr.length);
-    let results = zjs_as_array(results_v);
-    results.length = arr.length;
-    let init: u32 = 0;
-    while init < arr.length {
-        results.elements[init] = zjs_undefined();
-        init = init + 1;
-    }
+    ctx_push_temp_root(ctx, iter);
+    defer ctx_pop_temp_root(ctx);
+
+    let results_v = ctx_new_array(ctx, 0);
+    ctx_push_temp_root(ctx, results_v);
+    defer ctx_pop_temp_root(ctx);
+
     let state_v = ctx_new_object(ctx);
     let state = zjs_as_object(state_v);
-    object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32((i32)arr.length));
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(1));
 
     let onf_ptr: void* = NULL; raw { onf_ptr = (void*)host_promise_all_settled_on_fulfill; }
     let onr_ptr: void* = NULL; raw { onr_ptr = (void*)host_promise_all_settled_on_reject; }
     let i: u32 = 0;
-    while i < arr.length {
-        let item = array_get(arr, i);  // hole → undefined
+    let iter_throw: bool = false;
+    while true {
+        let step = iter_step(ctx, iter);
+        if ctx.pending_throw_active { iter_throw = true; break; }
+        if step.done { break; }
+        let item = step.value;
+
+        let rem_v = object_get(state, ctx_intern_atom(ctx, PA_REM_KEY, 12));
+        object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12),
+                   zjs_int32(zjs_as_int32(rem_v) + 1));
+
         let per_state_v = ctx_new_object(ctx);
         let per_state = zjs_as_object(per_state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
@@ -8175,6 +8245,18 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
             promise_attach_reaction(ctx, ip, onf, onr, zjs_undefined());
         }
         i = i + 1;
+    }
+    if iter_throw {
+        let err = consume_pending_throw(ctx);
+        promise_settle(ctx, rp, err, false);
+        return rp;
+    }
+
+    let rem_v = object_get(state, ctx_intern_atom(ctx, PA_REM_KEY, 12));
+    let rem_after = zjs_as_int32(rem_v) - 1;
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(rem_after));
+    if rem_after == 0 {
+        promise_resolve_with(ctx, rp, results_v);
     }
     return rp;
 }
@@ -8243,42 +8325,42 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     ctx_push_temp_root(ctx, rp);
     defer ctx_pop_temp_root(ctx);
 
-    let iter = if argc >= 1 { args[0] } else { zjs_undefined() };
-    if zjs_is_array(iter) == 0 {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Promise.any requires an array", 29);
+    let iter_arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let iter = iter_get(ctx, iter_arg);
+    if ctx.pending_throw_active {
+        let err = consume_pending_throw(ctx);
         promise_settle(ctx, rp, err, false);
         return rp;
     }
-    let arr = zjs_as_array(iter);
-    if arr.length == 0 {
-        let agg = build_typed_error(ctx, (char*)"AggregateError", 14,
-                                    (char*)"All promises were rejected", 26);
-        if zjs_is_object(agg) != 0 {
-            let ao = zjs_as_object(agg);
-            let empty = ctx_new_array(ctx, 0);
-            object_set(ctx, ao, ctx_intern_atom(ctx, (char*)"errors", 6), empty);
-        }
-        promise_settle(ctx, rp, agg, false);
-        return rp;
-    }
-    let errs_v = ctx_new_array(ctx, arr.length);
-    let errs = zjs_as_array(errs_v);
-    errs.length = arr.length;
-    let init: u32 = 0;
-    while init < arr.length {
-        errs.elements[init] = zjs_undefined();
-        init = init + 1;
-    }
+    ctx_push_temp_root(ctx, iter);
+    defer ctx_pop_temp_root(ctx);
+
+    let errs_v = ctx_new_array(ctx, 0);
+    ctx_push_temp_root(ctx, errs_v);
+    defer ctx_pop_temp_root(ctx);
+
     let state_v = ctx_new_object(ctx);
     let state = zjs_as_object(state_v);
-    object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32((i32)arr.length));
+    // The on-reject helper looks up the result promise + errors array
+    // through PA_*_KEYS the same way .all does; stash them here too.
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), errs_v);
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(1));
 
     let onf_ptr: void* = NULL; raw { onf_ptr = (void*)host_promise_any_on_fulfill; }
     let onr_ptr: void* = NULL; raw { onr_ptr = (void*)host_promise_any_on_reject; }
     let i: u32 = 0;
-    while i < arr.length {
-        let item = array_get(arr, i);  // hole → undefined
+    let iter_throw: bool = false;
+    while true {
+        let step = iter_step(ctx, iter);
+        if ctx.pending_throw_active { iter_throw = true; break; }
+        if step.done { break; }
+        let item = step.value;
+
+        let rem_v = object_get(state, ctx_intern_atom(ctx, PA_REM_KEY, 12));
+        object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12),
+                   zjs_int32(zjs_as_int32(rem_v) + 1));
+
         let per_state_v = ctx_new_object(ctx);
         let per_state = zjs_as_object(per_state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
@@ -8306,6 +8388,30 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             promise_attach_reaction(ctx, ip, onf, onr, zjs_undefined());
         }
         i = i + 1;
+    }
+    if iter_throw {
+        let err = consume_pending_throw(ctx);
+        promise_settle(ctx, rp, err, false);
+        return rp;
+    }
+
+    // End-of-iteration decrement. If we never bumped (empty iterable)
+    // or every input already rejected synchronously, reject rp with
+    // an AggregateError carrying the collected reasons.
+    let rem_v = object_get(state, ctx_intern_atom(ctx, PA_REM_KEY, 12));
+    let rem_after = zjs_as_int32(rem_v) - 1;
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(rem_after));
+    if rem_after == 0 {
+        let p = zjs_as_promise(rp);
+        if p.state == PROMISE_PENDING {
+            let agg = build_typed_error(ctx, (char*)"AggregateError", 14,
+                                        (char*)"All promises were rejected", 26);
+            if zjs_is_object(agg) != 0 {
+                let ao = zjs_as_object(agg);
+                object_set(ctx, ao, ctx_intern_atom(ctx, (char*)"errors", 6), errs_v);
+            }
+            promise_settle(ctx, rp, agg, false);
+        }
     }
     return rp;
 }
