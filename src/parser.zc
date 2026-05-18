@@ -2983,6 +2983,20 @@ fn parse_call_member(p: Parser*) -> AstNode* {
             cnode.children = args_pair.left_arr;
             cnode.children_count = args_pair.count;
             expr = cnode;
+        } else if k == TokenKind::TemplateLit {
+            // Tagged template — `tag`literal`` or `obj.method`x``. The
+            // tag-call evaluates the literal's substitutions (left to
+            // right), packs the cooked parts into an array with `.raw`
+            // pointing at the raw-part array, then calls
+            // `tag(strings, ...subs)`. We just attach the TemplateExpr
+            // as the AST child here; codegen emits the array-building
+            // sequence + the call.
+            let tmpl = parse_template_lit(p);
+            if tmpl == NULL { return NULL; }
+            let tt = new_node(&p.tracker, NodeKind::TaggedTemplate, expr.start, tmpl.end);
+            tt.left = expr;
+            tt.right = tmpl;
+            expr = tt;
         } else if k == TokenKind::QuestionDot {
             advance(p);
             let after = peek_kind(p);

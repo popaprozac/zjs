@@ -36,6 +36,10 @@ enum NodeKind {
                             //   the text (no backtick / ${, no }). Compiler
                             //   decodes escapes via the same path as regular
                             //   strings.
+    TaggedTemplate,         // `tag`literal`` — tag-call with the cooked
+                            //   strings array (+ .raw on it) and the
+                            //   interpolated values as args. left = tag
+                            //   expression, right = the TemplateExpr.
     BoolExpr,               // bool_value
     NullExpr,
     UndefinedExpr,

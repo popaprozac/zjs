@@ -661,6 +661,9 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
     if k == NodeKind::TemplateExpr {
         return compile_template_lit(c, node);
     }
+    if k == NodeKind::TaggedTemplate {
+        return compile_tagged_template(c, node);
+    }
     if k == NodeKind::RegexExpr {
         return compile_regex_literal(c, node);
     }
@@ -1868,6 +1871,107 @@ fn compile_template_part(c: Compiler*, node: AstNode*) -> u8 {
     let dst = alloc_reg(c);
     emit(c, make_inst_a_u16(Op::LoadConst, dst, idx));
     return dst;
+}
+
+// Build the cooked / raw segment arrays at compile time and emit
+// `tag(strings, ...subs)`. Each tagged-template AST node carries a
+// TemplateExpr child (the literal) whose children alternate
+// TemplatePartExpr (literal segment) and expression. For the strings
+// array, the part's cooked form goes through decode_string_body
+// (same as a regular string literal); the raw form is the bytes
+// between backticks unchanged.
+fn compile_tagged_template(c: Compiler*, node: AstNode*) -> u8 {
+    let tmpl = node.right;     // TemplateExpr
+    if tmpl == NULL || tmpl.children_count == 0 { c.had_error = true; return alloc_reg(c); }
+
+    // Count literal parts and substitution expressions.
+    let total = tmpl.children_count;
+    let n_parts: u32 = 0;
+    let n_subs:  u32 = 0;
+    let i0: u32 = 0;
+    while i0 < total {
+        if tmpl.children[i0].kind == NodeKind::TemplatePartExpr {
+            n_parts = n_parts + 1;
+        } else {
+            n_subs = n_subs + 1;
+        }
+        i0 = i0 + 1;
+    }
+
+    // Reserve regs for: callee, strings, sub1..subN.
+    let base = c.next_reg;
+    let slots_needed: u8 = 2 + (u8)n_subs;
+    let rr: u8 = 0;
+    while rr < slots_needed { alloc_reg(c); rr = rr + 1; }
+
+    // Compile the tag expression into regs[base].
+    c.preferred_dst = (i32)base;
+    let tag_r = compile_expr(c, node.left);
+    c.preferred_dst = -1;
+    if tag_r != base {
+        emit(c, make_inst_ab(Op::Mov, base, tag_r));
+        if tag_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+    }
+
+    // Build the cooked-strings array into a temp reg, then the raw
+    // array, then attach raw as .raw. Both arrays use NewArray + a
+    // sequence of ArrayPush emits (one per part).
+    let strings_r = base + 1;
+    emit(c, make_inst_abc(Op::NewArray, strings_r, 0, 0));
+    let raw_r = alloc_reg(c);
+    emit(c, make_inst_abc(Op::NewArray, raw_r, 0, 0));
+
+    let pi: u32 = 0;
+    while pi < total {
+        let ch = tmpl.children[pi];
+        if ch.kind == NodeKind::TemplatePartExpr {
+            // Cooked: decode escapes through compile_template_part's path.
+            let cooked_r = compile_template_part(c, ch);
+            emit(c, make_inst_ab(Op::ArrayPush, strings_r, cooked_r));
+            if cooked_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            // Raw: bytes as-is. emit_load_name_string interns the slice
+            // and loads it without escape decoding.
+            let raw_str_r = emit_load_name_string(c, c.source + ch.start, ch.end - ch.start);
+            emit(c, make_inst_ab(Op::ArrayPush, raw_r, raw_str_r));
+            if raw_str_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        }
+        pi = pi + 1;
+    }
+
+    // strings.raw = raw_r.
+    let raw_key = ctx_intern_atom(c.ctx, (char*)"raw", 3);
+    let raw_ic = alloc_ic_slot(c, raw_key);
+    if raw_ic <= 255 {
+        emit(c, make_inst_abc(Op::StoreProp, strings_r, (u8)raw_ic, raw_r));
+    }
+    if raw_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+
+    // Compile each substitution into its arg slot. Slots layout is
+    // [base=callee, base+1=strings, base+2..base+1+n_subs=subs].
+    let si: u32 = 0;
+    let arg_idx: u32 = 0;
+    while si < total {
+        let ch = tmpl.children[si];
+        if ch.kind != NodeKind::TemplatePartExpr {
+            let target_slot = base + 2 + (u8)arg_idx;
+            c.preferred_dst = (i32)target_slot;
+            let sub_r = compile_expr(c, ch);
+            c.preferred_dst = -1;
+            if sub_r != target_slot {
+                emit(c, make_inst_ab(Op::Mov, target_slot, sub_r));
+                if sub_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+            arg_idx = arg_idx + 1;
+        }
+        si = si + 1;
+    }
+
+    // Plain Invoke: regs[base] = callee, args at base+1..base+1+argc.
+    // argc = 1 (strings) + n_subs.
+    emit(c, make_inst_abc(Op::Invoke, base, base, 1 + (u8)n_subs));
+    c.next_reg = base + 1;
+    if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+    return base;
 }
 
 fn compile_template_lit(c: Compiler*, node: AstNode*) -> u8 {
