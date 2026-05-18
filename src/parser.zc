@@ -3694,11 +3694,13 @@ fn parse_object(p: Parser*) -> AstNode* {
             prop_end = body.end;
         } else {
             // Shorthand: { x } = { x: x }. Only valid if key is an Identifier.
-            // Object-literal cover-grammar also reaches here for the
-            // shorthand `{ x = init }` form (where `x` is both the
-            // property key and a binding/assignment target with a
-            // default). The default carries on prop.right (parsed
-            // below) so reinterpret_as_pattern can lift it.
+            // Cover-grammar also accepts `{ x = init }` here — the
+            // default carries an Assignment node which reinterpret_as_pattern
+            // lifts into a PatternEntry with a default. The form is
+            // *not* valid as a real object literal (`var o = { x = 1 }`
+            // is a SyntaxError) — that's enforced by compile-time
+            // checks: if this Object node never goes through
+            // reinterpret_as_pattern, the compiler will reject it.
             if key_tok.kind != TokenKind::Identifier {
                 p.had_error = true;
                 break;
@@ -3708,7 +3710,20 @@ fn parse_object(p: Parser*) -> AstNode* {
                                       key_tok.start + key_tok.length);
             ident_node.name_start  = key_tok.start;
             ident_node.name_length = key_tok.length;
-            value = ident_node;
+            if peek_kind(p) == TokenKind::Eq {
+                advance(p);
+                let default_expr = parse_assignment(p);
+                if default_expr == NULL { break; }
+                let assign = new_node(&p.tracker, NodeKind::Assignment,
+                                      ident_node.start, default_expr.end);
+                assign.op = TokenKind::Eq;
+                assign.left  = ident_node;
+                assign.right = default_expr;
+                value = assign;
+                prop_end = default_expr.end;
+            } else {
+                value = ident_node;
+            }
         }
 
         let prop = new_node(&p.tracker, NodeKind::ObjectProp, prop_start, prop_end);
