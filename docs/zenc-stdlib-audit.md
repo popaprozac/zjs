@@ -101,9 +101,17 @@ Module surface verified against `.md` docs (not the locally-installed
 - **std/fs:** `File::read_all(path: char*) -> Result<String>`. Also
   `read_lines`, `exists`, `metadata`, `current_dir`, `create_dir`,
   `read_dir`. RAII via `Drop`.
-- **Verdict — switch.** Drop-in replacement, less code, automatic
-  cleanup. Also: when we ship a node-style `fs.*` JS API later,
-  std/fs is the obvious backing.
+- **Verdict — DEFER, not "cheap switch".** Looks like a drop-in but
+  isn't: `String` is RAII-managed (`impl Drop for String` frees on
+  scope-exit), and our module loader intentionally leaks the source
+  buffer because the compiled `Function*` holds offsets into it. No
+  `leak()` / `into_raw()` / `detach()` on `String` to transfer
+  ownership out cleanly. A real switch needs a module-loader
+  ownership refactor (have Function take ownership of the source
+  buffer); that's a separate task. Keep our `fopen` for now.
+- **Right time to switch:** when we ship the `fs.*` JS API (column B)
+  AND when we refactor the loader to no-longer-leak. Both have to
+  happen together for the swap to be clean.
 
 ### A8 — Regex
 
@@ -220,7 +228,7 @@ Module surface verified against `.md` docs (not the locally-installed
 | A5 Date.now | **switch** to `Time::now()` | tiny |
 | A5 performance.now | **keep** — sub-ms required | — |
 | A6 module path normalize | **keep** — std doesn't canonicalize | — |
-| A7 file reading | **switch** to `File::read_all` | small |
+| A7 file reading | **defer** — needs loader ownership refactor | medium |
 | A8 regex | **keep**, switch if touched | — |
 | A9 NumberToString | **keep** — spec-specific | — |
 | B1 JSON.parse | **adopt** std/json parse | medium |
@@ -232,17 +240,18 @@ Module surface verified against `.md` docs (not the locally-installed
 | B7 fetch (Phase D.0) | **adopt** std/net/http | medium |
 | B8 WebSocket (Phase E) | **adopt with caveat** | medium |
 
-## Two near-term picks
+## One actual near-term pick
 
-If we want concrete consolidation wins this session, the cheap ones are:
+The only truly cheap switch:
 
-1. **A5: route Date.now through Time::now.** Removes one direct syscall
-   in our code; one-line change.
-2. **A7: switch `read_file_to_string` to `File::read_all`.** Smaller
-   loader, automatic cleanup, sets up B6 (future `fs.*`).
+1. **A5: route Date.now through Time::now** — done in commit
+   alongside this audit. One-line; std/time's `Time::now()` is exactly
+   what spec wants for Date.now (integer ms since epoch). `performance.now`
+   stays on `clock_gettime(CLOCK_MONOTONIC)` for sub-ms.
 
-Everything else in column B is "add when we get to that feature,"
-which is the right time to make the call.
+A7 (file reading) LOOKED cheap but isn't, see the entry. Everything
+else in column B is "add when we get to that feature," which is the
+right time to make the call.
 
 ## What this audit didn't cover
 

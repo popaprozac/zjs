@@ -6,6 +6,7 @@
 // share the same context so slot indices match up by construction.
 
 import "stdlib.h" as libc;
+import "std/time.zc";
 import "string.h" as libc_str;
 import "./value.zc";
 import "std/mem.zc"
@@ -8149,16 +8150,11 @@ fn host_set_is_disjoint_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zj
 // =====================================================================
 
 fn host_date_now_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let ms: f64 = 0.0;
-    raw {
-        struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
-        // Spec: returns an integer ms since the epoch. Truncate the
-        // sub-ms portion that comes from clock_gettime's ns field —
-        // performance.now() is the right call for sub-ms timing.
-        ms = (double)ts.tv_sec * 1000.0 + (double)(ts.tv_nsec / 1000000);
-    }
-    return zjs_double(ms);
+    // Spec: integer ms since the epoch. std/time::Time::now() returns
+    // U64 wall-clock ms (gettimeofday-backed), matching exactly.
+    // performance.now() uses CLOCK_MONOTONIC directly for sub-ms
+    // resolution — std/time doesn't expose that yet.
+    return zjs_double((f64)Time::now());
 }
 
 // Format a Date as ISO 8601 — `YYYY-MM-DDTHH:MM:SS.sssZ`. Used by
