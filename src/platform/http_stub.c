@@ -10,15 +10,36 @@
 #include <stdlib.h>
 #include <string.h>
 
-int zjs_http_get_sync(const char* url,
-                      int* status_out,
-                      char** body_out,
-                      size_t* body_len_out,
-                      char** err_out) {
-    (void)url;
-    if (status_out)   *status_out   = 0;
-    if (body_out)     *body_out     = NULL;
-    if (body_len_out) *body_len_out = 0;
-    if (err_out)      *err_out      = strdup("fetch: HTTP backend not configured on this platform");
+void zjs_http_response_free(ZjsHttpResponse* resp) {
+    if (resp == NULL) return;
+    if (resp->body != NULL) {
+        free(resp->body);
+        resp->body = NULL;
+    }
+    resp->body_len = 0;
+    if (resp->resp_headers != NULL) {
+        size_t n = resp->resp_header_count * 2;
+        for (size_t i = 0; i < n; i++) {
+            if (resp->resp_headers[i] != NULL) free(resp->resp_headers[i]);
+        }
+        free(resp->resp_headers);
+        resp->resp_headers = NULL;
+    }
+    resp->resp_header_count = 0;
+    resp->status = 0;
+}
+
+int zjs_http_request_sync(const ZjsHttpRequest* req,
+                          ZjsHttpResponse* resp,
+                          char** err_out) {
+    (void)req;
+    if (resp != NULL) {
+        resp->status = 0;
+        resp->body = NULL;
+        resp->body_len = 0;
+        resp->resp_headers = NULL;
+        resp->resp_header_count = 0;
+    }
+    if (err_out) *err_out = strdup("fetch: HTTP backend not configured on this platform");
     return -1;
 }

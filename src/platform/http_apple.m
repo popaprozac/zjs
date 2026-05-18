@@ -21,34 +21,74 @@ static char* dup_cstring_from_nsstring(NSString* s) {
     return strdup(utf8 ? utf8 : "");
 }
 
-int zjs_http_get_sync(const char* url,
-                      int* status_out,
-                      char** body_out,
-                      size_t* body_len_out,
-                      char** err_out) {
-    if (status_out)   *status_out   = 0;
-    if (body_out)     *body_out     = NULL;
-    if (body_len_out) *body_len_out = 0;
-    if (err_out)      *err_out      = NULL;
+void zjs_http_response_free(ZjsHttpResponse* resp) {
+    if (resp == NULL) return;
+    if (resp->body != NULL) {
+        free(resp->body);
+        resp->body = NULL;
+    }
+    resp->body_len = 0;
+    if (resp->resp_headers != NULL) {
+        size_t n = resp->resp_header_count * 2;
+        for (size_t i = 0; i < n; i++) {
+            if (resp->resp_headers[i] != NULL) free(resp->resp_headers[i]);
+        }
+        free(resp->resp_headers);
+        resp->resp_headers = NULL;
+    }
+    resp->resp_header_count = 0;
+    resp->status = 0;
+}
 
-    if (url == NULL) {
-        if (err_out) *err_out = strdup("fetch: url is NULL");
+int zjs_http_request_sync(const ZjsHttpRequest* req,
+                          ZjsHttpResponse* resp,
+                          char** err_out) {
+    if (resp != NULL) {
+        resp->status = 0;
+        resp->body = NULL;
+        resp->body_len = 0;
+        resp->resp_headers = NULL;
+        resp->resp_header_count = 0;
+    }
+    if (err_out) *err_out = NULL;
+
+    if (req == NULL || req->url == NULL) {
+        if (err_out) *err_out = strdup("fetch: missing url");
         return -1;
     }
 
     @autoreleasepool {
-        NSString* urlStr = [NSString stringWithUTF8String:url];
-        // Use percent-encoded init path: callers pass already-encoded URLs.
+        NSString* urlStr = [NSString stringWithUTF8String:req->url];
         NSURL* nsurl = [NSURL URLWithString:urlStr];
         if (nsurl == nil) {
             if (err_out) *err_out = strdup("fetch: invalid URL");
             return -1;
         }
 
-        NSURLRequest* req =
-            [NSURLRequest requestWithURL:nsurl
-                             cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
-                         timeoutInterval:30.0];
+        int timeout = (req->timeout_seconds > 0) ? req->timeout_seconds : 30;
+        NSMutableURLRequest* mreq =
+            [NSMutableURLRequest requestWithURL:nsurl
+                                    cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
+                                timeoutInterval:(NSTimeInterval)timeout];
+
+        const char* method = (req->method && req->method[0]) ? req->method : "GET";
+        [mreq setHTTPMethod:[NSString stringWithUTF8String:method]];
+
+        if (req->req_headers != NULL && req->req_header_count > 0) {
+            for (size_t i = 0; i < req->req_header_count; i++) {
+                const char* name  = req->req_headers[2*i];
+                const char* value = req->req_headers[2*i + 1];
+                if (name == NULL || value == NULL) continue;
+                NSString* ns_name  = [NSString stringWithUTF8String:name];
+                NSString* ns_value = [NSString stringWithUTF8String:value];
+                [mreq setValue:ns_value forHTTPHeaderField:ns_name];
+            }
+        }
+
+        if (req->body != NULL && req->body_len > 0) {
+            NSData* body_data = [NSData dataWithBytes:req->body length:req->body_len];
+            [mreq setHTTPBody:body_data];
+        }
 
         __block NSData* respData = nil;
         __block NSURLResponse* respResp = nil;
@@ -57,7 +97,7 @@ int zjs_http_get_sync(const char* url,
 
         NSURLSession* session = [NSURLSession sharedSession];
         NSURLSessionDataTask* task =
-            [session dataTaskWithRequest:req
+            [session dataTaskWithRequest:mreq
                        completionHandler:^(NSData* d, NSURLResponse* r, NSError* e) {
                 respData = d;
                 respResp = r;
@@ -74,26 +114,38 @@ int zjs_http_get_sync(const char* url,
 
         if ([respResp isKindOfClass:[NSHTTPURLResponse class]]) {
             NSHTTPURLResponse* httpResp = (NSHTTPURLResponse*)respResp;
-            if (status_out) *status_out = (int)[httpResp statusCode];
+            resp->status = (int)[httpResp statusCode];
+
+            NSDictionary* hdrs = [httpResp allHeaderFields];
+            NSUInteger pair_count = [hdrs count];
+            if (pair_count > 0) {
+                char** flat = (char**)calloc(pair_count * 2, sizeof(char*));
+                size_t idx = 0;
+                for (NSString* key in hdrs) {
+                    NSString* val = [hdrs objectForKey:key];
+                    flat[idx++] = dup_cstring_from_nsstring(key);
+                    flat[idx++] = dup_cstring_from_nsstring(val);
+                }
+                resp->resp_headers = flat;
+                resp->resp_header_count = (size_t)pair_count;
+            }
         } else {
-            // Non-HTTP (e.g., file://) — treat as 200 so callers can read the body.
-            if (status_out) *status_out = 200;
+            // Non-HTTP (e.g., file://) — treat as 200 with no headers.
+            resp->status = 200;
         }
 
         NSUInteger len = (respData == nil) ? 0 : [respData length];
-        if (len == 0) {
-            if (body_out)     *body_out     = NULL;
-            if (body_len_out) *body_len_out = 0;
-            return 0;
+        if (len > 0) {
+            char* buf = (char*)malloc(len);
+            if (buf == NULL) {
+                if (err_out) *err_out = strdup("fetch: out of memory");
+                zjs_http_response_free(resp);
+                return -1;
+            }
+            memcpy(buf, [respData bytes], len);
+            resp->body = buf;
+            resp->body_len = (size_t)len;
         }
-        char* buf = (char*)malloc(len);
-        if (buf == NULL) {
-            if (err_out) *err_out = strdup("fetch: out of memory");
-            return -1;
-        }
-        memcpy(buf, [respData bytes], len);
-        if (body_out)     *body_out     = buf;
-        if (body_len_out) *body_len_out = (size_t)len;
         return 0;
     }
 }

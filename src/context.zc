@@ -12,11 +12,28 @@ import "std/time.zc";
 // and src/platform/http_apple.m. Declared as raw C extern so we
 // don't depend on zen-c's header-import resolution.
 raw {
-    int zjs_http_get_sync(const char* url,
-                          int* status_out,
-                          char** body_out,
-                          size_t* body_len_out,
-                          char** err_out);
+    typedef struct {
+        const char* method;
+        const char* url;
+        const char** req_headers;
+        size_t req_header_count;
+        const char* body;
+        size_t body_len;
+        int timeout_seconds;
+    } ZjsHttpRequest;
+
+    typedef struct {
+        int status;
+        char* body;
+        size_t body_len;
+        char** resp_headers;
+        size_t resp_header_count;
+    } ZjsHttpResponse;
+
+    int zjs_http_request_sync(const ZjsHttpRequest* req,
+                              ZjsHttpResponse* resp,
+                              char** err_out);
+    void zjs_http_response_free(ZjsHttpResponse* resp);
 }
 import "string.h" as libc_str;
 import "./value.zc";
@@ -8532,8 +8549,95 @@ fn host_response_array_buffer(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Z
     return pv;
 }
 
-// fetch(url) — drives std/net/http::fetch synchronously and wraps
-// the result in a Promise.
+// Walk a JS "headers init" value (Headers / plain object / array of
+// [name, value] pairs) and fill name/value char* arrays. Returns the
+// number of pairs collected. Header values that aren't strings get
+// converted via zjs_to_string. Caps at `cap` pairs — anything beyond
+// is silently dropped at v0.1 (overflow into 65th header is exotic).
+fn marshal_request_headers(ctx: ZjsContext*, hv: ZjsValue,
+                           names: char**, values: char**, cap: usize) -> usize {
+    if zjs_is_undefined(hv) != 0 || zjs_is_null(hv) != 0 { return 0; }
+    let count: usize = 0;
+
+    // Headers instance — read the hidden bag.
+    if zjs_is_object(hv) != 0 && ctx.headers_proto != NULL
+       && zjs_as_object(hv).proto == ctx.headers_proto {
+        let bag = headers_bag(ctx, zjs_as_object(hv));
+        if bag == NULL { return 0; }
+        // Walk the bag's hidden-class chain to recover all key/value pairs.
+        let cls = bag.cls;
+        while cls != NULL && cls.parent != NULL && count < cap {
+            let name  = cls.transition_name;
+            let slot  = cls.transition_slot;
+            if name != NULL && zjs_is_deleted(bag.slots[slot]) == 0 {
+                let val = bag.slots[slot];
+                let val_s: ZjsValue = if zjs_is_string(val) != 0 { val }
+                                       else { zjs_to_string(ctx, val) };
+                names[count]  = name.data;
+                values[count] = zjs_as_string(val_s).data;
+                count = count + 1;
+            }
+            cls = cls.parent;
+        }
+        return count;
+    }
+
+    // Array of [name, value] pairs.
+    if zjs_is_array(hv) != 0 {
+        let a = zjs_as_array(hv);
+        let i: u32 = 0;
+        while i < a.length && count < cap {
+            let entry = a.elements[i];
+            if zjs_is_array(entry) != 0 {
+                let ea = zjs_as_array(entry);
+                if ea.length >= 2 {
+                    let n_v = ea.elements[0];
+                    let v_v = ea.elements[1];
+                    let n_s: ZjsValue = if zjs_is_string(n_v) != 0 { n_v } else { zjs_to_string(ctx, n_v) };
+                    let v_s: ZjsValue = if zjs_is_string(v_v) != 0 { v_v } else { zjs_to_string(ctx, v_v) };
+                    names[count]  = zjs_as_string(n_s).data;
+                    values[count] = zjs_as_string(v_s).data;
+                    count = count + 1;
+                }
+            }
+            i = i + 1;
+        }
+        return count;
+    }
+
+    // Plain object — walk own properties in insertion order.
+    if zjs_is_object(hv) != 0 {
+        let o = zjs_as_object(hv);
+        let stack_names: ZjsString*[64];
+        let stack_slots: u32[64];
+        let nc: u32 = 0;
+        let c = o.cls;
+        while c != NULL && c.parent != NULL && nc < 64 {
+            stack_names[nc] = c.transition_name;
+            stack_slots[nc] = c.transition_slot;
+            nc = nc + 1;
+            c = c.parent;
+        }
+        let ni: u32 = nc;
+        while ni > 0 && count < cap {
+            ni = ni - 1;
+            let name = stack_names[ni];
+            let slot = stack_slots[ni];
+            if name != NULL && zjs_is_deleted(o.slots[slot]) == 0 {
+                let val = o.slots[slot];
+                let val_s: ZjsValue = if zjs_is_string(val) != 0 { val } else { zjs_to_string(ctx, val) };
+                names[count]  = name.data;
+                values[count] = zjs_as_string(val_s).data;
+                count = count + 1;
+            }
+        }
+        return count;
+    }
+    return 0;
+}
+
+// fetch(input, init?) — drives the native HTTP backend and wraps the
+// result in a Promise. init supports {method, headers, body} at v0.1.
 fn host_fetch(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let url_v: ZjsValue = ctx_intern_string(ctx, (char*)"", 0);
     if argc >= 1 {
@@ -8557,17 +8661,92 @@ fn host_fetch(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
     let us = zjs_as_string(url_v);
 
-    // Native HTTP backend (NSURLSession on Apple; stub elsewhere).
-    // Body comes back as a malloc'd byte buffer that we own and free
-    // after copying into a ZjsString.
+    // --- Parse init: method / headers / body ---
+    let method_cstr: char* = (char*)"GET";
+    let body_ptr_req: char* = NULL;
+    let body_len_req: usize = 0;
+    let hdr_names:  char*[64];
+    let hdr_values: char*[64];
+    let hdr_count: usize = 0;
+    let hdr_flat: char*[128];
+
+    if argc >= 2 && zjs_is_object(args[1]) != 0 {
+        let init = zjs_as_object(args[1]);
+        let m_atom = ctx_intern_atom(ctx, (char*)"method", 6);
+        let m_slot = class_find_slot(init.cls, m_atom);
+        if m_slot >= 0 {
+            let m_v = init.slots[(u32)m_slot];
+            if zjs_is_string(m_v) != 0 {
+                method_cstr = zjs_as_string(m_v).data;
+            } else if zjs_is_undefined(m_v) == 0 && zjs_is_null(m_v) == 0 {
+                method_cstr = zjs_as_string(zjs_to_string(ctx, m_v)).data;
+            }
+        }
+
+        let h_atom = ctx_intern_atom(ctx, (char*)"headers", 7);
+        let h_slot = class_find_slot(init.cls, h_atom);
+        if h_slot >= 0 {
+            hdr_count = marshal_request_headers(ctx, init.slots[(u32)h_slot],
+                                                &hdr_names[0], &hdr_values[0], 64);
+        }
+
+        let b_atom = ctx_intern_atom(ctx, (char*)"body", 4);
+        let b_slot = class_find_slot(init.cls, b_atom);
+        if b_slot >= 0 {
+            let b_v = init.slots[(u32)b_slot];
+            if zjs_is_string(b_v) != 0 {
+                let bs = zjs_as_string(b_v);
+                body_ptr_req = bs.data;
+                body_len_req = (usize)bs.length;
+            } else if zjs_is_uint8_array(b_v) != 0 {
+                let ba = zjs_as_uint8_array(b_v);
+                raw { body_ptr_req = (char*)ba->bytes; }
+                body_len_req = (usize)ba.length;
+            } else if zjs_is_undefined(b_v) == 0 && zjs_is_null(b_v) == 0 {
+                let bs2 = zjs_as_string(zjs_to_string(ctx, b_v));
+                body_ptr_req = bs2.data;
+                body_len_req = (usize)bs2.length;
+            }
+        }
+    }
+
+    // Build flat [n0, v0, n1, v1, ...] array the C side expects.
+    let hi: usize = 0;
+    while hi < hdr_count {
+        hdr_flat[2*hi]     = hdr_names[hi];
+        hdr_flat[2*hi + 1] = hdr_values[hi];
+        hi = hi + 1;
+    }
+
+    // --- Call native backend ---
     let status: i32 = 0;
-    let body_ptr: char* = NULL;
-    let body_len: usize = 0;
+    let resp_body_ptr: char* = NULL;
+    let resp_body_len: usize = 0;
+    let resp_hdr_ptr: char** = NULL;
+    let resp_hdr_count: usize = 0;
     let err_ptr: char* = NULL;
     let rc: i32 = 0;
+    let url_cstr: char* = us.data;
     raw {
-        rc = zjs_http_get_sync(us->data, &status, &body_ptr, &body_len, &err_ptr);
+        ZjsHttpRequest c_req;
+        c_req.method = method_cstr;
+        c_req.url = url_cstr;
+        c_req.req_headers = (const char**)hdr_flat;
+        c_req.req_header_count = hdr_count;
+        c_req.body = body_ptr_req;
+        c_req.body_len = body_len_req;
+        c_req.timeout_seconds = 0;
+        ZjsHttpResponse c_resp;
+        c_resp.status = 0; c_resp.body = NULL; c_resp.body_len = 0;
+        c_resp.resp_headers = NULL; c_resp.resp_header_count = 0;
+        rc = zjs_http_request_sync(&c_req, &c_resp, &err_ptr);
+        status = c_resp.status;
+        resp_body_ptr = c_resp.body;
+        resp_body_len = c_resp.body_len;
+        resp_hdr_ptr = c_resp.resp_headers;
+        resp_hdr_count = c_resp.resp_header_count;
     }
+
     if rc != 0 {
         let msg: char* = if err_ptr != NULL { err_ptr } else { (char*)"fetch failed" };
         let msg_len: u32 = 0;
@@ -8578,13 +8757,44 @@ fn host_fetch(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         return pv;
     }
 
-    let body_zv: ZjsValue = ctx_intern_string(ctx, body_ptr, (u32)body_len);
-    if body_ptr != NULL { raw { free(body_ptr); } }
+    let body_zv: ZjsValue = ctx_intern_string(ctx, resp_body_ptr, (u32)resp_body_len);
 
-    // Headers from the native backend aren't surfaced yet — backend
-    // returns body+status only. Wiring header pass-through is a
-    // follow-up; for now hand callers an empty Headers instance.
+    // --- Populate Response.headers from the backend's flat array ---
     let hdrs_v = host_headers_ctor(ctx, NULL, 0);
+    if resp_hdr_ptr != NULL && resp_hdr_count > 0 {
+        let hbag = headers_bag(ctx, zjs_as_object(hdrs_v));
+        if hbag != NULL {
+            let ri: usize = 0;
+            while ri < resp_hdr_count {
+                let n_cstr: char* = NULL;
+                let v_cstr: char* = NULL;
+                let n_len: u32 = 0;
+                let v_len: u32 = 0;
+                raw {
+                    n_cstr = resp_hdr_ptr[2*ri];
+                    v_cstr = resp_hdr_ptr[2*ri + 1];
+                    n_len = n_cstr ? (uint32_t)strlen(n_cstr) : 0;
+                    v_len = v_cstr ? (uint32_t)strlen(v_cstr) : 0;
+                }
+                if n_cstr != NULL && v_cstr != NULL {
+                    let n_zv = ctx_intern_string(ctx, n_cstr, n_len);
+                    let n_lo = headers_lower(ctx, n_zv);
+                    let v_zv = ctx_intern_string(ctx, v_cstr, v_len);
+                    object_set(ctx, hbag, zjs_as_string(n_lo), v_zv);
+                }
+                ri = ri + 1;
+            }
+        }
+    }
+
+    // Free C-side allocations now that we've copied everything into
+    // ZjsStrings / Headers bag entries.
+    raw {
+        ZjsHttpResponse __r;
+        __r.status = 0; __r.body = resp_body_ptr; __r.body_len = resp_body_len;
+        __r.resp_headers = resp_hdr_ptr; __r.resp_header_count = resp_hdr_count;
+        zjs_http_response_free(&__r);
+    }
 
     let resp_v = build_response_object(ctx, status, body_zv, hdrs_v, url_v);
     promise_resolve_with(ctx, pv, resp_v);

@@ -1,10 +1,11 @@
 // Pluggable native HTTP backend for `fetch`.
 //
-// One symbol — `zjs_http_get_sync` — that each platform implements
-// against its OS-native networking stack. Keeps the engine free of
-// TLS plumbing (CA bundles, ciphersuite policy, version pinning) and
-// gives us HTTPS / HTTP/2 / proxy / IPv6 / cert validation for free
-// on platforms where the OS already provides them.
+// One entry point — `zjs_http_request_sync` — that each platform
+// implements against its OS-native networking stack. Keeps the
+// engine free of TLS plumbing (CA bundles, ciphersuite policy,
+// version pinning) and gives us HTTPS / HTTP/2 / proxy / IPv6 / cert
+// validation for free on platforms where the OS already provides
+// them.
 //
 //   Apple   — NSURLSession (Foundation.framework) — see http_apple.m
 //   Linux   — TBD (libcurl planned) — see http_stub.c at v0.1
@@ -19,26 +20,50 @@
 extern "C" {
 #endif
 
-// Synchronous GET. Blocks the calling thread until the request
+// Request — caller fills out, passes a pointer to zjs_http_request_sync.
+// All pointers are borrowed (not freed by the backend); the strings
+// must remain valid until the call returns.
+typedef struct {
+    const char* method;        // "GET", "POST", "PUT", etc. NULL => "GET".
+    const char* url;           // Required. UTF-8.
+    const char** req_headers;  // Flat [name0, value0, name1, value1, ...].
+                               // UTF-8 cstrings. May be NULL when count==0.
+    size_t req_header_count;   // Number of name/value PAIRS — array length is 2*N.
+    const char* body;          // Request body bytes (binary-safe). May be NULL.
+    size_t body_len;           // Bytes in `body`. 0 => no body.
+    int timeout_seconds;       // 0 => backend default (30s).
+} ZjsHttpRequest;
+
+// Response — backend fills out. Caller frees the allocations as
+// noted on each field. `status_text` is convenience only — most
+// callers prefer numeric status.
+typedef struct {
+    int status;                // HTTP status code (0 only when err_out is set).
+    char* body;                // malloc'd response body. NULL when body_len==0.
+                               // Caller frees with free().
+    size_t body_len;           // Body length in bytes (binary-safe).
+    char** resp_headers;       // malloc'd flat [name, value, ...]; each entry
+                               // is itself malloc'd. Caller frees each entry
+                               // then frees the array. May be NULL.
+    size_t resp_header_count;  // Number of pairs (array length is 2*N).
+} ZjsHttpResponse;
+
+// Synchronous request. Blocks the calling thread until the request
 // completes or fails.
 //
 // Returns 0 on transport success (any status code — caller must
-// inspect *status_out to know whether the server returned 2xx).
+// inspect resp->status to know whether the server returned 2xx).
 // Returns -1 on transport failure (connection refused, DNS error,
 // TLS handshake failure, etc.); *err_out is filled with a malloc'd
 // UTF-8 string that the caller must free().
-//
-// On transport success:
-//   *status_out   = HTTP status code (e.g. 200, 404)
-//   *body_out     = malloc'd response body. Caller frees with free().
-//                   May be NULL when body_len_out == 0.
-//   *body_len_out = body length in bytes (NOT including a null
-//                   terminator — the body is binary-safe).
-int zjs_http_get_sync(const char* url,
-                      int* status_out,
-                      char** body_out,
-                      size_t* body_len_out,
-                      char** err_out);
+int zjs_http_request_sync(const ZjsHttpRequest* req,
+                          ZjsHttpResponse* resp,
+                          char** err_out);
+
+// Convenience helper: free everything `resp` owns and zero the
+// struct. Safe to call on a partially-filled response (NULL pointers
+// are skipped).
+void zjs_http_response_free(ZjsHttpResponse* resp);
 
 #ifdef __cplusplus
 }

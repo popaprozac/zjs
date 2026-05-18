@@ -10,9 +10,9 @@
 // must be linked into the CLI binary too, since the CLI is its own
 // `zc build` entry point — directives don't propagate via import.
 //> macos: framework: Foundation
-//> macos: cflags:    src/platform/http_apple.m
+//> macos: cflags:    -fobjc-arc src/platform/http_apple.m
 //> ios:   framework: Foundation
-//> ios:   cflags:    src/platform/http_apple.m
+//> ios:   cflags:    -fobjc-arc src/platform/http_apple.m
 //> linux: cflags:    src/platform/http_stub.c
 //> windows: cflags:  src/platform/http_stub.c
 
