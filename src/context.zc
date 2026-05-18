@@ -104,9 +104,34 @@ struct ZjsContext {
     // Strings, Objects, Arrays, HostFunctions). Each cell starts with
     // a CellHeader whose type_tag drives the free dispatch. The mark
     // bit drives GC reachability.
+    //
+    // Generational scaffolding (2026-05-18, Session 2 of the GC
+    // experiment — see docs/gc-experiment.md). New cells land in
+    // `young_cells`; survivors of a minor collection are appended to
+    // `cells` (the "old gen"). Without a write barrier yet the mark
+    // phase still walks the full reachable graph, so a minor only
+    // wins us "cheap sweep of newly-dead garbage" — not a pause-time
+    // win on benches with a large persistent live set. Session 3
+    // adds the barrier + remembered set to make minor truly fast.
     cells:          void**;
     cell_count:     u32;
     cell_cap:       u32;
+    young_cells:    void**;
+    young_count:    u32;
+    young_cap:      u32;
+    young_threshold: u32;
+    cells_since_minor: u32;
+
+    // Remembered set — old cells that hold a pointer to a young cell.
+    // Populated by gc_write_barrier on every old.slot=young store and
+    // at promotion time (walking the new-old cell's slots). Each entry
+    // is the old-cell pointer; minor GC re-scans the cell's slots to
+    // follow the young descendants. Duplicates are tolerated (the
+    // mark check inside gc_mark_value early-returns on already-marked
+    // cells), so we don't bother deduping the list — just append.
+    rem_set:        void**;
+    rem_count:      u32;
+    rem_cap:        u32;
 
     // Set by zjs_eval when the program ends with an uncaught throw.
     // Public ABI: zjs_had_error / zjs_get_error.
@@ -176,11 +201,14 @@ struct ZjsContext {
 
     // GC instrumentation (2026-05-18). All counters are cumulative
     // for the lifetime of the context; reset on context creation.
-    gc_collections:    u32;          // # of GC runs
+    gc_collections:    u32;          // # of GC runs (minor + major)
     gc_pause_ns_total: u64;          // sum of all pauses (nanoseconds)
     gc_pause_ns_max:   u64;          // worst single pause
     gc_cells_freed:    u32;          // cells reclaimed across all runs
     gc_cells_kept:     u32;          // cells surviving the most recent run
+    gc_minors:         u32;          // # of minor (young-only sweep) GCs
+    gc_majors:         u32;          // # of major (full sweep) GCs
+    gc_promoted:       u32;          // total cells promoted young → old
 
     // --- Phase 3.9h scaffolding (unused until interpret() converts) ---
     // Single contiguous register stack; CallFrames take slices.
@@ -310,6 +338,15 @@ fn zjs_new_context() -> ZjsContext* {
         result.gc_pause_ns_max   = 0;
         result.gc_cells_freed    = 0;
         result.gc_cells_kept     = 0;
+        result.gc_minors         = 0;
+        result.gc_majors         = 0;
+        result.gc_promoted       = 0;
+        // Young-generation scaffolding. Fire a minor GC every ~1024
+        // young allocations until tuning says otherwise; small enough
+        // to keep pauses tight, large enough that the per-minor
+        // overhead doesn't dominate.
+        result.young_threshold   = 1024;
+        result.cells_since_minor = 0;
         // calloc gave us {bits: 0}; explicitly initialize the implicit
         // host receiver to JS `undefined`.
         result.host_this = zjs_undefined();
@@ -337,39 +374,22 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     }
     dealloc(ctx.globals);
 
-    // Free every heap cell, dispatched by its type tag.
+    // Free every heap cell — both generations. The dispatch by tag
+    // is shared with gc_sweep_old via gc_free_one so adding a new
+    // cell type only requires updating one place.
     let j: u32 = 0;
     while j < ctx.cell_count {
-        let cp = ctx.cells[j];
-        let tag: u8 = 0;
-        raw { tag = ((CellHeader*)cp)->type_tag; }
-        if tag == TAG_FUNCTION {
-            raw {
-                extern void function_free_void(void* f);
-                function_free_void(cp);
-            }
-        } else if tag == TAG_STRING {
-            string_free_void(cp);
-        } else if tag == TAG_OBJECT {
-            object_free_void(cp);
-        } else if tag == TAG_ARRAY {
-            array_free_void(cp);
-        } else if tag == TAG_HOST_FUNCTION {
-            host_function_free_void(cp);
-        } else if tag == TAG_HIDDEN_CLASS {
-            hidden_class_free_void(cp);
-        } else if tag == TAG_CLOSURE {
-            closure_free_void(cp);
-        } else if tag == TAG_ACCESSOR {
-            accessor_free_void(cp);
-        } else if tag == TAG_PROMISE {
-            promise_free_void(cp);
-        } else if tag == TAG_REGEXP {
-            regexp_free_void(cp);
-        }
+        gc_free_one(ctx.cells[j]);
         j = j + 1;
     }
+    let jy: u32 = 0;
+    while jy < ctx.young_count {
+        gc_free_one(ctx.young_cells[jy]);
+        jy = jy + 1;
+    }
     let cells = ctx.cells;
+    let young_cells = ctx.young_cells;
+    let rem_set = ctx.rem_set;
     let temp_roots = ctx.temp_roots;
     let reg_stack = ctx.reg_stack;
     let frames = ctx.frames;
@@ -377,6 +397,8 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     let invoke_arg_buffer = ctx.invoke_arg_buffer;
     let microtask_queue = ctx.microtask_queue;
     dealloc(cells);
+    dealloc(young_cells);
+    dealloc(rem_set);
     dealloc(temp_roots);
     dealloc(reg_stack);
     dealloc(frames);
@@ -419,7 +441,36 @@ fn ctx_replace_top_temp_root(ctx: ZjsContext*, v: ZjsValue) -> void {
 // Append a heap cell to the context's owned-cells list. Called whenever
 // a new Function / String / etc. is allocated by the compiler or
 // interpreter.
-fn ctx_register_cell(ctx: ZjsContext*, p: void*) -> void {
+// Module-level "active context" pointer. The write barrier and other
+// helpers that don't naturally receive `ctx` (e.g. array_set in
+// value.zc) read this to find the rem_set. Single-threaded engine —
+// no contention. NULL during bootstrap (before any interpret() runs)
+// is a normal state and means "no barrier needed yet" — bootstrap
+// cells are allocated young and either die or get promoted on the
+// first real GC.
+let g_active_ctx: ZjsContext* = NULL;
+
+fn gc_set_active_ctx(ctx: ZjsContext*) -> ZjsContext* {
+    let saved = g_active_ctx;
+    g_active_ctx = ctx;
+    return saved;
+}
+
+// Minor-mode flag: when 1, gc_mark_value stops recursing into OLD
+// cells (their pointers to YOUNG cells are tracked separately via
+// the remembered set). Toggled by gc_run_minor; gc_run_major sets it
+// back to 0 so a major behaves as a full reachability walk.
+let g_gc_minor_mode: u8 = 0;
+
+// Append `p` to the old-generation cell list. Used for cells that
+// should bypass the nursery — atoms (pinned for the context's
+// lifetime), bootstrap-time allocations (the empty hidden class,
+// well-known prototypes), and survivors promoted out of the young
+// list by minor GC. NOT bumped against `young_threshold` because
+// these allocations don't represent program-controlled pressure.
+// Stamps the cell's age to OLD so the write barrier and mark walk
+// can distinguish young from old in O(1).
+fn ctx_register_cell_old(ctx: ZjsContext*, p: void*) -> void {
     if ctx.cell_count >= ctx.cell_cap {
         let new_cap: u32 = if ctx.cell_cap == 0 { 16 } else { ctx.cell_cap * 2 };
         ctx.cells = realloc_n<void*>(ctx.cells, (usize)ctx.cell_cap, (usize)new_cap);
@@ -428,6 +479,73 @@ fn ctx_register_cell(ctx: ZjsContext*, p: void*) -> void {
     ctx.cells[ctx.cell_count] = p;
     ctx.cell_count = ctx.cell_count + 1;
     ctx.cells_since_gc = ctx.cells_since_gc + 1;
+    let h: CellHeader* = NULL;
+    raw { h = (CellHeader*)p; }
+    h.age = 1;
+}
+
+// Append `holder` to the remembered set. Caller has already determined
+// (holder is old) AND (a value pointing into the nursery was just
+// stored into one of its slots). The list dedups lazily — duplicates
+// are fine because mark walks early-return on already-marked cells.
+fn rem_set_add(ctx: ZjsContext*, holder: void*) -> void {
+    if ctx.rem_count >= ctx.rem_cap {
+        let new_cap: u32 = if ctx.rem_cap == 0 { 32 } else { ctx.rem_cap * 2 };
+        ctx.rem_set = realloc_n<void*>(ctx.rem_set, (usize)ctx.rem_cap, (usize)new_cap);
+        ctx.rem_cap = new_cap;
+    }
+    ctx.rem_set[ctx.rem_count] = holder;
+    ctx.rem_count = ctx.rem_count + 1;
+}
+
+// The write barrier itself. Call this on every store of a ZjsValue
+// into a heap-resident slot — the helper extracts the cell pointer
+// (if any) from `value` and records the old→young edge.
+//
+// Fast path: both arms are cheap. Most stores are either to a young
+// holder (no barrier needed) or with a primitive / old value (no
+// barrier needed). Real barriers only fire when promoted long-lived
+// state captures freshly-allocated data — which is exactly the
+// case we need to track for minor correctness.
+fn gc_write_barrier(ctx: ZjsContext*, holder: void*, value: ZjsValue) -> void {
+    if holder == NULL || ctx == NULL { return; }
+    let h: CellHeader* = NULL;
+    raw { h = (CellHeader*)holder; }
+    if h.age == 0 { return; }   // holder is young — slot can be re-scanned at promotion time
+    if zjs_is_cell(value) == 0 { return; }
+    let v_ptr = zjs_cell_as_ptr(value);
+    if v_ptr == NULL { return; }
+    let vh: CellHeader* = NULL;
+    raw { vh = (CellHeader*)v_ptr; }
+    if vh.age != 0 { return; }  // value is also old → no inter-gen edge
+    rem_set_add(ctx, holder);
+}
+
+// Param-less variant for code paths that don't have ctx threaded
+// through (e.g. array_set in value.zc). Reads from g_active_ctx,
+// which interpret() sets on entry and restores on exit. A NULL
+// g_active_ctx means we're outside the interpreter — typically
+// during bootstrap or test setup — and the barrier safely no-ops.
+fn gc_barrier(holder: void*, value: ZjsValue) -> void {
+    gc_write_barrier(g_active_ctx, holder, value);
+}
+
+// New cells from program execution land here. We bump
+// `cells_since_minor` and let `ctx_maybe_gc` decide when to collect
+// — that check fires from the interpreter loop, not from inside the
+// allocator (the prerequisite for moving GC trigger into the
+// allocator is rooting all in-flight cells, tracked in
+// docs/future-work.md).
+fn ctx_register_cell(ctx: ZjsContext*, p: void*) -> void {
+    if ctx.young_count >= ctx.young_cap {
+        let new_cap: u32 = if ctx.young_cap == 0 { 64 } else { ctx.young_cap * 2 };
+        ctx.young_cells = realloc_n<void*>(ctx.young_cells, (usize)ctx.young_cap, (usize)new_cap);
+        ctx.young_cap = new_cap;
+    }
+    ctx.young_cells[ctx.young_count] = p;
+    ctx.young_count = ctx.young_count + 1;
+    ctx.cells_since_gc    = ctx.cells_since_gc + 1;
+    ctx.cells_since_minor = ctx.cells_since_minor + 1;
 }
 
 // =====================================================================
@@ -720,17 +838,16 @@ fn ctx_try_pop(ctx: ZjsContext*) -> void {
     }
 }
 
-// Mark a single value's reachable graph. Idempotent — already-marked
-// cells return immediately, breaking cycles.
-fn gc_mark_value(v: ZjsValue) -> void {
-    if zjs_is_cell(v) == 0 { return; }
-    let p = zjs_cell_as_ptr(v);
-    if p == NULL { return; }
+// Recurse through every child reference of `p`, calling
+// gc_mark_value on each. Used directly by rem-set processing in
+// gc_run_minor to walk old holders without tripping the early-return
+// short-circuit in gc_mark_value's minor-mode check. Recursive
+// gc_mark_value calls from inside this body DO respect the
+// short-circuit — that's the whole point: we want to walk THIS
+// old cell's slots, but stop again at any further old descendants.
+fn gc_mark_cell_children(p: void*) -> void {
     let h: CellHeader* = NULL;
     raw { h = (CellHeader*)p; }
-    if h.mark != 0 { return; }
-    h.mark = 1;
-
     let tag = h.type_tag;
     if tag == TAG_STRING { return; }            // leaf
 
@@ -990,14 +1107,28 @@ fn gc_mark_value(v: ZjsValue) -> void {
     }
 }
 
-// After the mark phase but before sweep, walk all live Functions'
-// inline caches and null out entries whose cached HiddenClass wasn't
-// independently marked alive. Without this pass, the IC keeps long-dead
-// classes pinned and we slow-leak shape memory in long-running programs.
-fn gc_nullify_dead_ics(ctx: ZjsContext*) -> void {
+// Mark a single value's reachable graph. Idempotent — already-marked
+// cells return immediately, breaking cycles. In minor-GC mode the
+// old-cell short-circuit prevents recursion through old children
+// (the rem-set processing handles old→young edges separately).
+fn gc_mark_value(v: ZjsValue) -> void {
+    if zjs_is_cell(v) == 0 { return; }
+    let p = zjs_cell_as_ptr(v);
+    if p == NULL { return; }
+    let h: CellHeader* = NULL;
+    raw { h = (CellHeader*)p; }
+    if h.mark != 0 { return; }
+    h.mark = 1;
+    if g_gc_minor_mode != 0 && h.age != 0 { return; }
+    gc_mark_cell_children(p);
+}
+
+// Per-list helper for the IC compaction below. Factored out so the
+// nullify pass can walk both the old and young lists.
+fn gc_nullify_dead_ics_in(arr: void**, count: u32) -> void {
     let i: u32 = 0;
-    while i < ctx.cell_count {
-        let p = ctx.cells[i];
+    while i < count {
+        let p = arr[i];
         let h: CellHeader* = NULL;
         raw { h = (CellHeader*)p; }
         if h.mark != 0 && h.type_tag == TAG_FUNCTION {
@@ -1056,12 +1187,27 @@ fn gc_nullify_dead_ics(ctx: ZjsContext*) -> void {
     }
 }
 
+// After the mark phase but before sweep, walk all live Functions'
+// inline caches and null out entries whose cached HiddenClass wasn't
+// independently marked alive. Without this pass, the IC keeps long-dead
+// classes pinned and we slow-leak shape memory in long-running programs.
+// Walks both generations — young functions also carry ICs that need
+// cleaning, or the next dispatch crashes on a dangling pointer.
+fn gc_nullify_dead_ics(ctx: ZjsContext*) -> void {
+    gc_nullify_dead_ics_in(ctx.cells,       ctx.cell_count);
+    gc_nullify_dead_ics_in(ctx.young_cells, ctx.young_count);
+}
+
 // Mark a hidden class transitively: parent (chain back to root) and
-// every child transition. Idempotent.
+// every child transition. Idempotent. In minor mode an old class is
+// marked but its parent / transition links aren't walked — those
+// other classes are either also old (don't need re-marking) or are
+// pointed to from young objects we'll mark via the regular walk.
 fn gc_mark_hidden_class(c: ZjsHiddenClass*) -> void {
     if c == NULL { return; }
     if c.header.mark != 0 { return; }
     c.header.mark = 1;
+    if g_gc_minor_mode != 0 && c.header.age != 0 { return; }
     // Names are atoms; they're already pinned via the atom-table root.
     if c.parent != NULL { gc_mark_hidden_class(c.parent); }
     let i: u32 = 0;
@@ -1196,7 +1342,98 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     }
 }
 
-fn gc_sweep(ctx: ZjsContext*) -> void {
+// Free a single cell by type tag. Pulled out of gc_sweep so the
+// young-list sweep + zjs_free_context can share the dispatch.
+// Caller must have already determined the cell is dead (or that the
+// context is being torn down).
+fn gc_free_one(p: void*) -> void {
+    let h: CellHeader* = NULL;
+    raw { h = (CellHeader*)p; }
+    let tag = h.type_tag;
+    if tag == TAG_FUNCTION      {
+        raw { extern void function_free_void(void* f); function_free_void(p); }
+    } else if tag == TAG_STRING        { string_free_void(p); }
+      else if tag == TAG_OBJECT        { object_free_void(p); }
+      else if tag == TAG_ARRAY         { array_free_void(p); }
+      else if tag == TAG_HOST_FUNCTION { host_function_free_void(p); }
+      else if tag == TAG_CLOSURE       { closure_free_void(p); }
+      else if tag == TAG_ACCESSOR      { accessor_free_void(p); }
+      else if tag == TAG_PROMISE       { promise_free_void(p); }
+      else if tag == TAG_REGEXP        { regexp_free_void(p); }
+      else if tag == TAG_ASYNC_CONT    {
+          let ac: ZjsAsyncCont* = NULL;
+          raw { ac = (ZjsAsyncCont*)p; }
+          if ac.saved_regs != NULL { dealloc(ac.saved_regs); }
+          dealloc(ac);
+      }
+      else if tag == TAG_GENERATOR     {
+          let g: ZjsGenerator* = NULL;
+          raw { g = (ZjsGenerator*)p; }
+          if g.saved_regs != NULL { dealloc(g.saved_regs); }
+          dealloc(g);
+      }
+      else if tag == TAG_MAP           {
+          let mm: ZjsMap* = NULL;
+          raw { mm = (ZjsMap*)p; }
+          if mm.entries != NULL { dealloc(mm.entries); }
+          dealloc(mm);
+      }
+      else if tag == TAG_SET           {
+          let ss: ZjsSet* = NULL;
+          raw { ss = (ZjsSet*)p; }
+          if ss.entries != NULL { dealloc(ss.entries); }
+          dealloc(ss);
+      }
+      else if tag == TAG_DATE          {
+          let dd: ZjsDate* = NULL;
+          raw { dd = (ZjsDate*)p; }
+          dealloc(dd);
+      }
+      else if tag == TAG_SYMBOL        {
+          let sm: ZjsSymbol* = NULL;
+          raw { sm = (ZjsSymbol*)p; }
+          dealloc(sm);
+      }
+      else if tag == TAG_ARRAY_ITER    {
+          let aa: ZjsArrayIter* = NULL;
+          raw { aa = (ZjsArrayIter*)p; }
+          dealloc(aa);
+      }
+      else if tag == TAG_HIDDEN_CLASS  { hidden_class_free_void(p); }
+}
+
+// Sweep the young-generation list. Marked cells are promoted to the
+// old gen (appended to ctx.cells); unmarked are freed.
+//
+// IMPORTANT: we leave the mark bit set on promoted cells. If we
+// cleared it here and a sweep_old pass ran immediately after (the
+// major path), it would see the newly-promoted cells as unmarked
+// and free them. Mark-clearing is the caller's responsibility:
+// either sweep_old does it during its compaction, or the
+// post-minor clear loop does it.
+fn gc_sweep_young(ctx: ZjsContext*) -> u32 {
+    let i: u32 = 0;
+    let promoted: u32 = 0;
+    while i < ctx.young_count {
+        let p = ctx.young_cells[i];
+        let h: CellHeader* = NULL;
+        raw { h = (CellHeader*)p; }
+        if h.mark != 0 {
+            ctx_register_cell_old(ctx, p);
+            promoted = promoted + 1;
+        } else {
+            gc_free_one(p);
+        }
+        i = i + 1;
+    }
+    ctx.young_count = 0;
+    ctx.cells_since_minor = 0;
+    return promoted;
+}
+
+// Sweep the old-generation list. Same compaction as the original
+// single-list sweep — keep marked, free unmarked, compact in place.
+fn gc_sweep_old(ctx: ZjsContext*) -> void {
     let i: u32 = 0;
     let kept: u32 = 0;
     while i < ctx.cell_count {
@@ -1208,64 +1445,29 @@ fn gc_sweep(ctx: ZjsContext*) -> void {
             ctx.cells[kept] = p;
             kept = kept + 1;
         } else {
-            let tag = h.type_tag;
-            if tag == TAG_FUNCTION      {
-                raw { extern void function_free_void(void* f); function_free_void(p); }
-            } else if tag == TAG_STRING        { string_free_void(p); }
-              else if tag == TAG_OBJECT        { object_free_void(p); }
-              else if tag == TAG_ARRAY         { array_free_void(p); }
-              else if tag == TAG_HOST_FUNCTION { host_function_free_void(p); }
-              else if tag == TAG_CLOSURE       { closure_free_void(p); }
-              else if tag == TAG_ACCESSOR      { accessor_free_void(p); }
-              else if tag == TAG_PROMISE       { promise_free_void(p); }
-              else if tag == TAG_REGEXP        { regexp_free_void(p); }
-              else if tag == TAG_ASYNC_CONT    {
-                  let ac: ZjsAsyncCont* = NULL;
-                  raw { ac = (ZjsAsyncCont*)p; }
-                  if ac.saved_regs != NULL { dealloc(ac.saved_regs); }
-                  dealloc(ac);
-              }
-              else if tag == TAG_GENERATOR     {
-                  let g: ZjsGenerator* = NULL;
-                  raw { g = (ZjsGenerator*)p; }
-                  if g.saved_regs != NULL { dealloc(g.saved_regs); }
-                  dealloc(g);
-              }
-              else if tag == TAG_MAP           {
-                  let mm: ZjsMap* = NULL;
-                  raw { mm = (ZjsMap*)p; }
-                  if mm.entries != NULL { dealloc(mm.entries); }
-                  dealloc(mm);
-              }
-              else if tag == TAG_SET           {
-                  let ss: ZjsSet* = NULL;
-                  raw { ss = (ZjsSet*)p; }
-                  if ss.entries != NULL { dealloc(ss.entries); }
-                  dealloc(ss);
-              }
-              else if tag == TAG_DATE          {
-                  let dd: ZjsDate* = NULL;
-                  raw { dd = (ZjsDate*)p; }
-                  dealloc(dd);
-              }
-              else if tag == TAG_SYMBOL        {
-                  let sm: ZjsSymbol* = NULL;
-                  raw { sm = (ZjsSymbol*)p; }
-                  dealloc(sm);
-              }
-              else if tag == TAG_ARRAY_ITER    {
-                  let aa: ZjsArrayIter* = NULL;
-                  raw { aa = (ZjsArrayIter*)p; }
-                  dealloc(aa);
-              }
+            gc_free_one(p);
         }
         i = i + 1;
     }
     ctx.cell_count = kept;
 }
 
-fn gc_run(ctx: ZjsContext*) -> void {
-    let before = ctx.cell_count;
+// Minor: walk the live graph from roots (still touches old cells in
+// this Session 2 pass — Session 3 will trim that to a remembered
+// set), sweep ONLY the young list, and promote survivors into old.
+// Old cells are untouched: they stay marked-as-cleared at the end of
+// the cycle so the next minor's mark walk starts with mark=0
+// everywhere.
+//
+// Caveat: without the Session-3 write barrier, the mark walk costs
+// O(live), not O(young). On benches with a large persistent live
+// set (e.g. splay) this makes minors *more* expensive than the
+// pre-experiment single-collector path if they fire too often. We
+// adapt `young_threshold` upward as old gen grows so minor frequency
+// stays bounded — see the threshold update at the bottom of this
+// function.
+fn gc_run_minor(ctx: ZjsContext*) -> void {
+    let before = ctx.young_count;
     let t0: u64 = 0;
     let t1: u64 = 0;
     raw {
@@ -1273,11 +1475,92 @@ fn gc_run(ctx: ZjsContext*) -> void {
         clock_gettime(CLOCK_MONOTONIC, &_ts0);
         t0 = (uint64_t)_ts0.tv_sec * 1000000000ULL + (uint64_t)_ts0.tv_nsec;
     }
+    // Switch the mark walker into minor mode: old cells are marked
+    // but their slots aren't re-walked. The remembered set bridges
+    // the gap by enumerating each old cell that ever stored a young
+    // pointer; we re-scan those cells' slots so descendants in the
+    // nursery get found.
+    g_gc_minor_mode = 1;
+    gc_mark_roots(ctx);
+    // Process remembered set: walk each old holder's child slots
+    // directly via gc_mark_cell_children, bypassing the early-return
+    // in gc_mark_value. The recursive gc_mark_value calls inside the
+    // children walk DO respect minor mode — so we descend through
+    // young descendants and stop at any further old cells.
+    let ri: u32 = 0;
+    while ri < ctx.rem_count {
+        let rp = ctx.rem_set[ri];
+        if rp != NULL {
+            let rh: CellHeader* = NULL;
+            raw { rh = (CellHeader*)rp; }
+            rh.mark = 1;   // holder survives by virtue of being in the rem set
+            gc_mark_cell_children(rp);
+        }
+        ri = ri + 1;
+    }
+    gc_nullify_dead_ics(ctx);
+    let promoted = gc_sweep_young(ctx);
+    g_gc_minor_mode = 0;
+    // Clear marks on the old generation — they got set by the mark
+    // walk above. Without this the next minor would see them already
+    // "marked" and skip nothing.
+    let oi: u32 = 0;
+    while oi < ctx.cell_count {
+        let op = ctx.cells[oi];
+        let oh: CellHeader* = NULL;
+        raw { oh = (CellHeader*)op; }
+        oh.mark = 0;
+        oi = oi + 1;
+    }
+    // Reset the remembered set. After a minor every reachable young
+    // cell has been promoted, so no old→young edges remain. New
+    // edges that arise after this minor are captured by the write
+    // barrier on the next store.
+    ctx.rem_count = 0;
+    raw {
+        struct timespec _ts1;
+        clock_gettime(CLOCK_MONOTONIC, &_ts1);
+        t1 = (uint64_t)_ts1.tv_sec * 1000000000ULL + (uint64_t)_ts1.tv_nsec;
+    }
+    let pause = t1 - t0;
+    ctx.gc_collections    = ctx.gc_collections + 1;
+    ctx.gc_minors         = ctx.gc_minors + 1;
+    ctx.gc_pause_ns_total = ctx.gc_pause_ns_total + pause;
+    if pause > ctx.gc_pause_ns_max { ctx.gc_pause_ns_max = pause; }
+    let freed: u32 = if before > promoted { before - promoted } else { 0 };
+    ctx.gc_cells_freed    = ctx.gc_cells_freed + freed;
+    ctx.gc_cells_kept     = ctx.cell_count;
+    ctx.gc_promoted       = ctx.gc_promoted + promoted;
+    // Session-3 trigger: with the write barrier in place, a minor
+    // walks roots + rem_set, NOT the full old gen. Stay aggressive —
+    // a small fixed threshold means short-lived garbage gets freed
+    // quickly and minors are cheap.
+    ctx.young_threshold = 1024;
+}
+
+// Major: full mark + sweep of both generations. Resets the major
+// threshold (= 2× live old) and the cells_since_gc accumulator.
+fn gc_run_major(ctx: ZjsContext*) -> void {
+    let before_total = ctx.cell_count + ctx.young_count;
+    let t0: u64 = 0;
+    let t1: u64 = 0;
+    raw {
+        struct timespec _ts0;
+        clock_gettime(CLOCK_MONOTONIC, &_ts0);
+        t0 = (uint64_t)_ts0.tv_sec * 1000000000ULL + (uint64_t)_ts0.tv_nsec;
+    }
+    // Force full-reachability semantics for the mark walk — a major
+    // collection sweeps both gens, so old cells need their full slot
+    // graph traversed (no short-circuit on age).
+    g_gc_minor_mode = 0;
     gc_mark_roots(ctx);
     gc_nullify_dead_ics(ctx);
-    gc_sweep(ctx);
+    let promoted = gc_sweep_young(ctx);
+    gc_sweep_old(ctx);
     ctx.cells_since_gc = 0;
-    // Adapt threshold to grow with the live set; minimum floor of 256.
+    // After a major, every reachable cell is in old gen and rem_set
+    // (which tracked old→young edges) is moot.
+    ctx.rem_count = 0;
     let target: u32 = ctx.cell_count * 2;
     if target < 256 { target = 256; }
     ctx.gc_threshold = target;
@@ -1287,16 +1570,38 @@ fn gc_run(ctx: ZjsContext*) -> void {
         t1 = (uint64_t)_ts1.tv_sec * 1000000000ULL + (uint64_t)_ts1.tv_nsec;
     }
     let pause = t1 - t0;
-    ctx.gc_collections = ctx.gc_collections + 1;
+    ctx.gc_collections    = ctx.gc_collections + 1;
+    ctx.gc_majors         = ctx.gc_majors + 1;
     ctx.gc_pause_ns_total = ctx.gc_pause_ns_total + pause;
     if pause > ctx.gc_pause_ns_max { ctx.gc_pause_ns_max = pause; }
-    let freed: u32 = if before > ctx.cell_count { before - ctx.cell_count } else { 0 };
-    ctx.gc_cells_freed = ctx.gc_cells_freed + freed;
-    ctx.gc_cells_kept  = ctx.cell_count;
+    let after_total = ctx.cell_count;  // young is now empty
+    let freed: u32 = if before_total > after_total { before_total - after_total } else { 0 };
+    ctx.gc_cells_freed    = ctx.gc_cells_freed + freed;
+    ctx.gc_cells_kept     = ctx.cell_count;
+    ctx.gc_promoted       = ctx.gc_promoted + promoted;
 }
 
+// Compatibility shim — pre-experiment callers (test262 harness, the
+// embed ABI's zjs_gc) want "do a full collection now".
+fn gc_run(ctx: ZjsContext*) -> void { gc_run_major(ctx); }
+
 fn ctx_maybe_gc(ctx: ZjsContext*) -> void {
-    if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+    // Generational minor path is OFF in tree (2026-05-18). The
+    // write-barrier audit needed for correctness is incomplete —
+    // multiple heap-pointer fields (o.proto, hf.bound, hf.prototype,
+    // pr.reactions, ac.*, g.*) don't yet route through the barrier,
+    // so promoting cells to old without those barriers leads to
+    // use-after-free when minor sweeps young descendants prematurely.
+    // The young/old split + sweep_young + sweep_old + rem-set
+    // infrastructure remain in tree as scaffolding (see
+    // docs/gc-experiment.md for the design); flipping the trigger
+    // back on requires finishing the audit. Until then, every minor
+    // attempt was producing infinite GC loops on splay-shape
+    // workloads, and Session 2 measurements showed no win without
+    // the barrier anyway.
+    if ctx.cells_since_gc >= ctx.gc_threshold {
+        gc_run_major(ctx);
+    }
 }
 
 // --- Public ABI -----------------------------------------------------
@@ -1308,7 +1613,9 @@ fn zjs_gc(ctx: ZjsContext*) -> void {
 
 fn zjs_cell_count(ctx: ZjsContext*) -> u32 {
     if ctx == NULL { return 0; }
-    return ctx.cell_count;
+    // Returns total live cells across both generations — the public
+    // ABI doesn't expose the young/old split.
+    return ctx.cell_count + ctx.young_count;
 }
 
 // GC instrumentation getters (2026-05-18). Cumulative across the
@@ -1489,6 +1796,7 @@ fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsVal
             return;
         }
         obj.slots[(u32)existing] = value;
+        gc_write_barrier(ctx, (void*)obj, value);
         return;
     }
 
@@ -1527,6 +1835,12 @@ fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsVal
     obj.slots[child.transition_slot] = value;
     obj.attrs[child.transition_slot] = PROP_DEFAULT;
     obj.cls = child;
+    gc_write_barrier(ctx, (void*)obj, value);
+    // Hidden-class transition: when an old object gains a new shape,
+    // the freshly-allocated class is young — its mark walk only
+    // reaches it through obj.cls, which is exactly the kind of
+    // old→young edge the rem set tracks.
+    gc_write_barrier(ctx, (void*)obj, zjs_cell_from_ptr((void*)child));
 }
 
 // Read the attribute byte for slot `idx` on `obj`. Returns
@@ -6604,6 +6918,7 @@ fn promise_settle(ctx: ZjsContext*, pv: ZjsValue, value: ZjsValue, fulfilled: bo
     if p.state != PROMISE_PENDING { return; }
     p.state = if fulfilled { PROMISE_FULFILLED } else { PROMISE_REJECTED };
     p.value = value;
+    gc_write_barrier(ctx, (void*)p, value);
     // Fire all attached reactions. Each entry is 3 slots
     // (onFulfilled, onRejected, resultPromise).
     let i: u32 = 0;
@@ -6881,10 +7196,13 @@ fn map_set_entry(m: ZjsMap*, key: ZjsValue, val: ZjsValue) -> void {
     let slot = map_find_slot(m, ck);
     if slot >= 0 {
         m.entries[(u32)slot].value = val;
+        gc_barrier((void*)m, val);
         return;
     }
     map_ensure_cap(m, m.count + 1);
     m.entries[m.count] = ZjsMapEntry{ key: ck, value: val, deleted: false };
+    gc_barrier((void*)m, ck);
+    gc_barrier((void*)m, val);
     m.count = m.count + 1;
     m.size = m.size + 1;
 }
@@ -7165,6 +7483,7 @@ fn set_add_entry(s: ZjsSet*, v: ZjsValue) -> void {
     s.entries[s.count] = ZjsSetEntry{ value: cv, deleted: false };
     s.count = s.count + 1;
     s.size = s.size + 1;
+    gc_barrier((void*)s, cv);
 }
 
 fn set_require_this(ctx: ZjsContext*) -> ZjsSet* {

@@ -632,6 +632,13 @@ def PROMISE_REJECTED:  u8 = 2;
 struct CellHeader {
     type_tag: u8;
     mark:     u8;       // GC mark bit; 0 = white (unreachable), 1 = grey/black (reachable)
+    age:      u8;       // 0 = young (nursery), 1 = old (promoted). Set to 1 by
+                        // ctx_register_cell_old at promotion time. The write
+                        // barrier (gc_write_barrier) checks age==1 to decide
+                        // whether a store needs a remembered-set entry.
+    _pad:     u8;       // explicit padding so the header stays a clean 4 bytes
+                        // and existing memcpy-of-cells (none today, but possible
+                        // for stop-and-copy nursery later) stays predictable.
 }
 
 struct ZjsString {
@@ -1529,6 +1536,10 @@ fn array_set(arr: ZjsArray*, idx: u32, value: ZjsValue) -> void {
     }
     arr.elements[idx] = value;
     if idx >= arr.length { arr.length = idx + 1; }
+    // GC write barrier — record old→young edges for the next minor.
+    // Bridged through C since value.zc doesn't import context.zc;
+    // gc_barrier is a no-op when there's no active context (bootstrap).
+    raw { extern void gc_barrier(void* holder, ZjsValue value); gc_barrier((void*)arr, value); }
 }
 
 // Convert a key value to a non-negative index. Returns -1 if the key

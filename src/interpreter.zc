@@ -1166,7 +1166,10 @@ fn build_iter_result(ctx: ZjsContext*, value: ZjsValue, done: bool) -> ZjsValue 
 }
 
 fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u32) -> InterpretResult {
-    return interpret_inner(ctx, entry_f, args, arg_count, NULL);
+    let saved_ctx = gc_set_active_ctx(ctx);
+    let r = interpret_inner(ctx, entry_f, args, arg_count, NULL);
+    gc_set_active_ctx(saved_ctx);
+    return r;
 }
 
 // Resume a suspended generator. Hands off to interpret_inner_full
@@ -1390,7 +1393,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
         if op == Op::Return {
             // GC safe-point on the way out — only the return value
             // survives the frame.
-            if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+            ctx_maybe_gc(ctx);
             // Spec: derived-class constructor must call super() before
             // returning. If super wasn't called, `this` is in TDZ —
             // throw ReferenceError.
@@ -2374,14 +2377,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
             // Backward jumps are loop heads — only safe-point we need
             // to keep loops responsive to GC pressure.
             if off < 0 {
-                if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+                ctx_maybe_gc(ctx);
             }
         } else if op == Op::JmpIfTrue {
             if zjs_to_bool_coerce(regs[inst.a]) != 0 {
                 let off = inst_bc_i16(inst);
                 ip = (usize)((i32)ip + off);
                 if off < 0 {
-                    if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+                    ctx_maybe_gc(ctx);
                 }
             }
         } else if op == Op::JmpIfFalse {
@@ -2389,7 +2392,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let off = inst_bc_i16(inst);
                 ip = (usize)((i32)ip + off);
                 if off < 0 {
-                    if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+                    ctx_maybe_gc(ctx);
                 }
             }
         } else if op == Op::JmpIfNotNullish {
@@ -2399,7 +2402,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let off = inst_bc_i16(inst);
                 ip = (usize)((i32)ip + off);
                 if off < 0 {
-                    if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+                    ctx_maybe_gc(ctx);
                 }
             }
         } else if op == Op::MethodInvoke {
@@ -2779,7 +2782,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     // semantically "returned") and surface the throw in
                     // the caller.
                     let thrown_v = consume_pending_throw(ctx);
-                    if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+                    ctx_maybe_gc(ctx);
                     let _ = pop_call_frame(ctx);
                     throwing = true;
                     thrown = thrown_v;
@@ -2787,7 +2790,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     break;
                 }
                 // Pop and write result like an implicit Return.
-                if ctx.cells_since_gc >= ctx.gc_threshold { gc_run(ctx); }
+                ctx_maybe_gc(ctx);
                 let ret_dst = pop_call_frame(ctx);
                 if ctx.frame_count <= entry_frame {
                     final_result = r;

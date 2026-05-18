@@ -191,3 +191,75 @@ write barriers straightforward.
 - **What about strings produced by user code?** Those should hit the
   nursery and survive to old-gen on intern, dedup on a second
   reference.
+
+## Verdict (2026-05-18)
+
+Sessions 2 and 3 both shipped scaffolding (young/old split, rem-set
+fields, write-barrier helper, minor-mode mark walker) but the **minor
+trigger is OFF in tree**. Engine ships with single-generation
+mark-sweep semantics — same as before the experiment.
+
+What the data showed:
+
+| Mode | object_alloc max pause | splay max pause | splay total GC |
+|------|-----------------------:|----------------:|---------------:|
+| Baseline mark-sweep    | 0.09 ms | 18.7 ms | 28.9 ms |
+| Session 2 minor-on     | 0.06 ms | 18.5 ms | 57.5 ms (regression) |
+| Session 3 with partial barriers | small win | **hangs** | n/a |
+
+Session 3's win on splay (the only workload that would benefit) is
+gated on a **complete** audit of every heap-pointer write site. We
+covered `object_set` / `array_set` / `map_set_entry` / `set_add_entry`
+/ `promise_settle` / `obj.cls`. Still uncovered: `o.proto = ...`,
+`hf.bound = ...`, `hf.prototype = ...`, `pr.reactions[...] = ...`,
+`ac.saved_*`, `g.saved_*`, `cl.env = ...`, accessor `.get`/`.set`,
+template-cache writes, and the chain of bootstrap-time assignments.
+Each missed site is a latent use-after-free when an old cell holds a
+young pointer through that field.
+
+The reasons to back off rather than push through:
+
+1. **Real-world ROI is bounded.** 17 of 21 benches don't trigger GC
+   at all; mark-sweep is invisible to them. Only splay-shape
+   workloads (large persistent live set + ongoing allocation) see a
+   pause-time win. We don't have a real splay-shape workload today —
+   `zapp` workers are tight integer loops + short-lived JS; iOS UI
+   threads don't run zjs JS.
+2. **Audit complexity is real.** Roughly 25-30 careful edits across
+   the codebase, each one a possible regression. Maintainability
+   tax: every future heap-pointer field needs a barrier from day one.
+3. **Mark-sweep is correct and fast enough for current workloads.**
+   The benches that matter (richards, fib_recursive, int_loop) don't
+   touch the collector. Adding complexity for invisible benefit is
+   the wrong trade.
+
+What's in tree after the experiment:
+
+- `young_cells` / `old cells` (was just "cells") split — every new
+  cell registers young; major GC promotes survivors. No observable
+  behavior change since `gc_run_major` walks both lists.
+- `gc_run_minor` function — works mechanically but no caller routes
+  to it (`ctx_maybe_gc` only fires majors).
+- Remembered-set scaffolding (`rem_set`, `gc_write_barrier`,
+  `gc_barrier`) — barriers fire on the audited paths but the rem-set
+  list never gets consumed.
+- Per-cell `age` byte in `CellHeader` — set to OLD on promotion,
+  used by the minor-mode mark walker.
+- `gc_run --gc-stats` instrumentation (minor/major counters) —
+  always-on counters, useful as a baseline tool whether or not we
+  resume.
+- `g_active_ctx` + `gc_set_active_ctx` plumbing in `interpret()` so
+  the param-less `gc_barrier` finds its rem-set.
+
+When to resume:
+
+A real workload showing pause-sensitivity is the trigger. If a `zjs`
+user's hot path hits >5 ms collection pauses on heap-heavy code, the
+audit is worth finishing. The infrastructure here means the resumed
+work is "complete the audit + flip `ctx_maybe_gc`" rather than
+"design + scaffold + audit + flip" — about half the effort of
+starting fresh.
+
+Otherwise: revisit if a runtime-layer workload (txiki-style fetch +
+WebSocket + Timers stack on top of zjs) shows up as the next major
+arc.

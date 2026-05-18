@@ -13,6 +13,7 @@ import "std/mem.zc"
 raw {
     #include <stdio.h>
     #include <string.h>
+    #include <sys/resource.h>
 }
 
 // =====================================================================
@@ -458,21 +459,32 @@ fn run_file(path: char*, gc_stats: bool) -> int {
     if gc_stats {
         // One-shot dump after the script body + microtask drain. All
         // counters are cumulative across the run; live=cell_count is a
-        // snapshot at this moment.
+        // snapshot at this moment. peak_rss comes from getrusage
+        // ru_maxrss — macOS reports bytes, Linux reports kilobytes;
+        // we normalize to megabytes for either platform.
         let n   = zjs_gc_collections(ctx);
         let tot = zjs_gc_pause_ns_total(ctx);
         let mx  = zjs_gc_pause_ns_max(ctx);
         let fr  = zjs_gc_cells_freed(ctx);
         let live = zjs_cell_count(ctx);
         raw {
+            struct rusage _ru;
+            getrusage(RUSAGE_SELF, &_ru);
+            double rss_mb;
+        #if defined(__APPLE__)
+            rss_mb = (double)_ru.ru_maxrss / (1024.0 * 1024.0);
+        #else
+            rss_mb = (double)_ru.ru_maxrss / 1024.0;
+        #endif
             fprintf(stderr,
                 "[gc] runs=%u  pause_total=%.2fms  pause_max=%.2fms"
-                "  freed=%u  live=%u\n",
+                "  freed=%u  live=%u  peak_rss=%.1fMB\n",
                 (unsigned)n,
                 (double)tot / 1e6,
                 (double)mx  / 1e6,
                 (unsigned)fr,
-                (unsigned)live);
+                (unsigned)live,
+                rss_mb);
         }
     }
     return rc;
