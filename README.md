@@ -35,11 +35,13 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 | 3.7    | Classes (extends, super, static, methods, accessors, fields) |
 | 3.8    | Strictness sweep, conformance coverage push |
 | 3.9    | Performance pass — async/await, generators, modules, IC poly, instruction fusion, proto-chain IC, register-borrow / preferred-dst threading |
-| **3.9h** | **Non-recursive interpreter — single outer loop with explicit CallFrame stack** |
+| 3.9h   | Non-recursive interpreter — single outer loop with explicit CallFrame stack |
+| 4.0    | AOT bytecode — `zjs compile in.js -o out.zbc` + `zjs run out.zbc`; CLI auto-sniffs the `ZJSb` magic; embed ABI via `zjs_compile_to_bytecode` / `zjs_eval_bytecode`; wire format in `docs/aot-bytecode-format.md` |
+| **4.1** | **Iterator-protocol cleanup — Promise.{all,race,any,allSettled} drive `GetIterator`/`IteratorStep`; spec-correct non-Object rejects; `Map.groupBy` + `Object.groupBy`; ES2025 Set composition (`difference`/`intersection`/`union`/`symmetricDifference`/`isSubsetOf`/`isSupersetOf`/`isDisjointFrom`); object-shorthand-default cover grammar (`({x = 1} = src)`)** |
 
-**Tests:** 902 in-tree assertions pass (smoke + lexer + parser + interpreter).
+**Tests:** 941 in-tree assertions pass (378 smoke + 48 lexer + 84 parser + 431 interpreter).
 
-**Conformance:** 82.1% of the test262 included subset (6,565 of 7,997 non-skipped). Live dashboard at `docs/conformance/index.html`.
+**Conformance:** 83.4% of the test262 included subset (6,672 of 7,997 non-skipped). Live dashboard at `docs/conformance/index.html`.
 
 **Perf vs qjs:** zjs ahead on 19 of 21 microbenches (richards, property_poly, int_loop, etc); behind by single digits on nbody + fib_recursive. Live charts at `docs/perf/index.html`.
 
@@ -68,9 +70,24 @@ first \n second 3
 $ ./build/zjs eval "async function f() { return 42; } f().then(v => console.log(v))"
 42
 
-# Destructuring
+# Destructuring (binding + assignment forms)
 $ ./build/zjs eval "let [a, ...rest] = [1, 2, 3, 4]; rest.join(',')"
 2,3,4
+$ ./build/zjs eval "let x; ({a: x = 99} = {}); x"
+99
+
+# Map.groupBy + Set composition (ES2024 / 2025)
+$ ./build/zjs eval "JSON.stringify(Object.groupBy([1,2,3,4], x => x % 2 ? 'odd' : 'even'))"
+{"odd":[1,3],"even":[2,4]}
+$ ./build/zjs eval "[...new Set([1,2,3]).difference(new Set([2]))]"
+[1,3]
+
+# Promise combinators accept any iterable (not just arrays)
+$ ./build/zjs eval "function* g(){yield 1;yield 2;yield 3} Promise.all(g()).then(v => console.log(JSON.stringify(v)))"
+[1,2,3]
+
+# AOT bytecode — parse + compile once, run from the .zbc later
+$ ./build/zjs compile script.js -o script.zbc && ./build/zjs run script.zbc
 ```
 
 ## Build
@@ -162,22 +179,37 @@ builds: `make ZC_FLAGS='-w -O0 -g'`.
 
 ## Embed surface
 
-See `include/zjs.h`. QuickJS-style: opaque `ZjsContext*` handle, opaque NaN-boxed `ZjsValue`, no global state, all functions `extern "C"`-callable.
+See `include/zjs.h`. QuickJS-style: opaque `ZjsContext*` handle, opaque NaN-boxed `ZjsValue`, no global state, all functions `extern "C"`-callable. The header is the complete contract — what's in there works for embedders, nothing more.
 
 ```c
 #include "zjs.h"
 
 ZjsContext* ctx = zjs_new_context();
 
+/* Evaluate source */
 ZjsValue v = zjs_eval(ctx, "let x = 10; let y = 20; x + y");
 int      n = zjs_is_int32(v) ? zjs_as_int32(v) : 0;        // 30
 
 /* Detect uncaught throws */
 zjs_eval(ctx, "throw 'boom'");
 if (zjs_had_error(ctx)) {
-    ZjsValue err = zjs_get_error(ctx);
-    /* err is the thrown value */
+    ZjsValue err = zjs_get_error(ctx);     // the thrown value
 }
+
+/* Build JS values from C, set globals, call JS from C */
+ZjsValue obj = zjs_new_object(ctx);
+zjs_set_property(ctx, obj, "answer", zjs_int32(42));
+zjs_set_global(ctx, "from_host", obj);
+
+/* Host function callable from JS */
+ZjsValue my_log(ZjsContext* c, ZjsValue* argv, uint32_t argc) { /* ... */ return zjs_undefined(); }
+zjs_register_host_function(ctx, "hostLog", my_log);
+
+/* AOT bytecode — parse + compile once, replay later */
+size_t n_bytes = 0;
+unsigned char* bc = zjs_compile_to_bytecode(ctx, source, &n_bytes);
+ZjsValue result = zjs_eval_bytecode(ctx, bc, n_bytes);
+free(bc);
 
 zjs_free_context(ctx);
 ```

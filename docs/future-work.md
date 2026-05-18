@@ -202,35 +202,40 @@ so we don't lose them.
   ...). Today our string keys coerce a Symbol value to
   `[object Function]`; tests depending on Symbol-keyed dispatch all
   fail.
-- **`Symbol.iterator` protocol** wiring on for-of / spread / array
-  destructuring so non-array iterables (generators, Maps, Sets,
-  user objects) work end-to-end. ~1000 tests skipped on the
-  iterator part alone.
-- **Generators** (`function* () { yield ... }`) — 1500+ test262
-  tests skipped. Suspend/resume infra can reuse the ZjsAsyncCont
-  pattern from async/await; `yield` is the equivalent of `await`,
-  iterator-result `{ value, done }` envelopes are the public
-  surface.
+- **`Symbol.iterator` protocol** is wired everywhere it matters:
+  live for-of (2026-05-16), array destructure, Map/Set constructors,
+  and the four Promise combinators (2026-05-18, commit cefb846).
+  Generators feed any of those uniformly.
+- **`IteratorClose` abrupt-completion semantics.** Current
+  `iter_close` is "normal-completion" only: a throwing return() from
+  the iterator overrides the original completion. Spec says: when
+  closing for an *abrupt* completion, the return()-throw is
+  swallowed and the original completion re-raised. ~12 test262
+  tests in `Array.prototype/map`-style "abrupt-completion-from-cb"
+  exercise this.
+- **Generators** (`function* () { yield ... }`) — shipped 2026-05-16.
 
 ### Destructuring
 
 - **Binding** (`const { a, b } = obj`, `for (const [x, y] of pairs)`,
-  `function ({ a, b }) {}`, `catch ([x, y])`) is in (shipped
-  2026-05-15 / 16). NamedEvaluation also lands here for anonymous
-  function/arrow/class defaults.
-- **Assignment** (`[a, b] = arr` as an expression, including LHS member
-  targets like `[obj.x, arr[i]] = src`) is still missing. Needs the
-  parser's cover-grammar treatment to retroactively reinterpret an
-  ObjectLiteral / ArrayLiteral expression as an AssignmentPattern
-  on encountering `=`. Largest single bucket of remaining destructuring
-  failures (most "compile error" / "parse error" failures in
-  test/language/statements/for-of/dstr/).
-- **Array-pattern iterator semantics.** Current impl indexes via
-  LoadElem (works for arrays); generators and other iterables need
-  the spec's GetIterator + IteratorClose dance. Open: 12+ "iteration
-  occurred as expected" test262 failures cluster here, plus many
-  "Expected a undefined to be thrown" tests that exercise abrupt
-  completions from `iter.next()` / `iter.return()`.
+  `function ({ a, b }) {}`, `catch ([x, y])`) shipped 2026-05-15 / 16.
+- **Assignment** as an expression — base cases shipped 2026-05-18
+  via the parser's cover-grammar reinterpret (`reinterpret_as_pattern`
+  in parser.zc + the object shorthand-with-default carve-out). Open:
+  - `for ([ x = 'x' in {} ] of [[]])` — the for-head `in`-
+    disambiguator doesn't know `in` is inside a nested expression,
+    so it short-circuits to for-in. Needs paren/bracket nesting
+    tracking in the for-head pre-pass.
+  - `for ({ yield } of ...)` in sloppy non-generator code —
+    `yield` should be a valid identifier here; we treat it as
+    reserved.
+  - Early-error reject for `var o = { x = 1 }` (valid as a pattern,
+    invalid as a real object literal). Today we silently accept and
+    mis-compile.
+- **Array-pattern iterator semantics** shipped 2026-05-16 (uses
+  `IterGet` / `IterStep` / `IterClose` opcodes, identical to
+  live-for-of). Spec-correct iter.next-result Object check landed
+  2026-05-18.
 - **Object-rest computed-key omission.** `let { [k]: v, ...rest } = obj`
   currently omits only statically-named keys from `rest`. Computed
   keys would need a runtime "omit set" tracked alongside the rest
@@ -244,15 +249,49 @@ so we don't lose them.
 
 ### Built-ins
 
-- **`Map` / `Set`** — needed by ~30 for-of tests directly and
-  indirectly by many spec-conformance tests.
-- **`Date`** — currently a stub.
-- **`Object.freeze` / `Object.preventExtensions`** — many
-  Array.prototype tests check for the TypeError these should throw.
+- **`Map` / `Set`** — shipped 2026-05-16; ES2024/2025 surface
+  (`Map.groupBy`, `Object.groupBy`, full Set composition family)
+  landed 2026-05-18.
+- **`Date`** — basic methods in; locale-aware formatting deferred
+  until an Intl pass.
+- **`Object.freeze` / `Object.preventExtensions`** — both registered
+  but they no-op rather than tracking flags. Many `Array.prototype.push`
+  / `pop` tests check that the TypeError fires on a frozen receiver.
 - **Real `globalThis`** binding — `ctx.global_this_obj` exists but
   isn't registered under that name.
+- **`AggregateError` as a real constructor.** Today `Promise.any`
+  builds an Error-shaped object with `name: "AggregateError"` but
+  `Object.getPrototypeOf(e) === AggregateError.prototype` fails
+  because `AggregateError` isn't a global. ~10 Promise.any tests
+  cluster on this.
+- **Per-item `C.resolve(value)`** in the Promise combinators. Spec
+  says `Promise.all` calls `C.resolve(value).then(onFulfilled, onRejected)`
+  per pulled item (where `C` is the combinator's `this`); we
+  hand-roll `if (isPromise) item else new + resolve`. ~10 tests
+  check the call count.
+- **Host-function `.bind`.** `Function.prototype.bind` works for
+  closures but returns undefined for host functions, which breaks
+  a few Promise / spread combinator tests that try to `cb.bind(...)`.
 
 ### Operators
 
 - **Optional chaining `?.`** — partial; nullish coalescing operates
   but optional member / call chains still trip on edge cases.
+
+## Major arcs queued
+
+- **Cross-compile sweep** — research whether Zen-c's native toolchain
+  cross-compiles for iOS / Linux / Windows (or whether we need to
+  drive `zig cc` / clang directly). iOS already works via
+  `xcrun`-driven SDK paths in `zapp`; the rest is new. Compare
+  binary size + bench numbers across compiler combos.
+- **GC experiment** — alternatives to the default Hermes-style
+  stop-the-world mark-sweep. User-flagged Go's Green Tea GC (cache-
+  aware concurrent mark-sweep with minor-pause guarantees) as worth
+  exploring; generational nursery, bump-allocator young-gen, and
+  deferred refcounting are other points in the design space. Bench
+  pause time + throughput + footprint.
+- **Runtime layer (`zjs-runtime`)** — txiki-style batteries on top
+  of the engine: `fetch`, `WebSocket`, Timers, `TextEncoder`,
+  `crypto.subtle`, `URL`, eventually SQLite. Stays *above* the engine
+  and consumes the embed ABI like any other host.

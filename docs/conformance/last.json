@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-18 16:26 UTC",
+    "when": "2026-05-18 17:21 UTC",
     "total": 14524,
-    "passed": 6573,
-    "failed": 1424,
+    "passed": 6672,
+    "failed": 1325,
     "skipped": 6527
   },
   "failures": [
@@ -284,6 +284,10 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
+      "path": "test/language/statements/for-in/dstr/array-elem-nested-obj-yield-ident-invalid.js",
+      "reason": "expected SyntaxError, got Test262"
+    },
+    {
       "path": "test/language/statements/for-in/dstr/array-elem-target-simple-strict.js",
       "reason": "expected SyntaxError, got Test262"
     },
@@ -304,7 +308,19 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
+      "path": "test/language/statements/for-in/dstr/array-rest-nested-obj-yield-ident-invalid.js",
+      "reason": "expected SyntaxError, got Test262"
+    },
+    {
       "path": "test/language/statements/for-in/dstr/array-rest-yield-ident-invalid.js",
+      "reason": "expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/for-in/dstr/obj-id-init-simple-strict.js",
+      "reason": "expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/for-in/dstr/obj-id-init-yield-ident-invalid.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
@@ -321,6 +337,10 @@
     },
     {
       "path": "test/language/statements/for-in/dstr/obj-prop-nested-array-yield-ident-invalid.js",
+      "reason": "expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/for-in/dstr/obj-prop-nested-obj-yield-ident-invalid.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
@@ -444,12 +464,8 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/for-of/dstr/array-elem-nested-obj-yield-expr.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-nested-obj-yield-ident-valid.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/for-of/dstr/array-elem-nested-obj-yield-ident-invalid.js",
+      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-put-unresolvable-strict.js",
@@ -556,12 +572,8 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/for-of/dstr/array-rest-nested-obj-yield-expr.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-rest-nested-obj-yield-ident-valid.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/for-of/dstr/array-rest-nested-obj-yield-ident-invalid.js",
+      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/for-of/dstr/array-rest-put-unresolvable-strict.js",
@@ -584,48 +596,16 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-assignment-missing.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-assignment-null.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-assignment-truthy.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-assignment-undef.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-evaluation.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/obj-id-init-in.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-let.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/for-of/dstr/obj-id-init-simple-strict.js",
+      "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-order.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-simple-no-strict.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-yield-expr.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-yield-ident-valid.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/for-of/dstr/obj-id-init-yield-ident-invalid.js",
+      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-id-put-unresolvable-strict.js",
@@ -652,12 +632,8 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/for-of/dstr/obj-prop-nested-obj-yield-expr.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-nested-obj-yield-ident-valid.js",
-      "reason": "zjs: throw: SyntaxError: parse error"
+      "path": "test/language/statements/for-of/dstr/obj-prop-nested-obj-yield-ident-invalid.js",
+      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-prop-put-unresolvable-strict.js",
@@ -2344,8 +2320,24 @@
       "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.pop.call('') Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-11.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call(obj, true) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-12.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call(obj, true) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-9.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call(obj, true) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true"
+    },
+    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-2-17.js",
       "reason": "[sloppy] zjs: throw: (unknown): func(0, true) !== true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-2-19.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call(obj, obj[1]) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-14.js",
@@ -2400,10 +2392,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): [, ].indexOf(undefined) Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-31.js",
-      "reason": "[sloppy] zjs: throw: (unknown): accessed Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-6.js",
       "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call({ 0: true, 1: 1, length: 2 }, true) Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to"
     },
@@ -2440,8 +2428,20 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true"
     },
     {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-11.js",
+      "reason": "[sloppy] zjs: throw: (unknown): testResult[0] Expected SameValue(\u00abundefined\u00bb, \u00abtrue\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-12.js",
+      "reason": "[sloppy] zjs: throw: (unknown): testResult[0] Expected SameValue(\u00abundefined\u00bb, \u00abtrue\u00bb) to be true"
+    },
+    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-15.js",
       "reason": "[sloppy] zjs: throw: (unknown): testResult[1] Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-9.js",
+      "reason": "[sloppy] zjs: throw: (unknown): testResult[0] Expected SameValue(\u00abundefined\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-1-s.js",
@@ -2452,40 +2452,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): resArr[4] Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-9.js",
-      "reason": "[sloppy] zjs: throw: (unknown): called Expected SameValue(\u00ab3\u00bb, \u00ab2\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-10.js",
-      "reason": "[sloppy] zjs: throw: (unknown): typeof testResult[1] Expected SameValue(\u00ab\"boolean\"\u00bb, \u00ab\"undefined\"\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-11.js",
-      "reason": "[sloppy] zjs: throw: (unknown): typeof testResult[1] Expected SameValue(\u00ab\"boolean\"\u00bb, \u00ab\"undefined\"\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-13.js",
       "reason": "[sloppy] zjs: throw: (unknown): testResult[1] Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-14.js",
-      "reason": "[sloppy] zjs: throw: (unknown): typeof testResult[3] Expected SameValue(\u00ab\"boolean\"\u00bb, \u00ab\"undefined\"\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-15.js",
       "reason": "[sloppy] zjs: throw: (unknown): testResult[2] Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): typeof testResult[2] Expected SameValue(\u00ab\"boolean\"\u00bb, \u00ab\"undefined\"\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-7.js",
       "reason": "[sloppy] zjs: throw: (unknown): testResult[1] Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): typeof testResult[1] Expected SameValue(\u00ab\"boolean\"\u00bb, \u00ab\"undefined\"\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-9.js",
@@ -2502,10 +2478,6 @@
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-8.js",
       "reason": "[sloppy] zjs: throw: (unknown): newArr[1] Expected SameValue(\u00abundefined\u00bb, \u00abtrue\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-ii-19.js",
-      "reason": "[sloppy] zjs: throw: (unknown): called Expected SameValue(\u00ab20\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-9-3.js",
@@ -2564,12 +2536,28 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-11.js",
+      "reason": "[sloppy] zjs: throw: (unknown): result !== true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-12.js",
+      "reason": "[sloppy] zjs: throw: (unknown): result !== true"
+    },
+    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-15.js",
+      "reason": "[sloppy] zjs: throw: (unknown): result !== true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-9.js",
       "reason": "[sloppy] zjs: throw: (unknown): result !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-17.js",
       "reason": "[sloppy] zjs: throw: (unknown): func(12, 11) !== true"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-19.js",
+      "reason": "[sloppy] zjs: throw: (unknown): result !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-5-1-s.js",
@@ -2580,19 +2568,7 @@
       "reason": "[sloppy] zjs: throw: (unknown): callCnt Expected SameValue(\u00ab4\u00bb, \u00ab5\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-10.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-11.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-13.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-14.js",
       "reason": "[sloppy] zjs: throw: (unknown): testResult !== true"
     },
     {
@@ -2600,15 +2576,7 @@
       "reason": "[sloppy] zjs: throw: (unknown): testResult !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-8.js",
       "reason": "[sloppy] zjs: throw: (unknown): testResult !== true"
     },
     {
@@ -3804,40 +3772,20 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/built-ins/Map/groupBy/callback-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Map/groupBy/emptyList.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'size')"
-    },
-    {
       "path": "test/built-ins/Map/groupBy/evenOdd.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'keys')"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual argument [undefined] shouldn't be primitive."
     },
     {
       "path": "test/built-ins/Map/groupBy/groupLength.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'keys')"
-    },
-    {
-      "path": "test/built-ins/Map/groupBy/invalid-callback.js",
-      "reason": "[sloppy] zjs: throw: (unknown): null callback throws TypeError Expected a TypeError to be thrown but no exception was thrown at a"
-    },
-    {
-      "path": "test/built-ins/Map/groupBy/map-instance.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Map/groupBy/negativeZero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'size')"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual argument [undefined] shouldn't be primitive."
     },
     {
       "path": "test/built-ins/Map/groupBy/string.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'keys')"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual argument [undefined] shouldn't be primitive."
     },
     {
       "path": "test/built-ins/Map/groupBy/toPropertyKey.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'keys')"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual argument [undefined] shouldn't be primitive."
     },
     {
       "path": "test/built-ins/Map/is-a-constructor.js",
@@ -3940,72 +3888,124 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Set/prototype/difference/add-not-called.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/allows-set-like-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/allows-set-like-object.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/builtins.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Built-in objects must be extensible. Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Set/prototype/difference/called-with-object.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Set/prototype/difference/combines-Map.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/combines-empty-sets.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/combines-itself.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/combines-same-sets.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/combines-sets.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
       "path": "test/built-ins/Set/prototype/difference/converts-negative-zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
+      "reason": "[sloppy] zjs: throw: (unknown): Set.prototype.difference should not call its argument's has method when this.size > arg.size"
     },
     {
       "path": "test/built-ins/Set/prototype/difference/require-internal-slot.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Set/prototype/difference/result-order.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/set-like-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
       "path": "test/built-ins/Set/prototype/difference/set-like-class-mutation.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
+      "reason": "[sloppy] zjs: throw: (unknown): Set.prototype.difference should not invoke .has on its argument when this.size > other.size"
     },
     {
-      "path": "test/built-ins/Set/prototype/difference/set-like-class-order.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
+      "path": "test/built-ins/Set/prototype/difference/size-is-a-number.js",
+      "reason": "[sloppy] zjs: throw: ReferenceError: n is not defined"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-boolean.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-null.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-number.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-string.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-symbol.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-undefined.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/iterates-in-insertion-order.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/iterates-in-iterable-entry-order.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/iterates-values-added-after-foreach-begins.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/iterates-values-deleted-then-readded.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/iterates-values-not-deleted.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/iterates-values-revisits-after-delete-re-add.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/this-arg-explicit-cannot-override-lexical-this-arrow.js",
+      "reason": "[sloppy] zjs: throw: (unknown): `this` is not `usurper` Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object Object]\u00bb) to be false"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/this-strict.js",
+      "reason": "zjs: throw: (unknown): `this` is `undefined` in strict mode code Expected SameValue(\u00ab[object Object]\u00bb, \u00abundefined\u00bb) to b"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/intersection/called-with-object.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/intersection/converts-negative-zero.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Set.prototype.intersection should not invoke .has on its argument when this.size > arg.size"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/intersection/require-internal-slot.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/intersection/result-order.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [3, 1] and expected [1, 3] should have the same contents."
+    },
+    {
+      "path": "test/built-ins/Set/prototype/intersection/set-like-class-mutation.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Set.prototype.intersection should not invoke .has on its argument when this.size > other.size"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/intersection/size-is-a-number.js",
+      "reason": "[sloppy] zjs: throw: ReferenceError: n is not defined"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/isDisjointFrom/allows-set-like-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Set.prototype.isDisjointFrom should not call its argument's keys iterator when this.size \u2264 arg.si"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/isDisjointFrom/allows-set-like-object.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Set.prototype.isDisjointFrom should not call its argument's keys iterator when this.size \u2264 arg.si"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/isDisjointFrom/called-with-object.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/isDisjointFrom/converts-negative-zero.js",
+      "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/isDisjointFrom/require-internal-slot.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     }
   ],
   "skip_counts": {
