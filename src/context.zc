@@ -274,6 +274,7 @@ struct ZjsContext {
     set_proto:          ZjsObject*;
     date_proto:         ZjsObject*;
     symbol_proto:       ZjsObject*;
+    url_proto:          ZjsObject*;
     // Cached pristine Array/String @@iterator host fn. Used by iter_get
     // to short-circuit to the TAG_ARRAY_ITER fast path when the lookup
     // would yield this exact function (i.e. user code hasn't overridden
@@ -1321,6 +1322,9 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     }
     if ctx.symbol_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.symbol_proto));
+    }
+    if ctx.url_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.url_proto));
     }
     gc_mark_value(ctx.array_iter_host_fn);
     // Symbol.for registry — both keys and the symbols themselves stay
@@ -8156,6 +8160,530 @@ fn date_compose_utc_ms(year: f64, month: f64, day: f64,
     return result;
 }
 
+// Convenience: install a getter (and optionally setter) as an
+// accessor property on `obj`. Used by URL.prototype to expose
+// `protocol` / `host` / `pathname` / etc. via accessor semantics
+// (so `url.protocol` triggers the host fn). Mirrors the shape of
+// Object.defineProperty({get, set}) without going through the public
+// JS API.
+fn object_define_accessor(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*,
+                          getter: ZjsValue, setter: ZjsValue) -> void {
+    let acc = zjs_accessor_new(getter, setter);
+    ctx_register_cell(ctx, (void*)acc);
+    let av = zjs_cell_from_ptr((void*)acc);
+    object_define_property_slot(ctx, obj, name, av, PROP_ENUMERABLE | PROP_CONFIGURABLE);
+}
+
+// =====================================================================
+// WHATWG URL — v0.1 (2026-05-18). A pragmatic parser that covers the
+// shapes real npm packages reach for (http/https/file URLs, relative
+// resolution against a base, search/hash extraction). Skipped:
+// Punycode/IDN, blob:/data: opaque hosts, strict percent-encoding
+// validation. URL instances are plain ZjsObjects whose internal
+// components live as own properties under __zjs_url_*__ atoms;
+// prototype getters read those slots.
+// =====================================================================
+
+def URL_PROTOCOL_KEY: char* = (char*)"__zjs_url_protocol__";
+def URL_USERNAME_KEY: char* = (char*)"__zjs_url_username__";
+def URL_PASSWORD_KEY: char* = (char*)"__zjs_url_password__";
+def URL_HOSTNAME_KEY: char* = (char*)"__zjs_url_hostname__";
+def URL_PORT_KEY:     char* = (char*)"__zjs_url_port__";
+def URL_PATHNAME_KEY: char* = (char*)"__zjs_url_pathname__";
+def URL_SEARCH_KEY:   char* = (char*)"__zjs_url_search__";
+def URL_HASH_KEY:     char* = (char*)"__zjs_url_hash__";
+
+fn url_set_str(ctx: ZjsContext*, obj: ZjsObject*, key: char*, key_len: u32, data: char*, len: u32) -> void {
+    let atom = ctx_intern_atom(ctx, key, key_len);
+    let s_v: ZjsValue = if len == 0 { ctx_intern_string(ctx, (char*)"", 0) }
+                       else        { ctx_intern_string(ctx, data, len) };
+    object_set(ctx, obj, atom, s_v);
+}
+
+fn url_get_str(obj: ZjsObject*, ctx: ZjsContext*, key: char*, key_len: u32) -> ZjsValue {
+    let atom = ctx_intern_atom(ctx, key, key_len);
+    let slot = class_find_slot(obj.cls, atom);
+    if slot < 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    return obj.slots[(u32)slot];
+}
+
+// Lowercase ASCII alpha in-place. Used for scheme normalization.
+fn url_ascii_lower_dup(ctx: ZjsContext*, src: char*, len: u32) -> ZjsValue {
+    if len == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let buf = alloc_n<char>((usize)(len + 1));
+    let i: u32 = 0;
+    while i < len {
+        let c = src[i];
+        let cl: char = c;
+        raw {
+            if (c >= 'A' && c <= 'Z') cl = (char)(c + 32);
+        }
+        buf[i] = cl;
+        i = i + 1;
+    }
+    buf[len] = (char)0;
+    let r = ctx_intern_string(ctx, buf, len);
+    dealloc(buf);
+    return r;
+}
+
+// Is the input a valid ASCII scheme prefix? Returns the length of the
+// scheme (including the trailing ':') or 0 if no scheme is present.
+// Scheme: ALPHA followed by ALPHA / DIGIT / + / - / . , terminated by ':'.
+fn url_scan_scheme(data: char*, len: u32) -> u32 {
+    if len == 0 { return 0; }
+    let c0 = data[0];
+    let is_alpha0: bool = false;
+    raw { is_alpha0 = ((c0 >= 'a' && c0 <= 'z') || (c0 >= 'A' && c0 <= 'Z')); }
+    if !is_alpha0 { return 0; }
+    let i: u32 = 1;
+    while i < len {
+        let c = data[i];
+        let ok: bool = false;
+        raw {
+            ok = ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                || (c >= '0' && c <= '9')
+                || c == '+' || c == '-' || c == '.');
+        }
+        if c == (char)':' { return i + 1; }
+        if !ok { return 0; }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Find an ASCII char in [s, s+len). Returns the index (relative to s)
+// or len if not found.
+fn url_find_char(s: char*, len: u32, target: char) -> u32 {
+    let i: u32 = 0;
+    while i < len {
+        if s[i] == target { return i; }
+        i = i + 1;
+    }
+    return len;
+}
+
+// Resolve `dir_len` so that base.pathname[0..dir_len] is the dirname.
+// (i.e. the last '/' plus 1; if the base has no '/' we use the whole thing.)
+fn url_pathname_dirname_len(s: char*, len: u32) -> u32 {
+    let i: u32 = len;
+    while i > 0 {
+        if s[i - 1] == (char)'/' { return i; }
+        i = i - 1;
+    }
+    return 0;
+}
+
+// Normalize `./` and `../` segments in-place on a path buffer.
+// Mirrors the helper in module_resolve_specifier; duplicated here so
+// URL parsing isn't load-bearing on the module loader's lifetime.
+fn url_normalize_path(buf: char*, len: u32) -> u32 {
+    let new_len: u32 = len;
+    raw {
+        char* out = buf;
+        char* in_ = buf;
+        char* end = buf + len;
+        while (in_ < end) {
+            if (in_ + 2 < end && in_[0] == '/' && in_[1] == '.' && in_[2] == '/') {
+                in_ += 2;
+                continue;
+            }
+            if (in_ + 3 <= end && in_[0] == '/' && in_[1] == '.' && in_[2] == '.'
+                && (in_ + 3 == end || in_[3] == '/')) {
+                if (out > buf) out--;
+                while (out > buf && *(out - 1) != '/') out--;
+                in_ += 3;
+                continue;
+            }
+            *out++ = *in_++;
+        }
+        new_len = (uint32_t)(out - buf);
+    }
+    return new_len;
+}
+
+// Parse `input` (length `ilen`) into the URL components on `obj`. If
+// `base_obj` is non-NULL and `input` is relative, the missing parts
+// (protocol, host, etc.) come from the base. Returns true on success.
+fn parse_url_into(ctx: ZjsContext*, obj: ZjsObject*, input: char*, ilen: u32, base_obj: ZjsObject*) -> bool {
+    // Strip leading and trailing ASCII whitespace.
+    let s: u32 = 0;
+    let e: u32 = ilen;
+    while s < e {
+        let c = input[s];
+        let is_ws: bool = false;
+        raw { is_ws = (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'); }
+        if !is_ws { break; }
+        s = s + 1;
+    }
+    while e > s {
+        let c = input[e - 1];
+        let is_ws: bool = false;
+        raw { is_ws = (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'); }
+        if !is_ws { break; }
+        e = e - 1;
+    }
+    let body = input + s;
+    let bl   = e - s;
+
+    let scheme_len = url_scan_scheme(body, bl);
+    let has_scheme = scheme_len > 0;
+    let cur: u32 = 0;
+
+    if has_scheme {
+        // scheme = body[0..scheme_len-1], plus the ':' is already included
+        // (scheme_len includes it).
+        url_set_str(ctx, obj, URL_PROTOCOL_KEY, 20, body, scheme_len);
+        cur = scheme_len;
+    } else if base_obj != NULL {
+        // No scheme — inherit from base.
+        let proto_v = url_get_str(base_obj, ctx, URL_PROTOCOL_KEY, 20);
+        if zjs_is_string(proto_v) != 0 {
+            let pp = zjs_as_string(proto_v);
+            url_set_str(ctx, obj, URL_PROTOCOL_KEY, 20, pp.data, pp.length);
+        } else {
+            url_set_str(ctx, obj, URL_PROTOCOL_KEY, 20, (char*)"", 0);
+        }
+    } else {
+        return false;   // no scheme and no base → invalid
+    }
+
+    let has_authority: bool = false;
+    if has_scheme && cur + 2 <= bl && body[cur] == (char)'/' && body[cur + 1] == (char)'/' {
+        cur = cur + 2;
+        has_authority = true;
+    }
+
+    if has_authority {
+        // Authority spans until '/', '?', '#', or end.
+        let auth_start = cur;
+        while cur < bl {
+            let c = body[cur];
+            if c == (char)'/' || c == (char)'?' || c == (char)'#' { break; }
+            cur = cur + 1;
+        }
+        let auth_end = cur;
+        let auth_data = body + auth_start;
+        let auth_len  = auth_end - auth_start;
+        // Userinfo split: rightmost '@' inside [auth_data, auth_data+auth_len).
+        let at_idx: i32 = -1;
+        let scan: u32 = 0;
+        while scan < auth_len {
+            if auth_data[scan] == (char)'@' { at_idx = (i32)scan; }
+            scan = scan + 1;
+        }
+        let host_start: u32 = 0;
+        if at_idx >= 0 {
+            // userinfo = [0..at_idx). Split on first ':'.
+            let ui_data = auth_data;
+            let ui_len  = (u32)at_idx;
+            let colon = url_find_char(ui_data, ui_len, (char)':');
+            url_set_str(ctx, obj, URL_USERNAME_KEY, 20, ui_data, colon);
+            if colon < ui_len {
+                url_set_str(ctx, obj, URL_PASSWORD_KEY, 20, ui_data + colon + 1, ui_len - colon - 1);
+            } else {
+                url_set_str(ctx, obj, URL_PASSWORD_KEY, 20, (char*)"", 0);
+            }
+            host_start = (u32)at_idx + 1;
+        } else {
+            url_set_str(ctx, obj, URL_USERNAME_KEY, 20, (char*)"", 0);
+            url_set_str(ctx, obj, URL_PASSWORD_KEY, 20, (char*)"", 0);
+        }
+        // Host[:port] = [host_start..auth_len).
+        let host_data = auth_data + host_start;
+        let host_len  = auth_len - host_start;
+        // Find port colon. IPv6 hosts in [...] aren't fully handled —
+        // we look for the last ':' outside brackets.
+        let port_at: i32 = -1;
+        let in_brackets: bool = false;
+        let hi: u32 = 0;
+        while hi < host_len {
+            let c = host_data[hi];
+            if c == (char)'[' { in_brackets = true; }
+            else if c == (char)']' { in_brackets = false; }
+            else if c == (char)':' && !in_brackets { port_at = (i32)hi; }
+            hi = hi + 1;
+        }
+        if port_at >= 0 {
+            url_set_str(ctx, obj, URL_HOSTNAME_KEY, 20, host_data, (u32)port_at);
+            url_set_str(ctx, obj, URL_PORT_KEY, 16, host_data + (u32)port_at + 1, host_len - (u32)port_at - 1);
+        } else {
+            url_set_str(ctx, obj, URL_HOSTNAME_KEY, 20, host_data, host_len);
+            url_set_str(ctx, obj, URL_PORT_KEY, 16, (char*)"", 0);
+        }
+    } else if base_obj != NULL {
+        // Inherit authority from base.
+        let bp = url_get_str(base_obj, ctx, URL_USERNAME_KEY, 20);
+        if zjs_is_string(bp) != 0 {
+            let bs = zjs_as_string(bp);
+            url_set_str(ctx, obj, URL_USERNAME_KEY, 20, bs.data, bs.length);
+        }
+        let bq = url_get_str(base_obj, ctx, URL_PASSWORD_KEY, 20);
+        if zjs_is_string(bq) != 0 {
+            let bs2 = zjs_as_string(bq);
+            url_set_str(ctx, obj, URL_PASSWORD_KEY, 20, bs2.data, bs2.length);
+        }
+        let bh = url_get_str(base_obj, ctx, URL_HOSTNAME_KEY, 20);
+        if zjs_is_string(bh) != 0 {
+            let bs3 = zjs_as_string(bh);
+            url_set_str(ctx, obj, URL_HOSTNAME_KEY, 20, bs3.data, bs3.length);
+        }
+        let bo = url_get_str(base_obj, ctx, URL_PORT_KEY, 16);
+        if zjs_is_string(bo) != 0 {
+            let bs4 = zjs_as_string(bo);
+            url_set_str(ctx, obj, URL_PORT_KEY, 16, bs4.data, bs4.length);
+        }
+    } else {
+        url_set_str(ctx, obj, URL_USERNAME_KEY, 20, (char*)"", 0);
+        url_set_str(ctx, obj, URL_PASSWORD_KEY, 20, (char*)"", 0);
+        url_set_str(ctx, obj, URL_HOSTNAME_KEY, 20, (char*)"", 0);
+        url_set_str(ctx, obj, URL_PORT_KEY,     16, (char*)"", 0);
+    }
+
+    // Path = until '?', '#', or end. Search = '?' to '#' or end.
+    // Hash = '#' to end.
+    let path_start = cur;
+    while cur < bl {
+        let c = body[cur];
+        if c == (char)'?' || c == (char)'#' { break; }
+        cur = cur + 1;
+    }
+    let path_end = cur;
+    let path_data = body + path_start;
+    let path_len  = path_end - path_start;
+
+    if path_len > 0 {
+        // Relative path with a base — resolve against the base's dirname.
+        let resolve_against_base: bool = false;
+        if !has_authority && base_obj != NULL && path_data[0] != (char)'/' {
+            resolve_against_base = true;
+        }
+        if resolve_against_base {
+            let base_path_v = url_get_str(base_obj, ctx, URL_PATHNAME_KEY, 20);
+            if zjs_is_string(base_path_v) != 0 {
+                let bps = zjs_as_string(base_path_v);
+                let dir_len = url_pathname_dirname_len(bps.data, bps.length);
+                let total = dir_len + path_len;
+                let buf = alloc_n<char>((usize)(total + 1));
+                let i: u32 = 0;
+                while i < dir_len { buf[i] = bps.data[i]; i = i + 1; }
+                let j: u32 = 0;
+                while j < path_len { buf[dir_len + j] = path_data[j]; j = j + 1; }
+                buf[total] = (char)0;
+                let new_len = url_normalize_path(buf, total);
+                url_set_str(ctx, obj, URL_PATHNAME_KEY, 20, buf, new_len);
+                dealloc(buf);
+            } else {
+                url_set_str(ctx, obj, URL_PATHNAME_KEY, 20, path_data, path_len);
+            }
+        } else {
+            url_set_str(ctx, obj, URL_PATHNAME_KEY, 20, path_data, path_len);
+        }
+    } else if has_authority {
+        // Authority-form URL with no path → pathname is "/".
+        url_set_str(ctx, obj, URL_PATHNAME_KEY, 20, (char*)"/", 1);
+    } else if base_obj != NULL {
+        let bp = url_get_str(base_obj, ctx, URL_PATHNAME_KEY, 20);
+        if zjs_is_string(bp) != 0 {
+            let bs5 = zjs_as_string(bp);
+            url_set_str(ctx, obj, URL_PATHNAME_KEY, 20, bs5.data, bs5.length);
+        }
+    } else {
+        url_set_str(ctx, obj, URL_PATHNAME_KEY, 20, (char*)"", 0);
+    }
+
+    if cur < bl && body[cur] == (char)'?' {
+        let q_start = cur;
+        while cur < bl && body[cur] != (char)'#' { cur = cur + 1; }
+        url_set_str(ctx, obj, URL_SEARCH_KEY, 18, body + q_start, cur - q_start);
+    } else {
+        url_set_str(ctx, obj, URL_SEARCH_KEY, 18, (char*)"", 0);
+    }
+    if cur < bl && body[cur] == (char)'#' {
+        url_set_str(ctx, obj, URL_HASH_KEY, 16, body + cur, bl - cur);
+    } else {
+        url_set_str(ctx, obj, URL_HASH_KEY, 16, (char*)"", 0);
+    }
+    return true;
+}
+
+fn host_url_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"URL constructor: 1 argument required", 36);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return zjs_undefined();
+    }
+    // Coerce input + optional base to strings.
+    let in_v = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let base_v: ZjsValue = zjs_undefined();
+    let base_obj: ZjsObject* = NULL;
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
+        base_v = if zjs_is_string(args[1]) != 0 { args[1] } else { zjs_to_string(ctx, args[1]) };
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        // Parse the base by recursing — fresh obj, no base for the base itself.
+        let bo_v = ctx_new_object(ctx);
+        let bo = zjs_as_object(bo_v);
+        if ctx.url_proto != NULL { bo.proto = ctx.url_proto; }
+        let bs = zjs_as_string(base_v);
+        if !parse_url_into(ctx, bo, bs.data, bs.length, NULL) {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"Invalid base URL", 16);
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = err;
+            return zjs_undefined();
+        }
+        base_obj = bo;
+    }
+    // Construct the result. NewInvoke sets host_this to a fresh
+    // object whose proto is URL.prototype; reuse it if that's how we
+    // arrived. Otherwise allocate a new one.
+    let obj_v = ctx.host_this;
+    if zjs_is_object(obj_v) == 0 {
+        obj_v = ctx_new_object(ctx);
+        if ctx.url_proto != NULL { zjs_as_object(obj_v).proto = ctx.url_proto; }
+    }
+    let obj = zjs_as_object(obj_v);
+    let is = zjs_as_string(in_v);
+    if !parse_url_into(ctx, obj, is.data, is.length, base_obj) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Invalid URL", 11);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return zjs_undefined();
+    }
+    return obj_v;
+}
+
+// Generic component getter, parameterized by the hidden-key constant.
+fn url_proto_get(ctx: ZjsContext*, key: char*, key_len: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    return url_get_str(zjs_as_object(this_v), ctx, key, key_len);
+}
+
+fn host_url_protocol(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return url_proto_get(ctx, URL_PROTOCOL_KEY, 20); }
+fn host_url_username(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return url_proto_get(ctx, URL_USERNAME_KEY, 20); }
+fn host_url_password(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return url_proto_get(ctx, URL_PASSWORD_KEY, 20); }
+fn host_url_hostname(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return url_proto_get(ctx, URL_HOSTNAME_KEY, 20); }
+fn host_url_port(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return url_proto_get(ctx, URL_PORT_KEY, 16); }
+fn host_url_pathname(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return url_proto_get(ctx, URL_PATHNAME_KEY, 20); }
+fn host_url_search(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return url_proto_get(ctx, URL_SEARCH_KEY, 18); }
+fn host_url_hash(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return url_proto_get(ctx, URL_HASH_KEY, 16); }
+
+fn host_url_host(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let obj = zjs_as_object(this_v);
+    let host = url_get_str(obj, ctx, URL_HOSTNAME_KEY, 20);
+    let port = url_get_str(obj, ctx, URL_PORT_KEY, 16);
+    if zjs_is_string(port) != 0 && zjs_as_string(port).length > 0 {
+        let hs = zjs_as_string(host);
+        let ps = zjs_as_string(port);
+        let total = hs.length + 1 + ps.length;
+        let buf = alloc_n<char>((usize)(total + 1));
+        let i: u32 = 0;
+        while i < hs.length { buf[i] = hs.data[i]; i = i + 1; }
+        buf[hs.length] = (char)':';
+        let j: u32 = 0;
+        while j < ps.length { buf[hs.length + 1 + j] = ps.data[j]; j = j + 1; }
+        buf[total] = (char)0;
+        let r = ctx_intern_string(ctx, buf, total);
+        dealloc(buf);
+        return r;
+    }
+    return host;
+}
+
+fn host_url_origin(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let obj = zjs_as_object(this_v);
+    let proto = url_get_str(obj, ctx, URL_PROTOCOL_KEY, 20);
+    let host  = host_url_host(ctx, args, argc);
+    if zjs_is_string(proto) == 0 || zjs_is_string(host) == 0 {
+        return ctx_intern_string(ctx, (char*)"", 0);
+    }
+    let ps = zjs_as_string(proto);
+    let hs = zjs_as_string(host);
+    if hs.length == 0 { return ctx_intern_string(ctx, (char*)"null", 4); }
+    let total = ps.length + 2 + hs.length;
+    let buf = alloc_n<char>((usize)(total + 1));
+    let i: u32 = 0;
+    while i < ps.length { buf[i] = ps.data[i]; i = i + 1; }
+    buf[ps.length]     = (char)'/';
+    buf[ps.length + 1] = (char)'/';
+    let j: u32 = 0;
+    while j < hs.length { buf[ps.length + 2 + j] = hs.data[j]; j = j + 1; }
+    buf[total] = (char)0;
+    let r = ctx_intern_string(ctx, buf, total);
+    dealloc(buf);
+    return r;
+}
+
+// .href / .toString — reassemble all components into a single string.
+fn host_url_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let obj = zjs_as_object(this_v);
+    let proto = url_get_str(obj, ctx, URL_PROTOCOL_KEY, 20);
+    let user  = url_get_str(obj, ctx, URL_USERNAME_KEY, 20);
+    let pass  = url_get_str(obj, ctx, URL_PASSWORD_KEY, 20);
+    let host  = url_get_str(obj, ctx, URL_HOSTNAME_KEY, 20);
+    let port  = url_get_str(obj, ctx, URL_PORT_KEY, 16);
+    let path  = url_get_str(obj, ctx, URL_PATHNAME_KEY, 20);
+    let srch  = url_get_str(obj, ctx, URL_SEARCH_KEY, 18);
+    let hash  = url_get_str(obj, ctx, URL_HASH_KEY, 16);
+    let ps = zjs_as_string(proto);
+    let us = zjs_as_string(user);
+    let pas = zjs_as_string(pass);
+    let hs = zjs_as_string(host);
+    let ports = zjs_as_string(port);
+    let paths = zjs_as_string(path);
+    let ss = zjs_as_string(srch);
+    let hss = zjs_as_string(hash);
+    // Assemble. Pre-size big enough to hold every component + the
+    // single-byte separators we inject between them.
+    let cap: u32 = ps.length + us.length + pas.length + hs.length + ports.length + paths.length + ss.length + hss.length + 16;
+    let buf = alloc_n<char>((usize)cap);
+    let n: u32 = 0;
+    let i: u32 = 0;
+    while i < ps.length { buf[n] = ps.data[i]; n = n + 1; i = i + 1; }
+    let has_authority: bool = hs.length > 0;
+    if has_authority {
+        buf[n] = (char)'/'; n = n + 1;
+        buf[n] = (char)'/'; n = n + 1;
+        if us.length > 0 || pas.length > 0 {
+            let ui: u32 = 0;
+            while ui < us.length { buf[n] = us.data[ui]; n = n + 1; ui = ui + 1; }
+            if pas.length > 0 {
+                buf[n] = (char)':'; n = n + 1;
+                let pi: u32 = 0;
+                while pi < pas.length { buf[n] = pas.data[pi]; n = n + 1; pi = pi + 1; }
+            }
+            buf[n] = (char)'@'; n = n + 1;
+        }
+        let hi: u32 = 0;
+        while hi < hs.length { buf[n] = hs.data[hi]; n = n + 1; hi = hi + 1; }
+        if ports.length > 0 {
+            buf[n] = (char)':'; n = n + 1;
+            let pri: u32 = 0;
+            while pri < ports.length { buf[n] = ports.data[pri]; n = n + 1; pri = pri + 1; }
+        }
+    }
+    let pathi: u32 = 0;
+    while pathi < paths.length { buf[n] = paths.data[pathi]; n = n + 1; pathi = pathi + 1; }
+    let si: u32 = 0;
+    while si < ss.length { buf[n] = ss.data[si]; n = n + 1; si = si + 1; }
+    let hi2: u32 = 0;
+    while hi2 < hss.length { buf[n] = hss.data[hi2]; n = n + 1; hi2 = hi2 + 1; }
+    let r = ctx_intern_string(ctx, buf, n);
+    dealloc(buf);
+    return r;
+}
+
 fn host_date_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let ms: f64 = 0.0;
     if argc == 0 {
@@ -11069,6 +11597,59 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, ctx.symbol_proto, ctx_intern_atom(ctx, (char*)"valueOf", 7),
                ctx_make_host_function_arity(ctx, (char*)"valueOf", sym_valof_ptr, 0));
     object_set(ctx, ctx.symbol_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), sym_ctor_v);
+
+    // === URL (2026-05-18) — WHATWG URL parser at v0.1 coverage. ===
+    let url_ctor_ptr: void* = NULL; raw { url_ctor_ptr = (void*)host_url_ctor; }
+    let url_ctor_v  = ctx_register_host_function(ctx, (char*)"URL", url_ctor_ptr);
+    let url_proto_v = ctx_new_object(ctx);
+    ctx.url_proto = zjs_as_object(url_proto_v);
+    zjs_as_host_function(url_ctor_v).prototype = ctx.url_proto;
+    object_set(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), url_ctor_v);
+    // Component getters. Per spec these are accessors; we install them
+    // as plain methods first so `url.protocol` works via property_get's
+    // host-function-accessor path. A future polish pass can convert to
+    // real Object.defineProperty getters.
+    let u_proto_ptr:    void* = NULL; raw { u_proto_ptr    = (void*)host_url_protocol; }
+    let u_user_ptr:     void* = NULL; raw { u_user_ptr     = (void*)host_url_username; }
+    let u_pass_ptr:     void* = NULL; raw { u_pass_ptr     = (void*)host_url_password; }
+    let u_hname_ptr:    void* = NULL; raw { u_hname_ptr    = (void*)host_url_hostname; }
+    let u_port_ptr:     void* = NULL; raw { u_port_ptr     = (void*)host_url_port; }
+    let u_path_ptr:     void* = NULL; raw { u_path_ptr     = (void*)host_url_pathname; }
+    let u_search_ptr:   void* = NULL; raw { u_search_ptr   = (void*)host_url_search; }
+    let u_hash_ptr:     void* = NULL; raw { u_hash_ptr     = (void*)host_url_hash; }
+    let u_host_ptr:     void* = NULL; raw { u_host_ptr     = (void*)host_url_host; }
+    let u_origin_ptr:   void* = NULL; raw { u_origin_ptr   = (void*)host_url_origin; }
+    let u_tostr_ptr:    void* = NULL; raw { u_tostr_ptr    = (void*)host_url_to_string; }
+    // Each getter is wrapped as an accessor-shape pair via
+    // object_define_accessor — that's the cleanest path to "property
+    // access fires this fn".
+    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"protocol", 8),
+                           ctx_make_host_function(ctx, (char*)"get protocol", u_proto_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"username", 8),
+                           ctx_make_host_function(ctx, (char*)"get username", u_user_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"password", 8),
+                           ctx_make_host_function(ctx, (char*)"get password", u_pass_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"hostname", 8),
+                           ctx_make_host_function(ctx, (char*)"get hostname", u_hname_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"port", 4),
+                           ctx_make_host_function(ctx, (char*)"get port", u_port_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"pathname", 8),
+                           ctx_make_host_function(ctx, (char*)"get pathname", u_path_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"search", 6),
+                           ctx_make_host_function(ctx, (char*)"get search", u_search_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"hash", 4),
+                           ctx_make_host_function(ctx, (char*)"get hash", u_hash_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"host", 4),
+                           ctx_make_host_function(ctx, (char*)"get host", u_host_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"origin", 6),
+                           ctx_make_host_function(ctx, (char*)"get origin", u_origin_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"href", 4),
+                           ctx_make_host_function(ctx, (char*)"get href", u_tostr_ptr), zjs_undefined());
+    object_set(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
+               ctx_make_host_function(ctx, (char*)"toString", u_tostr_ptr));
+    object_set(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6),
+               ctx_make_host_function(ctx, (char*)"toJSON", u_tostr_ptr));
+
     // Well-known symbols installed below replace the prior string
     // sentinels so `typeof Symbol.iterator === "symbol"`.
     ctx_register_host_function(ctx, (char*)"Map",        eval_ptr);
