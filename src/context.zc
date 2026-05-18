@@ -850,6 +850,9 @@ fn gc_mark_value(v: ZjsValue) -> void {
             }
             mi = mi + 1;
         }
+        if mm.props != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)mm.props));
+        }
         return;
     }
 
@@ -863,11 +866,18 @@ fn gc_mark_value(v: ZjsValue) -> void {
             }
             si = si + 1;
         }
+        if ss.props != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)ss.props));
+        }
         return;
     }
 
     if tag == TAG_DATE {
-        // Leaf — just a number internally.
+        let dd: ZjsDate* = NULL;
+        raw { dd = (ZjsDate*)p; }
+        if dd.props != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)dd.props));
+        }
         return;
     }
 
@@ -885,6 +895,9 @@ fn gc_mark_value(v: ZjsValue) -> void {
         // symmetry with other types.
         if sym.description != NULL { sym.description.header.mark = 1; }
         if sym.key != NULL         { sym.key.header.mark = 1; }
+        if sym.props != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)sym.props));
+        }
         return;
     }
 
@@ -2687,6 +2700,38 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
         }
         return r.props;
     }
+    if zjs_is_date(obj_v) != 0 {
+        let d = zjs_as_date(obj_v);
+        if d.props == NULL {
+            let pv = ctx_new_object(ctx);
+            d.props = zjs_as_object(pv);
+        }
+        return d.props;
+    }
+    if zjs_is_map(obj_v) != 0 {
+        let m = zjs_as_map(obj_v);
+        if m.props == NULL {
+            let pv = ctx_new_object(ctx);
+            m.props = zjs_as_object(pv);
+        }
+        return m.props;
+    }
+    if zjs_is_set(obj_v) != 0 {
+        let s = zjs_as_set(obj_v);
+        if s.props == NULL {
+            let pv = ctx_new_object(ctx);
+            s.props = zjs_as_object(pv);
+        }
+        return s.props;
+    }
+    if zjs_is_symbol(obj_v) != 0 {
+        let sym = zjs_as_symbol(obj_v);
+        if sym.props == NULL {
+            let pv = ctx_new_object(ctx);
+            sym.props = zjs_as_object(pv);
+        }
+        return sym.props;
+    }
     return NULL;
 }
 
@@ -2925,6 +2970,26 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
         if r.props == NULL { return obj_v; }
         cls_root = r.props.cls;
         cls_owner_v = props_v;
+    } else if zjs_is_date(props_v) != 0 {
+        let dd = zjs_as_date(props_v);
+        if dd.props == NULL { return obj_v; }
+        cls_root = dd.props.cls;
+        cls_owner_v = props_v;
+    } else if zjs_is_map(props_v) != 0 {
+        let mm = zjs_as_map(props_v);
+        if mm.props == NULL { return obj_v; }
+        cls_root = mm.props.cls;
+        cls_owner_v = props_v;
+    } else if zjs_is_set(props_v) != 0 {
+        let ss = zjs_as_set(props_v);
+        if ss.props == NULL { return obj_v; }
+        cls_root = ss.props.cls;
+        cls_owner_v = props_v;
+    } else if zjs_is_symbol(props_v) != 0 {
+        let symv = zjs_as_symbol(props_v);
+        if symv.props == NULL { return obj_v; }
+        cls_root = symv.props.cls;
+        cls_owner_v = props_v;
     } else if zjs_is_object(props_v) != 0 {
         cls_root = zjs_as_object(props_v).cls;
         cls_owner_v = props_v;
@@ -2970,6 +3035,18 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
             } else if zjs_is_regexp(cls_owner_v) != 0 {
                 let r = zjs_as_regexp(cls_owner_v);
                 if r.props != NULL { owner_obj = r.props; }
+            } else if zjs_is_date(cls_owner_v) != 0 {
+                let dd = zjs_as_date(cls_owner_v);
+                if dd.props != NULL { owner_obj = dd.props; }
+            } else if zjs_is_map(cls_owner_v) != 0 {
+                let mm = zjs_as_map(cls_owner_v);
+                if mm.props != NULL { owner_obj = mm.props; }
+            } else if zjs_is_set(cls_owner_v) != 0 {
+                let ss = zjs_as_set(cls_owner_v);
+                if ss.props != NULL { owner_obj = ss.props; }
+            } else if zjs_is_symbol(cls_owner_v) != 0 {
+                let symv = zjs_as_symbol(cls_owner_v);
+                if symv.props != NULL { owner_obj = symv.props; }
             }
             let prop_attrs: u8 = if owner_obj != NULL { object_get_attrs(owner_obj, slot) } else { PROP_DEFAULT };
             if (prop_attrs & PROP_ENUMERABLE) == 0 {
@@ -8882,6 +8959,14 @@ fn ctx_to_object(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
     if zjs_is_host_function(v) != 0 { return v; }
     if zjs_is_regexp(v) != 0 { return v; }
     if zjs_is_promise(v) != 0 { return v; }
+    // Host instance types — already "objects" per spec; the
+    // generic-Array-method tests rely on `Array.prototype.map.call(
+    // someDate, cb)` walking the date as ToObject(date), which is
+    // just the date itself.
+    if zjs_is_date(v) != 0 { return v; }
+    if zjs_is_map(v) != 0 { return v; }
+    if zjs_is_set(v) != 0 { return v; }
+    if zjs_is_symbol(v) != 0 { return v; }
 
     if zjs_is_null(v) != 0 || zjs_is_undefined(v) != 0 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,

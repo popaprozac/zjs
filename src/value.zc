@@ -930,6 +930,9 @@ struct ZjsMap {
     count:   u32;           // entries.len (incl. tombstones)
     cap:     u32;
     size:    u32;           // live (non-tombstone) entry count
+    // Lazy expando bag — for own properties set via assignment or
+    // defineProperty. Matches Array's pattern. NULL until first set.
+    props:   ZjsObject*;
 }
 
 fn zjs_is_map(v: ZjsValue) -> int {
@@ -951,6 +954,7 @@ fn zjs_map_new() -> ZjsMap* {
     m.count = 0;
     m.cap = 0;
     m.size = 0;
+    m.props = NULL;
     return m;
 }
 
@@ -965,6 +969,8 @@ struct ZjsSet {
     count:   u32;
     cap:     u32;
     size:    u32;
+    // Lazy expando bag — same as Map's. NULL until first own prop set.
+    props:   ZjsObject*;
 }
 
 fn zjs_is_set(v: ZjsValue) -> int {
@@ -986,6 +992,7 @@ fn zjs_set_new() -> ZjsSet* {
     s.count = 0;
     s.cap = 0;
     s.size = 0;
+    s.props = NULL;
     return s;
 }
 
@@ -998,6 +1005,8 @@ fn zjs_set_new() -> ZjsSet* {
 struct ZjsDate {
     header:  CellHeader;        // type_tag = TAG_DATE
     time_ms: f64;
+    // Lazy expando bag for own properties (\`d.foo = 1\`, defineProperty).
+    props:   ZjsObject*;
 }
 
 fn zjs_is_date(v: ZjsValue) -> int {
@@ -1016,6 +1025,7 @@ fn zjs_date_new(time_ms: f64) -> ZjsDate* {
     let d = alloc<ZjsDate>();
     d.header.type_tag = TAG_DATE;
     d.time_ms = time_ms;
+    d.props = NULL;
     return d;
 }
 
@@ -1067,6 +1077,9 @@ struct ZjsSymbol {
     header:      CellHeader;     // type_tag = TAG_SYMBOL
     description: ZjsString*;     // may be NULL (anonymous Symbol())
     key:         ZjsString*;     // canonical lookup string for prop access
+    // Lazy expando bag — Symbols can carry own properties via
+    // defineProperty (rare in practice, but spec-permitted).
+    props:       ZjsObject*;
 }
 
 fn zjs_is_symbol(v: ZjsValue) -> int {
@@ -1086,6 +1099,7 @@ fn zjs_symbol_new(description: ZjsString*, key: ZjsString*) -> ZjsSymbol* {
     s.header.type_tag = TAG_SYMBOL;
     s.description = description;
     s.key = key;
+    s.props = NULL;
     return s;
 }
 
