@@ -3809,6 +3809,76 @@ fn obj_get_indexed(ctx: ZjsContext*, o: ZjsObject*, index: u32) -> ZjsValue {
     return property_get(ctx, obj_v, key_v);
 }
 
+// Spec HasProperty for an indexed key. Walks own props (arrays with
+// or without expando bag, plain objects via the class chain) and
+// then up the prototype chain. Used by Array.prototype iteration
+// methods (map / forEach / filter / find / etc.) to honor the spec's
+// "hole = skip callback" rule for BOTH real arrays AND generic
+// array-like receivers (Array.prototype.map.call(obj, ...)).
+fn value_has_index(ctx: ZjsContext*, v: ZjsValue, idx: u32) -> bool {
+    // Real-array fast path: dense slot present means own. If the array
+    // also has an expando bag with a stringified-index property, that
+    // counts too (defineProperty(arr, "3", ...) lands there).
+    if zjs_is_array(v) != 0 {
+        let a = zjs_as_array(v);
+        if array_has_index(a, idx) != 0 { return true; }
+        // Fall through to the proto walk below — Array.prototype may
+        // carry an inherited indexed property (test262 pokes these).
+    }
+    // Generic-object walk: stringify the index once, then look up by
+    // atom in the own class and each ancestor proto's class.
+    let buf: char[16];
+    let n: int = 0;
+    raw { n = snprintf(&buf[0], 16, "%u", (unsigned)idx); }
+    let kp: char* = NULL;
+    raw { kp = &buf[0]; }
+    let key_atom = ctx_intern_atom(ctx, kp, (u32)n);
+    if zjs_is_object(v) != 0 {
+        let cur: ZjsObject* = zjs_as_object(v);
+        while cur != NULL {
+            let slot = class_find_slot(cur.cls, key_atom);
+            if slot >= 0 && zjs_is_deleted(cur.slots[(u32)slot]) == 0 { return true; }
+            cur = cur.proto;
+        }
+        // Wrapped primitive (String boxed via ToObject): indexed access
+        // goes through property_get's wrapper path even though the
+        // class chain has no per-char slots. For string wrappers a
+        // valid in-range index counts as own per spec — exactly the
+        // semantics `Array.prototype.forEach.call("abc", cb)` relies on.
+        let o2 = zjs_as_object(v);
+        let wkey = ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN);
+        let wslot = class_find_slot(o2.cls, wkey);
+        if wslot >= 0 {
+            let wv = o2.slots[(u32)wslot];
+            if zjs_is_string(wv) != 0 {
+                let s = zjs_as_string(wv);
+                if idx < s.length { return true; }
+            }
+        }
+        return false;
+    }
+    if zjs_is_array(v) != 0 {
+        let a = zjs_as_array(v);
+        // Expando bag: defineProperty(arr, "3", ...) goes here too.
+        if a.props != NULL {
+            let slot = class_find_slot(a.props.cls, key_atom);
+            if slot >= 0 && zjs_is_deleted(a.props.slots[(u32)slot]) == 0 { return true; }
+        }
+        // Walk up the array's proto chain — Array.prototype is a
+        // plain ZjsObject in our model, so the same class walk works.
+        if ctx.array_proto != NULL {
+            let cur: ZjsObject* = ctx.array_proto;
+            while cur != NULL {
+                let slot = class_find_slot(cur.cls, key_atom);
+                if slot >= 0 && zjs_is_deleted(cur.slots[(u32)slot]) == 0 { return true; }
+                cur = cur.proto;
+            }
+        }
+        return false;
+    }
+    return false;
+}
+
 // ECMA-262 RequireObjectCoercible step at the top of every Array
 // prototype method: `Array.prototype.X.call(undefined or null)` must
 // throw TypeError. Returns `true` on accept (caller continues normally);
@@ -4014,10 +4084,16 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     let i = from_d;
     while i < len_d {
         let idx_u: u32 = (u32)i;
-        let v = property_get(ctx, this_val, zjs_int32((i32)idx_u));
-        if zjs_strict_eq(v, needle) != 0 {
-            if i <= 2147483647.0 { return zjs_int32((i32)i); }
-            return zjs_double(i);
+        // Spec: HasProperty gates the strict-eq. Without this guard,
+        // missing indices read as `undefined` via property_get and
+        // spuriously match `indexOf.call({length:5}, undefined)`.
+        if value_has_index(ctx, this_val, idx_u) {
+            let v = property_get(ctx, this_val, zjs_int32((i32)idx_u));
+            if ctx.pending_throw_active { return zjs_int32(-1); }
+            if zjs_strict_eq(v, needle) != 0 {
+                if i <= 2147483647.0 { return zjs_int32((i32)i); }
+                return zjs_double(i);
+            }
         }
         i = i + 1.0;
     }
@@ -4902,11 +4978,14 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             }
         } else {
             // Generic-this (or array with expando bag — defineProperty
-            // installed accessors that must fire). Treat every in-range
-            // index as present and read through property_get.
-            present = true;
-            src = property_get(ctx, this_val, zjs_int32((i32)i));
-            if ctx.pending_throw_active { return result_v; }
+            // installed accessors that must fire). Spec HasProperty
+            // gates the callback so missing indices stay holes in the
+            // result, matching real arrays.
+            if value_has_index(ctx, this_val, i) {
+                present = true;
+                src = property_get(ctx, this_val, zjs_int32((i32)i));
+                if ctx.pending_throw_active { return result_v; }
+            }
         }
         if present {
             let cb_args: ZjsValue[3];
@@ -5166,18 +5245,23 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     // Generic-this path: read_length_u32 + property_get on the
     // receiver value. Handles function / host-fn / regex /
     // wrapper-primitive receivers uniformly (no ZjsObject cast).
+    // Spec gates the callback on HasProperty so holes / missing
+    // indices skip the call entirely.
     let len = read_length_u32(ctx, this_val);
     let i: u32 = 0;
     while i < len {
-        let v = property_get(ctx, this_val, zjs_int32((i32)i));
-        let cb_args: ZjsValue[3];
-        cb_args[0] = v;
-        cb_args[1] = zjs_int32((i32)i);
-        cb_args[2] = this_val;
-        let cb_args_ptr: ZjsValue* = NULL;
-        raw { cb_args_ptr = &cb_args[0]; }
-        raw { (void)zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
-        if ctx.pending_throw_active { return zjs_undefined(); }
+        if value_has_index(ctx, this_val, i) {
+            let v = property_get(ctx, this_val, zjs_int32((i32)i));
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            let cb_args: ZjsValue[3];
+            cb_args[0] = v;
+            cb_args[1] = zjs_int32((i32)i);
+            cb_args[2] = this_val;
+            let cb_args_ptr: ZjsValue* = NULL;
+            raw { cb_args_ptr = &cb_args[0]; }
+            raw { (void)zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        }
         i = i + 1;
     }
     return zjs_undefined();

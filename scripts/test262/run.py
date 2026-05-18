@@ -506,6 +506,10 @@ def main():
                     help="Per-test timeout in seconds")
     ap.add_argument("--no-record", action="store_true",
                     help="Run tests but don't append to history / write HTML")
+    ap.add_argument("--record-filter", action="store_true",
+                    help="Allow recording even with --filter/--limit. By default "
+                         "partial runs are quarantined from the dashboard since "
+                         "their numbers aren't comparable to the full sweep.")
     ap.add_argument("--quiet", action="store_true",
                     help="Don't print per-failure lines")
     args = ap.parse_args()
@@ -590,6 +594,19 @@ def main():
         print(f"  pass rate: {passed / (passed + failed) * 100:.1f}%")
 
     if args.no_record:
+        return 0
+
+    # Partial runs (filter/limit) get quarantined from the main dashboard
+    # by default: their pass-counts aren't comparable to the full sweep
+    # and the trend line dips spuriously if they land in history.jsonl.
+    # Pass --record-filter to opt back in if you actually want a row.
+    partial = bool(args.filter) or args.limit > 0
+    if partial and not args.record_filter:
+        print()
+        print("note: partial run (filter/limit set) — not recording to "
+              "history / dashboard.")
+        print("      Pass --record-filter to override, or run without "
+              "filter for a real measurement.")
         return 0
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
