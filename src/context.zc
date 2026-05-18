@@ -8145,7 +8145,10 @@ fn host_date_now_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     raw {
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
-        ms = (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+        // Spec: returns an integer ms since the epoch. Truncate the
+        // sub-ms portion that comes from clock_gettime's ns field —
+        // performance.now() is the right call for sub-ms timing.
+        ms = (double)ts.tv_sec * 1000.0 + (double)(ts.tv_nsec / 1000000);
     }
     return zjs_double(ms);
 }
@@ -10939,10 +10942,16 @@ fn console_write_value(ctx: ZjsContext*, v: ZjsValue, stream_is_stderr: bool) ->
         return;
     }
     if zjs_is_double(v) != 0 {
-        let d = zjs_as_double(v);
-        raw {
-            if (stream_is_stderr) fprintf(stderr, "%g", d);
-            else fprintf(stdout, "%g", d);
+        // Match ECMA-262 NumberToString: integer-valued doubles
+        // print as integers (Date.now() = 1779140000000, not 1.78e12);
+        // others get the shortest round-trip-stable representation.
+        let s_v = zjs_to_string(ctx, v);
+        if zjs_is_string(s_v) != 0 {
+            let s = zjs_as_string(s_v);
+            raw {
+                if (stream_is_stderr) fwrite(s->data, 1, s->length, stderr);
+                else                  fwrite(s->data, 1, s->length, stdout);
+            }
         }
         return;
     }
@@ -11781,6 +11790,109 @@ fn host_wrapper_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
     return zjs_to_string(ctx, v);
 }
 
+// Number.prototype.toFixed(digits) — render `this` as a decimal
+// string with `digits` digits after the decimal point. Spec range
+// for digits is 0..100; out-of-range throws RangeError. NaN renders
+// as "NaN"; Infinity as "Infinity" / "-Infinity".
+fn host_number_to_fixed(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = host_wrapper_value_of(ctx, args, argc);
+    let d = zjs_to_double(v);
+    let digits: i32 = 0;
+    if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
+        let dd = zjs_to_double(args[0]);
+        raw { if (isnan(dd)) dd = 0; }
+        digits = (i32)dd;
+    }
+    if digits < 0 || digits > 100 {
+        let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                                    (char*)"toFixed() digits argument must be between 0 and 100", 52);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let is_nan: int = 0;
+    raw { is_nan = isnan(d) ? 1 : 0; }
+    if is_nan != 0 { return ctx_intern_string(ctx, (char*)"NaN", 3); }
+    let is_inf: int = 0;
+    raw { is_inf = isinf(d) ? 1 : 0; }
+    if is_inf != 0 {
+        if d > 0.0 { return ctx_intern_string(ctx, (char*)"Infinity", 8); }
+        return ctx_intern_string(ctx, (char*)"-Infinity", 9);
+    }
+    let buf: char[140];
+    let n: u32 = 0;
+    raw {
+        n = (uint32_t)snprintf(buf, 140, "%.*f", (int)digits, d);
+    }
+    let bp: char* = NULL;
+    raw { bp = &buf[0]; }
+    return ctx_intern_string(ctx, bp, n);
+}
+
+// Array.prototype.fill(value, start?, end?) — overwrite [start, end)
+// with `value` in place. Negative indices count from length; out-of-
+// range get clamped. Returns the array.
+fn host_array_fill(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_array_coercible_this(ctx) { return zjs_undefined(); }
+    let this_val = ctx.host_this;
+    let value = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_array(this_val) != 0 {
+        let arr = zjs_as_array(this_val);
+        let len = arr.length;
+        let start: i64 = 0;
+        let end:   i64 = (i64)len;
+        if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
+            let sd = zjs_to_double(args[1]);
+            raw { if (isnan(sd)) sd = 0; sd = (sd < 0) ? (sd + (double)len) : sd; }
+            start = (i64)sd;
+            if start < 0 { start = 0; }
+            if start > (i64)len { start = (i64)len; }
+        }
+        if argc >= 3 && zjs_is_undefined(args[2]) == 0 {
+            let ed = zjs_to_double(args[2]);
+            raw { if (isnan(ed)) ed = 0; ed = (ed < 0) ? (ed + (double)len) : ed; }
+            end = (i64)ed;
+            if end < 0 { end = 0; }
+            if end > (i64)len { end = (i64)len; }
+        }
+        let i: i64 = start;
+        while i < end {
+            array_set(arr, (u32)i, value);
+            i = i + 1;
+        }
+        return this_val;
+    }
+    // Generic array-like — operate via property_set against length.
+    if zjs_is_object(this_val) == 0 {
+        this_val = ctx_to_object(ctx, this_val);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
+    let len = read_length_u32(ctx, this_val);
+    let start: i64 = 0;
+    let end:   i64 = (i64)len;
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
+        let sd = zjs_to_double(args[1]);
+        raw { if (isnan(sd)) sd = 0; sd = (sd < 0) ? (sd + (double)len) : sd; }
+        start = (i64)sd;
+        if start < 0 { start = 0; }
+        if start > (i64)len { start = (i64)len; }
+    }
+    if argc >= 3 && zjs_is_undefined(args[2]) == 0 {
+        let ed = zjs_to_double(args[2]);
+        raw { if (isnan(ed)) ed = 0; ed = (ed < 0) ? (ed + (double)len) : ed; }
+        end = (i64)ed;
+        if end < 0 { end = 0; }
+        if end > (i64)len { end = (i64)len; }
+    }
+    let i: i64 = start;
+    while i < end {
+        property_set(ctx, this_val, zjs_int32((i32)i), value);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i + 1;
+    }
+    return this_val;
+}
+
 // String.raw(strings, ...subs) — tagged-template helper that joins
 // strings.raw entries with the substitutions verbatim. Spec §22.1.2.4.
 fn host_string_raw(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -12447,6 +12559,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
     object_set(ctx, num_hf.prototype, tostring_atom,
                ctx_make_host_function(ctx, (char*)"toString", wt_ptr));
+    let ntf_ptr: void* = NULL; raw { ntf_ptr = (void*)host_number_to_fixed; }
+    object_set(ctx, num_hf.prototype, ctx_intern_atom(ctx, (char*)"toFixed", 7),
+               ctx_make_host_function_arity(ctx, (char*)"toFixed", ntf_ptr, 1));
     // Number.* static constants (ECMA-262 §21.1.2).
     if num_hf.props == NULL {
         let pv = ctx_new_object(ctx);
@@ -13272,6 +13387,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"map", map_ptr, 1));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"forEach", 7),
                ctx_make_host_function_arity(ctx, (char*)"forEach", fe_ptr, 1));
+    let fill_ptr: void* = NULL; raw { fill_ptr = (void*)host_array_fill; }
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"fill", 4),
+               ctx_make_host_function_arity(ctx, (char*)"fill", fill_ptr, 1));
     let join_ptr:   void* = NULL; raw { join_ptr   = (void*)host_array_join; }
     // Array.prototype.toString delegates to .join() with comma separator
     // (or Object.prototype.toString if join isn't callable, but our
