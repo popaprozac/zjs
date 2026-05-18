@@ -5,53 +5,9 @@
 // skipping lex/parse/compile entirely. Modelled on QuickJS's qjsc and
 // Hermes's .hbc — but simpler and zjs-specific.
 //
-// File layout (v1):
-//
-//   ZjsBytecode := MAGIC u32 VERSION u32 FunctionBlock
-//   MAGIC       := 'Z','J','S','b' (4 bytes, little-endian read)
-//   VERSION     := 1
-//
-//   FunctionBlock :=
-//     u32  code_len               -- count of Inst (each 4 bytes)
-//     u8[code_len * 4] code
-//     u32  const_count
-//     Value[const_count] constants
-//     u32  ic_count               -- inline-cache slot count
-//     ZjsString[ic_count] ic_names
-//     u32  register_count
-//     u32  fixed_regs
-//     u32  param_count
-//     u32  expected_arg_count
-//     u8   flags                  -- see FlagBits below
-//     u8   env_reg                -- only meaningful when flags & NEEDS_ENV
-//     Value parent_ctor           -- for derived-class ctors; else undefined
-//     u32  template_count
-//     -- when template_count > 0:
-//     u32  total_segments
-//     u32[template_count + 1] seg_start
-//     -- per segment, in flat order:
-//     u8   cooked_valid (0 or 1)
-//     ZjsString cooked_or_empty
-//     ZjsString raw
-//
-//   Value := u8 tag, payload depending on tag:
-//     0x00 int32           i32
-//     0x01 double          u64 (bit pattern)
-//     0x02 bool            u8
-//     0x03 null
-//     0x04 undefined
-//     0x05 string          ZjsString
-//     0x06 function        FunctionBlock (recursive)
-//
-//   ZjsString := u32 length, u8[length] bytes (no NUL terminator)
-//
-// Caveats / known gaps:
-//   - IC tables ship cold: every entry's classes/slots/proto_cls start
-//     NULL. The interpreter repopulates them on first hit, same path as
-//     a fresh-from-source Function.
-//   - Tagged-template caches start empty.
-//   - Hidden classes aren't serialized (they're discovered at runtime).
-//   - .prototype / .props expandos on the Function start empty.
+// On-disk wire format is specified in docs/aot-bytecode-format.md. This
+// file is the canonical *implementation* — if the two disagree, the
+// implementation wins and the doc is the bug.
 
 import "./bytecode.zc";
 import "./value.zc";

@@ -697,6 +697,68 @@ static void test_call_from_c(void) {
 }
 
 /* -----------------------------------------------------------------------
+ * AOT bytecode — zjs_compile_to_bytecode / zjs_eval_bytecode.
+ *
+ * Verifies the in-process compile-then-replay path that lets embedders
+ * cache pre-parsed scripts: a script run twice — once through zjs_eval,
+ * once through compile+eval_bytecode — should yield the same value, and
+ * the bytecode buffer should survive transport across contexts (which is
+ * the whole reason globals are remapped on load).
+ * --------------------------------------------------------------------- */
+
+static void test_aot_bytecode(void) {
+    const char* src =
+        "function sum(n) {"
+        "  let s = 0;"
+        "  for (let i = 1; i <= n; i = i + 1) s = s + i;"
+        "  return s;"
+        "}"
+        "sum(100)";
+
+    /* Compile in one context, run in another. The bytecode embeds slot
+     * indices that depend on context-local interning order, so any
+     * "works only when reused on the same ctx" bug would surface here. */
+    ZjsContext* compile_ctx = zjs_new_context();
+    size_t bc_len = 0;
+    unsigned char* bc = zjs_compile_to_bytecode(compile_ctx, src, &bc_len);
+    CHECK(bc != NULL, "zjs_compile_to_bytecode returned non-NULL");
+    CHECK(bc_len > 8, "bytecode buffer has more than just a header (len=%zu)",
+          bc_len);
+    /* Magic header. */
+    CHECK(bc_len >= 4 && bc[0] == 'Z' && bc[1] == 'J' && bc[2] == 'S' && bc[3] == 'b',
+          "bytecode begins with ZJSb magic");
+    zjs_free_context(compile_ctx);
+
+    /* Reference value from a clean source eval, in a fresh context. */
+    ZjsContext* ref_ctx = zjs_new_context();
+    ZjsValue ref = zjs_eval(ref_ctx, src);
+    CHECK(zjs_is_int32(ref) && zjs_as_int32(ref) == 5050,
+          "reference sum(100) == 5050");
+    zjs_free_context(ref_ctx);
+
+    /* Replay path: a brand-new context loads the bytecode and runs it. */
+    ZjsContext* run_ctx = zjs_new_context();
+    ZjsValue got = zjs_eval_bytecode(run_ctx, bc, bc_len);
+    CHECK(zjs_is_int32(got) && zjs_as_int32(got) == 5050,
+          "zjs_eval_bytecode(sum(100)) == 5050 (got %d)",
+          zjs_is_int32(got) ? zjs_as_int32(got) : -1);
+    CHECK(!zjs_had_error(run_ctx), "bytecode replay did not throw");
+
+    /* Run a second time on the same context — must be re-runnable. */
+    ZjsValue got2 = zjs_eval_bytecode(run_ctx, bc, bc_len);
+    CHECK(zjs_is_int32(got2) && zjs_as_int32(got2) == 5050,
+          "second replay still 5050");
+
+    /* A malformed buffer surfaces as undefined, not a crash. */
+    unsigned char junk[] = "XXXX";
+    ZjsValue bad = zjs_eval_bytecode(run_ctx, junk, sizeof(junk));
+    CHECK(zjs_is_undefined(bad), "bad magic returns undefined");
+
+    zjs_free_context(run_ctx);
+    free(bc);
+}
+
+/* -----------------------------------------------------------------------
  * Main.
  * --------------------------------------------------------------------- */
 
@@ -716,6 +778,7 @@ int main(void) {
     test_property_access();
     test_host_functions();
     test_call_from_c();
+    test_aot_bytecode();
 
     printf("[smoke] %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

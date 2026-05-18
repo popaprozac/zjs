@@ -2,6 +2,7 @@
 #define ZJS_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -210,6 +211,40 @@ void zjs_throw(ZjsContext* ctx, ZjsValue value);
  * zjs_get_error; the returned value in that case is undefined.
  * --------------------------------------------------------------------- */
 ZjsValue zjs_call(ZjsContext* ctx, ZjsValue callee, ZjsValue this_val, ZjsValue* argv, uint32_t argc);
+
+/* -----------------------------------------------------------------------
+ * AOT-compiled bytecode.
+ *
+ * Pre-parsed programs ship as a byte buffer with a "ZJSb" magic
+ * header (produced by `zjs compile in.js -o out.zbc`). zjs_eval_bytecode
+ * deserializes the buffer, rebinds global-slot references to the
+ * current context, and runs the program as if it were the top-level
+ * script — top-level `this` is bound to the global object, microtasks
+ * drain after the body, and uncaught throws land on
+ * zjs_had_error / zjs_get_error the same way zjs_eval reports them.
+ *
+ * `data` is the raw bytes; `len` is the buffer length. Returns the
+ * program's final expression value (or undefined). On a malformed
+ * file (wrong magic, version mismatch, truncated), returns undefined
+ * without setting had_error — distinguish a bad file from a thrown
+ * program by checking the return + had_error together.
+ *
+ * The deserialized Function* is registered with the context's GC, so
+ * its lifetime tracks the context. Callers don't need to free it
+ * separately; freeing the context tears it down.
+ * --------------------------------------------------------------------- */
+ZjsValue zjs_eval_bytecode(ZjsContext* ctx, const unsigned char* data, size_t len);
+
+/* Compile source to a bytecode buffer in memory. On success returns
+ * a pointer to a fresh malloc'd buffer (caller frees with free()),
+ * writes the byte count to *out_len, and returns 0. On parse/compile
+ * failure leaves *out_len = 0, sets zjs_had_error, and returns NULL.
+ *
+ * Equivalent to running `zjs compile` but in-process: useful for
+ * embedders that want to AOT cache scripts the first time they're
+ * seen, then play back the bytecode on subsequent runs.
+ */
+unsigned char* zjs_compile_to_bytecode(ZjsContext* ctx, const char* source, size_t* out_len);
 
 #ifdef __cplusplus
 }

@@ -186,3 +186,35 @@ fn zjs_call(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsValue, argv: ZjsVal
     }
     return r;
 }
+
+// --- AOT bytecode --------------------------------------------------
+
+fn zjs_eval_bytecode(ctx: ZjsContext*, data: u8*, len: usize) -> ZjsValue {
+    if ctx == NULL || data == NULL || len < 8 { return zjs_undefined(); }
+    let f = aot_deserialize_program(ctx, data, len);
+    if f == NULL { return zjs_undefined(); }
+    return zjs_run_function(ctx, f);
+}
+
+fn zjs_compile_to_bytecode(ctx: ZjsContext*, source: char*, out_len: usize*) -> u8* {
+    if out_len != NULL { out_len[0] = 0; }
+    if ctx == NULL || source == NULL { return NULL; }
+    let f = zjs_compile(ctx, source);
+    if f == NULL { return NULL; }
+    let w = aot_serialize_program(ctx, f);
+    function_free(f);
+    if w == NULL { return NULL; }
+    // Hand the buffer off to the caller. Use plain malloc here so the
+    // caller's free() works — the writer's internal buffer was
+    // alloc_n<u8>'d via the engine's allocator, which is calloc-backed
+    // on the non-MISRA path, so it lines up with free(). Copy to a
+    // fresh malloc'd block to keep the contract explicit.
+    let n = w.len;
+    let out: u8* = NULL;
+    raw { out = (uint8_t*)malloc(n); }
+    if out == NULL { aot_writer_free(w); return NULL; }
+    raw { memcpy(out, w->buf, n); }
+    aot_writer_free(w);
+    if out_len != NULL { out_len[0] = n; }
+    return out;
+}
