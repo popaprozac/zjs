@@ -13,6 +13,7 @@ import "std/mem.zc"
 raw {
     #include <stdio.h>
     #include <string.h>
+    #include <time.h>
     #include <sys/resource.h>
 }
 
@@ -454,6 +455,24 @@ fn run_file(path: char*, gc_stats: bool) -> int {
     } else {
         let _ = zjs_eval(ctx, buf);
         if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); rc = 1; }
+    }
+
+    // Event-loop driver — keep running until no timers / microtasks
+    // remain. setTimeout / setInterval code stops being a no-op for
+    // `zjs run file.js`. nanosleep when the next timer is in the
+    // future; fire immediately when due.
+    while zjs_has_pending_work(ctx) != 0 {
+        let wait_ms = zjs_next_timer_ms(ctx);
+        if wait_ms > 0 {
+            raw {
+                struct timespec _ts;
+                _ts.tv_sec  = (time_t)(wait_ms / 1000);
+                _ts.tv_nsec = (long)((wait_ms % 1000) * 1000000);
+                nanosleep(&_ts, NULL);
+            }
+        }
+        zjs_run_pending_timers(ctx);
+        if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); rc = 1; break; }
     }
 
     if gc_stats {

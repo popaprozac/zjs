@@ -289,6 +289,46 @@ unsigned char* zjs_compile_to_bytecode(ZjsContext* ctx, const char* source, size
  * --------------------------------------------------------------------- */
 ZjsValue zjs_eval_module(ZjsContext* ctx, const char* abs_path);
 
+/* -----------------------------------------------------------------------
+ * Event loop — web-API Phase B (timers).
+ *
+ * The engine exposes its pending-work state through these three
+ * functions. Embedders integrate with their own event loop (libuv,
+ * dispatch, GLib, ...) by checking pending work, sleeping until the
+ * next timer is due, then calling zjs_run_pending_timers.
+ *
+ *   zjs_has_pending_work  returns 1 if any microtask or timer is
+ *                          pending. 0 = idle (host loop can exit).
+ *   zjs_next_timer_ms     ms until the next timer fires, or -1 if
+ *                          none. 0 means "fire now". Doesn't account
+ *                          for microtasks — drain those before
+ *                          asking again.
+ *   zjs_run_pending_timers fires every timer whose due time has
+ *                          arrived. Drains microtasks after each
+ *                          timer callback (per spec). setInterval
+ *                          re-arms; setTimeout deletes.
+ *
+ * Typical CLI-style loop:
+ *
+ *   while (zjs_has_pending_work(ctx)) {
+ *       int64_t wait = zjs_next_timer_ms(ctx);
+ *       if (wait > 0) {
+ *           struct timespec ts;
+ *           ts.tv_sec  = wait / 1000;
+ *           ts.tv_nsec = (wait % 1000) * 1000000;
+ *           nanosleep(&ts, NULL);
+ *       }
+ *       zjs_run_pending_timers(ctx);
+ *   }
+ *
+ * Throws inside a timer callback get captured on zjs_had_error /
+ * zjs_get_error after each fire; the loop continues unless the
+ * embedder bails.
+ * --------------------------------------------------------------------- */
+int     zjs_has_pending_work(ZjsContext* ctx);
+int64_t zjs_next_timer_ms(ZjsContext* ctx);
+void    zjs_run_pending_timers(ZjsContext* ctx);
+
 #ifdef __cplusplus
 }
 #endif

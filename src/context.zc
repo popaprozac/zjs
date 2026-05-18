@@ -82,6 +82,16 @@ struct CtxTryFrame {
     catch_reg:   u8;
 }
 
+struct ZjsTimer {
+    id:        u32;       // monotonic, unique for the lifetime of the ctx
+    due_ms:    f64;       // CLOCK_MONOTONIC ms when it next fires
+    period_ms: f64;       // 0 for setTimeout, > 0 for setInterval
+    cancelled: bool;
+    handler:   ZjsValue;  // callable
+    argc:      u32;       // count of args slice below
+    args:      ZjsValue*; // owned heap array (NULL if argc == 0)
+}
+
 def CTX_MAX_TRY_DEPTH:  u32 = 256;
 def CTX_INVOKE_ARG_CAP: u32 = 256;   // matches u8 argc range
 
@@ -276,6 +286,21 @@ struct ZjsContext {
     symbol_proto:       ZjsObject*;
     url_proto:          ZjsObject*;
     usp_proto:          ZjsObject*;
+
+    // Timer queue (2026-05-18, web-API Phase B). Each entry represents
+    // a setTimeout / setInterval reservation. `due_ms` is the
+    // monotonic-clock ms when it next fires. `period_ms` is 0 for
+    // setTimeout (one-shot, deleted after firing) and > 0 for
+    // setInterval (re-armed on each fire). `cancelled` is set by
+    // clearTimeout/clearInterval; compaction happens lazily on the
+    // next sweep. Embedders observe pending work via the new ABI
+    // (zjs_next_timer_ms / zjs_run_pending_timers / zjs_has_pending_work);
+    // CLI bundles a poll-based loop so `zjs run file.js` drives this
+    // automatically.
+    timers:         ZjsTimer*;
+    timer_count:    u32;
+    timer_cap:      u32;
+    next_timer_id:  u32;
     // Cached pristine Array/String @@iterator host fn. Used by iter_get
     // to short-circuit to the TAG_ARRAY_ITER fast path when the lookup
     // would yield this exact function (i.e. user code hasn't overridden
@@ -389,6 +414,13 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
         gc_free_one(ctx.young_cells[jy]);
         jy = jy + 1;
     }
+    // Free per-timer args buffers (the timer array itself is freed
+    // below with the rest of the ctx-owned buffers).
+    let ti: u32 = 0;
+    while ti < ctx.timer_count {
+        if ctx.timers[ti].args != NULL { dealloc(ctx.timers[ti].args); }
+        ti = ti + 1;
+    }
     let cells = ctx.cells;
     let young_cells = ctx.young_cells;
     let rem_set = ctx.rem_set;
@@ -398,6 +430,7 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     let ctx_try_stack = ctx.ctx_try_stack;
     let invoke_arg_buffer = ctx.invoke_arg_buffer;
     let microtask_queue = ctx.microtask_queue;
+    let timers = ctx.timers;
     dealloc(cells);
     dealloc(young_cells);
     dealloc(rem_set);
@@ -407,6 +440,7 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     dealloc(ctx_try_stack);
     dealloc(invoke_arg_buffer);
     dealloc(microtask_queue);
+    dealloc(timers);
     dealloc(ctx);
 }
 
@@ -1329,6 +1363,19 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     }
     if ctx.usp_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.usp_proto));
+    }
+    // Pending timer callbacks + their captured args must stay alive
+    // across collections — they're scheduled to run but not yet
+    // reachable through any user code root.
+    let ti: u32 = 0;
+    while ti < ctx.timer_count {
+        let tt = ctx.timers + ti;
+        if !tt.cancelled {
+            gc_mark_value(tt.handler);
+            let ai: u32 = 0;
+            while ai < tt.argc { gc_mark_value(tt.args[ai]); ai = ai + 1; }
+        }
+        ti = ti + 1;
     }
     gc_mark_value(ctx.array_iter_host_fn);
     // Symbol.for registry — both keys and the symbols themselves stay
@@ -8179,6 +8226,243 @@ fn object_define_accessor(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*,
 }
 
 // =====================================================================
+// Timers — web-API Phase B (2026-05-18). setTimeout / setInterval /
+// clear* as globals. The engine maintains a queue of pending timers;
+// embedders ask "when's the next one?" via zjs_next_timer_ms and
+// fire what's ready via zjs_run_pending_timers. The CLI bundles a
+// poll-based loop so `zjs run file.js` drives the queue.
+// =====================================================================
+
+// Monotonic-now in ms. Same source perf.now() returns.
+fn timer_now_ms() -> f64 {
+    let ms: f64 = 0.0;
+    raw {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        ms = (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+    }
+    return ms;
+}
+
+fn timer_install(ctx: ZjsContext*, handler: ZjsValue, delay_ms: f64, period_ms: f64,
+                 args: ZjsValue*, argc: u32) -> u32 {
+    if ctx.timer_count >= ctx.timer_cap {
+        let new_cap: u32 = if ctx.timer_cap == 0 { 8 } else { ctx.timer_cap * 2 };
+        ctx.timers = realloc_n<ZjsTimer>(ctx.timers, (usize)ctx.timer_cap, (usize)new_cap);
+        ctx.timer_cap = new_cap;
+    }
+    ctx.next_timer_id = ctx.next_timer_id + 1;
+    let id = ctx.next_timer_id;
+    let due = timer_now_ms() + delay_ms;
+    let t = ctx.timers + ctx.timer_count;
+    t.id        = id;
+    t.due_ms    = due;
+    t.period_ms = period_ms;
+    t.cancelled = false;
+    t.handler   = handler;
+    t.argc      = argc;
+    if argc > 0 {
+        t.args = alloc_n<ZjsValue>((usize)argc);
+        let i: u32 = 0;
+        while i < argc { t.args[i] = args[i]; i = i + 1; }
+    } else {
+        t.args = NULL;
+    }
+    ctx.timer_count = ctx.timer_count + 1;
+    return id;
+}
+
+fn timer_cancel(ctx: ZjsContext*, id: u32) -> void {
+    let i: u32 = 0;
+    while i < ctx.timer_count {
+        if ctx.timers[i].id == id { ctx.timers[i].cancelled = true; return; }
+        i = i + 1;
+    }
+}
+
+// Compact: drop cancelled entries from the queue, freeing their args
+// buffers. Called after a sweep so the array doesn't accumulate dead
+// reservations.
+fn timer_compact(ctx: ZjsContext*) -> void {
+    let read: u32 = 0;
+    let write: u32 = 0;
+    while read < ctx.timer_count {
+        let t = ctx.timers + read;
+        if t.cancelled {
+            if t.args != NULL { dealloc(t.args); }
+        } else {
+            if write != read { ctx.timers[write] = ctx.timers[read]; }
+            write = write + 1;
+        }
+        read = read + 1;
+    }
+    ctx.timer_count = write;
+}
+
+fn coerce_delay_ms(ctx: ZjsContext*, v: ZjsValue) -> f64 {
+    if zjs_is_undefined(v) != 0 { return 0.0; }
+    let d = zjs_to_double(v);
+    raw { if (isnan(d) || d < 0.0) d = 0.0; }
+    return d;
+}
+
+fn host_set_timeout(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_int32(0); }
+    let cb = args[0];
+    let callable: bool =
+           zjs_is_function(cb) != 0
+        || zjs_is_closure(cb)  != 0
+        || zjs_is_host_function(cb) != 0;
+    if !callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"setTimeout requires a function", 30);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let delay: f64 = if argc >= 2 { coerce_delay_ms(ctx, args[1]) } else { 0.0 };
+    let extra_args: ZjsValue* = NULL;
+    let extra_n: u32 = if argc > 2 { argc - 2 } else { 0 };
+    if extra_n > 0 { extra_args = args + 2; }
+    let id = timer_install(ctx, cb, delay, 0.0, extra_args, extra_n);
+    return zjs_int32((i32)id);
+}
+
+fn host_set_interval(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_int32(0); }
+    let cb = args[0];
+    let callable: bool =
+           zjs_is_function(cb) != 0
+        || zjs_is_closure(cb)  != 0
+        || zjs_is_host_function(cb) != 0;
+    if !callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"setInterval requires a function", 31);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let delay: f64 = if argc >= 2 { coerce_delay_ms(ctx, args[1]) } else { 0.0 };
+    // Spec: an interval of < 1ms gets clamped (browsers actually
+    // clamp to 4ms after nesting depth 5; we keep a flat 0-floor
+    // and let the host loop decide). Use the same value for both
+    // initial delay and the repeating period.
+    let extra_args: ZjsValue* = NULL;
+    let extra_n: u32 = if argc > 2 { argc - 2 } else { 0 };
+    if extra_n > 0 { extra_args = args + 2; }
+    let id = timer_install(ctx, cb, delay, delay, extra_args, extra_n);
+    return zjs_int32((i32)id);
+}
+
+fn host_clear_timeout(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_undefined(); }
+    let v = args[0];
+    if zjs_is_int32(v) != 0 {
+        let id = (u32)zjs_as_int32(v);
+        timer_cancel(ctx, id);
+    } else if zjs_is_double(v) != 0 {
+        timer_cancel(ctx, (u32)zjs_as_double(v));
+    }
+    return zjs_undefined();
+}
+
+fn zjs_has_pending_work(ctx: ZjsContext*) -> int {
+    if ctx == NULL { return 0; }
+    if ctx.microtask_count > 0 { return 1; }
+    let i: u32 = 0;
+    while i < ctx.timer_count {
+        if !ctx.timers[i].cancelled { return 1; }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// Returns ms until the next timer is due. Negative or 0 means "fire
+// now". -1 (or a very negative number) when there are no timers. Use
+// in conjunction with zjs_run_pending_timers in an embedder loop:
+//
+//   while (zjs_has_pending_work(ctx)) {
+//       int64_t wait = zjs_next_timer_ms(ctx);
+//       if (wait > 0) sleep(wait);
+//       zjs_run_pending_timers(ctx);
+//   }
+fn zjs_next_timer_ms(ctx: ZjsContext*) -> i64 {
+    if ctx == NULL { return -1; }
+    let now = timer_now_ms();
+    let best: f64 = 0.0;
+    let have: bool = false;
+    let i: u32 = 0;
+    while i < ctx.timer_count {
+        let t = ctx.timers + i;
+        if !t.cancelled {
+            let delta = t.due_ms - now;
+            if !have || delta < best { best = delta; have = true; }
+        }
+        i = i + 1;
+    }
+    if !have { return -1; }
+    if best < 0.0 { return 0; }
+    return (i64)best;
+}
+
+// Fire every timer whose due time has arrived. After each callback,
+// drain microtasks (per spec — a task always settles its microtasks
+// before the next task). setInterval re-arms; setTimeout deletes.
+// Cancellations and throws inside callbacks are absorbed so the loop
+// keeps running.
+fn zjs_run_pending_timers(ctx: ZjsContext*) -> void {
+    if ctx == NULL { return; }
+    let now = timer_now_ms();
+    // Snapshot which entries are due. Callbacks may install new
+    // timers — those have due_ms > now and won't fire in this pass.
+    let i: u32 = 0;
+    while i < ctx.timer_count {
+        let t = ctx.timers + i;
+        if !t.cancelled && t.due_ms <= now {
+            // Capture before firing — t may shift if the handler
+            // mutates the timers array (we'd realloc).
+            let handler = t.handler;
+            let argc    = t.argc;
+            // Copy args into a local buffer so a callback that
+            // installs more timers (which may realloc t.args's
+            // backing) doesn't yank our argv pointer.
+            let argbuf: ZjsValue[16];
+            let argp: ZjsValue* = NULL;
+            let alloc_local: bool = false;
+            if argc <= 16 {
+                raw { argp = &argbuf[0]; }
+                let ai: u32 = 0;
+                while ai < argc { argp[ai] = t.args[ai]; ai = ai + 1; }
+            } else {
+                argp = alloc_n<ZjsValue>((usize)argc);
+                alloc_local = true;
+                let ai: u32 = 0;
+                while ai < argc { argp[ai] = t.args[ai]; ai = ai + 1; }
+            }
+            let period = t.period_ms;
+            if period > 0.0 {
+                t.due_ms = now + period;
+            } else {
+                t.cancelled = true;
+            }
+            let r: ZjsValue = zjs_undefined();
+            raw { r = zjs_call_value_with_this(ctx, handler, zjs_undefined(), argp, argc); }
+            // Surface uncaught throws via had_error so the embedder
+            // can decide to bail; clear pending_throw so the next
+            // timer still runs.
+            if ctx.pending_throw_active {
+                ctx.had_error  = true;
+                ctx.last_error = consume_pending_throw(ctx);
+            }
+            if alloc_local { dealloc(argp); }
+            drain_microtasks(ctx);
+        }
+        i = i + 1;
+    }
+    timer_compact(ctx);
+}
+
+// =====================================================================
 // WHATWG URL — v0.1 (2026-05-18). A pragmatic parser that covers the
 // shapes real npm packages reach for (http/https/file URLs, relative
 // resolution against a base, search/hash extraction). Skipped:
@@ -13016,6 +13300,19 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let atob_ptr: void* = NULL; raw { atob_ptr = (void*)host_atob; }
     ctx_register_host_function(ctx, (char*)"btoa", btoa_ptr);
     ctx_register_host_function(ctx, (char*)"atob", atob_ptr);
+
+    // Timers — web-API Phase B. Backing infrastructure lives in
+    // zjs_next_timer_ms / zjs_run_pending_timers; these globals
+    // install / cancel reservations.
+    let st_ptr:  void* = NULL; raw { st_ptr  = (void*)host_set_timeout; }
+    let si_ptr:  void* = NULL; raw { si_ptr  = (void*)host_set_interval; }
+    let ct_ptr:  void* = NULL; raw { ct_ptr  = (void*)host_clear_timeout; }
+    ctx_register_host_function(ctx, (char*)"setTimeout",   st_ptr);
+    ctx_register_host_function(ctx, (char*)"setInterval",  si_ptr);
+    ctx_register_host_function(ctx, (char*)"clearTimeout", ct_ptr);
+    // clearInterval is the same operation as clearTimeout (both
+    // dispatch on id); aliasing matches what browsers and Node do.
+    ctx_register_host_function(ctx, (char*)"clearInterval", ct_ptr);
 
     // Mark every property on every built-in prototype as
     // non-enumerable. Per spec, ALL methods on Object.prototype,
