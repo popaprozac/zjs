@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-17 19:25 UTC",
+    "when": "2026-05-18 01:52 UTC",
     "total": 14440,
-    "passed": 6506,
-    "failed": 1412,
+    "passed": 6509,
+    "failed": 1409,
     "skipped": 6522
   },
   "failures": [
@@ -98,6 +98,10 @@
     {
       "path": "test/language/expressions/typeof/string.js",
       "reason": "[sloppy] zjs: throw: (unknown): typeof Date() === \"string\" Expected SameValue(\u00ab\"object\"\u00bb, \u00ab\"string\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/typeof/symbol.js",
+      "reason": "[sloppy] zjs: throw: (unknown): typeof Object(Symbol()) === 'object' Expected SameValue(\u00ab\"symbol\"\u00bb, \u00ab\"object\"\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/instanceof/S15.3.5.3_A2_T2.js",
@@ -2248,10 +2252,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.pop.call('') Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-11.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call(obj, true) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-2-17.js",
       "reason": "[sloppy] zjs: throw: (unknown): func(0, true) !== true"
     },
@@ -2346,10 +2346,6 @@
     {
       "path": "test/built-ins/Array/prototype/indexOf/resizable-buffer.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-11.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult[0] Expected SameValue(\u00abundefined\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-15.js",
@@ -2474,10 +2470,6 @@
     {
       "path": "test/built-ins/Array/prototype/map/target-array-with-non-configurable-property.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-11.js",
-      "reason": "[sloppy] zjs: throw: (unknown): result !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-15.js",
@@ -2614,10 +2606,6 @@
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-304.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-34.js",
-      "reason": "[sloppy] zjs: throw: (unknown): newObj.hasOwnProperty(\"prop\") !== true"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-39.js",
@@ -4005,6 +3993,18 @@
     },
     {
       "path": "test/built-ins/Set/prototype/forEach/iterates-in-iterable-entry-order.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/iterates-values-added-after-foreach-begins.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/iterates-values-deleted-then-readded.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/forEach/iterates-values-not-deleted.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
     }
   ],
