@@ -7287,6 +7287,426 @@ fn host_set_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 }
 
 // =====================================================================
+// ES2024 group-by + ES2025 Set composition (2026-05-18).
+// =====================================================================
+
+// Shared groupBy core: walks the iterable, applies callback(value, k),
+// and routes each (key, value) pair through `bucket_set`.
+// `bucket_storage` is the wrapper-specific accumulator (a ZjsMap* or
+// a ZjsObject* — passed as opaque void* so this helper doesn't know
+// which is which). `bucket_set` is the per-pair hook.
+//
+// Returns false on error (pending throw left active). True on success.
+fn group_by_walk(ctx: ZjsContext*, items: ZjsValue, cb: ZjsValue,
+                 bucket: void*,
+                 bucket_set_into_map: bool) -> bool {
+    let iter = iter_get(ctx, items);
+    if ctx.pending_throw_active { return false; }
+    let k: u32 = 0;
+    while true {
+        let step = iter_step(ctx, iter);
+        if ctx.pending_throw_active { return false; }
+        if step.done { break; }
+        let cb_args: ZjsValue[2];
+        cb_args[0] = step.value;
+        cb_args[1] = zjs_int32((i32)k);
+        let cap: ZjsValue* = NULL; raw { cap = &cb_args[0]; }
+        let key_v: ZjsValue = zjs_undefined();
+        raw { key_v = zjs_call_value_with_this(ctx, cb, zjs_undefined(), cap, 2); }
+        if ctx.pending_throw_active { return false; }
+        if bucket_set_into_map {
+            // Map.groupBy — SameValueZero on the raw key, value is an
+            // array of items grouped under it.
+            let m: ZjsMap* = NULL;
+            raw { m = (ZjsMap*)bucket; }
+            let slot = map_find_slot(m, key_v);
+            if slot < 0 {
+                let arr_v = ctx_new_array(ctx, 0);
+                array_set(zjs_as_array(arr_v), 0, step.value);
+                map_set_entry(m, key_v, arr_v);
+            } else {
+                let arr_v = m.entries[(u32)slot].value;
+                if zjs_is_array(arr_v) != 0 {
+                    let a = zjs_as_array(arr_v);
+                    array_set(a, a.length, step.value);
+                }
+            }
+        } else {
+            // Object.groupBy — key is ToPropertyKey'd (string or symbol).
+            let o: ZjsObject* = NULL;
+            raw { o = (ZjsObject*)bucket; }
+            // For our purposes, stringify if not already a string.
+            let key_s: ZjsValue =
+                if zjs_is_string(key_v) != 0 { key_v }
+                else { zjs_to_string(ctx, key_v) };
+            if ctx.pending_throw_active { return false; }
+            let key_atom = zjs_as_string(key_s);
+            // Does the object already have a bucket under this name?
+            let slot = class_find_slot(o.cls, key_atom);
+            if slot < 0 || zjs_is_deleted(o.slots[(u32)slot]) != 0 {
+                let arr_v = ctx_new_array(ctx, 0);
+                array_set(zjs_as_array(arr_v), 0, step.value);
+                object_set(ctx, o, key_atom, arr_v);
+            } else {
+                let arr_v = o.slots[(u32)slot];
+                if zjs_is_array(arr_v) != 0 {
+                    let a = zjs_as_array(arr_v);
+                    array_set(a, a.length, step.value);
+                }
+            }
+        }
+        k = k + 1;
+    }
+    return true;
+}
+
+fn host_map_group_by(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let items = if argc > 0 { args[0] } else { zjs_undefined() };
+    let cb    = if argc > 1 { args[1] } else { zjs_undefined() };
+    let cb_callable: bool =
+           zjs_is_function(cb) != 0
+        || zjs_is_closure(cb) != 0
+        || zjs_is_host_function(cb) != 0;
+    if !cb_callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Map.groupBy callbackfn is not callable", 38);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let m = zjs_map_new();
+    ctx_register_cell(ctx, (void*)m);
+    let bucket: void* = NULL; raw { bucket = (void*)m; }
+    if !group_by_walk(ctx, items, cb, bucket, true) { return zjs_undefined(); }
+    return zjs_cell_from_ptr((void*)m);
+}
+
+fn host_object_group_by(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let items = if argc > 0 { args[0] } else { zjs_undefined() };
+    let cb    = if argc > 1 { args[1] } else { zjs_undefined() };
+    let cb_callable: bool =
+           zjs_is_function(cb) != 0
+        || zjs_is_closure(cb) != 0
+        || zjs_is_host_function(cb) != 0;
+    if !cb_callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Object.groupBy callbackfn is not callable", 41);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let o_v = ctx_new_object(ctx);
+    let o = zjs_as_object(o_v);
+    // Spec: the returned object has a null prototype. We don't have
+    // an easy "null proto" mode (objects come from ctx_new_object
+    // wired to object_proto); set it explicitly.
+    o.proto = NULL;
+    let bucket: void* = NULL; raw { bucket = (void*)o; }
+    if !group_by_walk(ctx, items, cb, bucket, false) { return zjs_undefined(); }
+    return o_v;
+}
+
+// --- Set composition (2026-05-25 / ES2025) ---------------------------
+
+// Internal: produce a stream of values from a "set-like" — a real Set
+// (fast path: walk internal entries) or any object with a callable
+// keys() method returning an iterator. `callback_fp` is a raw C
+// function pointer (`bool (*)(void*, ZjsValue)`) passed as `void*`
+// since Zen-c's function-type-as-param doesn't accept plain C
+// pointers. Returning `true` from the callback aborts iteration
+// early. Returns false on error (pending throw active); true on
+// normal completion / early abort.
+fn iterate_set_like(ctx: ZjsContext*, other: ZjsValue,
+                    callback_fp: void*, state: void*) -> bool {
+    if zjs_is_set(other) != 0 {
+        let s = zjs_as_set(other);
+        let i: u32 = 0;
+        while i < s.count {
+            let e = s.entries + i;
+            if !e.deleted {
+                let stop: bool = false;
+                raw {
+                    typedef bool (*SetCb)(void*, ZjsValue);
+                    SetCb fp = (SetCb)callback_fp;
+                    stop = fp(state, e->value);
+                }
+                if stop { return true; }
+            }
+            i = i + 1;
+        }
+        return true;
+    }
+    // Generic set-like: read keys, iterate via the protocol.
+    let keys_atom = ctx_intern_atom(ctx, (char*)"keys", 4);
+    let keys_fn = property_get(ctx, other, zjs_cell_from_ptr((void*)keys_atom));
+    if ctx.pending_throw_active { return false; }
+    let nullp: ZjsValue* = NULL;
+    let iter: ZjsValue = zjs_undefined();
+    raw { iter = zjs_call_value_with_this(ctx, keys_fn, other, nullp, 0); }
+    if ctx.pending_throw_active { return false; }
+    if !value_is_js_object(iter) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"set-like.keys() did not return an object", 41);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return false;
+    }
+    while true {
+        let step = iter_step(ctx, iter);
+        if ctx.pending_throw_active { return false; }
+        if step.done { break; }
+        let stop: bool = false;
+        raw {
+            typedef bool (*SetCb)(void*, ZjsValue);
+            SetCb fp = (SetCb)callback_fp;
+            stop = fp(state, step.value);
+        }
+        if stop { return true; }
+    }
+    return true;
+}
+
+// `has` probe on a set-like: delegates to internal slot for real Sets
+// or calls .has(value) for generic set-likes.
+fn set_like_has(ctx: ZjsContext*, other: ZjsValue, v: ZjsValue) -> bool {
+    if zjs_is_set(other) != 0 {
+        let s = zjs_as_set(other);
+        return set_find_slot(s, v) >= 0;
+    }
+    let has_atom = ctx_intern_atom(ctx, (char*)"has", 3);
+    let has_fn = property_get(ctx, other, zjs_cell_from_ptr((void*)has_atom));
+    if ctx.pending_throw_active { return false; }
+    let nullp: ZjsValue* = NULL;
+    let arg_buf: ZjsValue[1]; arg_buf[0] = v;
+    let argp: ZjsValue* = NULL; raw { argp = &arg_buf[0]; }
+    let r: ZjsValue = zjs_undefined();
+    raw { r = zjs_call_value_with_this(ctx, has_fn, other, argp, 1); }
+    if ctx.pending_throw_active { return false; }
+    return zjs_to_bool_coerce(r) != 0;
+}
+
+// Build a fresh empty Set wrapper (registered for GC, returned by
+// reference for use as `out` in the helpers below).
+fn make_new_set(ctx: ZjsContext*) -> ZjsSet* {
+    let s = zjs_set_new();
+    ctx_register_cell(ctx, (void*)s);
+    return s;
+}
+
+// Callback states + free-fn callbacks for iterate_set_like (Zen-c
+// doesn't allow nested fn definitions, so these live at file scope).
+struct SetUnionState   { out: ZjsSet*; }
+struct SetSymDiffState { self_s: ZjsSet*; out: ZjsSet*; }
+struct SetSupOrDjState { self_s: ZjsSet*; flag: bool; }
+
+fn set_union_cb(state: void*, v: ZjsValue) -> bool {
+    let st: SetUnionState* = NULL; raw { st = (SetUnionState*)state; }
+    set_add_entry(st.out, v);
+    return false;
+}
+
+fn set_symdiff_other_cb(state: void*, v: ZjsValue) -> bool {
+    let st: SetSymDiffState* = NULL; raw { st = (SetSymDiffState*)state; }
+    if set_find_slot(st.self_s, v) < 0 { set_add_entry(st.out, v); }
+    return false;
+}
+
+fn set_superset_cb(state: void*, v: ZjsValue) -> bool {
+    let st: SetSupOrDjState* = NULL; raw { st = (SetSupOrDjState*)state; }
+    if set_find_slot(st.self_s, v) < 0 {
+        st.flag = false;
+        return true;
+    }
+    return false;
+}
+
+fn set_disjoint_cb(state: void*, v: ZjsValue) -> bool {
+    let st: SetSupOrDjState* = NULL; raw { st = (SetSupOrDjState*)state; }
+    if set_find_slot(st.self_s, v) >= 0 {
+        st.flag = false;
+        return true;
+    }
+    return false;
+}
+
+// Set.prototype.difference(other) — entries in `this` that aren't in
+// `other`. Walks `this`, probes other.has(value).
+fn host_set_difference(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let self_s = set_require_this(ctx);
+    if self_s == NULL { return zjs_undefined(); }
+    if argc == 0 || !value_is_js_object(args[0]) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Set.prototype.difference requires an object", 43);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let other = args[0];
+    let out = make_new_set(ctx);
+    let out_v = zjs_cell_from_ptr((void*)out);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    let i: u32 = 0;
+    while i < self_s.count {
+        let e = self_s.entries + i;
+        if !e.deleted {
+            let in_other = set_like_has(ctx, other, e.value);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if !in_other { set_add_entry(out, e.value); }
+        }
+        i = i + 1;
+    }
+    return out_v;
+}
+
+fn host_set_intersection(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let self_s = set_require_this(ctx);
+    if self_s == NULL { return zjs_undefined(); }
+    if argc == 0 || !value_is_js_object(args[0]) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Set.prototype.intersection requires an object", 45);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let other = args[0];
+    let out = make_new_set(ctx);
+    let out_v = zjs_cell_from_ptr((void*)out);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    let i: u32 = 0;
+    while i < self_s.count {
+        let e = self_s.entries + i;
+        if !e.deleted {
+            let in_other = set_like_has(ctx, other, e.value);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if in_other { set_add_entry(out, e.value); }
+        }
+        i = i + 1;
+    }
+    return out_v;
+}
+
+fn host_set_union(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let self_s = set_require_this(ctx);
+    if self_s == NULL { return zjs_undefined(); }
+    if argc == 0 || !value_is_js_object(args[0]) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Set.prototype.union requires an object", 38);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let other = args[0];
+    let out = make_new_set(ctx);
+    let out_v = zjs_cell_from_ptr((void*)out);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    let i: u32 = 0;
+    while i < self_s.count {
+        let e = self_s.entries + i;
+        if !e.deleted { set_add_entry(out, e.value); }
+        i = i + 1;
+    }
+    // Add each value from `other`. Captures `out` via state struct.
+    let us: SetUnionState; us.out = out;
+    let state: void* = NULL; raw { state = (void*)&us; }
+    let fp: void* = NULL; raw { fp = (void*)set_union_cb; }
+    if !iterate_set_like(ctx, other, fp, state) { return zjs_undefined(); }
+    return out_v;
+}
+
+fn host_set_symmetric_difference(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let self_s = set_require_this(ctx);
+    if self_s == NULL { return zjs_undefined(); }
+    if argc == 0 || !value_is_js_object(args[0]) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Set.prototype.symmetricDifference requires an object", 52);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let other = args[0];
+    let out = make_new_set(ctx);
+    let out_v = zjs_cell_from_ptr((void*)out);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    // Values from this NOT in other.
+    let i: u32 = 0;
+    while i < self_s.count {
+        let e = self_s.entries + i;
+        if !e.deleted {
+            let in_other = set_like_has(ctx, other, e.value);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if !in_other { set_add_entry(out, e.value); }
+        }
+        i = i + 1;
+    }
+    // Values from other NOT in this.
+    let sd: SetSymDiffState; sd.self_s = self_s; sd.out = out;
+    let sp: void* = NULL; raw { sp = (void*)&sd; }
+    let fp: void* = NULL; raw { fp = (void*)set_symdiff_other_cb; }
+    if !iterate_set_like(ctx, other, fp, sp) {
+        return zjs_undefined();
+    }
+    return out_v;
+}
+
+fn host_set_is_subset_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let self_s = set_require_this(ctx);
+    if self_s == NULL { return zjs_undefined(); }
+    if argc == 0 || !value_is_js_object(args[0]) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Set.prototype.isSubsetOf requires an object", 43);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let other = args[0];
+    let i: u32 = 0;
+    while i < self_s.count {
+        let e = self_s.entries + i;
+        if !e.deleted {
+            let in_other = set_like_has(ctx, other, e.value);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if !in_other { return zjs_bool(0); }
+        }
+        i = i + 1;
+    }
+    return zjs_bool(1);
+}
+
+fn host_set_is_superset_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let self_s = set_require_this(ctx);
+    if self_s == NULL { return zjs_undefined(); }
+    if argc == 0 || !value_is_js_object(args[0]) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Set.prototype.isSupersetOf requires an object", 45);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let other = args[0];
+    let ss: SetSupOrDjState; ss.self_s = self_s; ss.flag = true;
+    let sp: void* = NULL; raw { sp = (void*)&ss; }
+    let fp: void* = NULL; raw { fp = (void*)set_superset_cb; }
+    if !iterate_set_like(ctx, other, fp, sp) {
+        return zjs_undefined();
+    }
+    return zjs_bool(if ss.flag { 1 } else { 0 });
+}
+
+fn host_set_is_disjoint_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let self_s = set_require_this(ctx);
+    if self_s == NULL { return zjs_undefined(); }
+    if argc == 0 || !value_is_js_object(args[0]) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Set.prototype.isDisjointFrom requires an object", 47);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let other = args[0];
+    let ds: SetSupOrDjState; ds.self_s = self_s; ds.flag = true;
+    let sp: void* = NULL; raw { sp = (void*)&ds; }
+    let fp: void* = NULL; raw { fp = (void*)set_disjoint_cb; }
+    if !iterate_set_like(ctx, other, fp, sp) {
+        return zjs_undefined();
+    }
+    return zjs_bool(if ds.flag { 1 } else { 0 });
+}
+
+// =====================================================================
 // Date host functions (2026-05-16). Stores ms since UTC epoch as f64.
 // Year math goes through the C library (gmtime/timegm). Locale-aware
 // formatting is left for an Intl follow-up.
@@ -10202,6 +10622,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // @@iterator on Map.prototype === entries.
     object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
                ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", map_ents_ptr, 0));
+    // Static: Map.groupBy(items, callback). Returns a fresh Map keyed
+    // by callback output (SameValueZero), each value an array of items.
+    let map_groupby_ptr: void* = NULL; raw { map_groupby_ptr = (void*)host_map_group_by; }
+    object_set(ctx, resolve_define_receiver(ctx, map_ctor_v),
+               ctx_intern_atom(ctx, (char*)"groupBy", 7),
+               ctx_make_host_function_arity(ctx, (char*)"groupBy", map_groupby_ptr, 2));
 
     // Set (2026-05-16).
     let set_ctor_ptr:    void* = NULL; raw { set_ctor_ptr    = (void*)host_set_ctor; }
@@ -10237,6 +10663,28 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // @@iterator on Set.prototype === values (per spec).
     object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
                ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", set_vals_ptr, 0));
+    // ES2025 Set composition methods (set-methods proposal).
+    let set_diff_ptr:  void* = NULL; raw { set_diff_ptr  = (void*)host_set_difference; }
+    let set_inter_ptr: void* = NULL; raw { set_inter_ptr = (void*)host_set_intersection; }
+    let set_union_ptr: void* = NULL; raw { set_union_ptr = (void*)host_set_union; }
+    let set_sym_ptr:   void* = NULL; raw { set_sym_ptr   = (void*)host_set_symmetric_difference; }
+    let set_sub_ptr:   void* = NULL; raw { set_sub_ptr   = (void*)host_set_is_subset_of; }
+    let set_sup_ptr:   void* = NULL; raw { set_sup_ptr   = (void*)host_set_is_superset_of; }
+    let set_dj_ptr:    void* = NULL; raw { set_dj_ptr    = (void*)host_set_is_disjoint_from; }
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"difference", 10),
+               ctx_make_host_function_arity(ctx, (char*)"difference", set_diff_ptr, 1));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"intersection", 12),
+               ctx_make_host_function_arity(ctx, (char*)"intersection", set_inter_ptr, 1));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"union", 5),
+               ctx_make_host_function_arity(ctx, (char*)"union", set_union_ptr, 1));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"symmetricDifference", 19),
+               ctx_make_host_function_arity(ctx, (char*)"symmetricDifference", set_sym_ptr, 1));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"isSubsetOf", 10),
+               ctx_make_host_function_arity(ctx, (char*)"isSubsetOf", set_sub_ptr, 1));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"isSupersetOf", 12),
+               ctx_make_host_function_arity(ctx, (char*)"isSupersetOf", set_sup_ptr, 1));
+    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"isDisjointFrom", 14),
+               ctx_make_host_function_arity(ctx, (char*)"isDisjointFrom", set_dj_ptr, 1));
 
     ctx_register_host_function(ctx, (char*)"Proxy",      eval_ptr);
     ctx_register_host_function(ctx, (char*)"ArrayBuffer", eval_ptr);
@@ -10483,6 +10931,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"freeze", freeze_ptr));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"seal", 4),
                ctx_make_host_function(ctx, (char*)"seal", seal_ptr));
+    // ES2024 Object.groupBy(items, callbackfn).
+    let obj_groupby_ptr: void* = NULL; raw { obj_groupby_ptr = (void*)host_object_group_by; }
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"groupBy", 7),
+               ctx_make_host_function_arity(ctx, (char*)"groupBy", obj_groupby_ptr, 2));
 
     // --- Array.prototype intercept (Phase 3.5) ---
     let array_proto_v = ctx_new_object(ctx);
