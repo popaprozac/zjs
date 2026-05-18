@@ -1,10 +1,10 @@
 {
   "summary": {
-    "when": "2026-05-18 01:52 UTC",
-    "total": 14440,
-    "passed": 6509,
-    "failed": 1409,
-    "skipped": 6522
+    "when": "2026-05-18 03:15 UTC",
+    "total": 14524,
+    "passed": 6560,
+    "failed": 1437,
+    "skipped": 6527
   },
   "failures": [
     {
@@ -122,6 +122,118 @@
     {
       "path": "test/language/expressions/in/rhs-yield-absent-strict.js",
       "reason": "expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/tagged-template/cache-different-functions-same-site.js",
+      "reason": "[sloppy] zjs: throw: (unknown): The realm's template cache is for source code locations in a function Expected SameValue(\u00abhead,ta"
+    },
+    {
+      "path": "test/language/expressions/tagged-template/cache-realm.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'global')"
+    },
+    {
+      "path": "test/language/expressions/tagged-template/cache-same-site.js",
+      "reason": "[sloppy] zjs: throw: (unknown): The realm's template cache is for source code locations in a function Expected SameValue(\u00abhead,ta"
+    },
+    {
+      "path": "test/language/expressions/tagged-template/call-expression-context-strict.js",
+      "reason": "zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/tagged-template/constructor-invocation.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/language/expressions/tagged-template/invalid-escape-sequences.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Cooked template value should be undefined for illegal escape sequences Expected SameValue(\u00ab\"\\u000"
+    },
+    {
+      "path": "test/language/expressions/tagged-template/member-expression-context.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object Object]\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/tagged-template/template-object-frozen-non-strict.js",
+      "reason": "zjs: throw: (unknown): The template object is frozen Expected SameValue(\u00abtrue\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/tagged-template/template-object-frozen-strict.js",
+      "reason": "zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/tagged-template/template-object-template-map.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-hexidecimal-character-escape-sequence-truncated-1.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-hexidecimal-character-escape-sequence-truncated-2.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-hexidecimal-character-escape-sequence-truncated-3.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-legacy-octal-escape-sequence-8.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-legacy-octal-escape-sequence-9.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-legacy-octal-escape-sequence.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-unicode-escape-sequence-1.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-unicode-escape-sequence-2.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-unicode-escape-sequence-3.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-unicode-escape-sequence-4.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-unicode-escape-sequence-5.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-unicode-escape-sequence-6.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-unicode-escape-sequence-7.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/invalid-unicode-escape-sequence-8.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/tv-line-continuation.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Line Separator Expected SameValue(\u00ab\"\u2028\"\u00bb, \u00ab\"\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/template-literal/tv-null-character-escape-sequence.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/template-literal/unicode-escape-nls-err.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/template-literal/unicode-escape-no-hex-err.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/if/let-block-with-newline.js",
@@ -3894,132 +4006,21 @@
     {
       "path": "test/built-ins/Set/prototype/difference/builtins.js",
       "reason": "[sloppy] zjs: throw: (unknown): Built-in objects must be extensible. Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/called-with-object.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/combines-Map.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/combines-empty-sets.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/combines-itself.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/combines-same-sets.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/combines-sets.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/converts-negative-zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/require-internal-slot.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/result-order.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/set-like-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/set-like-class-mutation.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/set-like-class-order.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/size-is-a-number.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: n is not defined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/subclass-receiver-methods.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/subclass-symbol-species.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/subclass.js",
-      "reason": "[sloppy] zjs: throw: TypeError: for-of on null or undefined"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-boolean.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-string.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/iterates-in-insertion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/iterates-in-iterable-entry-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/iterates-values-added-after-foreach-begins.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/iterates-values-deleted-then-readded.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/iterates-values-not-deleted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
     }
   ],
   "skip_counts": {
     "feature:BigInt": 111,
-    "feature:tail-call-optimization": 18,
+    "feature:tail-call-optimization": 20,
     "feature:Proxy": 34,
     "feature:class-fields-private": 615,
     "feature:class-static-methods-private": 1273,
     "feature:class-methods-private": 1431,
+    "include:propertyHelper.js": 784,
+    "feature:u180e": 2,
     "feature:async-iteration": 1171,
     "feature:object-rest": 192,
     "feature:optional-chaining": 8,
     "feature:destructuring-assignment": 2,
-    "include:propertyHelper.js": 783,
     "feature:TypedArray": 48,
     "include:asyncHelpers.js": 25,
     "flag:module": 15,
