@@ -48,7 +48,7 @@ raw {
         "IterPrepare", "ArrayLength",
         "DeleteElem", "BuildArguments", "BuildRestArgs",
         "ImportBind", "ExportBind",
-        "Await", "Yield", "GeneratorStart",
+        "Await", "Yield", "GeneratorStart", "TemplateObject",
         "ArrayPush", "ArraySpread", "ObjectSpread",
         "ArrayRestFrom", "AssertCoercible",
         "IterGet", "IterStep", "IterRestCollect", "IterClose",
@@ -914,6 +914,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         // so `[].foo = 1` is visible to property_get, Object.keys-like
         // walks, and Object.create's descriptor walk.
         if zjs_is_string(key) != 0 {
+            if arr.frozen { return; }
             if arr.props == NULL {
                 let pv = ctx_new_object(ctx);
                 arr.props = zjs_as_object(pv);
@@ -1951,6 +1952,62 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             exit_reason = 1;
             break;
+        } else if op == Op::TemplateObject {
+            // Tagged-template strings array — cached per call site
+            // (ECMA-262 §13.2.8.4 GetTemplateObject). On first reach,
+            // build the cooked-strings array from f.template_cooked,
+            // build the parallel raw array, attach raw via .raw, and
+            // cache. Subsequent reaches return the cached cell.
+            let site = inst_bc_u16(inst);
+            if site >= f.template_count {
+                // Compiler bug — emitted with a stale index. Surface
+                // as a TypeError rather than corrupting the heap.
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"invalid template-object index", 30);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
+            let cached: ZjsObject* = f.template_cache[site];
+            if cached != NULL {
+                regs[inst.a] = zjs_cell_from_ptr((void*)cached);
+            } else {
+                let s_off = f.template_seg_start[site];
+                let s_end = f.template_seg_start[site + 1];
+                let s_n   = s_end - s_off;
+                // Build cooked + raw strings arrays.
+                let cooked_v = ctx_new_array(ctx, s_n);
+                let cooked = zjs_as_array(cooked_v);
+                let raw_v  = ctx_new_array(ctx, s_n);
+                let raw_arr = zjs_as_array(raw_v);
+                let k: u32 = 0;
+                while k < s_n {
+                    let ck: ZjsString* = f.template_cooked[s_off + k];
+                    if ck == NULL {
+                        // Invalid escape — spec says cooked[k] is undefined.
+                        cooked.elements[k] = zjs_undefined();
+                    } else {
+                        cooked.elements[k] = zjs_cell_from_ptr((void*)ck);
+                    }
+                    raw_arr.elements[k] = zjs_cell_from_ptr((void*)f.template_raw[s_off + k]);
+                    k = k + 1;
+                }
+                cooked.length = s_n;
+                raw_arr.length = s_n;
+                // cooked.raw = raw — landed in the lazy expando bag.
+                if cooked.props == NULL {
+                    let pv = ctx_new_object(ctx);
+                    cooked.props = zjs_as_object(pv);
+                }
+                object_set(ctx, cooked.props,
+                           ctx_intern_atom(ctx, (char*)"raw", 3), raw_v);
+                // Mark both arrays as immutable so user-tag mutations
+                // don't poison the cached state on subsequent reaches.
+                cooked.frozen = true;
+                raw_arr.frozen = true;
+                if cooked.props != NULL { cooked.props.frozen = true; }
+                f.template_cache[site] = cooked;
+                regs[inst.a] = cooked_v;
+            }
         } else if op == Op::Yield {
             // `yield expr` inside a generator body. Build the
             // iterator-result object, snapshot the frame state onto
@@ -3351,14 +3408,20 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let i = zjs_as_int32(key_val);
                 if i >= 0 {
                     let arr = zjs_as_array(obj_val);
-                    let u = (u32)i;
-                    if u < arr.length {
-                        arr.elements[u] = value;
+                    if arr.frozen {
+                        // Frozen array — sloppy-mode silent no-op (would
+                        // throw TypeError in strict-mode source).
                         took_fast = true;
-                    } else if u < arr.cap {
-                        arr.elements[u] = value;
-                        arr.length = u + 1;
-                        took_fast = true;
+                    } else {
+                        let u = (u32)i;
+                        if u < arr.length {
+                            arr.elements[u] = value;
+                            took_fast = true;
+                        } else if u < arr.cap {
+                            arr.elements[u] = value;
+                            arr.length = u + 1;
+                            took_fast = true;
+                        }
                     }
                 }
             }

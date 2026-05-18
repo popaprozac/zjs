@@ -680,6 +680,10 @@ struct ZjsObject {
     // Property lookups that miss the own-property table walk obj.proto
     // recursively. Set by `new`, Object.create, or Object.setPrototypeOf.
     proto:    ZjsObject*;
+    // Object.freeze / template-object mutability gate. When set,
+    // property writes silently no-op in sloppy mode (would throw
+    // TypeError in strict — not yet wired through the assignment ops).
+    frozen:   bool;
 }
 
 // Property attribute bits — fit in one byte per slot. Default for
@@ -700,6 +704,10 @@ struct ZjsArray {
     // / Object.create's property descriptors find named keys alongside
     // the integer-indexed entries. NULL until the first non-index store.
     props:    ZjsObject*;
+    // Object.freeze / template-object mutability gate. When set, any
+    // property assignment / indexed write is silently dropped in
+    // sloppy mode (would throw TypeError in strict — not yet wired).
+    frozen:   bool;
 }
 
 // Host (C) function exposed to JavaScript code. The fn_ptr is opaque
@@ -1493,6 +1501,9 @@ fn array_has_index(arr: ZjsArray*, idx: u32) -> int {
 }
 
 fn array_set(arr: ZjsArray*, idx: u32, value: ZjsValue) -> void {
+    // Object.freeze'd arrays are immutable. Silently no-op in sloppy
+    // mode (spec throws TypeError in strict — not wired yet).
+    if arr.frozen { return; }
     // Reject growths into unreasonable territory (spec says push at
     // length=2^32-1 throws RangeError; we silently drop). The 64 Mi
     // ceiling is chosen so the dense backing never demands a

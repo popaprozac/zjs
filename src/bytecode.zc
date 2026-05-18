@@ -195,6 +195,13 @@ enum Op {
     // snapshots state and unwinds — caller receives the generator
     // iterator. First .next() resumes at the instruction after this.
     GeneratorStart,   // no operands
+    // Tagged-template strings array (ECMA-262 GetTemplateObject). Looks
+    // up the cached array for site bc; on a miss builds it from
+    // f.template_cooked / template_raw, attaches .raw, freezes, and
+    // caches in f.template_cache. Subsequent reaches return the same
+    // cell — required by tests that rely on tag identity / per-site
+    // tagged-template caching.
+    TemplateObject,   // a=dst, bc=site_idx (u16)
 
     // Spread support (2026-05-15).
     // Append the value in regs[b] to the array in regs[a]. Used by
@@ -538,6 +545,27 @@ struct Function {
     // a generator iterator (TAG_GENERATOR) without running the body —
     // iter.next() drives execution and Op::Yield suspends back to it.
     is_generator: bool;
+
+    // Tagged-template site cache (ECMA-262 §13.2.8.4 GetTemplateObject).
+    // Each tagged-template call site in this function gets a stable
+    // index; the strings array built on first reach is cached so every
+    // subsequent reach passes the SAME array. Without this, code that
+    // uses tag identity (Map keyed by strings, etc.) breaks.
+    //
+    //  - template_count        = number of distinct tagged-template
+    //                            sites in this function's bytecode.
+    //  - template_cooked / raw = ZjsString*[total_segments] flat arrays.
+    //  - template_seg_start    = u32[template_count + 1] — start
+    //                            offset of each site's segments
+    //                            (so site i has segments [start[i], start[i+1])).
+    //  - template_cache        = ZjsArray*[template_count] —
+    //                            cached strings array per site, NULL
+    //                            until first reach.
+    template_count:      u32;
+    template_cooked:     ZjsString**;
+    template_raw:        ZjsString**;
+    template_seg_start:  u32*;
+    template_cache:      ZjsArray**;
 }
 
 fn function_new() -> Function* {
@@ -557,6 +585,10 @@ fn function_free(f: Function*) -> void {
     dealloc(f.constants);
     dealloc(f.ics);
     if f.ic_proto_cls != NULL { dealloc(f.ic_proto_cls); }
+    if f.template_cooked    != NULL { dealloc(f.template_cooked); }
+    if f.template_raw       != NULL { dealloc(f.template_raw); }
+    if f.template_seg_start != NULL { dealloc(f.template_seg_start); }
+    if f.template_cache     != NULL { dealloc(f.template_cache); }
     dealloc(f);
 }
 

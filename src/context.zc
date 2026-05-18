@@ -957,6 +957,20 @@ fn gc_mark_value(v: ZjsValue) -> void {
             gc_mark_value(zjs_cell_from_ptr((void*)f.props));
         }
         gc_mark_value(f.parent_ctor);
+        // Tagged-template strings array cache — each entry is a
+        // ZjsArray (allocated lazily on first reach of the site).
+        if f.template_cache != NULL {
+            let ti: u32 = 0;
+            while ti < f.template_count {
+                let cached: ZjsArray* = f.template_cache[ti];
+                if cached != NULL {
+                    gc_mark_value(zjs_cell_from_ptr((void*)cached));
+                }
+                ti = ti + 1;
+            }
+        }
+        // template_cooked / template_raw strings are atoms — already
+        // pinned via the atom-table root, no per-cell mark needed.
         return;
     }
 }
@@ -1410,6 +1424,7 @@ fn ctx_new_object(ctx: ZjsContext*) -> ZjsValue {
 // behavior of `o.x = 1` going through OrdinarySet which creates a
 // data property with full attributes.
 fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsValue) -> void {
+    if obj.frozen { return; }
     let existing = class_find_slot(obj.cls, name);
     if existing >= 0 {
         // Existing slot — check writable.
@@ -8736,11 +8751,13 @@ fn host_object_is_frozen(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     let _u = ctx;
     if argc == 0 { return zjs_bool(1); }
     let v = args[0];
-    if zjs_is_object(v) != 0 || zjs_is_array(v) != 0
-       || zjs_is_function(v) != 0 || zjs_is_closure(v) != 0
-       || zjs_is_host_function(v) != 0 {
+    if zjs_is_object(v) != 0       { return zjs_bool(if zjs_as_object(v).frozen { 1 } else { 0 }); }
+    if zjs_is_array(v) != 0        { return zjs_bool(if zjs_as_array(v).frozen  { 1 } else { 0 }); }
+    if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 || zjs_is_host_function(v) != 0 {
+        // Function objects aren't trackable yet; assume not frozen.
         return zjs_bool(0);
     }
+    // Primitives are spec-frozen (no own properties to mutate).
     return zjs_bool(1);
 }
 
@@ -8748,8 +8765,10 @@ fn host_object_is_sealed(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     return host_object_is_frozen(ctx, args, argc);
 }
 
-// Object.preventExtensions / freeze / seal — no-op stubs that return
-// the argument unchanged (we don't enforce extensibility yet).
+// Object.preventExtensions / freeze / seal. Toggles the frozen flag
+// on the input (objects + arrays). Strict-mode TypeError on writes
+// against frozen targets isn't yet wired through the assignment
+// machinery — sloppy mode silently drops writes.
 fn host_object_prevent_extensions(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let _u = ctx;
     if argc == 0 { return zjs_undefined(); }
@@ -8757,11 +8776,20 @@ fn host_object_prevent_extensions(ctx: ZjsContext*, args: ZjsValue*, argc: u32) 
 }
 
 fn host_object_freeze(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    return host_object_prevent_extensions(ctx, args, argc);
+    let _u = ctx;
+    if argc == 0 { return zjs_undefined(); }
+    let v = args[0];
+    if zjs_is_object(v) != 0 { zjs_as_object(v).frozen = true; }
+    else if zjs_is_array(v) != 0 {
+        let a = zjs_as_array(v);
+        a.frozen = true;
+        if a.props != NULL { a.props.frozen = true; }
+    }
+    return v;
 }
 
 fn host_object_seal(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    return host_object_prevent_extensions(ctx, args, argc);
+    return host_object_freeze(ctx, args, argc);
 }
 
 // Object.prototype.valueOf() — returns the boxed receiver per spec.

@@ -144,6 +144,21 @@ struct Compiler {
     // arbitrary LHSExpressions (Member, Computed) work.
     in_dstr_assign: bool;
 
+    // Tagged-template sites (ECMA-262 §13.2.8.4 GetTemplateObject).
+    // Collected during compile; flushed into the Function struct at
+    // function-end so each site can lazy-cache its strings array.
+    // Flat layout: cooked[0..tmpl_seg_count) holds the cooked strings
+    // for every site concatenated; raw[] is parallel. seg_start[i]
+    // tells where site i's segments begin; site i has segments
+    // [seg_start[i], seg_start[i+1]).
+    tmpl_cooked:        ZjsString**;
+    tmpl_raw:           ZjsString**;
+    tmpl_seg_count:     u32;
+    tmpl_seg_cap:       u32;
+    tmpl_seg_start:     u32*;
+    tmpl_site_count:    u32;
+    tmpl_site_cap:      u32;
+
     // Phase 3.8a — loop context stack for break / continue.
     // Pushed on entry to a loop, popped on exit. `continue_target` is
     // the bytecode offset to jump to on `continue` (loop test for
@@ -1873,30 +1888,180 @@ fn compile_template_part(c: Compiler*, node: AstNode*) -> u8 {
     return dst;
 }
 
-// Build the cooked / raw segment arrays at compile time and emit
-// `tag(strings, ...subs)`. Each tagged-template AST node carries a
-// TemplateExpr child (the literal) whose children alternate
-// TemplatePartExpr (literal segment) and expression. For the strings
-// array, the part's cooked form goes through decode_string_body
-// (same as a regular string literal); the raw form is the bytes
-// between backticks unchanged.
+// Compile-time helpers for tagged-template caching.
+
+// Tagged-template cooked decode. Returns NULL if the segment carries
+// an invalid escape (`\u00g`, `\u{g`, `\u{10FFFFF}`, truncated `\x`,
+// etc.) — per ECMA-262 §12.8.6.1, that index in the cooked array is
+// `undefined` and only raw[i] sees the source text. For untagged
+// templates the same form is a SyntaxError; the compiler only routes
+// here for tagged-template construction.
+fn tmpl_intern_cooked(c: Compiler*, node: AstNode*) -> ZjsString* {
+    let raw_start = node.start;
+    let raw_end   = node.end;
+    let raw_len   = if raw_end > raw_start { raw_end - raw_start } else { 0 };
+    if !template_escapes_are_valid(c.source, raw_start, raw_len) { return NULL; }
+    let buf = alloc_n<char>((usize)(raw_len + 1));
+    let out = decode_string_body(c.source, raw_start, raw_len, buf);
+    buf[out] = (char)0;
+    return ctx_intern_atom_take(c.ctx, buf, out);
+}
+
+// Scan a template segment's source bytes for an invalid escape. Mirrors
+// the well-formed-escape paths in decode_string_body — if any `\x` /
+// `\uXXXX` / `\u{...}` form fails to parse cleanly OR a `\u{...}`
+// codepoint exceeds U+10FFFF, returns false.
+fn template_escapes_are_valid(src: char*, start: u32, len: u32) -> bool {
+    let i: u32 = 0;
+    while i < len {
+        let ch = (u8)src[start + i];
+        if ch != (u8)'\\' { i = i + 1; continue; }
+        if i + 1 >= len { return false; }
+        let nx = (u8)src[start + i + 1];
+        if nx == (u8)'x' {
+            // Need exactly two hex digits.
+            if i + 3 >= len { return false; }
+            let c1 = (u8)src[start + i + 2];
+            let c2 = (u8)src[start + i + 3];
+            if !is_hex_digit_byte(c1) || !is_hex_digit_byte(c2) { return false; }
+            i = i + 4;
+            continue;
+        }
+        // Octal / decimal numeric escapes — \1..\9, plus \0 followed
+        // by another digit. Spec: templates forbid these even though
+        // string literals (in non-strict) allow \0 → NUL. Allow plain
+        // `\0` (next char is not a digit).
+        if nx >= (u8)'1' && nx <= (u8)'9' { return false; }
+        if nx == (u8)'0' && i + 2 < len {
+            let look = (u8)src[start + i + 2];
+            if look >= (u8)'0' && look <= (u8)'9' { return false; }
+        }
+        if nx == (u8)'u' {
+            if i + 2 >= len { return false; }
+            let after = (u8)src[start + i + 2];
+            if after == (u8)'{' {
+                // `\u{ HexDigits }` — at least one digit, terminated.
+                let p: u32 = i + 3;
+                let cp: u32 = 0;
+                let saw_digit: bool = false;
+                while p < len {
+                    let cc = (u8)src[start + p];
+                    if cc == (u8)'}' { break; }
+                    if !is_hex_digit_byte(cc) { return false; }
+                    let d: u32 = hex_digit_value(cc);
+                    cp = cp * 16 + d;
+                    if cp > 1114111 { return false; }   // > U+10FFFF
+                    saw_digit = true;
+                    p = p + 1;
+                }
+                if p >= len || (u8)src[start + p] != (u8)'}' { return false; }
+                if !saw_digit { return false; }
+                i = p + 1;
+                continue;
+            }
+            // `\uXXXX` — exactly four hex digits.
+            if i + 5 >= len { return false; }
+            let c1 = (u8)src[start + i + 2];
+            let c2 = (u8)src[start + i + 3];
+            let c3 = (u8)src[start + i + 4];
+            let c4 = (u8)src[start + i + 5];
+            if !is_hex_digit_byte(c1) || !is_hex_digit_byte(c2)
+               || !is_hex_digit_byte(c3) || !is_hex_digit_byte(c4) { return false; }
+            i = i + 6;
+            continue;
+        }
+        // Other backslash sequences are always legal (single-char escapes,
+        // line continuations, octal `\0`, identity escapes).
+        i = i + 2;
+    }
+    return true;
+}
+
+fn is_hex_digit_byte(c: u8) -> bool {
+    if c >= (u8)'0' && c <= (u8)'9' { return true; }
+    if c >= (u8)'a' && c <= (u8)'f' { return true; }
+    if c >= (u8)'A' && c <= (u8)'F' { return true; }
+    return false;
+}
+
+fn hex_digit_value(c: u8) -> u32 {
+    if c >= (u8)'0' && c <= (u8)'9' { return (u32)(c - (u8)'0'); }
+    if c >= (u8)'a' && c <= (u8)'f' { return (u32)(c - (u8)'a') + 10; }
+    if c >= (u8)'A' && c <= (u8)'F' { return (u32)(c - (u8)'A') + 10; }
+    return 0;
+}
+
+fn tmpl_intern_raw(c: Compiler*, node: AstNode*) -> ZjsString* {
+    let raw_start = node.start;
+    let raw_end   = node.end;
+    let raw_len   = if raw_end > raw_start { raw_end - raw_start } else { 0 };
+    return ctx_intern_atom(c.ctx, c.source + raw_start, raw_len);
+}
+
+fn tmpl_grow_segments(c: Compiler*, need: u32) -> void {
+    if c.tmpl_seg_count + need <= c.tmpl_seg_cap { return; }
+    let old_cap = c.tmpl_seg_cap;
+    let new_cap: u32 = if c.tmpl_seg_cap == 0 { 8 } else { c.tmpl_seg_cap * 2 };
+    while new_cap < c.tmpl_seg_count + need { new_cap = new_cap * 2; }
+    c.tmpl_cooked = realloc_n<ZjsString*>(c.tmpl_cooked, (usize)old_cap, (usize)new_cap);
+    c.tmpl_raw    = realloc_n<ZjsString*>(c.tmpl_raw,    (usize)old_cap, (usize)new_cap);
+    c.tmpl_seg_cap = new_cap;
+}
+
+fn tmpl_grow_sites(c: Compiler*, need: u32) -> void {
+    if c.tmpl_site_count + need <= c.tmpl_site_cap { return; }
+    let old_cap = c.tmpl_site_cap;
+    let new_cap: u32 = if c.tmpl_site_cap == 0 { 4 } else { c.tmpl_site_cap * 2 };
+    while new_cap < c.tmpl_site_count + need { new_cap = new_cap * 2; }
+    // +1 for the trailing terminator entry written at function-end.
+    c.tmpl_seg_start = realloc_n<u32>(c.tmpl_seg_start, (usize)(old_cap + 1), (usize)(new_cap + 1));
+    c.tmpl_site_cap = new_cap;
+}
+
+// Register a tagged-template site at compile time. Returns the site
+// index; the caller emits Op::TemplateObject with bc = idx. At function
+// finalization the compiler hands its flat segment arrays to the
+// resulting Function* so the interpreter can lazy-build + cache the
+// strings array on first reach.
+fn tmpl_register_site(c: Compiler*, tmpl: AstNode*) -> u32 {
+    tmpl_grow_sites(c, 1);
+    let idx = c.tmpl_site_count;
+    c.tmpl_seg_start[idx] = c.tmpl_seg_count;
+    let i: u32 = 0;
+    while i < tmpl.children_count {
+        let ch = tmpl.children[i];
+        if ch.kind == NodeKind::TemplatePartExpr {
+            tmpl_grow_segments(c, 1);
+            c.tmpl_cooked[c.tmpl_seg_count] = tmpl_intern_cooked(c, ch);
+            c.tmpl_raw[c.tmpl_seg_count]    = tmpl_intern_raw(c, ch);
+            c.tmpl_seg_count = c.tmpl_seg_count + 1;
+        }
+        i = i + 1;
+    }
+    c.tmpl_site_count = c.tmpl_site_count + 1;
+    return idx;
+}
+
+// `tag`literal``  →  Op::TemplateObject + per-sub compile + Invoke.
+// The strings array is built lazily by Op::TemplateObject and cached
+// per call site, so subsequent reaches pass the SAME array (spec
+// §13.2.8.4 GetTemplateObject) — required by tests that key Maps /
+// WeakMaps on strings identity.
 fn compile_tagged_template(c: Compiler*, node: AstNode*) -> u8 {
     let tmpl = node.right;     // TemplateExpr
     if tmpl == NULL || tmpl.children_count == 0 { c.had_error = true; return alloc_reg(c); }
 
-    // Count literal parts and substitution expressions.
-    let total = tmpl.children_count;
-    let n_parts: u32 = 0;
-    let n_subs:  u32 = 0;
+    let n_subs: u32 = 0;
     let i0: u32 = 0;
-    while i0 < total {
-        if tmpl.children[i0].kind == NodeKind::TemplatePartExpr {
-            n_parts = n_parts + 1;
-        } else {
-            n_subs = n_subs + 1;
-        }
+    while i0 < tmpl.children_count {
+        if tmpl.children[i0].kind != NodeKind::TemplatePartExpr { n_subs = n_subs + 1; }
         i0 = i0 + 1;
     }
+
+    // Register at compile time so the Function gets the cooked/raw
+    // segment arrays it'll need on first runtime reach.
+    let site_idx = tmpl_register_site(c, tmpl);
+    if site_idx > 65535 { c.had_error = true; return alloc_reg(c); }
 
     // Reserve regs for: callee, strings, sub1..subN.
     let base = c.next_reg;
@@ -1913,44 +2078,14 @@ fn compile_tagged_template(c: Compiler*, node: AstNode*) -> u8 {
         if tag_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
     }
 
-    // Build the cooked-strings array into a temp reg, then the raw
-    // array, then attach raw as .raw. Both arrays use NewArray + a
-    // sequence of ArrayPush emits (one per part).
+    // Strings array at base+1 via the cached-or-build TemplateObject op.
     let strings_r = base + 1;
-    emit(c, make_inst_abc(Op::NewArray, strings_r, 0, 0));
-    let raw_r = alloc_reg(c);
-    emit(c, make_inst_abc(Op::NewArray, raw_r, 0, 0));
+    emit(c, make_inst_a_u16(Op::TemplateObject, strings_r, (u16)site_idx));
 
-    let pi: u32 = 0;
-    while pi < total {
-        let ch = tmpl.children[pi];
-        if ch.kind == NodeKind::TemplatePartExpr {
-            // Cooked: decode escapes through compile_template_part's path.
-            let cooked_r = compile_template_part(c, ch);
-            emit(c, make_inst_ab(Op::ArrayPush, strings_r, cooked_r));
-            if cooked_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
-            // Raw: bytes as-is. emit_load_name_string interns the slice
-            // and loads it without escape decoding.
-            let raw_str_r = emit_load_name_string(c, c.source + ch.start, ch.end - ch.start);
-            emit(c, make_inst_ab(Op::ArrayPush, raw_r, raw_str_r));
-            if raw_str_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
-        }
-        pi = pi + 1;
-    }
-
-    // strings.raw = raw_r.
-    let raw_key = ctx_intern_atom(c.ctx, (char*)"raw", 3);
-    let raw_ic = alloc_ic_slot(c, raw_key);
-    if raw_ic <= 255 {
-        emit(c, make_inst_abc(Op::StoreProp, strings_r, (u8)raw_ic, raw_r));
-    }
-    if raw_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
-
-    // Compile each substitution into its arg slot. Slots layout is
-    // [base=callee, base+1=strings, base+2..base+1+n_subs=subs].
+    // Compile each substitution into its arg slot.
     let si: u32 = 0;
     let arg_idx: u32 = 0;
-    while si < total {
+    while si < tmpl.children_count {
         let ch = tmpl.children[si];
         if ch.kind != NodeKind::TemplatePartExpr {
             let target_slot = base + 2 + (u8)arg_idx;
@@ -2303,6 +2438,24 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     f.expected_arg_count = eac;
     f.ics = c.ics;
     f.ic_count = c.ic_count;
+    // Tagged-template site cache — flush the per-compiler flat arrays
+    // onto the Function so each site can lazy-build + cache its
+    // strings array on first reach. Write the terminator entry so
+    // site i's segments are [seg_start[i], seg_start[i+1]).
+    if c.tmpl_site_count > 0 {
+        c.tmpl_seg_start[c.tmpl_site_count] = c.tmpl_seg_count;
+        f.template_count     = c.tmpl_site_count;
+        f.template_cooked    = c.tmpl_cooked;
+        f.template_raw       = c.tmpl_raw;
+        f.template_seg_start = c.tmpl_seg_start;
+        f.template_cache     = alloc_n<ZjsArray*>((usize)c.tmpl_site_count);
+        let ti: u32 = 0;
+        while ti < c.tmpl_site_count { f.template_cache[ti] = NULL; ti = ti + 1; }
+        // Buffers handed off — don't double-free in compiler_free.
+        c.tmpl_cooked    = NULL;
+        c.tmpl_raw       = NULL;
+        c.tmpl_seg_start = NULL;
+    }
     f.uses_arguments = c.arguments_reg >= 0;
     f.has_rest_param = has_rest;
     // For ordinary functions / arrow funcs the parser stashes the
@@ -5363,6 +5516,19 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     f.param_count = 0;
     f.ics = c.ics;
     f.ic_count = c.ic_count;
+    if c.tmpl_site_count > 0 {
+        c.tmpl_seg_start[c.tmpl_site_count] = c.tmpl_seg_count;
+        f.template_count     = c.tmpl_site_count;
+        f.template_cooked    = c.tmpl_cooked;
+        f.template_raw       = c.tmpl_raw;
+        f.template_seg_start = c.tmpl_seg_start;
+        f.template_cache     = alloc_n<ZjsArray*>((usize)c.tmpl_site_count);
+        let ti: u32 = 0;
+        while ti < c.tmpl_site_count { f.template_cache[ti] = NULL; ti = ti + 1; }
+        c.tmpl_cooked    = NULL;
+        c.tmpl_raw       = NULL;
+        c.tmpl_seg_start = NULL;
+    }
 
     // Steal the buffers from the compiler so its destructor doesn't free them.
     c.code = NULL;
