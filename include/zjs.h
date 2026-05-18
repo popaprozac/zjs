@@ -98,6 +98,21 @@ ZjsValue    zjs_get_error(ZjsContext* ctx);
 void         zjs_gc(ZjsContext* ctx);
 unsigned int zjs_cell_count(ZjsContext* ctx);
 
+/* GC instrumentation — cumulative since context creation. Lets
+ * embedders + benchmark harnesses see how often GC runs and how
+ * long it pauses. Useful as a baseline before swapping in a
+ * different collector.
+ *
+ *   collections      total number of GC runs
+ *   pause_ns_total   sum of all pauses, in nanoseconds
+ *   pause_ns_max     worst single pause, in nanoseconds
+ *   cells_freed      total cells reclaimed across all runs
+ */
+unsigned int zjs_gc_collections(ZjsContext* ctx);
+uint64_t     zjs_gc_pause_ns_total(ZjsContext* ctx);
+uint64_t     zjs_gc_pause_ns_max(ZjsContext* ctx);
+unsigned int zjs_gc_cells_freed(ZjsContext* ctx);
+
 /* -----------------------------------------------------------------------
  * Heap value constructors.
  *

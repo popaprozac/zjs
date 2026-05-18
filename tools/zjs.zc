@@ -431,7 +431,7 @@ fn report_uncaught_error(ctx: ZjsContext*) -> void {
     raw { fputs("zjs: throw\n", stderr); }
 }
 
-fn run_file(path: char*) -> int {
+fn run_file(path: char*, gc_stats: bool) -> int {
     let len: usize = 0;
     let buf = slurp_file(path, true, &len);
     if buf == NULL { eprintln "zjs: cannot open file"; return 2; }
@@ -444,17 +444,38 @@ fn run_file(path: char*) -> int {
     // Auto-detect: AOT-compiled bytecode files start with the ZJSb
     // magic; everything else is treated as source. Lets `zjs run x.js`
     // and `zjs run x.zbc` share the same subcommand.
+    let rc: int = 0;
     if buf_is_bytecode(buf, len) {
         let f = aot_deserialize_program(ctx, (u8*)buf, len);
         if f == NULL { eprintln "zjs: invalid bytecode file"; return 1; }
         let _ = zjs_run_function(ctx, f);
-        if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); return 1; }
-        return 0;
+        if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); rc = 1; }
+    } else {
+        let _ = zjs_eval(ctx, buf);
+        if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); rc = 1; }
     }
 
-    let _ = zjs_eval(ctx, buf);
-    if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); return 1; }
-    return 0;
+    if gc_stats {
+        // One-shot dump after the script body + microtask drain. All
+        // counters are cumulative across the run; live=cell_count is a
+        // snapshot at this moment.
+        let n   = zjs_gc_collections(ctx);
+        let tot = zjs_gc_pause_ns_total(ctx);
+        let mx  = zjs_gc_pause_ns_max(ctx);
+        let fr  = zjs_gc_cells_freed(ctx);
+        let live = zjs_cell_count(ctx);
+        raw {
+            fprintf(stderr,
+                "[gc] runs=%u  pause_total=%.2fms  pause_max=%.2fms"
+                "  freed=%u  live=%u\n",
+                (unsigned)n,
+                (double)tot / 1e6,
+                (double)mx  / 1e6,
+                (unsigned)fr,
+                (unsigned)live);
+        }
+    }
+    return rc;
 }
 
 // `zjs compile <in.js> -o <out.zbc>` — parse + compile source to a
@@ -637,7 +658,22 @@ fn main(argc: int, argv: char**) -> int {
 
     if libc_str::strcmp(argv[1], "run") == 0 {
         if argc < 3 { return print_usage(); }
-        return run_file(argv[2]);
+        // Accept `--gc-stats` either before or after the path so
+        // `zjs run --gc-stats foo.js` and `zjs run foo.js --gc-stats`
+        // both work.
+        let path: char* = NULL;
+        let gc_stats: bool = false;
+        let i: i32 = 2;
+        while i < argc {
+            if libc_str::strcmp(argv[i], "--gc-stats") == 0 {
+                gc_stats = true;
+            } else if path == NULL {
+                path = argv[i];
+            }
+            i = i + 1;
+        }
+        if path == NULL { return print_usage(); }
+        return run_file(path, gc_stats);
     }
     if libc_str::strcmp(argv[1], "module") == 0 {
         if argc < 3 { return print_usage(); }
