@@ -8226,6 +8226,165 @@ fn object_define_accessor(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*,
 }
 
 // =====================================================================
+// =====================================================================
+// Web-API Phase C (2026-05-18) — TextEncoder / TextDecoder + crypto.
+//
+// v0.1 limitation: TextEncoder.encode returns a plain Array of bytes
+// (not Uint8Array — TypedArrays are deferred; see task #197). For
+// `Array.from(encoder.encode(s))` -shaped uses this works fine;
+// `bytes instanceof Uint8Array` returns false. TextDecoder accepts
+// any iterable of integers in [0, 255]. crypto.getRandomValues takes
+// the same array type and fills bytes in place.
+// =====================================================================
+
+fn host_text_encoder_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // No internal state — encoding is always UTF-8. Just return an
+    // object with the prototype set.
+    let obj_v = ctx.host_this;
+    if zjs_is_object(obj_v) == 0 { obj_v = ctx_new_object(ctx); }
+    let obj = zjs_as_object(obj_v);
+    // .encoding is "utf-8" per spec.
+    object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"encoding", 8),
+               ctx_intern_string(ctx, (char*)"utf-8", 5));
+    return obj_v;
+}
+
+// UTF-8 encode `s` into a fresh ZjsArray of byte ints.
+fn host_text_encoder_encode(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s_v: ZjsValue = if argc == 0 { ctx_intern_string(ctx, (char*)"", 0) }
+                       else if zjs_is_string(args[0]) != 0 { args[0] }
+                       else { zjs_to_string(ctx, args[0]) };
+    let s = zjs_as_string(s_v);
+    let out_v = ctx_new_array(ctx, 0);
+    let out   = zjs_as_array(out_v);
+    // We treat the input as bytes — our strings are already byte
+    // sequences and source-level UTF-8 escapes were already validated
+    // during lexing. So copying byte-for-byte produces a UTF-8
+    // encoding for any source-text-built string. For Unicode escape-
+    // synthesized strings we'd need real UTF-16 → UTF-8 transcoding;
+    // that's deferred until we have a proper Unicode rope layer.
+    let i: u32 = 0;
+    while i < s.length {
+        array_set(out, i, zjs_int32((i32)(u8)s.data[i]));
+        i = i + 1;
+    }
+    return out_v;
+}
+
+fn host_text_decoder_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let obj_v = ctx.host_this;
+    if zjs_is_object(obj_v) == 0 { obj_v = ctx_new_object(ctx); }
+    let obj = zjs_as_object(obj_v);
+    // We only support utf-8. If the caller passed a label, accept
+    // common aliases; otherwise spec says RangeError, but v0.1 is
+    // permissive and treats anything as utf-8.
+    object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"encoding", 8),
+               ctx_intern_string(ctx, (char*)"utf-8", 5));
+    object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"fatal", 5), zjs_bool(0));
+    object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"ignoreBOM", 9), zjs_bool(0));
+    return obj_v;
+}
+
+// Decode an Array-of-bytes (or any iterable yielding ints 0..255)
+// into a JS string. Bytes pass through as-is; we don't validate
+// UTF-8 well-formedness yet (the fatal flag is a no-op for v0.1).
+fn host_text_decoder_decode(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let src = args[0];
+    if zjs_is_undefined(src) != 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    // Fast path: real array of small ints.
+    if zjs_is_array(src) != 0 {
+        let a = zjs_as_array(src);
+        if a.length == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+        let buf = alloc_n<char>((usize)(a.length + 1));
+        let i: u32 = 0;
+        while i < a.length {
+            let v = a.elements[i];
+            let b: u32 = 0;
+            if zjs_is_int32(v) != 0 { b = (u32)zjs_as_int32(v); }
+            else if zjs_is_double(v) != 0 { b = (u32)zjs_as_double(v); }
+            buf[i] = (char)(b & 0xff);
+            i = i + 1;
+        }
+        buf[a.length] = (char)0;
+        let r = ctx_intern_string(ctx, buf, a.length);
+        dealloc(buf);
+        return r;
+    }
+    // Generic iterable. Walk via iter_get / iter_step.
+    let iter = iter_get(ctx, src);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let cap: u32 = 64;
+    let len: u32 = 0;
+    let buf = alloc_n<char>((usize)cap);
+    while true {
+        let step = iter_step(ctx, iter);
+        if ctx.pending_throw_active { dealloc(buf); return zjs_undefined(); }
+        if step.done { break; }
+        if len + 1 >= cap {
+            let new_cap = cap * 2;
+            buf = realloc_n<char>(buf, (usize)cap, (usize)new_cap);
+            cap = new_cap;
+        }
+        let v = step.value;
+        let b: u32 = 0;
+        if zjs_is_int32(v) != 0 { b = (u32)zjs_as_int32(v); }
+        else if zjs_is_double(v) != 0 { b = (u32)zjs_as_double(v); }
+        buf[len] = (char)(b & 0xff);
+        len = len + 1;
+    }
+    buf[len] = (char)0;
+    let r = ctx_intern_string(ctx, buf, len);
+    dealloc(buf);
+    return r;
+}
+
+// crypto.randomUUID() — v4 UUID via system entropy. Format:
+// xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx where y ∈ {8,9,a,b}.
+fn host_crypto_random_uuid(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let bytes: u8[16];
+    raw {
+        arc4random_buf(&bytes[0], 16);
+        bytes[6] = (uint8_t)((bytes[6] & 0x0F) | 0x40);  // version 4
+        bytes[8] = (uint8_t)((bytes[8] & 0x3F) | 0x80);  // variant
+    }
+    let buf: char[37];
+    raw {
+        static const char H[] = "0123456789abcdef";
+        int o = 0;
+        for (int k = 0; k < 16; k++) {
+            if (k == 4 || k == 6 || k == 8 || k == 10) buf[o++] = '-';
+            buf[o++] = H[(bytes[k] >> 4) & 0xF];
+            buf[o++] = H[ bytes[k]       & 0xF];
+        }
+        buf[o] = 0;
+    }
+    let bp: char* = NULL;
+    raw { bp = &buf[0]; }
+    return ctx_intern_string(ctx, bp, 36);
+}
+
+// crypto.getRandomValues(typedArray) — fills `typedArray` with
+// random bytes. v0.1 accepts plain Array (each element becomes a
+// byte int). Returns the same array (per spec) so callers can chain.
+fn host_crypto_get_random_values(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_undefined(); }
+    let arr_v = args[0];
+    if zjs_is_array(arr_v) == 0 { return arr_v; }
+    let a = zjs_as_array(arr_v);
+    if a.length == 0 { return arr_v; }
+    let buf = alloc_n<u8>((usize)a.length);
+    raw { arc4random_buf(buf, a->length); }
+    let i: u32 = 0;
+    while i < a.length {
+        a.elements[i] = zjs_int32((i32)(u32)buf[i]);
+        i = i + 1;
+    }
+    dealloc(buf);
+    return arr_v;
+}
+
+// =====================================================================
 // Timers — web-API Phase B (2026-05-18). setTimeout / setInterval /
 // clear* as globals. The engine maintains a queue of pending timers;
 // embedders ask "when's the next one?" via zjs_next_timer_ms and
@@ -13313,6 +13472,41 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // clearInterval is the same operation as clearTimeout (both
     // dispatch on id); aliasing matches what browsers and Node do.
     ctx_register_host_function(ctx, (char*)"clearInterval", ct_ptr);
+
+    // === Phase C: TextEncoder / TextDecoder + crypto ===
+    let te_ctor_ptr: void* = NULL; raw { te_ctor_ptr = (void*)host_text_encoder_ctor; }
+    let te_enc_ptr:  void* = NULL; raw { te_enc_ptr  = (void*)host_text_encoder_encode; }
+    let te_v = ctx_register_host_function(ctx, (char*)"TextEncoder", te_ctor_ptr);
+    let te_proto_v = ctx_new_object(ctx);
+    let te_proto = zjs_as_object(te_proto_v);
+    zjs_as_host_function(te_v).prototype = te_proto;
+    object_set(ctx, te_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), te_v);
+    object_set(ctx, te_proto, ctx_intern_atom(ctx, (char*)"encode", 6),
+               ctx_make_host_function_arity(ctx, (char*)"encode", te_enc_ptr, 1));
+
+    let td_ctor_ptr: void* = NULL; raw { td_ctor_ptr = (void*)host_text_decoder_ctor; }
+    let td_dec_ptr:  void* = NULL; raw { td_dec_ptr  = (void*)host_text_decoder_decode; }
+    let td_v = ctx_register_host_function(ctx, (char*)"TextDecoder", td_ctor_ptr);
+    let td_proto_v = ctx_new_object(ctx);
+    let td_proto = zjs_as_object(td_proto_v);
+    zjs_as_host_function(td_v).prototype = td_proto;
+    object_set(ctx, td_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), td_v);
+    object_set(ctx, td_proto, ctx_intern_atom(ctx, (char*)"decode", 6),
+               ctx_make_host_function_arity(ctx, (char*)"decode", td_dec_ptr, 1));
+
+    // crypto global (web-platform-style; not Node's `require('crypto')`).
+    // v0.1: randomUUID + getRandomValues. crypto.subtle deferred.
+    let crypto_v = ctx_new_object(ctx);
+    let crypto_o = zjs_as_object(crypto_v);
+    let cru_ptr: void* = NULL; raw { cru_ptr = (void*)host_crypto_random_uuid; }
+    let crg_ptr: void* = NULL; raw { crg_ptr = (void*)host_crypto_get_random_values; }
+    object_set(ctx, crypto_o, ctx_intern_atom(ctx, (char*)"randomUUID", 10),
+               ctx_make_host_function(ctx, (char*)"randomUUID", cru_ptr));
+    object_set(ctx, crypto_o, ctx_intern_atom(ctx, (char*)"getRandomValues", 15),
+               ctx_make_host_function_arity(ctx, (char*)"getRandomValues", crg_ptr, 1));
+    let crypto_slot = ctx_intern_global(ctx, (char*)"crypto", 6);
+    ctx.globals[crypto_slot].value = crypto_v;
+    ctx.globals[crypto_slot].defined = true;
 
     // Mark every property on every built-in prototype as
     // non-enumerable. Per spec, ALL methods on Object.prototype,
