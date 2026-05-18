@@ -618,6 +618,11 @@ def TAG_ARRAY_ITER:    u8 = 16;  // 2026-05-16: pristine-Array iterator
                                  //   @@iterator/next host-call cycle when
                                  //   for-of sees an Array (or String) with
                                  //   the standard prototype iterator.
+def TAG_UINT8_ARRAY:   u8 = 17;  // 2026-05-18: WHATWG TypedArray foundation.
+                                 //   Byte buffer (u8*) + length. Indexed
+                                 //   access (read/write) clamps to 0..255.
+                                 //   Other widths (Int8/Uint16/...) layer
+                                 //   on this representation when added.
 def TAG_SYMBOL:        u8 = 15;  // 2026-05-16: ECMA-262 Symbol. Each Symbol
                                  //   carries a description (for toString) and a
                                  //   unique underlying property-key string used
@@ -1054,6 +1059,49 @@ struct ZjsArrayIter {
     src:    ZjsValue;        // TAG_ARRAY or TAG_STRING
     index:  u32;
     done:   bool;
+}
+
+struct ZjsUint8Array {
+    header:   CellHeader;   // type_tag = TAG_UINT8_ARRAY
+    bytes:    u8*;          // owned heap buffer (freed in uint8_array_free)
+    length:   u32;          // number of bytes
+    capacity: u32;          // backing-buffer capacity
+}
+
+fn zjs_is_uint8_array(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_UINT8_ARRAY { return 1; }
+    return 0;
+}
+
+fn zjs_as_uint8_array(v: ZjsValue) -> ZjsUint8Array* {
+    let p = zjs_cell_as_ptr(v);
+    let u: ZjsUint8Array* = NULL;
+    raw { u = (ZjsUint8Array*)p; }
+    return u;
+}
+
+fn zjs_uint8_array_new(length: u32) -> ZjsUint8Array* {
+    let a = alloc<ZjsUint8Array>();
+    a.header.type_tag = TAG_UINT8_ARRAY;
+    a.length = length;
+    a.capacity = length;
+    if length > 0 {
+        a.bytes = alloc_n<u8>((usize)length);
+        // alloc_n is calloc-backed on the standard path; bytes are
+        // already zero. Be explicit anyway for clarity.
+        let i: u32 = 0;
+        while i < length { a.bytes[i] = (u8)0; i = i + 1; }
+    } else {
+        a.bytes = NULL;
+    }
+    return a;
+}
+
+fn uint8_array_free_void(p: void*) -> void {
+    let a: ZjsUint8Array* = NULL;
+    raw { a = (ZjsUint8Array*)p; }
+    if a.bytes != NULL { dealloc(a.bytes); }
+    dealloc(a);
 }
 
 fn zjs_is_array_iter(v: ZjsValue) -> int {

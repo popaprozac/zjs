@@ -286,6 +286,7 @@ struct ZjsContext {
     symbol_proto:       ZjsObject*;
     url_proto:          ZjsObject*;
     usp_proto:          ZjsObject*;
+    uint8_array_proto:  ZjsObject*;
 
     // Timer queue (2026-05-18, web-API Phase B). Each entry represents
     // a setTimeout / setInterval reservation. `due_ms` is the
@@ -1364,6 +1365,9 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     if ctx.usp_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.usp_proto));
     }
+    if ctx.uint8_array_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.uint8_array_proto));
+    }
     // Pending timer callbacks + their captured args must stay alive
     // across collections — they're scheduled to run but not yet
     // reachable through any user code root.
@@ -1455,6 +1459,7 @@ fn gc_free_one(p: void*) -> void {
           dealloc(aa);
       }
       else if tag == TAG_HIDDEN_CLASS  { hidden_class_free_void(p); }
+      else if tag == TAG_UINT8_ARRAY   { uint8_array_free_void(p); }
 }
 
 // Sweep the young-generation list. Marked cells are promoted to the
@@ -3856,6 +3861,9 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
     }
     if zjs_is_generator(v) != 0 && ctx.generator_proto != NULL {
         return zjs_cell_from_ptr((void*)ctx.generator_proto);
+    }
+    if zjs_is_uint8_array(v) != 0 && ctx.uint8_array_proto != NULL {
+        return zjs_cell_from_ptr((void*)ctx.uint8_array_proto);
     }
     // Primitives — ToObject(v) would wrap, then get its prototype.
     // Surface the matching prototype chain root directly; that's the
@@ -8229,6 +8237,267 @@ fn object_define_accessor(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*,
 }
 
 // =====================================================================
+// =====================================================================
+// Uint8Array (2026-05-18) — first real TypedArray. Byte-buffer backed,
+// not just an Array tag — `bytes instanceof Uint8Array` works, .length /
+// .byteLength match the spec, indexed read/write goes through
+// ToUint8 (modulo 256). ArrayBuffer is deferred; .buffer returns
+// undefined for v0.1. Other typed widths (Int8/Uint16/...) will
+// layer on this same byte-buffer representation when added.
+// =====================================================================
+
+fn host_uint8_array_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // new Uint8Array(N)           — alloc N zero bytes
+    // new Uint8Array(iterable)    — copy from iterable
+    // new Uint8Array(arrayLike)   — copy from .length + indexed reads
+    let length: u32 = 0;
+    let from_iterable: bool = false;
+    let from_arraylike: bool = false;
+    let src_v: ZjsValue = zjs_undefined();
+    if argc == 0 || zjs_is_undefined(args[0]) != 0 {
+        // empty
+    } else if zjs_is_int32(args[0]) != 0 {
+        let n = zjs_as_int32(args[0]);
+        if n < 0 {
+            let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                                        (char*)"Uint8Array length is negative", 29);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        length = (u32)n;
+    } else if zjs_is_double(args[0]) != 0 {
+        let d = zjs_as_double(args[0]);
+        let is_finite: int = 0;
+        raw { is_finite = (isfinite(d) && d >= 0.0) ? 1 : 0; }
+        if is_finite == 0 {
+            let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                                        (char*)"Uint8Array length is invalid", 28);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        length = (u32)d;
+    } else if zjs_is_uint8_array(args[0]) != 0 {
+        // Cloning ctor: copy bytes verbatim.
+        let other = zjs_as_uint8_array(args[0]);
+        let r = zjs_uint8_array_new(other.length);
+        ctx_register_cell(ctx, (void*)r);
+        let i: u32 = 0;
+        while i < other.length { r.bytes[i] = other.bytes[i]; i = i + 1; }
+        return zjs_cell_from_ptr((void*)r);
+    } else if zjs_is_array(args[0]) != 0 {
+        from_arraylike = true;
+        src_v = args[0];
+        length = zjs_as_array(args[0]).length;
+    } else if zjs_is_object(args[0]) != 0 {
+        // Iterable / array-like with .length.
+        from_iterable = true;
+        src_v = args[0];
+    }
+
+    let a = zjs_uint8_array_new(length);
+    ctx_register_cell(ctx, (void*)a);
+    let a_v = zjs_cell_from_ptr((void*)a);
+
+    if from_arraylike {
+        let src = zjs_as_array(src_v);
+        let i: u32 = 0;
+        while i < src.length {
+            let v = src.elements[i];
+            let b: u32 = 0;
+            if zjs_is_int32(v) != 0 { b = (u32)((i32)zjs_as_int32(v) & 0xff); }
+            else if zjs_is_double(v) != 0 {
+                let d = zjs_as_double(v);
+                let finite: int = 0;
+                raw { finite = (isfinite(d) && !isnan(d)) ? 1 : 0; }
+                if finite != 0 {
+                    let t: i64 = 0;
+                    raw { t = (int64_t)d; }
+                    b = (u32)((u8)((t % 256 + 256) % 256));
+                }
+            }
+            a.bytes[i] = (u8)b;
+            i = i + 1;
+        }
+    } else if from_iterable {
+        // Walk via iter_get / iter_step, growing as needed.
+        let iter = iter_get(ctx, src_v);
+        if !ctx.pending_throw_active {
+            let cap: u32 = 16;
+            let count: u32 = 0;
+            a.bytes = realloc_n<u8>(a.bytes, (usize)a.capacity, (usize)cap);
+            a.capacity = cap;
+            while true {
+                let step = iter_step(ctx, iter);
+                if ctx.pending_throw_active { break; }
+                if step.done { break; }
+                if count >= cap {
+                    let new_cap = cap * 2;
+                    a.bytes = realloc_n<u8>(a.bytes, (usize)cap, (usize)new_cap);
+                    cap = new_cap;
+                }
+                let v = step.value;
+                let b: u32 = 0;
+                if zjs_is_int32(v) != 0 { b = (u32)((i32)zjs_as_int32(v) & 0xff); }
+                else if zjs_is_double(v) != 0 {
+                    let d = zjs_as_double(v);
+                    let finite: int = 0;
+                    raw { finite = (isfinite(d) && !isnan(d)) ? 1 : 0; }
+                    if finite != 0 {
+                        let t: i64 = 0;
+                        raw { t = (int64_t)d; }
+                        b = (u32)((u8)((t % 256 + 256) % 256));
+                    }
+                }
+                a.bytes[count] = (u8)b;
+                count = count + 1;
+            }
+            a.length = count;
+            a.capacity = cap;
+        }
+    }
+    return a_v;
+}
+
+fn host_uint8_array_fill(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_uint8_array(this_v) == 0 { return this_v; }
+    let u = zjs_as_uint8_array(this_v);
+    let value_byte: u8 = 0;
+    if argc >= 1 {
+        let v = args[0];
+        if zjs_is_int32(v) != 0 { value_byte = (u8)((i32)zjs_as_int32(v) & 0xff); }
+        else if zjs_is_double(v) != 0 {
+            let d = zjs_as_double(v);
+            let finite: int = 0;
+            raw { finite = (isfinite(d) && !isnan(d)) ? 1 : 0; }
+            if finite != 0 {
+                let t: i64 = 0;
+                raw { t = (int64_t)d; }
+                value_byte = (u8)((t % 256 + 256) % 256);
+            }
+        }
+    }
+    let len = u.length;
+    let start: i64 = 0;
+    let end:   i64 = (i64)len;
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
+        let sd = zjs_to_double(args[1]);
+        raw { if (isnan(sd)) sd = 0; sd = (sd < 0) ? (sd + (double)len) : sd; }
+        start = (i64)sd;
+        if start < 0 { start = 0; }
+        if start > (i64)len { start = (i64)len; }
+    }
+    if argc >= 3 && zjs_is_undefined(args[2]) == 0 {
+        let ed = zjs_to_double(args[2]);
+        raw { if (isnan(ed)) ed = 0; ed = (ed < 0) ? (ed + (double)len) : ed; }
+        end = (i64)ed;
+        if end < 0 { end = 0; }
+        if end > (i64)len { end = (i64)len; }
+    }
+    let i: i64 = start;
+    while i < end { u.bytes[(u32)i] = value_byte; i = i + 1; }
+    return this_v;
+}
+
+fn host_uint8_array_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_uint8_array(this_v) == 0 { return this_v; }
+    let u = zjs_as_uint8_array(this_v);
+    let len = u.length;
+    let start: i64 = 0;
+    let end:   i64 = (i64)len;
+    if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
+        let sd = zjs_to_double(args[0]);
+        raw { if (isnan(sd)) sd = 0; sd = (sd < 0) ? (sd + (double)len) : sd; }
+        start = (i64)sd;
+        if start < 0 { start = 0; }
+        if start > (i64)len { start = (i64)len; }
+    }
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
+        let ed = zjs_to_double(args[1]);
+        raw { if (isnan(ed)) ed = 0; ed = (ed < 0) ? (ed + (double)len) : ed; }
+        end = (i64)ed;
+        if end < 0 { end = 0; }
+        if end > (i64)len { end = (i64)len; }
+    }
+    if end < start { end = start; }
+    let n: u32 = (u32)(end - start);
+    let r = zjs_uint8_array_new(n);
+    ctx_register_cell(ctx, (void*)r);
+    let i: u32 = 0;
+    while i < n { r.bytes[i] = u.bytes[(u32)start + i]; i = i + 1; }
+    return zjs_cell_from_ptr((void*)r);
+}
+
+fn host_uint8_array_set(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_uint8_array(this_v) == 0 || argc == 0 { return zjs_undefined(); }
+    let u = zjs_as_uint8_array(this_v);
+    let offset: u32 = 0;
+    if argc >= 2 && zjs_is_int32(args[1]) != 0 {
+        let oi = zjs_as_int32(args[1]);
+        if oi >= 0 { offset = (u32)oi; }
+    }
+    let src = args[0];
+    if zjs_is_uint8_array(src) != 0 {
+        let s = zjs_as_uint8_array(src);
+        let i: u32 = 0;
+        while i < s.length && offset + i < u.length {
+            u.bytes[offset + i] = s.bytes[i];
+            i = i + 1;
+        }
+        return zjs_undefined();
+    }
+    if zjs_is_array(src) != 0 {
+        let s = zjs_as_array(src);
+        let i: u32 = 0;
+        while i < s.length && offset + i < u.length {
+            let v = s.elements[i];
+            let b: u8 = 0;
+            if zjs_is_int32(v) != 0 { b = (u8)((i32)zjs_as_int32(v) & 0xff); }
+            else if zjs_is_double(v) != 0 {
+                let d = zjs_as_double(v);
+                let finite: int = 0;
+                raw { finite = (isfinite(d) && !isnan(d)) ? 1 : 0; }
+                if finite != 0 {
+                    let t: i64 = 0;
+                    raw { t = (int64_t)d; }
+                    b = (u8)((t % 256 + 256) % 256);
+                }
+            }
+            u.bytes[offset + i] = b;
+            i = i + 1;
+        }
+    }
+    return zjs_undefined();
+}
+
+fn host_uint8_array_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_uint8_array(this_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let u = zjs_as_uint8_array(this_v);
+    if u.length == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    // Worst case "255," per byte = 4 chars.
+    let cap: u32 = u.length * 4 + 1;
+    let buf = alloc_n<char>((usize)cap);
+    let o: u32 = 0;
+    let i: u32 = 0;
+    while i < u.length {
+        if i > 0 { buf[o] = (char)','; o = o + 1; }
+        let n: u32 = (u32)u.bytes[i];
+        raw {
+            if (n >= 100) buf[o++] = (char)('0' + (n / 100));
+            if (n >= 10)  buf[o++] = (char)('0' + ((n / 10) % 10));
+            buf[o++] = (char)('0' + (n % 10));
+        }
+        i = i + 1;
+    }
+    buf[o] = (char)0;
+    let r = ctx_intern_string(ctx, buf, o);
+    dealloc(buf);
+    return r;
+}
+
 // =====================================================================
 // Web-API Phase C (2026-05-18) — TextEncoder / TextDecoder + crypto.
 //
@@ -13118,7 +13387,25 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
 
     ctx_register_host_function(ctx, (char*)"Proxy",      eval_ptr);
     ctx_register_host_function(ctx, (char*)"ArrayBuffer", eval_ptr);
-    ctx_register_host_function(ctx, (char*)"Uint8Array",  eval_ptr);
+    // === Uint8Array (real, 2026-05-18) ===
+    let u8_ctor_ptr:  void* = NULL; raw { u8_ctor_ptr  = (void*)host_uint8_array_ctor; }
+    let u8_fill_ptr:  void* = NULL; raw { u8_fill_ptr  = (void*)host_uint8_array_fill; }
+    let u8_slice_ptr: void* = NULL; raw { u8_slice_ptr = (void*)host_uint8_array_slice; }
+    let u8_set_ptr:   void* = NULL; raw { u8_set_ptr   = (void*)host_uint8_array_set; }
+    let u8_ts_ptr:    void* = NULL; raw { u8_ts_ptr    = (void*)host_uint8_array_to_string; }
+    let u8_ctor_v = ctx_register_host_function(ctx, (char*)"Uint8Array", u8_ctor_ptr);
+    let u8_proto_v = ctx_new_object(ctx);
+    ctx.uint8_array_proto = zjs_as_object(u8_proto_v);
+    zjs_as_host_function(u8_ctor_v).prototype = ctx.uint8_array_proto;
+    object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), u8_ctor_v);
+    object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"fill", 4),
+               ctx_make_host_function_arity(ctx, (char*)"fill", u8_fill_ptr, 1));
+    object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"slice", 5),
+               ctx_make_host_function_arity(ctx, (char*)"slice", u8_slice_ptr, 2));
+    object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"set", 3),
+               ctx_make_host_function_arity(ctx, (char*)"set", u8_set_ptr, 1));
+    object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
+               ctx_make_host_function(ctx, (char*)"toString", u8_ts_ptr));
     ctx_register_host_function(ctx, (char*)"Int8Array",   eval_ptr);
     ctx_register_host_function(ctx, (char*)"Uint16Array", eval_ptr);
     ctx_register_host_function(ctx, (char*)"Int16Array",  eval_ptr);

@@ -223,6 +223,69 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         }
         return zjs_undefined();
     }
+    if zjs_is_uint8_array(obj) != 0 {
+        let u = zjs_as_uint8_array(obj);
+        // Integer-index fast path. property_get gets either an i32
+        // key directly OR a string we should attempt as an integer.
+        let idx: i32 = -1;
+        if zjs_is_int32(key) != 0 {
+            idx = zjs_as_int32(key);
+        } else if zjs_is_double(key) != 0 {
+            let d = zjs_as_double(key);
+            raw { if (d >= 0 && d < 4294967296.0 && d == (double)(uint32_t)d) idx = (int32_t)(uint32_t)d; }
+        } else if zjs_is_string(key) != 0 {
+            let ks = zjs_as_string(key);
+            // Treat keys that look like canonical integer indices
+            // ("0", "1", "42") as numeric. Anything else falls
+            // through to the named-property path.
+            if ks.length > 0 {
+                let ok: int = 1;
+                let n: u32 = 0;
+                let i: u32 = 0;
+                raw {
+                    while (i < ks->length) {
+                        char c = ks->data[i];
+                        if (c < '0' || c > '9') { ok = 0; break; }
+                        n = n * 10 + (uint32_t)(c - '0');
+                        i++;
+                    }
+                }
+                if ok != 0 { idx = (i32)n; }
+            }
+        }
+        if idx >= 0 && (u32)idx < u.length {
+            return zjs_int32((i32)(u32)u.bytes[(u32)idx]);
+        }
+        // Named property — .length / .byteLength / .byteOffset /
+        // .buffer plus prototype methods.
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        let name = zjs_as_string(key);
+        let nd = name.data;
+        let nl = name.length;
+        let is_len: int = 0;
+        let is_blen: int = 0;
+        let is_boff: int = 0;
+        let is_buf: int = 0;
+        raw {
+            is_len  = (nl == 6  && memcmp(nd, "length",     6)  == 0) ? 1 : 0;
+            is_blen = (nl == 10 && memcmp(nd, "byteLength", 10) == 0) ? 1 : 0;
+            is_boff = (nl == 10 && memcmp(nd, "byteOffset", 10) == 0) ? 1 : 0;
+            is_buf  = (nl == 6  && memcmp(nd, "buffer",     6)  == 0) ? 1 : 0;
+        }
+        if is_len != 0 || is_blen != 0 { return zjs_int32((i32)u.length); }
+        if is_boff != 0                { return zjs_int32(0); }
+        if is_buf != 0                 { return zjs_undefined(); }
+        // Prototype lookup.
+        if ctx.uint8_array_proto != NULL {
+            let slot = class_find_slot(ctx.uint8_array_proto.cls, name);
+            if slot >= 0 {
+                let v = ctx.uint8_array_proto.slots[(u32)slot];
+                if zjs_is_deleted(v) == 0 { return v; }
+            }
+        }
+        return zjs_undefined();
+    }
+
     if zjs_is_date(obj) != 0 && ctx.date_proto != NULL {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
@@ -863,6 +926,56 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
 
 fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue) -> void {
     key = symbol_key_coerce(key);
+    if zjs_is_uint8_array(obj) != 0 {
+        let u = zjs_as_uint8_array(obj);
+        let idx: i32 = -1;
+        if zjs_is_int32(key) != 0 {
+            idx = zjs_as_int32(key);
+        } else if zjs_is_double(key) != 0 {
+            let d = zjs_as_double(key);
+            raw { if (d >= 0 && d < 4294967296.0 && d == (double)(uint32_t)d) idx = (int32_t)(uint32_t)d; }
+        } else if zjs_is_string(key) != 0 {
+            let ks = zjs_as_string(key);
+            // Same canonical-integer probe as the read path.
+            if ks.length > 0 {
+                let ok: int = 1;
+                let n: u32 = 0;
+                let i: u32 = 0;
+                raw {
+                    while (i < ks->length) {
+                        char c = ks->data[i];
+                        if (c < '0' || c > '9') { ok = 0; break; }
+                        n = n * 10 + (uint32_t)(c - '0');
+                        i++;
+                    }
+                }
+                if ok != 0 { idx = (i32)n; }
+            }
+        }
+        if idx >= 0 && (u32)idx < u.length {
+            // Spec: ToUint8(value) per https://tc39.es/ecma262/
+            // #sec-touint8. NaN/Infinity/0/-0 → 0; otherwise modulo
+            // 256 of the truncated integer.
+            let b: u32 = 0;
+            if zjs_is_int32(value) != 0 {
+                b = (u32)((i32)zjs_as_int32(value) & 0xff);
+            } else if zjs_is_double(value) != 0 {
+                let d = zjs_as_double(value);
+                let is_finite: int = 0;
+                raw { is_finite = (isfinite(d) && !isnan(d)) ? 1 : 0; }
+                if is_finite != 0 {
+                    let t: i64 = 0;
+                    raw { t = (int64_t)d; }
+                    b = (u32)((u8)((t % 256 + 256) % 256));
+                }
+            }
+            u.bytes[(u32)idx] = (u8)b;
+            return;
+        }
+        // Out-of-bounds indices silently drop (TypedArray spec: writes
+        // past length are no-ops).
+        return;
+    }
     if zjs_is_array(obj) != 0 {
         let arr = zjs_as_array(obj);
         if zjs_is_int32(key) != 0 {
@@ -3704,6 +3817,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
+                } else if zjs_is_uint8_array(val) != 0 {
+                    let cur = ctx.uint8_array_proto;
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
                 } else if zjs_is_date(val) != 0 {
                     let cur = ctx.date_proto;
                     while cur != NULL {
@@ -3932,7 +4051,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 || zjs_is_host_function(call_result) != 0
                 || zjs_is_map(call_result) != 0
                 || zjs_is_set(call_result) != 0
-                || zjs_is_date(call_result) != 0;
+                || zjs_is_date(call_result) != 0
+                || zjs_is_uint8_array(call_result) != 0;
             if result_is_object {
                 regs[dst2] = call_result;
             } else if final_this.bits != new_obj_v.bits
@@ -4139,7 +4259,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 || zjs_is_host_function(call_result) != 0
                 || zjs_is_map(call_result) != 0
                 || zjs_is_set(call_result) != 0
-                || zjs_is_date(call_result) != 0;
+                || zjs_is_date(call_result) != 0
+                || zjs_is_uint8_array(call_result) != 0;
             // Derived-class ctor: a non-undefined non-Object return is
             // a TypeError. Base ctors silently coerce to `this`.
             let callee_is_derived: bool = false;
