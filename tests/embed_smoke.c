@@ -492,6 +492,211 @@ static void test_throw_abi(void) {
 }
 
 /* -----------------------------------------------------------------------
+ * Embed ABI v2 — value constructors, property access, host functions,
+ * call-from-C. Validates that the surface declared in zjs.h gives a host
+ * everything it needs to integrate zjs without speaking JS source.
+ * --------------------------------------------------------------------- */
+
+static void test_value_constructors(void) {
+    ZjsContext* ctx = zjs_new_context();
+
+    /* New string from a byte slice. */
+    ZjsValue s = zjs_new_string(ctx, "hello", 5);
+    CHECK(zjs_is_string(s), "zjs_new_string returns a string");
+    uint32_t slen = 0;
+    const char* sb = zjs_string_bytes(s, &slen);
+    CHECK(sb != NULL && slen == 5 && memcmp(sb, "hello", 5) == 0,
+          "string bytes round-trip (got %u bytes)", slen);
+
+    /* Second call with identical bytes should intern to the same cell. */
+    ZjsValue s2 = zjs_new_string(ctx, "hello", 5);
+    const char* sb2 = zjs_string_bytes(s2, NULL);
+    CHECK(sb == sb2, "interned strings share data pointer");
+
+    /* Embedded NUL byte — length is authoritative, data isn't C-string. */
+    ZjsValue s3 = zjs_new_string(ctx, "a\0b", 3);
+    uint32_t s3len = 0;
+    const char* s3b = zjs_string_bytes(s3, &s3len);
+    CHECK(s3len == 3, "string with embedded NUL keeps length=3");
+    CHECK(s3b != NULL && s3b[0] == 'a' && s3b[1] == '\0' && s3b[2] == 'b',
+          "embedded NUL preserved in bytes");
+
+    /* zjs_new_object — fresh, mutable. */
+    ZjsValue o = zjs_new_object(ctx);
+    CHECK(zjs_is_object(o), "zjs_new_object returns an object");
+
+    /* zjs_new_array — given length, indexable. */
+    ZjsValue a = zjs_new_array(ctx, 3);
+    CHECK(zjs_is_array(a), "zjs_new_array returns an array");
+    CHECK(zjs_array_length(a) == 3, "array length matches request");
+
+    /* String bytes on a non-string returns NULL. */
+    CHECK(zjs_string_bytes(zjs_int32(42), NULL) == NULL,
+          "zjs_string_bytes returns NULL for non-string");
+    CHECK(zjs_array_length(zjs_int32(42)) == 0,
+          "zjs_array_length returns 0 for non-array");
+
+    zjs_free_context(ctx);
+}
+
+static void test_property_access(void) {
+    ZjsContext* ctx = zjs_new_context();
+
+    /* Build {x: 10, y: 20} from C, expose as a global, read it from JS. */
+    ZjsValue o = zjs_new_object(ctx);
+    zjs_set_property(ctx, o, "x", zjs_int32(10));
+    zjs_set_property(ctx, o, "y", zjs_int32(20));
+    zjs_set_global(ctx, "obj", o);
+
+    ZjsValue sum = zjs_eval(ctx, "obj.x + obj.y");
+    CHECK(zjs_is_int32(sum) && zjs_as_int32(sum) == 30,
+          "C-built object readable from JS: got %d",
+          zjs_is_int32(sum) ? zjs_as_int32(sum) : -1);
+
+    /* Read it back through the ABI. */
+    ZjsValue x = zjs_get_property(ctx, o, "x");
+    CHECK(zjs_is_int32(x) && zjs_as_int32(x) == 10,
+          "zjs_get_property reads the value");
+
+    /* Missing property returns undefined (not an error). */
+    ZjsValue missing = zjs_get_property(ctx, o, "nope");
+    CHECK(zjs_is_undefined(missing), "missing property returns undefined");
+    CHECK(!zjs_had_error(ctx), "missing property does not set had_error");
+
+    /* Array indexed access. */
+    ZjsValue arr = zjs_new_array(ctx, 0);
+    zjs_set_element(ctx, arr, 0, zjs_int32(7));
+    zjs_set_element(ctx, arr, 1, zjs_int32(11));
+    zjs_set_element(ctx, arr, 2, zjs_int32(13));
+    CHECK(zjs_array_length(arr) >= 3, "array grew after set_element");
+    ZjsValue e1 = zjs_get_element(ctx, arr, 1);
+    CHECK(zjs_is_int32(e1) && zjs_as_int32(e1) == 11, "zjs_get_element");
+
+    /* Globals round-trip too. */
+    zjs_set_global(ctx, "answer", zjs_int32(42));
+    ZjsValue ans = zjs_eval(ctx, "answer + 0");
+    CHECK(zjs_is_int32(ans) && zjs_as_int32(ans) == 42, "zjs_set_global visible to JS");
+    ZjsValue ans2 = zjs_get_global(ctx, "answer");
+    CHECK(zjs_is_int32(ans2) && zjs_as_int32(ans2) == 42, "zjs_get_global reads back");
+
+    zjs_free_context(ctx);
+}
+
+/* Host function: receives ints, returns the sum. */
+static ZjsValue host_sum(ZjsContext* ctx, ZjsValue* argv, uint32_t argc) {
+    (void)ctx;
+    int32_t s = 0;
+    for (uint32_t i = 0; i < argc; i++) {
+        if (zjs_is_int32(argv[i])) s += zjs_as_int32(argv[i]);
+    }
+    return zjs_int32(s);
+}
+
+/* Host function: makes a fresh array from its args. */
+static ZjsValue host_to_array(ZjsContext* ctx, ZjsValue* argv, uint32_t argc) {
+    ZjsValue arr = zjs_new_array(ctx, 0);
+    for (uint32_t i = 0; i < argc; i++) {
+        zjs_set_element(ctx, arr, i, argv[i]);
+    }
+    return arr;
+}
+
+/* Host function: throws a JS error from C. */
+static ZjsValue host_throw_string(ZjsContext* ctx, ZjsValue* argv, uint32_t argc) {
+    (void)argv; (void)argc;
+    zjs_throw(ctx, zjs_new_string(ctx, "host blew up", 12));
+    return zjs_undefined();
+}
+
+/* Host function: reads `this` and pulls a property off it. */
+static ZjsValue host_get_label(ZjsContext* ctx, ZjsValue* argv, uint32_t argc) {
+    (void)argv; (void)argc;
+    return zjs_get_property(ctx, zjs_get_this(ctx), "label");
+}
+
+static void test_host_functions(void) {
+    ZjsContext* ctx = zjs_new_context();
+
+    zjs_register_host_function(ctx, "csum", host_sum);
+    zjs_register_host_function(ctx, "toArr", host_to_array);
+    zjs_register_host_function(ctx, "boom", host_throw_string);
+    zjs_register_host_function(ctx, "getLabel", host_get_label);
+
+    /* Simple sum. */
+    ZjsValue r = zjs_eval(ctx, "csum(1, 2, 3, 4, 5)");
+    CHECK(zjs_is_int32(r) && zjs_as_int32(r) == 15, "csum(1..5) == 15");
+
+    /* Build-an-array round trip. */
+    ZjsValue arr = zjs_eval(ctx, "toArr('a','b','c')");
+    CHECK(zjs_is_array(arr), "toArr returns array");
+    CHECK(zjs_array_length(arr) == 3, "toArr length == 3");
+    ZjsValue idx1 = zjs_get_element(ctx, arr, 1);
+    uint32_t blen = 0;
+    const char* bb = zjs_string_bytes(idx1, &blen);
+    CHECK(bb && blen == 1 && bb[0] == 'b', "toArr[1] == 'b'");
+
+    /* zjs_throw inside host fn surfaces as a JS throw, catchable. */
+    ZjsValue caught = zjs_eval(ctx, "try { boom() } catch (e) { e }");
+    uint32_t clen = 0;
+    const char* cb = zjs_string_bytes(caught, &clen);
+    CHECK(cb && clen == 12 && memcmp(cb, "host blew up", 12) == 0,
+          "host throw caught as string");
+
+    /* Uncaught host throw flags had_error. */
+    zjs_eval(ctx, "boom()");
+    CHECK(zjs_had_error(ctx), "uncaught host throw sets had_error");
+    ZjsValue err = zjs_get_error(ctx);
+    const char* eb = zjs_string_bytes(err, NULL);
+    CHECK(eb && memcmp(eb, "host blew up", 12) == 0, "had_error message");
+
+    /* host function as a method — zjs_get_this works. */
+    zjs_eval(ctx, "var rec = { label: 'tagged', read: getLabel };");
+    ZjsValue label = zjs_eval(ctx, "rec.read()");
+    uint32_t llen = 0;
+    const char* lb = zjs_string_bytes(label, &llen);
+    CHECK(lb && llen == 6 && memcmp(lb, "tagged", 6) == 0,
+          "host fn invoked as method sees `this`");
+
+    zjs_free_context(ctx);
+}
+
+static void test_call_from_c(void) {
+    ZjsContext* ctx = zjs_new_context();
+
+    /* Get a JS function, call it from C. */
+    zjs_eval(ctx, "function dbl(x) { return x * 2 }");
+    ZjsValue dbl = zjs_get_global(ctx, "dbl");
+    CHECK(zjs_is_callable(dbl), "dbl is callable");
+
+    ZjsValue args[1];
+    args[0] = zjs_int32(21);
+    ZjsValue r = zjs_call(ctx, dbl, zjs_undefined(), args, 1);
+    CHECK(zjs_is_int32(r) && zjs_as_int32(r) == 42, "zjs_call(dbl, 21) == 42");
+
+    /* Call with this. */
+    zjs_eval(ctx, "function readX() { return this.x }");
+    ZjsValue readX = zjs_get_global(ctx, "readX");
+    ZjsValue ctxObj = zjs_new_object(ctx);
+    zjs_set_property(ctx, ctxObj, "x", zjs_int32(99));
+    ZjsValue r2 = zjs_call(ctx, readX, ctxObj, NULL, 0);
+    CHECK(zjs_is_int32(r2) && zjs_as_int32(r2) == 99,
+          "zjs_call binds this");
+
+    /* Call propagates JS throws into had_error. */
+    zjs_eval(ctx, "function thrower() { throw 'no' }");
+    ZjsValue th = zjs_get_global(ctx, "thrower");
+    zjs_call(ctx, th, zjs_undefined(), NULL, 0);
+    CHECK(zjs_had_error(ctx), "zjs_call surfaces uncaught throw");
+    ZjsValue err = zjs_get_error(ctx);
+    uint32_t elen = 0;
+    const char* eb = zjs_string_bytes(err, &elen);
+    CHECK(eb && elen == 2 && memcmp(eb, "no", 2) == 0,
+          "throw value reachable via get_error");
+
+    zjs_free_context(ctx);
+}
+
+/* -----------------------------------------------------------------------
  * Main.
  * --------------------------------------------------------------------- */
 
@@ -507,6 +712,10 @@ int main(void) {
     test_hidden_class_sharing();
     test_inline_caches();
     test_gc();
+    test_value_constructors();
+    test_property_access();
+    test_host_functions();
+    test_call_from_c();
 
     printf("[smoke] %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

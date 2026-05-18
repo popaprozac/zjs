@@ -97,6 +97,120 @@ ZjsValue    zjs_get_error(ZjsContext* ctx);
 void         zjs_gc(ZjsContext* ctx);
 unsigned int zjs_cell_count(ZjsContext* ctx);
 
+/* -----------------------------------------------------------------------
+ * Heap value constructors.
+ *
+ * Each returns a freshly-allocated cell rooted via the context's cell
+ * list; lifetime is tied to the JS engine's reachability graph (any
+ * value you hand back to JS, store on a JS object, or store on a global
+ * is reachable; an orphaned cell held only on the C stack will survive
+ * until the next GC and may be collected after that).
+ *
+ * If you need to hand a value back to JS later, store it in a JS-level
+ * binding (e.g. set it as a property on globalThis via zjs_set_property)
+ * so the GC can see it.
+ * --------------------------------------------------------------------- */
+
+/* Make a JS string from a byte slice. `data` does not need to be
+ * null-terminated; `length` is in bytes. Interned automatically — two
+ * calls with the same bytes return the same underlying cell. */
+ZjsValue zjs_new_string(ZjsContext* ctx, const char* data, uint32_t length);
+
+/* Fresh empty plain object ({}). */
+ZjsValue zjs_new_object(ZjsContext* ctx);
+
+/* Fresh array with `length` slots, all initialized to undefined. */
+ZjsValue zjs_new_array(ZjsContext* ctx, uint32_t length);
+
+/* -----------------------------------------------------------------------
+ * String inspection.
+ *
+ * Returns a pointer to the string's internal UTF-8 byte buffer (null-
+ * terminated, but the length may include embedded nulls). The pointer
+ * remains valid as long as the string cell is reachable from JS or
+ * held in a JS-level binding; if you let GC reclaim the cell the
+ * pointer becomes dangling.
+ *
+ * If `out_length` is non-NULL, the length in bytes is written there.
+ * Returns NULL if `v` is not a string.
+ * --------------------------------------------------------------------- */
+const char* zjs_string_bytes(ZjsValue v, uint32_t* out_length);
+
+/* -----------------------------------------------------------------------
+ * Property access.
+ *
+ * zjs_get_property reads the named property using the same algorithm as
+ * `obj.name` in source — walks the prototype chain, fires accessors,
+ * coerces non-object hosts. Returns undefined for missing keys.
+ *
+ * zjs_set_property assigns to the named property on `obj`. Plain
+ * assignment semantics: creates the property if absent, walks the proto
+ * chain to find setter accessors, transitions hidden classes.
+ *
+ * zjs_get_element / zjs_set_element are the indexed equivalents for
+ * arrays and array-like objects.
+ * --------------------------------------------------------------------- */
+ZjsValue zjs_get_property(ZjsContext* ctx, ZjsValue obj, const char* name);
+void     zjs_set_property(ZjsContext* ctx, ZjsValue obj, const char* name, ZjsValue value);
+ZjsValue zjs_get_element(ZjsContext* ctx, ZjsValue obj, uint32_t index);
+void     zjs_set_element(ZjsContext* ctx, ZjsValue obj, uint32_t index, ZjsValue value);
+
+/* Array length, or 0 if `v` is not an array. */
+uint32_t zjs_array_length(ZjsValue v);
+
+/* -----------------------------------------------------------------------
+ * Globals.
+ *
+ * Read/write a binding on the global object. The setter creates the
+ * binding if absent. Names are NUL-terminated C strings.
+ * --------------------------------------------------------------------- */
+ZjsValue zjs_get_global(ZjsContext* ctx, const char* name);
+void     zjs_set_global(ZjsContext* ctx, const char* name, ZjsValue value);
+
+/* -----------------------------------------------------------------------
+ * Host functions — C callbacks callable from JS.
+ *
+ * Signature:
+ *   ZjsValue my_callback(ZjsContext* ctx, ZjsValue* argv, uint32_t argc);
+ *
+ * Inside the callback:
+ *   - argv[i] holds the i'th argument; missing args show up as undefined.
+ *   - argc is the number of args passed.
+ *   - To read `this`, call zjs_get_this(ctx).
+ *   - To signal a JS-level throw, store the value via zjs_throw and
+ *     return zjs_undefined().
+ *   - To return a value normally, just return it.
+ *
+ * zjs_register_host_function installs the callback as a global named
+ * `name` (callable as `name(...)` from JS). Returns the host-function
+ * value, which you can also stash via zjs_set_property if you want it
+ * reachable through a different name.
+ * --------------------------------------------------------------------- */
+typedef ZjsValue (*ZjsHostFunction)(ZjsContext* ctx, ZjsValue* argv, uint32_t argc);
+
+ZjsValue zjs_register_host_function(ZjsContext* ctx, const char* name, ZjsHostFunction fn);
+
+/* The current `this` value while a host callback is executing. Outside
+ * a callback this returns undefined. */
+ZjsValue zjs_get_this(ZjsContext* ctx);
+
+/* Signal a JS-level throw from inside a host callback. The thrown
+ * value is recorded; the host callback should return zjs_undefined()
+ * shortly after. The next op the interpreter runs will see the
+ * pending throw and unwind. */
+void zjs_throw(ZjsContext* ctx, ZjsValue value);
+
+/* -----------------------------------------------------------------------
+ * Calling JS from C.
+ *
+ * zjs_call invokes `callee` (which must be a JS function, closure, or
+ * host function) with `this_val` as `this` and `argv[0..argc)` as args.
+ * Returns the return value. If the call throws an uncaught exception,
+ * zjs_had_error becomes true and the thrown value is available via
+ * zjs_get_error; the returned value in that case is undefined.
+ * --------------------------------------------------------------------- */
+ZjsValue zjs_call(ZjsContext* ctx, ZjsValue callee, ZjsValue this_val, ZjsValue* argv, uint32_t argc);
+
 #ifdef __cplusplus
 }
 #endif

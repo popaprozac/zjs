@@ -11,7 +11,177 @@ import "./lexer.zc";
 import "./ast.zc";
 import "./parser.zc";
 import "./eval.zc";
+import "./interpreter.zc";
+
+raw {
+    #include <string.h>
+}
 
 fn zjs_version() -> string {
     return "0.0.1-phase0";
+}
+
+// =====================================================================
+// Public embed C ABI — thin wrappers around the internal helpers.
+//
+// Everything declared in include/zjs.h that isn't already a direct
+// internal symbol lives here, so the header surface and its
+// implementation sit side-by-side and the embed contract stays
+// reviewable in one place.
+// =====================================================================
+
+// --- Value constructors ------------------------------------------------
+
+fn zjs_new_string(ctx: ZjsContext*, data: char*, length: u32) -> ZjsValue {
+    if ctx == NULL { return zjs_undefined(); }
+    let bytes: char* = data;
+    if bytes == NULL && length == 0 { bytes = (char*)""; }
+    if bytes == NULL { return zjs_undefined(); }
+    // Route through the atom table so two calls with the same bytes
+    // get the same underlying cell — matches how source-level string
+    // literals dedup, and makes \`===\` over embed-built strings work
+    // through the pointer fast path.
+    let atom = ctx_intern_atom(ctx, bytes, length);
+    return zjs_cell_from_ptr((void*)atom);
+}
+
+fn zjs_new_object(ctx: ZjsContext*) -> ZjsValue {
+    if ctx == NULL { return zjs_undefined(); }
+    return ctx_new_object(ctx);
+}
+
+fn zjs_new_array(ctx: ZjsContext*, length: u32) -> ZjsValue {
+    if ctx == NULL { return zjs_undefined(); }
+    return ctx_new_array(ctx, length);
+}
+
+// --- String inspection -------------------------------------------------
+
+fn zjs_string_bytes(v: ZjsValue, out_length: u32*) -> char* {
+    if zjs_is_string(v) == 0 {
+        if out_length != NULL { out_length[0] = 0; }
+        return NULL;
+    }
+    let s = zjs_as_string(v);
+    if out_length != NULL { out_length[0] = s.length; }
+    return s.data;
+}
+
+// --- Property access ---------------------------------------------------
+
+fn zjs_get_property(ctx: ZjsContext*, obj: ZjsValue, name: char*) -> ZjsValue {
+    if ctx == NULL || name == NULL { return zjs_undefined(); }
+    let nlen: usize = 0;
+    raw { nlen = strlen(name); }
+    let key = ctx_intern_string(ctx, name, (u32)nlen);
+    let r = property_get(ctx, obj, key);
+    if ctx.pending_throw_active {
+        // Surface the pending throw through the same had_error path
+        // as zjs_eval — embedders inspect zjs_had_error after the
+        // call to find out.
+        ctx.had_error = true;
+        ctx.last_error = consume_pending_throw(ctx);
+        return zjs_undefined();
+    }
+    return r;
+}
+
+fn zjs_set_property(ctx: ZjsContext*, obj: ZjsValue, name: char*, value: ZjsValue) -> void {
+    if ctx == NULL || name == NULL { return; }
+    let nlen: usize = 0;
+    raw { nlen = strlen(name); }
+    let key = ctx_intern_string(ctx, name, (u32)nlen);
+    property_set(ctx, obj, key, value);
+    if ctx.pending_throw_active {
+        ctx.had_error = true;
+        ctx.last_error = consume_pending_throw(ctx);
+    }
+}
+
+fn zjs_get_element(ctx: ZjsContext*, obj: ZjsValue, index: u32) -> ZjsValue {
+    if ctx == NULL { return zjs_undefined(); }
+    let key = zjs_int32((i32)index);
+    let r = property_get(ctx, obj, key);
+    if ctx.pending_throw_active {
+        ctx.had_error = true;
+        ctx.last_error = consume_pending_throw(ctx);
+        return zjs_undefined();
+    }
+    return r;
+}
+
+fn zjs_set_element(ctx: ZjsContext*, obj: ZjsValue, index: u32, value: ZjsValue) -> void {
+    if ctx == NULL { return; }
+    let key = zjs_int32((i32)index);
+    property_set(ctx, obj, key, value);
+    if ctx.pending_throw_active {
+        ctx.had_error = true;
+        ctx.last_error = consume_pending_throw(ctx);
+    }
+}
+
+fn zjs_array_length(v: ZjsValue) -> u32 {
+    if zjs_is_array(v) == 0 { return 0; }
+    return zjs_as_array(v).length;
+}
+
+// --- Globals -----------------------------------------------------------
+
+fn zjs_get_global(ctx: ZjsContext*, name: char*) -> ZjsValue {
+    if ctx == NULL || name == NULL { return zjs_undefined(); }
+    let nlen: usize = 0;
+    raw { nlen = strlen(name); }
+    let slot = ctx_find_global(ctx, name, (u32)nlen);
+    if slot < 0 { return zjs_undefined(); }
+    if !ctx.globals[(u32)slot].defined { return zjs_undefined(); }
+    return ctx.globals[(u32)slot].value;
+}
+
+fn zjs_set_global(ctx: ZjsContext*, name: char*, value: ZjsValue) -> void {
+    if ctx == NULL || name == NULL { return; }
+    let nlen: usize = 0;
+    raw { nlen = strlen(name); }
+    let slot = ctx_intern_global(ctx, name, (u32)nlen);
+    ctx.globals[slot].value = value;
+    ctx.globals[slot].defined = true;
+}
+
+// --- Host functions ----------------------------------------------------
+
+// The C ABI typedef is `ZjsValue (*)(ZjsContext*, ZjsValue*, uint32_t)`.
+// We accept it as void* (Zen-c → C the trampoline already casts) and
+// route through the internal registrar, which installs the result as a
+// global named `name`.
+fn zjs_register_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> ZjsValue {
+    if ctx == NULL || name == NULL || fn_ptr == NULL { return zjs_undefined(); }
+    return ctx_register_host_function(ctx, name, fn_ptr);
+}
+
+fn zjs_get_this(ctx: ZjsContext*) -> ZjsValue {
+    if ctx == NULL { return zjs_undefined(); }
+    return ctx.host_this;
+}
+
+fn zjs_throw(ctx: ZjsContext*, value: ZjsValue) -> void {
+    if ctx == NULL { return; }
+    ctx.pending_throw_active = true;
+    ctx.pending_throw_value  = value;
+}
+
+// --- Call JS from C ----------------------------------------------------
+
+fn zjs_call(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsValue, argv: ZjsValue*, argc: u32) -> ZjsValue {
+    if ctx == NULL { return zjs_undefined(); }
+    // Mirror zjs_eval's had_error housekeeping so embedders can check
+    // zjs_had_error after every call (not just eval).
+    ctx.had_error = false;
+    ctx.last_error = zjs_undefined();
+    let r = zjs_call_value_with_this(ctx, callee, this_val, argv, argc);
+    drain_microtasks(ctx);
+    if ctx.pending_throw_active {
+        ctx.had_error = true;
+        ctx.last_error = consume_pending_throw(ctx);
+        return zjs_undefined();
+    }
+    return r;
 }
