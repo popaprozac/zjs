@@ -1,0 +1,678 @@
+// AOT bytecode serializer — Function* ↔ byte buffer.
+//
+// Goal: ship a pre-parsed program. Source compiles to a Function tree
+// once; the byte representation is what a host loads at runtime,
+// skipping lex/parse/compile entirely. Modelled on QuickJS's qjsc and
+// Hermes's .hbc — but simpler and zjs-specific.
+//
+// File layout (v1):
+//
+//   ZjsBytecode := MAGIC u32 VERSION u32 FunctionBlock
+//   MAGIC       := 'Z','J','S','b' (4 bytes, little-endian read)
+//   VERSION     := 1
+//
+//   FunctionBlock :=
+//     u32  code_len               -- count of Inst (each 4 bytes)
+//     u8[code_len * 4] code
+//     u32  const_count
+//     Value[const_count] constants
+//     u32  ic_count               -- inline-cache slot count
+//     ZjsString[ic_count] ic_names
+//     u32  register_count
+//     u32  fixed_regs
+//     u32  param_count
+//     u32  expected_arg_count
+//     u8   flags                  -- see FlagBits below
+//     u8   env_reg                -- only meaningful when flags & NEEDS_ENV
+//     Value parent_ctor           -- for derived-class ctors; else undefined
+//     u32  template_count
+//     -- when template_count > 0:
+//     u32  total_segments
+//     u32[template_count + 1] seg_start
+//     -- per segment, in flat order:
+//     u8   cooked_valid (0 or 1)
+//     ZjsString cooked_or_empty
+//     ZjsString raw
+//
+//   Value := u8 tag, payload depending on tag:
+//     0x00 int32           i32
+//     0x01 double          u64 (bit pattern)
+//     0x02 bool            u8
+//     0x03 null
+//     0x04 undefined
+//     0x05 string          ZjsString
+//     0x06 function        FunctionBlock (recursive)
+//
+//   ZjsString := u32 length, u8[length] bytes (no NUL terminator)
+//
+// Caveats / known gaps:
+//   - IC tables ship cold: every entry's classes/slots/proto_cls start
+//     NULL. The interpreter repopulates them on first hit, same path as
+//     a fresh-from-source Function.
+//   - Tagged-template caches start empty.
+//   - Hidden classes aren't serialized (they're discovered at runtime).
+//   - .prototype / .props expandos on the Function start empty.
+
+import "./bytecode.zc";
+import "./value.zc";
+import "./context.zc";
+
+raw {
+    #include <string.h>
+}
+
+def ZJS_AOT_MAGIC0: u8 = 'Z' as u8;
+def ZJS_AOT_MAGIC1: u8 = 'J' as u8;
+def ZJS_AOT_MAGIC2: u8 = 'S' as u8;
+def ZJS_AOT_MAGIC3: u8 = 'b' as u8;
+def ZJS_AOT_VERSION: u32 = 1;
+
+def ZJS_AOT_TAG_INT32:    u8 = 0;
+def ZJS_AOT_TAG_DOUBLE:   u8 = 1;
+def ZJS_AOT_TAG_BOOL:     u8 = 2;
+def ZJS_AOT_TAG_NULL:     u8 = 3;
+def ZJS_AOT_TAG_UNDEF:    u8 = 4;
+def ZJS_AOT_TAG_STRING:   u8 = 5;
+def ZJS_AOT_TAG_FUNCTION: u8 = 6;
+
+def ZJS_AOT_FLAG_NEEDS_ENV:               u8 = 0x01;
+def ZJS_AOT_FLAG_IS_CLASS_CONSTRUCTOR:    u8 = 0x02;
+def ZJS_AOT_FLAG_IS_METHOD:               u8 = 0x04;
+def ZJS_AOT_FLAG_IS_DEFAULT_DERIVED_CTOR: u8 = 0x08;
+def ZJS_AOT_FLAG_USES_ARGUMENTS:          u8 = 0x10;
+def ZJS_AOT_FLAG_HAS_REST_PARAM:          u8 = 0x20;
+def ZJS_AOT_FLAG_IS_ASYNC:                u8 = 0x40;
+def ZJS_AOT_FLAG_IS_GENERATOR:            u8 = 0x80;
+
+// =====================================================================
+// Writer — growing byte buffer.
+// =====================================================================
+
+struct AotWriter {
+    buf: u8*;
+    len: usize;
+    cap: usize;
+}
+
+fn aot_writer_new() -> AotWriter* {
+    let w = alloc<AotWriter>();
+    w.cap = 64;
+    w.buf = alloc_n<u8>(w.cap);
+    w.len = 0;
+    return w;
+}
+
+fn aot_writer_free(w: AotWriter*) -> void {
+    if w == NULL { return; }
+    if w.buf != NULL { dealloc(w.buf); }
+    dealloc(w);
+}
+
+fn aot_writer_ensure(w: AotWriter*, more: usize) -> void {
+    let need = w.len + more;
+    if need <= w.cap { return; }
+    let new_cap = if w.cap == 0 { 64 } else { w.cap * 2 };
+    while new_cap < need { new_cap = new_cap * 2; }
+    w.buf = realloc_n<u8>(w.buf, w.cap, new_cap);
+    w.cap = new_cap;
+}
+
+fn aot_w_u8(w: AotWriter*, v: u8) -> void {
+    aot_writer_ensure(w, 1);
+    w.buf[w.len] = v;
+    w.len = w.len + 1;
+}
+
+fn aot_w_u32(w: AotWriter*, v: u32) -> void {
+    aot_writer_ensure(w, 4);
+    let p: u8* = NULL;
+    raw { p = &(w->buf[w->len]); }
+    raw {
+        p[0] = (uint8_t)(v & 0xff);
+        p[1] = (uint8_t)((v >> 8) & 0xff);
+        p[2] = (uint8_t)((v >> 16) & 0xff);
+        p[3] = (uint8_t)((v >> 24) & 0xff);
+    }
+    w.len = w.len + 4;
+}
+
+fn aot_w_u64(w: AotWriter*, v: u64) -> void {
+    aot_writer_ensure(w, 8);
+    let p: u8* = NULL;
+    raw { p = &(w->buf[w->len]); }
+    raw {
+        p[0] = (uint8_t)(v & 0xff);
+        p[1] = (uint8_t)((v >> 8) & 0xff);
+        p[2] = (uint8_t)((v >> 16) & 0xff);
+        p[3] = (uint8_t)((v >> 24) & 0xff);
+        p[4] = (uint8_t)((v >> 32) & 0xff);
+        p[5] = (uint8_t)((v >> 40) & 0xff);
+        p[6] = (uint8_t)((v >> 48) & 0xff);
+        p[7] = (uint8_t)((v >> 56) & 0xff);
+    }
+    w.len = w.len + 8;
+}
+
+fn aot_w_bytes(w: AotWriter*, data: u8*, n: usize) -> void {
+    if n == 0 { return; }
+    aot_writer_ensure(w, n);
+    let dst: u8* = NULL;
+    raw { dst = &(w->buf[w->len]); }
+    raw { memcpy(dst, data, n); }
+    w.len = w.len + n;
+}
+
+fn aot_w_str(w: AotWriter*, s: ZjsString*) -> void {
+    if s == NULL { aot_w_u32(w, 0); return; }
+    aot_w_u32(w, s.length);
+    if s.length > 0 { aot_w_bytes(w, (u8*)s.data, (usize)s.length); }
+}
+
+fn aot_w_str_empty(w: AotWriter*) -> void {
+    aot_w_u32(w, 0);
+}
+
+// =====================================================================
+// Reader — byte cursor with bounds checking.
+// =====================================================================
+
+struct AotReader {
+    buf: u8*;
+    len: usize;
+    pos: usize;
+    err: bool;
+}
+
+fn aot_reader_init(r: AotReader*, buf: u8*, len: usize) -> void {
+    r.buf = buf;
+    r.len = len;
+    r.pos = 0;
+    r.err = false;
+}
+
+fn aot_r_ensure(r: AotReader*, n: usize) -> bool {
+    if r.err { return false; }
+    if r.pos + n > r.len { r.err = true; return false; }
+    return true;
+}
+
+fn aot_r_u8(r: AotReader*) -> u8 {
+    if !aot_r_ensure(r, 1) { return 0; }
+    let v = r.buf[r.pos];
+    r.pos = r.pos + 1;
+    return v;
+}
+
+fn aot_r_u32(r: AotReader*) -> u32 {
+    if !aot_r_ensure(r, 4) { return 0; }
+    let b0: u32 = (u32)r.buf[r.pos];
+    let b1: u32 = (u32)r.buf[r.pos + 1];
+    let b2: u32 = (u32)r.buf[r.pos + 2];
+    let b3: u32 = (u32)r.buf[r.pos + 3];
+    r.pos = r.pos + 4;
+    return b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+}
+
+fn aot_r_u64(r: AotReader*) -> u64 {
+    if !aot_r_ensure(r, 8) { return 0; }
+    let lo: u64 = (u64)aot_r_u32(r);
+    let hi: u64 = (u64)aot_r_u32(r);
+    return lo | (hi << 32);
+}
+
+// Allocates a fresh ZjsString from the byte slice and interns it via
+// the context's atom table so equal AOT-loaded strings share a cell
+// (matches source-literal interning behavior).
+fn aot_r_str(r: AotReader*, ctx: ZjsContext*) -> ZjsString* {
+    let n = aot_r_u32(r);
+    if r.err { return NULL; }
+    if !aot_r_ensure(r, (usize)n) { return NULL; }
+    let data: char* = NULL;
+    raw { data = (char*)&(r->buf[r->pos]); }
+    let atom = ctx_intern_atom(ctx, data, n);
+    r.pos = r.pos + (usize)n;
+    return atom;
+}
+
+// =====================================================================
+// Value serializer.
+// =====================================================================
+
+fn aot_write_value(w: AotWriter*, ctx: ZjsContext*, v: ZjsValue) -> bool {
+    if zjs_is_int32(v) != 0 {
+        aot_w_u8(w, ZJS_AOT_TAG_INT32);
+        aot_w_u32(w, (u32)zjs_as_int32(v));
+        return true;
+    }
+    if zjs_is_double(v) != 0 {
+        aot_w_u8(w, ZJS_AOT_TAG_DOUBLE);
+        let d = zjs_as_double(v);
+        let bits: u64 = 0;
+        raw { memcpy(&bits, &d, sizeof(double)); }
+        aot_w_u64(w, bits);
+        return true;
+    }
+    if zjs_is_bool(v) != 0 {
+        aot_w_u8(w, ZJS_AOT_TAG_BOOL);
+        aot_w_u8(w, if zjs_as_bool(v) != 0 { 1 } else { 0 });
+        return true;
+    }
+    if zjs_is_null(v) != 0 {
+        aot_w_u8(w, ZJS_AOT_TAG_NULL);
+        return true;
+    }
+    if zjs_is_undefined(v) != 0 {
+        aot_w_u8(w, ZJS_AOT_TAG_UNDEF);
+        return true;
+    }
+    if zjs_is_string(v) != 0 {
+        aot_w_u8(w, ZJS_AOT_TAG_STRING);
+        aot_w_str(w, zjs_as_string(v));
+        return true;
+    }
+    if zjs_is_function(v) != 0 {
+        aot_w_u8(w, ZJS_AOT_TAG_FUNCTION);
+        let fp = zjs_cell_as_ptr(v);
+        let f: Function* = NULL;
+        raw { f = (Function*)fp; }
+        return aot_write_function(w, ctx, f);
+    }
+    // Unsupported constant kind. Embed a tagged undefined so the
+    // reader doesn't desync; surface as a write failure to the caller.
+    aot_w_u8(w, ZJS_AOT_TAG_UNDEF);
+    return false;
+}
+
+fn aot_read_value(r: AotReader*, ctx: ZjsContext*) -> ZjsValue {
+    let tag = aot_r_u8(r);
+    if tag == ZJS_AOT_TAG_INT32    { return zjs_int32((i32)aot_r_u32(r)); }
+    if tag == ZJS_AOT_TAG_DOUBLE   {
+        let bits = aot_r_u64(r);
+        let d: f64 = 0.0;
+        raw { memcpy(&d, &bits, sizeof(double)); }
+        return zjs_double(d);
+    }
+    if tag == ZJS_AOT_TAG_BOOL     { return zjs_bool((int)aot_r_u8(r)); }
+    if tag == ZJS_AOT_TAG_NULL     { return zjs_null(); }
+    if tag == ZJS_AOT_TAG_UNDEF    { return zjs_undefined(); }
+    if tag == ZJS_AOT_TAG_STRING   {
+        let s = aot_r_str(r, ctx);
+        if s == NULL { return zjs_undefined(); }
+        return zjs_cell_from_ptr((void*)s);
+    }
+    if tag == ZJS_AOT_TAG_FUNCTION {
+        let f = aot_read_function(r, ctx);
+        if f == NULL { return zjs_undefined(); }
+        let fp: void* = NULL;
+        raw { fp = (void*)f; }
+        ctx_register_cell(ctx, fp);
+        return zjs_cell_from_ptr(fp);
+    }
+    r.err = true;
+    return zjs_undefined();
+}
+
+// =====================================================================
+// Function block.
+//
+// Global-slot remapping. Bytecode emitted at compile time references
+// globals by NUMERIC SLOT INDEX (the position in ctx.globals at the
+// moment the compiler called ctx_intern_global). Those slot numbers
+// are NOT stable across contexts — a fresh context's user globals
+// land in different slots depending on the order in which the loaded
+// code references them.
+//
+// Solution: per Function, serialize a `globals` table listing every
+// distinct slot index referenced by any global op, paired with the
+// slot's name from the compile-time context. At load time, intern
+// each name in the current context, build a remap[old_slot →
+// new_slot], and rewrite every global op's operand.
+// =====================================================================
+
+fn aot_inst_is_global_ref(op: Op) -> bool {
+    return op == Op::DefineGlobal
+        || op == Op::LoadGlobal
+        || op == Op::LoadGlobalOrUndefined
+        || op == Op::StoreGlobal;
+}
+
+// Walk a function's code looking for the max global slot referenced —
+// the per-function globals table only needs to span [0..max+1).
+fn aot_max_global_slot(f: Function*) -> i32 {
+    let m: i32 = -1;
+    let i: u32 = 0;
+    while i < f.code_len {
+        let inst = f.code[i];
+        if aot_inst_is_global_ref(inst.op) {
+            let s: i32 = (i32)inst_bc_u16(inst);
+            if s > m { m = s; }
+        }
+        i = i + 1;
+    }
+    return m;
+}
+
+fn aot_pack_flags(f: Function*) -> u8 {
+    let v: u8 = 0;
+    if f.needs_env               { v = v | ZJS_AOT_FLAG_NEEDS_ENV; }
+    if f.is_class_constructor    { v = v | ZJS_AOT_FLAG_IS_CLASS_CONSTRUCTOR; }
+    if f.is_method               { v = v | ZJS_AOT_FLAG_IS_METHOD; }
+    if f.is_default_derived_ctor { v = v | ZJS_AOT_FLAG_IS_DEFAULT_DERIVED_CTOR; }
+    if f.uses_arguments          { v = v | ZJS_AOT_FLAG_USES_ARGUMENTS; }
+    if f.has_rest_param          { v = v | ZJS_AOT_FLAG_HAS_REST_PARAM; }
+    if f.is_async                { v = v | ZJS_AOT_FLAG_IS_ASYNC; }
+    if f.is_generator            { v = v | ZJS_AOT_FLAG_IS_GENERATOR; }
+    return v;
+}
+
+fn aot_unpack_flags(f: Function*, v: u8) -> void {
+    f.needs_env               = (v & ZJS_AOT_FLAG_NEEDS_ENV)               != 0;
+    f.is_class_constructor    = (v & ZJS_AOT_FLAG_IS_CLASS_CONSTRUCTOR)    != 0;
+    f.is_method               = (v & ZJS_AOT_FLAG_IS_METHOD)               != 0;
+    f.is_default_derived_ctor = (v & ZJS_AOT_FLAG_IS_DEFAULT_DERIVED_CTOR) != 0;
+    f.uses_arguments          = (v & ZJS_AOT_FLAG_USES_ARGUMENTS)          != 0;
+    f.has_rest_param          = (v & ZJS_AOT_FLAG_HAS_REST_PARAM)          != 0;
+    f.is_async                = (v & ZJS_AOT_FLAG_IS_ASYNC)                != 0;
+    f.is_generator            = (v & ZJS_AOT_FLAG_IS_GENERATOR)            != 0;
+}
+
+fn aot_write_function(w: AotWriter*, ctx: ZjsContext*, f: Function*) -> bool {
+    if f == NULL { return false; }
+
+    // Globals slot remap. Walk the bytecode for the max slot index used
+    // by any global op, then write that many name slots. Unreferenced
+    // slots in the range get empty names; the loader skips remapping
+    // them. On load, names re-intern in the current context → produce
+    // a new-slot table the code-rewrite step applies.
+    let max_global = aot_max_global_slot(f);
+    let globals_count: u32 = if max_global < 0 { 0 } else { (u32)(max_global + 1) };
+    aot_w_u32(w, globals_count);
+    let gi: u32 = 0;
+    while gi < globals_count {
+        let name = ctx.globals[gi].name;
+        let name_len = ctx.globals[gi].name_len;
+        // Slots without a registered name (won't normally happen for
+        // referenced slots, but we tolerate it) get written as empty.
+        if name == NULL || name_len == 0 {
+            aot_w_u32(w, 0);
+        } else {
+            aot_w_u32(w, name_len);
+            aot_w_bytes(w, (u8*)name, (usize)name_len);
+        }
+        gi = gi + 1;
+    }
+
+    // Code — explicit 4-byte per Inst encoding so layout doesn't
+    // depend on Zen-c's enum width (Op is often emitted as int=4
+    // bytes, making the in-memory Inst struct 8 bytes after
+    // padding). The on-disk form is canonical: { u8 op, u8 a, u8 b,
+    // u8 c }.
+    let code_len: u32 = (u32)f.code_len;
+    aot_w_u32(w, code_len);
+    let ci: u32 = 0;
+    while ci < code_len {
+        let inst = f.code[ci];
+        aot_w_u8(w, (u8)inst.op);
+        aot_w_u8(w, inst.a);
+        aot_w_u8(w, inst.b);
+        aot_w_u8(w, inst.c);
+        ci = ci + 1;
+    }
+
+    // Constants.
+    aot_w_u32(w, f.const_count);
+    let i: u32 = 0;
+    while i < f.const_count {
+        if !aot_write_value(w, ctx, f.constants[i]) { return false; }
+        i = i + 1;
+    }
+
+    // Inline-cache names — the data fields (classes, slots, proto_cls)
+    // start cold; only the name atom is persistent across runs.
+    aot_w_u32(w, f.ic_count);
+    let j: u32 = 0;
+    while j < f.ic_count {
+        aot_w_str(w, f.ics[j].name);
+        j = j + 1;
+    }
+
+    aot_w_u32(w, f.register_count);
+    aot_w_u32(w, f.fixed_regs);
+    aot_w_u32(w, f.param_count);
+    aot_w_u32(w, f.expected_arg_count);
+
+    aot_w_u8(w, aot_pack_flags(f));
+    aot_w_u8(w, f.env_reg);
+
+    if !aot_write_value(w, ctx, f.parent_ctor) { return false; }
+
+    // Tagged-template tables. Each segment carries a u8 cooked-valid
+    // flag (cooked might be undefined for an invalid escape) plus the
+    // cooked + raw atoms.
+    aot_w_u32(w, f.template_count);
+    if f.template_count > 0 {
+        let total = f.template_seg_start[f.template_count];
+        aot_w_u32(w, total);
+        let s: u32 = 0;
+        while s <= f.template_count {
+            aot_w_u32(w, f.template_seg_start[s]);
+            s = s + 1;
+        }
+        let t: u32 = 0;
+        while t < total {
+            let ck = f.template_cooked[t];
+            if ck == NULL {
+                aot_w_u8(w, 0);
+                aot_w_str_empty(w);
+            } else {
+                aot_w_u8(w, 1);
+                aot_w_str(w, ck);
+            }
+            aot_w_str(w, f.template_raw[t]);
+            t = t + 1;
+        }
+    }
+
+    return true;
+}
+
+fn aot_read_function(r: AotReader*, ctx: ZjsContext*) -> Function* {
+    let f = function_new();
+
+    // Globals remap table — for each compile-time slot, rebind to a
+    // current-context slot via the stored name. Empty names mean
+    // "unreferenced": leave the remap entry as-is (it won't be touched
+    // because the bytecode never reads that slot).
+    let globals_count = aot_r_u32(r);
+    let remap: u16* = NULL;
+    if globals_count > 0 {
+        remap = alloc_n<u16>((usize)globals_count);
+        let gi: u32 = 0;
+        while gi < globals_count {
+            let nlen = aot_r_u32(r);
+            if r.err { dealloc(remap); function_free(f); return NULL; }
+            if nlen == 0 {
+                remap[gi] = (u16)gi;
+            } else {
+                if !aot_r_ensure(r, (usize)nlen) {
+                    dealloc(remap); function_free(f); return NULL;
+                }
+                let nptr: char* = NULL;
+                raw { nptr = (char*)&(r->buf[r->pos]); }
+                let new_slot = ctx_intern_global(ctx, nptr, nlen);
+                r.pos = r.pos + (usize)nlen;
+                remap[gi] = (u16)new_slot;
+            }
+            gi = gi + 1;
+        }
+    }
+
+    let code_len = aot_r_u32(r);
+    f.code_len = (usize)code_len;
+    if code_len > 0 {
+        if !aot_r_ensure(r, (usize)code_len * 4) {
+            if remap != NULL { dealloc(remap); }
+            function_free(f); return NULL;
+        }
+        f.code = alloc_n<Inst>((usize)code_len);
+        let ci: u32 = 0;
+        while ci < code_len {
+            let op_b = aot_r_u8(r);
+            let a_b  = aot_r_u8(r);
+            let b_b  = aot_r_u8(r);
+            let c_b  = aot_r_u8(r);
+            // Reconstruct the Inst — Op variant is selected by the
+            // raw integer value of the original opcode.
+            let inst: Inst;
+            raw {
+                inst.op = (Op)op_b;
+                inst.a  = a_b;
+                inst.b  = b_b;
+                inst.c  = c_b;
+            }
+            // Remap global-op slot operands to the current context.
+            if remap != NULL && aot_inst_is_global_ref(inst.op) {
+                let orig: u32 = (u32)b_b | ((u32)c_b << 8);
+                if orig < globals_count {
+                    let mapped = remap[orig];
+                    raw {
+                        inst.b = (uint8_t)(mapped & 0xff);
+                        inst.c = (uint8_t)((mapped >> 8) & 0xff);
+                    }
+                }
+            }
+            f.code[ci] = inst;
+            ci = ci + 1;
+        }
+    } else {
+        f.code = NULL;
+    }
+    if remap != NULL { dealloc(remap); }
+
+    let cc = aot_r_u32(r);
+    f.const_count = cc;
+    if cc > 0 {
+        f.constants = alloc_n<ZjsValue>((usize)cc);
+        let i: u32 = 0;
+        while i < cc {
+            f.constants[i] = aot_read_value(r, ctx);
+            if r.err { function_free(f); return NULL; }
+            i = i + 1;
+        }
+    } else {
+        f.constants = NULL;
+    }
+
+    let ic_n = aot_r_u32(r);
+    f.ic_count = ic_n;
+    if ic_n > 0 {
+        f.ics = alloc_n<ICEntry>((usize)ic_n);
+        let j: u32 = 0;
+        while j < ic_n {
+            let name = aot_r_str(r, ctx);
+            if r.err { function_free(f); return NULL; }
+            f.ics[j].name = name;
+            let k: u32 = 0;
+            while k < IC_POLY_SIZE {
+                f.ics[j].classes[k] = NULL;
+                f.ics[j].slots[k]   = 0;
+                k = k + 1;
+            }
+            f.ics[j].entry_count = 0;
+            f.ics[j].megamorphic = false;
+            j = j + 1;
+        }
+        // Proto-cls side table is allocated lazily on first proto-chain
+        // hit (matches the compile-time-fresh-Function shape).
+        f.ic_proto_cls = NULL;
+    } else {
+        f.ics = NULL;
+        f.ic_proto_cls = NULL;
+    }
+
+    f.register_count     = aot_r_u32(r);
+    f.fixed_regs         = aot_r_u32(r);
+    f.param_count        = aot_r_u32(r);
+    f.expected_arg_count = aot_r_u32(r);
+
+    aot_unpack_flags(f, aot_r_u8(r));
+    f.env_reg = aot_r_u8(r);
+
+    f.parent_ctor = aot_read_value(r, ctx);
+    if r.err { function_free(f); return NULL; }
+
+    let tc = aot_r_u32(r);
+    f.template_count = tc;
+    if tc > 0 {
+        let total = aot_r_u32(r);
+        f.template_seg_start = alloc_n<u32>((usize)(tc + 1));
+        let s: u32 = 0;
+        while s <= tc {
+            f.template_seg_start[s] = aot_r_u32(r);
+            s = s + 1;
+        }
+        f.template_cooked = alloc_n<ZjsString*>((usize)total);
+        f.template_raw    = alloc_n<ZjsString*>((usize)total);
+        let t: u32 = 0;
+        while t < total {
+            let cooked_valid = aot_r_u8(r);
+            let cs = aot_r_str(r, ctx);
+            if r.err { function_free(f); return NULL; }
+            if cooked_valid != 0 {
+                f.template_cooked[t] = cs;
+            } else {
+                f.template_cooked[t] = NULL;
+            }
+            let rs = aot_r_str(r, ctx);
+            if r.err { function_free(f); return NULL; }
+            f.template_raw[t] = rs;
+            t = t + 1;
+        }
+        f.template_cache = alloc_n<ZjsArray*>((usize)tc);
+        let ci: u32 = 0;
+        while ci < tc { f.template_cache[ci] = NULL; ci = ci + 1; }
+    }
+
+    if r.err { function_free(f); return NULL; }
+    return f;
+}
+
+// =====================================================================
+// Top-level container — magic + version + top function.
+// =====================================================================
+
+fn aot_serialize_program(ctx: ZjsContext*, f: Function*) -> AotWriter* {
+    let w = aot_writer_new();
+    aot_w_u8(w, ZJS_AOT_MAGIC0);
+    aot_w_u8(w, ZJS_AOT_MAGIC1);
+    aot_w_u8(w, ZJS_AOT_MAGIC2);
+    aot_w_u8(w, ZJS_AOT_MAGIC3);
+    aot_w_u32(w, ZJS_AOT_VERSION);
+    if !aot_write_function(w, ctx, f) {
+        aot_writer_free(w);
+        return NULL;
+    }
+    return w;
+}
+
+fn aot_deserialize_program(ctx: ZjsContext*, buf: u8*, len: usize) -> Function* {
+    if ctx == NULL || buf == NULL { return NULL; }
+    let r: AotReader;
+    let rp: AotReader* = NULL;
+    raw { rp = &r; }
+    aot_reader_init(rp, buf, len);
+    if aot_r_u8(rp) != ZJS_AOT_MAGIC0 { return NULL; }
+    if aot_r_u8(rp) != ZJS_AOT_MAGIC1 { return NULL; }
+    if aot_r_u8(rp) != ZJS_AOT_MAGIC2 { return NULL; }
+    if aot_r_u8(rp) != ZJS_AOT_MAGIC3 { return NULL; }
+    let ver = aot_r_u32(rp);
+    if ver != ZJS_AOT_VERSION { return NULL; }
+    let f = aot_read_function(rp, ctx);
+    if r.err { if f != NULL { function_free(f); } return NULL; }
+    if f != NULL {
+        let fp: void* = NULL;
+        raw { fp = (void*)f; }
+        ctx_register_cell(ctx, fp);
+    }
+    return f;
+}

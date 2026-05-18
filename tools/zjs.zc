@@ -355,13 +355,15 @@ fn run_module_file(path: char*) -> int {
     return 0;
 }
 
-fn run_file(path: char*) -> int {
+// Slurp a file's bytes into a fresh malloc'd buffer + return its
+// length. `null_terminate` adds a trailing NUL when true (source
+// path); leave it off for bytecode files so the length is precise.
+fn slurp_file(path: char*, null_terminate: bool, out_len: usize*) -> char* {
     let fh: void* = NULL;
     raw { fh = (void*)fopen(path, "rb"); }
-    if fh == NULL { eprintln "zjs: cannot open file"; return 2; }
-
-    let len: usize = 0;
+    if fh == NULL { return NULL; }
     let buf: char* = NULL;
+    let len: usize = 0;
     raw {
         FILE* f = (FILE*)fh;
         fseek(f, 0, SEEK_END);
@@ -369,55 +371,124 @@ fn run_file(path: char*) -> int {
         fseek(f, 0, SEEK_SET);
         if (sz < 0) sz = 0;
         len = (size_t)sz;
-        buf = (char*)malloc(len + 1);
-        if (buf) { fread(buf, 1, len, f); buf[len] = '\0'; }
+        size_t alloc = null_terminate ? len + 1 : (len > 0 ? len : 1);
+        buf = (char*)malloc(alloc);
+        if (buf) {
+            if (len > 0) { fread(buf, 1, len, f); }
+            if (null_terminate) { buf[len] = '\0'; }
+        }
         fclose(f);
     }
-    if buf == NULL { eprintln "zjs: out of memory"; return 2; }
+    if buf == NULL { return NULL; }
+    if out_len != NULL { out_len[0] = len; }
+    return buf;
+}
+
+// "ZJSb" magic at the head of every AOT-compiled program file.
+fn buf_is_bytecode(buf: char*, len: usize) -> bool {
+    if buf == NULL || len < 8 { return false; }
+    if (u8)buf[0] != (u8)'Z' { return false; }
+    if (u8)buf[1] != (u8)'J' { return false; }
+    if (u8)buf[2] != (u8)'S' { return false; }
+    if (u8)buf[3] != (u8)'b' { return false; }
+    return true;
+}
+
+fn report_uncaught_error(ctx: ZjsContext*) -> void {
+    let err = zjs_get_error(ctx);
+    if zjs_is_string(err) != 0 {
+        let s = zjs_as_string(err);
+        let sd = s.data;
+        let sn = s.length;
+        raw { fputs("zjs: throw: ", stderr); fwrite(sd, 1, sn, stderr); fputc('\n', stderr); }
+        return;
+    }
+    if zjs_is_object(err) != 0 {
+        let o = zjs_as_object(err);
+        let name_atom = zjs_string_new((char*)"name", 4);
+        let msg_atom  = zjs_string_new((char*)"message", 7);
+        let name_v = object_get(o, name_atom);
+        let msg_v  = object_get(o, msg_atom);
+        raw {
+            fputs("zjs: throw: ", stderr);
+            if (zjs_is_string(name_v)) {
+                ZjsString* s = zjs_as_string(name_v);
+                fwrite(s->data, 1, s->length, stderr);
+            } else {
+                fputs("(unknown)", stderr);
+            }
+            if (zjs_is_string(msg_v)) {
+                fputs(": ", stderr);
+                ZjsString* s = zjs_as_string(msg_v);
+                fwrite(s->data, 1, s->length, stderr);
+            }
+            fputc('\n', stderr);
+            free(name_atom->data); free(name_atom);
+            free(msg_atom->data);  free(msg_atom);
+        }
+        return;
+    }
+    raw { fputs("zjs: throw\n", stderr); }
+}
+
+fn run_file(path: char*) -> int {
+    let len: usize = 0;
+    let buf = slurp_file(path, true, &len);
+    if buf == NULL { eprintln "zjs: cannot open file"; return 2; }
     defer dealloc(buf);
 
     let ctx = zjs_new_context();
     if ctx == NULL { eprintln "zjs: failed to create context"; return 2; }
     defer zjs_free_context(ctx);
 
+    // Auto-detect: AOT-compiled bytecode files start with the ZJSb
+    // magic; everything else is treated as source. Lets `zjs run x.js`
+    // and `zjs run x.zbc` share the same subcommand.
+    if buf_is_bytecode(buf, len) {
+        let f = aot_deserialize_program(ctx, (u8*)buf, len);
+        if f == NULL { eprintln "zjs: invalid bytecode file"; return 1; }
+        let _ = zjs_run_function(ctx, f);
+        if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); return 1; }
+        return 0;
+    }
+
     let _ = zjs_eval(ctx, buf);
-    if zjs_had_error(ctx) != 0 {
-        let err = zjs_get_error(ctx);
-        // Print a one-line summary of the thrown value to stderr for the
-        // conformance runner to scrape.
-        if zjs_is_string(err) != 0 {
-            let s = zjs_as_string(err);
-            let sd = s.data;
-            let sn = s.length;
-            raw { fputs("zjs: throw: ", stderr); fwrite(sd, 1, sn, stderr); fputc('\n', stderr); }
-        } else if zjs_is_object(err) != 0 {
-            // Try .name + ": " + .message
-            let o = zjs_as_object(err);
-            let name_atom = zjs_string_new((char*)"name", 4);
-            let msg_atom  = zjs_string_new((char*)"message", 7);
-            let name_v = object_get(o, name_atom);
-            let msg_v  = object_get(o, msg_atom);
-            raw {
-                fputs("zjs: throw: ", stderr);
-                if (zjs_is_string(name_v)) {
-                    ZjsString* s = zjs_as_string(name_v);
-                    fwrite(s->data, 1, s->length, stderr);
-                } else {
-                    fputs("(unknown)", stderr);
-                }
-                if (zjs_is_string(msg_v)) {
-                    fputs(": ", stderr);
-                    ZjsString* s = zjs_as_string(msg_v);
-                    fwrite(s->data, 1, s->length, stderr);
-                }
-                fputc('\n', stderr);
-                free(name_atom->data); free(name_atom);
-                free(msg_atom->data);  free(msg_atom);
-            }
-        } else {
-            raw { fputs("zjs: throw\n", stderr); }
-        }
+    if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); return 1; }
+    return 0;
+}
+
+// `zjs compile <in.js> -o <out.zbc>` — parse + compile source to a
+// Function, serialize via the AOT writer, write bytes to disk. The
+// resulting file is loadable via `zjs run <out.zbc>` and embeds via
+// the zjs_eval_bytecode C ABI.
+fn run_compile(in_path: char*, out_path: char*) -> int {
+    let len: usize = 0;
+    let buf = slurp_file(in_path, true, &len);
+    if buf == NULL { eprintln "zjs: cannot open input"; return 2; }
+    defer dealloc(buf);
+
+    let ctx = zjs_new_context();
+    if ctx == NULL { eprintln "zjs: failed to create context"; return 2; }
+    defer zjs_free_context(ctx);
+
+    let f = zjs_compile(ctx, buf);
+    if f == NULL {
+        if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); }
         return 1;
+    }
+    defer function_free(f);
+
+    let w = aot_serialize_program(ctx, f);
+    if w == NULL { eprintln "zjs: serialize failed"; return 1; }
+    defer aot_writer_free(w);
+
+    let fh: void* = NULL;
+    raw { fh = (void*)fopen(out_path, "wb"); }
+    if fh == NULL { eprintln "zjs: cannot open output"; return 2; }
+    raw {
+        FILE* outf = (FILE*)fh;
+        fwrite(w->buf, 1, w->len, outf);
+        fclose(outf);
     }
     return 0;
 }
@@ -530,7 +601,14 @@ fn run_parse(source: char*) -> int {
 }
 
 fn print_usage() -> int {
-    eprintln "usage: zjs --version | zjs eval <source> | zjs run <file> | zjs lex <source> | zjs parse <source>";
+    eprintln "usage:";
+    eprintln "  zjs --version";
+    eprintln "  zjs eval <source>                evaluate source";
+    eprintln "  zjs run  <file>                  run a .js source or .zbc bytecode file";
+    eprintln "  zjs compile <in.js> -o <out.zbc> AOT-compile source to bytecode";
+    eprintln "  zjs lex   <source>               dump the token stream";
+    eprintln "  zjs parse <source>               dump the AST";
+    eprintln "  zjs module <file>                run a file as an ES module";
     return 1;
 }
 
@@ -564,6 +642,12 @@ fn main(argc: int, argv: char**) -> int {
     if libc_str::strcmp(argv[1], "module") == 0 {
         if argc < 3 { return print_usage(); }
         return run_module_file(argv[2]);
+    }
+    if libc_str::strcmp(argv[1], "compile") == 0 {
+        // zjs compile <in.js> -o <out.zbc>
+        if argc < 5 { return print_usage(); }
+        if libc_str::strcmp(argv[3], "-o") != 0 { return print_usage(); }
+        return run_compile(argv[2], argv[4]);
     }
 
     return print_usage();

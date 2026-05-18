@@ -67,6 +67,54 @@ fn zjs_eval(ctx: ZjsContext*, source: char*) -> ZjsValue {
     return r.value;
 }
 
+// Compile-only — exposed for the AOT CLI. Returns a fully-initialized
+// Function* (caller takes ownership / registers it for GC). Surface
+// SyntaxError / had_error on parse or compile failure, same as
+// zjs_eval. Does NOT run the function.
+fn zjs_compile(ctx: ZjsContext*, source: char*) -> Function* {
+    if ctx == NULL || source == NULL { return NULL; }
+    let len: usize = 0;
+    raw { len = strlen(source); }
+    let parse = parse_program(source, len);
+    defer parser_free_result(parse);
+    if parse.had_error {
+        let err = build_syntax_error(ctx, (char*)"parse error");
+        ctx.had_error = true;
+        ctx.last_error = err;
+        return NULL;
+    }
+    let f = compile_program(ctx, source, parse.root);
+    if f == NULL {
+        let err = build_syntax_error(ctx, (char*)"compile error");
+        ctx.had_error = true;
+        ctx.last_error = err;
+        return NULL;
+    }
+    return f;
+}
+
+// Run an already-compiled Function* as if it were the top-level
+// program. Used by the AOT loader to share zjs_eval's setup (top-level
+// `this` rebinding, microtask drain, error reporting).
+fn zjs_run_function(ctx: ZjsContext*, f: Function*) -> ZjsValue {
+    if ctx == NULL || f == NULL { return zjs_undefined(); }
+    let saved_this = ctx.host_this;
+    if ctx.global_this_obj != NULL {
+        ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+    }
+    let r = interpret(ctx, f, NULL, 0);
+    ctx.host_this = saved_this;
+    drain_microtasks(ctx);
+    if r.is_throw {
+        ctx.had_error = true;
+        ctx.last_error = r.value;
+        return r.value;
+    }
+    ctx.had_error = false;
+    ctx.last_error = zjs_undefined();
+    return r.value;
+}
+
 // Evaluate a file as an ES module. `abs_path` should be an absolute
 // filesystem path; the loader caches by it. Returns the module's
 // exports object on success; sets ctx.had_error on failure.

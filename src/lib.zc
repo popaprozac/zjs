@@ -12,6 +12,7 @@ import "./ast.zc";
 import "./parser.zc";
 import "./eval.zc";
 import "./interpreter.zc";
+import "./aot.zc";
 
 raw {
     #include <string.h>
