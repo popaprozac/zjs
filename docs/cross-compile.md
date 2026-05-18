@@ -9,6 +9,19 @@ cross-compile toolchain for Linux + macOS-x86_64. Windows needs three
 small POSIX shims; iOS needs more SDK plumbing than the experiment
 covered.** Perf is identical (zig cc *is* clang under the hood).
 
+Zen-c officially supports Zig as a backend at 100% test-suite parity
+with GCC/Clang — see [Compiler Support & Compatibility][zenc-compat]
+in the upstream README. The compatibility table:
+
+| Compiler | Pass rate | Supported features        |
+|----------|:---------:|---------------------------|
+| GCC      | 100%      | All                       |
+| Clang    | 100%      | All                       |
+| Zig      | 100%      | All (uses `zig cc`)       |
+| TCC      | 98%       | Most, no Intel ASM        |
+
+[zenc-compat]: https://github.com/zenc-lang/zenc#compiler-support--compatibility
+
 ## The mechanic
 
 `zc` accepts `--cc <command>` to swap the C compiler driver. Both
@@ -18,13 +31,14 @@ backends accept the same input (Zen-c's transpiled C11), so:
 # Default (system clang + libsystem on macOS)
 zc build --release tools/zjs.zc -o build/zjs
 
-# zig cc as the driver, host target
-zc build --release --cc 'zig cc' tools/zjs.zc -o build/zjs.zigcc
+# zig cc as the driver, host target — official short form
+zc build --release --cc zig tools/zjs.zc -o build/zjs.zigcc
 
-# Cross-compile via zig cc -target
-zc build --release --cc 'zig cc -target aarch64-linux-musl' tools/zjs.zc -o build/zjs.linux.arm64
+# Cross-compile — the short form doesn't carry through extra flags,
+# so use the explicit 'zig cc -target ...' form here.
+zc build --release --cc 'zig cc -target aarch64-linux-musl -s' tools/zjs.zc -o build/zjs.linux.arm64
 zc build --release --cc 'zig cc -target x86_64-linux-musl  -s' tools/zjs.zc -o build/zjs.linux.x64
-zc build --release --cc 'zig cc -target x86_64-macos'           tools/zjs.zc -o build/zjs.macos.x64
+zc build --release --cc 'zig cc -target x86_64-macos'         tools/zjs.zc -o build/zjs.macos.x64
 ```
 
 The `-s` flag is forwarded by zig cc to the linker for symbol-strip,
@@ -139,3 +153,26 @@ zc build --release --cc 'zig cc -target x86_64-macos' \
 Same `--cc` mechanic works for `make` invocations by passing
 `ZC_FLAGS='-w --release --cc "zig cc -target ..."'` (note the inner
 quotes — `--cc`'s argument is one shell word).
+
+## Release plan — dual builds
+
+Once the dust settles on iOS + Windows shims, the intent is to ship
+two release flavors per platform:
+
+| Flavor | Toolchain | Audience |
+|--------|-----------|----------|
+| `zjs-X.Y.Z-<plat>-clang.tar.gz` | System clang / GCC via `zc` | Embedders building locally, matches host libc. |
+| `zjs-X.Y.Z-<plat>-zig.tar.gz`   | `zc --cc 'zig cc -target ...'` | Static-musl Linux, portable distribution, smaller macOS binaries. |
+
+The size win (−12% on macOS arm64) and the static-musl Linux story
+are individually worth the second flavor; bundled they're a clean
+"download-and-run" story for non-host environments. CI is the gating
+work — `make cross` doesn't exist yet, and producing the binaries
+reliably requires the toolchain matrix.
+
+A small `make cross-zig` target wrapping the four working zig-cc
+recipes above is the natural next step. Cosmopolitan / APE
+(`cosmocc` toolchain) is a more ambitious alternative — one binary
+that runs on macOS + Linux + Windows + BSD across x86_64 + arm64 —
+worth a follow-up experiment after the basic dual-release pipeline
+is real.
