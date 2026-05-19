@@ -16272,7 +16272,12 @@ fn zjs_string_concat(ctx: ZjsContext*, a: ZjsValue, b: ZjsValue) -> ZjsValue {
     let sa = zjs_as_string(sa_val);
     let sb = zjs_as_string(sb_val);
     let total = sa.length + sb.length;
-    let buf = alloc_n<char>((usize)(total + 1));
+    // Use raw malloc instead of alloc_n<char> — alloc_n is calloc-
+    // backed, but we overwrite every byte below via memcpy. Profile
+    // of string_concat showed _platform_memset eating ~25% of body
+    // time, all spent zeroing memory we immediately clobber.
+    let buf: char* = NULL;
+    raw { buf = (char*)malloc((size_t)(total + 1)); }
     mem_copy<char>(buf, sa.data, (usize)sa.length);
     let tail: char* = NULL;
     raw { tail = &buf[sa->length]; }
