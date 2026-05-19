@@ -437,6 +437,24 @@ fn zjs_same_value_zero(a: ZjsValue, b: ZjsValue) -> int {
 }
 
 fn zjs_loose_eq(a: ZjsValue, b: ZjsValue) -> int {
+    // Hot fast path: both numeric (int32 or double). For loose-eq
+    // between numbers there's no coercion needed — same-type just
+    // means strict equality. Loop counters / property values that
+    // hit this path skip the full type-classification dance below.
+    // Profile of richards showed zjs_loose_eq at ~6% of body time
+    // pre-optimization; this fast path dominates real-world `==`.
+    let a_int = zjs_is_int32(a);
+    let b_int = zjs_is_int32(b);
+    if a_int != 0 && b_int != 0 {
+        return if zjs_as_int32(a) == zjs_as_int32(b) { 1 } else { 0 };
+    }
+    let a_dbl = zjs_is_double(a);
+    let b_dbl = zjs_is_double(b);
+    if (a_int != 0 || a_dbl != 0) && (b_int != 0 || b_dbl != 0) {
+        let af = zjs_to_double(a);
+        let bf = zjs_to_double(b);
+        return if af == bf { 1 } else { 0 };  // NaN != NaN — correct
+    }
     // ECMA-262 §7.2.13 IsLooselyEqual. The bracket sequence here mirrors
     // the spec steps: same-type strict-eq, null-undefined, cross-type
     // numeric/string coercion, boolean→number on either side, primitive
