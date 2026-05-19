@@ -45,22 +45,87 @@ def collect_benches(name_filter):
         found.append((name, p))
     return found
 
+_BODY_MARKER = "__zjs_body_ms="
+
+# Engine-agnostic timer prelude. node / bun / zjs / hermes all have
+# performance.now(); qjs has only Date.now() (ms precision). Probe
+# at runtime so the same wrapped script works under every engine
+# we compare against — startup-discrimination must be uniform or
+# the cross-engine numbers stop being apples-to-apples.
+_TIMER_PRELUDE = (
+    "var __zjs_now = (typeof performance === 'object' "
+    "&& typeof performance.now === 'function') "
+    "? function(){ return performance.now(); } "
+    ": function(){ return Date.now(); };\n"
+    "var __zjs_bench_t0 = __zjs_now();\n"
+)
+_TIMER_EPILOGUE = (
+    "console.log('" + _BODY_MARKER + "' + (__zjs_now() - __zjs_bench_t0));\n"
+)
+
+def _wrap_bench_source(path):
+    """Wrap a bench script with timer markers so the runner can
+    separate body-time from process-startup overhead. Engine-agnostic
+    so the same wrapping works under qjs / node / bun for the
+    compare-mode runs."""
+    original = path.read_text()
+    return _TIMER_PRELUDE + original.rstrip() + "\n" + _TIMER_EPILOGUE
+
 def time_one(zjs_bin, path, iters):
-    samples = []
-    for _ in range(iters):
-        t0 = time.perf_counter()
-        r = subprocess.run([str(zjs_bin), "run", str(path)],
-                           capture_output=True, text=True)
-        t1 = time.perf_counter()
-        if r.returncode != 0:
-            return None, r.stderr.strip()[:120]
-        samples.append(t1 - t0)
-    samples.sort()
+    """Run a bench `iters` times. Each iteration spawns a fresh zjs
+    process; the wrapped script reports the body-only time via a
+    stdout marker, and the subprocess wall-clock minus that gives us
+    startup. We track both separately so engine-init regressions
+    don't pollute the bench-body trend graphs."""
+    body_samples = []
+    wall_samples = []
+    wrapped_src = _wrap_bench_source(path)
+    # Write to a per-run temp file — zjs CLI takes a path, not stdin.
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as tf:
+        tf.write(wrapped_src)
+        wrapped_path = tf.name
+    try:
+        for _ in range(iters):
+            t0 = time.perf_counter()
+            r = subprocess.run([str(zjs_bin), "run", wrapped_path],
+                               capture_output=True, text=True)
+            t1 = time.perf_counter()
+            if r.returncode != 0:
+                return None, r.stderr.strip()[:120]
+            wall_samples.append(t1 - t0)
+            # Find the body marker — last occurrence wins so a bench
+            # that prints "__zjs_body_ms=..." itself can't fool us.
+            body_ms = None
+            for line in r.stdout.splitlines():
+                idx = line.find(_BODY_MARKER)
+                if idx >= 0:
+                    try:
+                        body_ms = float(line[idx + len(_BODY_MARKER):])
+                    except ValueError:
+                        pass
+            if body_ms is None:
+                return None, "missing body marker in stdout"
+            body_samples.append(body_ms / 1000.0)  # ms → seconds
+    finally:
+        try:
+            os.remove(wrapped_path)
+        except OSError:
+            pass
+    body_samples.sort()
+    wall_samples.sort()
+    startup_samples = sorted(w - b for w, b in zip(wall_samples, body_samples))
     return {
-        "min":    samples[0],
-        "median": samples[len(samples) // 2],
-        "max":    samples[-1],
-        "iters":  iters,
+        "min":          body_samples[0],
+        "median":       body_samples[len(body_samples) // 2],
+        "max":          body_samples[-1],
+        "iters":        iters,
+        # Wall-clock total (body + startup) for back-compat / sanity.
+        "wall_median":  wall_samples[len(wall_samples) // 2],
+        # Startup = wall − body, the bit we want to track on its own
+        # graph instead of letting it pollute body trends.
+        "startup_min":    startup_samples[0],
+        "startup_median": startup_samples[len(startup_samples) // 2],
     }, None
 
 def commit_short_sha():
@@ -101,8 +166,10 @@ def write_html(out_path, history, latest):
 </style>
 
 <h1>zjs — benchmarks</h1>
-<p class="sub">End-to-end wall-clock per script (parse + compile + interpret).
-zjs-vs-zjs over time. Numbers are median of N iterations.</p>
+<p class="sub">Body-only execution per script (parse + compile + interpret),
+measured with a <code>performance.now()</code> wrapper inside the script
+so process-startup overhead doesn't pollute the trend. Startup is
+tracked separately below.</p>
 
 <div class="card">
   <strong>Latest run</strong> &mdash; <span id="when"></span> @ <code id="sha"></code>
@@ -113,7 +180,16 @@ zjs-vs-zjs over time. Numbers are median of N iterations.</p>
 </div>
 
 <div class="card">
-  <strong>Per-benchmark history</strong> (median ms over time — lower is better)
+  <strong>Process startup overhead</strong>
+  (median across benches per commit — measures
+  <code>zjs run &lt;script&gt;</code> launch + ctx_init_builtins, with the
+  bench body subtracted via the in-script timer. Spiking here means
+  context init grew, even if individual benches look stable.)
+  <div id="startup-chart" style="margin-top: 0.5em;"></div>
+</div>
+
+<div class="card">
+  <strong>Per-benchmark history</strong> (body-only median ms over time — lower is better)
   <div id="charts" class="charts" style="margin-top: 0.5em;"></div>
 </div>
 
@@ -155,6 +231,49 @@ zjs-vs-zjs over time. Numbers are median of N iterations.</p>
       <td class="delta ${{dcls}}">${{delta}}</td>`;
     tbody.appendChild(tr);
   }}
+
+  // Process-startup chart. Each history row has many results; each
+  // result has its own startup_median (≈identical within a row since
+  // every bench spawns the same zjs process). Plot the median across
+  // benches per row so a single line summarizes "how long does a
+  // bare zjs invocation take" over time.
+  (function() {{
+    const Wsw = 980, Hsw = 130, Psw = 30;
+    const points = [];
+    for (const row of history) {{
+      const ms_vals = (row.results || [])
+        .map(r => (r.startup_median || 0) * 1000)
+        .filter(v => v > 0);
+      if (!ms_vals.length) continue;
+      ms_vals.sort((a, b) => a - b);
+      points.push({{ when: row.when, sha: row.sha,
+                     ms: ms_vals[Math.floor(ms_vals.length / 2)] }});
+    }}
+    const host = document.getElementById('startup-chart');
+    if (!points.length) {{
+      host.innerHTML = '<em style="color:#888">No startup data yet — run the bench after this commit to populate.</em>';
+      return;
+    }}
+    let yMax = 0;
+    for (const p of points) yMax = Math.max(yMax, p.ms);
+    yMax = Math.max(yMax * 1.1, 1);
+    const xs = i => Psw + (i / Math.max(points.length - 1, 1)) * (Wsw - 2*Psw);
+    const ys = v => Hsw - Psw - (v / yMax) * (Hsw - 2*Psw);
+    let svg = `<svg viewBox="0 0 ${{Wsw}} ${{Hsw}}" width="100%">`;
+    svg += `<line x1="${{Psw}}" y1="${{Hsw-Psw}}" x2="${{Wsw-Psw}}" y2="${{Hsw-Psw}}" stroke="#999"/>`;
+    svg += `<line x1="${{Psw}}" y1="${{Psw}}"     x2="${{Psw}}"      y2="${{Hsw-Psw}}" stroke="#999"/>`;
+    for (let v = 0; v <= yMax; v += yMax/4) {{
+      const y = ys(v);
+      svg += `<line x1="${{Psw}}" y1="${{y}}" x2="${{Wsw-Psw}}" y2="${{y}}" stroke="#eee"/>`;
+      svg += `<text x="${{Psw-4}}" y="${{y+3}}" text-anchor="end" fill="#888" font-size="9">${{v.toFixed(1)}}</text>`;
+    }}
+    const d = points.map((p, i) => `${{xs(i)}},${{ys(p.ms)}}`).join(' ');
+    svg += `<polyline points="${{d}}" fill="none" stroke="#c47" stroke-width="1.5"/>`;
+    const last = points[points.length - 1];
+    svg += `<text x="${{xs(points.length - 1) + 4}}" y="${{ys(last.ms)+4}}" font-size="10" fill="#c47">${{last.ms.toFixed(2)}}ms</text>`;
+    svg += '</svg>';
+    host.innerHTML = svg;
+  }})();
 
   // Per-benchmark line charts.
   const benchNames = new Set();
@@ -214,26 +333,52 @@ DEFAULT_OTHER_ENGINES = [
 ]
 
 def time_engine(label, bin_path, extra_args, script_path, iters):
-    """Time `<bin> <args...> <script>` N times. Returns dict like time_one()."""
-    samples = []
-    for _ in range(iters):
-        t0 = time.perf_counter()
+    """Time `<bin> <args...> <script>` N times under another engine.
+    Uses the same body-marker wrapper as time_one so cross-engine
+    comparisons exclude startup overhead — otherwise zjs's
+    ctx_init_builtins cost shows up as engine-vs-engine speed
+    differences, which is misleading."""
+    body_samples = []
+    wrapped_src = _wrap_bench_source(script_path)
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as tf:
+        tf.write(wrapped_src)
+        wrapped_path = tf.name
+    try:
+        for _ in range(iters):
+            try:
+                r = subprocess.run(
+                    [bin_path] + list(extra_args) + [wrapped_path],
+                    capture_output=True, text=True, timeout=30.0,
+                )
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                return None
+            if r.returncode != 0:
+                return None
+            # Parse the body marker. If the engine's stdout chunked
+            # weirdly or the wrap didn't take, treat as a miss and
+            # bail rather than corrupting the comparison.
+            body_ms = None
+            for line in r.stdout.splitlines():
+                idx = line.find(_BODY_MARKER)
+                if idx >= 0:
+                    try:
+                        body_ms = float(line[idx + len(_BODY_MARKER):])
+                    except ValueError:
+                        pass
+            if body_ms is None:
+                return None
+            body_samples.append(body_ms / 1000.0)
+    finally:
         try:
-            r = subprocess.run(
-                [bin_path] + list(extra_args) + [str(script_path)],
-                capture_output=True, text=True, timeout=30.0,
-            )
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            return None
-        t1 = time.perf_counter()
-        if r.returncode != 0:
-            return None
-        samples.append(t1 - t0)
-    samples.sort()
+            os.remove(wrapped_path)
+        except OSError:
+            pass
+    body_samples.sort()
     return {
-        "min":    samples[0],
-        "median": samples[len(samples) // 2],
-        "max":    samples[-1],
+        "min":    body_samples[0],
+        "median": body_samples[len(body_samples) // 2],
+        "max":    body_samples[-1],
         "iters":  iters,
     }
 
@@ -566,13 +711,24 @@ def main():
             "max":    stats["max"],
             "iters":  stats["iters"],
             "baseline_median": baseline,
+            # New since 2026-05-19: separate startup vs body so the
+            # body trend doesn't get pulled around by ctx_init_builtins
+            # cost. wall_median is the original "total subprocess
+            # time" metric kept for backwards compat.
+            "wall_median":     stats.get("wall_median", stats["median"]),
+            "startup_min":     stats.get("startup_min", 0.0),
+            "startup_median":  stats.get("startup_median", 0.0),
         })
         delta_str = ""
         if baseline:
             pct = (stats["median"] - baseline) / baseline * 100
             sign = "+" if pct >= 0 else ""
             delta_str = f"  ({sign}{pct:.1f}% vs first)"
-        print(f"{name:20s}  {stats['median']*1000:7.2f} ms  (min {stats['min']*1000:6.2f}, max {stats['max']*1000:6.2f}){delta_str}")
+        startup_str = ""
+        sm = stats.get("startup_median")
+        if sm is not None and sm > 0:
+            startup_str = f"  startup={sm*1000:.2f}ms"
+        print(f"{name:20s}  {stats['median']*1000:7.2f} ms  (min {stats['min']*1000:6.2f}, max {stats['max']*1000:6.2f}){startup_str}{delta_str}")
 
     when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     sha  = commit_short_sha()
