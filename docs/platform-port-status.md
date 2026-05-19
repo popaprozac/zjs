@@ -25,7 +25,7 @@ macOS development instead of bouncing between machines per commit.
 | `fetch` (sync HTTP/HTTPS) | ✅ NSURLSession (`http_apple.m`) | ✅ same | ⚠️ stub (`http_stub.c`) | ✅ WinHTTP (`http_windows.c`) | #201 — Linux libcurl planned |
 | `fetch` (async — Promise.all parallelism) | ✅ NSURLSession completion handlers | ✅ same | ⚠️ pthread-wraps sync via `http_async.c` | ⚠️ pthread-wraps sync via `http_async.c` | Apple skips the extra thread. Linux/Windows work but use a thread per in-flight request. |
 | `WebSocket` | ✅ `NSURLSessionWebSocketTask` (`ws_apple.m`) | ✅ same | ❌ stub (`ws_stub.c`) | ❌ stub (`ws_stub.c`) | #205 — libwebsockets / WinHTTP_WebSocket planned |
-| WebSocket keep-alive (ping/pong) | ⚠️ not yet | ⚠️ not yet | n/a | n/a | #208 — Apple needs `dispatch_source` ping cancel handler |
+| WebSocket keep-alive (ping/pong) | ✅ `dispatch_source` ping every 25s | ✅ same | ⚠️ deferred until Linux WS lands | ⚠️ deferred until Windows WS lands | Pong-error → CLOSE 1006 |
 | Cross-platform shims (realpath / gmtime_r / random / RSS) | ✅ POSIX | ✅ POSIX | ✅ POSIX | ✅ Win32 (`portability.h`: `_fullpath` / `gmtime_s` / `BCryptGenRandom` / `GetProcessMemoryInfo`) | Single header, no platform code outside the `#ifdef` |
 | Event-loop wait | ✅ `CFRunLoopRunInMode` (required for fetch async) | ✅ same | _n/a_ (`nanosleep`) | _n/a_ (`nanosleep`) | Apple-only because NSURLSession's completion needs the runloop |
 | iOS cross-compile | ✅ via zapp's xcrun pattern | — | _n/a_ | _n/a_ | Re-verify when iOS target is exercised |

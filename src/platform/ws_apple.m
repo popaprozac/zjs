@@ -31,6 +31,13 @@ struct ZjsWsHandle {
     ZjsWsEventNode* tail;
     int closed;                  // 1 once close has been requested
     int open_fired;              // 1 once an OPEN event has been enqueued
+    // Keep-alive ping/pong timer. Apple's NSURLSessionWebSocketTask
+    // does NOT auto-send client pings — many intermediaries (load
+    // balancers, NAT routers) drop idle WS connections after 30-60s
+    // without one. Source fires every 25s and sends a ping; if the
+    // pong handler comes back with an error we synthesize a CLOSE
+    // event with code 1006 (abnormal closure).
+    dispatch_source_t ping_timer;
 };
 
 static void ws_enqueue(ZjsWsHandle* h, ZjsWsEvent e) {
@@ -152,6 +159,34 @@ ZjsWsHandle* zjs_ws_connect(const char* url,
     [task resume];
     ws_arm_receive(h);
 
+    // Start the keep-alive ping timer — fires every 25s. Send a
+    // ping and watch for the pong's err — if it fails we synthesize
+    // a CLOSE event with code 1006 (abnormal closure). The timer
+    // uses a global queue so the main thread's runloop state
+    // doesn't matter; cancel happens in zjs_ws_destroy via
+    // dispatch_source_cancel.
+    h->ping_timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
+                        dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0));
+    uint64_t interval = 25ULL * NSEC_PER_SEC;
+    dispatch_source_set_timer(h->ping_timer,
+                              dispatch_time(DISPATCH_TIME_NOW, (int64_t)interval),
+                              interval, 1ULL * NSEC_PER_SEC);
+    dispatch_source_set_event_handler(h->ping_timer, ^{
+        if (h->closed || h->task == NULL) return;
+        NSURLSessionWebSocketTask* t = (__bridge NSURLSessionWebSocketTask*)h->task;
+        [t sendPingWithPongReceiveHandler:^(NSError* err) {
+            if (err != nil && !h->closed) {
+                ZjsWsEvent e = {0};
+                e.kind = ZJS_WS_EVT_CLOSE;
+                e.code = 1006;
+                e.text = strdup("ping timeout");
+                e.text_len = strlen("ping timeout");
+                ws_enqueue(h, e);
+            }
+        }];
+    });
+    dispatch_resume(h->ping_timer);
+
     return h;
 }
 
@@ -256,7 +291,18 @@ int zjs_ws_poll(ZjsWsHandle* h, ZjsWsEvent* out_event) {
 
 void zjs_ws_destroy(ZjsWsHandle* h) {
     if (h == NULL) return;
-    if (!h->closed && h->task != NULL) {
+    // Mark closed early so any in-flight ping completion skips
+    // the enqueue path before we tear down.
+    h->closed = 1;
+    // Cancel the keep-alive ping timer first. dispatch_source_cancel
+    // is synchronous-with-pending-handlers — if a ping's event
+    // handler is mid-execution it'll finish, but no new handlers
+    // fire after this returns.
+    if (h->ping_timer != NULL) {
+        dispatch_source_cancel(h->ping_timer);
+        h->ping_timer = NULL;
+    }
+    if (h->task != NULL) {
         NSURLSessionWebSocketTask* task = (__bridge NSURLSessionWebSocketTask*)h->task;
         [task cancel];
     }
