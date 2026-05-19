@@ -454,6 +454,26 @@ fn zjs_new_context() -> ZjsContext* {
         // host receiver to JS `undefined`.
         result.host_this = zjs_undefined();
 
+        // Pre-size the high-churn tables that ctx_init_builtins fills
+        // before any user script runs. Without this, the atom and
+        // globals tables grow ~5× during builtin registration, each
+        // grow rehashing every prior entry.
+        //   atoms: ~210 strings registered (prototype method names,
+        //          builtin globals, error type names). 512 → 1 grow.
+        //   globals: ~60 names (Object/Array/Math/JSON/.../WebSocket).
+        //          128 → 0 grows.
+        //
+        // young_cells deliberately NOT pre-sized — the 8KB allocation
+        // costs more in cold-page-fault time than it saves in
+        // realloc growth, since young_cells starts at 64 and only
+        // doubles. The atom/globals tables, by contrast, rehash all
+        // prior entries on every grow, so skipping that work is the
+        // real win.
+        result.atoms = alloc_n<AtomEntry>(512);
+        result.atom_cap = 512;
+        result.globals = alloc_n<GlobalEntry>(128);
+        result.global_cap = 128;
+
         // Root empty class — registered as a cell, kept alive via the
         // context pointer itself (we mark it during gc_mark_roots).
         let empty = zjs_hidden_class_new(NULL, NULL, 0, 0);

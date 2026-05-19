@@ -120,9 +120,12 @@ def time_one(zjs_bin, path, iters):
             os.remove(wrapped_path)
         except OSError:
             pass
+    # Compute startup per-iteration BEFORE sorting — otherwise zip()
+    # pairs the i-th smallest wall with the i-th smallest body, which
+    # mixes iterations and biases the result.
+    startup_samples = sorted(w - b for w, b in zip(wall_samples, body_samples))
     body_samples.sort()
     wall_samples.sort()
-    startup_samples = sorted(w - b for w, b in zip(wall_samples, body_samples))
     return {
         "min":          body_samples[0],
         "median":       body_samples[len(body_samples) // 2],
