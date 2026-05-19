@@ -779,19 +779,31 @@ fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc
     let args_base = reg_stack_reserve(ctx, total);
     let regs_base = args_base + argc;
 
+    // Single-arg fast path (fib_recursive, factorial, etc — by far
+    // the most common call shape). memcpy with runtime size is a
+    // libc call; one direct assignment is cheaper for argc=1.
+    // args_base is fresh past the old reg_stack_top so it never
+    // overlaps with src_offset — plain memcpy/move is safe even
+    // for the uses_arguments path.
     if f.uses_arguments || f.has_rest_param {
-        let a: u32 = 0;
-        while a < argc {
-            ctx.reg_stack[args_base + a] = ctx.reg_stack[src_offset + a];
-            a = a + 1;
+        if argc == 1 {
+            ctx.reg_stack[args_base] = ctx.reg_stack[src_offset];
+        } else if argc > 1 {
+            raw {
+                memcpy(&ctx->reg_stack[args_base], &ctx->reg_stack[src_offset],
+                       (size_t)argc * sizeof(ZjsValue));
+            }
         }
     }
 
     let copy_count: u32 = if argc < f.param_count { argc } else { f.param_count };
-    let i: u32 = 0;
-    while i < copy_count {
-        ctx.reg_stack[regs_base + i] = ctx.reg_stack[src_offset + i];
-        i = i + 1;
+    if copy_count == 1 {
+        ctx.reg_stack[regs_base] = ctx.reg_stack[src_offset];
+    } else if copy_count > 1 {
+        raw {
+            memcpy(&ctx->reg_stack[regs_base], &ctx->reg_stack[src_offset],
+                   (size_t)copy_count * sizeof(ZjsValue));
+        }
     }
     // Init only up to fixed_regs: params + locals + persistent temps.
     // Scratch temps above the watermark are guaranteed written-before-
@@ -800,7 +812,7 @@ fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc
     let undef: ZjsValue = zjs_undefined();
     let init_to: u32 = f.fixed_regs;
     if init_to > reg_count { init_to = reg_count; }
-    let j: u32 = i;
+    let j: u32 = copy_count;
     while j < init_to {
         ctx.reg_stack[regs_base + j] = undef;
         j = j + 1;
@@ -933,21 +945,23 @@ fn tail_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32) -
     let args_base = reg_stack_reserve(ctx, new_total);
     let regs_base = args_base + argc;
 
+    // Per-arg or bulk copy. memcpy with runtime size is a libc call —
+    // for argc=1 (fib-style) one direct assignment is faster.
     if f.uses_arguments || f.has_rest_param {
-        let a: u32 = 0;
-        while a < argc {
-            ctx.reg_stack[args_base + a] = args[a];
-            a = a + 1;
+        if argc == 1 {
+            ctx.reg_stack[args_base] = args[0];
+        } else if argc > 1 {
+            raw { memcpy(&ctx->reg_stack[args_base], args, (size_t)argc * sizeof(ZjsValue)); }
         }
     }
     let copy_count: u32 = if argc < f.param_count { argc } else { f.param_count };
-    let i: u32 = 0;
-    while i < copy_count {
-        ctx.reg_stack[regs_base + i] = args[i];
-        i = i + 1;
+    if copy_count == 1 {
+        ctx.reg_stack[regs_base] = args[0];
+    } else if copy_count > 1 {
+        raw { memcpy(&ctx->reg_stack[regs_base], args, (size_t)copy_count * sizeof(ZjsValue)); }
     }
     let undef: ZjsValue = zjs_undefined();
-    let j: u32 = i;
+    let j: u32 = copy_count;
     while j < reg_count {
         ctx.reg_stack[regs_base + j] = undef;
         j = j + 1;
