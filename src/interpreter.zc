@@ -4293,22 +4293,26 @@ fn interpret_inner_full(ctx: ZjsContext*,
             if did_throw {
                 throwing = true; thrown = call_result; exit_reason = 3; break;
             }
+            // Tag-load once. ECMA-262 §13.3.7.3.4 only counts certain
+            // cell types as Object — primitives (string, symbol, number)
+            // and internal sentinels (hidden class, accessor) are out.
+            let rt: u8 = zjs_cell_tag(call_result);
             let result_is_object: bool =
-                zjs_is_object(call_result) != 0
-                || zjs_is_array(call_result) != 0
-                || zjs_is_promise(call_result) != 0
-                || zjs_is_regexp(call_result) != 0
-                || zjs_is_function(call_result) != 0
-                || zjs_is_closure(call_result) != 0
-                || zjs_is_host_function(call_result) != 0
-                || zjs_is_map(call_result) != 0
-                || zjs_is_set(call_result) != 0
-                || zjs_is_date(call_result) != 0
-                || zjs_is_uint8_array(call_result) != 0
-                || zjs_is_typed_array(call_result) != 0
-                || zjs_is_array_buffer(call_result) != 0
-                || zjs_is_data_view(call_result) != 0
-                || zjs_is_websocket(call_result) != 0;
+                rt == TAG_OBJECT
+                || rt == TAG_ARRAY
+                || rt == TAG_PROMISE
+                || rt == TAG_REGEXP
+                || rt == TAG_FUNCTION
+                || rt == TAG_CLOSURE
+                || rt == TAG_HOST_FUNCTION
+                || rt == TAG_MAP
+                || rt == TAG_SET
+                || rt == TAG_DATE
+                || rt == TAG_UINT8_ARRAY
+                || rt == TAG_TYPED_ARRAY
+                || rt == TAG_ARRAY_BUFFER
+                || rt == TAG_DATA_VIEW
+                || rt == TAG_WEBSOCKET;
             if result_is_object {
                 regs[dst2] = call_result;
             } else if final_this.bits != new_obj_v.bits
@@ -4505,22 +4509,23 @@ fn interpret_inner_full(ctx: ZjsContext*,
             if did_throw {
                 throwing = true; thrown = call_result; exit_reason = 3; break;
             }
+            let rt2: u8 = zjs_cell_tag(call_result);
             let result_is_object: bool =
-                zjs_is_object(call_result) != 0
-                || zjs_is_array(call_result) != 0
-                || zjs_is_promise(call_result) != 0
-                || zjs_is_regexp(call_result) != 0
-                || zjs_is_function(call_result) != 0
-                || zjs_is_closure(call_result) != 0
-                || zjs_is_host_function(call_result) != 0
-                || zjs_is_map(call_result) != 0
-                || zjs_is_set(call_result) != 0
-                || zjs_is_date(call_result) != 0
-                || zjs_is_uint8_array(call_result) != 0
-                || zjs_is_typed_array(call_result) != 0
-                || zjs_is_array_buffer(call_result) != 0
-                || zjs_is_data_view(call_result) != 0
-                || zjs_is_websocket(call_result) != 0;
+                rt2 == TAG_OBJECT
+                || rt2 == TAG_ARRAY
+                || rt2 == TAG_PROMISE
+                || rt2 == TAG_REGEXP
+                || rt2 == TAG_FUNCTION
+                || rt2 == TAG_CLOSURE
+                || rt2 == TAG_HOST_FUNCTION
+                || rt2 == TAG_MAP
+                || rt2 == TAG_SET
+                || rt2 == TAG_DATE
+                || rt2 == TAG_UINT8_ARRAY
+                || rt2 == TAG_TYPED_ARRAY
+                || rt2 == TAG_ARRAY_BUFFER
+                || rt2 == TAG_DATA_VIEW
+                || rt2 == TAG_WEBSOCKET;
             // Derived-class ctor: a non-undefined non-Object return is
             // a TypeError. Base ctors silently coerce to `this`.
             let callee_is_derived: bool = false;
