@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-18 23:11 UTC",
+    "when": "2026-05-19 00:17 UTC",
     "total": 14524,
-    "passed": 6702,
-    "failed": 1295,
+    "passed": 6711,
+    "failed": 1286,
     "skipped": 6527
   },
   "failures": [
@@ -397,7 +397,7 @@
     },
     {
       "path": "test/language/statements/for-in/resizable-buffer.js",
-      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"012\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/for-in/var-arguments-fn-strict.js",
@@ -1465,19 +1465,7 @@
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/ArrayBuffer/regular-subclassing.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/ArrayBuffer/super-must-be-called.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/DataView/regular-subclassing.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/DataView/super-must-be-called.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Date/regular-subclassing.js",
@@ -2400,14 +2388,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): [undefined].indexOf() Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-grow.js",
-      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-shrink.js",
-      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/length-near-integer-limit.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab-1\u00bb, \u00ab9007199254740990\u00bb) to be true"
     },
@@ -2421,7 +2401,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/resizable-buffer.js",
-      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-11.js",
@@ -2512,14 +2492,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Constructor invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/resizable-buffer-grow-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/resizable-buffer-shrink-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/resizable-buffer.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
@@ -2596,16 +2568,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): callCnt Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/resizable-buffer-grow-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/resizable-buffer-shrink-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/resizable-buffer.js",
-      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents."
     },
     {
       "path": "test/built-ins/Object/keys/not-a-constructor.js",
@@ -4006,6 +3970,42 @@
     {
       "path": "test/built-ins/Set/set-get-add-method-failure.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Set/set-iterable-calls-add.js",
+      "reason": "[sloppy] zjs: throw: (unknown): `Set.prototype.add` called twice. Expected SameValue(\u00ab0\u00bb, \u00ab2\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Set/set-iterable-throws-when-add-is-not-callable.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Set/set-iterator-close-after-add-failure.js",
+      "reason": "[sloppy] timeout"
+    },
+    {
+      "path": "test/built-ins/Set/set-newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): `Object.getPrototypeOf(s1)` returns `Set.prototype` Expected SameValue(\u00abnull\u00bb, \u00ab[object Object]\u00bb)"
+    },
+    {
+      "path": "test/built-ins/Set/set-undefined-newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Date/15.9.1.15-1.js",
+      "reason": "[sloppy] zjs: throw: RangeError: Invalid time value"
+    },
+    {
+      "path": "test/built-ins/Date/S15.9.2.1_A1.js",
+      "reason": "[sloppy] zjs: throw: (unknown): The value of `typeof Date()` is expected to be \"string\" Expected SameValue(\u00ab\"object\"\u00bb, \u00ab\"string\"\u00bb"
+    },
+    {
+      "path": "test/built-ins/Date/S15.9.2.1_A2.js",
+      "reason": "[sloppy] zjs: throw: (unknown): isEqual(Date(), (new Date()).toString()) must return true"
+    },
+    {
+      "path": "test/built-ins/Date/S15.9.3.1_A2_T1.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.isPrototypeOf(x12) must return true"
     }
   ],
   "skip_counts": {

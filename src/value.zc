@@ -623,6 +623,39 @@ def TAG_UINT8_ARRAY:   u8 = 17;  // 2026-05-18: WHATWG TypedArray foundation.
                                  //   access (read/write) clamps to 0..255.
                                  //   Other widths (Int8/Uint16/...) layer
                                  //   on this representation when added.
+def TAG_TYPED_ARRAY:   u8 = 18;  // 2026-05-18: all non-Uint8 typed arrays —
+                                 //   Int8 / Uint8Clamped / Int16 / Uint16 /
+                                 //   Int32 / Uint32 / Float32 / Float64.
+                                 //   View over a ZjsArrayBuffer with a
+                                 //   `kind` byte selecting the element
+                                 //   representation.
+def TAG_ARRAY_BUFFER:  u8 = 19;  // 2026-05-18: WHATWG ArrayBuffer — owns
+                                 //   the bytes; typed arrays + DataView
+                                 //   are views over an ArrayBuffer.
+def TAG_DATA_VIEW:     u8 = 20;  // 2026-05-18: WHATWG DataView — un-typed
+                                 //   view onto an ArrayBuffer with per-call
+                                 //   get/set methods (little/big endian).
+
+// TypedArray element kinds. Used by ZjsTypedArray.kind to discriminate
+// at load/store time. Kept separate from TAG_TYPED_ARRAY so the tag
+// alone fits in CellHeader's u8 type_tag.
+def TA_INT8:          u8 = 0;
+def TA_UINT8:         u8 = 1;
+def TA_UINT8_CLAMPED: u8 = 2;
+def TA_INT16:         u8 = 3;
+def TA_UINT16:        u8 = 4;
+def TA_INT32:         u8 = 5;
+def TA_UINT32:        u8 = 6;
+def TA_FLOAT32:       u8 = 7;
+def TA_FLOAT64:       u8 = 8;
+
+fn ta_element_size(kind: u8) -> u8 {
+    if kind == TA_INT8 || kind == TA_UINT8 || kind == TA_UINT8_CLAMPED { return 1; }
+    if kind == TA_INT16 || kind == TA_UINT16 { return 2; }
+    if kind == TA_INT32 || kind == TA_UINT32 || kind == TA_FLOAT32 { return 4; }
+    if kind == TA_FLOAT64 { return 8; }
+    return 1;
+}
 def TAG_SYMBOL:        u8 = 15;  // 2026-05-16: ECMA-262 Symbol. Each Symbol
                                  //   carries a description (for toString) and a
                                  //   unique underlying property-key string used
@@ -1102,6 +1135,145 @@ fn uint8_array_free_void(p: void*) -> void {
     raw { a = (ZjsUint8Array*)p; }
     if a.bytes != NULL { dealloc(a.bytes); }
     dealloc(a);
+}
+
+// =====================================================================
+// ArrayBuffer / TypedArray / DataView — full TypedArray family.
+//
+// ArrayBuffer owns the bytes; TypedArray + DataView are views with
+// a byte offset and a length. Multiple views can reference the same
+// buffer (proper spec semantics). Lifetime: views hold the buffer
+// alive via GC marking (handled in context.zc's mark phase).
+// =====================================================================
+
+struct ZjsArrayBuffer {
+    header: CellHeader;       // type_tag = TAG_ARRAY_BUFFER
+    bytes:  u8*;              // owned; freed in array_buffer_free
+    length: u32;              // bytes
+}
+
+struct ZjsTypedArray {
+    header:       CellHeader;       // type_tag = TAG_TYPED_ARRAY
+    kind:         u8;               // TA_INT8 ... TA_FLOAT64
+    element_size: u8;               // 1 / 2 / 4 / 8 — derivable but cached
+    length:       u32;              // element count
+    byte_offset:  u32;              // start byte in buffer
+    buffer:       ZjsArrayBuffer*;  // backing storage
+}
+
+struct ZjsDataView {
+    header:      CellHeader;        // type_tag = TAG_DATA_VIEW
+    byte_offset: u32;
+    byte_length: u32;
+    buffer:      ZjsArrayBuffer*;
+}
+
+fn zjs_is_array_buffer(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_ARRAY_BUFFER { return 1; }
+    return 0;
+}
+
+fn zjs_as_array_buffer(v: ZjsValue) -> ZjsArrayBuffer* {
+    let p = zjs_cell_as_ptr(v);
+    let b: ZjsArrayBuffer* = NULL;
+    raw { b = (ZjsArrayBuffer*)p; }
+    return b;
+}
+
+fn zjs_array_buffer_new(length: u32) -> ZjsArrayBuffer* {
+    let b = alloc<ZjsArrayBuffer>();
+    b.header.type_tag = TAG_ARRAY_BUFFER;
+    b.length = length;
+    if length > 0 {
+        b.bytes = alloc_n<u8>((usize)length);
+        let i: u32 = 0;
+        while i < length { b.bytes[i] = (u8)0; i = i + 1; }
+    } else {
+        b.bytes = NULL;
+    }
+    return b;
+}
+
+fn array_buffer_free_void(p: void*) -> void {
+    let b: ZjsArrayBuffer* = NULL;
+    raw { b = (ZjsArrayBuffer*)p; }
+    if b.bytes != NULL { dealloc(b.bytes); }
+    dealloc(b);
+}
+
+fn zjs_is_typed_array(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_TYPED_ARRAY { return 1; }
+    return 0;
+}
+
+fn zjs_as_typed_array(v: ZjsValue) -> ZjsTypedArray* {
+    let p = zjs_cell_as_ptr(v);
+    let t: ZjsTypedArray* = NULL;
+    raw { t = (ZjsTypedArray*)p; }
+    return t;
+}
+
+// Construct a fresh TypedArray with its own backing buffer.
+// `element_count` is the JS-facing length; the buffer is allocated
+// to fit `element_count * element_size` bytes.
+fn zjs_typed_array_new(kind: u8, element_count: u32) -> ZjsTypedArray* {
+    let es = ta_element_size(kind);
+    let t = alloc<ZjsTypedArray>();
+    t.header.type_tag = TAG_TYPED_ARRAY;
+    t.kind = kind;
+    t.element_size = es;
+    t.length = element_count;
+    t.byte_offset = 0;
+    t.buffer = zjs_array_buffer_new(element_count * (u32)es);
+    return t;
+}
+
+// View an existing buffer with explicit offset/length. Offset is in
+// bytes; length is in elements.
+fn zjs_typed_array_view(kind: u8, buf: ZjsArrayBuffer*, byte_offset: u32, element_count: u32) -> ZjsTypedArray* {
+    let t = alloc<ZjsTypedArray>();
+    t.header.type_tag = TAG_TYPED_ARRAY;
+    t.kind = kind;
+    t.element_size = ta_element_size(kind);
+    t.length = element_count;
+    t.byte_offset = byte_offset;
+    t.buffer = buf;
+    return t;
+}
+
+fn typed_array_free_void(p: void*) -> void {
+    // View — does NOT own its buffer. The buffer is GC-owned and freed
+    // separately when no view references it.
+    let t: ZjsTypedArray* = NULL;
+    raw { t = (ZjsTypedArray*)p; }
+    dealloc(t);
+}
+
+fn zjs_is_data_view(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_DATA_VIEW { return 1; }
+    return 0;
+}
+
+fn zjs_as_data_view(v: ZjsValue) -> ZjsDataView* {
+    let p = zjs_cell_as_ptr(v);
+    let d: ZjsDataView* = NULL;
+    raw { d = (ZjsDataView*)p; }
+    return d;
+}
+
+fn zjs_data_view_new(buf: ZjsArrayBuffer*, byte_offset: u32, byte_length: u32) -> ZjsDataView* {
+    let d = alloc<ZjsDataView>();
+    d.header.type_tag = TAG_DATA_VIEW;
+    d.byte_offset = byte_offset;
+    d.byte_length = byte_length;
+    d.buffer = buf;
+    return d;
+}
+
+fn data_view_free_void(p: void*) -> void {
+    let d: ZjsDataView* = NULL;
+    raw { d = (ZjsDataView*)p; }
+    dealloc(d);
 }
 
 fn zjs_is_array_iter(v: ZjsValue) -> int {

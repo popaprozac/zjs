@@ -286,6 +286,120 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
+    if zjs_is_typed_array(obj) != 0 {
+        let ta = zjs_as_typed_array(obj);
+        // Integer-index fast path.
+        let idx: i32 = -1;
+        if zjs_is_int32(key) != 0 {
+            idx = zjs_as_int32(key);
+        } else if zjs_is_double(key) != 0 {
+            let d = zjs_as_double(key);
+            raw { if (d >= 0 && d < 4294967296.0 && d == (double)(uint32_t)d) idx = (int32_t)(uint32_t)d; }
+        } else if zjs_is_string(key) != 0 {
+            let ks = zjs_as_string(key);
+            if ks.length > 0 {
+                let ok: int = 1;
+                let n: u32 = 0;
+                let i: u32 = 0;
+                raw {
+                    while (i < ks->length) {
+                        char c = ks->data[i];
+                        if (c < '0' || c > '9') { ok = 0; break; }
+                        n = n * 10 + (uint32_t)(c - '0');
+                        i++;
+                    }
+                }
+                if ok != 0 { idx = (i32)n; }
+            }
+        }
+        if idx >= 0 && (u32)idx < ta.length {
+            return ta_load(ta, (u32)idx);
+        }
+        // Named properties.
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        let name = zjs_as_string(key);
+        let nd = name.data;
+        let nl = name.length;
+        let is_len: int = 0;
+        let is_blen: int = 0;
+        let is_boff: int = 0;
+        let is_buf: int = 0;
+        let is_bpe: int = 0;
+        raw {
+            is_len  = (nl == 6  && memcmp(nd, "length",            6)  == 0) ? 1 : 0;
+            is_blen = (nl == 10 && memcmp(nd, "byteLength",        10) == 0) ? 1 : 0;
+            is_boff = (nl == 10 && memcmp(nd, "byteOffset",        10) == 0) ? 1 : 0;
+            is_buf  = (nl == 6  && memcmp(nd, "buffer",            6)  == 0) ? 1 : 0;
+            is_bpe  = (nl == 17 && memcmp(nd, "BYTES_PER_ELEMENT", 17) == 0) ? 1 : 0;
+        }
+        if is_len != 0  { return zjs_int32((i32)ta.length); }
+        if is_blen != 0 { return zjs_int32((i32)(ta.length * (u32)ta.element_size)); }
+        if is_boff != 0 { return zjs_int32((i32)ta.byte_offset); }
+        if is_bpe != 0  { return zjs_int32((i32)ta.element_size); }
+        if is_buf != 0  {
+            if ta.buffer != NULL { return zjs_cell_from_ptr((void*)ta.buffer); }
+            return zjs_undefined();
+        }
+        let proto = ta_proto_for(ctx, ta.kind);
+        if proto != NULL {
+            let slot = class_find_slot(proto.cls, name);
+            if slot >= 0 {
+                let v = proto.slots[(u32)slot];
+                if zjs_is_deleted(v) == 0 { return v; }
+            }
+        }
+        return zjs_undefined();
+    }
+
+    if zjs_is_array_buffer(obj) != 0 {
+        let b = zjs_as_array_buffer(obj);
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        let name = zjs_as_string(key);
+        let nd = name.data;
+        let nl = name.length;
+        let is_blen: int = 0;
+        raw { is_blen = (nl == 10 && memcmp(nd, "byteLength", 10) == 0) ? 1 : 0; }
+        if is_blen != 0 { return zjs_int32((i32)b.length); }
+        if ctx.array_buffer_proto != NULL {
+            let slot = class_find_slot(ctx.array_buffer_proto.cls, name);
+            if slot >= 0 {
+                let v = ctx.array_buffer_proto.slots[(u32)slot];
+                if zjs_is_deleted(v) == 0 { return v; }
+            }
+        }
+        return zjs_undefined();
+    }
+
+    if zjs_is_data_view(obj) != 0 {
+        let dv = zjs_as_data_view(obj);
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        let name = zjs_as_string(key);
+        let nd = name.data;
+        let nl = name.length;
+        let is_blen: int = 0;
+        let is_boff: int = 0;
+        let is_buf:  int = 0;
+        raw {
+            is_blen = (nl == 10 && memcmp(nd, "byteLength", 10) == 0) ? 1 : 0;
+            is_boff = (nl == 10 && memcmp(nd, "byteOffset", 10) == 0) ? 1 : 0;
+            is_buf  = (nl == 6  && memcmp(nd, "buffer",     6)  == 0) ? 1 : 0;
+        }
+        if is_blen != 0 { return zjs_int32((i32)dv.byte_length); }
+        if is_boff != 0 { return zjs_int32((i32)dv.byte_offset); }
+        if is_buf  != 0 {
+            if dv.buffer != NULL { return zjs_cell_from_ptr((void*)dv.buffer); }
+            return zjs_undefined();
+        }
+        if ctx.data_view_proto != NULL {
+            let slot = class_find_slot(ctx.data_view_proto.cls, name);
+            if slot >= 0 {
+                let v = ctx.data_view_proto.slots[(u32)slot];
+                if zjs_is_deleted(v) == 0 { return v; }
+            }
+        }
+        return zjs_undefined();
+    }
+
     if zjs_is_date(obj) != 0 && ctx.date_proto != NULL {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
@@ -974,6 +1088,36 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         }
         // Out-of-bounds indices silently drop (TypedArray spec: writes
         // past length are no-ops).
+        return;
+    }
+    if zjs_is_typed_array(obj) != 0 {
+        let ta = zjs_as_typed_array(obj);
+        let idx: i32 = -1;
+        if zjs_is_int32(key) != 0 {
+            idx = zjs_as_int32(key);
+        } else if zjs_is_double(key) != 0 {
+            let d = zjs_as_double(key);
+            raw { if (d >= 0 && d < 4294967296.0 && d == (double)(uint32_t)d) idx = (int32_t)(uint32_t)d; }
+        } else if zjs_is_string(key) != 0 {
+            let ks = zjs_as_string(key);
+            if ks.length > 0 {
+                let ok: int = 1;
+                let n: u32 = 0;
+                let i: u32 = 0;
+                raw {
+                    while (i < ks->length) {
+                        char c = ks->data[i];
+                        if (c < '0' || c > '9') { ok = 0; break; }
+                        n = n * 10 + (uint32_t)(c - '0');
+                        i++;
+                    }
+                }
+                if ok != 0 { idx = (i32)n; }
+            }
+        }
+        if idx >= 0 && (u32)idx < ta.length {
+            ta_store(ctx, ta, (u32)idx, value);
+        }
         return;
     }
     if zjs_is_array(obj) != 0 {
@@ -3823,6 +3967,24 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
+                } else if zjs_is_typed_array(val) != 0 {
+                    let cur = ta_proto_for(ctx, zjs_as_typed_array(val).kind);
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
+                } else if zjs_is_array_buffer(val) != 0 {
+                    let cur = ctx.array_buffer_proto;
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
+                } else if zjs_is_data_view(val) != 0 {
+                    let cur = ctx.data_view_proto;
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
                 } else if zjs_is_date(val) != 0 {
                     let cur = ctx.date_proto;
                     while cur != NULL {
@@ -4052,7 +4214,10 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 || zjs_is_map(call_result) != 0
                 || zjs_is_set(call_result) != 0
                 || zjs_is_date(call_result) != 0
-                || zjs_is_uint8_array(call_result) != 0;
+                || zjs_is_uint8_array(call_result) != 0
+                || zjs_is_typed_array(call_result) != 0
+                || zjs_is_array_buffer(call_result) != 0
+                || zjs_is_data_view(call_result) != 0;
             if result_is_object {
                 regs[dst2] = call_result;
             } else if final_this.bits != new_obj_v.bits
@@ -4260,7 +4425,10 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 || zjs_is_map(call_result) != 0
                 || zjs_is_set(call_result) != 0
                 || zjs_is_date(call_result) != 0
-                || zjs_is_uint8_array(call_result) != 0;
+                || zjs_is_uint8_array(call_result) != 0
+                || zjs_is_typed_array(call_result) != 0
+                || zjs_is_array_buffer(call_result) != 0
+                || zjs_is_data_view(call_result) != 0;
             // Derived-class ctor: a non-undefined non-Object return is
             // a TypeError. Base ctors silently coerce to `this`.
             let callee_is_derived: bool = false;

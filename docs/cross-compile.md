@@ -48,11 +48,27 @@ which trims the static-Linux binary from ~5 MB to ~700 KB.
 
 | Target                              | Binary size (release, stripped) | Status |
 |-------------------------------------|--------------------------------:|:------:|
-| macOS arm64 (system clang via `zc`) | 635 KB                          |   ✅   |
-| macOS arm64 (`zig cc`)              | 561 KB (**−12%**)               |   ✅   |
-| macOS x86_64 (`zig cc -target`)     | 525 KB                          |   ✅   |
-| Linux arm64 (`zig cc -target`, static musl) | 675 KB                  |   ✅   |
-| Linux x86_64 (`zig cc -target`, static musl) | 721 KB                 |   ✅   |
+| macOS arm64 (system clang via `zc`) | 696 KB                          |   ✅   |
+| macOS arm64 (`zig cc`)              | 627 KB (**−10%**)               |   ✅   |
+| macOS x86_64 (`zig cc -target`)     | (not retested post-D.0)         |   ⚠️   |
+| Linux arm64 (`zig cc -target`, static musl) | broken — see below     |   ❌   |
+| Linux x86_64 (`zig cc -target`, static musl) | broken — see below    |   ❌   |
+
+**Note (2026-05-18):** Numbers re-measured after Phase D.0 (fetch via
+NSURLSession on Apple). Native macOS zig cc still gives the documented
+~10% size win.
+
+### Linux/non-Apple cross-compile temporarily broken — task #206
+
+The platform-native fetch backend added `//> macos: framework:
+Foundation` directives. `zc` applies platform-tagged directives based
+on the **host** OS, not zig's `-target` flag, so cross-compiling to
+Linux from a Mac host fails with `unable to find framework
+'Foundation'`. Tracked as #206. Workarounds:
+1. Generate a Linux-specific entry .zc that omits the macOS directives.
+2. Wait for `zc` to grow target-aware directive filtering.
+3. Add a Makefile target that strips the directives during a
+   cross-compile preprocess step.
 | Windows x86_64 (`zig cc -target *-windows-gnu`) | —                   |  ⚠️ POSIX gaps |
 | iOS device arm64                    | —                               |  ⚠️ needs SDK plumbing |
 | iOS simulator arm64                 | —                               |  ⚠️ needs SDK plumbing |
