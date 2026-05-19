@@ -13582,6 +13582,115 @@ fn host_wrapper_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
     return zjs_to_string(ctx, v);
 }
 
+// Number.prototype.toString(radix) — handles radixes 2..36. Radix
+// 10 (or omitted) delegates to the standard NumberToString path so
+// shortest-roundtrip / scientific formatting carries through.
+fn host_number_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = host_wrapper_value_of(ctx, args, argc);
+    let radix: i32 = 10;
+    if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
+        radix = (i32)zjs_to_double(args[0]);
+    }
+    if radix < 2 || radix > 36 {
+        let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                                    (char*)"toString() radix must be 2..36", 30);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    if radix == 10 {
+        if zjs_is_string(v) != 0 { return v; }
+        return zjs_to_string(ctx, v);
+    }
+
+    let d = zjs_to_double(v);
+    let is_nan: int = 0;
+    let is_inf: int = 0;
+    raw {
+        is_nan = isnan(d) ? 1 : 0;
+        is_inf = isinf(d) ? 1 : 0;
+    }
+    if is_nan != 0 { return ctx_intern_string(ctx, (char*)"NaN", 3); }
+    if is_inf != 0 {
+        if d < 0.0 { return ctx_intern_string(ctx, (char*)"-Infinity", 9); }
+        return ctx_intern_string(ctx, (char*)"Infinity", 8);
+    }
+
+    let negative: int = 0;
+    let abs_d: f64 = d;
+    if d < 0.0 { negative = 1; abs_d = -d; }
+
+    // Split into integer + fractional parts.
+    let int_part: f64 = 0.0;
+    let frac_part: f64 = 0.0;
+    raw { int_part = floor(abs_d); frac_part = abs_d - int_part; }
+
+    let buf: char[256];
+    let pos: u32 = 0;
+    if negative != 0 { buf[pos] = (char)'-'; pos = pos + 1; }
+
+    // Integer digits, produced LSB-first into a scratch buffer then
+    // reversed into `buf`.
+    let digits: char[80];
+    let digit_count: u32 = 0;
+    if int_part == 0.0 {
+        digits[0] = (char)'0';
+        digit_count = 1;
+    } else {
+        let n = int_part;
+        while n >= 1.0 && digit_count < 80 {
+            let rem: i32 = 0;
+            raw {
+                double r_d = (double)radix;
+                double q = floor(n / r_d);
+                rem = (int32_t)(n - q * r_d);
+                n = q;
+            }
+            let c: char = (char)0;
+            raw {
+                c = (rem < 10) ? (char)('0' + rem) : (char)('a' + rem - 10);
+            }
+            digits[digit_count] = c;
+            digit_count = digit_count + 1;
+        }
+    }
+    let ri: u32 = digit_count;
+    while ri > 0 {
+        ri = ri - 1;
+        buf[pos] = digits[ri];
+        pos = pos + 1;
+    }
+
+    // Fractional part — emit up to 20 digits or until the residue
+    // hits zero. Same precision cap V8 / SpiderMonkey use.
+    if frac_part > 0.0 {
+        buf[pos] = (char)'.';
+        pos = pos + 1;
+        let i: u32 = 0;
+        let f = frac_part;
+        while i < 20 && f > 0.0 && pos < 250 {
+            let digit: i32 = 0;
+            raw {
+                f = f * (double)radix;
+                digit = (int32_t)floor(f);
+                f = f - (double)digit;
+            }
+            let c: char = (char)0;
+            raw {
+                c = (digit < 10) ? (char)('0' + digit) : (char)('a' + digit - 10);
+            }
+            buf[pos] = c;
+            pos = pos + 1;
+            i = i + 1;
+        }
+    }
+
+    buf[pos] = (char)0;
+    let buf_p: char* = NULL;
+    raw { buf_p = &buf[0]; }
+    return ctx_intern_string(ctx, buf_p, pos);
+}
+
 // Number.prototype.toFixed(digits) — render `this` as a decimal
 // string with `digits` digits after the decimal point. Spec range
 // for digits is 0..100; out-of-range throws RangeError. NaN renders
@@ -14349,8 +14458,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, num_hf.prototype, ctx_intern_atom(ctx, (char*)"constructor", 11), num_full);
     object_set(ctx, num_hf.prototype, valueof_atom,
                ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
+    // Number.prototype.toString takes a radix argument, unlike the
+    // shared wrapper toString used by Boolean/String.
+    let nts_ptr: void* = NULL; raw { nts_ptr = (void*)host_number_to_string; }
     object_set(ctx, num_hf.prototype, tostring_atom,
-               ctx_make_host_function(ctx, (char*)"toString", wt_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"toString", nts_ptr, 1));
     let ntf_ptr: void* = NULL; raw { ntf_ptr = (void*)host_number_to_fixed; }
     object_set(ctx, num_hf.prototype, ctx_intern_atom(ctx, (char*)"toFixed", 7),
                ctx_make_host_function_arity(ctx, (char*)"toFixed", ntf_ptr, 1));
