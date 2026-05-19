@@ -32,7 +32,7 @@ CLANG := clang
 # Default to release builds. Until we measured, we were building
 # unoptimized — this alone closed ~11× of the perf gap to qjs. To
 # build for debugging (no -O, full -g), run `make ZC_FLAGS='-w -O0 -g'`.
-ZC_FLAGS := -w --release
+ZC_FLAGS := -w --release -Isrc
 
 # Zen-c source files comprising the engine. Every artifact that
 # imports src/lib.zc transitively re-imports all of these, so the

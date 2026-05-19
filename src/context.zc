@@ -8,6 +8,13 @@
 import "stdlib.h" as libc;
 import "std/time.zc";
 
+// Cross-platform shims (realpath / gmtime_r / timegm / random / RSS).
+// Single source of `#ifdef _WIN32` so the rest of the engine stays
+// platform-agnostic.
+raw {
+    #include "platform/portability.h"
+}
+
 // Platform-native HTTP backend — see src/platform/http_native.h
 // and src/platform/http_apple.m. Declared as raw C extern so we
 // don't depend on zen-c's header-import resolution.
@@ -8326,7 +8333,7 @@ fn format_iso_string(ctx: ZjsContext*, ms: f64) -> ZjsValue {
             time_t secs = (time_t)(total_ms / 1000);
             if (millis != 0 && total_ms < 0) secs -= 1;
             struct tm tm_utc;
-            gmtime_r(&secs, &tm_utc);
+            zjs_gmtime_r(&secs, &tm_utc);
             snprintf(buf, sizeof(buf),
                 "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
                 tm_utc.tm_year + 1900,
@@ -8363,7 +8370,7 @@ fn date_compose_utc_ms(year: f64, month: f64, day: f64,
         t.tm_hour = (int)hour;
         t.tm_min  = (int)minute;
         t.tm_sec  = (int)second;
-        time_t secs = timegm(&t);
+        time_t secs = zjs_timegm(&t);
         if (secs == (time_t)-1) {
             result = 0.0/0.0;   // NaN
         } else {
@@ -10308,7 +10315,7 @@ fn host_text_decoder_decode(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
 fn host_crypto_random_uuid(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let bytes: u8[16];
     raw {
-        arc4random_buf(&bytes[0], 16);
+        zjs_random_bytes(&bytes[0], 16);
         bytes[6] = (uint8_t)((bytes[6] & 0x0F) | 0x40);  // version 4
         bytes[8] = (uint8_t)((bytes[8] & 0x3F) | 0x80);  // variant
     }
@@ -10338,7 +10345,7 @@ fn host_crypto_get_random_values(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
     let a = zjs_as_array(arr_v);
     if a.length == 0 { return arr_v; }
     let buf = alloc_n<u8>((usize)a.length);
-    raw { arc4random_buf(buf, a->length); }
+    raw { zjs_random_bytes(buf, a->length); }
     let i: u32 = 0;
     while i < a.length {
         a.elements[i] = zjs_int32((i32)(u32)buf[i]);
@@ -11570,7 +11577,7 @@ fn host_date_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
                     t.tm_hour = H;
                     t.tm_min  = Mn;
                     t.tm_sec  = S;
-                    time_t secs = timegm(&t);
+                    time_t secs = zjs_timegm(&t);
                     parsed = (double)secs * 1000.0 + (double)Ms;
                 } else {
                     parsed = 0.0/0.0;
@@ -11617,7 +11624,7 @@ fn host_date_parse_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
             t.tm_hour = H;
             t.tm_min  = Mn;
             t.tm_sec  = S;
-            time_t secs = timegm(&t);
+            time_t secs = zjs_timegm(&t);
             parsed = (double)secs * 1000.0 + (double)Ms;
         } else {
             parsed = 0.0/0.0;
@@ -11712,7 +11719,7 @@ fn date_extract_utc(time_ms: f64, field: u32) -> f64 {
         time_t secs = (time_t)(total_ms / 1000);
         if (millis != 0 && total_ms < 0) secs -= 1;
         struct tm tm_utc;
-        gmtime_r(&secs, &tm_utc);
+        zjs_gmtime_r(&secs, &tm_utc);
         switch (field) {
             case 0: r = (double)(tm_utc.tm_year + 1900); break;
             case 1: r = (double)tm_utc.tm_mon;           break;

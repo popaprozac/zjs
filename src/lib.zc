@@ -16,6 +16,12 @@
 //> linux: cflags:    src/platform/http_stub.c src/platform/ws_stub.c
 //> windows: cflags:  src/platform/http_stub.c src/platform/ws_stub.c
 
+// --- Windows portability links ---
+// src/platform/portability.h uses BCryptGenRandom (bcrypt.dll) for
+// CSPRNG and GetProcessMemoryInfo (psapi.dll) for peak RSS. These
+// must be linked into every binary that compiles the engine.
+//> windows: link: -lbcrypt -lpsapi
+
 import "./context.zc";
 import "./value.zc";
 import "./token.zc";

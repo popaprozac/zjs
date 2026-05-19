@@ -13,6 +13,7 @@
 //> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
 //> linux: cflags:    src/platform/http_stub.c src/platform/ws_stub.c
 //> windows: cflags:  src/platform/http_stub.c src/platform/ws_stub.c
+//> windows: link:    -lbcrypt -lpsapi
 
 import "../src/lib.zc";
 
