@@ -164,10 +164,16 @@ fn read_from_props_bag(ctx: ZjsContext*, props: ZjsObject*, key: ZjsValue) -> Zj
 
 fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     key = symbol_key_coerce(key);
+    // Hoist a single tag load so the long chain of type-specific
+    // dispatch branches below becomes cheap u8 comparisons rather
+    // than 11+ separate `zjs_cell_tag` calls. clang lowers these to
+    // a near-jump-table — restored ~17-23% on property_mono /
+    // property_poly after the TypedArray + WebSocket adds.
+    let tag: u8 = zjs_cell_tag(obj);
     // Generator iterators have no own state-exposed props; everything
     // (.next, .return, .throw, Symbol.iterator) lives on the shared
     // generator_proto. Walk it directly.
-    if zjs_is_generator(obj) != 0 && ctx.generator_proto != NULL {
+    if tag == TAG_GENERATOR && ctx.generator_proto != NULL {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
         let slot = class_find_slot(ctx.generator_proto.cls, name);
@@ -181,7 +187,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     // The host_*_size_getter functions read the receiver's count, so
     // we expose .size by detecting the key here and dispatching to
     // the accessor — saves us from wiring real getter slots.
-    if zjs_is_map(obj) != 0 && ctx.map_proto != NULL {
+    if tag == TAG_MAP && ctx.map_proto != NULL {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
         // Own expando bag wins over .size getter and prototype methods,
@@ -203,7 +209,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         }
         return zjs_undefined();
     }
-    if zjs_is_set(obj) != 0 && ctx.set_proto != NULL {
+    if tag == TAG_SET && ctx.set_proto != NULL {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
         let ss = zjs_as_set(obj);
@@ -223,7 +229,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         }
         return zjs_undefined();
     }
-    if zjs_is_uint8_array(obj) != 0 {
+    if tag == TAG_UINT8_ARRAY {
         let u = zjs_as_uint8_array(obj);
         // Integer-index fast path. property_get gets either an i32
         // key directly OR a string we should attempt as an integer.
@@ -286,7 +292,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
-    if zjs_is_typed_array(obj) != 0 {
+    if tag == TAG_TYPED_ARRAY {
         let ta = zjs_as_typed_array(obj);
         // Integer-index fast path.
         let idx: i32 = -1;
@@ -351,7 +357,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
-    if zjs_is_array_buffer(obj) != 0 {
+    if tag == TAG_ARRAY_BUFFER {
         let b = zjs_as_array_buffer(obj);
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
@@ -370,7 +376,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
-    if zjs_is_websocket(obj) != 0 {
+    if tag == TAG_WEBSOCKET {
         let w = zjs_as_websocket(obj);
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
@@ -424,7 +430,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
-    if zjs_is_data_view(obj) != 0 {
+    if tag == TAG_DATA_VIEW {
         let dv = zjs_as_data_view(obj);
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
@@ -454,7 +460,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
-    if zjs_is_date(obj) != 0 && ctx.date_proto != NULL {
+    if tag == TAG_DATE && ctx.date_proto != NULL {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
         let dd = zjs_as_date(obj);
@@ -469,7 +475,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         }
         return zjs_undefined();
     }
-    if zjs_is_symbol(obj) != 0 && ctx.symbol_proto != NULL {
+    if tag == TAG_SYMBOL && ctx.symbol_proto != NULL {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
         let kd = name.data;
@@ -495,7 +501,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
     // Array: integer index OR "length", with prototype-method fallback.
-    if zjs_is_array(obj) != 0 {
+    if tag == TAG_ARRAY {
         let arr = zjs_as_array(obj);
         // Fast int path. Before returning the dense slot, check the
         // expando bag for an accessor at the same stringified key —
@@ -580,7 +586,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     }
 
     // String primitive: .length + indexed chars + prototype-method intercept.
-    if zjs_is_string(obj) != 0 {
+    if tag == TAG_STRING {
         // Integer index → single-char string. Out-of-range → undefined.
         if zjs_is_int32(key) != 0 {
             let s = zjs_as_string(obj);
@@ -617,7 +623,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     }
 
     // Object: ToString key, linear lookup, then walk proto chain.
-    if zjs_is_object(obj) != 0 {
+    if tag == TAG_OBJECT {
         let o = zjs_as_object(obj);
         let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
         let name = zjs_as_string(key_str_val);
@@ -685,7 +691,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     // Function: .prototype lazy-creates an object on first read.
     // Also serves .call and .apply via the cached host helpers, plus
     // Object.prototype methods (toString / valueOf / hasOwnProperty).
-    if zjs_is_function(obj) != 0 {
+    if tag == TAG_FUNCTION {
         // Numeric / other keys ToString — `fn[0]` reads from the
         // expando bag at key "0" alongside named props.
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
@@ -782,7 +788,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
     // Closure: same .call / .apply behavior.
-    if zjs_is_closure(obj) != 0 {
+    if tag == TAG_CLOSURE {
         if zjs_is_string(key) != 0 {
             let ks = zjs_as_string(key);
             let kd = ks.data;
@@ -879,7 +885,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     }
 
     // Host function: .prototype (lazy), .call / .apply, .length, .name, then .props.
-    if zjs_is_host_function(obj) != 0 {
+    if tag == TAG_HOST_FUNCTION {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         if zjs_is_string(key) != 0 {
             let ks = zjs_as_string(key);
@@ -970,7 +976,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     }
 
     // Promise cell — read through Promise.prototype (then / catch).
-    if zjs_is_promise(obj) != 0 && ctx.promise_ctor_proto != NULL && zjs_is_string(key) != 0 {
+    if tag == TAG_PROMISE && ctx.promise_ctor_proto != NULL && zjs_is_string(key) != 0 {
         let cur = ctx.promise_ctor_proto;
         let ks = zjs_as_string(key);
         while cur != NULL {
@@ -984,7 +990,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     // RegExp cell — `.source`, `.flags`, `.global`, `.ignoreCase`,
     // `.multiline`, `.lastIndex` are read from the cell; everything
     // else (test, exec, ...) flows through RegExp.prototype.
-    if zjs_is_regexp(obj) != 0 {
+    if tag == TAG_REGEXP {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let r = zjs_as_regexp(obj);
         let ks = zjs_as_string(key);
@@ -1094,7 +1100,9 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
 
 fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue) -> void {
     key = symbol_key_coerce(key);
-    if zjs_is_uint8_array(obj) != 0 {
+    // Same single-tag-load pattern as property_get — see comments there.
+    let tag: u8 = zjs_cell_tag(obj);
+    if tag == TAG_UINT8_ARRAY {
         let u = zjs_as_uint8_array(obj);
         let idx: i32 = -1;
         if zjs_is_int32(key) != 0 {
@@ -1144,7 +1152,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         // past length are no-ops).
         return;
     }
-    if zjs_is_websocket(obj) != 0 {
+    if tag == TAG_WEBSOCKET {
         let w = zjs_as_websocket(obj);
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
@@ -1166,7 +1174,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         if is_onc != 0 { w.on_close   = value; return; }
         return;
     }
-    if zjs_is_typed_array(obj) != 0 {
+    if tag == TAG_TYPED_ARRAY {
         let ta = zjs_as_typed_array(obj);
         let idx: i32 = -1;
         if zjs_is_int32(key) != 0 {
@@ -1196,7 +1204,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         }
         return;
     }
-    if zjs_is_array(obj) != 0 {
+    if tag == TAG_ARRAY {
         let arr = zjs_as_array(obj);
         if zjs_is_int32(key) != 0 {
             let i = zjs_as_int32(key);
@@ -1256,7 +1264,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         }
         return;
     }
-    if zjs_is_object(obj) != 0 {
+    if tag == TAG_OBJECT {
         let o = zjs_as_object(obj);
         let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
         let name = zjs_as_string(key_str_val);
@@ -1297,7 +1305,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
     // functions and array expandos. Unlocks the standard idiom
     // `fn.cnt = 0; fn.cnt++` and the test262 harness pattern
     // (`assert.sameValue = function (...) { ... }`).
-    if zjs_is_function(obj) != 0 {
+    if tag == TAG_FUNCTION {
         // Coerce non-string keys (numeric indices, ToString'd) — these
         // can show up via `fn[0] = true` patterns that the test262
         // generic-array-on-fn tests exercise.
@@ -1326,7 +1334,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         property_set(ctx, zjs_cell_from_ptr((void*)f.props), key, value);
         return;
     }
-    if zjs_is_host_function(obj) != 0 {
+    if tag == TAG_HOST_FUNCTION {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let ks = zjs_as_string(key);
         let is_proto: int = 0;
@@ -1348,7 +1356,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
     }
     // Date / Map / Set / Symbol expando bags — same shape as the
     // array/function/regex pattern. Lazily allocate on first set.
-    if zjs_is_date(obj) != 0 {
+    if tag == TAG_DATE {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let d = zjs_as_date(obj);
         if d.props == NULL {
@@ -1358,7 +1366,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         object_set(ctx, d.props, zjs_as_string(key), value);
         return;
     }
-    if zjs_is_map(obj) != 0 {
+    if tag == TAG_MAP {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let m = zjs_as_map(obj);
         if m.props == NULL {
@@ -1368,7 +1376,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         object_set(ctx, m.props, zjs_as_string(key), value);
         return;
     }
-    if zjs_is_set(obj) != 0 {
+    if tag == TAG_SET {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let s = zjs_as_set(obj);
         if s.props == NULL {
@@ -1378,7 +1386,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         object_set(ctx, s.props, zjs_as_string(key), value);
         return;
     }
-    if zjs_is_symbol(obj) != 0 {
+    if tag == TAG_SYMBOL {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let sym = zjs_as_symbol(obj);
         if sym.props == NULL {
@@ -1388,7 +1396,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         object_set(ctx, sym.props, zjs_as_string(key), value);
         return;
     }
-    if zjs_is_regexp(obj) != 0 {
+    if tag == TAG_REGEXP {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let r = zjs_as_regexp(obj);
         let ks = zjs_as_string(key);
@@ -2303,7 +2311,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 throwing = true; thrown = err; exit_reason = 3;
                 ctx.frames[cur_idx].ip = ip; break;
             }
-            let cached: ZjsObject* = f.template_cache[site];
+            let cached: ZjsArray* = f.template_cache[site];
             if cached != NULL {
                 regs[inst.a] = zjs_cell_from_ptr((void*)cached);
             } else {
