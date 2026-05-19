@@ -65,6 +65,17 @@ int zjs_http_request_sync(const ZjsHttpRequest* req,
 // are skipped).
 void zjs_http_response_free(ZjsHttpResponse* resp);
 
+// =====================================================================
+// Async ABI — Promise.all parallelism. Engine stashes (handle, promise)
+// in a pending list and polls every event-loop tick.
+//   Apple   — NSURLSession async (no extra thread)
+//   Windows/Linux — pthread-wrap of zjs_http_request_sync
+// =====================================================================
+typedef struct ZjsHttpHandle ZjsHttpHandle;
+ZjsHttpHandle* zjs_http_request_start(const ZjsHttpRequest* req);
+int  zjs_http_request_poll(ZjsHttpHandle* h, ZjsHttpResponse* out_resp, char** err_out);
+void zjs_http_request_destroy(ZjsHttpHandle* h);
+
 #ifdef __cplusplus
 }
 #endif

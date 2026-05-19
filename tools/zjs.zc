@@ -14,8 +14,8 @@
 //> macos: cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
 //> ios:   framework: Foundation
 //> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
-//> linux: cflags:    src/platform/http_stub.c src/platform/ws_stub.c
-//> windows: cflags:  src/platform/http_windows.c src/platform/ws_stub.c
+//> linux: cflags:    src/platform/http_stub.c src/platform/ws_stub.c src/platform/http_async.c
+//> windows: cflags:  src/platform/http_windows.c src/platform/ws_stub.c src/platform/http_async.c
 //> windows: link:    -lbcrypt -lpsapi -lwinhttp
 
 import "../src/lib.zc";
@@ -27,6 +27,42 @@ raw {
     #include <string.h>
     #include <time.h>
     #include "../src/platform/portability.h"
+    #ifdef __APPLE__
+    // Avoid including any CoreFoundation header — MacTypes.h's
+    // `Duration` typedef collides with zen-c's std/time Duration
+    // struct. Forward-declare exactly what we need from CFRunLoop:
+    // CFRunLoopRunInMode + kCFRunLoopDefaultMode. Linker resolves
+    // them out of CoreFoundation.framework, which is already linked
+    // transitively via Foundation.
+    typedef const struct __CFString* CFStringRef;
+    typedef double CFTimeInterval;
+    typedef unsigned char Boolean;
+    typedef int32_t SInt32;
+    extern const CFStringRef kCFRunLoopDefaultMode;
+    extern SInt32 CFRunLoopRunInMode(CFStringRef mode,
+                                     CFTimeInterval seconds,
+                                     Boolean returnAfterSourceHandled);
+    #endif
+}
+
+// Wait `ms` milliseconds while letting platform-level dispatch
+// queues drain. On Apple this MUST run a CFRunLoop step — NSURLSession's
+// async completion handler is dispatched through that runloop, and
+// without a tick here the engine never sees fetch() responses arrive.
+// Linux/Windows keep nanosleep — their backends (libcurl/WinHTTP) use
+// a worker pthread and have no main-runloop dependency.
+fn event_loop_wait(ms: i64) -> void {
+    raw {
+        #ifdef __APPLE__
+            double secs = (double)ms / 1000.0;
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, secs, true);
+        #else
+            struct timespec _ts;
+            _ts.tv_sec  = (time_t)(ms / 1000);
+            _ts.tv_nsec = (long)((ms % 1000) * 1000000);
+            nanosleep(&_ts, NULL);
+        #endif
+    }
 }
 
 // =====================================================================
@@ -329,12 +365,7 @@ fn run_eval(source: char*) -> int {
         // No timer? still loop with a short sleep so WS poll can run.
         if wait_ms < 0 || wait_ms > 50 { wait_ms = 50; }
         if wait_ms > 0 {
-            raw {
-                struct timespec _ts;
-                _ts.tv_sec  = (time_t)(wait_ms / 1000);
-                _ts.tv_nsec = (long)((wait_ms % 1000) * 1000000);
-                nanosleep(&_ts, NULL);
-            }
+            event_loop_wait(wait_ms);
             wall_so_far = wall_so_far + wait_ms;
         }
         zjs_run_pending_timers(ctx);
@@ -497,14 +528,8 @@ fn run_file(path: char*, gc_stats: bool) -> int {
     // future; fire immediately when due.
     while zjs_has_pending_work(ctx) != 0 {
         let wait_ms = zjs_next_timer_ms(ctx);
-        if wait_ms > 0 {
-            raw {
-                struct timespec _ts;
-                _ts.tv_sec  = (time_t)(wait_ms / 1000);
-                _ts.tv_nsec = (long)((wait_ms % 1000) * 1000000);
-                nanosleep(&_ts, NULL);
-            }
-        }
+        if wait_ms < 0 || wait_ms > 50 { wait_ms = 50; }
+        if wait_ms > 0 { event_loop_wait(wait_ms); }
         zjs_run_pending_timers(ctx);
         if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); rc = 1; break; }
     }
