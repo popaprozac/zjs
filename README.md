@@ -41,9 +41,9 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 
 **Tests:** 941 in-tree assertions pass (378 smoke + 48 lexer + 84 parser + 431 interpreter).
 
-**Conformance:** 83.4% of the test262 included subset (6,672 of 7,997 non-skipped). Live dashboard at `docs/conformance/index.html`.
+**Conformance:** 83.4% of the test262 included subset (6,672 of 7,997 non-skipped). Live dashboard at `docs/conformance/index.html` (macOS) — Windows results at `docs/conformance/index-windows.html`.
 
-**Perf vs qjs:** zjs ahead on 19 of 21 microbenches (richards, property_poly, int_loop, etc); behind by single digits on nbody + fib_recursive. Live charts at `docs/perf/index.html`.
+**Perf vs qjs:** zjs ahead on 19 of 21 microbenches (richards, property_poly, int_loop, etc); behind by single digits on nbody + fib_recursive. Live charts at `docs/perf/index.html` (macOS) — Windows results at `docs/perf/index-windows.html`.
 
 Per-phase plans live in `docs/phases/`.
 
@@ -137,6 +137,11 @@ expected throw type, and writes:
 - `docs/conformance/history.jsonl` — append-only summary
 - `docs/conformance/index.html` — self-contained report with a pass-rate sparkline + first failures (open in any browser)
 
+When the runner detects Windows (`sys.platform == 'win32'`) it writes
+to `last-windows.json` / `history-windows.jsonl` / `index-windows.html`
+instead, so the macOS history isn't polluted by a different host
+configuration.
+
 The included subset (see `scripts/test262/config.json`) covers
 language expressions / statements / iteration plus built-ins we
 support (Object / Array / String / JSON / Math). Expand the
@@ -160,6 +165,9 @@ literal allocation, string concat, try/catch overhead) and writes:
 - `docs/perf/history.jsonl` — append-only summary, one row per run
 - `docs/perf/index.html` — table of latest medians plus per-bench
   line charts of median ms over time (open in any browser)
+
+Windows runs land in the `-windows`-suffixed siblings of those files,
+same convention as the conformance dashboard above.
 
 Each benchmark is timed end-to-end around `zjs run <file>` (parse +
 compile + interpret). Numbers are tracked across commits in

@@ -30,11 +30,19 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BENCH_DIR = REPO_ROOT / "scripts" / "bench"
-ZJS_BIN   = REPO_ROOT / "build" / "zjs"
 OUT_DIR   = REPO_ROOT / "docs" / "perf"
-HISTORY   = OUT_DIR / "history.jsonl"
-LAST_JSON = OUT_DIR / "last.json"
-HTML_PATH = OUT_DIR / "index.html"
+
+# Platform-specific output stream: macOS/Linux runs land in the original
+# files; Windows runs land in `-windows`-suffixed siblings so the two
+# don't interleave on the same history chart. Same idea for the report
+# title further down.
+IS_WINDOWS  = sys.platform == "win32"
+PLATFORM_TAG = "windows" if IS_WINDOWS else None
+ZJS_BIN    = REPO_ROOT / "build" / ("zjs.exe" if IS_WINDOWS else "zjs")
+_suffix    = f"-{PLATFORM_TAG}" if PLATFORM_TAG else ""
+HISTORY    = OUT_DIR / f"history{_suffix}.jsonl"
+LAST_JSON  = OUT_DIR / f"last{_suffix}.json"
+HTML_PATH  = OUT_DIR / f"index{_suffix}.html"
 
 def collect_benches(name_filter):
     found = []
@@ -139,10 +147,11 @@ def commit_short_sha():
 def write_html(out_path, history, latest):
     history_json = json.dumps(history)
     latest_json  = json.dumps(latest)
+    platform_label = (latest.get("platform") or "macOS").strip()
     html = f"""<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<title>zjs benchmarks</title>
+<title>zjs benchmarks — {platform_label}</title>
 <style>
   body {{ font: 14px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
           max-width: 1100px; margin: 2em auto; padding: 0 1em; color: #222; }}
@@ -165,7 +174,7 @@ def write_html(out_path, history, latest):
   .chart-box h3 {{ font-size: 13px; margin: 0 0 4px 8px; font-family: ui-monospace, monospace; color: #444; }}
 </style>
 
-<h1>zjs — benchmarks</h1>
+<h1>zjs — benchmarks <span style="font-size:0.65em;color:#888;font-weight:normal;">({platform_label})</span></h1>
 <p class="sub">Body-only execution per script (parse + compile + interpret),
 measured with a <code>performance.now()</code> wrapper inside the script
 so process-startup overhead doesn't pollute the trend. Startup is
@@ -316,7 +325,7 @@ tracked separately below.</p>
 </script>
 </html>
 """
-    out_path.write_text(html)
+    out_path.write_text(html, encoding="utf-8")
 
 DEFAULT_OTHER_ENGINES = [
     # name,    binary (resolved via PATH),       extra args before script
@@ -663,7 +672,7 @@ in our scripts are too short to repay JIT cost.</p>
 </script>
 </html>
 """
-    out_path.write_text(html)
+    out_path.write_text(html, encoding="utf-8")
 
 def main():
     ap = argparse.ArgumentParser()
@@ -688,7 +697,7 @@ def main():
     # slower than the very first run we recorded").
     first_baseline = {}
     if HISTORY.exists():
-        with open(HISTORY) as f:
+        with open(HISTORY, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line: continue
@@ -732,16 +741,17 @@ def main():
 
     when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     sha  = commit_short_sha()
-    summary = {"when": when, "sha": sha, "results": results}
+    summary = {"when": when, "sha": sha, "results": results,
+               "platform": "Windows" if IS_WINDOWS else "macOS"}
 
     if not args.no_record:
         OUT_DIR.mkdir(parents=True, exist_ok=True)
-        with open(HISTORY, "a") as f:
+        with open(HISTORY, "a", encoding="utf-8") as f:
             f.write(json.dumps(summary) + "\n")
-        LAST_JSON.write_text(json.dumps(summary, indent=2))
+        LAST_JSON.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
         history = []
-        with open(HISTORY) as f:
+        with open(HISTORY, encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if not line: continue
@@ -779,7 +789,7 @@ def main():
         compare_path = OUT_DIR / "compare.html"
         write_compare_html(compare_path, compare_summary,
                            [r["name"] for r in compare_results], engine_names)
-        (OUT_DIR / "compare.json").write_text(json.dumps(compare_summary, indent=2))
+        (OUT_DIR / "compare.json").write_text(json.dumps(compare_summary, indent=2), encoding="utf-8")
         print(f"Cross-engine report: {compare_path.relative_to(REPO_ROOT)}")
     return 0
 

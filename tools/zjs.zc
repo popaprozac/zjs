@@ -6,16 +6,17 @@
 //   lex <source>           tokenize source, dump the token stream
 //   parse <source>         parse source, dump the AST as an indented tree
 
-// Platform-native HTTP backend (NSURLSession on Apple; stub elsewhere)
-// must be linked into the CLI binary too, since the CLI is its own
-// `zc build` entry point — directives don't propagate via import.
+// Platform-native networking (NSURLSession on Apple; WinHTTP / ws_stub
+// on Windows; stub elsewhere) plus the portability shims must be
+// linked into the CLI binary too, since the CLI is its own `zc build`
+// entry point — directives don't propagate via import.
 //> macos: framework: Foundation
 //> macos: cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
 //> ios:   framework: Foundation
 //> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
 //> linux: cflags:    src/platform/http_stub.c src/platform/ws_stub.c
-//> windows: cflags:  src/platform/http_stub.c src/platform/ws_stub.c
-//> windows: link:    -lbcrypt -lpsapi
+//> windows: cflags:  src/platform/http_windows.c src/platform/ws_stub.c
+//> windows: link:    -lbcrypt -lpsapi -lwinhttp
 
 import "../src/lib.zc";
 import "string.h" as libc_str;
