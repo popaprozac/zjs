@@ -10,11 +10,11 @@
 // must be linked into the CLI binary too, since the CLI is its own
 // `zc build` entry point — directives don't propagate via import.
 //> macos: framework: Foundation
-//> macos: cflags:    -fobjc-arc src/platform/http_apple.m
+//> macos: cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
 //> ios:   framework: Foundation
-//> ios:   cflags:    -fobjc-arc src/platform/http_apple.m
-//> linux: cflags:    src/platform/http_stub.c
-//> windows: cflags:  src/platform/http_stub.c
+//> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
+//> linux: cflags:    src/platform/http_stub.c src/platform/ws_stub.c
+//> windows: cflags:  src/platform/http_stub.c src/platform/ws_stub.c
 
 import "../src/lib.zc";
 import "string.h" as libc_str;
@@ -315,6 +315,28 @@ fn run_eval(source: char*) -> int {
     defer zjs_free_context(ctx);
     let result = zjs_eval(ctx, source);
     print_value(result);
+
+    // Drain pending async work (timers, microtasks, WebSocket events)
+    // so handlers attached during eval get a chance to fire before
+    // the process exits. Cap the loop at ~10s of wall time so an
+    // accidental infinite stream of events doesn't hang the CLI.
+    let max_wall_ms: i64 = 10000;
+    let wall_so_far: i64 = 0;
+    while zjs_has_pending_work(ctx) != 0 && wall_so_far < max_wall_ms {
+        let wait_ms = zjs_next_timer_ms(ctx);
+        // No timer? still loop with a short sleep so WS poll can run.
+        if wait_ms < 0 || wait_ms > 50 { wait_ms = 50; }
+        if wait_ms > 0 {
+            raw {
+                struct timespec _ts;
+                _ts.tv_sec  = (time_t)(wait_ms / 1000);
+                _ts.tv_nsec = (long)((wait_ms % 1000) * 1000000);
+                nanosleep(&_ts, NULL);
+            }
+            wall_so_far = wall_so_far + wait_ms;
+        }
+        zjs_run_pending_timers(ctx);
+    }
     return 0;
 }
 

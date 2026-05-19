@@ -34,6 +34,23 @@ raw {
                               ZjsHttpResponse* resp,
                               char** err_out);
     void zjs_http_response_free(ZjsHttpResponse* resp);
+
+    // WebSocket native shim — see src/platform/ws_native.h.
+    typedef struct ZjsWsHandle ZjsWsHandle;
+    typedef struct {
+        int kind;
+        char* text;
+        size_t text_len;
+        uint8_t* binary;
+        size_t binary_len;
+        int code;
+    } ZjsWsEvent;
+    ZjsWsHandle* zjs_ws_connect(const char* url);
+    int  zjs_ws_send_text(ZjsWsHandle* h, const char* text, size_t len);
+    int  zjs_ws_send_binary(ZjsWsHandle* h, const uint8_t* bytes, size_t len);
+    int  zjs_ws_close(ZjsWsHandle* h, int code, const char* reason);
+    int  zjs_ws_poll(ZjsWsHandle* h, ZjsWsEvent* out_event);
+    void zjs_ws_destroy(ZjsWsHandle* h);
 }
 import "string.h" as libc_str;
 import "./value.zc";
@@ -326,8 +343,16 @@ struct ZjsContext {
     float64_array_proto:      ZjsObject*;
     array_buffer_proto:       ZjsObject*;
     data_view_proto:          ZjsObject*;
+    websocket_proto:          ZjsObject*;
     headers_proto:            ZjsObject*;
     response_proto:           ZjsObject*;
+
+    // Live WebSocket cells — polled on each event-loop tick. Owned
+    // by ZjsContext (GC marks them so handlers stay reachable across
+    // collections even when JS user code has dropped its only ref).
+    websockets:      ZjsWebSocket**;
+    websocket_count: u32;
+    websocket_cap:   u32;
 
     // Timer queue (2026-05-18, web-API Phase B). Each entry represents
     // a setTimeout / setInterval reservation. `due_ms` is the
@@ -1205,6 +1230,17 @@ fn gc_mark_cell_children(p: void*) -> void {
 
     // TAG_ARRAY_BUFFER is a leaf — its bytes are a plain alloc, no
     // outgoing GC references.
+
+    if tag == TAG_WEBSOCKET {
+        let w: ZjsWebSocket* = NULL;
+        raw { w = (ZjsWebSocket*)p; }
+        if w.url != NULL { gc_mark_value(zjs_cell_from_ptr((void*)w.url)); }
+        gc_mark_value(w.on_open);
+        gc_mark_value(w.on_message);
+        gc_mark_value(w.on_error);
+        gc_mark_value(w.on_close);
+        return;
+    }
 }
 
 // Mark a single value's reachable graph. Idempotent — already-marked
@@ -1441,6 +1477,16 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     if ctx.float64_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.float64_array_proto)); }
     if ctx.array_buffer_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.array_buffer_proto)); }
     if ctx.data_view_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.data_view_proto)); }
+    if ctx.websocket_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.websocket_proto)); }
+    // Live WebSocket cells — kept alive by the engine until close,
+    // even when JS drops the last reference (a "ws.onmessage = ..."
+    // handler still needs to fire).
+    let wsi: u32 = 0;
+    while wsi < ctx.websocket_count {
+        let w = ctx.websockets[wsi];
+        if w != NULL { gc_mark_value(zjs_cell_from_ptr((void*)w)); }
+        wsi = wsi + 1;
+    }
     if ctx.headers_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.headers_proto));
     }
@@ -1542,6 +1588,7 @@ fn gc_free_one(p: void*) -> void {
       else if tag == TAG_TYPED_ARRAY   { typed_array_free_void(p); }
       else if tag == TAG_ARRAY_BUFFER  { array_buffer_free_void(p); }
       else if tag == TAG_DATA_VIEW     { data_view_free_void(p); }
+      else if tag == TAG_WEBSOCKET     { websocket_free_void(p); }
 }
 
 // Sweep the young-generation list. Marked cells are promoted to the
@@ -3956,6 +4003,9 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
     }
     if zjs_is_data_view(v) != 0 && ctx.data_view_proto != NULL {
         return zjs_cell_from_ptr((void*)ctx.data_view_proto);
+    }
+    if zjs_is_websocket(v) != 0 && ctx.websocket_proto != NULL {
+        return zjs_cell_from_ptr((void*)ctx.websocket_proto);
     }
     // Primitives — ToObject(v) would wrap, then get its prototype.
     // Surface the matching prototype chain root directly; that's the
@@ -9732,6 +9782,239 @@ fn host_dv_set_float32(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
 fn host_dv_set_float64(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return host_data_view_set(ctx, args, argc, TA_FLOAT64); }
 
 // =====================================================================
+// WebSocket — web-API Phase E (2026-05-18).
+//
+// Constructor opens an NSURLSessionWebSocketTask via the platform
+// shim and registers the cell on ctx.websockets for event-loop
+// polling. Event handlers (.onopen/.onmessage/.onerror/.onclose) and
+// readyState/url/binaryType/bufferedAmount live on the cell; methods
+// (send / close) on websocket_proto.
+//
+// v0.1 limits (lifted in follow-ups):
+//   - protocols argument ignored.
+//   - bufferedAmount always returns 0.
+//   - binaryType always "arraybuffer"; binary messages arrive as
+//     fresh Uint8Array regardless of binaryType setting.
+//   - No addEventListener; only on* handlers.
+//   - Close event is fired client-side immediately when .close() is
+//     called; server-initiated close also fires via the receive
+//     completion handler when NSURLSession reports the disconnect.
+// =====================================================================
+
+fn ctx_register_websocket(ctx: ZjsContext*, w: ZjsWebSocket*) -> void {
+    if ctx.websocket_count >= ctx.websocket_cap {
+        let new_cap: u32 = if ctx.websocket_cap == 0 { 4 } else { ctx.websocket_cap * 2 };
+        let old_cap = ctx.websocket_cap;
+        ctx.websockets = realloc_n<ZjsWebSocket*>(ctx.websockets, (usize)old_cap, (usize)new_cap);
+        ctx.websocket_cap = new_cap;
+    }
+    ctx.websockets[ctx.websocket_count] = w;
+    ctx.websocket_count = ctx.websocket_count + 1;
+}
+
+fn ctx_unregister_websocket(ctx: ZjsContext*, w: ZjsWebSocket*) -> void {
+    let i: u32 = 0;
+    while i < ctx.websocket_count {
+        if ctx.websockets[i] == w {
+            // Swap-with-last + decrement.
+            ctx.websocket_count = ctx.websocket_count - 1;
+            ctx.websockets[i] = ctx.websockets[ctx.websocket_count];
+            return;
+        }
+        i = i + 1;
+    }
+}
+
+fn host_websocket_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 {
+        return build_typed_error(ctx, (char*)"TypeError", 9,
+                                 (char*)"WebSocket: url required", 23);
+    }
+    let url_v: ZjsValue = args[0];
+    if zjs_is_string(url_v) == 0 { url_v = zjs_to_string(ctx, url_v); }
+    let us = zjs_as_string(url_v);
+
+    let w = zjs_websocket_new(us);
+    ctx_register_cell(ctx, (void*)w);
+
+    let h: void* = NULL;
+    raw { h = (void*)zjs_ws_connect(us->data); }
+    if h == NULL {
+        w.ready_state = 3;
+        return build_typed_error(ctx, (char*)"TypeError", 9,
+                                 (char*)"WebSocket: connection failed", 28);
+    }
+    w.native = h;
+    ctx_register_websocket(ctx, w);
+    return zjs_cell_from_ptr((void*)w);
+}
+
+fn host_websocket_send(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_websocket(this_v) == 0 || argc == 0 { return zjs_undefined(); }
+    let w = zjs_as_websocket(this_v);
+    if w.ready_state != 1 { return zjs_undefined(); }
+    let data = args[0];
+    if zjs_is_uint8_array(data) != 0 {
+        let u = zjs_as_uint8_array(data);
+        raw { zjs_ws_send_binary((ZjsWsHandle*)w->native, u->bytes, (size_t)u->length); }
+        return zjs_undefined();
+    }
+    if zjs_is_typed_array(data) != 0 {
+        let ta = zjs_as_typed_array(data);
+        if ta.buffer != NULL {
+            raw {
+                zjs_ws_send_binary((ZjsWsHandle*)w->native,
+                                   ta->buffer->bytes + ta->byte_offset,
+                                   (size_t)(ta->length * (uint32_t)ta->element_size));
+            }
+        }
+        return zjs_undefined();
+    }
+    if zjs_is_array_buffer(data) != 0 {
+        let b = zjs_as_array_buffer(data);
+        raw { zjs_ws_send_binary((ZjsWsHandle*)w->native, b->bytes, (size_t)b->length); }
+        return zjs_undefined();
+    }
+    // Text fallback — coerce to string.
+    let s_v = if zjs_is_string(data) != 0 { data } else { zjs_to_string(ctx, data) };
+    let s = zjs_as_string(s_v);
+    raw { zjs_ws_send_text((ZjsWsHandle*)w->native, s->data, (size_t)s->length); }
+    return zjs_undefined();
+}
+
+fn host_websocket_close(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_websocket(this_v) == 0 { return zjs_undefined(); }
+    let w = zjs_as_websocket(this_v);
+    if w.ready_state == 2 || w.ready_state == 3 { return zjs_undefined(); }
+    let code: i32 = 1000;
+    let reason_cstr: char* = NULL;
+    if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
+        code = (i32)ta_to_number(ctx, args[0]);
+    }
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
+        let rs = if zjs_is_string(args[1]) != 0 { args[1] } else { zjs_to_string(ctx, args[1]) };
+        reason_cstr = zjs_as_string(rs).data;
+    }
+    w.ready_state = 2;
+    raw { zjs_ws_close((ZjsWsHandle*)w->native, (int)code, reason_cstr); }
+    return zjs_undefined();
+}
+
+// Dispatch an event handler. Builds a tiny event-object literal and
+// calls handler(event) with this = the WebSocket. Handler may be
+// undefined (no-op) or a function.
+fn ws_dispatch(ctx: ZjsContext*, w: ZjsWebSocket*, handler: ZjsValue, event_obj: ZjsValue) -> void {
+    if zjs_is_function(handler) == 0 && zjs_is_closure(handler) == 0
+       && zjs_is_host_function(handler) == 0 { return; }
+    let argv: ZjsValue[1];
+    argv[0] = event_obj;
+    let this_v = zjs_cell_from_ptr((void*)w);
+    let argv_p: ZjsValue* = NULL;
+    raw { argv_p = &argv[0]; }
+    zjs_call_value_with_this(ctx, handler, this_v, argv_p, 1);
+}
+
+fn ws_make_event(ctx: ZjsContext*, type_str: char*, type_len: u32,
+                 target: ZjsValue) -> ZjsValue {
+    let ev = ctx_new_object(ctx);
+    let o = zjs_as_object(ev);
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"type", 4),
+               ctx_intern_string(ctx, type_str, type_len));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"target", 6), target);
+    return ev;
+}
+
+// Drain pending events from every live WebSocket and dispatch
+// handlers. Called from zjs_run_pending_timers on each event-loop
+// tick.
+fn ws_drain_events(ctx: ZjsContext*) -> void {
+    let i: u32 = 0;
+    while i < ctx.websocket_count {
+        let w = ctx.websockets[i];
+        let advanced: int = 1;
+        // Drain up to N events per tick to avoid starving timers.
+        let drained: u32 = 0;
+        while drained < 16 {
+            if w == NULL || w.native == NULL { break; }
+            let kind: i32 = 0;
+            let evt_text: char* = NULL;
+            let evt_text_len: usize = 0;
+            let evt_bin: u8* = NULL;
+            let evt_bin_len: usize = 0;
+            let evt_code: i32 = 0;
+            raw {
+                ZjsWsEvent _e;
+                _e.kind = 0; _e.text = NULL; _e.text_len = 0;
+                _e.binary = NULL; _e.binary_len = 0; _e.code = 0;
+                kind = zjs_ws_poll((ZjsWsHandle*)w->native, &_e);
+                evt_text = _e.text; evt_text_len = _e.text_len;
+                evt_bin  = _e.binary; evt_bin_len = _e.binary_len;
+                evt_code = _e.code;
+            }
+            if kind == 0 { break; }
+            let target = zjs_cell_from_ptr((void*)w);
+
+            if kind == 1 {
+                // OPEN
+                w.ready_state = 1;
+                let ev = ws_make_event(ctx, (char*)"open", 4, target);
+                ws_dispatch(ctx, w, w.on_open, ev);
+            } else if kind == 2 {
+                // MESSAGE_TEXT
+                let s_v = ctx_intern_string(ctx, evt_text, (u32)evt_text_len);
+                let ev = ws_make_event(ctx, (char*)"message", 7, target);
+                object_set(ctx, zjs_as_object(ev), ctx_intern_atom(ctx, (char*)"data", 4), s_v);
+                ws_dispatch(ctx, w, w.on_message, ev);
+                if evt_text != NULL { raw { free(evt_text); } }
+            } else if kind == 3 {
+                // MESSAGE_BIN — wrap into a Uint8Array (legacy fast path).
+                let u = zjs_uint8_array_new((u32)evt_bin_len);
+                ctx_register_cell(ctx, (void*)u);
+                raw {
+                    if (u->length > 0 && evt_bin != NULL) memcpy(u->bytes, evt_bin, u->length);
+                }
+                let ev = ws_make_event(ctx, (char*)"message", 7, target);
+                object_set(ctx, zjs_as_object(ev), ctx_intern_atom(ctx, (char*)"data", 4),
+                           zjs_cell_from_ptr((void*)u));
+                ws_dispatch(ctx, w, w.on_message, ev);
+                if evt_bin != NULL { raw { free(evt_bin); } }
+            } else if kind == 4 {
+                // ERROR
+                let msg_v = if evt_text != NULL { ctx_intern_string(ctx, evt_text, (u32)evt_text_len) }
+                                                else { ctx_intern_string(ctx, (char*)"", 0) };
+                let ev = ws_make_event(ctx, (char*)"error", 5, target);
+                object_set(ctx, zjs_as_object(ev), ctx_intern_atom(ctx, (char*)"message", 7), msg_v);
+                ws_dispatch(ctx, w, w.on_error, ev);
+                if evt_text != NULL { raw { free(evt_text); } }
+            } else if kind == 5 {
+                // CLOSE
+                w.ready_state = 3;
+                let reason_v = if evt_text != NULL { ctx_intern_string(ctx, evt_text, (u32)evt_text_len) }
+                                                   else { ctx_intern_string(ctx, (char*)"", 0) };
+                let ev = ws_make_event(ctx, (char*)"close", 5, target);
+                object_set(ctx, zjs_as_object(ev), ctx_intern_atom(ctx, (char*)"code", 4),
+                           zjs_int32(evt_code));
+                object_set(ctx, zjs_as_object(ev), ctx_intern_atom(ctx, (char*)"reason", 6), reason_v);
+                object_set(ctx, zjs_as_object(ev), ctx_intern_atom(ctx, (char*)"wasClean", 8),
+                           zjs_bool(if evt_code == 1000 { 1 } else { 0 }));
+                ws_dispatch(ctx, w, w.on_close, ev);
+                if evt_text != NULL { raw { free(evt_text); } }
+                // Once closed, remove from polling list so we don't
+                // keep walking it forever. Note: this mutates the
+                // list mid-iteration; we adjust `i` after.
+                ctx_unregister_websocket(ctx, w);
+                advanced = 0;
+                break;
+            }
+            drained = drained + 1;
+        }
+        if advanced != 0 { i = i + 1; }
+    }
+}
+
+// =====================================================================
 // Web-API Phase C (2026-05-18) — TextEncoder / TextDecoder + crypto.
 //
 // v0.1 limitation: TextEncoder.encode returns a plain Array of bytes
@@ -10038,6 +10321,9 @@ fn zjs_has_pending_work(ctx: ZjsContext*) -> int {
         if !ctx.timers[i].cancelled { return 1; }
         i = i + 1;
     }
+    // Live WebSockets force the loop to keep ticking so we can
+    // deliver async events (open / message / error / close).
+    if ctx.websocket_count > 0 { return 1; }
     return 0;
 }
 
@@ -10076,6 +10362,10 @@ fn zjs_next_timer_ms(ctx: ZjsContext*) -> i64 {
 // keeps running.
 fn zjs_run_pending_timers(ctx: ZjsContext*) -> void {
     if ctx == NULL { return; }
+    // Drain any pending WebSocket events FIRST so message handlers
+    // run on the same tick as timers (matches platform semantics
+    // where I/O completion can race with setTimeout).
+    if ctx.websocket_count > 0 { ws_drain_events(ctx); }
     let now = timer_now_ms();
     // Snapshot which entries are due. Callbacks may install new
     // timers — those have due_ms > now and won't fire in this pass.
@@ -14768,6 +15058,31 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ctx_register_host_function(ctx, (char*)"BigInt",      eval_ptr);
     ctx_register_host_function(ctx, (char*)"BigInt64Array",     eval_ptr);
     ctx_register_host_function(ctx, (char*)"BigUint64Array",    eval_ptr);
+
+    // === WebSocket — web-API Phase E (2026-05-18). ===
+    let ws_ctor_ptr:  void* = NULL; raw { ws_ctor_ptr  = (void*)host_websocket_ctor; }
+    let ws_send_ptr:  void* = NULL; raw { ws_send_ptr  = (void*)host_websocket_send; }
+    let ws_close_ptr: void* = NULL; raw { ws_close_ptr = (void*)host_websocket_close; }
+    let ws_ctor_v = ctx_register_host_function(ctx, (char*)"WebSocket", ws_ctor_ptr);
+    let ws_proto_v = ctx_new_object(ctx);
+    ctx.websocket_proto = zjs_as_object(ws_proto_v);
+    zjs_as_host_function(ws_ctor_v).prototype = ctx.websocket_proto;
+    object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), ws_ctor_v);
+    object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"send", 4),
+               ctx_make_host_function_arity(ctx, (char*)"send", ws_send_ptr, 1));
+    object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"close", 5),
+               ctx_make_host_function_arity(ctx, (char*)"close", ws_close_ptr, 2));
+
+    // Static constants on the constructor (spec): WebSocket.CONNECTING etc.
+    let ws_ctor_hf = zjs_as_host_function(ws_ctor_v);
+    if ws_ctor_hf.props == NULL {
+        let p_v = ctx_new_object(ctx);
+        ws_ctor_hf.props = zjs_as_object(p_v);
+    }
+    object_set(ctx, ws_ctor_hf.props, ctx_intern_atom(ctx, (char*)"CONNECTING", 10), zjs_int32(0));
+    object_set(ctx, ws_ctor_hf.props, ctx_intern_atom(ctx, (char*)"OPEN",       4),  zjs_int32(1));
+    object_set(ctx, ws_ctor_hf.props, ctx_intern_atom(ctx, (char*)"CLOSING",    7),  zjs_int32(2));
+    object_set(ctx, ws_ctor_hf.props, ctx_intern_atom(ctx, (char*)"CLOSED",     6),  zjs_int32(3));
 
     // === Headers / Response / fetch — web-API Phase D.0 (2026-05-18). ===
     let h_ctor_ptr:  void* = NULL; raw { h_ctor_ptr  = (void*)host_headers_ctor; }

@@ -6,11 +6,11 @@
 
 // Platform-native HTTP backend — link Apple impl into the test binary.
 //> macos: framework: Foundation
-//> macos: cflags:    -fobjc-arc src/platform/http_apple.m
+//> macos: cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
 //> ios:   framework: Foundation
-//> ios:   cflags:    -fobjc-arc src/platform/http_apple.m
-//> linux: cflags:    src/platform/http_stub.c
-//> windows: cflags:  src/platform/http_stub.c
+//> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
+//> linux: cflags:    src/platform/http_stub.c src/platform/ws_stub.c
+//> windows: cflags:  src/platform/http_stub.c src/platform/ws_stub.c
 
 import "../src/lib.zc";
 

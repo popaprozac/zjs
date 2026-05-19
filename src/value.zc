@@ -635,6 +635,9 @@ def TAG_ARRAY_BUFFER:  u8 = 19;  // 2026-05-18: WHATWG ArrayBuffer — owns
 def TAG_DATA_VIEW:     u8 = 20;  // 2026-05-18: WHATWG DataView — un-typed
                                  //   view onto an ArrayBuffer with per-call
                                  //   get/set methods (little/big endian).
+def TAG_WEBSOCKET:     u8 = 21;  // 2026-05-18: WHATWG WebSocket. Wraps an
+                                 //   opaque platform handle and four event
+                                 //   handler slots.
 
 // TypedArray element kinds. Used by ZjsTypedArray.kind to discriminate
 // at load/store time. Kept separate from TAG_TYPED_ARRAY so the tag
@@ -1274,6 +1277,60 @@ fn data_view_free_void(p: void*) -> void {
     let d: ZjsDataView* = NULL;
     raw { d = (ZjsDataView*)p; }
     dealloc(d);
+}
+
+// =====================================================================
+// WebSocket — wraps the platform's native ws handle. Event handlers
+// live in slots on the struct (assignable via .onopen/.onmessage/...
+// in JS). The platform's pending events are drained by
+// zjs_run_pending_work on each event-loop tick.
+// =====================================================================
+
+struct ZjsWebSocket {
+    header:      CellHeader;       // type_tag = TAG_WEBSOCKET
+    ready_state: u8;               // 0=CONNECTING 1=OPEN 2=CLOSING 3=CLOSED
+    native:      void*;            // ZjsWsHandle* (opaque, ws_native.h)
+    url:         ZjsString*;
+    on_open:     ZjsValue;
+    on_message:  ZjsValue;
+    on_error:    ZjsValue;
+    on_close:    ZjsValue;
+}
+
+fn zjs_is_websocket(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_WEBSOCKET { return 1; }
+    return 0;
+}
+
+fn zjs_as_websocket(v: ZjsValue) -> ZjsWebSocket* {
+    let p = zjs_cell_as_ptr(v);
+    let w: ZjsWebSocket* = NULL;
+    raw { w = (ZjsWebSocket*)p; }
+    return w;
+}
+
+fn zjs_websocket_new(url: ZjsString*) -> ZjsWebSocket* {
+    let w = alloc<ZjsWebSocket>();
+    w.header.type_tag = TAG_WEBSOCKET;
+    w.ready_state = 0;
+    w.native = NULL;
+    w.url = url;
+    w.on_open    = zjs_undefined();
+    w.on_message = zjs_undefined();
+    w.on_error   = zjs_undefined();
+    w.on_close   = zjs_undefined();
+    return w;
+}
+
+fn websocket_free_void(p: void*) -> void {
+    let w: ZjsWebSocket* = NULL;
+    raw { w = (ZjsWebSocket*)p; }
+    // Platform handle is torn down by ctx_unregister_websocket on
+    // CLOSE event delivery. By the time we GC-free the cell, native
+    // should already be NULL. If a cell is collected while still
+    // connected (user dropped all refs without close), leave the
+    // platform handle alone — finalizer-style cleanup is a follow-up.
+    dealloc(w);
 }
 
 fn zjs_is_array_iter(v: ZjsValue) -> int {

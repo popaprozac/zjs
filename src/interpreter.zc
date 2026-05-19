@@ -370,6 +370,57 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
+    if zjs_is_websocket(obj) != 0 {
+        let w = zjs_as_websocket(obj);
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        let name = zjs_as_string(key);
+        let nd = name.data;
+        let nl = name.length;
+        let is_rs:   int = 0;
+        let is_url:  int = 0;
+        let is_ono:  int = 0;
+        let is_onm:  int = 0;
+        let is_one:  int = 0;
+        let is_onc:  int = 0;
+        let is_bt:   int = 0;
+        let is_ba:   int = 0;
+        let is_proto: int = 0;
+        let is_ext:  int = 0;
+        raw {
+            is_rs    = (nl == 10 && memcmp(nd, "readyState",     10) == 0) ? 1 : 0;
+            is_url   = (nl == 3  && memcmp(nd, "url",            3)  == 0) ? 1 : 0;
+            is_ono   = (nl == 6  && memcmp(nd, "onopen",         6)  == 0) ? 1 : 0;
+            is_onm   = (nl == 9  && memcmp(nd, "onmessage",      9)  == 0) ? 1 : 0;
+            is_one   = (nl == 7  && memcmp(nd, "onerror",        7)  == 0) ? 1 : 0;
+            is_onc   = (nl == 7  && memcmp(nd, "onclose",        7)  == 0) ? 1 : 0;
+            is_bt    = (nl == 10 && memcmp(nd, "binaryType",     10) == 0) ? 1 : 0;
+            is_ba    = (nl == 14 && memcmp(nd, "bufferedAmount", 14) == 0) ? 1 : 0;
+            is_proto = (nl == 8  && memcmp(nd, "protocol",       8)  == 0) ? 1 : 0;
+            is_ext   = (nl == 10 && memcmp(nd, "extensions",     10) == 0) ? 1 : 0;
+        }
+        if is_rs  != 0 { return zjs_int32((i32)w.ready_state); }
+        if is_url != 0 {
+            if w.url != NULL { return zjs_cell_from_ptr((void*)w.url); }
+            return ctx_intern_string(ctx, (char*)"", 0);
+        }
+        if is_ono != 0 { return w.on_open; }
+        if is_onm != 0 { return w.on_message; }
+        if is_one != 0 { return w.on_error; }
+        if is_onc != 0 { return w.on_close; }
+        if is_bt  != 0 { return ctx_intern_string(ctx, (char*)"arraybuffer", 11); }
+        if is_ba  != 0 { return zjs_int32(0); }
+        if is_proto != 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+        if is_ext != 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+        if ctx.websocket_proto != NULL {
+            let slot = class_find_slot(ctx.websocket_proto.cls, name);
+            if slot >= 0 {
+                let v = ctx.websocket_proto.slots[(u32)slot];
+                if zjs_is_deleted(v) == 0 { return v; }
+            }
+        }
+        return zjs_undefined();
+    }
+
     if zjs_is_data_view(obj) != 0 {
         let dv = zjs_as_data_view(obj);
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
@@ -1088,6 +1139,28 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         }
         // Out-of-bounds indices silently drop (TypedArray spec: writes
         // past length are no-ops).
+        return;
+    }
+    if zjs_is_websocket(obj) != 0 {
+        let w = zjs_as_websocket(obj);
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        let name = zjs_as_string(key);
+        let nd = name.data;
+        let nl = name.length;
+        let is_ono: int = 0;
+        let is_onm: int = 0;
+        let is_one: int = 0;
+        let is_onc: int = 0;
+        raw {
+            is_ono = (nl == 6 && memcmp(nd, "onopen",    6) == 0) ? 1 : 0;
+            is_onm = (nl == 9 && memcmp(nd, "onmessage", 9) == 0) ? 1 : 0;
+            is_one = (nl == 7 && memcmp(nd, "onerror",   7) == 0) ? 1 : 0;
+            is_onc = (nl == 7 && memcmp(nd, "onclose",   7) == 0) ? 1 : 0;
+        }
+        if is_ono != 0 { w.on_open    = value; return; }
+        if is_onm != 0 { w.on_message = value; return; }
+        if is_one != 0 { w.on_error   = value; return; }
+        if is_onc != 0 { w.on_close   = value; return; }
         return;
     }
     if zjs_is_typed_array(obj) != 0 {
@@ -3985,6 +4058,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
+                } else if zjs_is_websocket(val) != 0 {
+                    let cur = ctx.websocket_proto;
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
                 } else if zjs_is_date(val) != 0 {
                     let cur = ctx.date_proto;
                     while cur != NULL {
@@ -4217,7 +4296,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 || zjs_is_uint8_array(call_result) != 0
                 || zjs_is_typed_array(call_result) != 0
                 || zjs_is_array_buffer(call_result) != 0
-                || zjs_is_data_view(call_result) != 0;
+                || zjs_is_data_view(call_result) != 0
+                || zjs_is_websocket(call_result) != 0;
             if result_is_object {
                 regs[dst2] = call_result;
             } else if final_this.bits != new_obj_v.bits
@@ -4428,7 +4508,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 || zjs_is_uint8_array(call_result) != 0
                 || zjs_is_typed_array(call_result) != 0
                 || zjs_is_array_buffer(call_result) != 0
-                || zjs_is_data_view(call_result) != 0;
+                || zjs_is_data_view(call_result) != 0
+                || zjs_is_websocket(call_result) != 0;
             // Derived-class ctor: a non-undefined non-Object return is
             // a TypeError. Base ctors silently coerce to `this`.
             let callee_is_derived: bool = false;
