@@ -84,6 +84,12 @@ raw {
     static inline void libc_memcpy(void* dst, const void* src, unsigned long n) {
         memcpy(dst, src, n);
     }
+    // Forward-declare the WebSocket platform shim so finalizer code
+    // in value.zc can tear down lingering native handles. Full
+    // declarations live in src/platform/ws_native.h (mirrored as
+    // raw externs in context.zc).
+    typedef struct ZjsWsHandle ZjsWsHandle;
+    void zjs_ws_destroy(ZjsWsHandle* h);
 }
 
 // --- Constructors -----------------------------------------------------
@@ -1291,10 +1297,17 @@ struct ZjsWebSocket {
     ready_state: u8;               // 0=CONNECTING 1=OPEN 2=CLOSING 3=CLOSED
     native:      void*;            // ZjsWsHandle* (opaque, ws_native.h)
     url:         ZjsString*;
+    protocol:    ZjsString*;       // server-selected subprotocol (or NULL)
     on_open:     ZjsValue;
     on_message:  ZjsValue;
     on_error:    ZjsValue;
     on_close:    ZjsValue;
+    // EventTarget listener pool — flat [type_v, callback_v, ...]
+    // pairs. v0.1: type stored as a ZjsString cell, callback as any
+    // callable value. options arg of addEventListener is ignored.
+    listeners:        ZjsValue*;
+    listener_count:   u32;          // number of (type, callback) pairs
+    listener_cap:     u32;          // capacity in pairs (array length = 2*cap)
 }
 
 fn zjs_is_websocket(v: ZjsValue) -> int {
@@ -1315,21 +1328,32 @@ fn zjs_websocket_new(url: ZjsString*) -> ZjsWebSocket* {
     w.ready_state = 0;
     w.native = NULL;
     w.url = url;
+    w.protocol = NULL;
     w.on_open    = zjs_undefined();
     w.on_message = zjs_undefined();
     w.on_error   = zjs_undefined();
     w.on_close   = zjs_undefined();
+    w.listeners = NULL;
+    w.listener_count = 0;
+    w.listener_cap = 0;
     return w;
 }
 
 fn websocket_free_void(p: void*) -> void {
     let w: ZjsWebSocket* = NULL;
     raw { w = (ZjsWebSocket*)p; }
-    // Platform handle is torn down by ctx_unregister_websocket on
-    // CLOSE event delivery. By the time we GC-free the cell, native
-    // should already be NULL. If a cell is collected while still
-    // connected (user dropped all refs without close), leave the
-    // platform handle alone — finalizer-style cleanup is a follow-up.
+    // Finalizer: tear down the platform handle if it's still alive.
+    // Reached when GC frees a cell that's no longer reachable —
+    // either after CLOSE removed it from the polling list, or when a
+    // user dropped all references without calling .close() (a
+    // dangling-handle leak in v0.1 prior to this fix).
+    raw {
+        if (w->native != NULL) {
+            zjs_ws_destroy((ZjsWsHandle*)w->native);
+            w->native = NULL;
+        }
+    }
+    if w.listeners != NULL { dealloc(w.listeners); }
     dealloc(w);
 }
 

@@ -37,6 +37,7 @@ typedef enum {
 typedef struct {
     int kind;            // ZjsWsEventKind
     char* text;          // for TEXT/ERROR/CLOSE — UTF-8, malloc'd, caller frees
+                         // for OPEN — server-selected subprotocol ("" if none)
     size_t text_len;
     uint8_t* binary;     // for BIN — malloc'd, caller frees
     size_t binary_len;
@@ -46,7 +47,15 @@ typedef struct {
 // Open a WebSocket connection. Returns an opaque handle on success
 // (caller eventually destroys with zjs_ws_destroy) or NULL on
 // failure. `url` must be a `ws://` or `wss://` URL.
-ZjsWsHandle* zjs_ws_connect(const char* url);
+//
+// `protocols` is an optional array of subprotocol names to offer in
+// the Sec-WebSocket-Protocol header. May be NULL when protocol_count
+// is 0. The server's chosen subprotocol arrives on the OPEN event's
+// `text` field. `timeout_seconds` <= 0 means use the platform default.
+ZjsWsHandle* zjs_ws_connect(const char* url,
+                            const char** protocols,
+                            size_t protocol_count,
+                            int timeout_seconds);
 
 // Send a text frame. Returns 0 on queued-for-send, -1 on error.
 int zjs_ws_send_text(ZjsWsHandle* h, const char* text, size_t len);

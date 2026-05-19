@@ -409,7 +409,10 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         if is_onc != 0 { return w.on_close; }
         if is_bt  != 0 { return ctx_intern_string(ctx, (char*)"arraybuffer", 11); }
         if is_ba  != 0 { return zjs_int32(0); }
-        if is_proto != 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+        if is_proto != 0 {
+            if w.protocol != NULL { return zjs_cell_from_ptr((void*)w.protocol); }
+            return ctx_intern_string(ctx, (char*)"", 0);
+        }
         if is_ext != 0 { return ctx_intern_string(ctx, (char*)"", 0); }
         if ctx.websocket_proto != NULL {
             let slot = class_find_slot(ctx.websocket_proto.cls, name);

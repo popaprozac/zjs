@@ -6,8 +6,11 @@
 
 struct ZjsWsHandle { int unused; };
 
-ZjsWsHandle* zjs_ws_connect(const char* url) {
-    (void)url;
+ZjsWsHandle* zjs_ws_connect(const char* url,
+                            const char** protocols,
+                            size_t protocol_count,
+                            int timeout_seconds) {
+    (void)url; (void)protocols; (void)protocol_count; (void)timeout_seconds;
     return NULL;
 }
 

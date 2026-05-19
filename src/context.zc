@@ -45,7 +45,10 @@ raw {
         size_t binary_len;
         int code;
     } ZjsWsEvent;
-    ZjsWsHandle* zjs_ws_connect(const char* url);
+    ZjsWsHandle* zjs_ws_connect(const char* url,
+                                const char** protocols,
+                                size_t protocol_count,
+                                int timeout_seconds);
     int  zjs_ws_send_text(ZjsWsHandle* h, const char* text, size_t len);
     int  zjs_ws_send_binary(ZjsWsHandle* h, const uint8_t* bytes, size_t len);
     int  zjs_ws_close(ZjsWsHandle* h, int code, const char* reason);
@@ -1235,10 +1238,21 @@ fn gc_mark_cell_children(p: void*) -> void {
         let w: ZjsWebSocket* = NULL;
         raw { w = (ZjsWebSocket*)p; }
         if w.url != NULL { gc_mark_value(zjs_cell_from_ptr((void*)w.url)); }
+        if w.protocol != NULL { gc_mark_value(zjs_cell_from_ptr((void*)w.protocol)); }
         gc_mark_value(w.on_open);
         gc_mark_value(w.on_message);
         gc_mark_value(w.on_error);
         gc_mark_value(w.on_close);
+        // EventTarget listeners — each pair is (type_str, callback);
+        // both must stay reachable so future dispatch can fire them.
+        if w.listeners != NULL {
+            let li: u32 = 0;
+            let total = w.listener_count * 2;
+            while li < total {
+                gc_mark_value(w.listeners[li]);
+                li = li + 1;
+            }
+        }
         return;
     }
 }
@@ -9834,11 +9848,35 @@ fn host_websocket_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     if zjs_is_string(url_v) == 0 { url_v = zjs_to_string(ctx, url_v); }
     let us = zjs_as_string(url_v);
 
+    // Parse the second arg as a subprotocol — string or array of
+    // strings per the WebSocket constructor spec.
+    let protos:  char*[16];
+    let pcount:  usize = 0;
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 && zjs_is_null(args[1]) == 0 {
+        let p_arg = args[1];
+        if zjs_is_string(p_arg) != 0 {
+            protos[0] = zjs_as_string(p_arg).data;
+            pcount = 1;
+        } else if zjs_is_array(p_arg) != 0 {
+            let a = zjs_as_array(p_arg);
+            let ai: u32 = 0;
+            while ai < a.length && pcount < 16 {
+                let pv = a.elements[ai];
+                let ps = if zjs_is_string(pv) != 0 { pv } else { zjs_to_string(ctx, pv) };
+                protos[pcount] = zjs_as_string(ps).data;
+                pcount = pcount + 1;
+                ai = ai + 1;
+            }
+        }
+    }
+
     let w = zjs_websocket_new(us);
     ctx_register_cell(ctx, (void*)w);
 
     let h: void* = NULL;
-    raw { h = (void*)zjs_ws_connect(us->data); }
+    raw {
+        h = (void*)zjs_ws_connect(us->data, (const char**)protos, pcount, 30);
+    }
     if h == NULL {
         w.ready_state = 3;
         return build_typed_error(ctx, (char*)"TypeError", 9,
@@ -9905,7 +9943,7 @@ fn host_websocket_close(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
 // Dispatch an event handler. Builds a tiny event-object literal and
 // calls handler(event) with this = the WebSocket. Handler may be
 // undefined (no-op) or a function.
-fn ws_dispatch(ctx: ZjsContext*, w: ZjsWebSocket*, handler: ZjsValue, event_obj: ZjsValue) -> void {
+fn ws_call_handler(ctx: ZjsContext*, w: ZjsWebSocket*, handler: ZjsValue, event_obj: ZjsValue) -> void {
     if zjs_is_function(handler) == 0 && zjs_is_closure(handler) == 0
        && zjs_is_host_function(handler) == 0 { return; }
     let argv: ZjsValue[1];
@@ -9914,6 +9952,138 @@ fn ws_dispatch(ctx: ZjsContext*, w: ZjsWebSocket*, handler: ZjsValue, event_obj:
     let argv_p: ZjsValue* = NULL;
     raw { argv_p = &argv[0]; }
     zjs_call_value_with_this(ctx, handler, this_v, argv_p, 1);
+}
+
+// Fire an event on a WebSocket: first the matching on* handler, then
+// every addEventListener listener whose type matches.
+fn ws_dispatch(ctx: ZjsContext*, w: ZjsWebSocket*, handler: ZjsValue, event_obj: ZjsValue) -> void {
+    ws_call_handler(ctx, w, handler, event_obj);
+    // Read the event's `type` slot to filter the listener array.
+    if w.listener_count == 0 { return; }
+    if zjs_is_object(event_obj) == 0 { return; }
+    let eo = zjs_as_object(event_obj);
+    let type_atom = ctx_intern_atom(ctx, (char*)"type", 4);
+    let slot = class_find_slot(eo.cls, type_atom);
+    if slot < 0 { return; }
+    let type_v = eo.slots[(u32)slot];
+    if zjs_is_string(type_v) == 0 { return; }
+    let type_s = zjs_as_string(type_v);
+    // Snapshot count — a listener may add/remove listeners during dispatch.
+    let snap = w.listener_count;
+    let i: u32 = 0;
+    while i < snap {
+        let lt = w.listeners[2 * i];
+        let lc = w.listeners[2 * i + 1];
+        if zjs_is_string(lt) != 0 {
+            let lts = zjs_as_string(lt);
+            if zjs_string_equals(lts, type_s) != 0 {
+                ws_call_handler(ctx, w, lc, event_obj);
+            }
+        }
+        i = i + 1;
+    }
+}
+
+// addEventListener — append a (type, callback) pair to the pool.
+// Duplicates of the same (type, callback) are de-duplicated per the
+// EventTarget spec.
+fn host_websocket_add_listener(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_websocket(this_v) == 0 || argc < 2 { return zjs_undefined(); }
+    let w = zjs_as_websocket(this_v);
+    let type_v = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    let cb_v   = args[1];
+    if zjs_is_function(cb_v) == 0 && zjs_is_closure(cb_v) == 0
+       && zjs_is_host_function(cb_v) == 0 { return zjs_undefined(); }
+    let type_s = zjs_as_string(type_v);
+    // De-dup: skip if (type, callback) already registered.
+    let i: u32 = 0;
+    while i < w.listener_count {
+        let lt = w.listeners[2 * i];
+        let lc = w.listeners[2 * i + 1];
+        if zjs_is_string(lt) != 0 && zjs_string_equals(zjs_as_string(lt), type_s) != 0 {
+            if lc.bits == cb_v.bits { return zjs_undefined(); }
+        }
+        i = i + 1;
+    }
+    // Grow.
+    if w.listener_count >= w.listener_cap {
+        let new_cap = if w.listener_cap == 0 { 4 } else { w.listener_cap * 2 };
+        let old_pairs = w.listener_cap;
+        w.listeners = realloc_n<ZjsValue>(w.listeners, (usize)(old_pairs * 2), (usize)(new_cap * 2));
+        w.listener_cap = new_cap;
+    }
+    w.listeners[2 * w.listener_count]     = type_v;
+    w.listeners[2 * w.listener_count + 1] = cb_v;
+    w.listener_count = w.listener_count + 1;
+    return zjs_undefined();
+}
+
+// removeEventListener — find (type, callback) and remove via
+// swap-with-last. No-op if not registered.
+fn host_websocket_remove_listener(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_websocket(this_v) == 0 || argc < 2 { return zjs_undefined(); }
+    let w = zjs_as_websocket(this_v);
+    let type_v = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
+    let cb_v   = args[1];
+    let type_s = zjs_as_string(type_v);
+    let i: u32 = 0;
+    while i < w.listener_count {
+        let lt = w.listeners[2 * i];
+        let lc = w.listeners[2 * i + 1];
+        if zjs_is_string(lt) != 0 && zjs_string_equals(zjs_as_string(lt), type_s) != 0 {
+            if lc.bits == cb_v.bits {
+                let last = w.listener_count - 1;
+                w.listeners[2 * i]     = w.listeners[2 * last];
+                w.listeners[2 * i + 1] = w.listeners[2 * last + 1];
+                w.listener_count = last;
+                return zjs_undefined();
+            }
+        }
+        i = i + 1;
+    }
+    return zjs_undefined();
+}
+
+// dispatchEvent(event) — user-side: fires the same dispatch path.
+// Returns true unless preventDefault was called (which we don't
+// track at v0.1 — always returns true).
+fn host_websocket_dispatch_event(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_websocket(this_v) == 0 || argc == 0 { return zjs_bool(0); }
+    let w = zjs_as_websocket(this_v);
+    let ev = args[0];
+    if zjs_is_object(ev) == 0 { return zjs_bool(0); }
+    // Look at .type to pick the matching on* handler.
+    let eo = zjs_as_object(ev);
+    let type_atom = ctx_intern_atom(ctx, (char*)"type", 4);
+    let slot = class_find_slot(eo.cls, type_atom);
+    let handler = zjs_undefined();
+    if slot >= 0 {
+        let type_v = eo.slots[(u32)slot];
+        if zjs_is_string(type_v) != 0 {
+            let ts = zjs_as_string(type_v);
+            let td = ts.data;
+            let tl = ts.length;
+            let is_open: int = 0;
+            let is_msg:  int = 0;
+            let is_err:  int = 0;
+            let is_cls:  int = 0;
+            raw {
+                is_open = (tl == 4 && memcmp(td, "open",    4) == 0) ? 1 : 0;
+                is_msg  = (tl == 7 && memcmp(td, "message", 7) == 0) ? 1 : 0;
+                is_err  = (tl == 5 && memcmp(td, "error",   5) == 0) ? 1 : 0;
+                is_cls  = (tl == 5 && memcmp(td, "close",   5) == 0) ? 1 : 0;
+            }
+            if is_open != 0 { handler = w.on_open; }
+            if is_msg  != 0 { handler = w.on_message; }
+            if is_err  != 0 { handler = w.on_error; }
+            if is_cls  != 0 { handler = w.on_close; }
+        }
+    }
+    ws_dispatch(ctx, w, handler, ev);
+    return zjs_bool(1);
 }
 
 fn ws_make_event(ctx: ZjsContext*, type_str: char*, type_len: u32,
@@ -9957,8 +10127,14 @@ fn ws_drain_events(ctx: ZjsContext*) -> void {
             let target = zjs_cell_from_ptr((void*)w);
 
             if kind == 1 {
-                // OPEN
+                // OPEN — evt_text carries the server-selected
+                // subprotocol (or "" if none negotiated).
                 w.ready_state = 1;
+                if evt_text != NULL {
+                    let proto_v = ctx_intern_string(ctx, evt_text, (u32)evt_text_len);
+                    w.protocol = zjs_as_string(proto_v);
+                    raw { free(evt_text); }
+                }
                 let ev = ws_make_event(ctx, (char*)"open", 4, target);
                 ws_dispatch(ctx, w, w.on_open, ev);
             } else if kind == 2 {
@@ -15175,6 +15351,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let ws_ctor_ptr:  void* = NULL; raw { ws_ctor_ptr  = (void*)host_websocket_ctor; }
     let ws_send_ptr:  void* = NULL; raw { ws_send_ptr  = (void*)host_websocket_send; }
     let ws_close_ptr: void* = NULL; raw { ws_close_ptr = (void*)host_websocket_close; }
+    let ws_add_ptr:   void* = NULL; raw { ws_add_ptr   = (void*)host_websocket_add_listener; }
+    let ws_rem_ptr:   void* = NULL; raw { ws_rem_ptr   = (void*)host_websocket_remove_listener; }
+    let ws_disp_ptr:  void* = NULL; raw { ws_disp_ptr  = (void*)host_websocket_dispatch_event; }
     let ws_ctor_v = ctx_register_host_function(ctx, (char*)"WebSocket", ws_ctor_ptr);
     let ws_proto_v = ctx_new_object(ctx);
     ctx.websocket_proto = zjs_as_object(ws_proto_v);
@@ -15184,6 +15363,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"send", ws_send_ptr, 1));
     object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"close", 5),
                ctx_make_host_function_arity(ctx, (char*)"close", ws_close_ptr, 2));
+    object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"addEventListener", 16),
+               ctx_make_host_function_arity(ctx, (char*)"addEventListener", ws_add_ptr, 2));
+    object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"removeEventListener", 19),
+               ctx_make_host_function_arity(ctx, (char*)"removeEventListener", ws_rem_ptr, 2));
+    object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"dispatchEvent", 13),
+               ctx_make_host_function_arity(ctx, (char*)"dispatchEvent", ws_disp_ptr, 1));
 
     // Static constants on the constructor (spec): WebSocket.CONNECTING etc.
     let ws_ctor_hf = zjs_as_host_function(ws_ctor_v);

@@ -1,11 +1,13 @@
 // Apple-native WebSocket backend — NSURLSessionWebSocketTask.
 //
-// Receive is naturally one-shot async on Apple's API — we re-arm
-// receiveMessageWithCompletionHandler after each event. Events are
-// buffered into a mutex-protected linked list and the JS-side event
-// loop drains via zjs_ws_poll on each tick. Same Foundation framework
-// already in zjs.dylib for fetch — TLS / wss / proxy / IPv6 / system
-// trust come along for free.
+// Per-WebSocket NSURLSession with a delegate so we get proper
+// didOpenWithProtocol / didCloseWithCode callbacks (the only path
+// for reading the server's chosen subprotocol). Events are buffered
+// into a mutex-protected linked list; the JS-side event loop drains
+// via zjs_ws_poll on each tick.
+//
+// Foundation framework is already in zjs.dylib for fetch — TLS / wss
+// / proxy / IPv6 / system trust come along for free.
 
 #import <Foundation/Foundation.h>
 #include "ws_native.h"
@@ -18,12 +20,17 @@ typedef struct ZjsWsEventNode {
     struct ZjsWsEventNode* next;
 } ZjsWsEventNode;
 
+@class ZjsWsDelegate;
+
 struct ZjsWsHandle {
+    void* session;               // NSURLSession* (retained)
     void* task;                  // NSURLSessionWebSocketTask* (retained)
+    void* delegate;              // ZjsWsDelegate* (retained)
     pthread_mutex_t lock;
     ZjsWsEventNode* head;
     ZjsWsEventNode* tail;
     int closed;                  // 1 once close has been requested
+    int open_fired;              // 1 once an OPEN event has been enqueued
 };
 
 static void ws_enqueue(ZjsWsHandle* h, ZjsWsEvent e) {
@@ -43,9 +50,70 @@ static char* dup_nsstr(NSString* s) {
     return strdup(utf8 ? utf8 : "");
 }
 
+@interface ZjsWsDelegate : NSObject <NSURLSessionWebSocketDelegate>
+@property (nonatomic, assign) ZjsWsHandle* handle;
+@end
+
+@implementation ZjsWsDelegate
+
+- (void)URLSession:(NSURLSession *)session
+     webSocketTask:(NSURLSessionWebSocketTask *)webSocketTask
+  didOpenWithProtocol:(NSString *)protocol {
+    if (self.handle == NULL) return;
+    if (self.handle->open_fired) return;
+    self.handle->open_fired = 1;
+    ZjsWsEvent e = {0};
+    e.kind = ZJS_WS_EVT_OPEN;
+    if (protocol != nil && protocol.length > 0) {
+        e.text = dup_nsstr(protocol);
+        e.text_len = e.text ? strlen(e.text) : 0;
+    } else {
+        // Empty string so JS gets "" not undefined when no subprotocol negotiated.
+        e.text = strdup("");
+        e.text_len = 0;
+    }
+    ws_enqueue(self.handle, e);
+}
+
+- (void)URLSession:(NSURLSession *)session
+     webSocketTask:(NSURLSessionWebSocketTask *)webSocketTask
+   didCloseWithCode:(NSURLSessionWebSocketCloseCode)closeCode
+              reason:(NSData *)reason {
+    if (self.handle == NULL) return;
+    ZjsWsEvent e = {0};
+    e.kind = ZJS_WS_EVT_CLOSE;
+    e.code = (int)closeCode;
+    if (reason != nil && reason.length > 0) {
+        char* buf = (char*)malloc(reason.length + 1);
+        memcpy(buf, reason.bytes, reason.length);
+        buf[reason.length] = 0;
+        e.text = buf;
+        e.text_len = reason.length;
+    }
+    ws_enqueue(self.handle, e);
+}
+
+// Surface lower-level transport errors (DNS, TLS, refused, timeout).
+- (void)URLSession:(NSURLSession *)session
+              task:(NSURLSessionTask *)task
+didCompleteWithError:(NSError *)error {
+    if (self.handle == NULL || error == nil) return;
+    // Don't duplicate a close that already arrived via didCloseWithCode.
+    if (self.handle->closed) return;
+    ZjsWsEvent e = {0};
+    e.kind = ZJS_WS_EVT_ERROR;
+    e.text = dup_nsstr([error localizedDescription]);
+    e.text_len = e.text ? strlen(e.text) : 0;
+    ws_enqueue(self.handle, e);
+}
+@end
+
 static void ws_arm_receive(ZjsWsHandle* h);
 
-ZjsWsHandle* zjs_ws_connect(const char* url) {
+ZjsWsHandle* zjs_ws_connect(const char* url,
+                            const char** protocols,
+                            size_t protocol_count,
+                            int timeout_seconds) {
     if (url == NULL) return NULL;
     NSString* urlStr = [NSString stringWithUTF8String:url];
     NSURL* nsurl = [NSURL URLWithString:urlStr];
@@ -54,28 +122,35 @@ ZjsWsHandle* zjs_ws_connect(const char* url) {
     ZjsWsHandle* h = (ZjsWsHandle*)calloc(1, sizeof(ZjsWsHandle));
     pthread_mutex_init(&h->lock, NULL);
 
-    NSURLSession* session = [NSURLSession sharedSession];
-    NSURLSessionWebSocketTask* task = [session webSocketTaskWithURL:nsurl];
-    // Retain bridge — ARC will keep it alive while held in handle.
+    ZjsWsDelegate* delegate = [[ZjsWsDelegate alloc] init];
+    delegate.handle = h;
+    h->delegate = (__bridge_retained void*)delegate;
+
+    NSURLSessionConfiguration* config = [NSURLSessionConfiguration defaultSessionConfiguration];
+    if (timeout_seconds > 0) {
+        config.timeoutIntervalForRequest = (NSTimeInterval)timeout_seconds;
+    }
+    NSURLSession* session = [NSURLSession sessionWithConfiguration:config
+                                                          delegate:delegate
+                                                     delegateQueue:nil];
+    h->session = (__bridge_retained void*)session;
+
+    NSURLSessionWebSocketTask* task = nil;
+    if (protocols != NULL && protocol_count > 0) {
+        NSMutableArray* protoArr = [NSMutableArray arrayWithCapacity:protocol_count];
+        for (size_t i = 0; i < protocol_count; i++) {
+            if (protocols[i] != NULL) {
+                NSString* p = [NSString stringWithUTF8String:protocols[i]];
+                if (p != nil) [protoArr addObject:p];
+            }
+        }
+        task = [session webSocketTaskWithURL:nsurl protocols:protoArr];
+    } else {
+        task = [session webSocketTaskWithURL:nsurl];
+    }
     h->task = (__bridge_retained void*)task;
     [task resume];
     ws_arm_receive(h);
-
-    // Apple's API doesn't expose an explicit open callback through
-    // NSURLSession; the first successful receive (or send) implies
-    // the upgrade completed. To match WebSocket spec semantics, fire
-    // a synthetic OPEN event once the task transitions to running.
-    // Schedule it on the global queue so it lands before any
-    // subsequent message events.
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_DEFAULT, 0), ^{
-        // Brief sleep to let the upgrade complete. v0.1 hack — proper
-        // path would observe NSURLSessionTaskDelegate's
-        // didOpenWithProtocol via a session delegate.
-        usleep(50000);
-        ZjsWsEvent open_evt = {0};
-        open_evt.kind = ZJS_WS_EVT_OPEN;
-        ws_enqueue(h, open_evt);
-    });
 
     return h;
 }
@@ -85,11 +160,9 @@ static void ws_arm_receive(ZjsWsHandle* h) {
     [task receiveMessageWithCompletionHandler:^(NSURLSessionWebSocketMessage* msg, NSError* err) {
         if (err != nil) {
             ZjsWsEvent e = {0};
-            // EOF / close translates to a close event with the task's
-            // reported code if available.
             if ([err.domain isEqualToString:NSURLErrorDomain] && err.code == NSURLErrorNetworkConnectionLost) {
                 e.kind = ZJS_WS_EVT_CLOSE;
-                e.code = 1006;  // abnormal closure
+                e.code = 1006;
                 e.text = strdup("connection lost");
                 e.text_len = strlen("connection lost");
             } else {
@@ -98,7 +171,7 @@ static void ws_arm_receive(ZjsWsHandle* h) {
                 e.text_len = e.text ? strlen(e.text) : 0;
             }
             ws_enqueue(h, e);
-            return;  // don't re-arm — connection done.
+            return;
         }
         ZjsWsEvent e = {0};
         if (msg.type == NSURLSessionWebSocketMessageTypeString) {
@@ -163,16 +236,8 @@ int zjs_ws_close(ZjsWsHandle* h, int code, const char* reason) {
         reason_data = [NSData dataWithBytes:reason length:strlen(reason)];
     }
     [task cancelWithCloseCode:(NSURLSessionWebSocketCloseCode)code reason:reason_data];
-
-    // Fire a close event so the JS-side handlers run.
-    ZjsWsEvent e = {0};
-    e.kind = ZJS_WS_EVT_CLOSE;
-    e.code = code;
-    if (reason != NULL && reason[0]) {
-        e.text = strdup(reason);
-        e.text_len = strlen(reason);
-    }
-    ws_enqueue(h, e);
+    // The delegate's didCloseWithCode will deliver the user-visible
+    // CLOSE event with whatever the server actually sent.
     return 0;
 }
 
@@ -195,12 +260,28 @@ void zjs_ws_destroy(ZjsWsHandle* h) {
         NSURLSessionWebSocketTask* task = (__bridge NSURLSessionWebSocketTask*)h->task;
         [task cancel];
     }
+    // Sever the delegate's back-pointer to prevent it firing onto a
+    // freed handle if a callback is in flight.
+    if (h->delegate != NULL) {
+        ZjsWsDelegate* d = (__bridge ZjsWsDelegate*)h->delegate;
+        d.handle = NULL;
+    }
     if (h->task != NULL) {
         NSURLSessionWebSocketTask* task = (__bridge_transfer NSURLSessionWebSocketTask*)h->task;
-        (void)task;  // ARC drops the retain here.
+        (void)task;
         h->task = NULL;
     }
-    // Drain pending events.
+    if (h->session != NULL) {
+        NSURLSession* session = (__bridge_transfer NSURLSession*)h->session;
+        [session invalidateAndCancel];
+        (void)session;
+        h->session = NULL;
+    }
+    if (h->delegate != NULL) {
+        ZjsWsDelegate* d = (__bridge_transfer ZjsWsDelegate*)h->delegate;
+        (void)d;
+        h->delegate = NULL;
+    }
     pthread_mutex_lock(&h->lock);
     ZjsWsEventNode* n = h->head;
     while (n != NULL) {
