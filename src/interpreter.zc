@@ -2584,12 +2584,18 @@ fn interpret_inner_full(ctx: ZjsContext*,
         } else if op == Op::CmpEq {
             let cea = regs[inst.b];
             let ceb = regs[inst.c];
-            // Hot fast path: both int32. Skips the object/to_primitive
-            // dance AND the zjs_loose_eq call entirely. Profile of
-            // richards showed loose_eq as ~6% of body time with most
-            // of that being call-edge overhead, not the body.
+            // Hot fast paths — inline so we skip the call+function
+            // overhead for the common comparison shapes. Profile of
+            // richards showed ~5% of body time in zjs_loose_eq even
+            // after the body fast path landed; most of those calls
+            // were null-checks (`task.handle == null`) that the
+            // int32-only fast path missed.
             if zjs_is_int32(cea) != 0 && zjs_is_int32(ceb) != 0 {
                 regs[inst.a] = zjs_bool(if zjs_as_int32(cea) == zjs_as_int32(ceb) { 1 } else { 0 });
+            } else if (zjs_is_null(cea) != 0 || zjs_is_undefined(cea) != 0)
+                   && (zjs_is_null(ceb) != 0 || zjs_is_undefined(ceb) != 0) {
+                // null == null, undefined == undefined, null == undefined → true
+                regs[inst.a] = zjs_bool(1);
             } else {
                 // ECMA-262 §7.2.13 step 13: when one side is an object and
                 // the other is a primitive, ToPrimitive(object) is invoked
@@ -2619,6 +2625,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let ceb = regs[inst.c];
             if zjs_is_int32(cea) != 0 && zjs_is_int32(ceb) != 0 {
                 regs[inst.a] = zjs_bool(if zjs_as_int32(cea) != zjs_as_int32(ceb) { 1 } else { 0 });
+            } else if (zjs_is_null(cea) != 0 || zjs_is_undefined(cea) != 0)
+                   && (zjs_is_null(ceb) != 0 || zjs_is_undefined(ceb) != 0) {
+                regs[inst.a] = zjs_bool(0);
             } else {
                 let cea_obj = zjs_is_object(cea) != 0 || zjs_is_array(cea) != 0;
                 let ceb_obj = zjs_is_object(ceb) != 0 || zjs_is_array(ceb) != 0;
