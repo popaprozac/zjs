@@ -12,7 +12,7 @@ import "std/time.zc";
 // Single source of `#ifdef _WIN32` so the rest of the engine stays
 // platform-agnostic.
 raw {
-    #include "platform/portability.h"
+    #include "../src/platform/portability.h"
 }
 
 // Platform-native HTTP backend — see src/platform/http_native.h
@@ -62,7 +62,6 @@ raw {
     int  zjs_ws_poll(ZjsWsHandle* h, ZjsWsEvent* out_event);
     void zjs_ws_destroy(ZjsWsHandle* h);
 }
-import "string.h" as libc_str;
 import "./value.zc";
 import "std/mem.zc"
 import "std/math.zc"
