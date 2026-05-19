@@ -46,11 +46,18 @@ from pathlib import Path
 
 REPO_ROOT  = Path(__file__).resolve().parent.parent.parent
 CONFIG     = REPO_ROOT / "scripts" / "test262" / "config.json"
-ZJS_BIN    = REPO_ROOT / "build" / "zjs"
 OUT_DIR    = REPO_ROOT / "docs" / "conformance"
-HISTORY    = OUT_DIR / "history.jsonl"
-LAST_JSON  = OUT_DIR / "last.json"
-HTML_PATH  = OUT_DIR / "index.html"
+
+# Same platform-tagging convention as scripts/bench/run.py: Windows
+# runs land in `-windows`-suffixed files so they don't pollute the
+# macOS history. macOS / Linux keep the original filenames.
+IS_WINDOWS  = sys.platform == "win32"
+PLATFORM_TAG = "windows" if IS_WINDOWS else None
+ZJS_BIN     = REPO_ROOT / "build" / ("zjs.exe" if IS_WINDOWS else "zjs")
+_suffix     = f"-{PLATFORM_TAG}" if PLATFORM_TAG else ""
+HISTORY     = OUT_DIR / f"history{_suffix}.jsonl"
+LAST_JSON   = OUT_DIR / f"last{_suffix}.json"
+HTML_PATH   = OUT_DIR / f"index{_suffix}.html"
 
 DEFAULT_TEST262 = REPO_ROOT / "vendor" / "test262"
 
@@ -133,7 +140,7 @@ def parse_frontmatter(src: str):
 # -----------------------------------------------------------------------------
 
 def load_config():
-    with open(CONFIG) as f:
+    with open(CONFIG, encoding="utf-8") as f:
         return json.load(f)
 
 def gather_tests(test262_root, cfg, name_filter=None):
@@ -213,8 +220,8 @@ def build_source(test262_root, test_src, meta, *, strict_mode: bool):
     # thrown.constructor against the expected ctor — every
     # *Error.prototype.constructor needs to point back at itself for
     # that to discriminate (we wire that in ctx_init_builtins).
-    parts.append((harness / "sta.js").read_text())
-    parts.append((harness / "assert.js").read_text())
+    parts.append((harness / "sta.js").read_text(encoding="utf-8"))
+    parts.append((harness / "assert.js").read_text(encoding="utf-8"))
     if "async" in flags:
         # Test262 async protocol: the test completes when print() is
         # called with the magic 'Test262:AsyncTestComplete' line, or
@@ -229,7 +236,7 @@ def build_source(test262_root, test_src, meta, *, strict_mode: bool):
             continue
         f = harness / inc
         if f.exists():
-            parts.append(f.read_text())
+            parts.append(f.read_text(encoding="utf-8"))
     parts.append(test_src)
     return "\n".join(parts)
 
@@ -287,7 +294,11 @@ def execution_modes(meta):
 
 def run_one(zjs_bin, source, timeout_s):
     """Run zjs on the given source. Returns (exit_code, stderr_text, stdout_text)."""
-    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as f:
+    # Force UTF-8 on the tempfile — test262 sources are UTF-8, and on
+    # Windows the default text-mode encoding (cp1252) chokes on the
+    # full Unicode range (arrows, math symbols, etc).
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
+                                     encoding="utf-8") as f:
         f.write(source)
         path = f.name
     try:
@@ -354,10 +365,11 @@ def write_html(out_path, history, last_summary, last_failures):
     history_json   = json.dumps(history)
     failures_json  = json.dumps(last_failures[:200])
     summary_json   = json.dumps(last_summary)
+    platform_label = (last_summary.get("platform") or "macOS").strip()
     html = f"""<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<title>zjs test262 conformance</title>
+<title>zjs test262 conformance — {platform_label}</title>
 <style>
   body {{ font: 14px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
           max-width: 960px; margin: 2em auto; padding: 0 1em; color: #222; }}
@@ -378,7 +390,7 @@ def write_html(out_path, history, last_summary, last_failures):
   details {{ margin-top: 1em; }}
 </style>
 
-<h1>zjs — test262 conformance</h1>
+<h1>zjs — test262 conformance <span style="font-size:0.65em;color:#888;font-weight:normal;">({platform_label})</span></h1>
 <p class="sub">Generated <span id="when"></span>. Curated subset of test262; configuration in
 <code>scripts/test262/config.json</code>. Numbers exclude tests skipped due to
 unsupported features or harness includes.</p>
@@ -488,7 +500,7 @@ unsupported features or harness includes.</p>
 </script>
 </html>
 """
-    out_path.write_text(html)
+    out_path.write_text(html, encoding="utf-8")
 
 # -----------------------------------------------------------------------------
 # Main
@@ -533,7 +545,7 @@ def main():
 
     for i, (rel, abs_path) in enumerate(tests):
         try:
-            src = abs_path.read_text()
+            src = abs_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
             skipped += 1
             skipped_counts["non-utf8"] = skipped_counts.get("non-utf8", 0) + 1
@@ -583,6 +595,7 @@ def main():
         "passed":  passed,
         "failed":  failed,
         "skipped": skipped,
+        "platform": "Windows" if IS_WINDOWS else "macOS",
     }
 
     print()
@@ -612,7 +625,7 @@ def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     # Append summary row.
-    with open(HISTORY, "a") as f:
+    with open(HISTORY, "a", encoding="utf-8") as f:
         f.write(json.dumps(summary) + "\n")
 
     # Full per-test results (truncate failures to 1000 entries).
@@ -620,11 +633,11 @@ def main():
         "summary":  summary,
         "failures": failure_log[:1000],
         "skip_counts": skipped_counts,
-    }, indent=2))
+    }, indent=2), encoding="utf-8")
 
     # Regenerate the HTML with embedded history.
     history = []
-    with open(HISTORY) as f:
+    with open(HISTORY, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line: continue

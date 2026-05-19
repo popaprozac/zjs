@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>zjs benchmarks — Windows</title>
+<style>
+  body { font: 14px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+          max-width: 1100px; margin: 2em auto; padding: 0 1em; color: #222; }
+  h1 { font-size: 1.4em; margin-bottom: 0.2em; }
+  .sub { color: #666; margin-bottom: 1.5em; }
+  .card { background: #fafafa; border: 1px solid #eee; border-radius: 6px;
+           padding: 1em 1.25em; margin-bottom: 1.25em; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }
+  th { background: #f5f5f5; }
+  th.ms, th.delta { text-align: right; }
+  td.bench { font-family: ui-monospace, SFMono-Regular, monospace; }
+  td.ms { text-align: right; font-variant-numeric: tabular-nums; }
+  td.delta { text-align: right; font-variant-numeric: tabular-nums; }
+  td.delta.up   { color: #c44; }   /* slower = bad */
+  td.delta.down { color: #2c7; }   /* faster = good */
+  svg { display: block; overflow: visible; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }
+  .chart-box { background: #fff; border: 1px solid #eee; padding: 0.5em; border-radius: 4px; }
+  .chart-box h3 { font-size: 13px; margin: 0 0 4px 8px; font-family: ui-monospace, monospace; color: #444; }
+</style>
+
+<h1>zjs — benchmarks <span style="font-size:0.65em;color:#888;font-weight:normal;">(Windows)</span></h1>
+<p class="sub">End-to-end wall-clock per script (parse + compile + interpret).
+zjs-vs-zjs over time. Numbers are median of N iterations.</p>
+
+<div class="card">
+  <strong>Latest run</strong> &mdash; <span id="when"></span> @ <code id="sha"></code>
+  <table id="latest-table" style="margin-top: 0.5em;">
+    <thead><tr><th>Benchmark</th><th class="ms">Median ms</th><th class="ms">Min ms</th><th class="ms">Max ms</th><th class="delta">Δ vs first</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<div class="card">
+  <strong>Per-benchmark history</strong> (median ms over time — lower is better)
+  <div id="charts" class="charts" style="margin-top: 0.5em;"></div>
+</div>
+
+<script id="history-data" type="application/json">[{"when": "2026-05-19 06:12 UTC", "sha": "fb8e7745a5", "results": [{"name": "array_iterate", "median": 0.023069750001013745, "min": 0.020695499999419553, "max": 0.03084600000147475, "iters": 5, "baseline_median": null}, {"name": "closure_call", "median": 0.033550000000104774, "min": 0.03167820800081245, "max": 0.03855216700321762, "iters": 5, "baseline_median": null}, {"name": "double_loop", "median": 0.028994042000704212, "min": 0.02810416600186727, "max": 0.02981154100052663, "iters": 5, "baseline_median": null}, {"name": "fib_recursive", "median": 0.3241913339988969, "min": 0.32034275000114576, "max": 0.33962658399832435, "iters": 5, "baseline_median": null}, {"name": "hash_count", "median": 0.022306292001303518, "min": 0.02144787499855738, "max": 0.02562266699897009, "iters": 5, "baseline_median": null}, {"name": "int_loop", "median": 0.03738179199717706, "min": 0.03574487500009127, "max": 0.03786679100085166, "iters": 5, "baseline_median": null}, {"name": "int_loop_big", "median": 0.20411737500035088, "min": 0.2008947909998824, "max": 0.20984287499959464, "iters": 5, "baseline_median": null}, {"name": "json_roundtrip", "median": 0.05979933300113771, "min": 0.05759570900045219, "max": 0.06422687500162283, "iters": 5, "baseline_median": null}, {"name": "mandelbrot", "median": 0.11187650000283611, "min": 0.110034249999444, "max": 0.14329441700101597, "iters": 5, "baseline_median": null}, {"name": "method_call", "median": 0.03633183399870177, "min": 0.032597875000647036, "max": 0.0387217919997056, "iters": 5, "baseline_median": null}, {"name": "nbody", "median": 0.2011121670002467, "min": 0.1972689590002119, "max": 0.21243287499964936, "iters": 5, "baseline_median": null}, {"name": "object_alloc", "median": 0.05029116600053385, "min": 0.048588833000394516, "max": 0.05383308399905218, "iters": 5, "baseline_median": null}, {"name": "property_mono", "median": 0.03267487500124844, "min": 0.03244616699885228, "max": 0.03335408400016604, "iters": 5, "baseline_median": null}, {"name": "property_poly", "median": 0.02999524999904679, "min": 0.029413457999908132, "max": 0.03976541700103553, "iters": 5, "baseline_median": null}, {"name": "quicksort", "median": 0.0423467079999682, "min": 0.0411885829998937, "max": 0.04383604099712102, "iters": 5, "baseline_median": null}, {"name": "regex_match", "median": 0.06351062500107219, "min": 0.04962070799956564, "max": 0.08050400000138325, "iters": 5, "baseline_median": null}, {"name": "richards", "median": 0.3383906249982829, "min": 0.3253078749985434, "max": 0.3396801660019264, "iters": 5, "baseline_median": null}, {"name": "sieve", "median": 0.039483707998442696, "min": 0.03764324999792734, "max": 0.04821204199834028, "iters": 5, "baseline_median": null}, {"name": "splay", "median": 0.8414164169989817, "min": 0.8339564999987488, "max": 0.8531759170000441, "iters": 5, "baseline_median": null}, {"name": "string_concat", "median": 0.019419416999880923, "min": 0.018424249999952735, "max": 0.02007979200061527, "iters": 5, "baseline_median": null}, {"name": "try_overhead", "median": 0.023780750001606066, "min": 0.022205417000805028, "max": 0.02404358299827436, "iters": 5, "baseline_median": null}], "platform": "Windows"}, {"when": "2026-05-19 06:13 UTC", "sha": "fb8e7745a5", "results": [{"name": "array_iterate", "median": 0.021738792001997354, "min": 0.018929957997897873, "max": 0.02265537499988568, "iters": 5, "baseline_median": 0.023069750001013745}, {"name": "closure_call", "median": 0.033450667000579415, "min": 0.032470832997205434, "max": 0.03486858299947926, "iters": 5, "baseline_median": 0.033550000000104774}, {"name": "double_loop", "median": 0.02780029199857381, "min": 0.026315499999327585, "max": 0.028985875000216765, "iters": 5, "baseline_median": 0.028994042000704212}, {"name": "fib_recursive", "median": 0.31905633399946964, "min": 0.3161791659986193, "max": 0.32521258300039335, "iters": 5, "baseline_median": 0.3241913339988969}, {"name": "hash_count", "median": 0.021666250002454035, "min": 0.020446334001462674, "max": 0.023942749998241197, "iters": 5, "baseline_median": 0.022306292001303518}, {"name": "int_loop", "median": 0.036719959000038216, "min": 0.034947208001540275, "max": 0.03831766599978437, "iters": 5, "baseline_median": 0.03738179199717706}, {"name": "int_loop_big", "median": 0.20594329199957429, "min": 0.20180920900020283, "max": 0.20991175000017392, "iters": 5, "baseline_median": 0.20411737500035088}, {"name": "json_roundtrip", "median": 0.054161000000021886, "min": 0.05296791699947789, "max": 0.054487375000462634, "iters": 5, "baseline_median": 0.05979933300113771}, {"name": "mandelbrot", "median": 0.11008700000093086, "min": 0.10866141599763068, "max": 0.1150099170008616, "iters": 5, "baseline_median": 0.11187650000283611}, {"name": "method_call", "median": 0.03115033300127834, "min": 0.03112075000171899, "max": 0.03233679099867004, "iters": 5, "baseline_median": 0.03633183399870177}, {"name": "nbody", "median": 0.19324199999755365, "min": 0.19204058399918722, "max": 0.19742137499997625, "iters": 5, "baseline_median": 0.2011121670002467}, {"name": "object_alloc", "median": 0.05013633300040965, "min": 0.0479962079989491, "max": 0.05056654199870536, "iters": 5, "baseline_median": 0.05029116600053385}, {"name": "property_mono", "median": 0.031398041999636916, "min": 0.030992625001090346, "max": 0.03253141700042761, "iters": 5, "baseline_median": 0.03267487500124844}, {"name": "property_poly", "median": 0.03025362500193296, "min": 0.029472207999788225, "max": 0.03127408399814158, "iters": 5, "baseline_median": 0.02999524999904679}, {"name": "quicksort", "median": 0.04221591700115823, "min": 0.0420155829997384, "max": 0.04512616699867067, "iters": 5, "baseline_median": 0.0423467079999682}, {"name": "regex_match", "median": 0.04153829200004111, "min": 0.0291554579998774, "max": 0.05604158300047857, "iters": 5, "baseline_median": 0.06351062500107219}, {"name": "richards", "median": 0.3232872500011581, "min": 0.31969691699850955, "max": 0.325471333002497, "iters": 5, "baseline_median": 0.3383906249982829}, {"name": "sieve", "median": 0.040021207998506725, "min": 0.03834804199868813, "max": 0.051663250000274274, "iters": 5, "baseline_median": 0.039483707998442696}, {"name": "splay", "median": 0.8119646250015649, "min": 0.8074028750015714, "max": 0.8389884169992001, "iters": 5, "baseline_median": 0.8414164169989817}, {"name": "string_concat", "median": 0.0181419159998768, "min": 0.01695954100068775, "max": 0.020358500001748325, "iters": 5, "baseline_median": 0.019419416999880923}, {"name": "try_overhead", "median": 0.021094750001793727, "min": 0.020586915998137556, "max": 0.021460457999637583, "iters": 5, "baseline_median": 0.023780750001606066}], "platform": "Windows"}]</script>
+<script id="latest-data"  type="application/json">{"when": "2026-05-19 06:13 UTC", "sha": "fb8e7745a5", "results": [{"name": "array_iterate", "median": 0.021738792001997354, "min": 0.018929957997897873, "max": 0.02265537499988568, "iters": 5, "baseline_median": 0.023069750001013745}, {"name": "closure_call", "median": 0.033450667000579415, "min": 0.032470832997205434, "max": 0.03486858299947926, "iters": 5, "baseline_median": 0.033550000000104774}, {"name": "double_loop", "median": 0.02780029199857381, "min": 0.026315499999327585, "max": 0.028985875000216765, "iters": 5, "baseline_median": 0.028994042000704212}, {"name": "fib_recursive", "median": 0.31905633399946964, "min": 0.3161791659986193, "max": 0.32521258300039335, "iters": 5, "baseline_median": 0.3241913339988969}, {"name": "hash_count", "median": 0.021666250002454035, "min": 0.020446334001462674, "max": 0.023942749998241197, "iters": 5, "baseline_median": 0.022306292001303518}, {"name": "int_loop", "median": 0.036719959000038216, "min": 0.034947208001540275, "max": 0.03831766599978437, "iters": 5, "baseline_median": 0.03738179199717706}, {"name": "int_loop_big", "median": 0.20594329199957429, "min": 0.20180920900020283, "max": 0.20991175000017392, "iters": 5, "baseline_median": 0.20411737500035088}, {"name": "json_roundtrip", "median": 0.054161000000021886, "min": 0.05296791699947789, "max": 0.054487375000462634, "iters": 5, "baseline_median": 0.05979933300113771}, {"name": "mandelbrot", "median": 0.11008700000093086, "min": 0.10866141599763068, "max": 0.1150099170008616, "iters": 5, "baseline_median": 0.11187650000283611}, {"name": "method_call", "median": 0.03115033300127834, "min": 0.03112075000171899, "max": 0.03233679099867004, "iters": 5, "baseline_median": 0.03633183399870177}, {"name": "nbody", "median": 0.19324199999755365, "min": 0.19204058399918722, "max": 0.19742137499997625, "iters": 5, "baseline_median": 0.2011121670002467}, {"name": "object_alloc", "median": 0.05013633300040965, "min": 0.0479962079989491, "max": 0.05056654199870536, "iters": 5, "baseline_median": 0.05029116600053385}, {"name": "property_mono", "median": 0.031398041999636916, "min": 0.030992625001090346, "max": 0.03253141700042761, "iters": 5, "baseline_median": 0.03267487500124844}, {"name": "property_poly", "median": 0.03025362500193296, "min": 0.029472207999788225, "max": 0.03127408399814158, "iters": 5, "baseline_median": 0.02999524999904679}, {"name": "quicksort", "median": 0.04221591700115823, "min": 0.0420155829997384, "max": 0.04512616699867067, "iters": 5, "baseline_median": 0.0423467079999682}, {"name": "regex_match", "median": 0.04153829200004111, "min": 0.0291554579998774, "max": 0.05604158300047857, "iters": 5, "baseline_median": 0.06351062500107219}, {"name": "richards", "median": 0.3232872500011581, "min": 0.31969691699850955, "max": 0.325471333002497, "iters": 5, "baseline_median": 0.3383906249982829}, {"name": "sieve", "median": 0.040021207998506725, "min": 0.03834804199868813, "max": 0.051663250000274274, "iters": 5, "baseline_median": 0.039483707998442696}, {"name": "splay", "median": 0.8119646250015649, "min": 0.8074028750015714, "max": 0.8389884169992001, "iters": 5, "baseline_median": 0.8414164169989817}, {"name": "string_concat", "median": 0.0181419159998768, "min": 0.01695954100068775, "max": 0.020358500001748325, "iters": 5, "baseline_median": 0.019419416999880923}, {"name": "try_overhead", "median": 0.021094750001793727, "min": 0.020586915998137556, "max": 0.021460457999637583, "iters": 5, "baseline_median": 0.023780750001606066}], "platform": "Windows"}</script>
+<script>
+  const history = JSON.parse(document.getElementById('history-data').textContent);
+  const latest  = JSON.parse(document.getElementById('latest-data').textContent);
+
+  document.getElementById('when').textContent = latest.when || '';
+  document.getElementById('sha').textContent  = latest.sha  || '';
+
+  // Pick a per-bench color from a small palette so the eye can track
+  // them across charts.
+  function colorFor(name) {
+    const palette = ['#2c7','#36a','#c47','#a84','#5a5','#48c','#c4a','#974','#284'];
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 33 + name.charCodeAt(i)) >>> 0;
+    return palette[h % palette.length];
+  }
+
+  // Latest-results table
+  const tbody = document.querySelector('#latest-table tbody');
+  for (const r of latest.results || []) {
+    const tr = document.createElement('tr');
+    let delta = '';
+    let dcls  = '';
+    if (r.baseline_median) {
+      const pct = (r.median - r.baseline_median) / r.baseline_median * 100;
+      const sign = pct >= 0 ? '+' : '';
+      delta = `${sign}${pct.toFixed(1)}%`;
+      dcls = pct >  2 ? 'up' : (pct < -2 ? 'down' : '');
+    }
+    tr.innerHTML = `
+      <td class="bench">${r.name}</td>
+      <td class="ms">${(r.median * 1000).toFixed(2)}</td>
+      <td class="ms">${(r.min    * 1000).toFixed(2)}</td>
+      <td class="ms">${(r.max    * 1000).toFixed(2)}</td>
+      <td class="delta ${dcls}">${delta}</td>`;
+    tbody.appendChild(tr);
+  }
+
+  // Per-benchmark line charts.
+  const benchNames = new Set();
+  for (const row of history) {
+    for (const r of (row.results || [])) benchNames.add(r.name);
+  }
+  const W = 480, H = 130, P = 30;
+  const charts = document.getElementById('charts');
+  for (const name of [...benchNames].sort()) {
+    const points = [];
+    for (const row of history) {
+      const r = (row.results || []).find(x => x.name === name);
+      if (r) points.push({ when: row.when, sha: row.sha, ms: r.median * 1000 });
+    }
+    if (!points.length) continue;
+    let yMax = 0;
+    for (const p of points) yMax = Math.max(yMax, p.ms);
+    yMax = Math.max(yMax * 1.1, 1);
+    const xs = i => P + (i / Math.max(points.length - 1, 1)) * (W - 2*P);
+    const ys = v => H - P - (v / yMax) * (H - 2*P);
+    let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%">`;
+    svg += `<line x1="${P}" y1="${H-P}" x2="${W-P}" y2="${H-P}" stroke="#999"/>`;
+    svg += `<line x1="${P}" y1="${P}"   x2="${P}"   y2="${H-P}" stroke="#999"/>`;
+    for (let v = 0; v <= yMax; v += yMax/4) {
+      const y = ys(v);
+      svg += `<line x1="${P}" y1="${y}" x2="${W-P}" y2="${y}" stroke="#eee"/>`;
+      svg += `<text x="${P-4}" y="${y+3}" text-anchor="end" fill="#888" font-size="9">${v.toFixed(1)}</text>`;
+    }
+    const color = colorFor(name);
+    const d = points.map((p, i) => `${xs(i)},${ys(p.ms)}`).join(' ');
+    svg += `<polyline points="${d}" fill="none" stroke="${color}" stroke-width="1.5"/>`;
+    const last = points[points.length - 1];
+    svg += `<text x="${xs(points.length - 1) + 4}" y="${ys(last.ms)+4}" font-size="10" fill="${color}">${last.ms.toFixed(1)}ms</text>`;
+    svg += '</svg>';
+    const box = document.createElement('div');
+    box.className = 'chart-box';
+    box.innerHTML = `<h3>${name}</h3>${svg}`;
+    charts.appendChild(box);
+  }
+</script>
+</html>
