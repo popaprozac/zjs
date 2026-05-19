@@ -6,21 +6,28 @@
 
 // --- Platform-native networking ---
 // fetch() routes through src/platform/http_native.h's zjs_http_get_sync.
-// On Apple we ship the NSURLSession impl (.m) and link Foundation. On
-// other platforms we link the C stub which returns a "not configured"
-// error — Linux/Windows native backends land in a follow-up.
+// Apple ships the NSURLSession impl (.m) and links Foundation; Windows
+// ships the WinHTTP impl as a sibling .c file. WebSocket follows the
+// same pattern (ws_apple.m on Apple; ws_stub.c elsewhere — Windows
+// native WebSocket lands in a follow-up). Linux still falls back to
+// the http_stub (libcurl backend lands in a follow-up).
+//
+// winhttp.lib pulls in via a `#pragma comment(lib, ...)` inside
+// http_windows.c (MSVC / clang-cl / zig cc); mingw/gcc honors the
+// `-lwinhttp` from the windows link directive below.
 //> macos: framework: Foundation
 //> macos: cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
 //> ios:   framework: Foundation
 //> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
 //> linux: cflags:    src/platform/http_stub.c src/platform/ws_stub.c
-//> windows: cflags:  src/platform/http_stub.c src/platform/ws_stub.c
+//> windows: cflags:  src/platform/http_windows.c src/platform/ws_stub.c
 
 // --- Windows portability links ---
 // src/platform/portability.h uses BCryptGenRandom (bcrypt.dll) for
-// CSPRNG and GetProcessMemoryInfo (psapi.dll) for peak RSS. These
-// must be linked into every binary that compiles the engine.
-//> windows: link: -lbcrypt -lpsapi
+// CSPRNG and GetProcessMemoryInfo (psapi.dll) for peak RSS. http_windows.c
+// uses WinHTTP (winhttp.dll). These must be linked into every binary that
+// compiles the engine.
+//> windows: link: -lbcrypt -lpsapi -lwinhttp
 
 import "./context.zc";
 import "./value.zc";

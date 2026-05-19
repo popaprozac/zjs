@@ -198,8 +198,10 @@ Module surface verified against `.md` docs (not the locally-installed
 
 ### B7 — `fetch` body / Phase D.0
 
-- **zjs:** Native-backed; landed 2026-05-18. See
-  `src/platform/http_native.h` + `src/platform/http_apple.m`.
+- **zjs:** Native-backed. Apple (NSURLSession) landed 2026-05-18;
+  Windows (WinHTTP) landed 2026-05-18. See
+  `src/platform/http_native.h`, `src/platform/http_apple.m`, and
+  `src/platform/http_windows.c`.
 - **std/net/http::fetch + std/net/tcp:** initially adopted, then
   reversed during integration. Two blockers surfaced: (1) HTTPS
   unsupported (TLS task #199); (2) the body String returned across
@@ -208,9 +210,9 @@ Module surface verified against `.md` docs (not the locally-installed
   /move interaction we don't want to debug for what is, at the end,
   a placeholder.
 - **Verdict — reversed: go platform-native.** Apple
-  `NSURLSession` gives us HTTPS + HTTP/2 + proxy + IPv6 + system
-  trust store for free, with smaller binary footprint than vendoring
-  TLS. Linux (libcurl) and Windows (WinHTTP) impls land later; in
+  `NSURLSession` and Windows `WinHTTP` both give us HTTPS + HTTP/2 +
+  proxy + IPv6 + system trust store for free, with smaller binary
+  footprint than vendoring TLS. Linux (libcurl) impl lands later; in
   the interim `http_stub.c` returns a clean "not configured" error.
   Recorded design discussion 2026-05-18.
 
