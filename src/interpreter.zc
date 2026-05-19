@@ -2579,52 +2579,72 @@ fn interpret_inner_full(ctx: ZjsContext*,
 
         // --- comparison -----------------------------------------
         } else if op == Op::CmpEq {
-            // ECMA-262 §7.2.13 step 13: when one side is an object and
-            // the other is a primitive, ToPrimitive(object) is invoked
-            // (which calls .valueOf / .toString). zjs_loose_eq alone
-            // handles wrapper objects via a hidden-key shortcut but
-            // can't invoke user methods — do that here while we still
-            // have ctx.
             let cea = regs[inst.b];
             let ceb = regs[inst.c];
-            let cea_obj = zjs_is_object(cea) != 0 || zjs_is_array(cea) != 0;
-            let ceb_obj = zjs_is_object(ceb) != 0 || zjs_is_array(ceb) != 0;
-            if cea_obj && !ceb_obj && !zjs_is_undefined(ceb) && !zjs_is_null(ceb) {
-                cea = zjs_to_primitive(ctx, cea, false);
-                if ctx.pending_throw_active {
-                    throwing = true; thrown = consume_pending_throw(ctx);
-                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            // Hot fast path: both int32. Skips the object/to_primitive
+            // dance AND the zjs_loose_eq call entirely. Profile of
+            // richards showed loose_eq as ~6% of body time with most
+            // of that being call-edge overhead, not the body.
+            if zjs_is_int32(cea) != 0 && zjs_is_int32(ceb) != 0 {
+                regs[inst.a] = zjs_bool(if zjs_as_int32(cea) == zjs_as_int32(ceb) { 1 } else { 0 });
+            } else {
+                // ECMA-262 §7.2.13 step 13: when one side is an object and
+                // the other is a primitive, ToPrimitive(object) is invoked
+                // (which calls .valueOf / .toString). zjs_loose_eq alone
+                // handles wrapper objects via a hidden-key shortcut but
+                // can't invoke user methods — do that here while we still
+                // have ctx.
+                let cea_obj = zjs_is_object(cea) != 0 || zjs_is_array(cea) != 0;
+                let ceb_obj = zjs_is_object(ceb) != 0 || zjs_is_array(ceb) != 0;
+                if cea_obj && !ceb_obj && !zjs_is_undefined(ceb) && !zjs_is_null(ceb) {
+                    cea = zjs_to_primitive(ctx, cea, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                } else if ceb_obj && !cea_obj && !zjs_is_undefined(cea) && !zjs_is_null(cea) {
+                    ceb = zjs_to_primitive(ctx, ceb, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
                 }
-            } else if ceb_obj && !cea_obj && !zjs_is_undefined(cea) && !zjs_is_null(cea) {
-                ceb = zjs_to_primitive(ctx, ceb, false);
-                if ctx.pending_throw_active {
-                    throwing = true; thrown = consume_pending_throw(ctx);
-                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
-                }
+                regs[inst.a] = zjs_bool(zjs_loose_eq(cea, ceb));
             }
-            regs[inst.a] = zjs_bool(zjs_loose_eq(cea, ceb));
         } else if op == Op::CmpNe {
             let cea = regs[inst.b];
             let ceb = regs[inst.c];
-            let cea_obj = zjs_is_object(cea) != 0 || zjs_is_array(cea) != 0;
-            let ceb_obj = zjs_is_object(ceb) != 0 || zjs_is_array(ceb) != 0;
-            if cea_obj && !ceb_obj && !zjs_is_undefined(ceb) && !zjs_is_null(ceb) {
-                cea = zjs_to_primitive(ctx, cea, false);
-                if ctx.pending_throw_active {
-                    throwing = true; thrown = consume_pending_throw(ctx);
-                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            if zjs_is_int32(cea) != 0 && zjs_is_int32(ceb) != 0 {
+                regs[inst.a] = zjs_bool(if zjs_as_int32(cea) != zjs_as_int32(ceb) { 1 } else { 0 });
+            } else {
+                let cea_obj = zjs_is_object(cea) != 0 || zjs_is_array(cea) != 0;
+                let ceb_obj = zjs_is_object(ceb) != 0 || zjs_is_array(ceb) != 0;
+                if cea_obj && !ceb_obj && !zjs_is_undefined(ceb) && !zjs_is_null(ceb) {
+                    cea = zjs_to_primitive(ctx, cea, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                } else if ceb_obj && !cea_obj && !zjs_is_undefined(cea) && !zjs_is_null(cea) {
+                    ceb = zjs_to_primitive(ctx, ceb, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
                 }
-            } else if ceb_obj && !cea_obj && !zjs_is_undefined(cea) && !zjs_is_null(cea) {
-                ceb = zjs_to_primitive(ctx, ceb, false);
-                if ctx.pending_throw_active {
-                    throwing = true; thrown = consume_pending_throw(ctx);
-                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
-                }
+                let eq = zjs_loose_eq(cea, ceb);
+                regs[inst.a] = zjs_bool(if eq != 0 { 0 } else { 1 });
             }
-            let eq = zjs_loose_eq(cea, ceb);
-            regs[inst.a] = zjs_bool(if eq != 0 { 0 } else { 1 });
         } else if op == Op::CmpStrictEq {
-            regs[inst.a] = zjs_bool(zjs_strict_eq(regs[inst.b], regs[inst.c]));
+            let sa = regs[inst.b];
+            let sb = regs[inst.c];
+            // Inline int32+int32 fast path — saves a call even for ===
+            // which is already in zjs_strict_eq's body.
+            if zjs_is_int32(sa) != 0 && zjs_is_int32(sb) != 0 {
+                regs[inst.a] = zjs_bool(if zjs_as_int32(sa) == zjs_as_int32(sb) { 1 } else { 0 });
+            } else {
+                regs[inst.a] = zjs_bool(zjs_strict_eq(sa, sb));
+            }
         } else if op == Op::CmpStrictNe {
             let eq = zjs_strict_eq(regs[inst.b], regs[inst.c]);
             regs[inst.a] = zjs_bool(if eq != 0 { 0 } else { 1 });
