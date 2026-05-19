@@ -998,6 +998,20 @@ fn gc_mark_cell_children(p: void*) -> void {
     let tag = h.type_tag;
     if tag == TAG_STRING { return; }            // leaf
 
+    if tag == TAG_STRING_ROPE {
+        // Rope holds left + right (each a string or sub-rope) plus
+        // the cached flat ZjsString*. Walk children so they survive
+        // collections while this rope is alive.
+        let r: ZjsStringRope* = NULL;
+        raw { r = (ZjsStringRope*)p; }
+        gc_mark_value(r.left);
+        gc_mark_value(r.right);
+        if r.flat != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)r.flat));
+        }
+        return;
+    }
+
     if tag == TAG_HOST_FUNCTION {
         // Phase 3.6: host functions can carry a .prototype.
         // Phase 3.8c: and arbitrary properties via .props.
@@ -1653,6 +1667,7 @@ fn gc_free_one(p: void*) -> void {
       else if tag == TAG_ARRAY_BUFFER  { array_buffer_free_void(p); }
       else if tag == TAG_DATA_VIEW     { data_view_free_void(p); }
       else if tag == TAG_WEBSOCKET     { websocket_free_void(p); }
+      else if tag == TAG_STRING_ROPE   { rope_free_void(p); }
 }
 
 // Sweep the young-generation list. Marked cells are promoted to the
@@ -16269,13 +16284,30 @@ fn zjs_string_concat(ctx: ZjsContext*, a: ZjsValue, b: ZjsValue) -> ZjsValue {
     if ctx.pending_throw_active { return zjs_undefined(); }
     let sb_val = zjs_to_string(ctx, b);
     if ctx.pending_throw_active { return zjs_undefined(); }
+
+    // O(1) length lookup — works for both flat strings and ropes.
+    let la = zjs_string_length(sa_val);
+    let lb = zjs_string_length(sb_val);
+    let total = la + lb;
+
+    // Empty-side fast paths.
+    if la == 0 { return sb_val; }
+    if lb == 0 { return sa_val; }
+
+    // Build a rope for non-trivial concatenations. Threshold (32
+    // chars) avoids rope-tree overhead for the common short-string
+    // case where the flat memcpy is cheaper than the lazy traversal.
+    // For the `s = s + 'x'` build-up pattern this kicks in after a
+    // few iterations and gives us O(n) total instead of O(n²).
+    if total >= 32 {
+        let r = zjs_string_rope_new(sa_val, sb_val, total);
+        ctx_register_cell(ctx, (void*)r);
+        return zjs_cell_from_ptr((void*)r);
+    }
+
+    // Short-string flat concat. Resolves any rope inputs once.
     let sa = zjs_as_string(sa_val);
     let sb = zjs_as_string(sb_val);
-    let total = sa.length + sb.length;
-    // Use raw malloc instead of alloc_n<char> — alloc_n is calloc-
-    // backed, but we overwrite every byte below via memcpy. Profile
-    // of string_concat showed _platform_memset eating ~25% of body
-    // time, all spent zeroing memory we immediately clobber.
     let buf: char* = NULL;
     raw { buf = (char*)malloc((size_t)(total + 1)); }
     mem_copy<char>(buf, sa.data, (usize)sa.length);

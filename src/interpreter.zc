@@ -586,7 +586,10 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     }
 
     // String primitive: .length + indexed chars + prototype-method intercept.
-    if tag == TAG_STRING {
+    // Ropes get the same code path — zjs_as_string transparently
+    // flattens them on demand. .length / indexed reads / proto
+    // methods are all available without callers caring.
+    if tag == TAG_STRING || tag == TAG_STRING_ROPE {
         // Integer index → single-char string. Out-of-range → undefined.
         if zjs_is_int32(key) != 0 {
             let s = zjs_as_string(obj);
