@@ -1,10 +1,11 @@
 {
   "summary": {
-    "when": "2026-05-19 06:19 UTC",
+    "when": "2026-05-19 17:10 UTC",
     "total": 14524,
     "passed": 6711,
     "failed": 1286,
-    "skipped": 6527
+    "skipped": 6527,
+    "platform": "macOS"
   },
   "failures": [
     {
