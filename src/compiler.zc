@@ -525,7 +525,9 @@ fn is_fused_branch_op(op: Op) -> bool {
     if op == Op::JmpIfNotLt  || op == Op::JmpIfNotLe
     || op == Op::JmpIfNotGt  || op == Op::JmpIfNotGe
     || op == Op::JmpIfNotLtImm || op == Op::JmpIfNotLeImm
-    || op == Op::JmpIfNotGtImm || op == Op::JmpIfNotGeImm {
+    || op == Op::JmpIfNotGtImm || op == Op::JmpIfNotGeImm
+    || op == Op::JmpIfNotEq   || op == Op::JmpIfNotNe
+    || op == Op::JmpIfNotStrictEq || op == Op::JmpIfNotStrictNe {
         return true;
     }
     return false;
@@ -561,12 +563,46 @@ fn patch_jump(c: Compiler*, jmp_idx: u32) -> void {
 fn try_emit_cmp_branch_if_false(c: Compiler*, cond: AstNode*) -> i32 {
     if cond == NULL || cond.kind != NodeKind::Binary { return -1; }
     let op_kind = binary_op(cond.op);
-    if op_kind != Op::CmpLt && op_kind != Op::CmpLe
-       && op_kind != Op::CmpGt && op_kind != Op::CmpGe {
+    let is_relational: bool = op_kind == Op::CmpLt || op_kind == Op::CmpLe
+                            || op_kind == Op::CmpGt || op_kind == Op::CmpGe;
+    let is_equality:   bool = op_kind == Op::CmpEq || op_kind == Op::CmpNe
+                            || op_kind == Op::CmpStrictEq || op_kind == Op::CmpStrictNe;
+    if !is_relational && !is_equality {
         return -1;
     }
-    // RHS small-int literal fast path: fused JmpIfNot*Imm.
-    if cond.right != NULL && cond.right.kind == NodeKind::NumberExpr {
+    // Nullish peephole: `x == null`, `x != null`, `x == undefined`,
+    // `x != undefined` (and operand-swapped variants). Loose-equality
+    // against null literally checks nullishness (§7.2.13: null == undefined).
+    // Emits JmpIfNullish / JmpIfNotNullish on the non-literal operand —
+    // eliminates the LoadNull/LoadUndefined dispatch from the pair.
+    if op_kind == Op::CmpEq || op_kind == Op::CmpNe {
+        let l_is_nullish_lit: bool = cond.left != NULL
+            && (cond.left.kind == NodeKind::NullExpr
+             || cond.left.kind == NodeKind::UndefinedExpr);
+        let r_is_nullish_lit: bool = cond.right != NULL
+            && (cond.right.kind == NodeKind::NullExpr
+             || cond.right.kind == NodeKind::UndefinedExpr);
+        if l_is_nullish_lit || r_is_nullish_lit {
+            let target = if r_is_nullish_lit { cond.left } else { cond.right };
+            // Borrow safe — the target is the only thing read.
+            let saved_borrow = c.borrow_local_ok;
+            c.borrow_local_ok = true;
+            let src = compile_expr(c, target);
+            c.borrow_local_ok = saved_borrow;
+            // For `x == null` / `null == x` we want to run the body
+            // when x IS nullish, so JmpIfNotNullish jumps to else when
+            // x is NOT nullish.
+            let fused_op = if op_kind == Op::CmpEq { Op::JmpIfNotNullish }
+                                                  else { Op::JmpIfNullish };
+            let idx = emit(c, make_inst_a_i16(fused_op, src, 0));
+            release_reg(c, src);
+            return (i32)idx;
+        }
+    }
+    // RHS small-int literal fast path: fused JmpIfNot*Imm. Only the
+    // relational variants have *Imm encodings — equality with a small
+    // int still goes through the reg-reg form.
+    if is_relational && cond.right != NULL && cond.right.kind == NodeKind::NumberExpr {
         let v = cond.right.num;
         let iv = (i32)v;
         let is_int: bool = false;
@@ -598,10 +634,14 @@ fn try_emit_cmp_branch_if_false(c: Compiler*, cond: AstNode*) -> i32 {
     let r = compile_expr(c, cond.right);
     c.borrow_local_ok = saved_borrow_b;
     let fused_op = Op::Halt;
-    if      op_kind == Op::CmpLt { fused_op = Op::JmpIfNotLt; }
-    else if op_kind == Op::CmpLe { fused_op = Op::JmpIfNotLe; }
-    else if op_kind == Op::CmpGt { fused_op = Op::JmpIfNotGt; }
-    else                         { fused_op = Op::JmpIfNotGe; }
+    if      op_kind == Op::CmpLt        { fused_op = Op::JmpIfNotLt; }
+    else if op_kind == Op::CmpLe        { fused_op = Op::JmpIfNotLe; }
+    else if op_kind == Op::CmpGt        { fused_op = Op::JmpIfNotGt; }
+    else if op_kind == Op::CmpGe        { fused_op = Op::JmpIfNotGe; }
+    else if op_kind == Op::CmpEq        { fused_op = Op::JmpIfNotEq; }
+    else if op_kind == Op::CmpNe        { fused_op = Op::JmpIfNotNe; }
+    else if op_kind == Op::CmpStrictEq  { fused_op = Op::JmpIfNotStrictEq; }
+    else                                { fused_op = Op::JmpIfNotStrictNe; }
     let idx = emit(c, make_inst_abc(fused_op, l, r, 0));
     emit(c, make_inst_i16(Op::Jmp, 0));
     release_reg(c, r);
@@ -2272,9 +2312,9 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     if c.arguments_reg >= 0 {
         emit(c, make_inst_a(Op::BuildArguments, (u8)c.arguments_reg));
     }
-    if c.this_reg >= 0 {
-        emit(c, make_inst_a(Op::LoadThis, (u8)c.this_reg));
-    }
+    // No prologue Op::LoadThis emit — the interpreter seeds
+    // regs[f.this_reg] from ctx.host_this on frame entry, saving the
+    // dispatch (~3.9% of richards dispatches).
     if has_rest {
         // Build rest array from args_base[regular_param_count..argc].
         emit(c, make_inst_ab(Op::BuildRestArgs, rest_reg, (u8)regular_param_count));
@@ -2423,6 +2463,7 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     // frame's allocation).
     f.fixed_regs = (u32)c.fixed_regs;
     if f.fixed_regs > f.register_count { f.fixed_regs = f.register_count; }
+    f.this_reg = c.this_reg;  // -1 if body doesn't use `this`
     f.param_count = param_count;
     // ExpectedArgumentCount — walk params left-to-right, stop at the
     // first with a default initializer or the rest binding.
@@ -4871,9 +4912,16 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     }
     if k == NodeKind::ReturnStmt {
         // Compute the return value first so we have it in hand.
+        // Borrow the source register directly for IdentExpr — Return
+        // consumes the value immediately, so the defensive Mov that
+        // IdentExpr otherwise emits is dead weight. (Profile showed
+        // Mov→Return = 2.1% of dispatches on richards.)
         let r: u8 = 0;
         if node.left != NULL {
+            let saved_borrow = c.borrow_local_ok;
+            c.borrow_local_ok = true;
             r = compile_expr(c, node.left);
+            c.borrow_local_ok = saved_borrow;
         } else {
             r = alloc_reg(c);
             emit(c, make_inst_a(Op::LoadUndefined, r));

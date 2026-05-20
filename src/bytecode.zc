@@ -74,6 +74,11 @@ enum Op {
     JmpIfFalse,       // a=src, bc=offset
     JmpIfNotNullish,  // a=src, bc=offset — used by ??; jumps when src
                       // is anything other than null or undefined.
+    JmpIfNullish,     // a=src, bc=offset — inverse of the above.
+                      // Fused emit for `if (x != null) body` and
+                      // `if (x !== undefined) body` (loose check).
+                      // Eliminates the LoadNull / LoadUndefined +
+                      // CmpNe pair (4.9% combined on richards).
 
     // Fused compare-and-branch — collapses Cmp + JmpIfFalse (the
     // standard while/for/if loop-exit shape) into a single dispatch.
@@ -91,6 +96,14 @@ enum Op {
     JmpIfNotLeImm,
     JmpIfNotGtImm,
     JmpIfNotGeImm,
+    // Same shape — fuses Cmp{Eq,Ne,StrictEq,StrictNe} + JmpIfFalse.
+    // Profile (richards): CmpEq→JmpIfFalse alone was 3.4% of dispatches;
+    // splay added another 2.7%. Strict variants pick up the
+    // `x === null` / `x !== undefined` church traffic.
+    JmpIfNotEq,       // a=lhs_reg, b=rhs_reg ; next.bc = i16 offset
+    JmpIfNotNe,
+    JmpIfNotStrictEq,
+    JmpIfNotStrictNe,
 
     // Universal return — exits interpret() with regs[a] as the value.
     Return,
@@ -473,6 +486,12 @@ struct Function {
     // (fib_recursive).
     fixed_regs:     u32;
     param_count:    u32;       // 0 for the top-level program
+    // Reg index where `this` is hoisted at function entry. -1 means
+    // the body never reads `this`, so no slot is reserved and the
+    // interpreter skips the prologue init. Set by the compiler when
+    // body_uses_this() is true. Replaces a per-call Op::LoadThis
+    // dispatch (was 3.9% of dispatches on richards).
+    this_reg:       i32;
     // ECMA-262 ExpectedArgumentCount — index of the first parameter
     // with a default initializer or rest binding (or = param_count if
     // none). Read by Function.length / host-func length getters.
@@ -576,6 +595,7 @@ fn function_new() -> Function* {
     let f = zalloc<Function>();
     f.header.type_tag = TAG_FUNCTION;
     f.parent_ctor = zjs_undefined();
+    f.this_reg = -1;  // default: body doesn't use `this`
     return f;
 }
 

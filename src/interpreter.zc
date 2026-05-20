@@ -21,9 +21,12 @@ raw {
     // Op profiling counters — gated on $ZJS_PROFILE_OPS=1 at startup.
     // Updated per dispatch in interpret_inner_full; dumped via an
     // atexit handler installed by the first interpret() call when
-    // enabled.
+    // enabled. The 256×256 pair matrix counts (prev_op, this_op)
+    // pairs — used to pick super-instruction fusion candidates.
     int      zjs_profile_ops_enabled = -1;
     uint64_t zjs_op_counts[256];
+    uint64_t zjs_pair_counts[256 * 256];
+    int      zjs_last_op = 0;  // 0 == Halt, treated as "no predecessor"
     // Op-name table mirroring the Op enum order in bytecode.zc.
     // Keep in sync when ops are added. Unknown indices print as
     // "Op<N>" so the dump is still readable.
@@ -40,9 +43,10 @@ raw {
         "CmpEq", "CmpNe", "CmpStrictEq", "CmpStrictNe",
         "CmpLt", "CmpLe", "CmpGt", "CmpGe",
         "Neg", "BitNot", "LogicalNot",
-        "Jmp", "JmpIfTrue", "JmpIfFalse", "JmpIfNotNullish",
+        "Jmp", "JmpIfTrue", "JmpIfFalse", "JmpIfNotNullish", "JmpIfNullish",
         "JmpIfNotLt", "JmpIfNotLe", "JmpIfNotGt", "JmpIfNotGe",
         "JmpIfNotLtImm", "JmpIfNotLeImm", "JmpIfNotGtImm", "JmpIfNotGeImm",
+        "JmpIfNotEq", "JmpIfNotNe", "JmpIfNotStrictEq", "JmpIfNotStrictNe",
         "Return", "Invoke", "TailInvoke",
         "LoadProp", "StoreProp",
         "IterPrepare", "ArrayLength",
@@ -94,6 +98,44 @@ raw {
             double pct = 100.0 * (double)c / (double)total;
             fprintf(stderr, "  %-24s %12llu  %5.1f%%\n",
                     zjs_op_name_lookup(order[i]), (unsigned long long)c, pct);
+        }
+        // ---- pair table (top 30) ----
+        // Selection-sort the top 30 indices of zjs_pair_counts. The
+        // table is 65k entries so a full qsort would be wasted work;
+        // a 30-pass scan is fine and avoids needing scratch memory.
+        int top_idx[30];
+        for (int i = 0; i < 30; i++) top_idx[i] = -1;
+        for (int slot = 0; slot < 30; slot++) {
+            int best = -1;
+            uint64_t best_v = 0;
+            for (int k = 0; k < 256 * 256; k++) {
+                uint64_t v = zjs_pair_counts[k];
+                if (v <= best_v) continue;
+                // Skip indices already chosen.
+                int already = 0;
+                for (int j = 0; j < slot; j++) if (top_idx[j] == k) { already = 1; break; }
+                if (already) continue;
+                best = k; best_v = v;
+            }
+            if (best < 0) break;
+            top_idx[slot] = best;
+        }
+        uint64_t pair_total = 0;
+        for (int k = 0; k < 256 * 256; k++) pair_total += zjs_pair_counts[k];
+        if (pair_total == 0) return;
+        fprintf(stderr, "\n=== zjs pair profile (%llu pairs; prev → this) ===\n",
+                (unsigned long long)pair_total);
+        for (int i = 0; i < 30; i++) {
+            int k = top_idx[i];
+            if (k < 0) break;
+            uint64_t c = zjs_pair_counts[k];
+            if (c == 0) break;
+            int prev = k >> 8;
+            int cur  = k & 0xff;
+            double pct = 100.0 * (double)c / (double)pair_total;
+            fprintf(stderr, "  %-22s -> %-22s  %12llu  %5.1f%%\n",
+                    zjs_op_name_lookup(prev), zjs_op_name_lookup(cur),
+                    (unsigned long long)c, pct);
         }
     }
     static void zjs_profile_ops_init(void) {
@@ -1702,6 +1744,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
         raw { regs = &ctx->reg_stack[regs_base]; }
         let ip: usize = ctx.frames[cur_idx].ip;
 
+        // On first entry to a frame, seed regs[f.this_reg] from the
+        // host_this set by the call site. Replaces the Op::LoadThis the
+        // compiler used to emit at function entry — saves one dispatch
+        // per call into any `this`-using function.
+        if ip == 0 && f.this_reg >= 0 {
+            regs[(u32)f.this_reg] = ctx.host_this;
+        }
+
         // Inner-loop exit reason:
         //   0 = ran off code_len (implicit return undefined)
         //   1 = Op::Return / Op::Halt (frame already popped + return value written)
@@ -1726,11 +1776,15 @@ fn interpret_inner_full(ctx: ZjsContext*,
         let inst = code[ip];
         let op = inst.op;
         // Op profiling — gated on $ZJS_PROFILE_OPS=1. atexit dumper
-        // below logs per-op execution counts and per-op nanoseconds.
+        // below logs per-op execution counts AND per-pair counts
+        // (prev → this) for super-instruction fusion candidates.
         raw {
             if (zjs_profile_ops_enabled < 0) zjs_profile_ops_init();
             if (zjs_profile_ops_enabled) {
-                zjs_op_counts[(int)op] += 1;
+                int op_i = (int)op;
+                zjs_op_counts[op_i] += 1;
+                zjs_pair_counts[(zjs_last_op << 8) | op_i] += 1;
+                zjs_last_op = op_i;
             }
         }
 
@@ -2226,6 +2280,109 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 cond_true = zjs_cmp_le(bv, av);
             }
             if !cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfNotEq {
+            // Mirrors CmpEq's body (§7.2.13). Branches when the
+            // comparison is FALSE (else-edge of `if (a == b) { then }`).
+            let cea = regs[inst.a];
+            let ceb = regs[inst.b];
+            let cond_true: bool = false;
+            if zjs_is_int32(cea) != 0 && zjs_is_int32(ceb) != 0 {
+                cond_true = zjs_as_int32(cea) == zjs_as_int32(ceb);
+            } else if (zjs_is_null(cea) != 0 || zjs_is_undefined(cea) != 0)
+                   && (zjs_is_null(ceb) != 0 || zjs_is_undefined(ceb) != 0) {
+                cond_true = true;
+            } else {
+                let cea_obj = zjs_is_object(cea) != 0 || zjs_is_array(cea) != 0;
+                let ceb_obj = zjs_is_object(ceb) != 0 || zjs_is_array(ceb) != 0;
+                if cea_obj && !ceb_obj && !zjs_is_undefined(ceb) && !zjs_is_null(ceb) {
+                    cea = zjs_to_primitive(ctx, cea, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                } else if ceb_obj && !cea_obj && !zjs_is_undefined(cea) && !zjs_is_null(cea) {
+                    ceb = zjs_to_primitive(ctx, ceb, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                cond_true = zjs_loose_eq(cea, ceb) != 0;
+            }
+            if !cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfNotNe {
+            // Mirrors CmpNe (§7.2.13 negated). Branches when `a != b`
+            // is FALSE — i.e. when `a == b` is TRUE.
+            let cea = regs[inst.a];
+            let ceb = regs[inst.b];
+            let ne_true: bool = false;
+            if zjs_is_int32(cea) != 0 && zjs_is_int32(ceb) != 0 {
+                ne_true = zjs_as_int32(cea) != zjs_as_int32(ceb);
+            } else if (zjs_is_null(cea) != 0 || zjs_is_undefined(cea) != 0)
+                   && (zjs_is_null(ceb) != 0 || zjs_is_undefined(ceb) != 0) {
+                ne_true = false;
+            } else {
+                let cea_obj = zjs_is_object(cea) != 0 || zjs_is_array(cea) != 0;
+                let ceb_obj = zjs_is_object(ceb) != 0 || zjs_is_array(ceb) != 0;
+                if cea_obj && !ceb_obj && !zjs_is_undefined(ceb) && !zjs_is_null(ceb) {
+                    cea = zjs_to_primitive(ctx, cea, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                } else if ceb_obj && !cea_obj && !zjs_is_undefined(cea) && !zjs_is_null(cea) {
+                    ceb = zjs_to_primitive(ctx, ceb, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                ne_true = zjs_loose_eq(cea, ceb) == 0;
+            }
+            if !ne_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfNotStrictEq {
+            // Mirrors CmpStrictEq. Branches when `a === b` is FALSE.
+            let sa = regs[inst.a];
+            let sb = regs[inst.b];
+            let cond_true: bool = false;
+            if zjs_is_int32(sa) != 0 && zjs_is_int32(sb) != 0 {
+                cond_true = zjs_as_int32(sa) == zjs_as_int32(sb);
+            } else {
+                cond_true = zjs_strict_eq(sa, sb) != 0;
+            }
+            if !cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfNotStrictNe {
+            // Mirrors CmpStrictNe. Branches when `a !== b` is FALSE
+            // (i.e. when `a === b` is TRUE).
+            let sa = regs[inst.a];
+            let sb = regs[inst.b];
+            let ne_true: bool = false;
+            if zjs_is_int32(sa) != 0 && zjs_is_int32(sb) != 0 {
+                ne_true = zjs_as_int32(sa) != zjs_as_int32(sb);
+            } else {
+                ne_true = zjs_strict_eq(sa, sb) == 0;
+            }
+            if !ne_true {
                 let off = inst_bc_i16(code[ip + 1]);
                 ip = (u32)((i32)ip + 1 + off);
             } else {
@@ -2795,6 +2952,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let v = regs[inst.a];
             let is_nullish = zjs_is_null(v) != 0 || zjs_is_undefined(v) != 0;
             if !is_nullish {
+                let off = inst_bc_i16(inst);
+                ip = (usize)((i32)ip + off);
+                if off < 0 {
+                    ctx_maybe_gc(ctx);
+                }
+            }
+        } else if op == Op::JmpIfNullish {
+            let v = regs[inst.a];
+            let is_nullish = zjs_is_null(v) != 0 || zjs_is_undefined(v) != 0;
+            if is_nullish {
                 let off = inst_bc_i16(inst);
                 ip = (usize)((i32)ip + off);
                 if off < 0 {
