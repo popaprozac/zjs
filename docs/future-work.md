@@ -280,18 +280,53 @@ so we don't lose them.
 
 ## Major arcs queued
 
-- **Cross-compile sweep** — research whether Zen-c's native toolchain
-  cross-compiles for iOS / Linux / Windows (or whether we need to
-  drive `zig cc` / clang directly). iOS already works via
-  `xcrun`-driven SDK paths in `zapp`; the rest is new. Compare
-  binary size + bench numbers across compiler combos.
+- **Real `Symbol` values + `Symbol.iterator` protocol made first-class.**
+  We currently shim the iteration protocol with string atoms
+  (`"@@iterator"`). Real `Symbol` is the largest single conformance
+  unlock left in the included subset (~3000 tests across
+  class-fields-private, well-known-symbol-keyed property access,
+  spec-correct `IteratorClose`). Prerequisite for private class
+  fields/methods (`#name`). Phase 4.3 — taken on as the next arc.
+
+- **Private class fields / methods (`#name`)** — follows Symbol
+  naturally; same family of test262 unlocks. Skipped today by the
+  harness.
+
+- **Property descriptors + accessors as first-class.**
+  `Object.defineProperty`, real getters/setters in object literals,
+  `Object.freeze` that actually tracks `[[Writable]]` /
+  `[[Configurable]]` flags. Today `freeze` no-ops and many
+  `Array.prototype.push` / `pop` tests check that the TypeError
+  fires on a frozen receiver. Biggest single test262 unlock in the
+  `Object/create` subset.
+
 - **GC experiment** — alternatives to the default Hermes-style
   stop-the-world mark-sweep. User-flagged Go's Green Tea GC (cache-
   aware concurrent mark-sweep with minor-pause guarantees) as worth
   exploring; generational nursery, bump-allocator young-gen, and
-  deferred refcounting are other points in the design space. Bench
-  pause time + throughput + footprint.
-- **Runtime layer (`zjs-runtime`)** — txiki-style batteries on top
-  of the engine: `fetch`, `WebSocket`, Timers, `TextEncoder`,
-  `crypto.subtle`, `URL`, eventually SQLite. Stays *above* the engine
-  and consumes the embed ABI like any other host.
+  deferred refcounting are other points in the design space.
+  Hermes's clear daylight on `mandelbrot`, `nbody`, `splay`,
+  `object_alloc` points at generational specifically. Bench pause
+  time + throughput + footprint before committing.
+
+## Major arcs landed
+
+Kept here for context — these were once on this list and are now
+either fully shipped or in a stable state with their own ongoing
+maintenance threads.
+
+- **Cross-compile sweep** — Apple SDK paths via `xcrun`, Windows
+  WinHTTP / BCrypt / Psapi shims, Linux POSIX shims. Live status in
+  `docs/platform-port-status.md`. The `zig cc` cross-compile to
+  non-Apple targets has a known issue (#206) — Foundation directive
+  leaks across compiler hosts — but the native-toolchain build works
+  on each platform.
+
+- **Runtime layer (`zjs-runtime`)** — the txiki-style batteries
+  shipped across Phases A–E (timers, console, performance, atob/btoa,
+  `TextEncoder` / `Decoder`, `crypto.getRandomValues` / `crypto.subtle`,
+  `URL` / `URLSearchParams`, `fetch` (sync + async, HTTP/HTTPS),
+  `Response` / `Headers`, `WebSocket` over `NSURLSessionWebSocketTask`
+  on Apple, sync HTTP via WinHTTP on Windows). Linux native HTTP /
+  WebSocket backends (#201, #205) remain stubbed pending libcurl /
+  libwebsockets work.

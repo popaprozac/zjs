@@ -37,13 +37,14 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 | 3.9    | Performance pass — async/await, generators, modules, IC poly, instruction fusion, proto-chain IC, register-borrow / preferred-dst threading |
 | 3.9h   | Non-recursive interpreter — single outer loop with explicit CallFrame stack |
 | 4.0    | AOT bytecode — `zjs compile in.js -o out.zbc` + `zjs run out.zbc`; CLI auto-sniffs the `ZJSb` magic; embed ABI via `zjs_compile_to_bytecode` / `zjs_eval_bytecode`; wire format in `docs/aot-bytecode-format.md` |
-| **4.1** | **Iterator-protocol cleanup — Promise.{all,race,any,allSettled} drive `GetIterator`/`IteratorStep`; spec-correct non-Object rejects; `Map.groupBy` + `Object.groupBy`; ES2025 Set composition (`difference`/`intersection`/`union`/`symmetricDifference`/`isSubsetOf`/`isSupersetOf`/`isDisjointFrom`); object-shorthand-default cover grammar (`({x = 1} = src)`)** |
+| 4.1    | Iterator-protocol cleanup — Promise.{all,race,any,allSettled} drive `GetIterator`/`IteratorStep`; spec-correct non-Object rejects; `Map.groupBy` + `Object.groupBy`; ES2025 Set composition (`difference`/`intersection`/`union`/`symmetricDifference`/`isSubsetOf`/`isSupersetOf`/`isDisjointFrom`); object-shorthand-default cover grammar (`({x = 1} = src)`) |
+| **4.2** | **Perf pass against Hermes — string ropes (O(n²)→O(n) concat, 3.8x speedup); super-instructions (`JmpIfNot{Eq,Ne,StrictEq,StrictNe}`, `JmpIfNullish` + nullish-literal peephole, `f.this_reg` metadata hoist replacing per-call `LoadThis`, `borrow_local_ok` at `ReturnStmt`); `libzjs.a` static archive for iOS embedding; WebSocket keep-alive ping/pong; `hermes`/`shermes` added to bench-compare** |
 
 **Tests:** 941 in-tree assertions pass (378 smoke + 48 lexer + 84 parser + 431 interpreter).
 
-**Conformance:** 83.4% of the test262 included subset (6,672 of 7,997 non-skipped). Live dashboard at `docs/conformance/index.html` (macOS) — Windows results at `docs/conformance/index-windows.html`.
+**Conformance:** 83.9% of the test262 included subset (6,711 of 7,997 non-skipped). Live dashboard at `docs/conformance/index.html` (macOS) — Windows results at `docs/conformance/index-windows.html`.
 
-**Perf vs qjs:** zjs ahead on 19 of 21 microbenches (richards, property_poly, int_loop, etc); behind by single digits on nbody + fib_recursive. Live charts at `docs/perf/index.html` (macOS) — Windows results at `docs/perf/index-windows.html`.
+**Perf:** vs qjs (our closest peer — both jitless interpreters), zjs ahead on 17 / tied on 1 / behind on 3 of 21 microbenches. vs hermes (Meta's jitless engine, the design-space ceiling), zjs ahead on 5 / behind on 14 of 19 measurable — richards within 1.40×, splay 1.65×, with widest gaps on numeric / alloc-heavy benches (mandelbrot, nbody, object_alloc) where Hermes's generational GC and specialized arithmetic opcodes are the structural lead. Live charts at `docs/perf/index.html` (macOS) — Windows results at `docs/perf/index-windows.html`, cross-engine at `docs/perf/compare.html`.
 
 Per-phase plans live in `docs/phases/`.
 
@@ -102,7 +103,8 @@ After `make`:
 
 - `build/zjs` — CLI binary with `eval`, `lex`, `parse`, `--version` subcommands
 - `build/libzjs.dylib` (macOS) / `build/libzjs.so` (Linux) — shared library exposing the public C ABI
-- `build/smoke` — pure-C consumer of the library; validates the embed surface
+- `build/libzjs.a` — static archive of the same; required for iOS App Store embedding (no `dlopen`), useful elsewhere as the small-binary path
+- `build/smoke` / `build/smoke_static` — pure-C consumers of the library (dylib and `.a`); validate the embed surface from both link modes
 - `build/lexer_test`, `build/parser_test`, `build/interp_test` — Zen-c test runners
 
 Try it:
@@ -177,10 +179,13 @@ compile + interpret). Numbers are tracked across commits in
 make bench-compare
 ```
 
-Also runs each script under `qjs`, `node`, and `bun` and writes
-`docs/perf/compare.html`. qjs is our closest peer (jitless
-interpreter, similar architecture). node/bun include JIT but their
-numbers are largely process-startup on our short scripts.
+Also runs each script under `qjs`, `boa`, `hermes -O` (Meta's jitless
+interpreter — our direct design-space peer), `shermes -O -exec`
+(Static Hermes, JS → C → native — AOT-to-native ceiling reference),
+`node`, `bun`, and `deno`, and writes `docs/perf/compare.html`.
+qjs and hermes are the meaningful peers (both jitless); node / bun /
+deno include JIT but their numbers are largely process-startup on
+our short scripts.
 
 Builds default to `--release` (`-O3`-ish) via `zc`. For debug
 builds: `make ZC_FLAGS='-w -O0 -g'`.
