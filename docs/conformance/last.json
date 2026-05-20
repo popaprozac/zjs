@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-20 05:25 UTC",
+    "when": "2026-05-20 06:10 UTC",
     "total": 14524,
-    "passed": 6741,
-    "failed": 1256,
+    "passed": 6751,
+    "failed": 1246,
     "skipped": 6527,
     "platform": "macOS"
   },
@@ -13,16 +13,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): error thrown by left-hand side Expected a undefined to be thrown but no exception was thrown at a"
     },
     {
-      "path": "test/language/expressions/addition/coerce-symbol-to-prim-invocation.js",
-      "reason": "[sloppy] zjs: throw: (unknown): methods invoked in correct sequence Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"leftright\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/addition/coerce-symbol-to-prim-return-obj.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ordinary object value, right-hand side Expected a TypeError to be thrown but no exception was thr"
-    },
-    {
       "path": "test/language/expressions/addition/coerce-symbol-to-prim-return-prim.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"1[object Object]\"\u00bb, \u00ab87\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): ToNumber(Symbol): right-hand side Expected a TypeError to be thrown but no exception was thrown a"
     },
     {
       "path": "test/language/expressions/addition/get-symbol-to-prim-err.js",
@@ -51,22 +43,6 @@
     {
       "path": "test/language/expressions/modulus/order-of-evaluation.js",
       "reason": "[sloppy] zjs: throw: (unknown): ?ToNumeric(lhs) throws. Expected a TypeError but got a undefined"
-    },
-    {
-      "path": "test/language/expressions/equals/coerce-symbol-to-prim-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/expressions/equals/coerce-symbol-to-prim-invocation.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/equals/coerce-symbol-to-prim-return-obj.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/expressions/equals/coerce-symbol-to-prim-return-prim.js",
-      "reason": "[sloppy] zjs: throw: (unknown): number primitive (equal) Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/equals/get-symbol-to-prim-err.js",
@@ -2217,10 +2193,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call(obj, 0) Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-29.js",
-      "reason": "[sloppy] zjs: throw: (unknown): stepFiveOccurs Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-32.js",
       "reason": "[sloppy] zjs: throw: (unknown): [0, targetObj, 2].indexOf(targetObj, -1.5) Expected SameValue(\u00ab1\u00bb, \u00ab-1\u00bb) to be true"
     },
@@ -2597,10 +2569,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'join')"
     },
     {
-      "path": "test/built-ins/JSON/stringify/value-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"null\"\u00bb, \u00abundefined\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A9.js",
       "reason": "[sloppy] zjs: throw: (unknown): #2: delete String.prototype.indexOf.length; String.prototype.indexOf.hasOwnProperty('length') ret"
     },
@@ -2610,11 +2578,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/position-tointeger-toprimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown):"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/position-tointeger-wrapped-values.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToInteger: @@toPrimitive => true => 1 Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): ToPrimitive: throw when @@toPrimitive is not callable Expected a TypeError to be thrown but no ex"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/searchstring-tostring-errors.js",
@@ -2659,10 +2623,6 @@
     {
       "path": "test/built-ins/String/prototype/split/cstm-split-on-bigint-primitive.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: n is not defined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/limit-touint32-error.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToUint32 should be called on the limit before ToString on the separator. Expected a undefined to "
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-regexp.js",
@@ -4007,6 +3967,46 @@
     {
       "path": "test/built-ins/Date/S15.9.3.1_A5_T6.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected Invalid Date to be -2208988800001 milliseconds from the Unix epoch"
+    },
+    {
+      "path": "test/built-ins/Date/S15.9.3.2_A2_T1.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.isPrototypeOf(x12) must return true"
+    },
+    {
+      "path": "test/built-ins/Date/S15.9.3.2_A3_T1.1.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(new Date(date_1899_end)) must return \"[object Date]\" Expected Same"
+    },
+    {
+      "path": "test/built-ins/Date/S15.9.3.2_A3_T1.2.js",
+      "reason": "[sloppy] zjs: throw: (unknown): x1.toString() must return \"[object Date]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Date]"
+    },
+    {
+      "path": "test/built-ins/Date/S15.9.4_A1.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Date.hasOwnProperty(\"prototype\") must return true"
+    },
+    {
+      "path": "test/built-ins/Date/S15.9.4_A4.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Function.prototype.isPrototypeOf(Date) must return true"
+    },
+    {
+      "path": "test/built-ins/Date/S15.9.4_A5.js",
+      "reason": "[sloppy] zjs: throw: (unknown): The value of Date.length is expected to be 7 Expected SameValue(\u00ab0\u00bb, \u00ab7\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Date/TimeClip_negative_zero.js",
+      "reason": "[sloppy] zjs: throw: (unknown): TimeClip does not return negative zero Expected SameValue(\u00ab-0\u00bb, \u00ab0\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Date/UTC/coercion-errors.js",
+      "reason": "[sloppy] zjs: throw: (unknown): year Expected a undefined to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/built-ins/Date/UTC/coercion-order.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"yearmonthdatehoursminutessecondsms\"\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Date/UTC/fp-evaluation-order.js",
+      "reason": "[sloppy] zjs: throw: (unknown): order of operations / precision in MakeTime Expected SameValue(\u00ab-280499435020770752\u00bb, \u00ab29312\u00bb) to"
     }
   ],
   "skip_counts": {

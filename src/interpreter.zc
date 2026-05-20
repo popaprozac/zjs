@@ -5181,12 +5181,46 @@ fn consume_pending_throw(ctx: ZjsContext*) -> ZjsValue {
 }
 
 fn zjs_to_primitive(ctx: ZjsContext*, v: ZjsValue, prefer_string: bool) -> ZjsValue {
-    // ECMA-262: ToPrimitive on any object-like value runs the
-    // valueOf/toString coercion dance. Host instance types (Date,
+    // ECMA-262 §7.1.1 OrdinaryToPrimitive. Host instance types (Date,
     // RegExp, Map, Set) are "object-like" per spec too — they have
     // toString/valueOf on their prototypes and `new Date() + ""`,
     // `+new Date()`, etc. must invoke those methods.
     if is_object_like(v) == 0 { return v; }
+
+    // §7.1.1 step 4: look up Symbol.toPrimitive first. If callable,
+    // it overrides the normal valueOf/toString dance. The hint string
+    // is "string" / "number" / "default" per the caller's intent;
+    // here we pass "string" when prefer_string is set and "default"
+    // otherwise (callers that need a "number" hint should grow a
+    // separate path — but the most common consumers, `==` and `+`,
+    // both spec to "default" anyway).
+    let toprim_key = ctx_intern_atom(ctx, (char*)"@@toPrimitive", 13);
+    let toprim_fn = property_get(ctx, v, zjs_cell_from_ptr((void*)toprim_key));
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if zjs_is_function(toprim_fn) != 0 || zjs_is_closure(toprim_fn) != 0
+       || zjs_is_host_function(toprim_fn) != 0 {
+        let hint_str = if prefer_string {
+            ctx_intern_string(ctx, (char*)"string", 6)
+        } else {
+            ctx_intern_string(ctx, (char*)"default", 7)
+        };
+        let argv_tp: ZjsValue*; let one: ZjsValue;
+        one = hint_str;
+        raw { argv_tp = &one; }
+        let r = zjs_call_value_with_this(ctx, toprim_fn, v, argv_tp, 1);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let r_objy: int = 0;
+        if zjs_is_object(r) != 0 || zjs_is_array(r) != 0
+           || zjs_is_function(r) != 0 || zjs_is_closure(r) != 0
+           || zjs_is_host_function(r) != 0 { r_objy = 1; }
+        if r_objy == 0 { return r; }
+        // Spec: if Symbol.toPrimitive returns an object, throw TypeError.
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Cannot convert object to primitive value", 40);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return zjs_undefined();
+    }
 
     let valueOf_atom  = ctx_intern_atom(ctx, (char*)"valueOf",  7);
     let toString_atom = ctx_intern_atom(ctx, (char*)"toString", 8);

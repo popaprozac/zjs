@@ -4208,6 +4208,138 @@ fn host_object_get_own_property_names(ctx: ZjsContext*, args: ZjsValue*, argc: u
     return host_object_keys(ctx, args, argc);
 }
 
+// Linear sweep of both cell pools (young + old) for a live ZjsSymbol
+// whose `.key` is the given interned atom. Returns NULL if no live
+// Symbol exists for that key (e.g. the Symbol was GC'd because no
+// roots referenced it — its property-key string survives on the host
+// object, but the Symbol cell itself doesn't).
+fn lookup_symbol_by_key(ctx: ZjsContext*, key: ZjsString*) -> ZjsSymbol* {
+    let ci: u32 = 0;
+    while ci < ctx.young_count {
+        let p = ctx.young_cells[ci];
+        if p != NULL {
+            let h: CellHeader* = NULL;
+            raw { h = (CellHeader*)p; }
+            if h.type_tag == TAG_SYMBOL {
+                let sm: ZjsSymbol* = NULL;
+                raw { sm = (ZjsSymbol*)p; }
+                if sm.key == key { return sm; }
+            }
+        }
+        ci = ci + 1;
+    }
+    let ci2: u32 = 0;
+    while ci2 < ctx.cell_count {
+        let p = ctx.cells[ci2];
+        if p != NULL {
+            let h: CellHeader* = NULL;
+            raw { h = (CellHeader*)p; }
+            if h.type_tag == TAG_SYMBOL {
+                let sm: ZjsSymbol* = NULL;
+                raw { sm = (ZjsSymbol*)p; }
+                if sm.key == key { return sm; }
+            }
+        }
+        ci2 = ci2 + 1;
+    }
+    return NULL;
+}
+
+// Object.getOwnPropertySymbols(o) — returns an Array of the Symbol-
+// valued own keys of `o`. The current Symbol shim stores Symbol-keyed
+// properties under their canonical key string (`@@sym:N` for user-
+// created, `@@iterator` etc. for well-known); this function maps those
+// strings back to ZjsSymbol* cells by sweeping ctx.cells for live
+// Symbols and matching their `.key` field.
+//
+// Known limitation: a Symbol that's only referenced via a property
+// key (the user dropped their local binding) can be GC'd between the
+// set and the read, since the canonical-key string doesn't pin the
+// Symbol cell. For tests where the Symbol is still live in scope this
+// works; for "create Symbol, set on obj, drop binding, getOwnPropertySymbols"
+// the Symbol is gone. Fixing this requires a Symbol-keyed property
+// bucket on objects (separate from the string-keyed slots) — bigger
+// refactor.
+fn host_object_get_own_property_symbols(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let arg0 = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !require_object_keys_arg(ctx, arg0) { return zjs_undefined(); }
+    // Build atom-string → ZjsSymbol* lookup from live cells. Cheap
+    // enough; this function isn't a hot path.
+    let v = args[0];
+    let receiver_obj: ZjsObject* = NULL;
+    if zjs_is_object(v) != 0 {
+        receiver_obj = zjs_as_object(v);
+    } else if zjs_is_array(v) != 0 {
+        // Array .props expando is where any non-index keys live.
+        let a = zjs_as_array(v);
+        receiver_obj = a.props;
+    } else if zjs_is_function(v) != 0 {
+        let fp = zjs_cell_as_ptr(v);
+        let f: Function* = NULL;
+        raw { f = (Function*)fp; }
+        receiver_obj = f.props;
+    } else if zjs_is_closure(v) != 0 {
+        let cl = zjs_as_closure(v);
+        let fp2 = cl.function;
+        let f2: Function* = NULL;
+        raw { f2 = (Function*)fp2; }
+        receiver_obj = f2.props;
+    } else if zjs_is_host_function(v) != 0 {
+        receiver_obj = zjs_as_host_function(v).props;
+    } else if zjs_is_regexp(v) != 0 {
+        receiver_obj = zjs_as_regexp(v).props;
+    }
+    if receiver_obj == NULL || receiver_obj.cls == NULL {
+        return ctx_new_array(ctx, 0);
+    }
+    let o = receiver_obj;
+    let out_v = ctx_new_array(ctx, 0);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    let out_arr = zjs_as_array(out_v);
+    // Walk hidden-class chain in slot order. For each @@-prefixed key
+    // that's still present + enumerable-or-not (spec returns all Symbol
+    // keys, not just enumerable), look up the corresponding Symbol.
+    let cap = o.cls.prop_count;
+    let scratch: ZjsString*[64];
+    let limit: u32 = if cap > 64 { 64 } else { cap };
+    let i: u32 = 0;
+    while i < limit { scratch[i] = NULL; i = i + 1; }
+    let cls = o.cls;
+    while cls != NULL && cls.parent != NULL {
+        let slot = cls.transition_slot;
+        if slot < limit && zjs_is_deleted(o.slots[slot]) == 0 {
+            scratch[slot] = cls.transition_name;
+        }
+        cls = cls.parent;
+    }
+    let j: u32 = 0;
+    while j < limit {
+        let nm = scratch[j];
+        if nm != NULL && nm.length >= 2 {
+            // Match `@@` prefix — both user-created (`@@sym:N`) and
+            // well-known (`@@iterator`, etc.) live there.
+            let is_sym_key: bool = false;
+            let nd = nm.data;
+            raw { is_sym_key = (memcmp(nd, "@@", 2) == 0) ? true : false; }
+            if is_sym_key {
+                // Linear sweep of both cell pools for a ZjsSymbol with
+                // matching key. Generational scaffolding splits storage
+                // between young_cells (nursery) and cells (old gen); we
+                // walk both. O(cells) per slot; acceptable for a non-hot
+                // API. Replace with a back-reference on ZjsString or a
+                // side-table when this becomes a measurable cost.
+                let found = lookup_symbol_by_key(ctx, nm);
+                if found != NULL {
+                    array_set(out_arr, out_arr.length, zjs_cell_from_ptr((void*)found));
+                }
+            }
+        }
+        j = j + 1;
+    }
+    return out_v;
+}
+
 fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let arg0 = if argc >= 1 { args[0] } else { zjs_undefined() };
     if !require_object_keys_arg(ctx, arg0) { return zjs_undefined(); }
@@ -6355,12 +6487,13 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
                         if ctx.pending_throw_active { return; }
                         let processed = json_apply_replacer(ctx, jc, key_v, val);
                         if ctx.pending_throw_active { return; }
-                        // Skip undefined and callable values (spec).
+                        // Skip undefined, callable, and Symbol values (spec).
                         let is_callable: bool =
                                zjs_is_function(processed) != 0
                             || zjs_is_closure(processed) != 0
                             || zjs_is_host_function(processed) != 0;
-                        if zjs_is_undefined(processed) == 0 && !is_callable {
+                        let is_sym = zjs_is_symbol(processed) != 0;
+                        if zjs_is_undefined(processed) == 0 && !is_callable && !is_sym {
                             if emitted > 0 { json_buf_putc(b, ','); }
                             json_emit_indent(b, jc);
                             json_emit_string(b, n.data, n.length);
@@ -6531,10 +6664,13 @@ fn host_json_stringify(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         v = json_apply_replacer(ctx, &jc, key0, v);
         if ctx.pending_throw_active { return zjs_undefined(); }
     }
-    // Top-level undefined / functions return undefined (per spec).
+    // Top-level undefined / functions / Symbols return undefined per
+    // ECMA-262 §25.5.2.2 (Symbols throw if inside, but are returned-
+    // as-undefined at the top level per the Serialize fast paths).
     if zjs_is_undefined(v) != 0 { return zjs_undefined(); }
     let t = zjs_cell_tag(v);
-    if t == TAG_FUNCTION || t == TAG_CLOSURE || t == TAG_HOST_FUNCTION {
+    if t == TAG_FUNCTION || t == TAG_CLOSURE || t == TAG_HOST_FUNCTION
+       || t == TAG_SYMBOL {
         return zjs_undefined();
     }
     let b: JsonBuf;
@@ -15786,6 +15922,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let gopn_ptr: void* = NULL; raw { gopn_ptr = (void*)host_object_get_own_property_names; }
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getOwnPropertyNames", 19),
                ctx_make_host_function(ctx, (char*)"getOwnPropertyNames", gopn_ptr));
+    let gops_ptr: void* = NULL; raw { gops_ptr = (void*)host_object_get_own_property_symbols; }
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getOwnPropertySymbols", 21),
+               ctx_make_host_function(ctx, (char*)"getOwnPropertySymbols", gops_ptr));
     // Extensibility introspection — we don't track frozen / sealed
     // state yet, so report every object as extensible / not frozen /
     // not sealed. Non-objects (primitives) get the spec's "true"
