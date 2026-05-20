@@ -1526,7 +1526,8 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
         // async method.
         if is_kw_static != 0 && (is_property_name_start(peek_kind2(p))
                                  || peek_kind2(p) == TokenKind::LBracket
-                                 || peek_kind2(p) == TokenKind::Star) {
+                                 || peek_kind2(p) == TokenKind::Star
+                                 || peek_kind2(p) == TokenKind::PrivateName) {
             advance(p);
             is_static = true;
         }
@@ -1536,7 +1537,7 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     // `get`/`set` — only consume when followed by a property-name token
     // (or a computed `[`).
     let is_async_method: bool = false;
-    if peek_kind(p) == TokenKind::KwAsync && (is_property_name_start(peek_kind2(p)) || peek_kind2(p) == TokenKind::LBracket) {
+    if peek_kind(p) == TokenKind::KwAsync && (is_property_name_start(peek_kind2(p)) || peek_kind2(p) == TokenKind::LBracket || peek_kind2(p) == TokenKind::PrivateName) {
         advance(p);
         is_async_method = true;
     }
@@ -1565,7 +1566,7 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
                 is_set = (memcmp(nd, "set", 3) == 0) ? 1 : 0;
             }
             if (is_get != 0 || is_set != 0)
-               && (is_property_name_start(peek_kind2(p)) || peek_kind2(p) == TokenKind::LBracket) {
+               && (is_property_name_start(peek_kind2(p)) || peek_kind2(p) == TokenKind::LBracket || peek_kind2(p) == TokenKind::PrivateName) {
                 advance(p);
                 acc_kind = if is_get != 0 { TokenKind::KwGet } else { TokenKind::KwSet };
             }

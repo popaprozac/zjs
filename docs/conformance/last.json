@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-20 06:41 UTC",
+    "when": "2026-05-20 06:57 UTC",
     "total": 14524,
-    "passed": 7922,
-    "failed": 2163,
+    "passed": 8218,
+    "failed": 1867,
     "skipped": 4439,
     "platform": "macOS"
   },
@@ -1113,462 +1113,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-init-iter-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-init-iter-no-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-name-iter-val.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-ary-elem-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-ary-elem-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-ary-elision-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-ary-elision-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-ary-empty-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-ary-empty-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-ary-rest-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-ary-rest-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-init-exhausted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-init-hole.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-init-undef.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-iter-complete.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-iter-done.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-id-iter-val.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-obj-id-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-obj-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-obj-prop-id-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elem-obj-prop-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elision-exhausted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-elision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-empty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-rest-ary-elem.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-rest-ary-elision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-rest-ary-empty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-rest-ary-rest.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-rest-id-direct.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-rest-id-elision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-rest-id-exhausted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-rest-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-ary-ptrn-rest-obj-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-init-iter-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-init-iter-no-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-name-iter-val.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-elem-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-elem-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-elision-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-elision-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-empty-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-empty-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-rest-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-rest-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-exhausted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-hole.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-undef.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-iter-complete.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-iter-done.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-iter-val.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-obj-id-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-obj-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-obj-prop-id-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elem-obj-prop-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elision-exhausted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-elision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-empty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-rest-ary-elem.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-rest-ary-elision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-rest-ary-empty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-rest-ary-rest.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-rest-id-direct.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-rest-id-elision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-rest-id-exhausted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-rest-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-ary-ptrn-rest-obj-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-empty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-id-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-prop-ary-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-prop-ary-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-prop-ary.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-prop-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-prop-id-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-prop-id-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-prop-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-prop-obj-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-dflt-obj-ptrn-prop-obj.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-empty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-id-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-id-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-id-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-id-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-id-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-id-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-prop-ary-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-prop-ary-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-prop-ary.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-prop-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-prop-id-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-prop-id-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-prop-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-prop-obj-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/dstr/private-meth-static-obj-ptrn-prop-obj.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/arrow-body-derived-cls-direct-eval-contains-superproperty-1.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
@@ -1585,19 +1129,7 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/statements/class/elements/async-private-method/await-as-binding-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method/await-as-binding-identifier.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/async-private-method/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method/await-as-identifier-reference.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -1629,19 +1161,7 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/statements/class/elements/async-private-method-static/await-as-binding-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method-static/await-as-binding-identifier.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/async-private-method-static/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method-static/await-as-identifier-reference.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -1753,10 +1273,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/get-access-of-missing-shadowed-private-getter.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
-    },
-    {
       "path": "test/language/statements/class/elements/nested-derived-cls-direct-eval-contains-superproperty-1.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
@@ -1805,20 +1321,8 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/elements/private-accessor-name/inst-private-name-common.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"get string\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/inst-private-name-dollar.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"get string\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/private-accessor-name/inst-private-name-u2118.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/inst-private-name-underscore.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"get string\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/private-accessor-name/static-private-escape-sequence-ZWJ.js",
@@ -1845,20 +1349,8 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/elements/private-accessor-name/static-private-name-common.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get string\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/static-private-name-dollar.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get string\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/private-accessor-name/static-private-name-u2118.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/static-private-name-underscore.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get string\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/private-async-generator-method-name.js",
@@ -1881,20 +1373,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_f')"
     },
     {
-      "path": "test/language/statements/class/elements/private-field-as-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/private-field-as-async-arrow-function.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/private-field-as-async-function.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-field-as-function.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/private-field-is-not-clobbered-by-computed-property.js",
@@ -1921,18 +1405,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_m')"
     },
     {
-      "path": "test/language/statements/class/elements/private-getter-brand-check-super-class.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-getter-is-not-a-own-property.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"Test262\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-getter-is-not-clobbered-by-computed-property.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"Test262\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/private-getter-on-nested-class.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
     },
@@ -1946,31 +1418,11 @@
     },
     {
       "path": "test/language/statements/class/elements/private-method-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '#m')"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_m')"
     },
     {
       "path": "test/language/statements/class/elements/private-method-comparison-multiple-evaluations-of-class.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be false"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-method-double-initialisation-get-and-set.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-method-double-initialisation-get.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-method-double-initialisation-set.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-method-is-not-a-own-property.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-method-is-not-clobbered-by-computed-property.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/private-method-is-visible-in-computed-properties.js",
@@ -1989,12 +1441,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')"
     },
     {
-      "path": "test/language/statements/class/elements/private-method-shadowed-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
+      "path": "test/language/statements/class/elements/private-method-visible-to-direct-eval-on-initializer.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/statements/class/elements/private-method-visible-to-direct-eval-on-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true"
+      "path": "test/language/statements/class/elements/private-method-visible-to-direct-eval.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/statements/class/elements/private-methods/prod-private-async-method.js",
@@ -2011,18 +1463,6 @@
     {
       "path": "test/language/statements/class/elements/private-methods/prod-private-method.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-setter-brand-check-super-class.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-setter-is-not-a-own-property.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-setter-is-not-clobbered-by-computed-property.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/private-setter-on-nested-class.js",
@@ -2042,7 +1482,7 @@
     },
     {
       "path": "test/language/statements/class/elements/private-static-async-method-name.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'name')"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/private-static-field-shadowed-by-field-on-nested-class.js",
@@ -2069,12 +1509,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/elements/private-static-method-length.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'length')"
-    },
-    {
       "path": "test/language/statements/class/elements/private-static-method-name.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'name')"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/private-static-method-shadowed-by-field-on-nested-class.js",
@@ -2155,14 +1591,6 @@
     {
       "path": "test/language/statements/class/elements/regular-definitions-grammar-privatename-identifier-semantics-stringvalue.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-private-method-getter-usage.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"test262\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-private-method-usage.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/regular-definitions-rs-field-identifier-initializer.js",
@@ -2273,24 +1701,8 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/elements/regular-definitions-static-private-methods-with-fields.js",
-      "reason": "[sloppy] zjs: throw: (unknown): test 13 Expected SameValue(\u00abundefined\u00bb, \u00ab42\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-static-private-methods.js",
-      "reason": "[sloppy] zjs: throw: (unknown): test 7 Expected SameValue(\u00abundefined\u00bb, \u00ab42\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/set-access-of-missing-shadowed-private-setter.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
-    },
-    {
-      "path": "test/language/statements/class/elements/static-field-anonymous-function-length.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'length')"
-    },
-    {
       "path": "test/language/statements/class/elements/static-field-anonymous-function-name.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'name')"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#field\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/static-field-init-with-this.js",
@@ -2302,7 +1714,7 @@
     },
     {
       "path": "test/language/statements/class/elements/static-private-fields-proxy-default-handler-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/class/elements/static-private-getter-access-on-inner-class.js",
@@ -2315,14 +1727,6 @@
     {
       "path": "test/language/statements/class/elements/super-access-from-arrow-func-on-field.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/elements/super-access-inside-a-private-getter.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
-    },
-    {
-      "path": "test/language/statements/class/elements/super-access-inside-a-private-setter.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
     },
     {
       "path": "test/language/statements/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-call-expression-private-method-accessor-get.js",
@@ -2985,14 +2389,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-private-method-getter-usage.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab\"test262\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-private-method-usage.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/wrapped-in-sc-rs-field-identifier-initializer.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
@@ -3099,14 +2495,6 @@
     {
       "path": "test/language/statements/class/elements/wrapped-in-sc-rs-static-privatename-identifier.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-static-private-methods-with-fields.js",
-      "reason": "[sloppy] zjs: throw: (unknown): test 13 Expected SameValue(\u00abundefined\u00bb, \u00ab42\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-static-private-methods.js",
-      "reason": "[sloppy] zjs: throw: (unknown): test 7 Expected SameValue(\u00abundefined\u00bb, \u00ab42\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/gen-method/yield-as-identifier-reference-escaped.js",
@@ -3581,432 +2969,1044 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-init-iter-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/arrow-body-derived-cls-direct-eval-contains-superproperty-1.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-init-iter-no-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/arrow-body-derived-cls-direct-eval-contains-superproperty-2.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-name-iter-val.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/arrow-body-indirect-eval-err-contains-newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-ary-elem-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/arrow-body-private-derived-cls-direct-eval-contains-superproperty-1.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-ary-elem-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/arrow-body-private-derived-cls-direct-eval-contains-superproperty-2.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-ary-elision-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/arrow-body-private-direct-eval-err-contains-arguments.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-ary-elision-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/arrow-body-private-indirect-eval-err-contains-newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-ary-empty-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method/await-as-identifier-reference-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-ary-empty-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method/await-as-label-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-ary-rest-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method/returns-async-arrow-returns-arguments-from-parent-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-ary-rest-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method/returns-async-arrow-returns-newtarget.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-init-exhausted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method/returns-async-arrow.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method/returns-async-function-returns-arguments-from-own-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method/returns-async-function-returns-newtarget.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method/returns-async-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method-static/await-as-identifier-reference-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method-static/await-as-label-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-init-hole.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-arrow-returns-newtarget.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-init-undef.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-arrow.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-iter-complete.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-function-returns-arguments-from-own-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-iter-done.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-function-returns-newtarget.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-id-iter-val.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/class-name-static-initializer-anonymous.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"C\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-obj-id-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/class-name-static-initializer-decl.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"C\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-obj-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/class-name-static-initializer-expr.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"C\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-obj-prop-id-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/derived-cls-direct-eval-contains-superproperty-1.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elem-obj-prop-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/derived-cls-direct-eval-contains-superproperty-2.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elision-exhausted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/direct-eval-err-contains-arguments.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-elision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/direct-eval-err-contains-newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-empty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/evaluation-error/computed-name-referenceerror.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-rest-ary-elem.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/evaluation-error/computed-name-toprimitive-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-rest-ary-elision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/evaluation-error/computed-name-toprimitive-returns-noncallable.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-rest-ary-empty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/evaluation-error/computed-name-toprimitive-returns-nonobject.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-rest-ary-rest.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/evaluation-error/computed-name-tostring-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-rest-id-direct.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/evaluation-error/computed-name-valueof-err.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-rest-id-elision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/fields-asi-same-line-1.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-rest-id-exhausted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/fields-asi-same-line-2.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-rest-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/fields-computed-name-static-propname-prototype.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-ary-ptrn-rest-obj-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/fields-duplicate-privatenames.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-init-iter-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/fields-multiple-definitions-static-private-methods-proxy.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-init-iter-no-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/gen-private-method/yield-as-identifier-reference-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-name-iter-val.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/gen-private-method/yield-as-identifier-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-elem-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/gen-private-method/yield-as-label-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-elem-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/gen-private-method-static/yield-as-identifier-reference-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-elision-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/gen-private-method-static/yield-as-identifier-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-elision-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/gen-private-method-static/yield-as-label-identifier-escaped.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-empty-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/indirect-eval-err-contains-newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-empty-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/nested-derived-cls-direct-eval-contains-superproperty-1.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-rest-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/nested-derived-cls-direct-eval-contains-superproperty-2.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-ary-rest-iter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/nested-direct-eval-err-contains-newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-exhausted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/nested-indirect-eval-err-contains-newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/nested-private-derived-cls-direct-eval-contains-superproperty-1.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/nested-private-derived-cls-direct-eval-contains-superproperty-2.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/nested-private-direct-eval-err-contains-arguments.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/nested-private-indirect-eval-err-contains-newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/inst-private-escape-sequence-ZWJ.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-hole.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/inst-private-escape-sequence-ZWNJ.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/inst-private-escape-sequence-u2118.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-init-undef.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/inst-private-escape-sequence-u6F.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-iter-complete.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/inst-private-name-ZWJ.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-iter-done.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/inst-private-name-ZWNJ.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-iter-val-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/inst-private-name-u2118.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-id-iter-val.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/static-private-escape-sequence-ZWJ.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-obj-id-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/static-private-escape-sequence-ZWNJ.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-obj-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/static-private-escape-sequence-u2118.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-obj-prop-id-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/static-private-escape-sequence-u6F.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elem-obj-prop-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/static-private-name-ZWJ.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elision-exhausted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/static-private-name-ZWNJ.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-elision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-accessor-name/static-private-name-u2118.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-empty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-async-generator-method-name.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-rest-ary-elem.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-async-method-name.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-rest-ary-elision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-derived-cls-direct-eval-contains-superproperty-1.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-rest-ary-empty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-derived-cls-direct-eval-contains-superproperty-2.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-rest-ary-rest.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-direct-eval-err-contains-arguments.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError but got a ReferenceError"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-rest-id-direct.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-field-access-on-inner-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_f')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-rest-id-elision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-field-as-async-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-rest-id-exhausted.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-field-as-async-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-rest-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-field-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-ary-ptrn-rest-obj-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-fields-proxy-default-handler-throws.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-empty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-generator-method-name.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-getter-access-on-inner-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_m')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-getter-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-indirect-eval-err-contains-newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-method-access-on-inner-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_m')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-method-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-method-referenced-from-static-method.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed private method from an object which did not contain it Expected a TypeError to be thrown"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-id-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-methods/prod-private-async-method.js",
+      "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-prop-ary-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-methods/prod-private-generator.js",
+      "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-prop-ary-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-methods/prod-private-method-initialize-order.js",
+      "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-prop-ary.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-methods/prod-private-method.js",
+      "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-prop-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-setter-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-prop-id-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-async-generator-method-name.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'name')"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-prop-id-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-async-method-name.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-prop-id.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-field-shadowed-by-field-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private field from an arbritary object Expected a TypeError to be thrown but no exceptio"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-prop-obj-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-field-shadowed-by-getter-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private getter from an arbritary object Expected a TypeError to be thrown but no excepti"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-dflt-obj-ptrn-prop-obj.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-field-shadowed-by-method-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private method from an arbritary object Expected a TypeError to be thrown but no excepti"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-obj-ptrn-empty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-field-shadowed-by-setter-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private setter from an arbritary object Expected a TypeError to be thrown but no excepti"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-obj-ptrn-id-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-field-usage-inside-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"outer class\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-obj-ptrn-id-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-generator-method-name.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-obj-ptrn-id-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-method-name.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-obj-ptrn-id-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-method-shadowed-by-field-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private field from an arbritary object Expected a TypeError to be thrown but no exceptio"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-obj-ptrn-id-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-method-shadowed-by-getter-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private getter from an arbritary object Expected a TypeError to be thrown but no excepti"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-obj-ptrn-id-init-skipped.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-method-shadowed-by-method-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private method from an arbritary object Expected a TypeError to be thrown but no excepti"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-obj-ptrn-id-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-method-shadowed-by-setter-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private setter from an arbritary object Expected a TypeError to be thrown but no excepti"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-obj-ptrn-prop-ary-init.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/private-static-method-usage-inside-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"outer class\"\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/dstr/private-meth-static-obj-ptrn-prop-ary-trailing-comma.js",
-      "reason": "[sloppy] zjs: throw: (unknown): method invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "path": "test/language/expressions/class/elements/regular-definitions-grammar-privatename-identifier-semantics-stringvalue.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-field-identifier-initializer.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-field-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-getter-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-getter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-method-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-method.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-setter-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-setter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-privatename-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-privatename-identifier-initializer-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-privatename-identifier-initializer.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-privatename-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-generator-method-privatename-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-method-privatename-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-method-privatename-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-generator-method-privatename-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-generator-method-privatename-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-method-privatename-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-method-privatename-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-alt-by-classname.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-by-classname.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-initializer-alt-by-classname.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-initializer-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-initializer.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-field-anonymous-function-name.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#field\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-field-init-with-this.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined262\"\u00bb, \u00ab\"test262\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-field-redeclaration.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined262\"\u00bb, \u00ab\"test262\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-fields-proxy-default-handler-throws.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-getter-access-on-inner-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_f')"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-getter-access-on-inner-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-getter-access-on-inner-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed static private getter from an arbitrary object Expected a TypeError to be thrown but no "
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-getter.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed static private getter from an arbitrary object Expected a TypeError to be thrown but no "
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-method-access-on-inner-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_f')"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-method-access-on-inner-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed static private method from an object which did not contain it Expected a TypeError to be"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-method-referenced-from-instance-method.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed static private method from an object which did not contain it Expected a TypeError to be"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-methods-proxy-default-handler-throws.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-setter-access-on-inner-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-setter-access-on-inner-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-setter-access-on-inner-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed static private setter from an arbitrary object Expected a TypeError to be thrown but no "
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-private-setter.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed static private setter from an arbitrary object Expected a TypeError to be thrown but no "
+    },
+    {
+      "path": "test/language/expressions/class/elements/super-access-from-arrow-func-on-field.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-call-expression-private-method-accessor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-call-expression-private-method-accessor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-call-expression-private-method-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-call-expression-private-method-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-call-expression-private-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-call-expression-private-no-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-call-expression-privatename.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-member-expression-private-method-accessor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-member-expression-private-method-accessor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-member-expression-private-method-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-member-expression-private-method-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-member-expression-private-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-member-expression-private-no-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-covered-err-delete-member-expression-privatename.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-call-expression-private-method-accessor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-call-expression-private-method-accessor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-call-expression-private-method-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-call-expression-private-method-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-call-expression-private-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-call-expression-private-no-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-call-expression-privatename.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-member-expression-private-method-accessor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-member-expression-private-method-accessor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-member-expression-private-method-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-member-expression-private-method-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-member-expression-private-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-member-expression-private-no-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-err-delete-member-expression-privatename.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-call-expression-private-method-accessor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-call-expression-private-method-accessor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-call-expression-private-method-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-call-expression-private-method-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-call-expression-private-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-call-expression-private-no-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-call-expression-privatename.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-member-expression-private-method-accessor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-member-expression-private-method-accessor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-member-expression-private-method-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-member-expression-private-method-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-member-expression-private-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-member-expression-private-no-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/field-delete-twice-covered-err-delete-member-expression-privatename.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-method-accessor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-method-accessor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-method-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-method-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-no-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-privatename.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-method-accessor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-method-accessor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-method-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-method-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-no-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-privatename.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-method-accessor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-method-accessor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-method-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-method-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-no-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-privatename.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-method-accessor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-method-accessor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-method-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-method-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-no-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-privatename.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-method-accessor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-method-accessor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-method-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-method-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-no-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-privatename.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-method-accessor-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-method-accessor-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-method-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-method-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-method.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-no-reference.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-privatename.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-fields-same-line-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage-chained-usage.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage-function-expression.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage-recursive.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-field-super-access.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-async.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-get-field.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-get-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-meth-field.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-meth-get.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-meth-meth.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-meth-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-meth-staticfield.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-meth-staticmeth.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-set-field.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-set-set.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-constructor.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-in-computed-property-missing.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-whitespace-error-call-expr.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-whitespace-error-member-expr.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatenames-same-line-error.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-async-meth.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-gen.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     }
   ],
   "skip_counts": {

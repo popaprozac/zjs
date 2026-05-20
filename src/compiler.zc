@@ -3588,11 +3588,18 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
 
             // Load the method into regs[base].
             if callee.kind == NodeKind::Member {
-                let name_atom = ctx_intern_atom(c.ctx, c.source + callee.name_start, callee.name_length);
+                let name_atom: ZjsString* = NULL;
+                if is_private_name(c, callee.name_start, callee.name_length) {
+                    name_atom = mangle_private_name(c, callee.name_start, callee.name_length);
+                    if name_atom == NULL { return 0; }
+                } else {
+                    name_atom = ctx_intern_atom(c.ctx, c.source + callee.name_start, callee.name_length);
+                }
                 let ic = alloc_ic_slot(c, name_atom);
                 if ic > 255 {
-                    // Out of IC slots: fall back to LoadElem with a name-string key.
-                    let key_r = emit_load_name_string(c, c.source + callee.name_start, callee.name_length);
+                    // Out of IC slots: fall back to LoadElem with the
+                    // already-interned (possibly mangled) atom.
+                    let key_r = emit_load_atom(c, name_atom);
                     emit(c, make_inst_abc(Op::LoadElem, base, base + 1, key_r));
                     if key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
                 } else {
