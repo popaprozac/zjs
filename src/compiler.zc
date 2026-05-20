@@ -931,10 +931,16 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         if node.op == TokenKind::KwDelete {
             let operand = node.left;
             // Spec: `delete obj.#x` is an early SyntaxError. Private
-            // class members can't be removed once installed.
-            if operand != NULL
-               && (operand.kind == NodeKind::Member)
-               && is_private_name(c, operand.name_start, operand.name_length) {
+            // class members can't be removed once installed. The
+            // covered-parenthesis variants are SyntaxError too, so
+            // walk through Paren wrappers before the check.
+            let probe = operand;
+            while probe != NULL && probe.kind == NodeKind::Paren {
+                probe = probe.left;
+            }
+            if probe != NULL
+               && (probe.kind == NodeKind::Member)
+               && is_private_name(c, probe.name_start, probe.name_length) {
                 c.had_error = true;
                 return alloc_reg(c);
             }
