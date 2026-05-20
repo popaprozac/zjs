@@ -930,6 +930,14 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         // compile_expr of the operand.
         if node.op == TokenKind::KwDelete {
             let operand = node.left;
+            // Spec: `delete obj.#x` is an early SyntaxError. Private
+            // class members can't be removed once installed.
+            if operand != NULL
+               && (operand.kind == NodeKind::Member)
+               && is_private_name(c, operand.name_start, operand.name_length) {
+                c.had_error = true;
+                return alloc_reg(c);
+            }
             if operand != NULL && operand.kind == NodeKind::Member {
                 let obj_r = compile_expr(c, operand.left);
                 let key_r = emit_load_name_string(c, c.source + operand.name_start, operand.name_length);
