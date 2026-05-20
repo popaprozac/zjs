@@ -64,7 +64,6 @@
   "_skip_features_comment": "Tests whose `features` frontmatter intersects this list are skipped (counted as 'skipped'). Update as the engine grows.",
 
   "skip_features": [
-    "async-iteration",
     "Atomics",
     "BigInt",
     "SharedArrayBuffer",

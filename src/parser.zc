@@ -913,6 +913,19 @@ fn parse_do_while(p: Parser*) -> AstNode* {
 
 fn parse_for(p: Parser*) -> AstNode* {
     let kw = advance(p);   // 'for'
+    // `for await (binding of expr) body` — only legal inside an
+    // async function. Parser consumes the `await`, threads a flag
+    // through finish_for_in_or_of so the resulting ForOfStmt carries
+    // bool_value=true; the compiler then emits Op::Await around each
+    // step's binding.
+    let is_await: bool = false;
+    if peek_kind(p) == TokenKind::KwAwait {
+        if !p.in_async {
+            p.had_error = true; return NULL;
+        }
+        advance(p);
+        is_await = true;
+    }
     if !expect_kind(p, TokenKind::LParen) { return NULL; }
 
     // init slot: var-decl (no `;` consumed), expression, or empty.
@@ -935,8 +948,9 @@ fn parse_for(p: Parser*) -> AstNode* {
         if init == NULL { return NULL; }
         let after = peek_kind(p);
         if after == TokenKind::KwIn || after == TokenKind::KwOf {
-            return finish_for_in_or_of(p, kw, init, after);
+            return finish_for_in_or_of_ex(p, kw, init, after, is_await);
         }
+        if is_await { p.had_error = true; return NULL; }
         if !expect_kind(p, TokenKind::Semicolon) { return NULL; }
     } else {
         init = parse_expression(p);
@@ -944,8 +958,9 @@ fn parse_for(p: Parser*) -> AstNode* {
         if init == NULL { return NULL; }
         let after = peek_kind(p);
         if after == TokenKind::KwIn || after == TokenKind::KwOf {
-            return finish_for_in_or_of(p, kw, init, after);
+            return finish_for_in_or_of_ex(p, kw, init, after, is_await);
         }
+        if is_await { p.had_error = true; return NULL; }
         if !expect_kind(p, TokenKind::Semicolon) { return NULL; }
     }
 
@@ -989,6 +1004,10 @@ fn parse_for(p: Parser*) -> AstNode* {
 // `for (` and the binding. `op_kind` is KwIn or KwOf — drives the
 // returned NodeKind.
 fn finish_for_in_or_of(p: Parser*, kw_tok: Token, binding: AstNode*, op_kind: TokenKind) -> AstNode* {
+    return finish_for_in_or_of_ex(p, kw_tok, binding, op_kind, false);
+}
+
+fn finish_for_in_or_of_ex(p: Parser*, kw_tok: Token, binding: AstNode*, op_kind: TokenKind, is_await: bool) -> AstNode* {
     // ECMA-262: ForDeclaration / ForBinding in for-in / for-of heads
     // may not carry an initializer, and must be exactly one binding.
     // `for (let x = 1 of [])` and `for (var x, y in obj)` are both
@@ -1047,9 +1066,14 @@ fn finish_for_in_or_of(p: Parser*, kw_tok: Token, binding: AstNode*, op_kind: To
     if is_disallowed_statement_body(body) { p.had_error = true; return NULL; }
 
     let kind = if op_kind == TokenKind::KwIn { NodeKind::ForInStmt } else { NodeKind::ForOfStmt };
+    // `for await ( ... in ...)` is a SyntaxError — await is for-of only.
+    if is_await && op_kind == TokenKind::KwIn { p.had_error = true; return NULL; }
     let node = new_node(&p.tracker, kind, kw_tok.start, body.end);
     node.left = binding;
     node.right = iter_expr;
+    // bool_value=true on ForOfStmt marks for-await-of so the compiler
+    // emits Op::Await around each step's binding.
+    if is_await { node.bool_value = true; }
 
     let body_arr: AstNode** = NULL;
     body_arr = alloc_n<AstNode*>(1);

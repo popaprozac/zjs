@@ -5369,6 +5369,14 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
     emit(c, make_inst_abc(Op::IterStep, value_r, iter_r, done_r));
     let jmp_exit_idx = emit(c, make_inst_a_i16(Op::JmpIfTrue, done_r, 0));
 
+    // `for await (x of expr)`: the iterator may produce Promises (per
+    // ECMA-262 §14.7.5.3 ForIn/OfBodyEvaluation step k.iii). Await each
+    // value before binding. For sync iterables that yield non-Promises,
+    // Op::Await passes through unchanged.
+    if node.bool_value {
+        emit(c, make_inst_ab(Op::Await, value_r, value_r));
+    }
+
     // Write `value_r` into the binding. Reuses the binding logic from
     // the original for-of/in path: Member / Computed targets, plain
     // ident, VarDecl, and pattern (both binding and assignment mode).
