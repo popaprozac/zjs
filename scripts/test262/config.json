@@ -69,8 +69,6 @@
     "BigInt",
     "SharedArrayBuffer",
     "Symbol.asyncIterator",
-    "Proxy",
-    "Reflect",
     "WeakMap",
     "WeakSet",
     "WeakRef",

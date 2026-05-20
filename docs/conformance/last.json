@@ -1,10 +1,10 @@
 {
   "summary": {
-    "when": "2026-05-20 06:57 UTC",
+    "when": "2026-05-20 07:45 UTC",
     "total": 14524,
-    "passed": 8218,
-    "failed": 1867,
-    "skipped": 4439,
+    "passed": 8122,
+    "failed": 2008,
+    "skipped": 4394,
     "platform": "macOS"
   },
   "failures": [
@@ -65,12 +65,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): #10: (\"\\u{10000}\" >= \"\\uFFFF\") === false"
     },
     {
-      "path": "test/language/expressions/typeof/built-in-ordinary-objects-no-call.js",
-      "reason": "[sloppy] zjs: throw: (unknown): typeof Reflect === \"object\" Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"object\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/typeof/get-value.js",
       "reason": "[sloppy] zjs: throw: (unknown): typeof x === \"number\" Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"number\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/typeof/proxy.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"object\"\u00bb, \u00ab\"function\"\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/typeof/string.js",
@@ -1193,6 +1193,10 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'bind')"
     },
     {
+      "path": "test/language/statements/class/elements/class-field-is-observable-by-proxy.js",
+      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
+    },
+    {
       "path": "test/language/statements/class/elements/derived-cls-direct-eval-contains-superproperty-1.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
@@ -1450,19 +1454,19 @@
     },
     {
       "path": "test/language/statements/class/elements/private-methods/prod-private-async-method.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
     },
     {
       "path": "test/language/statements/class/elements/private-methods/prod-private-generator.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
     },
     {
       "path": "test/language/statements/class/elements/private-methods/prod-private-method-initialize-order.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
     },
     {
       "path": "test/language/statements/class/elements/private-methods/prod-private-method.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
     },
     {
       "path": "test/language/statements/class/elements/private-setter-on-nested-class.js",
@@ -1531,6 +1535,10 @@
     {
       "path": "test/language/statements/class/elements/private-static-method-usage-inside-nested-class.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'methodAccess')"
+    },
+    {
+      "path": "test/language/statements/class/elements/privatefield-on-proxy.js",
+      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
     },
     {
       "path": "test/language/statements/class/elements/privatefieldget-success-2.js",
@@ -2737,6 +2745,18 @@
       "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor"
     },
     {
+      "path": "test/language/statements/class/subclass/superclass-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/class/subclass/superclass-async-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/class/subclass/superclass-generator-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
       "path": "test/language/statements/class/subclass-builtins/subclass-Array.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
     },
@@ -3318,19 +3338,19 @@
     },
     {
       "path": "test/language/expressions/class/elements/private-methods/prod-private-async-method.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
     },
     {
       "path": "test/language/expressions/class/elements/private-methods/prod-private-generator.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
     },
     {
       "path": "test/language/expressions/class/elements/private-methods/prod-private-method-initialize-order.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
     },
     {
       "path": "test/language/expressions/class/elements/private-methods/prod-private-method.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Reflect is not defined"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
     },
     {
       "path": "test/language/expressions/class/elements/private-setter-on-nested-class.js",
@@ -3987,32 +4007,11 @@
     {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-in-computed-property-missing.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-whitespace-error-call-expr.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-whitespace-error-member-expr.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatenames-same-line-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-async-meth.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     }
   ],
   "skip_counts": {
     "feature:BigInt": 113,
     "feature:tail-call-optimization": 20,
-    "feature:Proxy": 37,
     "include:propertyHelper.js": 1642,
     "feature:u180e": 2,
     "feature:async-iteration": 1843,
@@ -4030,9 +4029,9 @@
     "feature:WeakSet": 11,
     "feature:SharedArrayBuffer": 2,
     "feature:WeakRef": 2,
+    "include:proxyTrapsHelper.js": 1,
     "feature:well-formed-json-stringify": 1,
     "include:byteConversionValues.js": 1,
-    "include:promiseHelper.js": 53,
-    "feature:Reflect": 9
+    "include:promiseHelper.js": 53
   }
 }

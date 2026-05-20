@@ -212,6 +212,32 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     // a near-jump-table — restored ~17-23% on property_mono /
     // property_poly after the TypedArray + WebSocket adds.
     let tag: u8 = zjs_cell_tag(obj);
+    // Proxy detour. If obj is a proxy: look up handler.get; if it's
+    // callable, invoke trap(target, key, proxy) and return its result;
+    // otherwise forward to property_get(target, key).
+    if tag == TAG_PROXY {
+        let p = zjs_as_proxy(obj);
+        if p.revoked {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"Cannot perform 'get' on a proxy that has been revoked", 54);
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = err;
+            return zjs_undefined();
+        }
+        let get_atom = ctx_intern_atom(ctx, (char*)"get", 3);
+        let trap = property_get(ctx, p.handler, zjs_cell_from_ptr((void*)get_atom));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_function(trap) != 0 || zjs_is_closure(trap) != 0 || zjs_is_host_function(trap) != 0 {
+            let argv: ZjsValue*; let argbuf: ZjsValue[3];
+            argbuf[0] = p.target;
+            argbuf[1] = key;
+            argbuf[2] = obj;  // receiver = the proxy
+            raw { argv = &argbuf[0]; }
+            return zjs_call_value_with_this(ctx, trap, p.handler, argv, 3);
+        }
+        // No trap → forward to target.
+        return property_get(ctx, p.target, key);
+    }
     // Generator iterators have no own state-exposed props; everything
     // (.next, .return, .throw, Symbol.iterator) lives on the shared
     // generator_proto. Walk it directly.
@@ -1147,6 +1173,33 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
     key = symbol_key_coerce(key);
     // Same single-tag-load pattern as property_get — see comments there.
     let tag: u8 = zjs_cell_tag(obj);
+    // Proxy detour. See property_get's matching block for the trap-lookup
+    // pattern. Trap is called as `set(target, key, value, receiver)`.
+    if tag == TAG_PROXY {
+        let p = zjs_as_proxy(obj);
+        if p.revoked {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"Cannot perform 'set' on a proxy that has been revoked", 54);
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = err;
+            return;
+        }
+        let set_atom = ctx_intern_atom(ctx, (char*)"set", 3);
+        let trap = property_get(ctx, p.handler, zjs_cell_from_ptr((void*)set_atom));
+        if ctx.pending_throw_active { return; }
+        if zjs_is_function(trap) != 0 || zjs_is_closure(trap) != 0 || zjs_is_host_function(trap) != 0 {
+            let argv: ZjsValue*; let argbuf: ZjsValue[4];
+            argbuf[0] = p.target;
+            argbuf[1] = key;
+            argbuf[2] = value;
+            argbuf[3] = obj;
+            raw { argv = &argbuf[0]; }
+            let _ = zjs_call_value_with_this(ctx, trap, p.handler, argv, 4);
+            return;
+        }
+        property_set(ctx, p.target, key, value);
+        return;
+    }
     if tag == TAG_UINT8_ARRAY {
         let u = zjs_as_uint8_array(obj);
         let idx: i32 = -1;
@@ -4550,7 +4603,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 || rt == TAG_TYPED_ARRAY
                 || rt == TAG_ARRAY_BUFFER
                 || rt == TAG_DATA_VIEW
-                || rt == TAG_WEBSOCKET;
+                || rt == TAG_WEBSOCKET
+                || rt == TAG_PROXY;
             if result_is_object {
                 regs[dst2] = call_result;
             } else if final_this.bits != new_obj_v.bits
@@ -4763,7 +4817,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 || rt2 == TAG_TYPED_ARRAY
                 || rt2 == TAG_ARRAY_BUFFER
                 || rt2 == TAG_DATA_VIEW
-                || rt2 == TAG_WEBSOCKET;
+                || rt2 == TAG_WEBSOCKET
+                || rt2 == TAG_PROXY;
             // Derived-class ctor: a non-undefined non-Object return is
             // a TypeError. Base ctors silently coerce to `this`.
             let callee_is_derived: bool = false;

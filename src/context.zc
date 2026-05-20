@@ -1115,6 +1115,14 @@ fn gc_mark_cell_children(p: void*) -> void {
         return;
     }
 
+    if tag == TAG_PROXY {
+        let px: ZjsProxy* = NULL;
+        raw { px = (ZjsProxy*)p; }
+        gc_mark_value(px.target);
+        gc_mark_value(px.handler);
+        return;
+    }
+
     if tag == TAG_ASYNC_CONT {
         let ac: ZjsAsyncCont* = NULL;
         raw { ac = (ZjsAsyncCont*)p; }
@@ -12323,6 +12331,76 @@ fn host_promise_with_resolvers(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
 // new Promise(executor) — allocates a pending promise, builds bound
 // resolve/reject closures, and runs the executor synchronously.
 // If the executor throws, the promise is rejected with the thrown value.
+// =====================================================================
+// Proxy ctor + Reflect static methods (2026-05-20).
+// =====================================================================
+fn host_proxy_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 2 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Proxy requires 2 arguments", 26);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let target  = args[0];
+    let handler = args[1];
+    // Both target and handler must be object-like (per spec — including
+    // arrays, functions, but excluding primitives + null/undefined).
+    let target_ok = zjs_is_object(target) != 0 || zjs_is_array(target) != 0
+                 || zjs_is_function(target) != 0 || zjs_is_closure(target) != 0
+                 || zjs_is_host_function(target) != 0;
+    let handler_ok = zjs_is_object(handler) != 0 || zjs_is_array(handler) != 0
+                  || zjs_is_function(handler) != 0 || zjs_is_closure(handler) != 0
+                  || zjs_is_host_function(handler) != 0;
+    if !target_ok || !handler_ok {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Proxy target and handler must be objects", 40);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let p = zjs_proxy_new(target, handler);
+    ctx_register_cell(ctx, (void*)p);
+    return zjs_cell_from_ptr((void*)p);
+}
+
+fn host_reflect_get(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 2 { return zjs_undefined(); }
+    return property_get(ctx, args[0], args[1]);
+}
+
+fn host_reflect_set(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 3 { return zjs_bool(0); }
+    property_set(ctx, args[0], args[1], args[2]);
+    if ctx.pending_throw_active { return zjs_bool(0); }
+    return zjs_bool(1);
+}
+
+fn host_reflect_has(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 2 { return zjs_bool(0); }
+    let obj = args[0];
+    let key = symbol_key_coerce(args[1]);
+    // Forward to the same logic the `in` operator uses. Easiest path:
+    // check via property_get and the proto chain; for proxies, route to
+    // handler.has (the property_get fallback won't catch that, so do an
+    // explicit proxy-aware check first).
+    if zjs_is_proxy(obj) != 0 {
+        let p = zjs_as_proxy(obj);
+        if p.revoked { return zjs_bool(0); }
+        let has_atom = ctx_intern_atom(ctx, (char*)"has", 3);
+        let trap = property_get(ctx, p.handler, zjs_cell_from_ptr((void*)has_atom));
+        if zjs_is_function(trap) != 0 || zjs_is_closure(trap) != 0 || zjs_is_host_function(trap) != 0 {
+            let argv: ZjsValue*; let argbuf: ZjsValue[2];
+            argbuf[0] = p.target; argbuf[1] = key;
+            raw { argv = &argbuf[0]; }
+            let r = zjs_call_value_with_this(ctx, trap, p.handler, argv, 2);
+            return zjs_bool(if zjs_to_bool_coerce(r) != 0 { 1 } else { 0 });
+        }
+        return host_reflect_has(ctx, args, 2);  // forward
+    }
+    let v = property_get(ctx, obj, key);
+    if ctx.pending_throw_active { return zjs_bool(0); }
+    return zjs_bool(if zjs_is_undefined(v) != 0 { 0 } else { 1 });
+}
+
 fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // ECMA-262 §27.2.3.1 step 1: throw TypeError if NewTarget is
     // undefined — i.e. Promise(...) called without `new`.
@@ -15241,6 +15319,25 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ctx_register_host_function(ctx, (char*)"Set",        eval_ptr);
     ctx_register_host_function(ctx, (char*)"WeakMap",    eval_ptr);
     ctx_register_host_function(ctx, (char*)"WeakSet",    eval_ptr);
+    // Phase 4.6 — Proxy ctor + Reflect static methods.
+    let proxy_ptr: void* = NULL; raw { proxy_ptr = (void*)host_proxy_ctor; }
+    let proxy_v = ctx_register_host_function(ctx, (char*)"Proxy", proxy_ptr);
+    zjs_as_host_function(proxy_v).arity = 2;
+    let reflect_v = ctx_new_object(ctx);
+    let reflect_o = zjs_as_object(reflect_v);
+    let rget_ptr: void* = NULL; raw { rget_ptr = (void*)host_reflect_get; }
+    let rset_ptr: void* = NULL; raw { rset_ptr = (void*)host_reflect_set; }
+    let rhas_ptr: void* = NULL; raw { rhas_ptr = (void*)host_reflect_has; }
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"get", 3),
+               ctx_make_host_function(ctx, (char*)"get", rget_ptr));
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"set", 3),
+               ctx_make_host_function(ctx, (char*)"set", rset_ptr));
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"has", 3),
+               ctx_make_host_function(ctx, (char*)"has", rhas_ptr));
+    let reflect_slot = ctx_intern_global(ctx, (char*)"Reflect", 7);
+    ctx.globals[reflect_slot].value = reflect_v;
+    ctx.globals[reflect_slot].defined = true;
+
     // Phase 3.10 — real Promise constructor.
     let promise_ptr: void* = NULL; raw { promise_ptr = (void*)host_promise_ctor; }
     let promise_v = ctx_register_host_function(ctx, (char*)"Promise", promise_ptr);
@@ -15479,7 +15576,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"isDisjointFrom", 14),
                ctx_make_host_function_arity(ctx, (char*)"isDisjointFrom", set_dj_ptr, 1));
 
-    ctx_register_host_function(ctx, (char*)"Proxy",      eval_ptr);
+    // (Proxy is now a real ctor — see Phase 4.6 registration above.)
 
     // === ArrayBuffer + DataView + full TypedArray family ===
     let ab_ctor_ptr:  void* = NULL; raw { ab_ctor_ptr  = (void*)host_array_buffer_ctor;  }
