@@ -104,7 +104,6 @@
     "doneprintHandle.js",
     "promiseHelper.js",
     "asyncHelpers.js",
-    "propertyHelper.js",
     "fnGlobalObject.js",
     "regExpUtils.js",
     "wellKnownIntrinsicObjects.js",
