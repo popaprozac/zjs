@@ -1561,7 +1561,10 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     // `get`/`set` — only consume when followed by a property-name token
     // (or a computed `[`).
     let is_async_method: bool = false;
-    if peek_kind(p) == TokenKind::KwAsync && (is_property_name_start(peek_kind2(p)) || peek_kind2(p) == TokenKind::LBracket || peek_kind2(p) == TokenKind::PrivateName) {
+    if peek_kind(p) == TokenKind::KwAsync && (is_property_name_start(peek_kind2(p))
+                                             || peek_kind2(p) == TokenKind::LBracket
+                                             || peek_kind2(p) == TokenKind::PrivateName
+                                             || peek_kind2(p) == TokenKind::Star) {
         advance(p);
         is_async_method = true;
     }
