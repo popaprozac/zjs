@@ -136,6 +136,13 @@ struct Compiler {
     // the method body re-uses this expression to resolve the parent
     // constructor at runtime.
     enclosing_class_parent: AstNode*;
+    // 2026-05-20 — enclosing class id for private-name (`#x`) mangling.
+    // Set to a fresh integer when entering a class body; copied to
+    // child compilers (methods, nested functions) so `this.#x` inside
+    // a method sees the lexically enclosing class's id. -1 outside any
+    // class body — emitting a `#x` access there is a SyntaxError per
+    // spec, enforced via the c.had_error gate.
+    enclosing_class_id: i32;
 
     // 2026-05-16 — destructure_pattern mode flag. False = binding
     // (let/const/var/param/catch); true = assignment (`[a, b] = src`).
@@ -199,6 +206,7 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.arguments_reg = -1;
     c.this_reg = -1;
     c.preferred_dst = -1;
+    c.enclosing_class_id = -1;
     return c;
 }
 
@@ -1447,12 +1455,20 @@ fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
     c.preferred_dst = -1;
     let saved_borrow = c.borrow_local_ok;
     c.borrow_local_ok = true;
-    let name_atom = ctx_intern_atom(c.ctx, c.source + node.name_start, node.name_length);
+    let name_atom: ZjsString* = NULL;
+    if is_private_name(c, node.name_start, node.name_length) {
+        name_atom = mangle_private_name(c, node.name_start, node.name_length);
+        if name_atom == NULL { return 0; }  // SyntaxError already armed
+    } else {
+        name_atom = ctx_intern_atom(c.ctx, c.source + node.name_start, node.name_length);
+    }
     let ic = alloc_ic_slot(c, name_atom);
     if ic > 255 {
         let obj_r = compile_expr(c, node.left);
         c.borrow_local_ok = saved_borrow;
-        let key_r = emit_load_name_string(c, c.source + node.name_start, node.name_length);
+        // Use the already-interned (possibly mangled) atom so the
+        // fallback honors private-name mangling too.
+        let key_r = emit_load_atom(c, name_atom);
         c.preferred_dst = saved_pd;
         let dst = alloc_dst(c);
         emit(c, make_inst_abc(Op::LoadElem, dst, obj_r, key_r));
@@ -1495,7 +1511,17 @@ fn compile_property_target(c: Compiler*, target: AstNode*) -> PropTarget {
     let obj_r = compile_expr(c, target.left);
     let key_r: u8 = 0;
     if target.kind == NodeKind::Member {
-        key_r = emit_load_name_string(c, c.source + target.name_start, target.name_length);
+        if is_private_name(c, target.name_start, target.name_length) {
+            let atom = mangle_private_name(c, target.name_start, target.name_length);
+            if atom == NULL {
+                // SyntaxError armed. Return dummy regs; outer error gate
+                // handles the early exit.
+                return PropTarget{ obj_reg: obj_r, key_reg: 0 };
+            }
+            key_r = emit_load_atom(c, atom);
+        } else {
+            key_r = emit_load_name_string(c, c.source + target.name_start, target.name_length);
+        }
     } else {
         key_r = compile_expr(c, target.right);
     }
@@ -1508,9 +1534,15 @@ fn compile_assignment_to_property(c: Compiler*, target: AstNode*, op_tok: TokenK
     // operators (`+=` etc.) still go through the LoadElem/StoreElem
     // path.
     if target.kind == NodeKind::Member && op_tok == TokenKind::Eq {
-        let name_atom = ctx_intern_atom(c.ctx,
+        let name_atom: ZjsString* = NULL;
+        if is_private_name(c, target.name_start, target.name_length) {
+            name_atom = mangle_private_name(c, target.name_start, target.name_length);
+            if name_atom == NULL { return 0; }
+        } else {
+            name_atom = ctx_intern_atom(c.ctx,
                                         c.source + target.name_start,
                                         target.name_length);
+        }
         let ic = alloc_ic_slot(c, name_atom);
         if ic <= 255 {
             // StoreProp reads obj+value before writing — borrow is
@@ -2191,7 +2223,12 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     c.parent = parent;
     // Inherit the enclosing class context so super() inside a class
     // method can find its parent expression at compile time.
-    if parent != NULL { c.enclosing_class_parent = parent.enclosing_class_parent; }
+    if parent != NULL {
+        c.enclosing_class_parent = parent.enclosing_class_parent;
+        c.enclosing_class_id     = parent.enclosing_class_id;
+    } else {
+        c.enclosing_class_id = -1;
+    }
 
     // 1. Allocate registers for parameters. They sit at the bottom of
     //    the register file so callers can place args contiguously.
@@ -2613,6 +2650,10 @@ fn intern_method_name_atom(c: Compiler*, name_start: u32, name_length: u32) -> Z
     let mn = c.source + name_start;
     let ml = name_length;
     if ml == 0 { return ctx_intern_atom(c.ctx, mn, ml); }
+    // PrivateName: mangle to the per-class hidden key.
+    if mn[0] == '#' {
+        return mangle_private_name(c, name_start, ml);
+    }
     let first = mn[0];
     // NumberLit: starts with a digit or `.` followed by digit.
     let is_numeric: int = 0;
@@ -2878,6 +2919,46 @@ fn compile_export_decl(c: Compiler*, node: AstNode*) -> void {
     }
 }
 
+// Detect `#name` private-name slices. The lexer's PrivateName token
+// keeps the leading `#` so the slice's first byte is the sigil.
+fn is_private_name(c: Compiler*, name_start: u32, name_length: u32) -> bool {
+    if name_length == 0 { return false; }
+    return c.source[name_start] == '#';
+}
+
+// Mangle a `#name` slice into a per-class hidden key:
+//   __zjs_priv_<class_id>_<name-after-hash>
+// The `__zjs_` prefix is already filtered out of Object.keys /
+// getOwnPropertyNames / for-in / JSON.stringify via
+// string_is_hidden_key, so private fields stay invisible to reflection.
+// Returns NULL with `c.had_error = true` if we're not inside a class
+// body (ECMA-262 SyntaxError: "Unexpected private name").
+fn mangle_private_name(c: Compiler*, name_start: u32, name_length: u32) -> ZjsString* {
+    if c.enclosing_class_id < 0 {
+        c.had_error = true;
+        return NULL;
+    }
+    // name_length includes the leading `#`; skip it for the body.
+    let body_ptr: char* = NULL;
+    raw { body_ptr = c->source + name_start + 1; }
+    let body_len: u32 = name_length - 1;
+    let buf: char[64];
+    let bp: char* = NULL; raw { bp = &buf[0]; }
+    let n: int = 0;
+    raw {
+        n = snprintf(bp, 64, "__zjs_priv_%u_%.*s",
+                     (unsigned)c->enclosing_class_id,
+                     (int)body_len, body_ptr);
+    }
+    if n < 0 || n >= 64 {
+        // Overflow: name too long for our 64-byte buffer. Truncate
+        // safely — collisions only matter across same-class same-id
+        // and a 64-byte mangle is plenty for typical names.
+        n = 63;
+    }
+    return ctx_intern_atom(c.ctx, bp, (u32)n);
+}
+
 fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     // Find the constructor MethodDef among the children. The parser
     // may have synthesized one (num == 2.0) when fields exist without
@@ -2899,7 +2980,14 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     // shape (children=params, left=body, name=name) so compile_function
     // accepts it directly. If absent, synthesize an empty node.
     let saved_class_parent = c.enclosing_class_parent;
+    let saved_class_id     = c.enclosing_class_id;
     c.enclosing_class_parent = cls_node.right;
+    // Allocate a fresh class id so `#x` in this class gets a hidden
+    // key distinct from `#x` in any other class. Counter is on ctx
+    // so it stays monotonic across nested compiles (compile_function
+    // recursion for methods).
+    c.ctx.class_id_counter = c.ctx.class_id_counter + 1;
+    c.enclosing_class_id = (i32)c.ctx.class_id_counter;
     let ctor_fn: Function* = NULL;
     if ctor_node != NULL {
         ctor_fn = compile_function(c.ctx, c.source, ctor_node, c);
@@ -3102,7 +3190,13 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
                 emit(c, make_inst_abc(Op::StoreElem, ctor_reg, key_r, val_r));
                 release_reg(c, key_r);
             } else {
-                let name_atom = ctx_intern_atom(c.ctx, c.source + f.name_start, f.name_length);
+                let name_atom: ZjsString* = NULL;
+                if is_private_name(c, f.name_start, f.name_length) {
+                    name_atom = mangle_private_name(c, f.name_start, f.name_length);
+                }
+                if name_atom == NULL {
+                    name_atom = ctx_intern_atom(c.ctx, c.source + f.name_start, f.name_length);
+                }
                 let ic = alloc_ic_slot(c, name_atom);
                 if ic <= 255 {
                     emit(c, make_inst_abc(Op::StoreProp, ctor_reg, (u8)ic, val_r));
@@ -3115,6 +3209,7 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
 
     release_reg(c, proto_reg);
     c.enclosing_class_parent = saved_class_parent;
+    c.enclosing_class_id     = saved_class_id;
     return ctor_reg;
 }
 

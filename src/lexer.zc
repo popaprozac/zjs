@@ -566,6 +566,26 @@ impl Lexer {
             return self.tok1(TokenKind::Caret, start);
         }
 
+        if c == (u8)'#' {
+            // PrivateName: `#identifier`. The `#` and identifier body
+            // must be lexically adjacent (no whitespace). On its own,
+            // `#` is invalid — the parser only accepts PrivateName in
+            // class members + member access inside a class scope.
+            // (`#` was already consumed by scan_punctuator's self.advance()
+            // at the top of the function; we now expect an id-start.)
+            if self.at_end() || !is_id_start(self.peek()) {
+                return Token{kind: TokenKind::Invalid, start: start, length: 1};
+            }
+            self.advance();  // consume first id-start byte
+            while !self.at_end() {
+                let ch = self.peek();
+                if is_id_part(ch) { self.advance(); }
+                else { break; }
+            }
+            let length: u32 = (u32)self.pos - start;
+            return Token{kind: TokenKind::PrivateName, start: start, length: length};
+        }
+
         return token_invalid(start);
     }
 

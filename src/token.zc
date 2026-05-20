@@ -69,6 +69,12 @@ enum TokenKind {
     Amp, AmpAmp, AmpEq, AmpAmpEq,    // & && &= &&=
     Pipe, PipePipe, PipeEq, PipePipeEq,    // | || |= ||=
     Caret, CaretEq,                  // ^ ^=
+
+    // Private name: `#identifier` — only legal inside class bodies
+    // and in member access from inside the lexical class scope.
+    // Lexed as a single token; the slice covers `#identifier` (the
+    // `#` is at start[0], the name body starts at start[1]).
+    PrivateName,
 }
 
 struct Token {

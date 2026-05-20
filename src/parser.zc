@@ -1582,7 +1582,13 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
         if computed_key == NULL { return NULL; }
         if !expect_kind(p, TokenKind::RBracket) { return NULL; }
     } else {
-        if !is_property_name_start(name_tok.kind) { p.had_error = true; return NULL; }
+        // Class members additionally accept PrivateName (`#x`). The
+        // name slice carries the `#` as its first byte; the compiler
+        // sniffs that and mangles to a per-class hidden key.
+        if !is_property_name_start(name_tok.kind)
+           && name_tok.kind != TokenKind::PrivateName {
+            p.had_error = true; return NULL;
+        }
         advance(p);
     }
 

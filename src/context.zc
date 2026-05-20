@@ -400,6 +400,11 @@ struct ZjsContext {
     // Monotonic counter for fresh symbol identity (used to derive each
     // Symbol's unique internal key string).
     symbol_counter:     u32;
+    // Monotonic counter for class-body lexical identity (used to
+    // mangle `#name` private members per ECMA-262: each class
+    // declaration gets a unique id so `#x` in class A and `#x` in
+    // class B compile to different hidden keys).
+    class_id_counter:   u32;
     // Symbol.for / Symbol.keyFor registry. Two parallel lists:
     // symbol_for_keys[i] is the user-visible key string, symbol_for_syms[i]
     // is the interned Symbol value. Linear scan for now.
