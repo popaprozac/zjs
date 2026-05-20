@@ -154,6 +154,13 @@ $(T262_RUNNER): $(T262_RUNNER_SRC) include/zjs.h $(LIB) | $(BUILD_DIR)
 test262: cli
 	@python3 scripts/test262/run.py --quiet
 
+# Run the FULL test262 suite (test/language + test/built-ins, no
+# feature-skips) for honest absolute-methodology framing — matches
+# what test262.fyi reports. Missing-feature failures count as
+# failures here, NOT as skips. Does not record to the dashboard.
+test262-full: cli
+	@python3 scripts/test262/run.py --full-suite --quiet
+
 # End-to-end microbenchmarks. Times each scripts/bench/*.js with
 # wall-clock around `zjs run`, records the median, appends history,
 # regenerates docs/perf/index.html.

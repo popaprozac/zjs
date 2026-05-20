@@ -524,6 +524,13 @@ def main():
                          "their numbers aren't comparable to the full sweep.")
     ap.add_argument("--quiet", action="store_true",
                     help="Don't print per-failure lines")
+    ap.add_argument("--full-suite", action="store_true",
+                    help="Override config: run all of test/language/ + "
+                         "test/built-ins/ with NO feature skips. Reports "
+                         "the test262.fyi-style 'absolute methodology' "
+                         "number — missing-feature failures count as "
+                         "failures, not skips. Forces --no-record so it "
+                         "doesn't pollute the curated dashboard.")
     args = ap.parse_args()
 
     if not ZJS_BIN.exists():
@@ -535,6 +542,22 @@ def main():
         return 2
 
     cfg = load_config()
+    if args.full_suite:
+        # Match the test262.fyi methodology: full language + built-ins,
+        # exclude intl402 (Intl is its own optional opt-in) and annexB
+        # (legacy/host-optional). Zero out the feature skip-list so
+        # missing-feature tests run and count as failures rather than
+        # being filtered out — the point of this mode is honest framing.
+        cfg = dict(cfg)
+        cfg["include"] = ["test/language", "test/built-ins"]
+        cfg["skip_features"] = []
+        cfg["skip_includes"] = []
+        args.no_record = True
+        print("[full-suite] running against test/language + test/built-ins "
+              "with no feature skips. This does NOT update the curated "
+              "dashboard — it's a one-shot 'where are we vs the full spec' "
+              "measurement.", file=sys.stderr)
+
     tests = gather_tests(args.test262, cfg, args.filter)
     if args.limit > 0:
         tests = tests[:args.limit]
