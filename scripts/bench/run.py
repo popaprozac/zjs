@@ -55,11 +55,15 @@ def collect_benches(name_filter):
 
 _BODY_MARKER = "__zjs_body_ms="
 
-# Engine-agnostic timer prelude. node / bun / zjs / hermes all have
-# performance.now(); qjs has only Date.now() (ms precision). Probe
-# at runtime so the same wrapped script works under every engine
-# we compare against — startup-discrimination must be uniform or
-# the cross-engine numbers stop being apples-to-apples.
+# Engine-agnostic timer prelude. node / bun / deno / zjs all have
+# performance.now() (sub-ms precision). qjs / hermes / shermes / boa
+# only have Date.now() (integer-ms precision), so benches that run
+# in <5ms get rounded ugly there — accept the noise on those rows;
+# the >10ms benches (richards, splay, nbody, fib_recursive) are
+# where cross-engine comparison is meaningful anyway. Probe at
+# runtime so the same wrapped script works everywhere — startup-
+# discrimination must be uniform or the numbers stop being apples-
+# to-apples.
 _TIMER_PRELUDE = (
     "var __zjs_now = (typeof performance === 'object' "
     "&& typeof performance.now === 'function') "
@@ -331,17 +335,28 @@ tracked separately below.</p>
     out_path.write_text(html, encoding="utf-8")
 
 DEFAULT_OTHER_ENGINES = [
-    # name,    binary (resolved via PATH),       extra args before script
+    # name,     binary (resolved via PATH),       extra args before script
     # Peer interpreters first (similar design space — no JIT by default,
-    # embeddable), then JIT engines for the absolute-ceiling reference.
+    # embeddable), then AOT-compiled and JIT engines for ceiling refs.
     # Kiesel is dropped — orders-of-magnitude slower per run, not a
     # real competitor on this benchmark suite. Add `kiesel` back here
     # if a future release closes the gap.
-    ("qjs",    "qjs",                            []),
-    ("boa",    "boa",                            []),
-    ("node",   "node",                           []),
-    ("bun",    "bun",                            []),
-    ("deno",   str(Path.home() / ".deno/bin/deno"), ["run", "-q"]),
+    #
+    # `hermes` is the direct design-space peer: Meta's jitless,
+    # embeddable, iOS-target interpreter. Same mission as zjs. `-O`
+    # enables Hermes's compile-time optimizations (still a bytecode
+    # interpreter at runtime).
+    #
+    # `shermes` (Static Hermes) compiles JS → C → native; not an
+    # interpreter peer but a useful AOT-ceiling reference for what
+    # native-compiled JS looks like on the same scripts.
+    ("qjs",     "qjs",                              []),
+    ("boa",     "boa",                              []),
+    ("hermes",  "/usr/local/bin/hermes",            ["-O"]),
+    ("shermes", "/usr/local/bin/shermes",           ["-O", "-exec"]),
+    ("node",    "node",                             []),
+    ("bun",     "bun",                              []),
+    ("deno",    str(Path.home() / ".deno/bin/deno"), ["run", "-q"]),
 ]
 
 def time_engine(label, bin_path, extra_args, script_path, iters):
@@ -513,13 +528,15 @@ in our scripts are too short to repay JIT cost.</p>
   // Bars scaled to the slowest engine on that bench so even fast engines
   // are visible. Toggle linear/log via the radio above.
   const palette = {{
-    zjs:    '#d65a31',
-    qjs:    '#3b82f6',
-    boa:    '#06b6d4',
-    kiesel: '#f59e0b',
-    node:   '#10b981',
-    bun:    '#a855f7',
-    deno:   '#000000',
+    zjs:     '#d65a31',
+    qjs:     '#3b82f6',
+    boa:     '#06b6d4',
+    hermes:  '#f97316',
+    shermes: '#facc15',
+    kiesel:  '#f59e0b',
+    node:    '#10b981',
+    bun:     '#a855f7',
+    deno:    '#000000',
   }};
   const fallbackPalette = ['#888', '#666', '#444', '#bbb'];
   function colorFor(engine, idx) {{
@@ -683,7 +700,7 @@ def main():
     ap.add_argument("--filter", type=str, default=None)
     ap.add_argument("--no-record", action="store_true")
     ap.add_argument("--compare", action="store_true",
-                    help="also run benches under qjs/boa/kiesel/node/bun/deno (whichever are available); write docs/perf/compare.html")
+                    help="also run benches under qjs/boa/hermes/shermes/node/bun/deno (whichever are available); write docs/perf/compare.html")
     args = ap.parse_args()
 
     if not ZJS_BIN.exists():
