@@ -7523,6 +7523,13 @@ fn host_generator_next(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         let obj = zjs_as_object(obj_v);
         object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"value", 5), zjs_undefined());
         object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"done", 4), zjs_bool(1));
+        if g.is_async {
+            let p = zjs_promise_new();
+            ctx_register_cell(ctx, (void*)p);
+            let pv = zjs_cell_from_ptr((void*)p);
+            promise_resolve_with(ctx, pv, obj_v);
+            return pv;
+        }
         return obj_v;
     }
     if g.state == GEN_RUNNING {
@@ -7545,9 +7552,29 @@ fn host_generator_next(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         // Body bubbled an uncaught exception. Mark completed and
         // re-throw to the JS caller.
         g.state = GEN_COMPLETED;
+        if g.is_async {
+            // Async generator: an unhandled throw becomes a rejected
+            // Promise on the .next() return rather than a JS-level
+            // throw. Per ECMA-262 §27.6.3.6 AsyncGeneratorResume.
+            let p = zjs_promise_new();
+            ctx_register_cell(ctx, (void*)p);
+            let pv = zjs_cell_from_ptr((void*)p);
+            promise_settle(ctx, pv, r, false);
+            return pv;
+        }
         ctx.pending_throw_active = true;
         ctx.pending_throw_value  = r;
         return zjs_undefined();
+    }
+    // Async generator: wrap the iter-result `{value, done}` in a
+    // resolved Promise so each `.next()` call returns Promise<iter-result>
+    // (ECMA-262 §27.6 AsyncFromSyncIteratorContinuation).
+    if g.is_async {
+        let p = zjs_promise_new();
+        ctx_register_cell(ctx, (void*)p);
+        let pv = zjs_cell_from_ptr((void*)p);
+        promise_resolve_with(ctx, pv, r);
+        return pv;
     }
     return r;
 }

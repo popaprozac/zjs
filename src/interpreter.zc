@@ -3046,6 +3046,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     gen.function = target;
                     gen.reg_count = target.register_count;
                     gen.state = GEN_STARTING;
+                    gen.is_async = target.is_async;
                     gen.saved_host_this = new_this;
                     ctx.frames[cur_idx].ip = ip + 1;
                     push_call_frame_inplace(ctx, target, regs_base + (u32)base + 2, argc, dst);
@@ -3078,6 +3079,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     gen.function = target2;
                     gen.reg_count = target2.register_count;
                     gen.state = GEN_STARTING;
+                    gen.is_async = target2.is_async;
                     gen.saved_host_this = new_this;
                     gen.saved_current_closure = cl;
                     ctx.frames[cur_idx].ip = ip + 1;
@@ -3150,6 +3152,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     gen.function = target;
                     gen.reg_count = target.register_count;
                     gen.state = GEN_STARTING;
+                    gen.is_async = target.is_async;
                     gen.saved_host_this = ctx.host_this;
                     ctx.frames[cur_idx].ip = ip + 1;
                     push_call_frame_inplace(ctx, target, regs_base + (u32)base + 1, argc, dst);
@@ -3190,6 +3193,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     gen.function = target2;
                     gen.reg_count = target2.register_count;
                     gen.state = GEN_STARTING;
+                    gen.is_async = target2.is_async;
                     gen.saved_host_this = ctx.host_this;
                     gen.saved_current_closure = cl;
                     ctx.frames[cur_idx].ip = ip + 1;

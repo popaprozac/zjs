@@ -974,6 +974,11 @@ struct ZjsGenerator {
     // tests just call iter.next() on the iterator itself, so this stays
     // NULL until something asks for the iterable view.
     self_iter_obj:          ZjsObject*;
+    // True when this generator came from `async function*` — .next()
+    // wraps the iter-result in Promise.resolve(...) before returning,
+    // matching async-iterator semantics. Set by the Op::Invoke is-gen
+    // branch when target.is_async is true.
+    is_async:               bool;
 }
 
 fn zjs_is_generator(v: ZjsValue) -> int {
