@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-20 23:26 UTC",
+    "when": "2026-05-20 23:32 UTC",
     "total": 14524,
-    "passed": 9729,
-    "failed": 2166,
+    "passed": 9757,
+    "failed": 2138,
     "skipped": 2629,
     "platform": "macOS"
   },
@@ -1617,10 +1617,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/statements/class/elements/fields-duplicate-privatenames.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/gen-private-method/yield-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -2342,58 +2338,6 @@
     },
     {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-private-field-super-access.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-async-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-async.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-get-field.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-get-get.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-meth-field.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-meth-get.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-meth-meth.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-meth-set.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-meth-staticfield.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-meth-staticmeth.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-set-field.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatemeth-duplicate-set-set.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -3845,10 +3789,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/elements/fields-duplicate-privatenames.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/fields-multiple-definitions-static-private-methods-proxy.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
@@ -4007,6 +3947,66 @@
     {
       "path": "test/language/expressions/class/elements/private-field-on-nested-class.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-fields-proxy-default-handler-throws.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-generator-method-name.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-getter-access-on-inner-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_m')"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-getter-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-indirect-eval-err-contains-newtarget.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-method-access-on-inner-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_m')"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-method-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-method-referenced-from-static-method.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed private method from an object which did not contain it Expected a TypeError to be thrown"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-methods/prod-private-async-generator.js",
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-methods/prod-private-async-method.js",
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-methods/prod-private-generator.js",
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-methods/prod-private-method-initialize-order.js",
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-methods/prod-private-method.js",
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-setter-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-async-generator-method-name.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
     }
   ],
   "skip_counts": {

@@ -3063,6 +3063,52 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         object_set(c.ctx, ctor_fn.props, name_atom, cls_name_v);
     }
 
+    // Spec: PrivateBoundNames of ClassBody must not contain duplicates,
+    // EXCEPT a name shared by exactly one getter + one setter is OK.
+    // Walk all class elements, intern their (mangled) private keys,
+    // and reject duplicates inline. The accessor-pair exception is
+    // tracked via two parallel bitmaps keyed by atom-pointer hash.
+    let pname_atoms: ZjsString*[32];
+    let pname_attrs: u8[32];  // bit 0 = saw plain, bit 1 = get, bit 2 = set
+    let pname_count: u32 = 0;
+    let pn_i: u32 = 0;
+    while pn_i < cls_node.children_count {
+        let pe = cls_node.children[pn_i];
+        if pe != NULL && is_private_name(c, pe.name_start, pe.name_length) {
+            let atom = mangle_private_name(c, pe.name_start, pe.name_length);
+            if atom != NULL {
+                let this_attr: u8 = 1;  // plain
+                if pe.kind == NodeKind::MethodDef {
+                    if pe.op == TokenKind::KwGet { this_attr = 2; }
+                    else if pe.op == TokenKind::KwSet { this_attr = 4; }
+                }
+                let found: i32 = -1;
+                let ai: u32 = 0;
+                while ai < pname_count {
+                    if pname_atoms[ai] == atom { found = (i32)ai; break; }
+                    ai = ai + 1;
+                }
+                if found >= 0 {
+                    let prev = pname_attrs[(u32)found];
+                    // Only allowed combo: one get + one set (== 6).
+                    // Anything else is a duplicate.
+                    let combined: u8 = prev | this_attr;
+                    let only_accessors: bool = (prev == 2 && this_attr == 4) || (prev == 4 && this_attr == 2);
+                    if !only_accessors {
+                        c.had_error = true;
+                        return alloc_reg(c);
+                    }
+                    pname_attrs[(u32)found] = combined;
+                } else if pname_count < 32 {
+                    pname_atoms[pname_count] = atom;
+                    pname_attrs[pname_count] = this_attr;
+                    pname_count = pname_count + 1;
+                }
+            }
+        }
+        pn_i = pn_i + 1;
+    }
+
     let ctor_ptr: void* = NULL;
     raw { ctor_ptr = (void*)ctor_fn; }
     ctx_register_cell(c.ctx, ctor_ptr);
