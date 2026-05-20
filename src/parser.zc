@@ -2776,8 +2776,32 @@ fn parse_equality(p: Parser*) -> AstNode* {
 // then dispatches to for-in, rather than swallowing `x in obj` as a
 // Binary here.
 fn parse_relational(p: Parser*) -> AstNode* {
-    let left = parse_shift(p);
-    if left == NULL { return NULL; }
+    // Brand check: `#x in obj`. Per ECMA-262, `PrivateIdentifier in
+    // ShiftExpression` is the ONLY syntactic position where a
+    // PrivateName parses as an expression. Detect at the head of
+    // parse_relational; downstream parsers don't accept PrivateName.
+    let left: AstNode* = NULL;
+    if peek_kind(p) == TokenKind::PrivateName && peek_kind2(p) == TokenKind::KwIn && !p.no_in {
+        let pname_tok = advance(p);                   // #x
+        let in_tok    = advance(p);                   // in
+        let rhs = parse_shift(p);
+        if rhs == NULL { return NULL; }
+        let lhs_node = new_node(&p.tracker, NodeKind::Member, pname_tok.start, pname_tok.start + pname_tok.length);
+        // LHS encoded as a Member node with left=NULL — the compiler's
+        // brand-check path detects this shape and emits has-private-key
+        // semantics (lookup mangled key on rhs; result is boolean).
+        lhs_node.left = NULL;
+        lhs_node.name_start  = pname_tok.start;
+        lhs_node.name_length = pname_tok.length;
+        let bin = new_node(&p.tracker, NodeKind::Binary, pname_tok.start, rhs.end);
+        bin.op    = in_tok.kind;
+        bin.left  = lhs_node;
+        bin.right = rhs;
+        left = bin;
+    } else {
+        left = parse_shift(p);
+        if left == NULL { return NULL; }
+    }
     while true {
         let k = peek_kind(p);
         let is_in = k == TokenKind::KwIn;

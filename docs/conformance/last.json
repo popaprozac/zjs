@@ -1,10 +1,10 @@
 {
   "summary": {
-    "when": "2026-05-20 15:17 UTC",
+    "when": "2026-05-20 15:28 UTC",
     "total": 14524,
-    "passed": 8416,
-    "failed": 3355,
-    "skipped": 2753,
+    "passed": 8465,
+    "failed": 3430,
+    "skipped": 2629,
     "platform": "macOS"
   },
   "failures": [
@@ -97,28 +97,20 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined but got a TypeError"
     },
     {
-      "path": "test/language/expressions/in/private-field-presence-accessor-shadowed.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/in/private-field-invalid-identifier-complex.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/in/private-field-presence-accessor.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/in/private-field-presence-accessor-shadowed.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'isNameIn')"
     },
     {
       "path": "test/language/expressions/in/private-field-presence-field-shadowed.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/in/private-field-presence-field.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'isNameIn')"
     },
     {
       "path": "test/language/expressions/in/private-field-presence-method-shadowed.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/in/private-field-presence-method.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'isNameIn')"
     },
     {
       "path": "test/language/expressions/in/private-field-rhs-await-absent.js",
@@ -126,19 +118,11 @@
     },
     {
       "path": "test/language/expressions/in/private-field-rhs-await-present.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/expressions/in/private-field-rhs-non-object.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/in/private-field-rhs-unresolvable.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/in/private-field-rhs-yield-present.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+      "path": "test/language/expressions/in/private-field-rhs-yield-absent.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/in/rhs-yield-absent-strict.js",
@@ -365,6 +349,10 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
+      "path": "test/language/statements/for-in/dstr/obj-rest-not-last-element-invalid.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
       "path": "test/language/statements/for-in/head-const-bound-names-dup.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -443,6 +431,10 @@
     {
       "path": "test/language/statements/for-of/arguments-unmapped-mutation.js",
       "reason": "zjs: throw: (unknown): argument at index 3 Expected SameValue(\u00abNaN\u00bb, \u00abundefined\u00bb) to be true"
+    },
+    {
+      "path": "test/language/statements/for-of/body-dstr-assign-error.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Iterator is closed Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/for-of/body-put-error.js",
@@ -661,8 +653,36 @@
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/language/statements/for-of/dstr/obj-rest-not-last-element-invalid.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/obj-rest-order.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [z, a, 1, Symbol(foo)] and expected [1, z, a, Symbol(foo)] should have the same contents."
+    },
+    {
+      "path": "test/language/statements/for-of/dstr/obj-rest-str-val.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"f\"\u00bb) to be true"
+    },
+    {
       "path": "test/language/statements/for-of/dstr/var-ary-init-iter-get-err-array-prototype.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+    },
+    {
+      "path": "test/language/statements/for-of/float32array-mutate.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/float32array.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/float64array-mutate.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/float64array.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
     },
     {
       "path": "test/language/statements/for-of/generator-close-via-break.js",
@@ -715,6 +735,30 @@
     {
       "path": "test/language/statements/for-of/head-using-fresh-binding-per-iteration.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/for-of/int16array-mutate.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/int16array.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/int32array-mutate.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/int32array.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/int8array-mutate.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/int8array.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
     },
     {
       "path": "test/language/statements/for-of/iterator-close-non-object.js",
@@ -790,6 +834,38 @@
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/uint16array-mutate.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/uint16array.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/uint32array-mutate.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/uint32array.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/uint8array-mutate.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/uint8array.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/uint8clampedarray-mutate.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
+    },
+    {
+      "path": "test/language/statements/for-of/uint8clampedarray.js",
       "reason": "[sloppy] zjs: throw: TypeError: value is not iterable"
     },
     {
@@ -993,6 +1069,10 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
+      "path": "test/language/statements/class/async-gen-method/yield-spread-obj.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+    },
+    {
       "path": "test/language/statements/class/async-gen-method/yield-star-expr-abrupt.js",
       "reason": "[sloppy] zjs: throw: (unknown)"
     },
@@ -1149,6 +1229,10 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
+      "path": "test/language/statements/class/async-gen-method-static/yield-spread-obj.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+    },
+    {
       "path": "test/language/statements/class/async-gen-method-static/yield-star-expr-abrupt.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
@@ -1297,8 +1381,56 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a undefined to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-assignment-expression-coalesce.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-assignment-expression-logical-and.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-assignment-expression-logical-or.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-assignment-expression-coalesce.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-assignment-expression-logical-and.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-assignment-expression-logical-or.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-assignment-expression-coalesce.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-assignment-expression-logical-and.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-assignment-expression-logical-or.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
       "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-yield-expression.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-assignment-expression-coalesce.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-assignment-expression-logical-and.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-assignment-expression-logical-or.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-yield-expression.js",
@@ -3581,6 +3713,10 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
+      "path": "test/language/statements/class/elements/async-gen-private-method/yield-spread-obj.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+    },
+    {
       "path": "test/language/statements/class/elements/async-gen-private-method/yield-star-expr-abrupt.js",
       "reason": "[sloppy] zjs: throw: (unknown)"
     },
@@ -3690,6 +3826,10 @@
     },
     {
       "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-spread-arr-single.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+    },
+    {
+      "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-spread-obj.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
@@ -3867,169 +4007,23 @@
     {
       "path": "test/language/statements/class/elements/gen-private-method/yield-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/gen-private-method/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/gen-private-method/yield-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/gen-private-method-static/yield-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/gen-private-method-static/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/gen-private-method-static/yield-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-derived-cls-direct-eval-contains-superproperty-1.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-derived-cls-direct-eval-contains-superproperty-2.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-direct-eval-err-contains-newtarget.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-private-derived-cls-direct-eval-contains-superproperty-1.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/elements/nested-private-derived-cls-direct-eval-contains-superproperty-2.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-is-visible-in-computed-properties.js",
-      "reason": "[sloppy] zjs: throw: (unknown): access to a private acessor from ordinary object Expected a TypeError to be thrown but no excepti"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/inst-private-escape-sequence-ZWJ.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/inst-private-escape-sequence-ZWNJ.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/inst-private-escape-sequence-u2118.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/inst-private-escape-sequence-u6F.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/inst-private-name-ZWJ.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/inst-private-name-ZWNJ.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/inst-private-name-u2118.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/static-private-escape-sequence-ZWJ.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/static-private-escape-sequence-ZWNJ.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/static-private-escape-sequence-u2118.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/static-private-escape-sequence-u6F.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/static-private-name-ZWJ.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/static-private-name-ZWNJ.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-accessor-name/static-private-name-u2118.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-async-generator-method-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-async-method-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-derived-cls-direct-eval-contains-superproperty-1.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-derived-cls-direct-eval-contains-superproperty-2.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-field-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_f')"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-field-as-async-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-field-as-async-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-field-is-not-clobbered-by-computed-property.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-field-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-field-visible-to-direct-eval-on-initializer.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     }
   ],
   "skip_counts": {
-    "feature:BigInt": 113,
+    "feature:BigInt": 117,
     "feature:tail-call-optimization": 20,
-    "include:propertyHelper.js": 1804,
+    "include:propertyHelper.js": 1983,
     "feature:u180e": 2,
-    "feature:object-rest": 192,
-    "feature:optional-chaining": 12,
-    "feature:destructuring-assignment": 2,
-    "feature:TypedArray": 48,
     "include:asyncHelpers.js": 25,
     "flag:module": 15,
-    "feature:object-spread": 32,
     "feature:Symbol.asyncIterator": 352,
-    "feature:logical-assignment-operators": 24,
     "feature:decorators": 24,
+    "include:testTypedArray.js": 4,
     "feature:WeakMap": 17,
     "feature:WeakSet": 11,
     "feature:SharedArrayBuffer": 2,
     "feature:WeakRef": 2,
     "include:proxyTrapsHelper.js": 1,
-    "feature:well-formed-json-stringify": 1,
     "include:byteConversionValues.js": 1,
     "include:promiseHelper.js": 53
   }

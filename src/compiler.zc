@@ -1066,6 +1066,26 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         // Special-case `in` and `instanceof` — they're keyword tokens, not
         // arithmetic ops, but the parser routes them through Binary.
         if node.op == TokenKind::KwIn || node.op == TokenKind::KwInstanceof {
+            // Brand check: `#x in obj`. The parser synthesizes a Member
+            // node with left=NULL holding the `#x` slice — compile the
+            // mangled key as the LHS so Op::In tests existence of that
+            // hidden key on the receiver.
+            if node.op == TokenKind::KwIn
+               && node.left != NULL
+               && node.left.kind == NodeKind::Member
+               && node.left.left == NULL
+               && is_private_name(c, node.left.name_start, node.left.name_length) {
+                let mangled = mangle_private_name(c, node.left.name_start, node.left.name_length);
+                if mangled == NULL { return 0; }
+                let l = emit_load_atom(c, mangled);
+                let r = compile_expr(c, node.right);
+                let dst = alloc_reg(c);
+                emit(c, make_inst_abc(Op::In, dst, l, r));
+                release_reg(c, r);
+                release_reg(c, l);
+                if c.next_reg <= dst { c.next_reg = dst + 1; }
+                return dst;
+            }
             let l = compile_expr(c, node.left);
             let r = compile_expr(c, node.right);
             let dst = alloc_reg(c);
