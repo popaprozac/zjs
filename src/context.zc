@@ -2820,13 +2820,9 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
                 while i < limit {
                     let nm = scratch[i];
                     if nm != NULL {
-                        // Skip our internal hidden keys (`__zjs_*`) —
-                        // wrapper primitives, env chain, toString tag.
-                        let is_internal: bool = false;
-                        if nm.length >= 6 {
-                            let nd = nm.data;
-                            raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
-                        }
+                        // Skip internal (`__zjs_*`) and Symbol-shim (`@@*`)
+                        // hidden keys. See string_is_hidden_key.
+                        let is_internal = string_is_hidden_key(nm);
                         if !is_internal {
                             // Shadowed by an earlier (more-specific)
                             // level? Important: even an own
@@ -3718,12 +3714,8 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
     while cls != NULL && cls.parent != NULL {
         let name = cls.transition_name;
         let slot = cls.transition_slot;
-        // Skip our internal hidden keys (`__zjs_*`).
-        let is_internal: bool = false;
-        if name.length >= 6 {
-            let nd = name.data;
-            raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
-        }
+        // Skip internal (`__zjs_*`) and Symbol-shim (`@@*`) hidden keys.
+        let is_internal = string_is_hidden_key(name);
         if !is_internal {
             // Spec: only ENUMERABLE own props of `props` become
             // descriptor entries. The hidden-class walker visits all
@@ -3939,6 +3931,44 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
 
 // Object.getPrototypeOf(obj) — Phase 3.6.
 // ECMA-262 ToObject for Object.{keys, values, entries, getPrototypeOf,
+// Enumeration filter — covers two unrelated cases of "internal" keys
+// that should not surface to user code via Object.keys / for-in /
+// JSON.stringify / Object.getOwnPropertyNames:
+//
+//   1. `__zjs_*` — engine-internal slots (wrapper primitives, env
+//      chain link, toString tag) that we store on user objects.
+//
+//   2. `@@*`     — the canonical-key shim for Symbol-keyed properties.
+//      Since we don't have a separate symbol-key bucket yet, Symbol
+//      property access stores under `@@sym:N` (user-created) or
+//      `@@iterator` etc. (well-known). The spec requires Object.keys
+//      / getOwnPropertyNames / for-in to enumerate only string keys —
+//      Symbol keys come back via Object.getOwnPropertySymbols. The
+//      filter catches both shapes.
+//
+// Edge case (accepted, documented): if user code writes `obj["@@x"] =
+// 1` with a literal "@@x" string key, that property will also be
+// filtered from enumeration. The risk is small in practice (no test262
+// test we've found relies on this) and removing the false positive
+// requires a separate Symbol-keyed property bucket, which is a much
+// larger structural change.
+fn string_is_hidden_key(s: ZjsString*) -> bool {
+    if s == NULL { return false; }
+    let d = s.data;
+    let n = s.length;
+    if n >= 6 {
+        let m: int = 1;
+        raw { m = memcmp(d, "__zjs_", 6); }
+        if m == 0 { return true; }
+    }
+    if n >= 2 {
+        let m: int = 1;
+        raw { m = memcmp(d, "@@", 2); }
+        if m == 0 { return true; }
+    }
+    return false;
+}
+
 // getOwnPropertyNames, ...}: null and undefined throw TypeError per ES2015+.
 // Returns true if the argument is suitable; false (with a pending throw
 // armed) if the caller must bail.
@@ -4157,11 +4187,7 @@ fn host_object_get_own_property_names(ctx: ZjsContext*, args: ZjsValue*, argc: u
             while cls != NULL && cls.parent != NULL {
                 let nm = cls.transition_name;
                 let slot = cls.transition_slot;
-                let is_internal: bool = false;
-                if nm.length >= 6 {
-                    let nd = nm.data;
-                    raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
-                }
+                let is_internal = string_is_hidden_key(nm);
                 if !is_internal && zjs_is_deleted(hf.props.slots[slot]) == 0 {
                     if cursor >= out_arr.cap {
                         // Grow if more than the default 4-prep got
@@ -4221,16 +4247,11 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
                     let raw_v = a.props.slots[slot];
                     let attrs = object_get_attrs(a.props, slot);
                     if zjs_is_deleted(raw_v) == 0 && (attrs & PROP_ENUMERABLE) != 0 {
-                        // Skip internal `__zjs_*` hidden keys. Numeric
-                        // keys past arr.cap AND string keys (e.g. a
-                        // defineProperty'd named prop on an array)
-                        // both land here.
-                        let nd = nm.data;
-                        let nl = nm.length;
-                        let is_internal: bool = false;
-                        if nl >= 6 {
-                            raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
-                        }
+                        // Skip internal (`__zjs_*`) and Symbol-shim (`@@*`)
+                        // hidden keys. Numeric keys past arr.cap AND string
+                        // keys (e.g. a defineProperty'd named prop on an
+                        // array) both land here.
+                        let is_internal = string_is_hidden_key(nm);
                         if !is_internal {
                             array_set(out_arr, out_idx, zjs_cell_from_ptr((void*)nm));
                             out_idx = out_idx + 1;
@@ -4305,11 +4326,7 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     while i < limit {
         let nm = scratch[i];
         if nm != NULL {
-            let is_internal: bool = false;
-            if nm.length >= 6 {
-                let nd = nm.data;
-                raw { is_internal = (memcmp(nd, "__zjs_", 6) == 0) ? true : false; }
-            }
+            let is_internal = string_is_hidden_key(nm);
             if !is_internal {
                 let idx_v: i64 = string_as_array_index(nm);
                 if idx_v >= 0 && int_count < 64 {
@@ -4348,12 +4365,7 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     while j < limit {
         if scratch[j] != NULL {
             let nm2 = scratch[j];
-            let is_internal2: bool = false;
-            if nm2.length >= 6 {
-                let nd2 = nm2.data;
-                raw { is_internal2 = (memcmp(nd2, "__zjs_", 6) == 0) ? true : false; }
-            }
-            if !is_internal2 {
+            if !string_is_hidden_key(nm2) {
                 arr.elements[out] = zjs_cell_from_ptr((void*)nm2);
                 out = out + 1;
             }
@@ -6327,7 +6339,11 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
         } else {
             while i < limit {
                 let n = names_ptr[i];
-                if n != NULL {
+                // Skip internal (`__zjs_*`) and Symbol-shim (`@@*`) keys.
+                // Symbol-keyed props are spec-required to be omitted from
+                // JSON.stringify; the internal-slot keys are an engine
+                // implementation detail user code shouldn't see.
+                if n != NULL && !string_is_hidden_key(n) {
                     let attrs = object_get_attrs(o, i);
                     if (attrs & PROP_ENUMERABLE) != 0 && zjs_is_deleted(o.slots[i]) == 0 {
                         let key_v = zjs_cell_from_ptr((void*)n);
