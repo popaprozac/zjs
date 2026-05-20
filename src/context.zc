@@ -3014,6 +3014,17 @@ fn iter_get(ctx: ZjsContext*, src: ZjsValue) -> ZjsValue {
         ctx.pending_throw_value = err;
         return zjs_undefined();
     }
+    // TypedArrays don't carry @@iterator on their prototype but the
+    // spec wires them up to the same %ArrayIteratorPrototype%. Build
+    // a TAG_ARRAY_ITER directly — iter_step recognizes the typed-
+    // array source and loads via ta_load. Same trick is used for
+    // pristine Array / String above.
+    let src_tag = zjs_cell_tag(src);
+    if src_tag == TAG_UINT8_ARRAY || src_tag == TAG_TYPED_ARRAY {
+        let ai = zjs_array_iter_new(src);
+        ctx_register_cell(ctx, (void*)ai);
+        return zjs_cell_from_ptr((void*)ai);
+    }
     let iter_key = ctx_intern_atom(ctx, (char*)"@@iterator", 10);
     let getter = property_get(ctx, src, zjs_cell_from_ptr((void*)iter_key));
     if ctx.pending_throw_active { return zjs_undefined(); }
@@ -3109,6 +3120,18 @@ fn iter_step(ctx: ZjsContext*, iter: ZjsValue) -> IterStep {
             let piece = ctx_intern_string_take(ctx, buf, 1);
             ai.index = ai.index + 1;
             return IterStep{ value: piece, done: false };
+        }
+        // TypedArray: load via ta_load (per-kind reinterpretation).
+        let src_tag = zjs_cell_tag(ai.src);
+        if src_tag == TAG_UINT8_ARRAY || src_tag == TAG_TYPED_ARRAY {
+            let ta = zjs_as_typed_array(ai.src);
+            if ai.index >= ta.length {
+                ai.done = true;
+                return IterStep{ value: zjs_undefined(), done: true };
+            }
+            let v = ta_load(ta, ai.index);
+            ai.index = ai.index + 1;
+            return IterStep{ value: v, done: false };
         }
         // Shouldn't happen, but fall through to done.
         ai.done = true;
