@@ -3157,6 +3157,13 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         if is_ctor == 0 {
             // Compile method body as a function.
             let mfn = compile_function(c.ctx, c.source, m, c);
+            if mfn == NULL {
+                // Inner compile failed (e.g. SyntaxError inside the
+                // method body). Propagate to the outer compiler so
+                // the whole class declaration is treated as bad.
+                c.had_error = true;
+                return ctor_reg;
+            }
             if mfn != NULL {
                 mfn.is_method = true;
                 let mptr: void* = NULL;

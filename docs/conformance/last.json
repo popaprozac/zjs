@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-20 23:32 UTC",
+    "when": "2026-05-20 23:40 UTC",
     "total": 14524,
-    "passed": 9757,
-    "failed": 2138,
+    "passed": 9838,
+    "failed": 2057,
     "skipped": 2629,
     "platform": "macOS"
   },
@@ -1221,6 +1221,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/language/statements/class/definition/numeric-property-names.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
       "path": "test/language/statements/class/definition/prototype-getter.js",
       "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
     },
@@ -1641,6 +1645,10 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
+      "path": "test/language/statements/class/elements/grammar-private-field-optional-chaining.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
       "path": "test/language/statements/class/elements/nested-derived-cls-direct-eval-contains-superproperty-1.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
@@ -1739,6 +1747,10 @@
     {
       "path": "test/language/statements/class/elements/private-field-access-on-inner-arrow-function.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_f')"
+    },
+    {
+      "path": "test/language/statements/class/elements/private-field-after-optional-chain.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/statements/class/elements/private-field-as-async-arrow-function.js",
@@ -2125,198 +2137,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-method-accessor-get.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-method-accessor-set.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-method-async-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-method-async.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-method-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-method.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-private-no-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-call-expression-privatename.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-method-accessor-get.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-method-accessor-set.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-method-async-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-method-async.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-method-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-method.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-private-no-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-covered-err-delete-member-expression-privatename.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-method-accessor-get.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-method-accessor-set.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-method-async-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-method-async.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-method-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-method.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-private-no-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-call-expression-privatename.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-method-accessor-get.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-method-accessor-set.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-method-async-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-method-async.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-method-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-method.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-private-no-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-err-delete-member-expression-privatename.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-method-accessor-get.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-method-accessor-set.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-method-async-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-method-async.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-method-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-method.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-private-no-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-call-expression-privatename.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-method-accessor-get.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-method-accessor-set.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-method-async-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-method-async.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-method-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-method.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-private-no-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/delete/method-delete-twice-covered-err-delete-member-expression-privatename.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-fields-same-line-error.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -2334,10 +2154,6 @@
     },
     {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-private-field-super-access.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -3050,6 +2866,30 @@
     },
     {
       "path": "test/language/statements/class/super/in-constructor.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-getter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-methods.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-setter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-static-getter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-static-methods.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
+      "path": "test/language/statements/class/super/in-static-setter.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
@@ -3818,7 +3658,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/grammar-private-field-optional-chaining.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/expressions/class/elements/indirect-eval-err-contains-newtarget.js",
@@ -3937,6 +3777,10 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_f')"
     },
     {
+      "path": "test/language/expressions/class/elements/private-field-after-optional-chain.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+    },
+    {
       "path": "test/language/expressions/class/elements/private-field-as-async-arrow-function.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
@@ -4007,6 +3851,162 @@
     {
       "path": "test/language/expressions/class/elements/private-static-async-generator-method-name.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-async-method-name.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-field-shadowed-by-field-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private field from an arbritary object Expected a TypeError to be thrown but no exceptio"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-field-shadowed-by-getter-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private getter from an arbritary object Expected a TypeError to be thrown but no excepti"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-field-shadowed-by-method-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private method from an arbritary object Expected a TypeError to be thrown but no excepti"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-field-shadowed-by-setter-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private setter from an arbritary object Expected a TypeError to be thrown but no excepti"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-field-usage-inside-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"outer class\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-generator-method-name.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-method-name.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-method-shadowed-by-field-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private field from an arbritary object Expected a TypeError to be thrown but no exceptio"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-method-shadowed-by-getter-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private getter from an arbritary object Expected a TypeError to be thrown but no excepti"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-method-shadowed-by-method-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private method from an arbritary object Expected a TypeError to be thrown but no excepti"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-method-shadowed-by-setter-on-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private setter from an arbritary object Expected a TypeError to be thrown but no excepti"
+    },
+    {
+      "path": "test/language/expressions/class/elements/private-static-method-usage-inside-nested-class.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"outer class\"\u00bb) to be true"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-grammar-privatename-identifier-semantics-stringvalue.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-field-identifier-initializer.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-field-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-getter-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-getter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-method-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-method.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-setter-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-setter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-privatename-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-privatename-identifier-initializer-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-privatename-identifier-initializer.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-privatename-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-generator-method-privatename-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-method-privatename-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-method-privatename-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-generator-method-privatename-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-generator-method-privatename-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-method-privatename-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-method-privatename-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-alt-by-classname.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-by-classname.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-initializer-alt-by-classname.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-initializer-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     }
   ],
   "skip_counts": {
