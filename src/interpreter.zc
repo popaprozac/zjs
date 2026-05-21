@@ -65,7 +65,7 @@ raw {
         "Throw", "EnterTry", "LeaveTry",
         "In", "Instanceof", "LoadThis", "LoadNewTarget",
         "NewInvoke", "Typeof", "SetProto", "SuperCall",
-        "DefineMethod", "SetParentCtor",
+        "DefineMethod", "SetParentCtor", "SetFunctionName",
         NULL,
     };
     static const char *zjs_op_name_lookup(int op) {
@@ -3600,6 +3600,32 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let ff2: Function* = NULL;
                 raw { ff2 = (Function*)fp2; }
                 ff2.parent_ctor = parent_v;
+            }
+        } else if op == Op::SetFunctionName {
+            // ECMA-262 SetFunctionName: install `name` on the function
+            // value with spec attrs (writable=false, enumerable=false,
+            // configurable=true). Used by NamedEvaluation when an
+            // anonymous function/class is assigned to a binding.
+            let fn_v = regs[inst.a];
+            let name_v = regs[inst.b];
+            if zjs_is_string(name_v) != 0 {
+                let target_f: Function* = NULL;
+                if zjs_is_function(fn_v) != 0 {
+                    let fp = zjs_cell_as_ptr(fn_v);
+                    raw { target_f = (Function*)fp; }
+                } else if zjs_is_closure(fn_v) != 0 {
+                    let cl = zjs_as_closure(fn_v);
+                    let fp2 = cl.function;
+                    raw { target_f = (Function*)fp2; }
+                }
+                if target_f != NULL {
+                    if target_f.props == NULL {
+                        let pv = ctx_new_object(ctx);
+                        target_f.props = zjs_as_object(pv);
+                    }
+                    let name_atom = ctx_intern_atom(ctx, (char*)"name", 4);
+                    object_define_property_slot(ctx, target_f.props, name_atom, name_v, PROP_CONFIGURABLE);
+                }
             }
         } else if op == Op::SuperCall {
             // super(...): call parent ctor with the in-flight `this`
