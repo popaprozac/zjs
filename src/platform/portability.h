@@ -27,6 +27,19 @@
 #else
 #  include <sys/resource.h>
 #  include <limits.h>
+   // arc4random_buf landed in glibc 2.36 (Aug 2022). On older Linux
+   // (Ubuntu 20.04 / 22.04 LTS, RHEL ≤ 8) and on non-glibc libcs (musl)
+   // it's missing, which becomes an undefined-reference at link time.
+   // Fall back to getrandom(2) — Linux 3.17+, glibc 2.25+, also in
+   // musl ≥ 1.1.20.
+#  if defined(__linux__)
+#    include <features.h>
+#    if !defined(__GLIBC_PREREQ) || !__GLIBC_PREREQ(2, 36)
+#      include <sys/random.h>
+#      include <errno.h>
+#      define ZJS_USE_GETRANDOM 1
+#    endif
+#  endif
 #endif
 
 // realpath(path, resolved) — canonicalize a filesystem path.
@@ -74,6 +87,19 @@ static inline void zjs_random_bytes(void* buf, size_t len) {
         // BCryptGenRandom failure on a healthy machine is unrecoverable.
         // Zero the buffer rather than leaving it uninitialized.
         memset(buf, 0, len);
+    }
+#elif defined(ZJS_USE_GETRANDOM)
+    // getrandom can short-read on EINTR — loop until the request is
+    // fully satisfied or a non-recoverable error occurs.
+    size_t off = 0;
+    while (off < len) {
+        ssize_t n = getrandom((char*)buf + off, len - off, 0);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            memset(buf, 0, len);
+            return;
+        }
+        off += (size_t)n;
     }
 #else
     arc4random_buf(buf, len);
