@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-21 03:41 UTC",
+    "when": "2026-05-21 04:40 UTC",
     "total": 14524,
-    "passed": 10771,
-    "failed": 3107,
+    "passed": 10793,
+    "failed": 3085,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -1634,23 +1634,23 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-computed-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-literal-names-asi.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-private-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-private-getter-alt.js",
@@ -1694,99 +1694,99 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-async-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-async-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-initializer-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-initializer-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-static-private-fields.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-static-private-methods-with-fields.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-static-private-methods.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-computed-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-literal-names-asi.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-private-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-private-getter-alt.js",
@@ -1830,87 +1830,83 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-initializer-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-initializer-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-static-private-fields.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-static-private-methods-with-fields.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-static-private-methods.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-private-getter-alt.js",
@@ -1977,18 +1973,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-privatename-identifier-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-privatename-identifier-initializer-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-privatename-identifier-initializer-alt.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
@@ -2007,10 +1991,6 @@
     {
       "path": "test/language/statements/class/elements/after-same-line-static-method-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-method-rs-private-getter-alt.js",
@@ -2075,18 +2055,6 @@
     {
       "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-method-privatename-identifier.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-privatename-identifier-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-privatename-identifier-initializer-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-privatename-identifier-initializer-alt.js",
@@ -3061,52 +3029,12 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/statements/class/elements/private-static-field-shadowed-by-field-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'fieldAccess')"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-field-shadowed-by-getter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'access')"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-field-shadowed-by-method-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'access')"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-field-shadowed-by-setter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'access')"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-field-usage-inside-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'fieldAccess')"
-    },
-    {
       "path": "test/language/statements/class/elements/private-static-field-visible-to-direct-eval.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/statements/class/elements/private-static-getter-visible-to-direct-eval.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-method-shadowed-by-field-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'fieldAccess')"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-method-shadowed-by-getter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'access')"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-method-shadowed-by-method-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'access')"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-method-shadowed-by-setter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'access')"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-method-usage-inside-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'methodAccess')"
     },
     {
       "path": "test/language/statements/class/elements/private-static-method-visible-to-direct-eval.js",
@@ -3597,16 +3525,8 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_f')"
     },
     {
-      "path": "test/language/statements/class/elements/static-private-getter-access-on-inner-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'access')"
-    },
-    {
       "path": "test/language/statements/class/elements/static-private-method-access-on-inner-arrow-function.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_1_f')"
-    },
-    {
-      "path": "test/language/statements/class/elements/static-private-setter-access-on-inner-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'access')"
     },
     {
       "path": "test/language/statements/class/elements/super-access-from-arrow-func-on-field.js",
@@ -4998,7 +4918,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-private-getter-alt.js",
@@ -5086,7 +5006,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-private-getter-alt.js",
@@ -5171,10 +5091,6 @@
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-gen-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-private-getter-alt.js",
@@ -5267,10 +5183,6 @@
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-method-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): m descriptor should be writable"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-private-getter-alt.js",

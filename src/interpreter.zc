@@ -1462,6 +1462,38 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         property_set(ctx, zjs_cell_from_ptr((void*)f.props), key, value);
         return;
     }
+    // Closure-wrapped CLASS constructor: route static-method writes
+    // through the underlying Function's .props the same as TAG_FUNCTION.
+    // Gate on is_class_constructor so generic closures (multi-instanced
+    // function declarations) don't accidentally share their .props —
+    // independent per-closure props needs a struct change and is deferred.
+    if tag == TAG_CLOSURE {
+        let cl = zjs_as_closure(obj);
+        let fp2 = cl.function;
+        let f2: Function* = NULL;
+        raw { f2 = (Function*)fp2; }
+        if f2.is_class_constructor {
+            if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+            let ks2 = zjs_as_string(key);
+            let kd2 = ks2.data;
+            let kn2 = ks2.length;
+            let is_proto2: int = 0;
+            raw { is_proto2 = (kn2 == 9 && memcmp(kd2, "prototype", 9) == 0) ? 1 : 0; }
+            if is_proto2 != 0 && zjs_is_object(value) != 0 {
+                f2.prototype = zjs_as_object(value);
+                return;
+            }
+            if is_proto2 != 0 { return; }
+            if f2.props == NULL {
+                let pv = ctx_new_object(ctx);
+                f2.props = zjs_as_object(pv);
+            }
+            property_set(ctx, zjs_cell_from_ptr((void*)f2.props), key, value);
+            return;
+        }
+        // Non-class closure: writes silently drop until per-closure props
+        // land. Matches the long-standing engine behavior.
+    }
     if tag == TAG_HOST_FUNCTION {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let ks = zjs_as_string(key);
