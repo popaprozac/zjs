@@ -405,6 +405,11 @@ struct ZjsContext {
     // declaration gets a unique id so `#x` in class A and `#x` in
     // class B compile to different hidden keys).
     class_id_counter:   u32;
+    // True once at least one Proxy has been constructed. property_get /
+    // property_set hot paths use this to skip the TAG_PROXY tag check
+    // entirely when no proxies exist — the common case. host_proxy_ctor
+    // flips it on first ctor call.
+    any_proxy_alive:    bool;
     // Symbol.for / Symbol.keyFor registry. Two parallel lists:
     // symbol_for_keys[i] is the user-visible key string, symbol_for_syms[i]
     // is the interned Symbol value. Linear scan for now.
@@ -12409,6 +12414,7 @@ fn host_proxy_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     }
     let p = zjs_proxy_new(target, handler);
     ctx_register_cell(ctx, (void*)p);
+    ctx.any_proxy_alive = true;
     return zjs_cell_from_ptr((void*)p);
 }
 

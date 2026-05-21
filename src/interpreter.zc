@@ -214,8 +214,11 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     let tag: u8 = zjs_cell_tag(obj);
     // Proxy detour. If obj is a proxy: look up handler.get; if it's
     // callable, invoke trap(target, key, proxy) and return its result;
-    // otherwise forward to property_get(target, key).
-    if tag == TAG_PROXY {
+    // otherwise forward to property_get(target, key). Gated on
+    // ctx.any_proxy_alive so the common case (no Proxy ever
+    // constructed — richards, splay, anything that doesn't use
+    // Proxy) skips the tag-compare entirely.
+    if ctx.any_proxy_alive && tag == TAG_PROXY {
         let p = zjs_as_proxy(obj);
         if p.revoked {
             let err = build_typed_error(ctx, (char*)"TypeError", 9,
@@ -1201,7 +1204,8 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
     let tag: u8 = zjs_cell_tag(obj);
     // Proxy detour. See property_get's matching block for the trap-lookup
     // pattern. Trap is called as `set(target, key, value, receiver)`.
-    if tag == TAG_PROXY {
+    // Same any_proxy_alive gate to keep the common case free.
+    if ctx.any_proxy_alive && tag == TAG_PROXY {
         let p = zjs_as_proxy(obj);
         if p.revoked {
             let err = build_typed_error(ctx, (char*)"TypeError", 9,
