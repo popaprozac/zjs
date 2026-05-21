@@ -5177,13 +5177,20 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             r = alloc_reg(c);
             emit(c, make_inst_a(Op::LoadUndefined, r));
         }
-        // Phase 3.9h-C — tail-call optimization. If the last emitted
-        // instruction is Op::Invoke / Op::MethodInvoke (i.e. the
-        // returned value is the result of a direct call), and there
-        // are no pending finallies to run on the way out, rewrite the
-        // call to its Tail variant and skip the Op::Return entirely.
-        // Tail-callee returns directly to *our* caller.
-        if c.is_function && c.active_finally_count == 0 && c.code_count > 0 && node.left != NULL {
+        // Phase 3.9h-C — tail-call optimization. If `return` is
+        // returning the result of a direct call (`return f(...)`), and
+        // there are no pending finallies, rewrite the call to its Tail
+        // variant and skip Op::Return. The Tail callee returns directly
+        // to *our* caller.
+        //
+        // Gate on (a) node.left being a Call AST node — `return x` after
+        // an expression statement `console.log()` would otherwise see
+        // the prior statement's MethodInvoke as "last emitted" and
+        // incorrectly rewrite it; (b) the last emitted op matching, so
+        // we don't rewrite an Invoke that's no longer the tail (e.g.
+        // some peephole emitted a Mov after it).
+        if c.is_function && c.active_finally_count == 0 && c.code_count > 0
+           && node.left != NULL && node.left.kind == NodeKind::Call {
             let last_op = c.code[c.code_count - 1].op;
             if last_op == Op::Invoke {
                 c.code[c.code_count - 1].op = Op::TailInvoke;

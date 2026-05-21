@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-05-21 02:44 UTC",
+    "when": "2026-05-21 03:28 UTC",
     "total": 14524,
     "passed": 10766,
     "failed": 3112,
@@ -8250,7 +8250,7 @@
     },
     {
       "path": "test/built-ins/JSON/stringify/replacer-function-arguments.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"{\\\"a1\\\":{\\\"b1\\\":[1,2],\\\"b2\\\":{\\\"c1\\\":true,\\\"c2\\\":false}},\\\"a2\\\""
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [[object Object], a1, [object Object]] and expected [[object Object], a1, [object Object]]"
     },
     {
       "path": "test/built-ins/JSON/stringify/replacer-function-object-deleted-property.js",
