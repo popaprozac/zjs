@@ -24,8 +24,8 @@ macOS development instead of bouncing between machines per commit.
 |---|---|---|---|---|---|
 | `fetch` (sync HTTP/HTTPS) | ✅ NSURLSession (`http_apple.m`) | ✅ same | ✅ libcurl (`http_linux.c`) | ✅ WinHTTP (`http_windows.c`) | All three use the OS-native trust store |
 | `fetch` (async — Promise.all parallelism) | ✅ NSURLSession completion handlers | ✅ same | ⚠️ pthread-wraps sync via `http_async.c` | ⚠️ pthread-wraps sync via `http_async.c` | Apple skips the extra thread. Linux/Windows work but use a thread per in-flight request. |
-| `WebSocket` | ✅ `NSURLSessionWebSocketTask` (`ws_apple.m`) | ✅ same | ❌ stub (`ws_stub.c`) | ❌ stub (`ws_stub.c`) | #205 — libwebsockets / WinHTTP_WebSocket planned |
-| WebSocket keep-alive (ping/pong) | ✅ `dispatch_source` ping every 25s | ✅ same | ⚠️ deferred until Linux WS lands | ⚠️ deferred until Windows WS lands | Pong-error → CLOSE 1006 |
+| `WebSocket` | ✅ `NSURLSessionWebSocketTask` (`ws_apple.m`) | ✅ same | ✅ libwebsockets (`ws_linux.c`) | ❌ stub (`ws_stub.c`) | Windows native WS planned via WinHTTP_WebSocket |
+| WebSocket keep-alive (ping/pong) | ✅ `dispatch_source` ping every 25s | ✅ same | ⚠️ deferred — lws's default is no client ping | ⚠️ deferred until Windows WS lands | Pong-error → CLOSE 1006 |
 | Cross-platform shims (realpath / gmtime_r / random / RSS) | ✅ POSIX | ✅ POSIX | ✅ POSIX | ✅ Win32 (`portability.h`: `_fullpath` / `gmtime_s` / `BCryptGenRandom` / `GetProcessMemoryInfo`) | Single header, no platform code outside the `#ifdef` |
 | Event-loop wait | ✅ `CFRunLoopRunInMode` (required for fetch async) | ✅ same | _n/a_ (`nanosleep`) | _n/a_ (`nanosleep`) | Apple-only because NSURLSession's completion needs the runloop |
 | iOS cross-compile | ✅ via zapp's xcrun pattern | — | _n/a_ | _n/a_ | Re-verify when iOS target is exercised |
@@ -38,7 +38,7 @@ macOS development instead of bouncing between machines per commit.
 | Platform | Required flags | Frameworks/libs pulled in |
 |---|---|---|
 | macOS / iOS | `-framework Foundation` (set in build directives) | Foundation, CoreFoundation, libobjc, CoreFoundation runloop |
-| Linux | `-lpthread -lcurl` (set in build directives + Makefile) | libcurl (HTTP/HTTPS), pthread (async wrapper) |
+| Linux | `-lpthread -lcurl -lwebsockets` (set in build directives + Makefile) | libcurl (HTTP/HTTPS), libwebsockets (WS), pthread (async wrapper) |
 | Windows | `-lbcrypt -lpsapi -lwinhttp` (set in build directives) | bcrypt.dll (CSPRNG), psapi.dll (peak RSS), winhttp.dll (HTTP) |
 
 ---
@@ -78,7 +78,8 @@ http_async.c         pthread-wrap of sync → async ABI; compiled on Linux + Win
 
 ws_native.h          Public C ABI for WebSocket
 ws_apple.m           NSURLSessionWebSocketTask (Apple only)
-ws_stub.c            "Not configured" returns (Linux + Windows until native lands)
+ws_linux.c           libwebsockets client (Linux only)
+ws_stub.c            "Not configured" returns (Windows until native lands)
 
 portability.h        Cross-platform shims (realpath, gmtime_r, random, peak RSS)
 ```
@@ -99,6 +100,13 @@ platform-specific header directly.
   detection from NSURLSession. Windows gets the same from WinHTTP.
   Linux gets the same from libcurl (whatever TLS backend the distro
   built it against — OpenSSL on most, GnuTLS on a few).
+- **WebSocket close codes**: Apple surfaces the exact close code from
+  the server (NSURLSessionWebSocketTask delivers it via the delegate).
+  Linux captures peer-initiated closes via
+  `LWS_CALLBACK_WS_PEER_INITIATED_CLOSE`, but for client-initiated
+  closes lws 4.5 doesn't expose the echoed code back to us — so a
+  successful client-side `ws.close(1000)` surfaces as `1005`
+  ("no status received") in the JS event. Acceptable for v0.1.
 - **Test262 conformance**: tracked per-platform via `history-<platform>.jsonl`
   and `index-<platform>.html` under `docs/conformance/`.
 - **Bench numbers**: same — `docs/perf/history.jsonl` is macOS;

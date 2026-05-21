@@ -7,8 +7,8 @@
 //> macos: cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
 //> ios:   framework: Foundation
 //> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
-//> linux: cflags:    src/platform/http_linux.c src/platform/ws_stub.c src/platform/http_async.c
-//> linux: link:      -lcurl
+//> linux: cflags:    src/platform/http_linux.c src/platform/ws_linux.c src/platform/http_async.c
+//> linux: link:      -lcurl -lwebsockets
 //> windows: cflags:  src/platform/http_windows.c src/platform/ws_stub.c src/platform/http_async.c
 //> windows: link:    -lbcrypt -lpsapi -lwinhttp
 

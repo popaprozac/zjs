@@ -7,7 +7,7 @@
 // `feedback_prefer_platform_native` memory for the rationale.
 //
 //   Apple   — NSURLSessionWebSocketTask  (Foundation) — ws_apple.m
-//   Linux   — TBD (libwebsockets planned) — ws_stub.c at v0.1
+//   Linux   — libwebsockets (-lwebsockets) — ws_linux.c
 //   Windows — TBD (WinHTTP_WebSocket planned) — ws_stub.c at v0.1
 
 #ifndef ZJS_WS_NATIVE_H

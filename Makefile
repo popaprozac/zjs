@@ -23,9 +23,9 @@ PLATFORM_CFLAGS  := -fobjc-arc
 else
 SHLIB_EXT := so
 RPATH_FLAG := -Wl,-rpath,'$$ORIGIN'
-PLATFORM_SRC     := src/platform/http_linux.c src/platform/http_async.c src/platform/ws_stub.c
-PLATFORM_OBJS    := $(BUILD_DIR)/http_linux.o $(BUILD_DIR)/http_async.o $(BUILD_DIR)/ws_stub.o
-PLATFORM_LDFLAGS := -lpthread -lcurl
+PLATFORM_SRC     := src/platform/http_linux.c src/platform/http_async.c src/platform/ws_linux.c
+PLATFORM_OBJS    := $(BUILD_DIR)/http_linux.o $(BUILD_DIR)/http_async.o $(BUILD_DIR)/ws_linux.o
+PLATFORM_LDFLAGS := -lpthread -lcurl -lwebsockets
 PLATFORM_CFLAGS  :=
 endif
 
@@ -124,7 +124,11 @@ std:
 	@ln -sfn $(ZC_ROOT)/std $@
 
 lib: $(LIB)
-$(LIB): $(ENGINE_SRC) include/zjs.h | $(BUILD_DIR) stdlib-link
+# Depend on PLATFORM_SRC too — zc reads the //> directives in src/lib.zc
+# and compiles those .c files in alongside the transpiled engine, but
+# Make on its own wouldn't notice a platform-source edit and so wouldn't
+# re-run zc. Listing them here forces the rebuild.
+$(LIB): $(ENGINE_SRC) $(PLATFORM_SRC) include/zjs.h | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) -shared $(LIB_SRC) -o $@
 
 # Static archive for embedding (iOS App Store mandates static linking;
@@ -136,7 +140,7 @@ $(LIB): $(ENGINE_SRC) include/zjs.h | $(BUILD_DIR) stdlib-link
 # ourselves with the same flag set zc would have used.
 lib-static: $(LIBA)
 
-$(LIBA_C): $(ENGINE_SRC) include/zjs.h | $(BUILD_DIR) stdlib-link
+$(LIBA_C): $(ENGINE_SRC) $(PLATFORM_SRC) include/zjs.h | $(BUILD_DIR) stdlib-link
 	$(ZC) transpile $(ZC_FLAGS) $(LIB_SRC) -o $@
 
 $(LIBA_OBJ): $(LIBA_C)
@@ -163,7 +167,7 @@ $(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(TRE_FULL_OBJ)
 	ar rcs $@ $^
 
 cli: $(CLI)
-$(CLI): $(CLI_SRC) $(ENGINE_SRC) | $(BUILD_DIR) stdlib-link
+$(CLI): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(CLI_SRC) -o $@
 
 smoke: $(SMOKE)
@@ -177,15 +181,15 @@ $(SMOKE_STATIC): $(SMOKE_SRC) include/zjs.h $(LIBA) | $(BUILD_DIR)
 	$(CLANG) -O0 -g -Wall -Iinclude $(SMOKE_SRC) $(LIBA) -lm $(PLATFORM_LDFLAGS) -o $@
 
 lexer-test: $(LEXER_TEST)
-$(LEXER_TEST): $(LEXER_TEST_SRC) $(ENGINE_SRC) | $(BUILD_DIR) stdlib-link
+$(LEXER_TEST): $(LEXER_TEST_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(LEXER_TEST_SRC) -o $@
 
 parser-test: $(PARSER_TEST)
-$(PARSER_TEST): $(PARSER_TEST_SRC) $(ENGINE_SRC) | $(BUILD_DIR) stdlib-link
+$(PARSER_TEST): $(PARSER_TEST_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(PARSER_TEST_SRC) -o $@
 
 interp-test: $(INTERP_TEST)
-$(INTERP_TEST): $(INTERP_TEST_SRC) $(ENGINE_SRC) | $(BUILD_DIR) stdlib-link
+$(INTERP_TEST): $(INTERP_TEST_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(INTERP_TEST_SRC) -o $@
 
 test262-runner: $(T262_RUNNER)
