@@ -9,7 +9,7 @@
 //
 //   Apple   — NSURLSession (Foundation.framework) — see http_apple.m
 //   Windows — WinHTTP (winhttp.lib) — see http_windows.c
-//   Linux   — TBD (libcurl planned) — see http_stub.c at v0.1
+//   Linux   — libcurl (-lcurl) — see http_linux.c
 
 #ifndef ZJS_HTTP_NATIVE_H
 #define ZJS_HTTP_NATIVE_H

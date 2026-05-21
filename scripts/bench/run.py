@@ -41,12 +41,21 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BENCH_DIR = REPO_ROOT / "scripts" / "bench"
 OUT_DIR   = REPO_ROOT / "docs" / "perf"
 
-# Platform-specific output stream: macOS/Linux runs land in the original
-# files; Windows runs land in `-windows`-suffixed siblings so the two
-# don't interleave on the same history chart. Same idea for the report
-# title further down.
+# Platform-specific output stream: macOS keeps the original (un-suffixed)
+# filenames; Windows and Linux land in `-windows` / `-linux` siblings so
+# the three streams don't interleave on the same history chart. Same
+# idea for the report title further down.
 IS_WINDOWS  = sys.platform == "win32"
-PLATFORM_TAG = "windows" if IS_WINDOWS else None
+IS_LINUX    = sys.platform.startswith("linux")
+if IS_WINDOWS:
+    PLATFORM_TAG = "windows"
+    PLATFORM_LABEL = "Windows"
+elif IS_LINUX:
+    PLATFORM_TAG = "linux"
+    PLATFORM_LABEL = "Linux"
+else:
+    PLATFORM_TAG = None
+    PLATFORM_LABEL = "macOS"
 ZJS_BIN    = REPO_ROOT / "build" / ("zjs.exe" if IS_WINDOWS else "zjs")
 _suffix    = f"-{PLATFORM_TAG}" if PLATFORM_TAG else ""
 HISTORY    = OUT_DIR / f"history{_suffix}.jsonl"
@@ -771,7 +780,7 @@ def main():
     when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     sha  = commit_short_sha()
     summary = {"when": when, "sha": sha, "results": results,
-               "platform": "Windows" if IS_WINDOWS else "macOS"}
+               "platform": PLATFORM_LABEL}
 
     if not args.no_record:
         OUT_DIR.mkdir(parents=True, exist_ok=True)

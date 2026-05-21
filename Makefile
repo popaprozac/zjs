@@ -23,11 +23,28 @@ PLATFORM_CFLAGS  := -fobjc-arc
 else
 SHLIB_EXT := so
 RPATH_FLAG := -Wl,-rpath,'$$ORIGIN'
-PLATFORM_SRC     := src/platform/http_stub.c src/platform/http_async.c src/platform/ws_stub.c
-PLATFORM_OBJS    := $(BUILD_DIR)/http_stub.o $(BUILD_DIR)/http_async.o $(BUILD_DIR)/ws_stub.o
-PLATFORM_LDFLAGS := -lpthread
+PLATFORM_SRC     := src/platform/http_linux.c src/platform/http_async.c src/platform/ws_linux.c
+PLATFORM_OBJS    := $(BUILD_DIR)/http_linux.o $(BUILD_DIR)/http_async.o $(BUILD_DIR)/ws_linux.o
+PLATFORM_LDFLAGS := -lpthread -lcurl -lwebsockets
 PLATFORM_CFLAGS  :=
 endif
+
+# Locate zc's stdlib root (the dir containing `std/`). Resolution order:
+#   1. $ZC_ROOT if exported (matches the env var zc itself reads)
+#   2. The dir holding `zc` on $PATH — works on macOS where the install
+#      layout is `<prefix>/zc` next to `<prefix>/std/`
+#   3. Linux fallbacks for the standard package layout
+# We probe each candidate for `std/third-party/tre/tre_full.c` so a wrong
+# guess fails loud instead of producing a half-resolved build.
+ZC_ROOT ?= $(shell \
+  for d in "$$ZC_ROOT" "$$(dirname $$(command -v zc))" /usr/local/share/zenc /usr/share/zenc; do \
+    if [ -n "$$d" ] && [ -f "$$d/std/third-party/tre/tre_full.c" ]; then echo "$$d"; exit 0; fi; \
+  done)
+
+# zc reads $ZC_ROOT to decide where to find `std/` and which `-I` paths
+# to pass to its backend cc. Export ours so sub-invocations of zc inherit
+# the same value the Makefile resolved.
+export ZC_ROOT
 
 LIB          := $(BUILD_DIR)/libzjs.$(SHLIB_EXT)
 LIBA         := $(BUILD_DIR)/libzjs.a
@@ -41,11 +58,13 @@ PARSER_TEST  := $(BUILD_DIR)/parser_test
 INTERP_TEST  := $(BUILD_DIR)/interp_test
 T262_RUNNER  := $(BUILD_DIR)/test262_runner
 
-# zc's stdlib include roots (regex via tre lives here). Resolved from
-# the zc binary location so `zc` on $PATH continues to work after a
-# Zen-c upgrade.
-ZC_BIN_DIR := $(shell dirname $$(command -v zc))
-ZC_STDLIB_INCS := -I$(ZC_BIN_DIR) -I$(ZC_BIN_DIR)/std/third-party/tre/include
+# zc's stdlib include roots (regex via tre lives here). Driven off
+# ZC_ROOT so they track wherever the Zen-c stdlib lives — bin and data
+# directories diverge on Linux package layouts.
+ifeq ($(ZC_ROOT),)
+$(error Could not locate Zen-c stdlib. Set ZC_ROOT to the dir containing `std/` (e.g. /usr/local/share/zenc), or install zc such that its sibling `std/` is discoverable.)
+endif
+ZC_STDLIB_INCS := -I$(ZC_ROOT) -I$(ZC_ROOT)/std/third-party/tre/include
 
 # Warning silencers required for the transpiled C — Zen-c emits patterns
 # (unused params on accessor stubs, intentional sign comparisons, etc.)
@@ -57,7 +76,11 @@ ZC_C_WARNS := -Wno-parentheses -Wno-unused-value -Wno-unused-variable \
               -Wno-incompatible-pointer-types-discards-qualifiers
 
 ZC    := zc
-CLANG := clang
+# Variable is historically named CLANG (macOS used `clang` directly), but
+# any C/ObjC compiler that understands the flags below works. Default to
+# `cc` so Linux gcc-only installs build without an extra dep, while macOS
+# (where /usr/bin/cc is clang) keeps the same path.
+CLANG ?= cc
 
 # Default to release builds. Until we measured, we were building
 # unoptimized — this alone closed ~11× of the perf gap to qjs. To
@@ -88,8 +111,24 @@ all: lib lib-static cli smoke smoke-static lexer-test parser-test interp-test
 $(BUILD_DIR):
 	mkdir -p $@
 
+# zc's stdlib carries `@link("std/third-party/tre/tre_full.c")` in
+# std/regex.zc, but zc resolves that path with `realpath()` against the
+# *invoking* cwd rather than the stdlib root. With cwd=$(CURDIR) the
+# path doesn't exist and gcc fails with:
+#   cc1: fatal error: std/third-party/tre/tre_full.c: No such file or directory
+# Until that's fixed upstream, point a project-root `std` symlink at
+# $(ZC_ROOT)/std so the cwd-relative lookup succeeds. (.gitignored.)
+.PHONY: stdlib-link
+stdlib-link: std
+std:
+	@ln -sfn $(ZC_ROOT)/std $@
+
 lib: $(LIB)
-$(LIB): $(ENGINE_SRC) include/zjs.h | $(BUILD_DIR)
+# Depend on PLATFORM_SRC too — zc reads the //> directives in src/lib.zc
+# and compiles those .c files in alongside the transpiled engine, but
+# Make on its own wouldn't notice a platform-source edit and so wouldn't
+# re-run zc. Listing them here forces the rebuild.
+$(LIB): $(ENGINE_SRC) $(PLATFORM_SRC) include/zjs.h | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) -shared $(LIB_SRC) -o $@
 
 # Static archive for embedding (iOS App Store mandates static linking;
@@ -101,7 +140,7 @@ $(LIB): $(ENGINE_SRC) include/zjs.h | $(BUILD_DIR)
 # ourselves with the same flag set zc would have used.
 lib-static: $(LIBA)
 
-$(LIBA_C): $(ENGINE_SRC) include/zjs.h | $(BUILD_DIR)
+$(LIBA_C): $(ENGINE_SRC) $(PLATFORM_SRC) include/zjs.h | $(BUILD_DIR) stdlib-link
 	$(ZC) transpile $(ZC_FLAGS) $(LIB_SRC) -o $@
 
 $(LIBA_OBJ): $(LIBA_C)
@@ -113,12 +152,22 @@ $(BUILD_DIR)/%.o: src/platform/%.m | $(BUILD_DIR)
 $(BUILD_DIR)/%.o: src/platform/%.c | $(BUILD_DIR)
 	$(CLANG) -O3 -fPIC -Isrc $(ZC_C_WARNS) -c $< -o $@
 
-$(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS)
+# Bundle tre into the static archive — the .so build pulls tre_full.c
+# through zc's @link plumbing, but lib-static does its own clang+ar dance
+# and needs the regex symbols (tre_regcomp/exec/free) baked into the .a
+# so embedders linking only `-lzjs` see no undefined references.
+TRE_FULL_SRC := $(ZC_ROOT)/std/third-party/tre/tre_full.c
+TRE_FULL_OBJ := $(BUILD_DIR)/tre_full.o
+
+$(TRE_FULL_OBJ): $(TRE_FULL_SRC) | $(BUILD_DIR)
+	$(CLANG) -O3 -fPIC -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) -c $< -o $@
+
+$(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(TRE_FULL_OBJ)
 	@rm -f $@
 	ar rcs $@ $^
 
 cli: $(CLI)
-$(CLI): $(CLI_SRC) $(ENGINE_SRC) | $(BUILD_DIR)
+$(CLI): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(CLI_SRC) -o $@
 
 smoke: $(SMOKE)
@@ -132,15 +181,15 @@ $(SMOKE_STATIC): $(SMOKE_SRC) include/zjs.h $(LIBA) | $(BUILD_DIR)
 	$(CLANG) -O0 -g -Wall -Iinclude $(SMOKE_SRC) $(LIBA) -lm $(PLATFORM_LDFLAGS) -o $@
 
 lexer-test: $(LEXER_TEST)
-$(LEXER_TEST): $(LEXER_TEST_SRC) $(ENGINE_SRC) | $(BUILD_DIR)
+$(LEXER_TEST): $(LEXER_TEST_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(LEXER_TEST_SRC) -o $@
 
 parser-test: $(PARSER_TEST)
-$(PARSER_TEST): $(PARSER_TEST_SRC) $(ENGINE_SRC) | $(BUILD_DIR)
+$(PARSER_TEST): $(PARSER_TEST_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(PARSER_TEST_SRC) -o $@
 
 interp-test: $(INTERP_TEST)
-$(INTERP_TEST): $(INTERP_TEST_SRC) $(ENGINE_SRC) | $(BUILD_DIR)
+$(INTERP_TEST): $(INTERP_TEST_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(INTERP_TEST_SRC) -o $@
 
 test262-runner: $(T262_RUNNER)
