@@ -7,3 +7,6 @@ vendor/
 *.dll
 *.dSYM/
 .DS_Store
+# Symlink Make plants at project root so zc's cwd-relative @link()
+# resolution finds the stdlib's tre source. Created by `make stdlib-link`.
+/std
