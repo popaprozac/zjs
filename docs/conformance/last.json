@@ -1,24 +1,16 @@
 {
   "summary": {
-    "when": "2026-05-21 04:40 UTC",
+    "when": "2026-05-21 06:12 UTC",
     "total": 14524,
-    "passed": 10793,
-    "failed": 3085,
+    "passed": 10867,
+    "failed": 3011,
     "skipped": 646,
     "platform": "macOS"
   },
   "failures": [
     {
-      "path": "test/language/expressions/addition/coerce-symbol-to-prim-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): error thrown by left-hand side Expected a Test262Error to be thrown but no exception was thrown a"
-    },
-    {
       "path": "test/language/expressions/addition/coerce-symbol-to-prim-return-prim.js",
       "reason": "[sloppy] zjs: throw: (unknown): ToNumber(Symbol): right-hand side Expected a TypeError to be thrown but no exception was thrown a"
-    },
-    {
-      "path": "test/language/expressions/addition/get-symbol-to-prim-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): error from property access of left-hand side Expected a Test262Error to be thrown but no exceptio"
     },
     {
       "path": "test/language/expressions/addition/order-of-evaluation.js",
@@ -47,10 +39,6 @@
     {
       "path": "test/language/expressions/equals/S11.9.1_A1.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: true\u00a0 is not defined"
-    },
-    {
-      "path": "test/language/expressions/equals/get-symbol-to-prim-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A1.js",
@@ -119,10 +107,6 @@
     {
       "path": "test/language/expressions/instanceof/S15.3.5.3_A2_T6.js",
       "reason": "[sloppy] zjs: throw: (unknown): #1.1: O is not an object, throw a TypeError exception"
-    },
-    {
-      "path": "test/language/expressions/instanceof/symbol-hasinstance-get-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError"
     },
     {
       "path": "test/language/expressions/in/S11.8.7_A1.js",
@@ -461,26 +445,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Iterator is closed Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/for-of/dstr/array-elem-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/array-elem-init-in.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
@@ -649,26 +613,6 @@
       "reason": "zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/obj-id-init-in.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
@@ -687,26 +631,6 @@
     {
       "path": "test/language/statements/for-of/dstr/obj-id-simple-strict.js",
       "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-fn-name-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-fn-name-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-fn-name-cover.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-fn-name-fn.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-fn-name-gen.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-in.js",
@@ -774,7 +698,7 @@
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-rest-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [z, a, 1, Symbol(foo)] and expected [1, z, a, Symbol(foo)] should have the same contents."
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [z, a, 1] and expected [1, z, a, Symbol(foo)] should have the same contents."
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-rest-str-val.js",
@@ -1310,7 +1234,7 @@
     },
     {
       "path": "test/language/statements/class/definition/fn-length-static-precedence-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [name] and expected [length, name, prototype, method] should have the same contents."
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [length, name, prototype, method] should have the same contents."
     },
     {
       "path": "test/language/statements/class/definition/fn-length-static-precedence.js",
@@ -1318,23 +1242,27 @@
     },
     {
       "path": "test/language/statements/class/definition/fn-name-accessor-get.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
     },
     {
       "path": "test/language/statements/class/definition/fn-name-accessor-set.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'set')"
     },
     {
       "path": "test/language/statements/class/definition/fn-name-gen-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')"
     },
     {
       "path": "test/language/statements/class/definition/fn-name-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')"
     },
     {
       "path": "test/language/statements/class/definition/fn-name-static-precedence-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [length, name, prototype, method] should have the same contents."
+    },
+    {
+      "path": "test/language/statements/class/definition/fn-name-static-precedence.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"string\"\u00bb, \u00ab\"function\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/definition/getters-non-configurable-err.js",
@@ -1633,24 +1561,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-computed-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-literal-names-asi.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-literal-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-private-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-private-getter-alt.js",
@@ -1694,99 +1606,27 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-async-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-async-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-initializer-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-initializer-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-static-private-fields.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-static-private-methods-with-fields.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-static-private-methods.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-computed-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-literal-names-asi.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-literal-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-private-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-private-getter-alt.js",
@@ -1830,79 +1670,23 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-initializer-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-initializer-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-static-private-fields.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-static-private-methods-with-fields.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-static-private-methods.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-computed-symbol-names.js",
@@ -3893,10 +3677,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/gen-method-length-dflt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
       "path": "test/language/statements/class/gen-method-param-dflt-yield.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -3917,10 +3697,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/method-length-dflt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
       "path": "test/language/statements/class/method-param-yield.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -3939,10 +3715,6 @@
     {
       "path": "test/language/statements/class/name-binding/in-extends-expression.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError but got a TypeError"
-    },
-    {
-      "path": "test/language/statements/class/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
     },
     {
       "path": "test/language/statements/class/params-dflt-gen-meth-ref-arguments.js",
@@ -3999,10 +3771,6 @@
     {
       "path": "test/language/statements/class/scope-static-setter-paramsbody-var-open.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'x')"
-    },
-    {
-      "path": "test/language/statements/class/setter-length-dflt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
     },
     {
       "path": "test/language/statements/class/static-gen-method-param-dflt-yield.js",
@@ -4077,10 +3845,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/statements/class/static-method-length-dflt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
       "path": "test/language/statements/class/static-method-non-configurable-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
@@ -4115,22 +3879,6 @@
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Error/message-property-assignment.js",
       "reason": "[sloppy] zjs: throw: (unknown): message descriptor should not be enumerable"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/Function/instance-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/Function/instance-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/GeneratorFunction/instance-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/language/statements/class/subclass/builtin-objects/GeneratorFunction/instance-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should not be writable; name descriptor should be configurable"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/GeneratorFunction/instance-prototype.js",
@@ -4917,10 +4665,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-literal-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-private-getter-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -5003,10 +4747,6 @@
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-computed-symbol-names.js",
       "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-literal-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-private-getter-alt.js",
@@ -7209,10 +6949,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/gen-method-length-dflt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
       "path": "test/language/expressions/class/gen-method-param-dflt-yield.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -7255,10 +6991,6 @@
     {
       "path": "test/language/expressions/class/method/dflt-params-ref-self.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/expressions/class/method-length-dflt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
     },
     {
       "path": "test/language/expressions/class/method-param-dflt-yield.js",
@@ -7373,20 +7105,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'x')"
     },
     {
-      "path": "test/language/expressions/class/setter-length-dflt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
       "path": "test/language/expressions/class/static-gen-method-param-dflt-yield.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/static-init-await-reference.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/static-method-length-dflt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
     },
     {
       "path": "test/language/expressions/class/static-method-param-dflt-yield.js",
@@ -7881,10 +7605,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents."
     },
     {
-      "path": "test/built-ins/Object/keys/15.2.3.14-3-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a.length Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Object/keys/name.js",
       "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
@@ -7894,7 +7614,7 @@
     },
     {
       "path": "test/built-ins/Object/keys/order-after-define-property-with-function.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [name, a, length] and expected [length, a] should have the same contents."
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [a, length] and expected [length, a] should have the same contents."
     },
     {
       "path": "test/built-ins/Object/keys/property-traps-order-with-proxied-array.js",
@@ -7941,10 +7661,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-28.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-285.js",
       "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
     },
@@ -7963,10 +7679,6 @@
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-40.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-5.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
     },
     {
       "path": "test/built-ins/Object/create/15.2.3.5-4-65.js",
@@ -9057,10 +8769,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): `then` invoked once for every iterated value Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Promise/allSettled/iter-arg-is-poisoned.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/built-ins/Promise/allSettled/length.js",
       "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
     },
@@ -9230,10 +8938,6 @@
     },
     {
       "path": "test/built-ins/Promise/any/invoke-then-get-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/any/iter-arg-is-poisoned.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {

@@ -3434,6 +3434,20 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
         }
         return f.props;
     }
+    // Closure-wrapped function (class ctor with outer captures, or
+    // any captured-scope function). Route to the underlying
+    // Function's .props expando — same model as TAG_FUNCTION.
+    if zjs_is_closure(obj_v) != 0 {
+        let cl = zjs_as_closure(obj_v);
+        let fp2 = cl.function;
+        let ff: Function* = NULL;
+        raw { ff = (Function*)fp2; }
+        if ff.props == NULL {
+            let pv = ctx_new_object(ctx);
+            ff.props = zjs_as_object(pv);
+        }
+        return ff.props;
+    }
     if zjs_is_host_function(obj_v) != 0 {
         let hf = zjs_as_host_function(obj_v);
         if hf.props == NULL {
@@ -3538,6 +3552,11 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     if o == NULL { return obj_v; }
 
     let key_v = args[1];
+    // Symbol keys coerce to their canonical atom ("@@toPrimitive",
+    // "@@iterator", "@@sym:N") so the slot matches what property_get
+    // / property_set use internally. ToString'ing a Symbol would
+    // produce "Symbol(toPrimitive)" — a different key entirely.
+    key_v = symbol_key_coerce(key_v);
     if zjs_is_string(key_v) == 0 { key_v = zjs_to_string(ctx, key_v); }
     let key_str = zjs_as_string(key_v);
     let key_atom = ctx_intern_atom(ctx, key_str.data, key_str.length);
@@ -13975,20 +13994,12 @@ fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
         }
         return zjs_bool(0);
     }
-    // Plain function / closure: name + length are own; everything else
-    // routes through the .props expando.
+    // Plain function / closure: walk .props first so a deleted real
+    // slot reports as absent (propertyHelper's isConfigurable depends
+    // on `delete fn.name` flipping hasOwnProperty to false).
     if (zjs_is_function(this_val) != 0 || zjs_is_closure(this_val) != 0)
        && zjs_is_string(key) != 0 {
         let ks2 = zjs_as_string(key);
-        let kd2 = ks2.data;
-        let kn2 = ks2.length;
-        let m2: int = 0;
-        raw {
-            m2 = ((kn2 == 6 && memcmp(kd2, "length", 6) == 0)
-               || (kn2 == 4 && memcmp(kd2, "name",   4) == 0)
-               || (kn2 == 9 && memcmp(kd2, "prototype", 9) == 0)) ? 1 : 0;
-        }
-        if m2 != 0 { return zjs_bool(1); }
         let pf: ZjsObject* = NULL;
         if zjs_is_function(this_val) != 0 {
             let fp = zjs_cell_as_ptr(this_val);
@@ -14003,9 +14014,27 @@ fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
             pf = ff2.props;
         }
         if pf != NULL {
-            let slot = class_find_slot(pf.cls, ks2);
-            if slot >= 0 && zjs_is_deleted(pf.slots[(u32)slot]) == 0 { return zjs_bool(1); }
+            let slot_pf = class_find_slot(pf.cls, ks2);
+            if slot_pf >= 0 {
+                // Slot exists (possibly deleted). If deleted, the
+                // property is genuinely absent — fall through to the
+                // synth-name short-circuit so a deleted "name"/"length"
+                // also reads as absent.
+                if zjs_is_deleted(pf.slots[(u32)slot_pf]) == 0 { return zjs_bool(1); }
+                return zjs_bool(0);
+            }
         }
+        // Slot doesn't exist (or .props is NULL): fall back to the
+        // synth-own check for the intrinsic names.
+        let kd2 = ks2.data;
+        let kn2 = ks2.length;
+        let m2: int = 0;
+        raw {
+            m2 = ((kn2 == 6 && memcmp(kd2, "length", 6) == 0)
+               || (kn2 == 4 && memcmp(kd2, "name",   4) == 0)
+               || (kn2 == 9 && memcmp(kd2, "prototype", 9) == 0)) ? 1 : 0;
+        }
+        if m2 != 0 { return zjs_bool(1); }
         return zjs_bool(0);
     }
     return zjs_bool(0);

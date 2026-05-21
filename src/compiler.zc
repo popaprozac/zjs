@@ -2605,7 +2605,10 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
         let name_v2 = ctx_intern_string(parent_ctx,
                                         source + node.name_start,
                                         node.name_length);
-        object_set(parent_ctx, f.props, name_atom2, name_v2);
+        // ECMA-262 §10.2.10 SetFunctionName: { writable: false,
+        // enumerable: false, configurable: true }.
+        object_define_property_slot(parent_ctx, f.props, name_atom2, name_v2,
+                                    PROP_CONFIGURABLE);
     }
 
     c.code = NULL;
@@ -3072,7 +3075,8 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     }
     // ECMA-262: classes have a `.name` data property set from the
     // class binding (or "" for anonymous class expressions). Install
-    // it on the constructor's expando bag now.
+    // it on the constructor's expando bag now. Spec attrs are
+    // { writable: false, enumerable: false, configurable: true }.
     if cls_node.name_length > 0 {
         if ctor_fn.props == NULL {
             let pv = ctx_new_object(c.ctx);
@@ -3082,7 +3086,8 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         let cls_name_v = ctx_intern_string(c.ctx,
                                            c.source + cls_node.name_start,
                                            cls_node.name_length);
-        object_set(c.ctx, ctor_fn.props, name_atom, cls_name_v);
+        object_define_property_slot(c.ctx, ctor_fn.props, name_atom, cls_name_v,
+                                    PROP_CONFIGURABLE);
     }
 
     // Spec: PrivateBoundNames of ClassBody must not contain duplicates,
@@ -3226,7 +3231,8 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
                                                      m.name_length);
                     }
                     let name_atom_m = ctx_intern_atom(c.ctx, (char*)"name", 4);
-                    object_set(c.ctx, mfn.props, name_atom_m, name_str);
+                    object_define_property_slot(c.ctx, mfn.props, name_atom_m, name_str,
+                                                PROP_CONFIGURABLE);
                 }
                 let mptr: void* = NULL;
                 raw { mptr = (void*)mfn; }
@@ -4286,10 +4292,8 @@ fn maybe_infer_anon_name(c: Compiler*, init_expr: AstNode*, val_reg: u8,
             ci = ci + 1;
         }
     }
-    let name_atom = ctx_intern_atom(c.ctx, (char*)"name", 4);
-    let ic = alloc_ic_slot(c, name_atom);
     let name_str_reg = emit_load_name_string(c, target_name, target_name_len);
-    emit(c, make_inst_abc(Op::StoreProp, val_reg, (u8)ic, name_str_reg));
+    emit(c, make_inst_ab(Op::SetFunctionName, val_reg, name_str_reg));
     release_reg(c, name_str_reg);
 }
 
