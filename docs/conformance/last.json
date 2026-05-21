@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-21 05:40 UTC",
+    "when": "2026-05-21 06:12 UTC",
     "total": 14524,
-    "passed": 10829,
-    "failed": 3049,
+    "passed": 10867,
+    "failed": 3011,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -1561,24 +1561,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-computed-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-literal-names-asi.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-literal-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-private-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-private-getter-alt.js",
@@ -1622,99 +1606,27 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-async-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-async-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-initializer-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-initializer-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-static-private-fields.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-static-private-methods-with-fields.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-static-private-methods.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-computed-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-literal-names-asi.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-literal-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-private-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-private-getter-alt.js",
@@ -1758,79 +1670,23 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-initializer-alt-by-classname.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-initializer-alt.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-static-private-fields.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-static-private-methods-with-fields.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-static-private-methods.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-computed-symbol-names.js",
@@ -4809,10 +4665,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-literal-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-private-getter-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -4895,10 +4747,6 @@
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-computed-symbol-names.js",
       "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-literal-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-private-getter-alt.js",
