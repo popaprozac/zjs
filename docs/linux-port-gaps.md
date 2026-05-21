@@ -23,8 +23,12 @@ All of the cross-cutting plumbing is done. The Linux track inherits:
 - **Native WebSocket ABI** in `src/platform/ws_native.h`: `zjs_ws_connect`
   + `_send_text` / `_send_binary` / `_close` / `_poll` / `_destroy`.
 - **Async wrapper** in `src/platform/http_async.c`: pthread-per-request
-  wrapper around `zjs_http_request_sync`. Both Linux and Windows
-  compile this; macOS skips it (NSURLSession is already async).
+  wrapper around `zjs_http_request_sync`. Linux compiles this; macOS
+  has its own NSURLSession-native async impl; Windows has its own
+  WinHTTP-native async impl (callback state machine in `http_windows.c`).
+  Once libcurl is wired in, Linux can either keep the pthread wrap or
+  switch to libcurl's multi-handle (analogous to the Windows callback
+  approach) — see item 1 for the trade-off.
 - **Engine-side glue**: `host_fetch` in `src/context.zc` (around line
   9080) drives the async ABI, polls per tick, settles the JS Promise.
   Nothing platform-aware in there — once `http_linux.c` exists and
@@ -96,17 +100,29 @@ Verify with `curl https://api.github.com/zen` from the shell first.
 gets a `WebSocket` object that immediately errors.
 
 **What to build**: `src/platform/ws_linux.c` against libwebsockets.
-The Apple impl in `ws_apple.m` is the design reference — note in
-particular:
+Two design references exist now:
 
-- Per-handle event queue (linked list, mutex-protected) — matches
-  the async, *poll-from-main-thread* shape `ws_native.h` requires.
-- Receive loop runs on a worker thread (libwebsockets services its
-  context via `lws_service`); each frame enqueues a `ZjsWsEvent`.
-- Client-initiated ping every 25s + CLOSE 1006 if the pong errors —
-  apple uses `dispatch_source`; libwebsockets has `LWS_CALLBACK_CLIENT_RECEIVE_PONG`
-  and supports per-connection ping interval via `lws_set_timer_usecs`
-  or by sending `LWS_WRITE_PING` manually on a timer.
+- `ws_apple.m` — NSURLSessionWebSocketTask, callback-driven event
+  queue, `dispatch_source` ping every 25s
+- `ws_windows.c` — WinHTTP WebSocket API, dedicated worker thread
+  runs the receive loop, `WINHTTP_OPTION_WEB_SOCKET_KEEPALIVE_INTERVAL`
+  handles ping/pong automatically
+
+Both feed a per-handle, mutex-protected event queue that the engine
+drains via `zjs_ws_poll` per tick. The Windows impl is the closer
+analog for a libwebsockets-backed Linux impl since libwebsockets
+also expects a service loop on a worker thread (`lws_service`).
+Key points to mirror:
+
+- Per-handle event queue (linked list, mutex-protected) — required
+  by the async *poll-from-main-thread* shape `ws_native.h` defines.
+- Worker thread runs the receive/service loop; each WS message
+  enqueues a `ZjsWsEvent`.
+- Client-initiated ping every 25s + CLOSE 1006 if the pong errors.
+  libwebsockets has `LWS_CALLBACK_CLIENT_RECEIVE_PONG` and supports
+  per-connection ping interval via `lws_set_timer_usecs`.
+- Fragmented frames: accumulate into a growable buffer and emit one
+  MESSAGE_TEXT / MESSAGE_BIN event per complete WS message.
 
 **Library choice**: libwebsockets is the workhorse but heavyweight
 (~250 KB statically linked). Alternative: hand-rolled framing on
@@ -243,7 +259,10 @@ which lands shortly after this doc) adds:
   rejects the returned Promise with `SyntaxError` on malformed JSON.
 - `Headers.prototype.forEach` / `keys` / `values` / `entries` +
   `@@iterator` defaulting to `entries`.
+- WinHTTP-native async fetch (replaces `http_async.c` on Windows).
+- WinHTTP-native WebSocket (`ws_windows.c`).
 
-These are platform-agnostic — they live in `src/context.zc` and run
-unchanged on Linux. No action needed; flagging because the docs
-above reference them and they weren't present before May 21, 2026.
+The first two are platform-agnostic — they live in `src/context.zc`
+and run unchanged on Linux. The last two are Windows-only but the
+design patterns transfer directly to libcurl + libwebsockets on
+Linux (see items 1 + 2).

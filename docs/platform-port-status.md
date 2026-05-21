@@ -23,9 +23,9 @@ macOS development instead of bouncing between machines per commit.
 | Feature | macOS | iOS | Linux | Windows | Notes |
 |---|---|---|---|---|---|
 | `fetch` (sync HTTP/HTTPS) | ✅ NSURLSession (`http_apple.m`) | ✅ same | ⚠️ stub (`http_stub.c`) | ✅ WinHTTP (`http_windows.c`) | #201 — Linux libcurl planned |
-| `fetch` (async — Promise.all parallelism) | ✅ NSURLSession completion handlers | ✅ same | ⚠️ pthread-wraps sync via `http_async.c` | ⚠️ pthread-wraps sync via `http_async.c` | Apple skips the extra thread. Linux/Windows work but use a thread per in-flight request. |
-| `WebSocket` | ✅ `NSURLSessionWebSocketTask` (`ws_apple.m`) | ✅ same | ❌ stub (`ws_stub.c`) | ❌ stub (`ws_stub.c`) | #205 — libwebsockets / WinHTTP_WebSocket planned |
-| WebSocket keep-alive (ping/pong) | ✅ `dispatch_source` ping every 25s | ✅ same | ⚠️ deferred until Linux WS lands | ⚠️ deferred until Windows WS lands | Pong-error → CLOSE 1006 |
+| `fetch` (async — Promise.all parallelism) | ✅ NSURLSession completion handlers | ✅ same | ⚠️ pthread-wraps sync via `http_async.c` | ✅ WinHTTP-native (`WINHTTP_FLAG_ASYNC` + status callback in `http_windows.c`) | Apple + Windows skip the extra thread; Linux still does thread-per-request. |
+| `WebSocket` | ✅ `NSURLSessionWebSocketTask` (`ws_apple.m`) | ✅ same | ❌ stub (`ws_stub.c`) | ✅ WinHTTP WebSocket (`ws_windows.c`) | #205 — Linux libwebsockets planned |
+| WebSocket keep-alive (ping/pong) | ✅ `dispatch_source` ping every 25s | ✅ same | ⚠️ deferred until Linux WS lands | ✅ `WINHTTP_OPTION_WEB_SOCKET_KEEPALIVE_INTERVAL` (25s) | Pong-error → CLOSE 1006 |
 | Cross-platform shims (realpath / gmtime_r / random / RSS) | ✅ POSIX | ✅ POSIX | ✅ POSIX | ✅ Win32 (`portability.h`: `_fullpath` / `gmtime_s` / `BCryptGenRandom` / `GetProcessMemoryInfo`) | Single header, no platform code outside the `#ifdef` |
 | Event-loop wait | ✅ `CFRunLoopRunInMode` (required for fetch async) | ✅ same | _n/a_ (`nanosleep`) | _n/a_ (`nanosleep`) | Apple-only because NSURLSession's completion needs the runloop |
 | iOS cross-compile | ✅ via zapp's xcrun pattern | — | _n/a_ | _n/a_ | Re-verify when iOS target is exercised |
@@ -50,13 +50,15 @@ Per-platform implementations live under `src/platform/`:
 ```
 http_native.h        Public C ABI — same signatures on all platforms
 http_apple.m         NSURLSession sync + native async (Apple only)
-http_windows.c       WinHTTP sync (Windows only — async via http_async.c thread-wrap)
+http_windows.c       WinHTTP sync + native async (Windows only)
 http_stub.c          "Not configured" returns (Linux until libcurl lands)
-http_async.c         pthread-wrap of sync → async ABI; compiled on Linux + Windows only
+http_async.c         pthread-wrap of sync → async ABI; compiled on Linux only
+                     (Apple has its own native async; Windows has its own native async)
 
 ws_native.h          Public C ABI for WebSocket
 ws_apple.m           NSURLSessionWebSocketTask (Apple only)
-ws_stub.c            "Not configured" returns (Linux + Windows until native lands)
+ws_windows.c         WinHTTP WebSocket API (Windows only)
+ws_stub.c            "Not configured" returns (Linux until libwebsockets lands)
 
 portability.h        Cross-platform shims (realpath, gmtime_r, random, peak RSS)
 ```
@@ -70,9 +72,11 @@ platform-specific header directly.
 ## Known divergences worth tracking
 
 - **Async fetch parallelism**: Apple uses NSURLSession's native completion
-  handlers (one thread total managed by the OS). Linux/Windows currently
-  use one pthread per in-flight request via `http_async.c`. Functionally
-  equivalent; resource profile differs at high concurrency.
+  handlers; Windows uses WinHTTP's `WINHTTP_FLAG_ASYNC` + status-callback
+  state machine — both leverage the OS's I/O completion pool, no extra
+  threads per request. Linux still uses one pthread per in-flight
+  request via `http_async.c`. Functionally equivalent; resource profile
+  differs at high concurrency.
 - **HTTPS / TLS**: Apple gets system trust store + HTTP/2 + proxy
   detection from NSURLSession. Windows gets the same from WinHTTP.
   Linux currently doesn't have HTTPS at all (stub rejects).
