@@ -28,6 +28,15 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Force UTF-8 on stdout/stderr — bench output rarely needs it but
+# the few characters in the labels (Δ, ×) trip cp1252 on Windows.
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 BENCH_DIR = REPO_ROOT / "scripts" / "bench"
 OUT_DIR   = REPO_ROOT / "docs" / "perf"

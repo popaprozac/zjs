@@ -8770,7 +8770,6 @@ fn object_define_accessor(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*,
 //   - Headers from std/net/http::fetch's response aren't parsed
 //     (the std impl only extracts status + body). Response.headers
 //     is empty for v0.1.
-//   - response.json() isn't here yet — waits on JSON.parse (B1).
 // =====================================================================
 
 def HDR_BAG_KEY: char* = (char*)"__zjs_hdr_bag__";
@@ -8918,6 +8917,140 @@ fn host_headers_delete(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     return zjs_undefined();
 }
 
+// Walk the bag's hidden-class chain to snapshot live header entries
+// in insertion order into a fresh ZjsArray of [name0, value0, name1,
+// value1, ...]. Used by both forEach and the iterator wrappers below.
+fn headers_snapshot_pairs(ctx: ZjsContext*, bag: ZjsObject*) -> ZjsValue {
+    let names: ZjsString*[64];
+    let slots: u32[64];
+    let nc: u32 = 0;
+    if bag != NULL {
+        let c = bag.cls;
+        while c != NULL && c.parent != NULL && nc < 64 {
+            names[nc] = c.transition_name;
+            slots[nc] = c.transition_slot;
+            nc = nc + 1;
+            c = c.parent;
+        }
+    }
+    // Count live entries so we can size the array up-front (no incremental growth needed).
+    let live: u32 = 0;
+    let ni: u32 = nc;
+    while ni > 0 {
+        ni = ni - 1;
+        if names[ni] != NULL && zjs_is_deleted(bag.slots[slots[ni]]) == 0 {
+            live = live + 1;
+        }
+    }
+    let arr_v = ctx_new_array(ctx, live * 2);
+    let a = zjs_as_array(arr_v);
+    let out: u32 = 0;
+    ni = nc;
+    while ni > 0 {
+        ni = ni - 1;
+        let name = names[ni];
+        let slot = slots[ni];
+        if name != NULL && zjs_is_deleted(bag.slots[slot]) == 0 {
+            a.elements[out]     = zjs_cell_from_ptr((void*)name);
+            a.elements[out + 1] = bag.slots[slot];
+            out = out + 2;
+        }
+    }
+    return arr_v;
+}
+
+fn host_headers_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_undefined(); }
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    let bag = headers_bag(ctx, zjs_as_object(this_v));
+    if bag == NULL { return zjs_undefined(); }
+    let cb = args[0];
+    let this_arg = if argc > 1 { args[1] } else { zjs_undefined() };
+    let pairs_v = headers_snapshot_pairs(ctx, bag);
+    let pa = zjs_as_array(pairs_v);
+    let i: u32 = 0;
+    while i + 1 < pa.length {
+        let local_args: ZjsValue[3];
+        local_args[0] = pa.elements[i + 1];  // value
+        local_args[1] = pa.elements[i];      // name
+        local_args[2] = this_v;              // headers obj
+        let lp: ZjsValue* = NULL;
+        raw { lp = &local_args[0]; }
+        zjs_call_value_with_this(ctx, cb, this_arg, lp, 3);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i + 2;
+    }
+    return zjs_undefined();
+}
+
+// `kind`: 0 = keys, 1 = values, 2 = entries [name, value].
+fn build_headers_iterator(ctx: ZjsContext*, headers_v: ZjsValue, kind: u32) -> ZjsValue {
+    let it = ctx_new_object(ctx);
+    let o = zjs_as_object(it);
+    let bag = headers_bag(ctx, zjs_as_object(headers_v));
+    let pairs_v = headers_snapshot_pairs(ctx, bag);
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"_pairs", 6), pairs_v);
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"_i", 2), zjs_int32(0));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"_kind", 5), zjs_int32((i32)kind));
+    let next_ptr: void* = NULL; raw { next_ptr = (void*)host_headers_iter_next; }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"next", 4),
+               ctx_make_host_function(ctx, (char*)"next", next_ptr));
+    let self_ptr: void* = NULL; raw { self_ptr = (void*)host_self_iter; }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
+               ctx_make_host_function(ctx, (char*)"[Symbol.iterator]", self_ptr));
+    return it;
+}
+
+fn host_headers_iter_next(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let recv = zjs_get_host_this(ctx);
+    if zjs_is_object(recv) == 0 {
+        return build_iter_result_helper(ctx, zjs_undefined(), true);
+    }
+    let pairs_v = property_get(ctx, recv, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"_pairs", 6)));
+    let i_v     = property_get(ctx, recv, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"_i",     2)));
+    let k_v     = property_get(ctx, recv, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"_kind",  5)));
+    if zjs_is_array(pairs_v) == 0 { return build_iter_result_helper(ctx, zjs_undefined(), true); }
+    let pa = zjs_as_array(pairs_v);
+    let i: u32 = if zjs_is_int32(i_v) != 0 { (u32)zjs_as_int32(i_v) } else { 0 };
+    let kind: u32 = if zjs_is_int32(k_v) != 0 { (u32)zjs_as_int32(k_v) } else { 2 };
+    if i + 1 >= pa.length {
+        object_set(ctx, zjs_as_object(recv),
+                   ctx_intern_atom(ctx, (char*)"_i", 2), zjs_int32((i32)pa.length));
+        return build_iter_result_helper(ctx, zjs_undefined(), true);
+    }
+    let name  = pa.elements[i];
+    let value = pa.elements[i + 1];
+    object_set(ctx, zjs_as_object(recv),
+               ctx_intern_atom(ctx, (char*)"_i", 2), zjs_int32((i32)(i + 2)));
+    if kind == 0 { return build_iter_result_helper(ctx, name,  false); }
+    if kind == 1 { return build_iter_result_helper(ctx, value, false); }
+    let pair = ctx_new_array(ctx, 2);
+    let pra = zjs_as_array(pair);
+    pra.elements[0] = name;
+    pra.elements[1] = value;
+    pra.length = 2;
+    return build_iter_result_helper(ctx, pair, false);
+}
+
+fn host_headers_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    return build_headers_iterator(ctx, this_v, 0);
+}
+
+fn host_headers_values(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    return build_headers_iterator(ctx, this_v, 1);
+}
+
+fn host_headers_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    return build_headers_iterator(ctx, this_v, 2);
+}
+
 // =====================================================================
 // Response. Stored on a plain ZjsObject with hidden fields for
 // status/body; .status / .ok / .headers exposed via accessor getters
@@ -9030,6 +9163,33 @@ fn host_response_array_buffer(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Z
     ctx_register_cell(ctx, (void*)p);
     let pv = zjs_cell_from_ptr((void*)p);
     promise_resolve_with(ctx, pv, av);
+    return pv;
+}
+
+// Return body parsed as JSON — Promise<any>. Routes through the same
+// JSON.parse machinery used by the global so spec-correct error
+// reporting (SyntaxError on malformed JSON) stays consistent.
+fn host_response_json(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    let body_v: ZjsValue = ctx_intern_string(ctx, (char*)"", 0);
+    if zjs_is_object(this_v) != 0 {
+        let atom = ctx_intern_atom(ctx, RESP_BODY_KEY, 17);
+        let slot = class_find_slot(zjs_as_object(this_v).cls, atom);
+        if slot >= 0 { body_v = zjs_as_object(this_v).slots[(u32)slot]; }
+    }
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+
+    let parse_args: ZjsValue[1];
+    parse_args[0] = body_v;
+    let parsed = host_json_parse(ctx, &parse_args[0], 1);
+    if ctx.pending_throw_active {
+        let err = consume_pending_throw(ctx);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    promise_resolve_with(ctx, pv, parsed);
     return pv;
 }
 
@@ -16114,6 +16274,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let h_set_ptr:   void* = NULL; raw { h_set_ptr   = (void*)host_headers_set; }
     let h_has_ptr:   void* = NULL; raw { h_has_ptr   = (void*)host_headers_has; }
     let h_del_ptr:   void* = NULL; raw { h_del_ptr   = (void*)host_headers_delete; }
+    let h_fe_ptr:    void* = NULL; raw { h_fe_ptr    = (void*)host_headers_for_each; }
+    let h_keys_ptr:  void* = NULL; raw { h_keys_ptr  = (void*)host_headers_keys; }
+    let h_vals_ptr:  void* = NULL; raw { h_vals_ptr  = (void*)host_headers_values; }
+    let h_ents_ptr:  void* = NULL; raw { h_ents_ptr  = (void*)host_headers_entries; }
     let h_ctor_v = ctx_register_host_function(ctx, (char*)"Headers", h_ctor_ptr);
     let h_proto_v = ctx_new_object(ctx);
     ctx.headers_proto = zjs_as_object(h_proto_v);
@@ -16129,6 +16293,17 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"append", h_set_ptr, 2));
     object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"delete", 6),
                ctx_make_host_function_arity(ctx, (char*)"delete", h_del_ptr, 1));
+    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"forEach", 7),
+               ctx_make_host_function_arity(ctx, (char*)"forEach", h_fe_ptr, 1));
+    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"keys", 4),
+               ctx_make_host_function(ctx, (char*)"keys", h_keys_ptr));
+    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"values", 6),
+               ctx_make_host_function(ctx, (char*)"values", h_vals_ptr));
+    let h_ents_fn = ctx_make_host_function(ctx, (char*)"entries", h_ents_ptr);
+    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"entries", 7), h_ents_fn);
+    // Iteration default is entries — matches the spec
+    // (`for (const [k, v] of headers)` walks name/value pairs).
+    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10), h_ents_fn);
 
     let r_status_ptr:   void* = NULL; raw { r_status_ptr   = (void*)host_response_status; }
     let r_ok_ptr:       void* = NULL; raw { r_ok_ptr       = (void*)host_response_ok; }
@@ -16137,6 +16312,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let r_hdrs_ptr:     void* = NULL; raw { r_hdrs_ptr     = (void*)host_response_headers_acc; }
     let r_text_ptr:     void* = NULL; raw { r_text_ptr     = (void*)host_response_text; }
     let r_ab_ptr:       void* = NULL; raw { r_ab_ptr       = (void*)host_response_array_buffer; }
+    let r_json_ptr:     void* = NULL; raw { r_json_ptr     = (void*)host_response_json; }
     // Response has no useful ctor at v0.1 — fetch() is the only
     // factory. Expose it as a global anyway so `instanceof Response`
     // and `Response.prototype` work.
@@ -16159,6 +16335,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"text", r_text_ptr));
     object_set(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"arrayBuffer", 11),
                ctx_make_host_function(ctx, (char*)"arrayBuffer", r_ab_ptr));
+    object_set(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"json", 4),
+               ctx_make_host_function(ctx, (char*)"json", r_json_ptr));
 
     let fetch_ptr: void* = NULL; raw { fetch_ptr = (void*)host_fetch; }
     ctx_register_host_function(ctx, (char*)"fetch", fetch_ptr);

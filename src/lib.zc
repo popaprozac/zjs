@@ -8,9 +8,10 @@
 // fetch() routes through src/platform/http_native.h's zjs_http_get_sync.
 // Apple ships the NSURLSession impl (.m) and links Foundation; Windows
 // ships the WinHTTP impl as a sibling .c file. WebSocket follows the
-// same pattern (ws_apple.m on Apple; ws_stub.c elsewhere — Windows
-// native WebSocket lands in a follow-up). Linux still falls back to
-// the http_stub (libcurl backend lands in a follow-up).
+// same pattern: ws_apple.m on Apple, ws_windows.c (WinHTTP WebSocket
+// API, Win 8+) on Windows, ws_stub.c on Linux until libwebsockets
+// lands. Linux HTTP still falls back to the http_stub (libcurl
+// backend lands in a follow-up).
 //
 // winhttp.lib pulls in via a `#pragma comment(lib, ...)` inside
 // http_windows.c (MSVC / clang-cl / zig cc); mingw/gcc honors the
@@ -20,7 +21,7 @@
 //> ios:   framework: Foundation
 //> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
 //> linux: cflags:    src/platform/http_stub.c src/platform/ws_stub.c src/platform/http_async.c
-//> windows: cflags:  src/platform/http_windows.c src/platform/ws_stub.c src/platform/http_async.c
+//> windows: cflags:  src/platform/http_windows.c src/platform/ws_windows.c
 
 // --- Windows portability links ---
 // src/platform/portability.h uses BCryptGenRandom (bcrypt.dll) for
