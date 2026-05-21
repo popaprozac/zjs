@@ -368,6 +368,13 @@ enum Op {
     //   are (writable + configurable, NOT enumerable). Used by
     //   class method definitions which spec-mandate non-enumerable.
     DefineMethod,     // a=obj, b=ic_slot, c=val_reg.
+    // DefineMethodComputed: same attrs as DefineMethod (writable +
+    // configurable, NOT enumerable) but the key is in regs[b]
+    // rather than encoded as an IC slot. Used by `static [expr]() {}`
+    // so the install overwrites an existing slot (e.g. the class's
+    // synthesized .name) instead of falling back to property_set's
+    // writable-respecting object_set path.
+    DefineMethodComputed,  // a=obj, b=key_reg, c=val_reg.
     // SetParentCtor: record regs[b] (the parent constructor) on
     //   the Function* in regs[a]. Used by class-extends so
     //   Object.getPrototypeOf(Child) returns Parent.

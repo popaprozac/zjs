@@ -65,7 +65,7 @@ raw {
         "Throw", "EnterTry", "LeaveTry",
         "In", "Instanceof", "LoadThis", "LoadNewTarget",
         "NewInvoke", "Typeof", "SetProto", "SuperCall",
-        "DefineMethod", "SetParentCtor", "SetFunctionName",
+        "DefineMethod", "DefineMethodComputed", "SetParentCtor", "SetFunctionName",
         NULL,
     };
     static const char *zjs_op_name_lookup(int op) {
@@ -802,19 +802,25 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
             if is_call   != 0 { return ctx.fn_call_v; }
             if is_apply  != 0 { return ctx.fn_apply_v; }
-            if is_length != 0 {
-                let fp = zjs_cell_as_ptr(obj);
-                let f: Function* = NULL;
-                raw { f = (Function*)fp; }
-                return zjs_int32((i32)f.expected_arg_count);
-            }
-            // Expando bag — fires before Object.prototype so user-set
-            // properties shadow inherited methods (`fn.toString = ...`
-            // wins over Object.prototype.toString). Mirrors how host
-            // functions and arrays carry a lazy props object.
             let fp_p = zjs_cell_as_ptr(obj);
             let f_p: Function* = NULL;
             raw { f_p = (Function*)fp_p; }
+            // .length short-circuits BEFORE the props lookup. Spec says
+            // a function's `.length` is the expected-arg count with
+            // attrs (writable:false, enumerable:false, configurable:true);
+            // exposing it from the synth path means propertyHelper's
+            // `delete fn.length` / `fn.length = x` probes behave
+            // correctly without needing an eager slot install. Trade-off:
+            // class { static length() {} } can't override .length, but
+            // that's a tiny corner.
+            if is_length != 0 {
+                return zjs_int32((i32)f_p.expected_arg_count);
+            }
+            // Expando bag — fires before Object.prototype so user-set
+            // properties shadow inherited methods (`fn.toString = ...`
+            // wins over Object.prototype.toString) AND so a
+            // SetFunctionName-installed `name` is returned before
+            // falling through to the proto chain.
             if f_p.props != NULL {
                 let slot = class_find_slot(f_p.props.cls, ks);
                 if slot >= 0 {
@@ -909,6 +915,11 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 is_length = (kn == 6 && memcmp(kd, "length", 6) == 0) ? 1 : 0;
                 is_name   = (kn == 4 && memcmp(kd, "name",   4) == 0) ? 1 : 0;
             }
+            // .length / .name short-circuit BEFORE the props lookup,
+            // matching the TAG_FUNCTION path. Same trade-off — no
+            // `static length()` override on closure-wrapped class
+            // ctors, but the synth path is what propertyHelper's
+            // descriptor probes assume.
             if is_length != 0 {
                 let cl_l = zjs_as_closure(obj);
                 let fp_l = cl_l.function;
@@ -3554,6 +3565,43 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let ic_name: ZjsString* = f.ics[ic_slot].name;
                 let attrs: u8 = PROP_WRITABLE | PROP_CONFIGURABLE;
                 object_define_property_slot(ctx, target_obj, ic_name, value, attrs);
+            }
+        } else if op == Op::DefineMethodComputed {
+            // Same as DefineMethod but the key is read from a register
+            // (a Symbol or string) instead of an IC slot. Symbol keys
+            // coerce to their canonical atom via symbol_key_coerce so
+            // the install matches what property_get later expects.
+            let obj_v = regs[inst.a];
+            let mut_key_v = symbol_key_coerce(regs[inst.b]);
+            let value = regs[inst.c];
+            if zjs_is_string(mut_key_v) == 0 { mut_key_v = zjs_to_string(ctx, mut_key_v); }
+            let name = zjs_as_string(mut_key_v);
+            let target_obj: ZjsObject* = NULL;
+            if zjs_is_object(obj_v) != 0 {
+                target_obj = zjs_as_object(obj_v);
+            } else if zjs_is_function(obj_v) != 0 {
+                let fp = zjs_cell_as_ptr(obj_v);
+                let ff: Function* = NULL;
+                raw { ff = (Function*)fp; }
+                if ff.props == NULL {
+                    let pv = ctx_new_object(ctx);
+                    ff.props = zjs_as_object(pv);
+                }
+                target_obj = ff.props;
+            } else if zjs_is_closure(obj_v) != 0 {
+                let cl = zjs_as_closure(obj_v);
+                let fp2 = cl.function;
+                let f2: Function* = NULL;
+                raw { f2 = (Function*)fp2; }
+                if f2.props == NULL {
+                    let pv = ctx_new_object(ctx);
+                    f2.props = zjs_as_object(pv);
+                }
+                target_obj = f2.props;
+            }
+            if target_obj != NULL {
+                let attrs: u8 = PROP_WRITABLE | PROP_CONFIGURABLE;
+                object_define_property_slot(ctx, target_obj, name, value, attrs);
             }
         } else if op == Op::SetProto {
             // a = proto, b = obj. Wire obj.proto = proto (both must be

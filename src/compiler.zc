@@ -3252,16 +3252,18 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
                 let target = if m.bool_value { ctor_reg } else { proto_reg };
                 if is_computed_name {
                     // Computed key — evaluate at runtime. Accessor
-                    // variants land in DefineMethodGetter/Setter (which
-                    // ToStrings the key); plain methods install via
-                    // StoreElem.
+                    // variants land in DefineMethodGetter/Setter; plain
+                    // methods use DefineMethodComputed so the install
+                    // attrs match the non-computed path (writable +
+                    // configurable, non-enumerable, overwrites in
+                    // place).
                     let key_r = compile_expr(c, m.third);
                     if m.op == TokenKind::KwGet {
                         emit(c, make_inst_abc(Op::DefineMethodGetter, target, key_r, mreg));
                     } else if m.op == TokenKind::KwSet {
                         emit(c, make_inst_abc(Op::DefineMethodSetter, target, key_r, mreg));
                     } else {
-                        emit(c, make_inst_abc(Op::StoreElem, target, key_r, mreg));
+                        emit(c, make_inst_abc(Op::DefineMethodComputed, target, key_r, mreg));
                     }
                     release_reg(c, key_r);
                     release_reg(c, mreg);
