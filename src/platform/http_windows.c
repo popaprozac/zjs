@@ -25,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <pthread.h>
 
 #if defined(__GNUC__) && !defined(__clang__)
 // gcc ignores #pragma comment(lib, ...); link with -lwinhttp instead.
@@ -509,4 +510,600 @@ done:
         return -1;
     }
     return 0;
+}
+
+// =====================================================================
+// Async ABI — WinHTTP native (WINHTTP_FLAG_ASYNC + status callback).
+//
+// Replaces src/platform/http_async.c on Windows. The pthread-per-
+// request shape that http_async.c uses works but spawns a fresh
+// thread for every in-flight fetch; here the WinHTTP runtime
+// drives the state machine via callbacks on its own thread pool,
+// so Promise.all([fetch, fetch, ...]) doesn't spawn N pthreads.
+//
+// State machine:
+//   start()             — create handles, kick off WinHttpSendRequest
+//   SENDREQUEST_COMPLETE → WinHttpReceiveResponse
+//   HEADERS_AVAILABLE    → query status + raw headers, then
+//                          WinHttpQueryDataAvailable
+//   DATA_AVAILABLE       → grow body buffer, WinHttpReadData
+//   READ_COMPLETE        → resp_body_len += bytes; loop to
+//                          QueryDataAvailable. If bytes==0 → done.
+//   REQUEST_ERROR        → set err_msg, transition to ERROR.
+//   HANDLE_CLOSING       — final callback after CloseHandle; the
+//                          only point at which it's safe to free
+//                          the handle struct.
+//
+// Lifecycle: destroy() sets `teardown=1` and calls
+// WinHttpCloseHandle on the request handle (which cancels any
+// in-flight op). The HANDLE_CLOSING callback that follows sees
+// `teardown=1` and frees the handle struct. Poll() returns 0 in
+// the meantime; the engine moves on.
+
+typedef enum {
+    HTTP_ASYNC_PENDING = 0,
+    HTTP_ASYNC_DONE    = 1,
+    HTTP_ASYNC_ERROR   = -1,
+} HttpAsyncState;
+
+struct ZjsHttpHandle {
+    pthread_mutex_t lock;
+    HttpAsyncState state;
+    int teardown;
+    int handle_closed; // HANDLE_CLOSING fired? — guards double-free
+
+    // Caller inputs — owned copies so they outlive start().
+    char* method;
+    char* url;
+    char** req_headers;
+    size_t req_header_count;
+    char* body;
+    size_t body_len;
+    int timeout_seconds;
+
+    // Parsed URL pieces (UTF-16) — must outlive the request because
+    // WinHTTP reads from them during the async chain.
+    wchar_t* w_host;
+    wchar_t* w_path;
+    wchar_t* w_method;
+    wchar_t* w_url;
+    wchar_t* w_headers;       // combined "N: V\r\n..." block
+    INTERNET_PORT port;
+    int is_secure;
+
+    // WinHTTP handles.
+    HINTERNET h_session;
+    HINTERNET h_conn;
+    HINTERNET h_req;
+
+    // Accumulated response.
+    int      status;
+    char*    resp_body;
+    size_t   resp_body_len;
+    size_t   resp_body_cap;
+    char**   resp_headers;
+    size_t   resp_header_count;
+    char*    err_msg;
+};
+
+static void http_async_free(ZjsHttpHandle* h);
+
+static char* xstrdup_or_null(const char* s) {
+    if (s == NULL) return NULL;
+    size_t n = strlen(s) + 1;
+    char* p = (char*)malloc(n);
+    if (p) memcpy(p, s, n);
+    return p;
+}
+
+// Build the parsed URL and combined header block on the handle.
+// Returns 0 on success, -1 + err_msg on failure.
+static int http_async_prepare(ZjsHttpHandle* h) {
+    h->w_url = utf8_to_wide(h->url, strlen(h->url));
+    if (h->w_url == NULL) {
+        h->err_msg = _strdup("fetch: invalid URL encoding");
+        return -1;
+    }
+    URL_COMPONENTS uc;
+    memset(&uc, 0, sizeof uc);
+    uc.dwStructSize      = sizeof uc;
+    uc.dwSchemeLength    = (DWORD)-1;
+    uc.dwHostNameLength  = (DWORD)-1;
+    uc.dwUrlPathLength   = (DWORD)-1;
+    uc.dwExtraInfoLength = (DWORD)-1;
+    if (!WinHttpCrackUrl(h->w_url, 0, 0, &uc)) {
+        h->err_msg = format_win32_error("URL parse", GetLastError());
+        return -1;
+    }
+    h->is_secure = (uc.nScheme == INTERNET_SCHEME_HTTPS) ? 1 : 0;
+    if (uc.nScheme != INTERNET_SCHEME_HTTP && !h->is_secure) {
+        h->err_msg = _strdup("fetch: only http and https URLs are supported");
+        return -1;
+    }
+    h->port = uc.nPort;
+
+    h->w_host = (wchar_t*)malloc(((size_t)uc.dwHostNameLength + 1) * sizeof(wchar_t));
+    if (h->w_host == NULL) { h->err_msg = _strdup("fetch: out of memory"); return -1; }
+    memcpy(h->w_host, uc.lpszHostName, uc.dwHostNameLength * sizeof(wchar_t));
+    h->w_host[uc.dwHostNameLength] = L'\0';
+
+    size_t path_chars = (size_t)uc.dwUrlPathLength + (size_t)uc.dwExtraInfoLength;
+    if (path_chars == 0) path_chars = 1;
+    h->w_path = (wchar_t*)malloc((path_chars + 1) * sizeof(wchar_t));
+    if (h->w_path == NULL) { h->err_msg = _strdup("fetch: out of memory"); return -1; }
+    if (uc.dwUrlPathLength == 0 && uc.dwExtraInfoLength == 0) {
+        h->w_path[0] = L'/'; h->w_path[1] = L'\0';
+    } else {
+        size_t off = 0;
+        if (uc.dwUrlPathLength > 0) {
+            memcpy(h->w_path + off, uc.lpszUrlPath,
+                   uc.dwUrlPathLength * sizeof(wchar_t));
+            off += uc.dwUrlPathLength;
+        }
+        if (uc.dwExtraInfoLength > 0) {
+            memcpy(h->w_path + off, uc.lpszExtraInfo,
+                   uc.dwExtraInfoLength * sizeof(wchar_t));
+            off += uc.dwExtraInfoLength;
+        }
+        h->w_path[off] = L'\0';
+    }
+
+    const char* method = (h->method && h->method[0]) ? h->method : "GET";
+    h->w_method = utf8_to_wide(method, strlen(method));
+    if (h->w_method == NULL) {
+        h->err_msg = _strdup("fetch: invalid method encoding");
+        return -1;
+    }
+
+    // Build a single Name:Value\r\n... block for WinHttpAddRequestHeaders.
+    if (h->req_headers != NULL && h->req_header_count > 0) {
+        size_t total = 0;
+        for (size_t i = 0; i < h->req_header_count; i++) {
+            const char* name  = h->req_headers[2*i];
+            const char* value = h->req_headers[2*i + 1];
+            if (name == NULL || value == NULL) continue;
+            total += strlen(name) + 2 + strlen(value) + 2;
+        }
+        if (total > 0) {
+            char* buf = (char*)malloc(total + 1);
+            if (buf != NULL) {
+                size_t off = 0;
+                for (size_t i = 0; i < h->req_header_count; i++) {
+                    const char* name  = h->req_headers[2*i];
+                    const char* value = h->req_headers[2*i + 1];
+                    if (name == NULL || value == NULL) continue;
+                    size_t nl = strlen(name), vl = strlen(value);
+                    memcpy(buf + off, name, nl); off += nl;
+                    buf[off++] = ':'; buf[off++] = ' ';
+                    memcpy(buf + off, value, vl); off += vl;
+                    buf[off++] = '\r'; buf[off++] = '\n';
+                }
+                buf[off] = '\0';
+                h->w_headers = utf8_to_wide(buf, off);
+                free(buf);
+            }
+        }
+    }
+    return 0;
+}
+
+// Caller holds h->lock.
+static void http_async_set_error_locked(ZjsHttpHandle* h, const char* op, DWORD code) {
+    if (h->err_msg != NULL) free(h->err_msg);
+    h->err_msg = format_win32_error(op, code);
+    h->state = HTTP_ASYNC_ERROR;
+}
+
+// HEADERS_AVAILABLE callback: query status + the raw header block
+// and stash them on the handle. Caller holds h->lock.
+static void http_async_capture_headers_locked(ZjsHttpHandle* h) {
+    DWORD status_code = 0;
+    DWORD status_size = sizeof status_code;
+    if (!WinHttpQueryHeaders(h->h_req,
+                             WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                             WINHTTP_HEADER_NAME_BY_INDEX,
+                             &status_code,
+                             &status_size,
+                             WINHTTP_NO_HEADER_INDEX)) {
+        http_async_set_error_locked(h, "query status", GetLastError());
+        return;
+    }
+    h->status = (int)status_code;
+
+    DWORD raw_bytes = 0;
+    WinHttpQueryHeaders(h->h_req,
+                        WINHTTP_QUERY_RAW_HEADERS_CRLF,
+                        WINHTTP_HEADER_NAME_BY_INDEX,
+                        WINHTTP_NO_OUTPUT_BUFFER,
+                        &raw_bytes,
+                        WINHTTP_NO_HEADER_INDEX);
+    if (raw_bytes > 0 && GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
+        wchar_t* raw = (wchar_t*)malloc(raw_bytes);
+        if (raw != NULL) {
+            if (WinHttpQueryHeaders(h->h_req,
+                                    WINHTTP_QUERY_RAW_HEADERS_CRLF,
+                                    WINHTTP_HEADER_NAME_BY_INDEX,
+                                    raw,
+                                    &raw_bytes,
+                                    WINHTTP_NO_HEADER_INDEX)) {
+                // Reuse the sync impl's parser; it writes resp_headers
+                // + resp_header_count on a transient ZjsHttpResponse,
+                // and we transfer those onto the handle.
+                ZjsHttpResponse tmp;
+                memset(&tmp, 0, sizeof tmp);
+                parse_raw_headers_crlf(raw, &tmp);
+                h->resp_headers      = tmp.resp_headers;
+                h->resp_header_count = tmp.resp_header_count;
+            }
+            free(raw);
+        }
+    }
+}
+
+// Grow resp_body to fit at least `want` more bytes; returns 0 on
+// success, -1 on OOM (caller sets error). Holds h->lock.
+static int http_async_reserve_body_locked(ZjsHttpHandle* h, size_t want) {
+    size_t need = h->resp_body_len + want + 1;
+    if (need <= h->resp_body_cap) return 0;
+    size_t new_cap = h->resp_body_cap ? h->resp_body_cap * 2 : 4096;
+    while (new_cap < need) new_cap *= 2;
+    char* g = (char*)realloc(h->resp_body, new_cap);
+    if (g == NULL) return -1;
+    h->resp_body = g;
+    h->resp_body_cap = new_cap;
+    return 0;
+}
+
+// WinHTTP status callback. Fires from worker threads in WinHTTP's
+// internal pool. Critical: WinHTTP can invoke the *next* callback
+// synchronously from within its own async call (e.g., when a small
+// response completes mid-call) — so we must NEVER hold h->lock
+// across a WinHttp* call, or we deadlock the same thread against a
+// non-recursive mutex. The pattern: lock, mutate state / read
+// state, decide what's next, unlock, issue the next async op
+// outside the lock.
+static void CALLBACK http_async_cb(HINTERNET hInternet, DWORD_PTR ctx,
+                                   DWORD status, LPVOID info, DWORD infoLen) {
+    (void)hInternet;
+    ZjsHttpHandle* h = (ZjsHttpHandle*)ctx;
+    if (h == NULL) return;
+
+    if (status == WINHTTP_CALLBACK_STATUS_HANDLE_CLOSING) {
+        // Last callback for h_req — safe to free now. Mark handle
+        // already closed so destroy doesn't double-CloseHandle.
+        pthread_mutex_lock(&h->lock);
+        h->h_req = NULL;
+        int teardown = h->teardown;
+        h->handle_closed = 1;
+        pthread_mutex_unlock(&h->lock);
+        if (teardown) {
+            http_async_free(h);
+        }
+        return;
+    }
+
+    // Skip the bulk of the callback once we're done / errored — only
+    // the *_COMPLETE / DATA_AVAILABLE / READ_COMPLETE statuses drive
+    // the state machine, and they all assume PENDING.
+    pthread_mutex_lock(&h->lock);
+    if (h->teardown || h->state != HTTP_ASYNC_PENDING) {
+        pthread_mutex_unlock(&h->lock);
+        return;
+    }
+
+    // Decide what to do next; mutate state under the lock; capture
+    // whatever the next WinHttp call needs into locals; release;
+    // then call. `next` says which (if any) async op to fire.
+    enum {
+        NEXT_NONE = 0,
+        NEXT_RECV,           // WinHttpReceiveResponse
+        NEXT_QUERY_AVAIL,    // WinHttpQueryDataAvailable
+        NEXT_READ,           // WinHttpReadData(buf, want)
+    } next = NEXT_NONE;
+    DWORD want = 0;
+    char* read_into = NULL;
+    const char* err_op = NULL;
+    DWORD       err_code = 0;
+
+    switch (status) {
+    case WINHTTP_CALLBACK_STATUS_SENDREQUEST_COMPLETE:
+        next = NEXT_RECV;
+        break;
+
+    case WINHTTP_CALLBACK_STATUS_HEADERS_AVAILABLE:
+        // Header queries are sync — safe to call under the lock.
+        http_async_capture_headers_locked(h);
+        if (h->state == HTTP_ASYNC_PENDING) next = NEXT_QUERY_AVAIL;
+        break;
+
+    case WINHTTP_CALLBACK_STATUS_DATA_AVAILABLE: {
+        DWORD avail = (info != NULL) ? *(DWORD*)info : 0;
+        if (avail == 0) {
+            h->state = HTTP_ASYNC_DONE;
+            break;
+        }
+        if (http_async_reserve_body_locked(h, avail) != 0) {
+            http_async_set_error_locked(h, "out of memory", 0);
+            break;
+        }
+        want      = avail;
+        read_into = h->resp_body + h->resp_body_len;
+        next      = NEXT_READ;
+        break;
+    }
+
+    case WINHTTP_CALLBACK_STATUS_READ_COMPLETE: {
+        DWORD got = infoLen;
+        if (got == 0) {
+            h->state = HTTP_ASYNC_DONE;
+            break;
+        }
+        h->resp_body_len += got;
+        next = NEXT_QUERY_AVAIL;
+        break;
+    }
+
+    case WINHTTP_CALLBACK_STATUS_REQUEST_ERROR: {
+        WINHTTP_ASYNC_RESULT* ar = (WINHTTP_ASYNC_RESULT*)info;
+        http_async_set_error_locked(h, "async error",
+                                    ar ? ar->dwError : 0);
+        break;
+    }
+
+    default:
+        break;
+    }
+
+    HINTERNET h_req = h->h_req;
+    pthread_mutex_unlock(&h->lock);
+
+    if (next != NEXT_NONE && h_req != NULL) {
+        BOOL rc = TRUE;
+        switch (next) {
+        case NEXT_RECV:
+            rc = WinHttpReceiveResponse(h_req, NULL);
+            if (!rc) { err_op = "receive response"; err_code = GetLastError(); }
+            break;
+        case NEXT_QUERY_AVAIL:
+            rc = WinHttpQueryDataAvailable(h_req, NULL);
+            if (!rc) { err_op = "query data available"; err_code = GetLastError(); }
+            break;
+        case NEXT_READ:
+            rc = WinHttpReadData(h_req, read_into, want, NULL);
+            if (!rc) { err_op = "read data"; err_code = GetLastError(); }
+            break;
+        default:
+            break;
+        }
+        if (err_op != NULL) {
+            pthread_mutex_lock(&h->lock);
+            if (h->state == HTTP_ASYNC_PENDING) {
+                http_async_set_error_locked(h, err_op, err_code);
+            }
+            pthread_mutex_unlock(&h->lock);
+        }
+    }
+}
+
+// Build the WinHTTP handle chain in async mode and kick off the
+// initial WinHttpSendRequest. Returns 0 on success, -1 on failure
+// (h->err_msg is set; caller's free path runs).
+static int http_async_kick_off(ZjsHttpHandle* h) {
+    h->h_session = WinHttpOpen(L"zjs/0.0.1",
+                               WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                               WINHTTP_NO_PROXY_NAME,
+                               WINHTTP_NO_PROXY_BYPASS,
+                               WINHTTP_FLAG_ASYNC);
+    if (h->h_session == NULL) {
+        h->err_msg = format_win32_error("session open", GetLastError());
+        return -1;
+    }
+
+    // Install the callback on the session — it propagates to every
+    // child handle (connection, request) automatically. Doing it
+    // here, before WinHttpConnect, ensures the callback is in place
+    // by the time any async op kicks off.
+    DWORD cb_flags = WINHTTP_CALLBACK_FLAG_ALL_COMPLETIONS |
+                     WINHTTP_CALLBACK_FLAG_REQUEST_ERROR   |
+                     WINHTTP_CALLBACK_FLAG_HANDLES         |
+                     WINHTTP_CALLBACK_FLAG_SECURE_FAILURE;
+    if (WinHttpSetStatusCallback(h->h_session, http_async_cb,
+                                 cb_flags,
+                                 0) == WINHTTP_INVALID_STATUS_CALLBACK) {
+        h->err_msg = format_win32_error("set callback", GetLastError());
+        return -1;
+    }
+
+    int timeout = (h->timeout_seconds > 0) ? h->timeout_seconds : 30;
+    DWORD ms = (DWORD)timeout * 1000u;
+    WinHttpSetTimeouts(h->h_session, (int)ms, (int)ms, (int)ms, (int)ms);
+
+    h->h_conn = WinHttpConnect(h->h_session, h->w_host, h->port, 0);
+    if (h->h_conn == NULL) {
+        h->err_msg = format_win32_error("connect", GetLastError());
+        return -1;
+    }
+
+    DWORD req_flags = h->is_secure ? WINHTTP_FLAG_SECURE : 0;
+    h->h_req = WinHttpOpenRequest(h->h_conn,
+                                  h->w_method,
+                                  h->w_path,
+                                  NULL,
+                                  WINHTTP_NO_REFERER,
+                                  WINHTTP_DEFAULT_ACCEPT_TYPES,
+                                  req_flags);
+    if (h->h_req == NULL) {
+        h->err_msg = format_win32_error("open request", GetLastError());
+        return -1;
+    }
+
+    DWORD_PTR ctx_val = (DWORD_PTR)h;
+    if (!WinHttpSetOption(h->h_req, WINHTTP_OPTION_CONTEXT_VALUE,
+                          &ctx_val, sizeof ctx_val)) {
+        h->err_msg = format_win32_error("set context", GetLastError());
+        return -1;
+    }
+
+    if (h->w_headers != NULL) {
+        if (!WinHttpAddRequestHeaders(h->h_req, h->w_headers,
+                                      (DWORD)-1L,
+                                      WINHTTP_ADDREQ_FLAG_ADD |
+                                      WINHTTP_ADDREQ_FLAG_REPLACE)) {
+            h->err_msg = format_win32_error("add headers", GetLastError());
+            return -1;
+        }
+    }
+
+    DWORD body_dw = (h->body != NULL) ? (DWORD)h->body_len : 0;
+    LPVOID body_ptr = (h->body != NULL && h->body_len > 0)
+                      ? (LPVOID)h->body
+                      : WINHTTP_NO_REQUEST_DATA;
+
+    if (!WinHttpSendRequest(h->h_req,
+                            WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                            body_ptr, body_dw,
+                            body_dw,
+                            (DWORD_PTR)h)) {
+        h->err_msg = format_win32_error("send request", GetLastError());
+        return -1;
+    }
+    // Now we're driven entirely by callbacks until DONE / ERROR.
+    return 0;
+}
+
+// Final free — only called when WinHTTP is done with the handles
+// (HANDLE_CLOSING fired) or when start() failed before any async
+// op kicked off. Closes session + conn (no callbacks fire for
+// those) and frees everything.
+static void http_async_free(ZjsHttpHandle* h) {
+    if (h == NULL) return;
+    if (h->h_req     != NULL) { WinHttpCloseHandle(h->h_req);     h->h_req = NULL; }
+    if (h->h_conn    != NULL) { WinHttpCloseHandle(h->h_conn);    h->h_conn = NULL; }
+    if (h->h_session != NULL) { WinHttpCloseHandle(h->h_session); h->h_session = NULL; }
+
+    if (h->resp_body) free(h->resp_body);
+    if (h->resp_headers) {
+        size_t n = h->resp_header_count * 2;
+        for (size_t i = 0; i < n; i++) {
+            if (h->resp_headers[i]) free(h->resp_headers[i]);
+        }
+        free(h->resp_headers);
+    }
+    if (h->err_msg) free(h->err_msg);
+
+    if (h->method) free(h->method);
+    if (h->url)    free(h->url);
+    if (h->body)   free(h->body);
+    if (h->req_headers) {
+        size_t n = h->req_header_count * 2;
+        for (size_t i = 0; i < n; i++) {
+            if (h->req_headers[i]) free(h->req_headers[i]);
+        }
+        free(h->req_headers);
+    }
+    if (h->w_host)    free(h->w_host);
+    if (h->w_path)    free(h->w_path);
+    if (h->w_method)  free(h->w_method);
+    if (h->w_url)     free(h->w_url);
+    if (h->w_headers) free(h->w_headers);
+
+    pthread_mutex_destroy(&h->lock);
+    free(h);
+}
+
+ZjsHttpHandle* zjs_http_request_start(const ZjsHttpRequest* req) {
+    if (req == NULL || req->url == NULL) return NULL;
+    ZjsHttpHandle* h = (ZjsHttpHandle*)calloc(1, sizeof(ZjsHttpHandle));
+    if (h == NULL) return NULL;
+    pthread_mutex_init(&h->lock, NULL);
+    h->method = xstrdup_or_null(req->method ? req->method : "GET");
+    h->url    = xstrdup_or_null(req->url);
+    h->timeout_seconds = req->timeout_seconds;
+    if (req->req_header_count > 0 && req->req_headers != NULL) {
+        size_t n = req->req_header_count * 2;
+        h->req_headers = (char**)calloc(n, sizeof(char*));
+        if (h->req_headers != NULL) {
+            for (size_t i = 0; i < n; i++) {
+                h->req_headers[i] = xstrdup_or_null(req->req_headers[i]);
+            }
+            h->req_header_count = req->req_header_count;
+        }
+    }
+    if (req->body_len > 0 && req->body != NULL) {
+        h->body = (char*)malloc(req->body_len);
+        if (h->body != NULL) {
+            memcpy(h->body, req->body, req->body_len);
+            h->body_len = req->body_len;
+        }
+    }
+
+    if (http_async_prepare(h) != 0) {
+        h->state = HTTP_ASYNC_ERROR;
+        // No callbacks have been installed yet; safe to return the
+        // pre-failed handle and let the caller poll → destroy.
+        return h;
+    }
+    if (http_async_kick_off(h) != 0) {
+        h->state = HTTP_ASYNC_ERROR;
+        // The callback may or may not have been installed at the
+        // point of failure. If h_req exists, close it so HANDLE_CLOSING
+        // fires + frees; otherwise the next destroy will free
+        // synchronously. To keep destroy() the only owner of the
+        // free path, just return — destroy is what the engine calls.
+        return h;
+    }
+    return h;
+}
+
+int zjs_http_request_poll(ZjsHttpHandle* h, ZjsHttpResponse* out_resp, char** err_out) {
+    if (h == NULL || out_resp == NULL) return -1;
+    pthread_mutex_lock(&h->lock);
+    HttpAsyncState s = h->state;
+    if (s == HTTP_ASYNC_PENDING) {
+        pthread_mutex_unlock(&h->lock);
+        return 0;
+    }
+    if (s == HTTP_ASYNC_DONE) {
+        out_resp->status            = h->status;
+        out_resp->body              = h->resp_body;
+        out_resp->body_len          = h->resp_body_len;
+        out_resp->resp_headers      = h->resp_headers;
+        out_resp->resp_header_count = h->resp_header_count;
+        // Ownership transfers to caller; null out so destroy doesn't
+        // double-free.
+        h->resp_body         = NULL;
+        h->resp_body_len     = 0;
+        h->resp_body_cap     = 0;
+        h->resp_headers      = NULL;
+        h->resp_header_count = 0;
+        pthread_mutex_unlock(&h->lock);
+        return 1;
+    }
+    // ERROR
+    if (err_out != NULL) {
+        *err_out = h->err_msg;
+        h->err_msg = NULL;
+    }
+    pthread_mutex_unlock(&h->lock);
+    return -1;
+}
+
+void zjs_http_request_destroy(ZjsHttpHandle* h) {
+    if (h == NULL) return;
+    pthread_mutex_lock(&h->lock);
+    h->teardown = 1;
+    HINTERNET h_req = h->h_req;
+    int already_closed = h->handle_closed;
+    pthread_mutex_unlock(&h->lock);
+
+    if (h_req != NULL && !already_closed) {
+        // Triggers HANDLE_CLOSING; that callback frees the handle.
+        // Don't touch h after this point — the callback owns it.
+        WinHttpCloseHandle(h_req);
+        return;
+    }
+    // No outstanding async op (either we never kicked off, or the
+    // request finished and we already saw HANDLE_CLOSING). Free
+    // synchronously.
+    http_async_free(h);
 }

@@ -12,7 +12,7 @@
 //> ios:   framework: Foundation
 //> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
 //> linux: cflags:    src/platform/http_stub.c src/platform/ws_stub.c src/platform/http_async.c
-//> windows: cflags:  src/platform/http_windows.c src/platform/ws_windows.c src/platform/http_async.c
+//> windows: cflags:  src/platform/http_windows.c src/platform/ws_windows.c
 //> windows: link:    -lbcrypt -lpsapi -lwinhttp
 
 import "../src/lib.zc";
