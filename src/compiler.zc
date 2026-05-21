@@ -2586,6 +2586,28 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
         f.is_generator = node.num == 3.0;
     }
 
+    // ECMA-262 SetFunctionName step. If the source has a declared
+    // identifier (function f(){}, function f(){...} as expr, class
+    // method shorthand pre-name from MethodDef would set name via the
+    // class path), install a `name` data property on the function's
+    // expando bag so property_get and Object.getOwnPropertyDescriptor
+    // see it. Anonymous function/arrow-func get name via
+    // maybe_infer_anon_name at the assignment site.
+    if node.name_length > 0
+       && node.kind != NodeKind::MethodDef
+       && node.kind != NodeKind::ClassDecl
+       && node.kind != NodeKind::ClassExpr {
+        if f.props == NULL {
+            let pv2 = ctx_new_object(parent_ctx);
+            f.props = zjs_as_object(pv2);
+        }
+        let name_atom2 = ctx_intern_atom(parent_ctx, (char*)"name", 4);
+        let name_v2 = ctx_intern_string(parent_ctx,
+                                        source + node.name_start,
+                                        node.name_length);
+        object_set(parent_ctx, f.props, name_atom2, name_v2);
+    }
+
     c.code = NULL;
     c.constants = NULL;
     c.ics = NULL;

@@ -255,9 +255,11 @@ impl Lexer {
                 i = i + 1;
             }
         }
-        // Restrict to ASCII id_part for now.
-        if cp > 0x7F { return false; }
-        if !is_id_part((u8)cp) { return false; }
+        // Accept ASCII id_part directly; for any codepoint above ASCII
+        // accept without consulting Unicode ID tables (pragmatic v1).
+        if cp <= 0x7F {
+            if !is_id_part((u8)cp) { return false; }
+        }
         return true;
     }
 
@@ -573,14 +575,30 @@ impl Lexer {
             // class members + member access inside a class scope.
             // (`#` was already consumed by scan_punctuator's self.advance()
             // at the top of the function; we now expect an id-start.)
-            if self.at_end() || !is_id_start(self.peek()) {
+            if self.at_end() {
                 return Token{kind: TokenKind::Invalid, start: start, length: 1};
             }
-            self.advance();  // consume first id-start byte
+            // First char: either an id-start byte or a `\u` escape.
+            if self.peek() == (u8)'\\' && self.peek_at(1) == (u8)'u' {
+                if !self.consume_unicode_escape() {
+                    return Token{kind: TokenKind::Invalid, start: start, length: 1};
+                }
+            } else if is_id_start(self.peek()) {
+                self.advance();
+            } else {
+                return Token{kind: TokenKind::Invalid, start: start, length: 1};
+            }
             while !self.at_end() {
                 let ch = self.peek();
-                if is_id_part(ch) { self.advance(); }
-                else { break; }
+                if is_id_part(ch) {
+                    self.advance();
+                } else if ch == (u8)'\\' && self.peek_at(1) == (u8)'u' {
+                    if !self.consume_unicode_escape() {
+                        return Token{kind: TokenKind::Invalid, start: start, length: 1};
+                    }
+                } else {
+                    break;
+                }
             }
             let length: u32 = (u32)self.pos - start;
             return Token{kind: TokenKind::PrivateName, start: start, length: length};
@@ -740,6 +758,12 @@ fn is_id_start(c: u8) -> bool {
     if is_alpha(c) { return true; }
     if c == (u8)'_' { return true; }
     if c == (u8)'$' { return true; }
+    // Accept any non-ASCII byte as identifier-start. The source is
+    // required to be valid UTF-8, so high bytes only appear inside a
+    // multi-byte codepoint sequence. We don't consult the ID_Start /
+    // ID_Continue tables — pragmatic v1, sufficient for test262 and
+    // any well-formed program.
+    if c >= 0x80 { return true; }
     return false;
 }
 

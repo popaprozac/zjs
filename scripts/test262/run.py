@@ -654,7 +654,7 @@ def main():
     # Full per-test results (truncate failures to 1000 entries).
     LAST_JSON.write_text(json.dumps({
         "summary":  summary,
-        "failures": failure_log[:1000],
+        "failures": failure_log,
         "skip_counts": skipped_counts,
     }, indent=2), encoding="utf-8")
 

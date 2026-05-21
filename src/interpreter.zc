@@ -4904,6 +4904,25 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let obj_v = regs[inst.b];
             let key   = regs[inst.c];
             let ok: bool = true;
+            let obj_tag: u8 = if zjs_is_cell(obj_v) != 0 { zjs_cell_tag(obj_v) } else { 0xFF };
+            // Resolve the .props expando for function / closure / host-fn
+            // receivers — they route property storage through that bag.
+            let props_o: ZjsObject* = NULL;
+            if obj_tag == TAG_FUNCTION {
+                let fp = zjs_cell_as_ptr(obj_v);
+                let ff: Function* = NULL;
+                raw { ff = (Function*)fp; }
+                props_o = ff.props;
+            } else if obj_tag == TAG_CLOSURE {
+                let cl = zjs_as_closure(obj_v);
+                let fp2 = cl.function;
+                let ff2: Function* = NULL;
+                raw { ff2 = (Function*)fp2; }
+                props_o = ff2.props;
+            } else if obj_tag == TAG_HOST_FUNCTION {
+                let hf = zjs_as_host_function(obj_v);
+                props_o = hf.props;
+            }
             if zjs_is_object(obj_v) != 0 {
                 let o = zjs_as_object(obj_v);
                 let key_str = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
@@ -4927,6 +4946,18 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     // Array elements aren't tracked with attrs yet, so
                     // they're always configurable per spec.
                     a.elements[(u32)idx] = zjs_deleted();
+                }
+            } else if props_o != NULL {
+                let key_str = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+                let name = zjs_as_string(key_str);
+                let slot = class_find_slot(props_o.cls, name);
+                if slot >= 0 {
+                    let a = object_get_attrs(props_o, (u32)slot);
+                    if (a & PROP_CONFIGURABLE) == 0 {
+                        ok = false;
+                    } else {
+                        props_o.slots[(u32)slot] = zjs_deleted();
+                    }
                 }
             }
             regs[dst] = zjs_bool(ok);
