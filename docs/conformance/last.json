@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-21 03:28 UTC",
+    "when": "2026-05-21 03:41 UTC",
     "total": 14524,
-    "passed": 10766,
-    "failed": 3112,
+    "passed": 10771,
+    "failed": 3107,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -7685,16 +7685,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call(obj, true) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-1-9.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call(obj, true) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-2-17.js",
       "reason": "[sloppy] zjs: throw: (unknown): func(0, true) !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-2-19.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call(obj, obj[1]) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-14.js",
@@ -7795,10 +7787,6 @@
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-15.js",
       "reason": "[sloppy] zjs: throw: (unknown): testResult[1] Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-9.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult[0] Expected SameValue(\u00abundefined\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-1-s.js",
@@ -7921,16 +7909,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): result !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-9.js",
-      "reason": "[sloppy] zjs: throw: (unknown): result !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-17.js",
       "reason": "[sloppy] zjs: throw: (unknown): func(12, 11) !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-19.js",
-      "reason": "[sloppy] zjs: throw: (unknown): result !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-5-1-s.js",
