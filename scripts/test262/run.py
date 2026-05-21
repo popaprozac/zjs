@@ -48,11 +48,21 @@ REPO_ROOT  = Path(__file__).resolve().parent.parent.parent
 CONFIG     = REPO_ROOT / "scripts" / "test262" / "config.json"
 OUT_DIR    = REPO_ROOT / "docs" / "conformance"
 
-# Same platform-tagging convention as scripts/bench/run.py: Windows
-# runs land in `-windows`-suffixed files so they don't pollute the
-# macOS history. macOS / Linux keep the original filenames.
+# Same platform-tagging convention as scripts/bench/run.py: macOS keeps
+# the original (un-suffixed) filenames; Windows and Linux land in
+# `-windows` / `-linux` siblings so the three streams don't pollute one
+# another's history.
 IS_WINDOWS  = sys.platform == "win32"
-PLATFORM_TAG = "windows" if IS_WINDOWS else None
+IS_LINUX    = sys.platform.startswith("linux")
+if IS_WINDOWS:
+    PLATFORM_TAG = "windows"
+    PLATFORM_LABEL = "Windows"
+elif IS_LINUX:
+    PLATFORM_TAG = "linux"
+    PLATFORM_LABEL = "Linux"
+else:
+    PLATFORM_TAG = None
+    PLATFORM_LABEL = "macOS"
 ZJS_BIN     = REPO_ROOT / "build" / ("zjs.exe" if IS_WINDOWS else "zjs")
 _suffix     = f"-{PLATFORM_TAG}" if PLATFORM_TAG else ""
 HISTORY     = OUT_DIR / f"history{_suffix}.jsonl"
@@ -618,7 +628,7 @@ def main():
         "passed":  passed,
         "failed":  failed,
         "skipped": skipped,
-        "platform": "Windows" if IS_WINDOWS else "macOS",
+        "platform": PLATFORM_LABEL,
     }
 
     print()
