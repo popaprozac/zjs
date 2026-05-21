@@ -44,6 +44,17 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Force UTF-8 on stdout/stderr — Windows's default text encoding
+# (cp1252) chokes on the replacement char (�) and other
+# non-Latin-1 codepoints that show up in test262 failure messages.
+# Python ≥ 3.7 supports `reconfigure`; safe no-op everywhere else.
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except AttributeError:
+        pass
+
 REPO_ROOT  = Path(__file__).resolve().parent.parent.parent
 CONFIG     = REPO_ROOT / "scripts" / "test262" / "config.json"
 OUT_DIR    = REPO_ROOT / "docs" / "conformance"
