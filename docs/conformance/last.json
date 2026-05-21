@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-20 23:47 UTC",
+    "when": "2026-05-21 00:00 UTC",
     "total": 14524,
-    "passed": 10333,
-    "failed": 3545,
+    "passed": 10347,
+    "failed": 3531,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -3365,14 +3365,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/elements/private-async-generator-method-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-async-method-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/private-derived-cls-direct-eval-contains-superproperty-1.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
@@ -3411,10 +3403,6 @@
     {
       "path": "test/language/statements/class/elements/private-field-visible-to-direct-eval.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-generator-method-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/private-getter-access-on-inner-arrow-function.js",
@@ -3493,14 +3481,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/statements/class/elements/private-static-async-generator-method-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-async-method-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/private-static-field-shadowed-by-field-on-nested-class.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'fieldAccess')"
     },
@@ -3525,16 +3505,8 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/statements/class/elements/private-static-generator-method-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/private-static-getter-visible-to-direct-eval.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-method-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#method\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/private-static-method-shadowed-by-field-on-nested-class.js",
@@ -4006,6 +3978,34 @@
     },
     {
       "path": "test/language/statements/class/elements/same-line-gen-rs-field-identifier.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/same-line-gen-rs-private-getter-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/same-line-gen-rs-private-getter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/same-line-gen-rs-private-method-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/same-line-gen-rs-private-method.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/same-line-gen-rs-private-setter-alt.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/same-line-gen-rs-private-setter.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
+    },
+    {
+      "path": "test/language/statements/class/elements/same-line-gen-rs-privatename-identifier-alt.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     }
   ],

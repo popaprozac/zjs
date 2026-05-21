@@ -3166,6 +3166,46 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
             }
             if mfn != NULL {
                 mfn.is_method = true;
+                // Set Function.name from the method name slice (matches
+                // ECMA-262 §15.4.4: each MethodDefinition's function
+                // value has .name = PropName). Skipped for computed-
+                // name methods — those need runtime evaluation. Get/set
+                // accessors get "get name" / "set name" prefix per spec.
+                if !is_computed_name && m.name_length > 0 {
+                    if mfn.props == NULL {
+                        let pv = ctx_new_object(c.ctx);
+                        mfn.props = zjs_as_object(pv);
+                    }
+                    let name_str: ZjsValue = zjs_undefined();
+                    if m.op == TokenKind::KwGet || m.op == TokenKind::KwSet {
+                        let prefix: char* = NULL;
+                        raw { prefix = (m->op == 36 /* placeholder */) ? "set " : "get "; }
+                        // Build "get <name>" / "set <name>". Use the
+                        // m.op == KwGet vs KwSet to choose. Zen-c
+                        // const-string concat at compile time would be
+                        // overkill — snprintf into a stack buf.
+                        let buf: char[128];
+                        let bp: char* = NULL; raw { bp = &buf[0]; }
+                        let nl: int = 0;
+                        let name_d = c.source + m.name_start;
+                        let name_l = m.name_length;
+                        let is_get_kw: int = if m.op == TokenKind::KwGet { 1 } else { 0 };
+                        raw {
+                            nl = snprintf(bp, 128, "%s%.*s",
+                                          is_get_kw ? "get " : "set ",
+                                          (int)name_l, name_d);
+                            if (nl < 0) nl = 0;
+                            if (nl >= 128) nl = 127;
+                        }
+                        name_str = ctx_intern_string(c.ctx, bp, (u32)nl);
+                    } else {
+                        name_str = ctx_intern_string(c.ctx,
+                                                     c.source + m.name_start,
+                                                     m.name_length);
+                    }
+                    let name_atom_m = ctx_intern_atom(c.ctx, (char*)"name", 4);
+                    object_set(c.ctx, mfn.props, name_atom_m, name_str);
+                }
                 let mptr: void* = NULL;
                 raw { mptr = (void*)mfn; }
                 ctx_register_cell(c.ctx, mptr);

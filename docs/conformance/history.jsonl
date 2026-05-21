@@ -458,3 +458,5 @@
 {"when": "2026-05-20 23:32 UTC", "total": 14524, "passed": 9757, "failed": 2138, "skipped": 2629, "platform": "macOS"}
 {"when": "2026-05-20 23:40 UTC", "total": 14524, "passed": 9838, "failed": 2057, "skipped": 2629, "platform": "macOS"}
 {"when": "2026-05-20 23:47 UTC", "total": 14524, "passed": 10333, "failed": 3545, "skipped": 646, "platform": "macOS"}
+{"when": "2026-05-20 23:51 UTC", "total": 14524, "passed": 10333, "failed": 3897, "skipped": 294, "platform": "macOS"}
+{"when": "2026-05-21 00:00 UTC", "total": 14524, "passed": 10347, "failed": 3531, "skipped": 646, "platform": "macOS"}
