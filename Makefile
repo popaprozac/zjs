@@ -23,9 +23,9 @@ PLATFORM_CFLAGS  := -fobjc-arc
 else
 SHLIB_EXT := so
 RPATH_FLAG := -Wl,-rpath,'$$ORIGIN'
-PLATFORM_SRC     := src/platform/http_stub.c src/platform/http_async.c src/platform/ws_stub.c
-PLATFORM_OBJS    := $(BUILD_DIR)/http_stub.o $(BUILD_DIR)/http_async.o $(BUILD_DIR)/ws_stub.o
-PLATFORM_LDFLAGS := -lpthread
+PLATFORM_SRC     := src/platform/http_linux.c src/platform/http_async.c src/platform/ws_stub.c
+PLATFORM_OBJS    := $(BUILD_DIR)/http_linux.o $(BUILD_DIR)/http_async.o $(BUILD_DIR)/ws_stub.o
+PLATFORM_LDFLAGS := -lpthread -lcurl
 PLATFORM_CFLAGS  :=
 endif
 
