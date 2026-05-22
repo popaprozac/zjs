@@ -144,6 +144,14 @@ struct Compiler {
     // spec, enforced via the c.had_error gate.
     enclosing_class_id: i32;
 
+    // Previous head of ctx.active_compiler when this Compiler was
+    // pushed via compiler_new — restored on compiler_free. Forms a
+    // singly-linked stack that GC walks during mark so mid-compile
+    // constants / IC names survive a sweep triggered by allocations
+    // in a later sibling's compile. void* to keep the cycle between
+    // Compiler and ZjsContext loose.
+    outer_compiler: void*;
+
     // 2026-05-16 — destructure_pattern mode flag. False = binding
     // (let/const/var/param/catch); true = assignment (`[a, b] = src`).
     // Binding mode assigns to a freshly-declared local/global; assign
@@ -207,7 +215,47 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.this_reg = -1;
     c.preferred_dst = -1;
     c.enclosing_class_id = -1;
+    // Push onto the ctx-wide active-compiler stack so GC sees this
+    // compiler's mid-flight constants + ICs as roots.
+    c.outer_compiler = ctx.active_compiler;
+    raw { ctx->active_compiler = (void*)c; }
     return c;
+}
+
+// Walk the active compiler chain and mark every ZjsValue still
+// holding inner-Function / interned-string references that haven't
+// been handed off to a finalized Function*'s constants array yet.
+// Called from gc_mark_roots.
+fn compiler_mark_chain(ctx: ZjsContext*) -> void {
+    let cur: Compiler* = NULL;
+    raw { cur = (Compiler*)ctx->active_compiler; }
+    while cur != NULL {
+        let i: u32 = 0;
+        while i < cur.const_count {
+            gc_mark_value(cur.constants[i]);
+            i = i + 1;
+        }
+        let j: u32 = 0;
+        while j < cur.ic_count {
+            if cur.ics[j].name != NULL {
+                gc_mark_value(zjs_cell_from_ptr((void*)cur.ics[j].name));
+            }
+            j = j + 1;
+        }
+        // Template-literal cooked / raw segments collected mid-compile
+        // also need to survive until the parent Function adopts them.
+        let t: u32 = 0;
+        while t < cur.tmpl_seg_count {
+            if cur.tmpl_cooked != NULL && cur.tmpl_cooked[t] != NULL {
+                gc_mark_value(zjs_cell_from_ptr((void*)cur.tmpl_cooked[t]));
+            }
+            if cur.tmpl_raw != NULL && cur.tmpl_raw[t] != NULL {
+                gc_mark_value(zjs_cell_from_ptr((void*)cur.tmpl_raw[t]));
+            }
+            t = t + 1;
+        }
+        raw { cur = (Compiler*)cur->outer_compiler; }
+    }
 }
 
 fn finally_push(c: Compiler*, body: AstNode*) -> void {
@@ -352,6 +400,27 @@ fn loop_pop(c: Compiler*) -> void {
 
 fn compiler_free(c: Compiler*) -> void {
     if c == NULL { return; }
+    // Pop ourselves off the ctx active-compiler stack. We can only
+    // be at the head — compile_function is recursive, not interleaved —
+    // but we tolerate not-at-head by walking and unlinking to keep
+    // teardown ordering issues from cascading.
+    let head: Compiler* = NULL;
+    raw { head = (Compiler*)c->ctx->active_compiler; }
+    if head == c {
+        raw { c->ctx->active_compiler = c->outer_compiler; }
+    } else if head != NULL {
+        // Defensive: splice c out of the chain.
+        let prev = head;
+        let cur: Compiler* = NULL;
+        raw { cur = (Compiler*)prev->outer_compiler; }
+        while cur != NULL && cur != c {
+            prev = cur;
+            raw { cur = (Compiler*)prev->outer_compiler; }
+        }
+        if cur == c {
+            raw { prev->outer_compiler = c->outer_compiler; }
+        }
+    }
     dealloc(c.code);
     dealloc(c.constants);
     dealloc(c.loop_stack);

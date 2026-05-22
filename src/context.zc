@@ -274,6 +274,16 @@ struct ZjsContext {
     roots_cap:       u32;
     roots_free_head: i32;        // first free slot index, or -1
 
+    // Active compiler chain — head is the INNERMOST in-progress
+    // Compiler. Each Compiler links to its outer via its own
+    // `outer_compiler` field. GC must walk this chain during mark
+    // because mid-compile values live in `c.constants` / `c.ics`
+    // BEFORE they're handed off to a finalized Function* (which has
+    // its own mark coverage via the cells list). Without this, a GC
+    // triggered during compile of a later sibling function sweeps
+    // earlier siblings' Function*s out from under us.
+    active_compiler: void*;
+
     // --- GC state ---
     root_frames:    GcRootFrame*;     // grown geometrically
     root_depth:     u32;              // # of active interpret() frames
@@ -1578,6 +1588,12 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         gc_mark_value(ctx.roots[sr]);
         sr = sr + 1;
     }
+    // Mid-compile constant pool + IC names + template segments live
+    // in the active compiler chain until each Compiler's data is
+    // transferred to a finalized Function*. Without this walk, a GC
+    // triggered by allocation during compile of a sibling function
+    // would sweep earlier siblings' inner Function*s.
+    if ctx.active_compiler != NULL { compiler_mark_chain(ctx); }
     // Globals
     let i: u32 = 0;
     while i < ctx.global_count {
@@ -1607,6 +1623,18 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     }
     let fi: u32 = 0;
     while fi < ctx.frame_count {
+        // The frame's executing Function — and therefore its bytecode,
+        // constants pool, and IC names — must be rooted. The TOP-LEVEL
+        // program Function is NOT registered in ctx.cells (compile_program
+        // skips ctx_register_cell on purpose so eval.zc's defer can free
+        // it directly), so this is the ONLY path that keeps its
+        // constants array reachable. Inner Function*s live in that pool
+        // and would otherwise get swept mid-execution on a large
+        // program that trips the GC threshold during ordinary
+        // allocation (Vite-bundled workers reliably hit this).
+        if ctx.frames[fi].f != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)ctx.frames[fi].f));
+        }
         gc_mark_value(ctx.frames[fi].saved_host_this);
         gc_mark_value(ctx.frames[fi].outer_promise);
         if ctx.frames[fi].saved_current_closure != NULL {
