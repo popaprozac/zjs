@@ -143,3 +143,72 @@ fn zjs_eval_module(ctx: ZjsContext*, abs_path: char*) -> ZjsValue {
     ctx.last_error = zjs_undefined();
     return zjs_cell_from_ptr((void*)m.exports);
 }
+
+// Evaluate an in-memory source buffer as an ES module — useful for
+// embedders that bundle worker code (Vite / Rolldown / esbuild) and
+// want to skip the disk hop, or for any host generating module
+// source on the fly. `virtual_path` is the cache key + base path for
+// relative imports inside the source (`import "./sibling"` resolves
+// against the directory of `virtual_path`). It does NOT need to point
+// at a real file — `/virtual/main.mjs` works fine for a single
+// self-contained bundle.
+//
+// `source_len` is the byte length of `source`; the buffer does NOT
+// need to be NUL-terminated. A second call with the same
+// `virtual_path` returns the cached exports without re-parsing.
+//
+// Returns the module's exports object on success. On parse / compile /
+// evaluation failure, sets ctx.had_error and returns the thrown value
+// (or undefined on truly fatal failures).
+fn zjs_eval_module_source(ctx: ZjsContext*, source: char*, source_len: usize, virtual_path: char*) -> ZjsValue {
+    if ctx == NULL || source == NULL || virtual_path == NULL { return zjs_undefined(); }
+    let path_len: u32 = 0;
+    raw { path_len = (uint32_t)strlen(virtual_path); }
+    let path_atom = ctx_intern_atom(ctx, virtual_path, path_len);
+
+    // Cache hit on virtual_path: behave like zjs_eval_module — return
+    // the cached exports without re-parsing the supplied buffer.
+    let cached = module_cache_find(ctx, path_atom);
+    if cached != NULL && cached.state == MODULE_STATE_EVALUATED {
+        ctx.had_error  = false;
+        ctx.last_error = zjs_undefined();
+        return zjs_cell_from_ptr((void*)cached.exports);
+    }
+
+    // Copy the caller's source into a freshly-allocated NUL-terminated
+    // buffer that we retain — Functions hold offsets into the bytes.
+    // Calling code with `const char*` doesn't need to keep its copy
+    // around after this call returns.
+    let src_owned: char* = NULL;
+    raw {
+        src_owned = (char*)malloc(source_len + 1);
+        if (src_owned) {
+            memcpy(src_owned, source, source_len);
+            src_owned[source_len] = 0;
+        }
+    }
+    if src_owned == NULL {
+        ctx.had_error = true;
+        return zjs_undefined();
+    }
+
+    let m = ctx_eval_module_with_source(ctx, path_atom, src_owned);
+    drain_microtasks(ctx);
+    if ctx.pending_throw_active {
+        ctx.had_error = true;
+        ctx.last_error = consume_pending_throw(ctx);
+        return ctx.last_error;
+    }
+    if m == NULL {
+        ctx.had_error = true;
+        return zjs_undefined();
+    }
+    if m.state == MODULE_STATE_ERRORED {
+        ctx.had_error  = true;
+        ctx.last_error = m.error;
+        return m.error;
+    }
+    ctx.had_error  = false;
+    ctx.last_error = zjs_undefined();
+    return zjs_cell_from_ptr((void*)m.exports);
+}

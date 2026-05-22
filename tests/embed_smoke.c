@@ -894,6 +894,58 @@ static void test_drain_microtasks(void) {
 }
 
 /* -----------------------------------------------------------------------
+ * zjs_eval_module_source — evaluate ESM from an in-memory buffer.
+ * Mirrors the Vite/Rolldown bundle-to-string flow embedders use.
+ * --------------------------------------------------------------------- */
+
+static void test_module_source_abi(void) {
+    ZjsContext *ctx = zjs_new_context();
+
+    /* Self-contained bundle — exports computed at evaluation time. */
+    const char *src =
+        "export const tick = 7;\n"
+        "export function next(x) { return x + 1; }\n"
+        "export const sum = next(tick);\n";
+
+    ZjsValue exports = zjs_eval_module_source(ctx, src, strlen(src), "/virtual/main.mjs");
+    CHECK(!zjs_had_error(ctx), "in-memory module evaluated without error");
+    CHECK(zjs_is_object(exports), "returns the exports object");
+
+    ZjsValue tick = zjs_get_property(ctx, exports, "tick");
+    CHECK(zjs_is_int32(tick) && zjs_as_int32(tick) == 7,
+          "named export `tick` round-trips (got %d)",
+          zjs_is_int32(tick) ? zjs_as_int32(tick) : -1);
+
+    ZjsValue sum = zjs_get_property(ctx, exports, "sum");
+    CHECK(zjs_is_int32(sum) && zjs_as_int32(sum) == 8,
+          "computed export `sum` reflects body evaluation (got %d)",
+          zjs_is_int32(sum) ? zjs_as_int32(sum) : -1);
+
+    /* Re-eval with the SAME virtual_path: returns cached exports without
+     * re-parsing. Different source bytes — they must be ignored. */
+    const char *src2 = "export const tick = 999;";
+    ZjsValue exports2 = zjs_eval_module_source(ctx, src2, strlen(src2), "/virtual/main.mjs");
+    ZjsValue tick2 = zjs_get_property(ctx, exports2, "tick");
+    CHECK(zjs_is_int32(tick2) && zjs_as_int32(tick2) == 7,
+          "second eval with same virtual_path returns cached module (got %d)",
+          zjs_is_int32(tick2) ? zjs_as_int32(tick2) : -1);
+
+    /* Different virtual_path: re-parses the new source. */
+    ZjsValue exports3 = zjs_eval_module_source(ctx, src2, strlen(src2), "/virtual/other.mjs");
+    ZjsValue tick3 = zjs_get_property(ctx, exports3, "tick");
+    CHECK(zjs_is_int32(tick3) && zjs_as_int32(tick3) == 999,
+          "different virtual_path treated as new module (got %d)",
+          zjs_is_int32(tick3) ? zjs_as_int32(tick3) : -1);
+
+    /* Parse error surfaces via had_error. */
+    const char *bad = "export const = ;";
+    zjs_eval_module_source(ctx, bad, strlen(bad), "/virtual/bad.mjs");
+    CHECK(zjs_had_error(ctx), "parse error reports via had_error");
+
+    zjs_free_context(ctx);
+}
+
+/* -----------------------------------------------------------------------
  * Main.
  * --------------------------------------------------------------------- */
 
@@ -917,6 +969,7 @@ int main(void) {
     test_module_abi();
     test_strong_roots();
     test_drain_microtasks();
+    test_module_source_abi();
 
     printf("[smoke] %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

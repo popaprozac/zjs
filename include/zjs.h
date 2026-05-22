@@ -290,6 +290,35 @@ unsigned char* zjs_compile_to_bytecode(ZjsContext* ctx, const char* source, size
 ZjsValue zjs_eval_module(ZjsContext* ctx, const char* abs_path);
 
 /* -----------------------------------------------------------------------
+ * Evaluate an in-memory source buffer as an ES module.
+ *
+ * Useful when the embedder bundles worker code (Vite, Rolldown, esbuild,
+ * …) and wants to skip the disk hop, or when generating module source
+ * on the fly.
+ *
+ *   source         module source bytes (need not be NUL-terminated)
+ *   source_len     length of source in bytes
+ *   virtual_path   the cache key + base for relative `import "./..."`
+ *                  resolution inside the source. Does NOT need to point
+ *                  at a real file — `/virtual/main.mjs` works fine for
+ *                  a single self-contained bundle. Re-evaluating with
+ *                  the same virtual_path returns the cached exports
+ *                  without re-parsing.
+ *
+ * Returns the module's exports object on success. On parse / compile /
+ * evaluation failure, sets zjs_had_error and returns the thrown value
+ * (or undefined on truly fatal failures).
+ *
+ * Bare specifiers (`import "lodash"`) still go through the same
+ * resolver as zjs_eval_module — preprocess them before evaluation if
+ * you need package-style lookup.
+ * --------------------------------------------------------------------- */
+ZjsValue zjs_eval_module_source(ZjsContext* ctx,
+                                const char* source,
+                                size_t source_len,
+                                const char* virtual_path);
+
+/* -----------------------------------------------------------------------
  * Event loop — web-API Phase B (timers).
  *
  * The engine exposes its pending-work state through these three

@@ -17370,43 +17370,20 @@ raw {
 
 // Load + (recursively) evaluate the module at `abs_path`. Returns the
 // cached record on subsequent calls.
-fn ctx_load_module(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {
-    if abs_path == NULL { return NULL; }
-    let existing = module_cache_find(ctx, abs_path);
-    if existing != NULL {
-        if existing.state == MODULE_STATE_EVALUATED { return existing; }
-        if existing.state == MODULE_STATE_EVALUATING {
-            // Circular import — surface a real error once cycle support
-            // lands. For MVP, return the (partially populated) record;
-            // the in-flight body sees `undefined` for not-yet-set names.
-            return existing;
-        }
-        if existing.state == MODULE_STATE_ERRORED {
-            ctx.pending_throw_active = true;
-            ctx.pending_throw_value  = existing.error;
-            return existing;
-        }
-    }
-
-    // Read file.
-    let path_c: char* = NULL;
-    let path_buf = alloc_n<char>((usize)(abs_path.length + 1));
-    raw {
-        memcpy(path_buf, abs_path->data, abs_path->length);
-        path_buf[abs_path->length] = 0;
-        path_c = path_buf;
-    }
-    let src = read_file_to_string(path_c);
-    dealloc(path_buf);
-    if src == NULL {
-        let err = build_typed_error(ctx, (char*)"Error", 5,
-                                    (char*)"module not found", 16);
-        ctx.pending_throw_active = true;
-        ctx.pending_throw_value  = err;
-        return NULL;
-    }
-
-    // Parse + compile.
+// Internal helper: parse + compile + register + evaluate a module
+// from an already-owned source buffer. The caller is responsible for
+// reading the source (from disk, from a passed-in string, etc.) and
+// passing in the abs_path atom that becomes the module's cache key.
+//
+// `src` must be a heap-allocated NUL-terminated buffer; this function
+// retains it (Functions hold offsets into the source). Caller must NOT
+// free it after the call.
+//
+// On parse/compile/evaluation failure, sets ctx.pending_throw and
+// returns either NULL (couldn't even build a record) or the errored
+// module record. The src buffer is freed in the parse/compile-failure
+// paths since no Function ends up owning it.
+fn ctx_eval_module_with_source(ctx: ZjsContext*, abs_path: ZjsString*, src: char*) -> ZjsModuleRecord* {
     let src_len: usize = 0;
     raw { src_len = strlen(src); }
     let parse: ParseResult = parse_module(src, src_len);
@@ -17471,6 +17448,44 @@ fn ctx_load_module(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {
     }
     m.state = MODULE_STATE_EVALUATED;
     return m;
+}
+
+fn ctx_load_module(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {
+    if abs_path == NULL { return NULL; }
+    let existing = module_cache_find(ctx, abs_path);
+    if existing != NULL {
+        if existing.state == MODULE_STATE_EVALUATED { return existing; }
+        if existing.state == MODULE_STATE_EVALUATING {
+            // Circular import — surface a real error once cycle support
+            // lands. For MVP, return the (partially populated) record;
+            // the in-flight body sees `undefined` for not-yet-set names.
+            return existing;
+        }
+        if existing.state == MODULE_STATE_ERRORED {
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = existing.error;
+            return existing;
+        }
+    }
+
+    // Read file.
+    let path_c: char* = NULL;
+    let path_buf = alloc_n<char>((usize)(abs_path.length + 1));
+    raw {
+        memcpy(path_buf, abs_path->data, abs_path->length);
+        path_buf[abs_path->length] = 0;
+        path_c = path_buf;
+    }
+    let src = read_file_to_string(path_c);
+    dealloc(path_buf);
+    if src == NULL {
+        let err = build_typed_error(ctx, (char*)"Error", 5,
+                                    (char*)"module not found", 16);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return NULL;
+    }
+    return ctx_eval_module_with_source(ctx, abs_path, src);
 }
 
 // Called from Op::ImportBind. Returns the value of source.exports[name]
