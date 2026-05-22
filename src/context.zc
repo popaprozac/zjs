@@ -1633,6 +1633,17 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         // program that trips the GC threshold during ordinary
         // allocation (Vite-bundled workers reliably hit this).
         if ctx.frames[fi].f != NULL {
+            // The top-level script Function isn't in ctx.cells, so
+            // gc_sweep_old never clears its mark bit. Without this
+            // reset, the SECOND GC sees mark!=0 and early-returns from
+            // gc_mark_value without recursing into f.constants — the
+            // pattern/atom strings then get swept and their cells get
+            // recycled. Inner Functions are in ctx.cells; resetting
+            // their mark here too is harmless (sweep would clear it
+            // moments later either way).
+            let fh: CellHeader* = NULL;
+            raw { fh = (CellHeader*)ctx->frames[fi].f; }
+            fh.mark = 0;
             gc_mark_value(zjs_cell_from_ptr((void*)ctx.frames[fi].f));
         }
         gc_mark_value(ctx.frames[fi].saved_host_this);
