@@ -1999,16 +1999,59 @@ fn interpret_inner_full(ctx: ZjsContext*,
         } else if op == Op::LoadGlobal {
             let slot = inst_bc_u16(inst);
             if !ctx.globals[slot].defined {
+                // ECMA-262 §9.1.1.4 GetBindingValue: when the
+                // DeclarativeRecord has no binding, fall through to
+                // the ObjectRecord (= globalThis own/inherited).
                 let nm = ctx.globals[slot].name;
                 let nl = ctx.globals[slot].name_len;
-                let err = build_reference_error(ctx, nm, nl);
-                throwing = true; thrown = err; exit_reason = 3; break;
+                let found_v: ZjsValue = zjs_undefined();
+                let found: bool = false;
+                if ctx.global_this_obj != NULL {
+                    let key_str = ctx_intern_atom(ctx, nm, nl);
+                    let cur = ctx.global_this_obj;
+                    while cur != NULL {
+                        if class_find_slot(cur.cls, key_str) >= 0 {
+                            let obj_v = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                            let key_v = zjs_cell_from_ptr((void*)key_str);
+                            found_v = property_get(ctx, obj_v, key_v);
+                            found = true;
+                            cur = NULL;
+                        } else {
+                            cur = cur.proto;
+                        }
+                    }
+                }
+                if !found {
+                    let err = build_reference_error(ctx, nm, nl);
+                    throwing = true; thrown = err; exit_reason = 3; break;
+                }
+                regs[inst.a] = found_v;
+            } else {
+                regs[inst.a] = ctx.globals[slot].value;
             }
-            regs[inst.a] = ctx.globals[slot].value;
         } else if op == Op::LoadGlobalOrUndefined {
             let slot = inst_bc_u16(inst);
             if !ctx.globals[slot].defined {
-                regs[inst.a] = zjs_undefined();
+                // typeof variant — same fallback, but absence is
+                // silently `undefined` rather than ReferenceError.
+                let nm = ctx.globals[slot].name;
+                let nl = ctx.globals[slot].name_len;
+                let found_v: ZjsValue = zjs_undefined();
+                if ctx.global_this_obj != NULL {
+                    let key_str = ctx_intern_atom(ctx, nm, nl);
+                    let cur = ctx.global_this_obj;
+                    while cur != NULL {
+                        if class_find_slot(cur.cls, key_str) >= 0 {
+                            let obj_v = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                            let key_v = zjs_cell_from_ptr((void*)key_str);
+                            found_v = property_get(ctx, obj_v, key_v);
+                            cur = NULL;
+                        } else {
+                            cur = cur.proto;
+                        }
+                    }
+                }
+                regs[inst.a] = found_v;
             } else {
                 regs[inst.a] = ctx.globals[slot].value;
             }

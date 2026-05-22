@@ -592,6 +592,31 @@ fn expr_is_simple_pure(n: AstNode*) -> bool {
     return false;
 }
 
+// Walk the leftmost spine of a member/call expression looking for a
+// `?.` operation. Paren / Identifier / anything else terminates the
+// chain. Returns true iff at least one Optional* node is present, in
+// which case the WHOLE expression must compile as a short-circuit
+// unit (per ECMA-262 §13.3.9 ChainExpression).
+fn expr_chain_has_optional(n: AstNode*) -> bool {
+    let cur = n;
+    while cur != NULL {
+        let k = cur.kind;
+        if k == NodeKind::OptionalMember
+           || k == NodeKind::OptionalComputed
+           || k == NodeKind::OptionalCall {
+            return true;
+        }
+        if k == NodeKind::Member
+           || k == NodeKind::Computed
+           || k == NodeKind::Call {
+            cur = cur.left;
+            continue;
+        }
+        return false;
+    }
+    return false;
+}
+
 fn release_reg(c: Compiler*, r: u8) -> void {
     // High-water-mark allocator: only release if it's the top register
     // AND it's a temp (above fixed_regs). The second guard matters for
@@ -875,7 +900,15 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
     if k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
         return compile_function_value(c, node);
     }
+    if k == NodeKind::OptionalMember
+       || k == NodeKind::OptionalComputed
+       || k == NodeKind::OptionalCall {
+        return compile_optional_chain(c, node);
+    }
     if k == NodeKind::Call {
+        if expr_chain_has_optional(node) {
+            return compile_optional_chain(c, node);
+        }
         return compile_call(c, node);
     }
     if k == NodeKind::New {
@@ -955,9 +988,15 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         return base;
     }
     if k == NodeKind::Member {
+        if expr_chain_has_optional(node) {
+            return compile_optional_chain(c, node);
+        }
         return compile_member(c, node);
     }
     if k == NodeKind::Computed {
+        if expr_chain_has_optional(node) {
+            return compile_optional_chain(c, node);
+        }
         return compile_computed(c, node);
     }
     if k == NodeKind::Array {
@@ -1610,6 +1649,166 @@ fn compile_computed(c: Compiler*, node: AstNode*) -> u8 {
     emit(c, make_inst_abc(Op::LoadElem, dst, obj_r, key_r));
     release_reg(c, key_r);
     release_reg(c, obj_r);
+    if c.next_reg <= dst { c.next_reg = dst + 1; }
+    return dst;
+}
+
+// Compile an optional-chain expression (a Member/Computed/Call tree
+// whose leftmost spine contains at least one Optional* node) as a
+// single short-circuit unit. Per ECMA-262 §13.3.9, once any `?.` in
+// the chain sees a nullish LHS, every subsequent access in the same
+// chain is skipped and the chain evaluates to `undefined`.
+//
+// Strategy: walk the leftmost spine top-down collecting operations,
+// then compile them in source order. Each Optional* op emits a
+// JmpIfNullish on the running value, targeting a shared "end-handler"
+// that loads `undefined` into the result register. Non-optional ops
+// in the chain compile normally — they only short-circuit because a
+// PREVIOUS `?.` already jumped past them.
+//
+// Calls in the chain need receiver tracking: a Member/Computed
+// produces a value AND remembers the object it was read from, so
+// that a following Call/OptionalCall can pass it as `this`. We keep
+// the most recent receiver in a dedicated register.
+fn compile_optional_chain(c: Compiler*, node: AstNode*) -> u8 {
+    let CHAIN_CAP: u32 = 32;
+    let ops: AstNode*[32];
+    let op_count: u32 = 0;
+    let cur = node;
+    while cur != NULL {
+        let k = cur.kind;
+        let is_chain_op: bool =
+            k == NodeKind::Member
+            || k == NodeKind::Computed
+            || k == NodeKind::Call
+            || k == NodeKind::OptionalMember
+            || k == NodeKind::OptionalComputed
+            || k == NodeKind::OptionalCall;
+        if !is_chain_op { break; }
+        if op_count >= CHAIN_CAP {
+            // Pathological chain length — emit a no-op and bail.
+            c.had_error = true;
+            return alloc_reg(c);
+        }
+        ops[op_count] = cur;
+        op_count = op_count + 1;
+        cur = cur.left;
+    }
+    // `cur` is the chain's base expression (Identifier, Paren, literal, etc.).
+    // op_count must be >= 1 because the caller only routes here when
+    // at least one Optional* is in the spine.
+
+    // Reserve dst + receiver scratch up front so all chain steps share
+    // a stable layout. recv starts as undefined; Member/Computed update
+    // it to the prior object, Call consumes + resets it.
+    let dst  = alloc_reg(c);
+    let recv = alloc_reg(c);
+    emit(c, make_inst_a(Op::LoadUndefined, recv));
+
+    let base_r = compile_expr(c, cur);
+    if base_r != dst { emit(c, make_inst_ab(Op::Mov, dst, base_r)); }
+    release_reg(c, base_r);
+    if c.next_reg <= recv + 1 { c.next_reg = recv + 1; }
+
+    // Indices into c.code of the JmpIfNullish placeholders to patch
+    // to the end-handler. Sized in lock-step with chain ops.
+    let end_jumps: u32[32];
+    let end_jump_count: u32 = 0;
+
+    let i = op_count;
+    while i > 0 {
+        i = i - 1;
+        let op = ops[i];
+        let k = op.kind;
+        let is_optional: bool =
+            k == NodeKind::OptionalMember
+            || k == NodeKind::OptionalComputed
+            || k == NodeKind::OptionalCall;
+        if is_optional {
+            let jmp_idx = emit(c, make_inst_a_i16(Op::JmpIfNullish, dst, 0));
+            end_jumps[end_jump_count] = jmp_idx;
+            end_jump_count = end_jump_count + 1;
+        }
+
+        if k == NodeKind::Member || k == NodeKind::OptionalMember {
+            // Save current dst as receiver for any subsequent Call.
+            emit(c, make_inst_ab(Op::Mov, recv, dst));
+            let name_atom = ctx_intern_atom(c.ctx, c.source + op.name_start, op.name_length);
+            let ic = alloc_ic_slot(c, name_atom);
+            if ic <= 255 {
+                emit(c, make_inst_abc(Op::LoadProp, dst, dst, (u8)ic));
+            } else {
+                let key_r = emit_load_atom(c, name_atom);
+                emit(c, make_inst_abc(Op::LoadElem, dst, dst, key_r));
+                release_reg(c, key_r);
+            }
+        } else if k == NodeKind::Computed || k == NodeKind::OptionalComputed {
+            emit(c, make_inst_ab(Op::Mov, recv, dst));
+            let key_r = compile_expr(c, op.right);
+            emit(c, make_inst_abc(Op::LoadElem, dst, dst, key_r));
+            release_reg(c, key_r);
+        } else if k == NodeKind::Call || k == NodeKind::OptionalCall {
+            // MethodInvoke layout: regs[base] = callee, regs[base+1] =
+            // receiver, regs[base+2..] = args. We currently have callee
+            // in dst and receiver in recv. Reserve a fresh contiguous
+            // frame and stage them.
+            //
+            // Spread-args in optional calls aren't supported yet — fall
+            // out as a compile error rather than miscompile silently.
+            let has_spread: bool = false;
+            let sj: u32 = 0;
+            while sj < op.children_count {
+                if op.children[sj].kind == NodeKind::Spread { has_spread = true; break; }
+                sj = sj + 1;
+            }
+            if has_spread {
+                c.had_error = true;
+                return dst;
+            }
+            let arg_count: u8 = (u8)op.children_count;
+            let call_base = c.next_reg;
+            let slots_needed: u8 = 2 + arg_count;
+            let r: u8 = 0;
+            while r < slots_needed { alloc_reg(c); r = r + 1; }
+            emit(c, make_inst_ab(Op::Mov, call_base,     dst));
+            emit(c, make_inst_ab(Op::Mov, call_base + 1, recv));
+            let j: u32 = 0;
+            while j < op.children_count {
+                let target = call_base + 2 + (u8)j;
+                let saved_pd = c.preferred_dst;
+                c.preferred_dst = (i32)target;
+                let arg_r = compile_expr(c, op.children[j]);
+                c.preferred_dst = saved_pd;
+                if arg_r != target {
+                    emit(c, make_inst_ab(Op::Mov, target, arg_r));
+                    if arg_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                }
+                j = j + 1;
+            }
+            emit(c, make_inst_abc(Op::MethodInvoke, call_base, call_base, arg_count));
+            if call_base != dst {
+                emit(c, make_inst_ab(Op::Mov, dst, call_base));
+            }
+            c.next_reg = recv + 1;
+            // After a call, the receiver chain restarts at undefined.
+            emit(c, make_inst_a(Op::LoadUndefined, recv));
+        }
+    }
+
+    // Chain finished successfully — skip past the end-handler.
+    let past_idx = emit(c, make_inst_i16(Op::Jmp, 0));
+    // End-handler entry — patch all JmpIfNullish placeholders to land here.
+    let pj: u32 = 0;
+    while pj < end_jump_count {
+        patch_jump(c, end_jumps[pj]);
+        pj = pj + 1;
+    }
+    emit(c, make_inst_a(Op::LoadUndefined, dst));
+    // Patch the unconditional jump to fall through here.
+    patch_jump(c, past_idx);
+
+    // Receiver scratch isn't observable past the chain — release.
+    release_reg(c, recv);
     if c.next_reg <= dst { c.next_reg = dst + 1; }
     return dst;
 }
