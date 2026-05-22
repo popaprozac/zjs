@@ -364,6 +364,18 @@ fn compiler_free(c: Compiler*) -> void {
 // Allocate a fresh IC slot for the current function. Initializes name
 // and leaves class_/slot at zero (cold cache; first execution warms it).
 fn alloc_ic_slot(c: Compiler*, name: ZjsString*) -> u32 {
+    // Dedupe by atom-pointer: multiple call sites that look up the same
+    // name share an IC entry. Each entry is already polymorphic up to
+    // IC_POLY_SIZE=4 classes (megamorphic past that), so collapsing
+    // unrelated sites onto one slot is a no-op for correctness and a
+    // big win for slot count — large Vite bundles routinely look up
+    // names like "prototype" / "exports" / "length" dozens of times
+    // and previously chewed through the 256-slot u8 encoding budget.
+    let i: u32 = 0;
+    while i < c.ic_count {
+        if c.ics[i].name == name { return i; }
+        i = i + 1;
+    }
     if c.ic_count >= c.ic_cap {
         let new_cap: u32 = if c.ic_cap == 0 { 8 } else { c.ic_cap * 2 };
         c.ics = realloc_n<ICEntry>(c.ics, (usize)c.ic_cap, (usize)new_cap);
