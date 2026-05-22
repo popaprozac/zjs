@@ -847,8 +847,7 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
                 // Captured local — read through env via an IC.
                 let dst = alloc_reg(c);
                 let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-                let ic = alloc_ic_slot(c, name_atom);
-                emit(c, make_inst_abc(Op::LoadProp, dst, c.env_reg, (u8)ic));
+                emit_load_prop_atom(c, dst, c.env_reg, name_atom);
                 return dst;
             }
             // Non-captured local — hand back the local's reg directly
@@ -882,9 +881,8 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
             c.has_outer_refs = true;
             let env_r = emit_env_chain_walk(c, depth);
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-            let ic = alloc_ic_slot(c, name_atom);
             let dst = alloc_reg(c);
-            emit(c, make_inst_abc(Op::LoadProp, dst, env_r, (u8)ic));
+            emit_load_prop_atom(c, dst, env_r, name_atom);
             release_reg(c, env_r);
             if c.next_reg <= dst { c.next_reg = dst + 1; }
             return dst;
@@ -1483,8 +1481,7 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         if local_idx >= 0 {
             if captured_local {
                 let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-                let ic = alloc_ic_slot(c, name_atom);
-                emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, r));
+                emit_store_prop_atom(c, c.env_reg, name_atom, r);
             } else if r != local_reg {
                 // RHS didn't take our hint (e.g. it was a bare ident
                 // returning a borrowed reg) — fall back to Mov.
@@ -1493,8 +1490,7 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         } else if outer_depth > 0 {
             let env_r = emit_env_chain_walk(c, outer_depth);
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-            let ic = alloc_ic_slot(c, name_atom);
-            emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, r));
+            emit_store_prop_atom(c, env_r, name_atom, r);
             release_reg(c, env_r);
         } else {
             let slot = ctx_intern_global(c.ctx, name, name_len);
@@ -1509,16 +1505,14 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     if local_idx >= 0 {
         if captured_local {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-            let ic = alloc_ic_slot(c, name_atom);
-            emit(c, make_inst_abc(Op::LoadProp, cur, c.env_reg, (u8)ic));
+            emit_load_prop_atom(c, cur, c.env_reg, name_atom);
         } else {
             emit(c, make_inst_ab(Op::Mov, cur, local_reg));
         }
     } else if outer_depth > 0 {
         let env_r = emit_env_chain_walk(c, outer_depth);
         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-        let ic = alloc_ic_slot(c, name_atom);
-        emit(c, make_inst_abc(Op::LoadProp, cur, env_r, (u8)ic));
+        emit_load_prop_atom(c, cur, env_r, name_atom);
         release_reg(c, env_r);
     } else {
         let slot = ctx_intern_global(c.ctx, name, name_len);
@@ -1548,16 +1542,14 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     if local_idx >= 0 {
         if captured_local {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-            let ic = alloc_ic_slot(c, name_atom);
-            emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, dst));
+            emit_store_prop_atom(c, c.env_reg, name_atom, dst);
         } else {
             emit(c, make_inst_ab(Op::Mov, local_reg, dst));
         }
     } else if outer_depth > 0 {
         let env_r = emit_env_chain_walk(c, outer_depth);
         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-        let ic = alloc_ic_slot(c, name_atom);
-        emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, dst));
+        emit_store_prop_atom(c, env_r, name_atom, dst);
         release_reg(c, env_r);
     } else {
         let slot = ctx_intern_global(c.ctx, name, name_len);
@@ -1597,6 +1589,35 @@ fn emit_load_atom(c: Compiler*, atom: ZjsString*) -> u8 {
     let r = alloc_reg(c);
     emit(c, make_inst_a_u16(Op::LoadConst, r, idx));
     return r;
+}
+
+// Property LOAD by atom name. Uses the ic-cached LoadProp opcode when
+// the slot fits in the 8-bit operand field, otherwise falls back to a
+// LoadElem with the atom materialized into a fresh key register. The
+// fallback is uncached (slower) but spec-correct — without it, a
+// function whose enclosing compiler accumulates >255 distinct IC names
+// silently truncates the slot index and reads/writes the wrong slot
+// on its env / object.
+fn emit_load_prop_atom(c: Compiler*, dst: u8, obj_r: u8, name_atom: ZjsString*) -> void {
+    let ic = alloc_ic_slot(c, name_atom);
+    if ic <= 255 {
+        emit(c, make_inst_abc(Op::LoadProp, dst, obj_r, (u8)ic));
+        return;
+    }
+    let key_r = emit_load_atom(c, name_atom);
+    emit(c, make_inst_abc(Op::LoadElem, dst, obj_r, key_r));
+    release_reg(c, key_r);
+}
+
+fn emit_store_prop_atom(c: Compiler*, obj_r: u8, name_atom: ZjsString*, val_r: u8) -> void {
+    let ic = alloc_ic_slot(c, name_atom);
+    if ic <= 255 {
+        emit(c, make_inst_abc(Op::StoreProp, obj_r, (u8)ic, val_r));
+        return;
+    }
+    let key_r = emit_load_atom(c, name_atom);
+    emit(c, make_inst_abc(Op::StoreElem, obj_r, key_r, val_r));
+    release_reg(c, key_r);
 }
 
 fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
@@ -2715,8 +2736,7 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
             let outer_r = alloc_reg(c);
             emit(c, make_inst_a(Op::LoadEnv, outer_r));
             let outer_atom = ctx_intern_atom(c.ctx, OUTER_ENV_KEY, OUTER_ENV_KEY_LEN);
-            let ic = alloc_ic_slot(c, outer_atom);
-            emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, outer_r));
+            emit_store_prop_atom(c, c.env_reg, outer_atom, outer_r);
             release_reg(c, outer_r);
         }
         let j: u32 = 0;
@@ -2730,8 +2750,7 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
                 let name_atom = ctx_intern_atom(c.ctx,
                                                 c.source + c.locals[j].name_start,
                                                 c.locals[j].name_length);
-                let ic = alloc_ic_slot(c, name_atom);
-                emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, c.locals[j].reg));
+                emit_store_prop_atom(c, c.env_reg, name_atom, c.locals[j].reg);
             }
             j = j + 1;
         }
@@ -3154,8 +3173,7 @@ fn compile_import_decl(c: Compiler*, node: AstNode*) -> void {
             // ImportBind into a temp, then store into env.
             let tmp = alloc_reg(c);
             emit(c, make_inst_abc(Op::ImportBind, tmp, (u8)spec_idx, (u8)name_idx));
-            let ic = alloc_ic_slot(c, local_atom);
-            emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, tmp));
+            emit_store_prop_atom(c, c.env_reg, local_atom, tmp);
             release_reg(c, tmp);
         } else {
             emit(c, make_inst_abc(Op::ImportBind, reg, (u8)spec_idx, (u8)name_idx));
@@ -3634,10 +3652,7 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
                 if name_atom == NULL {
                     name_atom = ctx_intern_atom(c.ctx, c.source + f.name_start, f.name_length);
                 }
-                let ic = alloc_ic_slot(c, name_atom);
-                if ic <= 255 {
-                    emit(c, make_inst_abc(Op::StoreProp, ctor_reg, (u8)ic, val_r));
-                }
+                emit_store_prop_atom(c, ctor_reg, name_atom, val_r);
             }
             release_reg(c, val_r);
         }
@@ -3729,13 +3744,12 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
     if target.kind == NodeKind::Member {
         let obj_r = compile_expr(c, target.left);
         let name_atom = ctx_intern_atom(c.ctx, c.source + target.name_start, target.name_length);
-        let ic = alloc_ic_slot(c, name_atom);
         let cur = alloc_reg(c);
-        emit(c, make_inst_abc(Op::LoadProp, cur, obj_r, (u8)ic));
+        emit_load_prop_atom(c, cur, obj_r, name_atom);
         let new_reg = alloc_reg(c);
         let op_ = if is_inc { Op::AddImm } else { Op::SubImm };
         emit(c, make_inst_abc(op_, new_reg, cur, (u8)1));
-        emit(c, make_inst_abc(Op::StoreProp, obj_r, (u8)ic, new_reg));
+        emit_store_prop_atom(c, obj_r, name_atom, new_reg);
         if obj_r + 1 == c.next_reg
            || (target.left.kind != NodeKind::IdentExpr && obj_r + 2 == c.next_reg) {
             // Best-effort temp recovery — only release if obj_r was a
@@ -3785,16 +3799,14 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
     if local_idx >= 0 {
         if captured_local {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-            let ic = alloc_ic_slot(c, name_atom);
-            emit(c, make_inst_abc(Op::LoadProp, cur, c.env_reg, (u8)ic));
+            emit_load_prop_atom(c, cur, c.env_reg, name_atom);
         } else {
             emit(c, make_inst_ab(Op::Mov, cur, local_reg));
         }
     } else if outer_depth > 0 {
         let env_r = emit_env_chain_walk(c, outer_depth);
         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-        let ic = alloc_ic_slot(c, name_atom);
-        emit(c, make_inst_abc(Op::LoadProp, cur, env_r, (u8)ic));
+        emit_load_prop_atom(c, cur, env_r, name_atom);
         release_reg(c, env_r);
     } else {
         let slot = ctx_intern_global(c.ctx, name, name_len);
@@ -3810,16 +3822,14 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
     if local_idx >= 0 {
         if captured_local {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-            let ic = alloc_ic_slot(c, name_atom);
-            emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, new_reg));
+            emit_store_prop_atom(c, c.env_reg, name_atom, new_reg);
         } else {
             emit(c, make_inst_ab(Op::Mov, local_reg, new_reg));
         }
     } else if outer_depth > 0 {
         let env_r = emit_env_chain_walk(c, outer_depth);
         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-        let ic = alloc_ic_slot(c, name_atom);
-        emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, new_reg));
+        emit_store_prop_atom(c, env_r, name_atom, new_reg);
         release_reg(c, env_r);
     } else {
         let slot = ctx_intern_global(c.ctx, name, name_len);
@@ -4455,8 +4465,7 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
             let obj_r = compile_expr(c, target.left);
             let name = c.source + target.name_start;
             let name_atom = ctx_intern_atom(c.ctx, name, target.name_length);
-            let ic = alloc_ic_slot(c, name_atom);
-            emit(c, make_inst_abc(Op::StoreProp, obj_r, (u8)ic, val_reg));
+            emit_store_prop_atom(c, obj_r, name_atom, val_reg);
             if obj_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
             return;
         }
@@ -4480,8 +4489,7 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
         if lidx >= 0 {
             if c.locals[(u32)lidx].captured {
                 let name_atom = ctx_intern_atom(c.ctx, nm, nl);
-                let ic = alloc_ic_slot(c, name_atom);
-                emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, val_reg));
+                emit_store_prop_atom(c, c.env_reg, name_atom, val_reg);
             } else {
                 emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, val_reg));
             }
@@ -4492,8 +4500,7 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
             c.has_outer_refs = true;
             let env_r = emit_env_chain_walk(c, outer_depth);
             let name_atom = ctx_intern_atom(c.ctx, nm, nl);
-            let ic = alloc_ic_slot(c, name_atom);
-            emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, val_reg));
+            emit_store_prop_atom(c, env_r, name_atom, val_reg);
             release_reg(c, env_r);
             return;
         }
@@ -4523,8 +4530,7 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
         }
         if c.locals[(u32)lidx].captured {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-            let ic = alloc_ic_slot(c, name_atom);
-            emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, val_reg));
+            emit_store_prop_atom(c, c.env_reg, name_atom, val_reg);
         } else {
             emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, val_reg));
         }
@@ -4657,8 +4663,7 @@ fn destructure_object(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
             let name_atom = ctx_intern_atom(c.ctx,
                                             c.source + entry.name_start,
                                             entry.name_length);
-            let ic = alloc_ic_slot(c, name_atom);
-            emit(c, make_inst_abc(Op::LoadProp, v_r, src_reg, (u8)ic));
+            emit_load_prop_atom(c, v_r, src_reg, name_atom);
         } else if entry.third != NULL {
             let key_r = compile_expr(c, entry.third);
             emit(c, make_inst_abc(Op::LoadElem, v_r, src_reg, key_r));
@@ -4899,8 +4904,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
                         // Captured locals live as properties on the env
                         // object — outer's reg slot is unused.
                         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-                        let ic = alloc_ic_slot(c, name_atom);
-                        emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, r));
+                        emit_store_prop_atom(c, c.env_reg, name_atom, r);
                     } else {
                         emit(c, make_inst_ab(Op::Mov, lreg, r));
                     }
@@ -4931,8 +4935,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             if lidx >= 0 {
                 if c.locals[(u32)lidx].captured {
                     let n_atom = ctx_intern_atom(c.ctx, c.source + node.name_start, node.name_length);
-                    let ic = alloc_ic_slot(c, n_atom);
-                    emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, r));
+                    emit_store_prop_atom(c, c.env_reg, n_atom, r);
                 } else {
                     emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, r));
                 }
@@ -4979,8 +4982,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
                     let n_atom = ctx_intern_atom(c.ctx,
                                                  c.source + node.name_start,
                                                  node.name_length);
-                    let ic = alloc_ic_slot(c, n_atom);
-                    emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, r));
+                    emit_store_prop_atom(c, c.env_reg, n_atom, r);
                 } else {
                     emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, r));
                 }
@@ -5338,8 +5340,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             if lidx >= 0 {
                 if c.locals[(u32)lidx].captured {
                     let name_atom = ctx_intern_atom(c.ctx, bname, bname_len);
-                    let ic = alloc_ic_slot(c, name_atom);
-                    emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, elem_r));
+                    emit_store_prop_atom(c, c.env_reg, name_atom, elem_r);
                 } else {
                     emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, elem_r));
                 }
@@ -5358,8 +5359,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
                     let env_r = alloc_reg(c);
                     emit(c, make_inst_a(Op::LoadEnv, env_r));
                     let name_atom = ctx_intern_atom(c.ctx, bname, bname_len);
-                    let ic = alloc_ic_slot(c, name_atom);
-                    emit(c, make_inst_abc(Op::StoreProp, env_r, (u8)ic, elem_r));
+                    emit_store_prop_atom(c, env_r, name_atom, elem_r);
                     release_reg(c, env_r);
                 } else {
                     let slot = ctx_intern_global(c.ctx, bname, bname_len);
@@ -5860,8 +5860,7 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
                 if lidx >= 0 {
                     if c.locals[(u32)lidx].captured {
                         let name_atom = ctx_intern_atom(c.ctx, bname, bname_len);
-                        let ic = alloc_ic_slot(c, name_atom);
-                        emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, value_r));
+                        emit_store_prop_atom(c, c.env_reg, name_atom, value_r);
                     } else {
                         emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, value_r));
                     }
@@ -5883,8 +5882,7 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
             if lidx >= 0 {
                 if c.locals[(u32)lidx].captured {
                     let name_atom = ctx_intern_atom(c.ctx, bname, bname_len);
-                    let ic = alloc_ic_slot(c, name_atom);
-                    emit(c, make_inst_abc(Op::StoreProp, c.env_reg, (u8)ic, value_r));
+                    emit_store_prop_atom(c, c.env_reg, name_atom, value_r);
                 } else {
                     emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, value_r));
                 }
