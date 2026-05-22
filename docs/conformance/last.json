@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-21 15:18 UTC",
+    "when": "2026-05-22 00:01 UTC",
     "total": 14524,
-    "passed": 10867,
-    "failed": 3011,
+    "passed": 10868,
+    "failed": 3010,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -1259,10 +1259,6 @@
     {
       "path": "test/language/statements/class/definition/fn-name-static-precedence-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [length, name, prototype, method] should have the same contents."
-    },
-    {
-      "path": "test/language/statements/class/definition/fn-name-static-precedence.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"string\"\u00bb, \u00ab\"function\"\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/definition/getters-non-configurable-err.js",

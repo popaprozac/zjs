@@ -329,6 +329,46 @@ int     zjs_has_pending_work(ZjsContext* ctx);
 int64_t zjs_next_timer_ms(ZjsContext* ctx);
 void    zjs_run_pending_timers(ZjsContext* ctx);
 
+/* Drain pending microtasks now. Use after C-side resolution of a
+ * Promise (uv I/O completion, native event arrival, …) so the
+ * `.then` continuations run before the next host work item. Idempotent
+ * when the queue is empty; safe to call at any time.
+ *
+ * zjs_run_pending_timers and the end of zjs_eval already drain
+ * microtasks for you. This entry point is for the cases between
+ * those — typically: host code calls into JS, that JS resolves a
+ * Promise, control returns to host code that wants the .then chain
+ * to have already fired. */
+void    zjs_drain_microtasks(ZjsContext* ctx);
+
+/* -----------------------------------------------------------------------
+ * Strong roots — keep a JS value alive across event-loop ticks.
+ *
+ * Embedders that hold a JS value across a uv I/O completion, a
+ * setInterval-style handler, or any other tick boundary use these to
+ * tell the GC the value is still in use. Returns an opaque handle
+ * (a small u32); zjs_unroot releases it.
+ *
+ * Typical use:
+ *
+ *     // C side, owning a JS callback across ticks:
+ *     uint32_t cb_handle = zjs_root(ctx, js_callback_value);
+ *     store_in_struct(my_handler_ctx, cb_handle);
+ *     // ... time passes; uv callback fires ...
+ *     ZjsValue cb = zjs_root_get(ctx, my_handler_ctx->cb_handle);
+ *     zjs_call(ctx, cb, zjs_undefined(), NULL, 0);
+ *     // Done with it:
+ *     zjs_unroot(ctx, my_handler_ctx->cb_handle);
+ *
+ * Multiple zjs_root calls with the same value each return an
+ * independent handle. After zjs_unroot, the handle is invalid; do not
+ * pass a freed handle to zjs_root_get (the slot may have been
+ * reassigned to a different value).
+ * --------------------------------------------------------------------- */
+uint32_t zjs_root(ZjsContext* ctx, ZjsValue value);
+void     zjs_unroot(ZjsContext* ctx, uint32_t handle);
+ZjsValue zjs_root_get(ZjsContext* ctx, uint32_t handle);
+
 #ifdef __cplusplus
 }
 #endif
