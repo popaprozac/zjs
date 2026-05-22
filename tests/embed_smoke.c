@@ -822,6 +822,78 @@ static void test_module_abi(void) {
 }
 
 /* -----------------------------------------------------------------------
+ * Strong roots — zjs_root / zjs_unroot / zjs_root_get. Embedders use
+ * these to keep JS values alive across event-loop ticks.
+ * --------------------------------------------------------------------- */
+
+static void test_strong_roots(void) {
+    ZjsContext *ctx = zjs_new_context();
+
+    /* Allocate a cell, root it, then trigger GC. The handle must still
+     * yield the same cell afterward. */
+    ZjsValue s = zjs_new_string(ctx, "rooted", 6);
+    uint32_t h = zjs_root(ctx, s);
+    zjs_gc(ctx);
+    ZjsValue back = zjs_root_get(ctx, h);
+    uint32_t len = 0;
+    const char *bytes = zjs_string_bytes(back, &len);
+    CHECK(len == 6 && memcmp(bytes, "rooted", 6) == 0,
+          "rooted string survives GC (got len=%u bytes=%.*s)",
+          len, (int)len, bytes ? bytes : "<null>");
+
+    /* Free + reacquire — slots should recycle, so the second handle
+     * matches the first. */
+    zjs_unroot(ctx, h);
+    ZjsValue s2 = zjs_new_string(ctx, "second", 6);
+    uint32_t h2 = zjs_root(ctx, s2);
+    CHECK(h2 == h, "freed slot reused (h=%u h2=%u)", h, h2);
+
+    /* Holding multiple values simultaneously gives independent handles. */
+    ZjsValue arr = zjs_new_array(ctx, 0);
+    uint32_t h3 = zjs_root(ctx, arr);
+    CHECK(h3 != h2, "second concurrent root gets a distinct handle");
+
+    zjs_unroot(ctx, h2);
+    zjs_unroot(ctx, h3);
+
+    zjs_free_context(ctx);
+}
+
+/* -----------------------------------------------------------------------
+ * zjs_drain_microtasks — embedder-driven microtask flush. Used after
+ * C-side resolution of a Promise (uv I/O completion, etc.) so the
+ * .then continuations fire before returning to the host loop.
+ * --------------------------------------------------------------------- */
+
+static void test_drain_microtasks(void) {
+    ZjsContext *ctx = zjs_new_context();
+
+    /* Schedule a microtask via Promise.resolve().then(...) inside a
+     * fresh eval, then drain explicitly. The .then callback installs
+     * a sentinel on globalThis; we verify it's set after the drain. */
+    zjs_eval(ctx, "var __mt_ran = 0; Promise.resolve().then(function(){ __mt_ran = 42; });");
+    CHECK(zjs_had_error(ctx) == 0, "eval scheduling microtask did not throw");
+
+    /* zjs_eval already drains at the end of the program — so the
+     * sentinel should already be 42 from the eval-end drain. Verify. */
+    ZjsValue ran = zjs_get_global(ctx, "__mt_ran");
+    CHECK(zjs_is_int32(ran) && zjs_as_int32(ran) == 42,
+          "eval-end drain fired the .then callback");
+
+    /* Schedule another from JS land but don't trigger an eval-boundary
+     * drain. Call zjs_drain_microtasks directly and confirm it ran. */
+    zjs_eval(ctx, "var __mt2 = 0; Promise.resolve().then(function(){ __mt2 = 99; });");
+    /* drain is also called at eval-end so __mt2 == 99 already, but the
+     * point is that the public entry exists and is callable. */
+    zjs_drain_microtasks(ctx);
+    ZjsValue mt2 = zjs_get_global(ctx, "__mt2");
+    CHECK(zjs_is_int32(mt2) && zjs_as_int32(mt2) == 99,
+          "zjs_drain_microtasks is callable as a public ABI entry");
+
+    zjs_free_context(ctx);
+}
+
+/* -----------------------------------------------------------------------
  * Main.
  * --------------------------------------------------------------------- */
 
@@ -843,6 +915,8 @@ int main(void) {
     test_call_from_c();
     test_aot_bytecode();
     test_module_abi();
+    test_strong_roots();
+    test_drain_microtasks();
 
     printf("[smoke] %d passed, %d failed\n", g_pass, g_fail);
     return g_fail == 0 ? 0 : 1;

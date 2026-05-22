@@ -263,6 +263,17 @@ struct ZjsContext {
     temp_root_count: u32;
     temp_root_cap:   u32;
 
+    // Strong-root table — exposed via the public zjs_root / zjs_unroot
+    // ABI. Embedders that hold JS values across event-loop ticks
+    // (uv I/O completions, setTimeout callbacks stashed in a C struct,
+    // etc.) acquire a stable handle backed by a slot here. The slot's
+    // index doubles as the handle; freed slots form a free list via
+    // `roots_free_head` (= -1 when empty). GC marks every live slot.
+    roots:           ZjsValue*;
+    roots_count:     u32;        // logical occupied (incl. free-listed)
+    roots_cap:       u32;
+    roots_free_head: i32;        // first free slot index, or -1
+
     // --- GC state ---
     root_frames:    GcRootFrame*;     // grown geometrically
     root_depth:     u32;              // # of active interpret() frames
@@ -479,6 +490,9 @@ fn zjs_new_context() -> ZjsContext* {
         // host receiver to JS `undefined`.
         result.host_this = zjs_undefined();
 
+        // Strong-root table: -1 sentinel means "no free slot, append".
+        result.roots_free_head = -1;
+
         // Pre-size the high-churn tables that ctx_init_builtins fills
         // before any user script runs. Without this, the atom and
         // globals tables grow ~5× during builtin registration, each
@@ -546,6 +560,7 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     let young_cells = ctx.young_cells;
     let rem_set = ctx.rem_set;
     let temp_roots = ctx.temp_roots;
+    let strong_roots = ctx.roots;
     let reg_stack = ctx.reg_stack;
     let frames = ctx.frames;
     let ctx_try_stack = ctx.ctx_try_stack;
@@ -556,6 +571,7 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     dealloc(young_cells);
     dealloc(rem_set);
     dealloc(temp_roots);
+    dealloc(strong_roots);
     dealloc(reg_stack);
     dealloc(frames);
     dealloc(ctx_try_stack);
@@ -593,6 +609,63 @@ fn ctx_replace_top_temp_root(ctx: ZjsContext*, v: ZjsValue) -> void {
     if ctx.temp_root_count > 0 {
         ctx.temp_roots[ctx.temp_root_count - 1] = v;
     }
+}
+
+// =====================================================================
+// Strong roots — public zjs_root / zjs_unroot ABI.
+//
+// Embedders use these to keep a JS value alive across event-loop ticks
+// (uv I/O completion, setInterval callbacks stashed in a C struct,
+// etc.). zjs_root returns a stable u32 handle backed by an entry in
+// ctx.roots. Free slots are recycled via a free list: each free slot
+// stores its successor's index as an int32; the head is in
+// ctx.roots_free_head (-1 = none).
+//
+// The handle is opaque to JS — it's just an index. Mark walks every
+// live slot regardless (free slots hold primitives, which mark
+// ignores), so the free-list payload is GC-safe.
+// =====================================================================
+
+// Acquire a stable root for `value`. Returns the handle (a small u32);
+// pass it to zjs_unroot when done. Multiple roots for the same value
+// each get an independent handle.
+fn zjs_root(ctx: ZjsContext*, value: ZjsValue) -> u32 {
+    if ctx.roots_free_head >= 0 {
+        let h = (u32)ctx.roots_free_head;
+        // The free slot's payload was an int32 carrying the next-free
+        // index. Read it before overwriting.
+        let nxt = zjs_as_int32(ctx.roots[h]);
+        ctx.roots_free_head = nxt;
+        ctx.roots[h] = value;
+        return h;
+    }
+    if ctx.roots_count >= ctx.roots_cap {
+        let new_cap: u32 = if ctx.roots_cap == 0 { 8 } else { ctx.roots_cap * 2 };
+        ctx.roots = realloc_n<ZjsValue>(ctx.roots, (usize)ctx.roots_cap, (usize)new_cap);
+        ctx.roots_cap = new_cap;
+    }
+    let h = ctx.roots_count;
+    ctx.roots[h] = value;
+    ctx.roots_count = ctx.roots_count + 1;
+    return h;
+}
+
+// Release the root. After this call the handle is invalid; the slot
+// may be reused by a future zjs_root call.
+fn zjs_unroot(ctx: ZjsContext*, handle: u32) -> void {
+    if handle >= ctx.roots_count { return; }
+    // Push onto the free list. The slot value carries the previous
+    // head as an int32 — primitives don't disrupt mark.
+    ctx.roots[handle] = zjs_int32(ctx.roots_free_head);
+    ctx.roots_free_head = (i32)handle;
+}
+
+// Read the value currently stored at the given root handle. Returns
+// undefined for an out-of-range handle; the caller is responsible for
+// not passing a freed handle (we don't track per-slot generation).
+fn zjs_root_get(ctx: ZjsContext*, handle: u32) -> ZjsValue {
+    if handle >= ctx.roots_count { return zjs_undefined(); }
+    return ctx.roots[handle];
 }
 
 // Append a heap cell to the context's owned-cells list. Called whenever
@@ -1496,6 +1569,14 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     while t < ctx.temp_root_count {
         gc_mark_value(ctx.temp_roots[t]);
         t = t + 1;
+    }
+    // Strong roots — slots in the public zjs_root table. Free slots
+    // hold a "next-free index" payload tagged as int32, which is a
+    // primitive and safe to mark (mark walks cells only).
+    let sr: u32 = 0;
+    while sr < ctx.roots_count {
+        gc_mark_value(ctx.roots[sr]);
+        sr = sr + 1;
     }
     // Globals
     let i: u32 = 0;
@@ -11162,6 +11243,15 @@ fn zjs_run_pending_timers(ctx: ZjsContext*) -> void {
         i = i + 1;
     }
     timer_compact(ctx);
+}
+
+// Public ABI: drain pending microtasks now. Embedders call this after
+// resolving/rejecting a Promise from C (uv I/O completion, etc.) so
+// the .then continuations execute before the next host work item.
+// Safe to call at any time; idempotent when the queue is empty.
+fn zjs_drain_microtasks(ctx: ZjsContext*) -> void {
+    if ctx == NULL { return; }
+    drain_microtasks(ctx);
 }
 
 // =====================================================================
