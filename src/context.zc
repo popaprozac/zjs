@@ -1200,6 +1200,9 @@ fn gc_mark_cell_children(p: void*) -> void {
             gc_mark_value(pr.reactions[i]);
             i = i + 1;
         }
+        if pr.proto != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)pr.proto));
+        }
         return;
     }
 
@@ -1261,6 +1264,9 @@ fn gc_mark_cell_children(p: void*) -> void {
         if mm.props != NULL {
             gc_mark_value(zjs_cell_from_ptr((void*)mm.props));
         }
+        if mm.proto != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)mm.proto));
+        }
         return;
     }
 
@@ -1277,6 +1283,9 @@ fn gc_mark_cell_children(p: void*) -> void {
         if ss.props != NULL {
             gc_mark_value(zjs_cell_from_ptr((void*)ss.props));
         }
+        if ss.proto != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)ss.proto));
+        }
         return;
     }
 
@@ -1285,6 +1294,9 @@ fn gc_mark_cell_children(p: void*) -> void {
         raw { dd = (ZjsDate*)p; }
         if dd.props != NULL {
             gc_mark_value(zjs_cell_from_ptr((void*)dd.props));
+        }
+        if dd.proto != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)dd.proto));
         }
         return;
     }
@@ -1325,6 +1337,9 @@ fn gc_mark_cell_children(p: void*) -> void {
         if r.props != NULL {
             gc_mark_value(zjs_cell_from_ptr((void*)r.props));
         }
+        if r.proto != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)r.proto));
+        }
         return;
     }
 
@@ -1338,6 +1353,9 @@ fn gc_mark_cell_children(p: void*) -> void {
         }
         if a.props != NULL {
             gc_mark_value(zjs_cell_from_ptr((void*)a.props));
+        }
+        if a.proto != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)a.proto));
         }
         return;
     }
@@ -4416,6 +4434,8 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         return zjs_cell_from_ptr((void*)o.proto);
     }
     if zjs_is_array(v) != 0 {
+        let a = zjs_as_array(v);
+        if a.proto != NULL { return zjs_cell_from_ptr((void*)a.proto); }
         if ctx.array_proto == NULL { return zjs_null(); }
         return zjs_cell_from_ptr((void*)ctx.array_proto);
     }
@@ -4445,11 +4465,32 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         if ctx.function_proto == NULL { return zjs_null(); }
         return zjs_cell_from_ptr((void*)ctx.function_proto);
     }
-    if zjs_is_regexp(v) != 0 && ctx.regexp_proto != NULL {
-        return zjs_cell_from_ptr((void*)ctx.regexp_proto);
+    if zjs_is_regexp(v) != 0 {
+        let rr = zjs_as_regexp(v);
+        if rr.proto != NULL { return zjs_cell_from_ptr((void*)rr.proto); }
+        if ctx.regexp_proto != NULL { return zjs_cell_from_ptr((void*)ctx.regexp_proto); }
     }
-    if zjs_is_promise(v) != 0 && ctx.promise_ctor_proto != NULL {
-        return zjs_cell_from_ptr((void*)ctx.promise_ctor_proto);
+    if zjs_is_map(v) != 0 {
+        let mm = zjs_as_map(v);
+        if mm.proto != NULL { return zjs_cell_from_ptr((void*)mm.proto); }
+        if ctx.map_proto != NULL { return zjs_cell_from_ptr((void*)ctx.map_proto); }
+    }
+    if zjs_is_set(v) != 0 {
+        let ss = zjs_as_set(v);
+        if ss.proto != NULL { return zjs_cell_from_ptr((void*)ss.proto); }
+        if ctx.set_proto != NULL { return zjs_cell_from_ptr((void*)ctx.set_proto); }
+    }
+    if zjs_is_date(v) != 0 {
+        let dd = zjs_as_date(v);
+        if dd.proto != NULL { return zjs_cell_from_ptr((void*)dd.proto); }
+        if ctx.date_proto != NULL { return zjs_cell_from_ptr((void*)ctx.date_proto); }
+    }
+    if zjs_is_promise(v) != 0 {
+        let pp = zjs_as_promise(v);
+        if pp.proto != NULL { return zjs_cell_from_ptr((void*)pp.proto); }
+        if ctx.promise_ctor_proto != NULL {
+            return zjs_cell_from_ptr((void*)ctx.promise_ctor_proto);
+        }
     }
     if zjs_is_generator(v) != 0 && ctx.generator_proto != NULL {
         return zjs_cell_from_ptr((void*)ctx.generator_proto);
@@ -7509,7 +7550,13 @@ fn host_regexp_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         pattern_v = zjs_to_string(ctx, pattern_v);
     }
     if zjs_is_string(flags_v) == 0 { flags_v = zjs_to_string(ctx, flags_v); }
-    return ctx_new_regexp(ctx, pattern_v, flags_v);
+    let re_v = ctx_new_regexp(ctx, pattern_v, flags_v);
+    let nt_proto_r = subclass_proto_for(ctx, ctx.regexp_proto);
+    if nt_proto_r != NULL {
+        let re = zjs_as_regexp(re_v);
+        re.proto = nt_proto_r;
+    }
+    return re_v;
 }
 
 // RegExp.prototype.exec(str): coerce `str`, run the regex, build a
@@ -8062,6 +8109,8 @@ fn map_require_this(ctx: ZjsContext*) -> ZjsMap* {
 fn host_map_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let m = zjs_map_new();
     ctx_register_cell(ctx, (void*)m);
+    let nt_proto_m = subclass_proto_for(ctx, ctx.map_proto);
+    if nt_proto_m != NULL { m.proto = nt_proto_m; }
     let m_v = zjs_cell_from_ptr((void*)m);
     // Optional iterable arg — each entry must itself be an iterable of
     // [key, value].
@@ -8341,6 +8390,8 @@ fn set_require_this(ctx: ZjsContext*) -> ZjsSet* {
 fn host_set_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let s = zjs_set_new();
     ctx_register_cell(ctx, (void*)s);
+    let nt_proto_s = subclass_proto_for(ctx, ctx.set_proto);
+    if nt_proto_s != NULL { s.proto = nt_proto_s; }
     let s_v = zjs_cell_from_ptr((void*)s);
     if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
         let iter = iter_get(ctx, args[0]);
@@ -12429,6 +12480,8 @@ fn host_date_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     }
     let d = zjs_date_new(ms);
     ctx_register_cell(ctx, (void*)d);
+    let nt_proto_d = subclass_proto_for(ctx, ctx.date_proto);
+    if nt_proto_d != NULL { d.proto = nt_proto_d; }
     return zjs_cell_from_ptr((void*)d);
 }
 
@@ -13102,12 +13155,12 @@ fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let executor = if argc >= 1 { args[0] } else { zjs_undefined() };
     let p = zjs_promise_new();
     ctx_register_cell(ctx, (void*)p);
-    if ctx.promise_ctor_proto != NULL {
-        // Allow `new Promise()` to set up proto chain. The cell itself
-        // doesn't carry .proto (promises aren't ZjsObject), so
-        // property_get for promise instances must intercept on
-        // ctx.promise_ctor_proto. Handled below in property_get.
-    }
+    // If called via `class Sub extends Promise {}`, attach Sub.prototype
+    // as the cell's per-instance [[Prototype]] so `instanceof Sub`,
+    // `getPrototypeOf`, and method lookups (e.g. Sub.prototype.then2)
+    // resolve correctly.
+    let p_nt_proto = subclass_proto_for(ctx, ctx.promise_ctor_proto);
+    if p_nt_proto != NULL { p.proto = p_nt_proto; }
     let pv = zjs_cell_from_ptr((void*)p);
     ctx_push_temp_root(ctx, pv);
     defer ctx_pop_temp_root(ctx);
@@ -14735,9 +14788,61 @@ fn host_object_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
 
 // --- Array constructor + helpers (Phase 3.8c) ---------------------
 
+// Resolve the .prototype slot of a constructor value (host function,
+// user function, or closure). Lazily creates one if missing. Returns
+// NULL only for non-constructable values. Used by built-in ctors to
+// honor new.target when called via `class Sub extends Builtin {}`.
+fn ctor_prototype_object(ctx: ZjsContext*, c: ZjsValue) -> ZjsObject* {
+    if zjs_is_host_function(c) != 0 {
+        let hf = zjs_as_host_function(c);
+        return hf.prototype;
+    }
+    if zjs_is_function(c) != 0 {
+        let fp = zjs_cell_as_ptr(c);
+        let f: Function* = NULL; raw { f = (Function*)fp; }
+        if f.prototype == NULL {
+            let pv = ctx_new_object(ctx);
+            f.prototype = zjs_as_object(pv);
+            object_define_property_slot(ctx, f.prototype,
+                ctx_intern_atom(ctx, (char*)"constructor", 11),
+                c, PROP_WRITABLE | PROP_CONFIGURABLE);
+        }
+        return f.prototype;
+    }
+    if zjs_is_closure(c) != 0 {
+        let cl = zjs_as_closure(c);
+        let fp2 = cl.function;
+        let f2: Function* = NULL; raw { f2 = (Function*)fp2; }
+        if f2.prototype == NULL {
+            let pv = ctx_new_object(ctx);
+            f2.prototype = zjs_as_object(pv);
+            object_define_property_slot(ctx, f2.prototype,
+                ctx_intern_atom(ctx, (char*)"constructor", 11),
+                c, PROP_WRITABLE | PROP_CONFIGURABLE);
+        }
+        return f2.prototype;
+    }
+    return NULL;
+}
+
+// If we're inside `new Sub(...)` where Sub extends a built-in, return
+// Sub.prototype so the built-in cell's per-instance [[Prototype]] can
+// be set. Returns NULL when not subclassing (plain `new Array()`).
+fn subclass_proto_for(ctx: ZjsContext*, builtin_proto: ZjsObject*) -> ZjsObject* {
+    if !ctx.new_target_active { return NULL; }
+    let np = ctor_prototype_object(ctx, ctx.new_target_value);
+    if np == NULL || np == builtin_proto { return NULL; }
+    return np;
+}
+
 fn host_array_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let nt_proto = subclass_proto_for(ctx, ctx.array_proto);
     // Array() / new Array() → []
-    if argc == 0 { return ctx_new_array(ctx, 0); }
+    if argc == 0 {
+        let arr_v0 = ctx_new_array(ctx, 0);
+        if nt_proto != NULL { zjs_as_array(arr_v0).proto = nt_proto; }
+        return arr_v0;
+    }
     // Array(N) where N is a non-negative integer → array of length N.
     if argc == 1 {
         let v = args[0];
@@ -14745,11 +14850,14 @@ fn host_array_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             let n = zjs_as_int32(v);
             if n < 0 {
                 // ECMA-262: RangeError; MVP returns empty.
-                return ctx_new_array(ctx, 0);
+                let arr_e = ctx_new_array(ctx, 0);
+                if nt_proto != NULL { zjs_as_array(arr_e).proto = nt_proto; }
+                return arr_e;
             }
             let arr_v = ctx_new_array(ctx, (u32)n);
             let arr = zjs_as_array(arr_v);
             arr.length = (u32)n;
+            if nt_proto != NULL { arr.proto = nt_proto; }
             return arr_v;
         }
         if zjs_is_double(v) != 0 {
@@ -14759,15 +14867,19 @@ fn host_array_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
                 let arr_v = ctx_new_array(ctx, (u32)n2);
                 let arr = zjs_as_array(arr_v);
                 arr.length = (u32)n2;
+                if nt_proto != NULL { arr.proto = nt_proto; }
                 return arr_v;
             }
-            return ctx_new_array(ctx, 0);
+            let arr_e2 = ctx_new_array(ctx, 0);
+            if nt_proto != NULL { zjs_as_array(arr_e2).proto = nt_proto; }
+            return arr_e2;
         }
         // Single non-numeric arg → array containing that value.
         let arr_v = ctx_new_array(ctx, 1);
         let arr = zjs_as_array(arr_v);
         arr.elements[0] = v;
         arr.length = 1;
+        if nt_proto != NULL { arr.proto = nt_proto; }
         return arr_v;
     }
     // Variadic — copy args into a fresh array.
@@ -14779,6 +14891,7 @@ fn host_array_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         i = i + 1;
     }
     arr.length = argc;
+    if nt_proto != NULL { arr.proto = nt_proto; }
     return arr_v;
 }
 

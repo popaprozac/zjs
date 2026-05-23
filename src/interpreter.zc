@@ -258,7 +258,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     // The host_*_size_getter functions read the receiver's count, so
     // we expose .size by detecting the key here and dispatching to
     // the accessor — saves us from wiring real getter slots.
-    if tag == TAG_MAP && ctx.map_proto != NULL {
+    if tag == TAG_MAP {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
         // Own expando bag wins over .size getter and prototype methods,
@@ -273,14 +273,19 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let is_size: int = 0;
         raw { is_size = (kn == 4 && memcmp(kd, "size", 4) == 0) ? 1 : 0; }
         if is_size != 0 { return zjs_int32((i32)mm.size); }
-        let slot = class_find_slot(ctx.map_proto.cls, name);
-        if slot >= 0 {
-            let v = ctx.map_proto.slots[(u32)slot];
-            if zjs_is_deleted(v) == 0 { return v; }
+        let cur: ZjsObject* = ctx.map_proto;
+        if mm.proto != NULL { cur = mm.proto; }
+        while cur != NULL {
+            let slot = class_find_slot(cur.cls, name);
+            if slot >= 0 {
+                let mv = cur.slots[(u32)slot];
+                if zjs_is_deleted(mv) == 0 { return mv; }
+            }
+            cur = cur.proto;
         }
         return zjs_undefined();
     }
-    if tag == TAG_SET && ctx.set_proto != NULL {
+    if tag == TAG_SET {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
         let ss = zjs_as_set(obj);
@@ -293,10 +298,15 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let is_size: int = 0;
         raw { is_size = (kn == 4 && memcmp(kd, "size", 4) == 0) ? 1 : 0; }
         if is_size != 0 { return zjs_int32((i32)ss.size); }
-        let slot = class_find_slot(ctx.set_proto.cls, name);
-        if slot >= 0 {
-            let v = ctx.set_proto.slots[(u32)slot];
-            if zjs_is_deleted(v) == 0 { return v; }
+        let cur: ZjsObject* = ctx.set_proto;
+        if ss.proto != NULL { cur = ss.proto; }
+        while cur != NULL {
+            let slot = class_find_slot(cur.cls, name);
+            if slot >= 0 {
+                let sv = cur.slots[(u32)slot];
+                if zjs_is_deleted(sv) == 0 { return sv; }
+            }
+            cur = cur.proto;
         }
         return zjs_undefined();
     }
@@ -531,7 +541,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
-    if tag == TAG_DATE && ctx.date_proto != NULL {
+    if tag == TAG_DATE {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
         let dd = zjs_as_date(obj);
@@ -539,10 +549,15 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             let pv = read_from_props_bag(ctx, dd.props, key);
             if zjs_is_deleted(pv) == 0 { return pv; }
         }
-        let slot = class_find_slot(ctx.date_proto.cls, name);
-        if slot >= 0 {
-            let v = ctx.date_proto.slots[(u32)slot];
-            if zjs_is_deleted(v) == 0 { return v; }
+        let cur: ZjsObject* = ctx.date_proto;
+        if dd.proto != NULL { cur = dd.proto; }
+        while cur != NULL {
+            let slot = class_find_slot(cur.cls, name);
+            if slot >= 0 {
+                let dv2 = cur.slots[(u32)slot];
+                if zjs_is_deleted(dv2) == 0 { return dv2; }
+            }
+            cur = cur.proto;
         }
         return zjs_undefined();
     }
@@ -640,9 +655,12 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                     }
                 }
             }
-            // Walk array_proto then its chain (so hasOwnProperty from
-            // object_proto is reachable).
-            let cur = ctx.array_proto;
+            // Walk proto chain. arr.proto is non-NULL when the array
+            // was constructed via a subclass (e.g. `class Sub extends
+            // Array {}`) and points at Sub.prototype; its own proto
+            // is Array.prototype so the chain still reaches the
+            // built-in methods. NULL falls back to ctx.array_proto.
+            let cur = if arr.proto != NULL { arr.proto } else { ctx.array_proto };
             while cur != NULL {
                 let slot = class_find_slot(cur.cls, ks);
                 if slot >= 0 { return cur.slots[(u32)slot]; }
@@ -1098,15 +1116,18 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     }
 
     // Promise cell — read through Promise.prototype (then / catch).
-    if tag == TAG_PROMISE && ctx.promise_ctor_proto != NULL && zjs_is_string(key) != 0 {
-        let cur = ctx.promise_ctor_proto;
-        let ks = zjs_as_string(key);
-        while cur != NULL {
-            let slot = class_find_slot(cur.cls, ks);
-            if slot >= 0 { return cur.slots[(u32)slot]; }
-            cur = cur.proto;
+    if tag == TAG_PROMISE && zjs_is_string(key) != 0 {
+        let pcell = zjs_as_promise(obj);
+        let cur = if pcell.proto != NULL { pcell.proto } else { ctx.promise_ctor_proto };
+        if cur != NULL {
+            let ks = zjs_as_string(key);
+            while cur != NULL {
+                let slot = class_find_slot(cur.cls, ks);
+                if slot >= 0 { return cur.slots[(u32)slot]; }
+                cur = cur.proto;
+            }
+            return zjs_undefined();
         }
-        return zjs_undefined();
     }
 
     // RegExp cell — `.source`, `.flags`, `.global`, `.ignoreCase`,
@@ -1171,16 +1192,15 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
         }
         // Methods + everything else through the prototype.
-        if ctx.regexp_proto != NULL {
-            let cur = ctx.regexp_proto;
-            while cur != NULL {
-                let slot = class_find_slot(cur.cls, ks);
-                if slot >= 0 {
-                    let v = cur.slots[(u32)slot];
-                    if zjs_is_deleted(v) == 0 { return v; }
-                }
-                cur = cur.proto;
+        let cur: ZjsObject* = ctx.regexp_proto;
+        if r.proto != NULL { cur = r.proto; }
+        while cur != NULL {
+            let slot = class_find_slot(cur.cls, ks);
+            if slot >= 0 {
+                let rv2 = cur.slots[(u32)slot];
+                if zjs_is_deleted(rv2) == 0 { return rv2; }
             }
+            cur = cur.proto;
         }
         return zjs_undefined();
     }
@@ -3779,7 +3799,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let saved_nt = ctx.new_target_active;
             let saved_ntv = ctx.new_target_value;
             ctx.new_target_active = true;
-            ctx.new_target_value = parent;
+            // ECMA-262 §13.3.7.1 SuperCall: new.target propagates from
+            // the outer (currently running) constructor, NOT the parent
+            // we're delegating to. Built-in ctors (Array, Map, …) use
+            // new.target.prototype to set the instance's [[Prototype]],
+            // so this is what enables `class Sub extends Array {}`
+            // to actually produce Sub-typed instances.
+            if saved_nt { ctx.new_target_value = saved_ntv; }
+            else        { ctx.new_target_value = parent; }
             if parent_is_host {
                 let saved_th = ctx.host_this;
                 raw { r = zjs_call_value_with_this(ctx, parent, ctx->host_this, argv_ptr, argc); }
@@ -4511,23 +4538,26 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_array(val) != 0 {
-                    // All arrays implicitly delegate to ctx.array_proto.
-                    // Walk from there in case array_proto itself has
-                    // been re-prototyped (rare in practice; mostly
-                    // matches when proto_obj == ctx.array_proto).
-                    let cur = ctx.array_proto;
+                    // Arrays delegate to ctx.array_proto by default;
+                    // when constructed via `class Sub extends Array {}`,
+                    // arr.proto is non-NULL and points at Sub.prototype
+                    // (whose chain reaches Array.prototype).
+                    let av = zjs_as_array(val);
+                    let cur = if av.proto != NULL { av.proto } else { ctx.array_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_promise(val) != 0 {
-                    let cur = ctx.promise_ctor_proto;
+                    let pv = zjs_as_promise(val);
+                    let cur = if pv.proto != NULL { pv.proto } else { ctx.promise_ctor_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_regexp(val) != 0 {
-                    let cur = ctx.regexp_proto;
+                    let rv = zjs_as_regexp(val);
+                    let cur = if rv.proto != NULL { rv.proto } else { ctx.regexp_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
@@ -4541,13 +4571,15 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_map(val) != 0 {
-                    let cur = ctx.map_proto;
+                    let mv = zjs_as_map(val);
+                    let cur = if mv.proto != NULL { mv.proto } else { ctx.map_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_set(val) != 0 {
-                    let cur = ctx.set_proto;
+                    let sv = zjs_as_set(val);
+                    let cur = if sv.proto != NULL { sv.proto } else { ctx.set_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
@@ -4583,7 +4615,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_date(val) != 0 {
-                    let cur = ctx.date_proto;
+                    let dv = zjs_as_date(val);
+                    let cur = if dv.proto != NULL { dv.proto } else { ctx.date_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
