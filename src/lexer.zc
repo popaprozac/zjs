@@ -213,14 +213,67 @@ impl Lexer {
             }
         }
         let length: u32 = (u32)self.pos - start;
-        // If any escape was used, this is an IdentifierName but NOT
-        // a reserved word (spec): `if` is an identifier, never a
-        // keyword. Force Identifier kind to keep keyword positions strict.
+        // ECMA-262 §11.6.2.1 — an IdentifierName whose escape-decoded form
+        // matches a ReservedWord is NOT a valid IdentifierReference /
+        // BindingIdentifier. Surface the keyword kind so the parser
+        // rejects `if x = 1` (decoded "if") in binding positions
+        // but still accepts it as an IdentifierName in member-access
+        // positions (`obj.if` works the same as `obj.if`).
         if has_escape {
-            return Token{kind: TokenKind::Identifier, start: start, length: length};
+            let kind = self.lookup_keyword_after_escape(start, length);
+            return Token{kind: kind, start: start, length: length};
         }
         let kind = lookup_keyword(self.source + start, (usize)length);
         return Token{kind: kind, start: start, length: length};
+    }
+
+    // Decode `\uXXXX` / `\u{...}` escapes in [start, start+length) into
+    // an ASCII-only stack buffer (longest reserved word is "instanceof"
+    // at 10 chars; cap at 16). If anything stops it from forming an
+    // ASCII reserved word — non-ASCII code point, oversize length,
+    // malformed escape — bail with `Identifier`. The token's source
+    // span stays as-is; only the classification is decode-aware.
+    fn lookup_keyword_after_escape(self, start: u32, length: u32) -> TokenKind {
+        let buf: char[16];
+        let out: u32 = 0;
+        let j: u32 = 0;
+        while j < length {
+            if out >= 16 { return TokenKind::Identifier; }
+            let c = self.source[start + j];
+            if c == (char)'\\' && j + 1 < length && self.source[start + j + 1] == (char)'u' {
+                j = j + 2;
+                let cp: u32 = 0;
+                if j < length && self.source[start + j] == (char)'{' {
+                    j = j + 1;
+                    while j < length && self.source[start + j] != (char)'}' {
+                        let d = hex_digit_val((u8)self.source[start + j]);
+                        if d < 0 { return TokenKind::Identifier; }
+                        cp = (cp << 4) | (u32)d;
+                        j = j + 1;
+                    }
+                    if j < length { j = j + 1; }   // consume '}'
+                } else {
+                    let n: u32 = 0;
+                    while n < 4 && j < length {
+                        let d = hex_digit_val((u8)self.source[start + j]);
+                        if d < 0 { return TokenKind::Identifier; }
+                        cp = (cp << 4) | (u32)d;
+                        j = j + 1;
+                        n = n + 1;
+                    }
+                }
+                if cp > 0x7F { return TokenKind::Identifier; }
+                buf[out] = (char)cp;
+                out = out + 1;
+            } else {
+                buf[out] = c;
+                out = out + 1;
+                j = j + 1;
+            }
+        }
+        let bufp: char* = NULL;
+        raw { bufp = &buf[0]; }
+        return lookup_keyword(bufp, (usize)out);
     }
 
     // Consumes a `\uXXXX` or `\u{...}` escape after verifying that

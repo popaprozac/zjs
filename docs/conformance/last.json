@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-23 08:18 UTC",
+    "when": "2026-05-23 08:28 UTC",
     "total": 14524,
-    "passed": 11367,
-    "failed": 2511,
+    "passed": 11415,
+    "failed": 2463,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -721,6 +721,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
+      "path": "test/language/statements/for-of/escaped-of.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
       "path": "test/language/statements/for-of/generator-close-via-break.js",
       "reason": "[sloppy] zjs: throw: (unknown): Generator is closed after `break` statement Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
@@ -945,23 +949,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-gen-method/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/async-gen-method/yield-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/async-gen-method/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/yield-as-label-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -1025,23 +1017,11 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/async-gen-method-static/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/async-gen-method-static/yield-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/async-gen-method-static/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-as-label-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -1109,14 +1089,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-method/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/async-method/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/async-method/dflt-params-ref-later.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -1147,14 +1119,6 @@
     {
       "path": "test/language/statements/class/async-method/returns-async-function.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/async-method-static/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/async-method-static/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/async-method-static/dflt-params-ref-later.js",
@@ -1693,23 +1657,11 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/statements/class/elements/async-gen-private-method/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/async-gen-private-method/yield-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/elements/async-gen-private-method/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-as-label-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -1773,23 +1725,11 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-as-label-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -1861,14 +1801,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/elements/async-private-method/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/async-private-method/returns-async-arrow-returns-arguments-from-parent-function.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
@@ -1891,14 +1823,6 @@
     {
       "path": "test/language/statements/class/elements/async-private-method/returns-async-function.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method-static/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method-static/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/elements/async-private-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
@@ -2009,19 +1933,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/gen-private-method/yield-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/gen-private-method-static/yield-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/elements/gen-private-method-static/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/gen-private-method-static/yield-as-label-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -3197,10 +3113,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/gen-method/yield-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/gen-method-param-dflt-yield.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -3210,10 +3122,6 @@
     },
     {
       "path": "test/language/statements/class/gen-method-static/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/gen-method-static/yield-as-label-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -3629,14 +3537,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/async-gen-method/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/async-gen-method/dflt-params-ref-later.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
@@ -3650,10 +3550,6 @@
     },
     {
       "path": "test/language/expressions/class/async-gen-method/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/yield-as-label-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -3717,14 +3613,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/async-gen-method-static/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/async-gen-method-static/dflt-params-ref-later.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all"
     },
@@ -3738,10 +3626,6 @@
     },
     {
       "path": "test/language/expressions/class/async-gen-method-static/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-as-label-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -3805,14 +3689,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/async-method/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/async-method/dflt-params-ref-later.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -3845,14 +3721,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
     {
-      "path": "test/language/expressions/class/async-method-static/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/async-method-static/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/async-method-static/dflt-params-ref-later.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -3861,12 +3729,12 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/language/expressions/class/class-name-ident-await.js",
+      "path": "test/language/expressions/class/class-name-ident-await-escaped.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/class-name-ident-let-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
+      "path": "test/language/expressions/class/class-name-ident-await.js",
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/expressions/class/class-name-ident-static-escaped.js",
@@ -3874,10 +3742,6 @@
     },
     {
       "path": "test/language/expressions/class/class-name-ident-static.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/class-name-ident-yield-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -4349,23 +4213,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/async-gen-private-method/yield-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/elements/async-gen-private-method/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-as-label-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -4429,23 +4281,11 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-as-label-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -4517,14 +4357,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/class/elements/async-private-method/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/async-private-method/returns-async-arrow-returns-arguments-from-parent-function.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
     },
@@ -4547,14 +4379,6 @@
     {
       "path": "test/language/expressions/class/elements/async-private-method/returns-async-function.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method-static/await-as-identifier-reference-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method-static/await-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
@@ -4669,19 +4493,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/elements/gen-private-method/yield-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/gen-private-method-static/yield-as-identifier-reference-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/elements/gen-private-method-static/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/gen-private-method-static/yield-as-label-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -5909,10 +5725,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/gen-method/yield-as-label-identifier-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/gen-method-param-dflt-yield.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -5930,10 +5742,6 @@
     },
     {
       "path": "test/language/expressions/class/gen-method-static/yield-as-identifier-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/gen-method-static/yield-as-label-identifier-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -6310,7 +6118,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
