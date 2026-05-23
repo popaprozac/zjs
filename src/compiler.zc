@@ -1613,6 +1613,47 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         let slot = ctx_intern_global(c.ctx, name, name_len);
         emit(c, make_inst_a_u16(Op::LoadGlobal, cur, (u16)slot));
     }
+    // Logical-assignment operators (ECMA-262 §13.15.2): short-circuit on
+    // the LHS before evaluating RHS. `&&=` skips the assign when LHS is
+    // falsy, `||=` when truthy, `??=` when neither null nor undefined.
+    // We borrow dst's tentative value from `cur`, branch past RHS+store
+    // on short-circuit, otherwise overwrite dst with RHS and store back.
+    let is_logical_assign: bool =
+        op_tok == TokenKind::AmpAmpEq
+        || op_tok == TokenKind::PipePipeEq
+        || op_tok == TokenKind::QuestionQuestionEq;
+    if is_logical_assign {
+        let dst = alloc_reg(c);
+        emit(c, make_inst_ab(Op::Mov, dst, cur));
+        let jmp_op = Op::JmpIfFalse;
+        if      op_tok == TokenKind::PipePipeEq          { jmp_op = Op::JmpIfTrue; }
+        else if op_tok == TokenKind::QuestionQuestionEq  { jmp_op = Op::JmpIfNotNullish; }
+        let skip_idx = emit(c, make_inst_a_i16(jmp_op, dst, 0));
+        let rhs_r = compile_expr(c, node.right);
+        emit(c, make_inst_ab(Op::Mov, dst, rhs_r));
+        if local_idx >= 0 {
+            if captured_local {
+                let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+                emit_store_prop_atom(c, c.env_reg, name_atom, dst);
+            } else {
+                emit(c, make_inst_ab(Op::Mov, local_reg, dst));
+            }
+        } else if outer_depth > 0 {
+            let env_r = emit_env_chain_walk(c, outer_depth);
+            let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+            emit_store_prop_atom(c, env_r, name_atom, dst);
+            release_reg(c, env_r);
+        } else {
+            let slot = ctx_intern_global(c.ctx, name, name_len);
+            emit(c, make_inst_a_u16(Op::StoreGlobal, dst, (u16)slot));
+        }
+        patch_jump(c, skip_idx);
+        release_reg(c, rhs_r);
+        release_reg(c, cur);
+        if c.next_reg <= dst { c.next_reg = dst + 1; }
+        return dst;
+    }
+
     let rhs = compile_expr(c, node.right);
 
     let op = Op::Halt;
@@ -2006,6 +2047,31 @@ fn compile_assignment_to_property(c: Compiler*, target: AstNode*, op_tok: TokenK
     // Compound (o.x += rhs): load current, op, store, return new value.
     let cur = alloc_reg(c);
     emit(c, make_inst_abc(Op::LoadElem, cur, obj_r, key_r));
+
+    // Logical-assignment shape — see compile_assignment for the matching
+    // ident-target case. Short-circuits before RHS evaluation; the store
+    // is skipped entirely when the LHS already satisfies the predicate.
+    let is_logical_assign: bool =
+        op_tok == TokenKind::AmpAmpEq
+        || op_tok == TokenKind::PipePipeEq
+        || op_tok == TokenKind::QuestionQuestionEq;
+    if is_logical_assign {
+        let dst = alloc_reg(c);
+        emit(c, make_inst_ab(Op::Mov, dst, cur));
+        let jmp_op = Op::JmpIfFalse;
+        if      op_tok == TokenKind::PipePipeEq          { jmp_op = Op::JmpIfTrue; }
+        else if op_tok == TokenKind::QuestionQuestionEq  { jmp_op = Op::JmpIfNotNullish; }
+        let skip_idx = emit(c, make_inst_a_i16(jmp_op, dst, 0));
+        let rhs_r = compile_expr(c, rhs);
+        emit(c, make_inst_ab(Op::Mov, dst, rhs_r));
+        emit(c, make_inst_abc(Op::StoreElem, obj_r, key_r, dst));
+        patch_jump(c, skip_idx);
+        release_reg(c, rhs_r);
+        release_reg(c, cur);
+        if c.next_reg <= dst { c.next_reg = dst + 1; }
+        return dst;
+    }
+
     let rhs_r = compile_expr(c, rhs);
 
     let op = Op::Halt;

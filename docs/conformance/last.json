@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-23 03:56 UTC",
+    "when": "2026-05-23 08:18 UTC",
     "total": 14524,
-    "passed": 11343,
-    "failed": 2535,
+    "passed": 11367,
+    "failed": 2511,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -1181,56 +1181,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-assignment-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-assignment-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-accessors-computed-property-name-from-assignment-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-assignment-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-assignment-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-computed-property-name-from-assignment-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-assignment-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-assignment-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-assignment-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-yield-expression.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-assignment-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-assignment-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-assignment-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-yield-expression.js",
@@ -3929,56 +3881,8 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-assignment-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-assignment-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-accessors-computed-property-name-from-assignment-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-computed-property-name-from-assignment-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-computed-property-name-from-assignment-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-computed-property-name-from-assignment-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-assignment-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-assignment-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-assignment-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-yield-expression.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-assignment-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-assignment-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-assignment-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-yield-expression.js",
