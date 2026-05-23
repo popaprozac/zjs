@@ -5619,6 +5619,102 @@ fn zjs_to_primitive(ctx: ZjsContext*, v: ZjsValue, prefer_string: bool) -> ZjsVa
 // receiver. Unlike the plain helper, this does NOT clear
 // ctx.host_this around host-function dispatch — the explicit
 // `this_val` is the receiver the callee should see.
+// Host-side equivalent of `new callee(...args)`. Mirrors the bytecode
+// Op::NewInvoke path: lazily creates callee.prototype if absent,
+// allocates a fresh ZjsObject with that proto, sets host_this +
+// new_target_active + new_target_value, calls, then unwraps the result
+// (Promise / Date / RegExp constructors hand back a special cell via
+// host_this — preserve that even though the call returned undefined).
+// Caller checks ctx.pending_throw_active for failure.
+fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // Validate constructable.
+    let constructable: bool = false;
+    if zjs_is_function(callee) != 0 || zjs_is_closure(callee) != 0 { constructable = true; }
+    else if zjs_is_host_function(callee) != 0 {
+        let hf_c = zjs_as_host_function(callee);
+        constructable = hf_c.is_constructor;
+    }
+    if !constructable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"value is not a constructor", 26);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+
+    // Resolve or lazily create the constructor's .prototype.
+    let proto_obj: ZjsObject* = NULL;
+    if zjs_is_function(callee) != 0 {
+        let fp = zjs_cell_as_ptr(callee);
+        let f: Function* = NULL;
+        raw { f = (Function*)fp; }
+        if f.prototype == NULL {
+            let pv = ctx_new_object(ctx);
+            f.prototype = zjs_as_object(pv);
+            object_define_property_slot(ctx, f.prototype,
+                ctx_intern_atom(ctx, (char*)"constructor", 11),
+                callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+        }
+        proto_obj = f.prototype;
+    } else if zjs_is_closure(callee) != 0 {
+        let cl = zjs_as_closure(callee);
+        let fp2 = cl.function;
+        let f2: Function* = NULL;
+        raw { f2 = (Function*)fp2; }
+        if f2.prototype == NULL {
+            let pv = ctx_new_object(ctx);
+            f2.prototype = zjs_as_object(pv);
+            object_define_property_slot(ctx, f2.prototype,
+                ctx_intern_atom(ctx, (char*)"constructor", 11),
+                callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+        }
+        proto_obj = f2.prototype;
+    } else if zjs_is_host_function(callee) != 0 {
+        let hf = zjs_as_host_function(callee);
+        if hf.prototype == NULL {
+            let pv = ctx_new_object(ctx);
+            hf.prototype = zjs_as_object(pv);
+            object_define_property_slot(ctx, hf.prototype,
+                ctx_intern_atom(ctx, (char*)"constructor", 11),
+                callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+        }
+        proto_obj = hf.prototype;
+    }
+
+    let new_obj_v = ctx_new_object(ctx);
+    let new_obj = zjs_as_object(new_obj_v);
+    new_obj.proto = proto_obj;
+
+    let saved_this = ctx.host_this;
+    let saved_nt = ctx.new_target_active;
+    let saved_ntv = ctx.new_target_value;
+    ctx.host_this = new_obj_v;
+    ctx.new_target_active = true;
+    ctx.new_target_value = callee;
+
+    let r = zjs_call_value_with_this(ctx, callee, new_obj_v, args, argc);
+
+    let final_this = ctx.host_this;
+    ctx.host_this = saved_this;
+    ctx.new_target_active = saved_nt;
+    ctx.new_target_value = saved_ntv;
+
+    if ctx.pending_throw_active { return zjs_undefined(); }
+
+    // If the constructor handed back an object/cell, use it. Otherwise
+    // fall back to whatever host_this got rebound to (super(...) on a
+    // Promise/RegExp etc.). Plain user ctors return undefined and
+    // host_this is the new_obj we allocated.
+    let rt: u8 = zjs_cell_tag(r);
+    let result_is_object: bool =
+        rt == TAG_OBJECT || rt == TAG_ARRAY || rt == TAG_PROMISE || rt == TAG_REGEXP
+        || rt == TAG_FUNCTION || rt == TAG_CLOSURE || rt == TAG_HOST_FUNCTION
+        || rt == TAG_MAP || rt == TAG_SET || rt == TAG_DATE || rt == TAG_UINT8_ARRAY
+        || rt == TAG_TYPED_ARRAY || rt == TAG_ARRAY_BUFFER || rt == TAG_DATA_VIEW
+        || rt == TAG_WEBSOCKET || rt == TAG_PROXY;
+    if result_is_object { return r; }
+    return final_this;
+}
+
 fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsValue, args: ZjsValue*, argc: u32) -> ZjsValue {
     let saved = ctx.host_this;
     // Non-strict default: coerce undefined / null `this` to the global

@@ -13181,26 +13181,146 @@ fn require_promise_constructor_this(ctx: ZjsContext*, fn_name: char*, fn_name_le
     return true;
 }
 
+// Spec PromiseCapability — promise + the resolve/reject functions that
+// settle it. NewPromiseCapability constructs `new C(executor)` and the
+// executor captures the (resolve, reject) it's called with. For `C`
+// equal to the built-in Promise we can short-circuit and skip the
+// executor dance entirely.
+struct PromiseCapability {
+    promise: ZjsValue;
+    resolve: ZjsValue;
+    reject:  ZjsValue;
+    ok:      bool;
+}
+
+def CAP_RESOLVE_KEY: char* = (char*)"__zjs_cap_r__";
+def CAP_REJECT_KEY:  char* = (char*)"__zjs_cap_j__";
+
+fn host_capability_executor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // Spec §27.2.1.5.1 GetCapabilitiesExecutor: if [[Resolve]] or
+    // [[Reject]] is already set we throw TypeError. Our state object
+    // starts with both undefined, so a non-undefined value means the
+    // capability's executor was called a second time.
+    let hf: ZjsHostFunction* = NULL;
+    raw { hf = (ZjsHostFunction*)ctx->current_host_fn; }
+    let state_v = hf.bound;
+    if zjs_is_object(state_v) == 0 { return zjs_undefined(); }
+    let state = zjs_as_object(state_v);
+    let r_atom = ctx_intern_atom(ctx, CAP_RESOLVE_KEY, 13);
+    let j_atom = ctx_intern_atom(ctx, CAP_REJECT_KEY, 13);
+    let prev_r = object_get(state, r_atom);
+    let prev_j = object_get(state, j_atom);
+    if zjs_is_undefined(prev_r) == 0 || zjs_is_undefined(prev_j) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Promise capability executor called more than once", 50);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let rv = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let jv = if argc >= 2 { args[1] } else { zjs_undefined() };
+    object_set(ctx, state, r_atom, rv);
+    object_set(ctx, state, j_atom, jv);
+    return zjs_undefined();
+}
+
+fn new_promise_capability(ctx: ZjsContext*, ctor_v: ZjsValue) -> PromiseCapability {
+    let bad = PromiseCapability{ promise: zjs_undefined(), resolve: zjs_undefined(),
+                                  reject: zjs_undefined(), ok: false };
+    // Built-in Promise short-circuit — no executor dance needed, the
+    // resolve/reject functions are just bound host fns that flip the
+    // TAG_PROMISE state directly.
+    if value_is_builtin_promise_ctor(ctx, ctor_v) {
+        let p = zjs_promise_new();
+        ctx_register_cell(ctx, (void*)p);
+        let pv = zjs_cell_from_ptr((void*)p);
+        let resolve_ptr: void* = NULL; raw { resolve_ptr = (void*)host_promise_resolve_fn; }
+        let reject_ptr:  void* = NULL; raw { reject_ptr  = (void*)host_promise_reject_fn; }
+        let resolve_v = ctx_make_host_function(ctx, (char*)"resolve", resolve_ptr);
+        let reject_v  = ctx_make_host_function(ctx, (char*)"reject",  reject_ptr);
+        zjs_as_host_function(resolve_v).bound = pv;
+        zjs_as_host_function(reject_v).bound  = pv;
+        return PromiseCapability{ promise: pv, resolve: resolve_v, reject: reject_v, ok: true };
+    }
+
+    // Generic NewPromiseCapability(C) — build a capture-executor host
+    // fn whose `.bound` points to a state object, then call
+    // `new C(executor)`. After the call, the state holds (resolve,
+    // reject) which must both be callable.
+    let state_v = ctx_new_object(ctx);
+    let r_atom = ctx_intern_atom(ctx, CAP_RESOLVE_KEY, 13);
+    let j_atom = ctx_intern_atom(ctx, CAP_REJECT_KEY, 13);
+    object_set(ctx, zjs_as_object(state_v), r_atom, zjs_undefined());
+    object_set(ctx, zjs_as_object(state_v), j_atom, zjs_undefined());
+    ctx_push_temp_root(ctx, state_v);
+    defer ctx_pop_temp_root(ctx);
+    let exec_ptr: void* = NULL; raw { exec_ptr = (void*)host_capability_executor; }
+    let executor_v = ctx_make_host_function(ctx, (char*)"", exec_ptr);
+    zjs_as_host_function(executor_v).bound = state_v;
+    let argv: ZjsValue[1]; argv[0] = executor_v;
+    let argp: ZjsValue* = NULL; raw { argp = &argv[0]; }
+    let promise_v = zjs_construct_value(ctx, ctor_v, argp, 1);
+    if ctx.pending_throw_active { return bad; }
+    let resolve_v = object_get(zjs_as_object(state_v), r_atom);
+    let reject_v  = object_get(zjs_as_object(state_v), j_atom);
+    let r_callable: bool = zjs_is_function(resolve_v) != 0 || zjs_is_closure(resolve_v) != 0
+                           || zjs_is_host_function(resolve_v) != 0;
+    let j_callable: bool = zjs_is_function(reject_v) != 0 || zjs_is_closure(reject_v) != 0
+                           || zjs_is_host_function(reject_v) != 0;
+    if !r_callable || !j_callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Promise capability resolve/reject is not callable", 50);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return bad;
+    }
+    return PromiseCapability{ promise: promise_v, resolve: resolve_v, reject: reject_v, ok: true };
+}
+
+fn value_is_builtin_promise_ctor(ctx: ZjsContext*, v: ZjsValue) -> bool {
+    if zjs_is_host_function(v) == 0 { return false; }
+    let hf = zjs_as_host_function(v);
+    if hf.prototype == NULL { return false; }
+    return hf.prototype == ctx.promise_ctor_proto;
+}
+
+fn capability_call_resolve(ctx: ZjsContext*, cap: PromiseCapability, value: ZjsValue) -> void {
+    let argv: ZjsValue[1]; argv[0] = value;
+    let argp: ZjsValue* = NULL; raw { argp = &argv[0]; }
+    zjs_call_value_with_this(ctx, cap.resolve, zjs_undefined(), argp, 1);
+}
+
+fn capability_call_reject(ctx: ZjsContext*, cap: PromiseCapability, reason: ZjsValue) -> void {
+    let argv: ZjsValue[1]; argv[0] = reason;
+    let argp: ZjsValue* = NULL; raw { argp = &argv[0]; }
+    zjs_call_value_with_this(ctx, cap.reject, zjs_undefined(), argp, 1);
+}
+
 fn host_promise_resolve_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_promise_constructor_this(ctx, (char*)"resolve", 7) { return zjs_undefined(); }
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
-    if zjs_is_promise(v) != 0 { return v; }
-    let p = zjs_promise_new();
-    ctx_register_cell(ctx, (void*)p);
-    let pv = zjs_cell_from_ptr((void*)p);
-    promise_resolve_with(ctx, pv, v);
-    return pv;
+    let ctor_v = ctx.host_this;
+    // Spec §27.2.4.7 step 4: if `v` is a Promise AND its constructor is
+    // `this`, return `v` unchanged. Built-in promises with the built-in
+    // ctor satisfy this trivially; for sub-classes we check the
+    // .constructor property.
+    if zjs_is_promise(v) != 0 && value_is_builtin_promise_ctor(ctx, ctor_v) {
+        return v;
+    }
+    let cap = new_promise_capability(ctx, ctor_v);
+    if !cap.ok { return zjs_undefined(); }
+    capability_call_resolve(ctx, cap, v);
+    return cap.promise;
 }
 
-// Promise.reject(reason) — always a new rejected promise.
+// Promise.reject(reason) — always a new rejected promise built from
+// `this` (per spec) — sub-class ctors construct themselves and have
+// their own reject path called.
 fn host_promise_reject_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_promise_constructor_this(ctx, (char*)"reject", 6) { return zjs_undefined(); }
     let r = if argc >= 1 { args[0] } else { zjs_undefined() };
-    let p = zjs_promise_new();
-    ctx_register_cell(ctx, (void*)p);
-    let pv = zjs_cell_from_ptr((void*)p);
-    promise_settle(ctx, pv, r, false);
-    return pv;
+    let cap = new_promise_capability(ctx, ctx.host_this);
+    if !cap.ok { return zjs_undefined(); }
+    capability_call_reject(ctx, cap, r);
+    return cap.promise;
 }
 
 // Promise.prototype.then(onFulfilled, onRejected)
