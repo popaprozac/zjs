@@ -13294,6 +13294,21 @@ fn capability_call_reject(ctx: ZjsContext*, cap: PromiseCapability, reason: ZjsV
     zjs_call_value_with_this(ctx, cap.reject, zjs_undefined(), argp, 1);
 }
 
+// Spec IfAbruptRejectPromise(value, capability) — used by Promise.all
+// / race / any / allSettled / finally where a throwing operation
+// inside the combinator MUST be turned into a rejection of the
+// returned promise rather than a synchronous throw. (Promise.resolve
+// and Promise.reject deliberately don't wrap their capability calls
+// — a throwing custom resolve propagates per §27.2.4.7 step 5.)
+fn capability_reject_if_pending(ctx: ZjsContext*, cap: PromiseCapability) -> bool {
+    if ctx.pending_throw_active {
+        let err = consume_pending_throw(ctx);
+        capability_call_reject(ctx, cap, err);
+        return true;
+    }
+    return false;
+}
+
 fn host_promise_resolve_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_promise_constructor_this(ctx, (char*)"resolve", 7) { return zjs_undefined(); }
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
@@ -13357,10 +13372,11 @@ def PA_PROMISE_KEY: char* = (char*)"__zjs_pa_p__";
 def PA_RESULTS_KEY: char* = (char*)"__zjs_pa_r__";
 def PA_REM_KEY:     char* = (char*)"__zjs_pa_n__";
 def PA_IDX_KEY:     char* = (char*)"__zjs_pa_i__";
+def PA_REJECT_KEY:  char* = (char*)"__zjs_pa_j__";
 
 fn host_promise_all_on_fulfill(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // Per-element state shape:
-    //   __zjs_pa_p__: result promise (rp)
+    //   __zjs_pa_p__: cap.resolve — fires when remaining counter hits 0
     //   __zjs_pa_r__: results array
     //   __zjs_pa_n__: shared-state object (whose own __zjs_pa_n__
     //                  is the int remaining counter)
@@ -13370,7 +13386,7 @@ fn host_promise_all_on_fulfill(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     let per_v = hf.bound;
     if zjs_is_object(per_v) == 0 { return zjs_undefined(); }
     let per = zjs_as_object(per_v);
-    let p_v   = object_get(per, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12));
+    let cap_resolve = object_get(per, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12));
     let res_v = object_get(per, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12));
     let shared_v = object_get(per, ctx_intern_atom(ctx, PA_REM_KEY, 12));
     let idx_v = object_get(per, ctx_intern_atom(ctx, PA_IDX_KEY, 12));
@@ -13385,8 +13401,10 @@ fn host_promise_all_on_fulfill(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     let rem_v = object_get(shared, ctx_intern_atom(ctx, PA_REM_KEY, 12));
     let rem = zjs_as_int32(rem_v) - 1;
     object_set(ctx, shared, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(rem));
-    if rem == 0 && zjs_is_promise(p_v) != 0 {
-        promise_resolve_with(ctx, p_v, res_v);
+    if rem == 0 {
+        let argv: ZjsValue[1]; argv[0] = res_v;
+        let argp: ZjsValue* = NULL; raw { argp = &argv[0]; }
+        zjs_call_value_with_this(ctx, cap_resolve, zjs_undefined(), argp, 1);
     }
     return zjs_undefined();
 }
@@ -13429,56 +13447,52 @@ fn promise_resolve_call(ctx: ZjsContext*, resolve_fn: ZjsValue, ctor_v: ZjsValue
 
 fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_promise_constructor_this(ctx, (char*)"all", 3) { return zjs_undefined(); }
-    let result = zjs_promise_new();
-    ctx_register_cell(ctx, (void*)result);
-    let rp = zjs_cell_from_ptr((void*)result);
+    let ctor_v = ctx.host_this;
+
+    // Build the result via NewPromiseCapability so `Promise.all.call(Sub, …)`
+    // returns a Sub instance and a custom-ctor wrapper observes the
+    // executor-captured resolve/reject. Built-in Promise short-circuits
+    // to a direct alloc + bound host fns.
+    let cap = new_promise_capability(ctx, ctor_v);
+    if !cap.ok { return zjs_undefined(); }
+    let rp = cap.promise;
     ctx_push_temp_root(ctx, rp);
     defer ctx_pop_temp_root(ctx);
-    let ctor_v = ctx.host_this;
+    let cap_resolve = cap.resolve;
+    let cap_reject  = cap.reject;
+    ctx_push_temp_root(ctx, cap_resolve);
+    defer ctx_pop_temp_root(ctx);
+    ctx_push_temp_root(ctx, cap_reject);
+    defer ctx_pop_temp_root(ctx);
 
     // Spec: read C.resolve once up-front (before iterating). A
     // throwing / missing resolve rejects the result.
     let resolve_fn = promise_resolve_lookup(ctx, ctor_v);
     if ctx.pending_throw_active {
         let err = consume_pending_throw(ctx);
-        promise_settle(ctx, rp, err, false);
+        capability_call_reject(ctx, cap, err);
         return rp;
     }
 
-    // Drive the input via the iterator protocol so any iterable
-    // (Set, Map, generator, custom @@iterator) settles correctly.
-    // iter_get throws on null/undefined or non-iterable; surface that
-    // as the rejection of `rp` to match Promise.all's "reject on
-    // GetIterator throw" semantics.
     let iter_arg = if argc >= 1 { args[0] } else { zjs_undefined() };
     let iter = iter_get(ctx, iter_arg);
     if ctx.pending_throw_active {
         let err = consume_pending_throw(ctx);
-        promise_settle(ctx, rp, err, false);
+        capability_call_reject(ctx, cap, err);
         return rp;
     }
     ctx_push_temp_root(ctx, iter);
     defer ctx_pop_temp_root(ctx);
 
-    // Results grow as we pull items; index i is the slot.
     let results_v = ctx_new_array(ctx, 0);
     ctx_push_temp_root(ctx, results_v);
     defer ctx_pop_temp_root(ctx);
 
-    // Remaining-counter dance: start at 1 (the "iteration still running"
-    // sentinel), bump by 1 per pulled item, decrement once after the
-    // pull loop finishes. Each per-element callback decrements; whoever
-    // drops it to 0 settles `rp`. The +1/-1 around iteration prevents
-    // an all-synchronous-fulfilled input from settling mid-pull.
     let state_v = ctx_new_object(ctx);
     let state = zjs_as_object(state_v);
-    object_set(ctx, state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), cap_resolve);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(1));
-
-    let reject_ptr: void* = NULL; raw { reject_ptr = (void*)host_promise_reject_fn; }
-    let reject_fn = ctx_make_host_function(ctx, (char*)"reject", reject_ptr);
-    zjs_as_host_function(reject_fn).bound = rp;
 
     let onf_ptr: void* = NULL; raw { onf_ptr = (void*)host_promise_all_on_fulfill; }
     let i: u32 = 0;
@@ -13486,23 +13500,21 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     while true {
         let step = iter_step(ctx, iter);
         if ctx.pending_throw_active {
-            // iter.next() threw — reject rp with that throw. The
-            // iterator is already done (iter_step sets done on throw),
-            // so iter_close would no-op.
             iter_throw = true;
             break;
         }
         if step.done { break; }
         let item = step.value;
 
-        // Bump the remaining counter for this slot.
         let rem_v = object_get(state, ctx_intern_atom(ctx, PA_REM_KEY, 12));
         object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12),
                    zjs_int32(zjs_as_int32(rem_v) + 1));
 
         let per_state_v = ctx_new_object(ctx);
         let per_state = zjs_as_object(per_state_v);
-        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
+        // PA_PROMISE_KEY now holds cap.resolve (the function we call
+        // when the per-elem counter hits zero), NOT the result promise.
+        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), cap_resolve);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_REM_KEY, 12), state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_IDX_KEY, 12), zjs_int32((i32)i));
@@ -13510,18 +13522,11 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         let onf = ctx_make_host_function(ctx, (char*)"all_onf", onf_ptr);
         zjs_as_host_function(onf).bound = per_state_v;
 
-        // Spec: call C.resolve(item) per element — observable as the
-        // "resolve invoked once per iterated value" test pattern.
         let item_pv = promise_resolve_call(ctx, resolve_fn, ctor_v, item);
         if ctx.pending_throw_active {
             iter_throw = true;
             break;
         }
-        // If C.resolve returned something that isn't a promise, wrap
-        // it so the .then dispatch below has a real promise to bind
-        // reactions to. (Spec: the result has whatever .then the
-        // returned value provides; we keep the legacy direct
-        // PROMISE_* state inspection but feed it a promise either way.)
         if zjs_is_promise(item_pv) == 0 {
             let pp2 = zjs_promise_new();
             ctx_register_cell(ctx, (void*)pp2);
@@ -13533,27 +13538,28 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         if ip.state == PROMISE_FULFILLED {
             microtask_enqueue(ctx, onf, ip.value, zjs_undefined(), true);
         } else if ip.state == PROMISE_REJECTED {
-            microtask_enqueue(ctx, reject_fn, ip.value, zjs_undefined(), false);
+            microtask_enqueue(ctx, cap_reject, ip.value, zjs_undefined(), false);
         } else {
-            promise_attach_reaction(ctx, ip, onf, reject_fn, zjs_undefined());
+            promise_attach_reaction(ctx, ip, onf, cap_reject, zjs_undefined());
         }
 
         i = i + 1;
     }
     if iter_throw {
         let err = consume_pending_throw(ctx);
-        promise_settle(ctx, rp, err, false);
+        capability_call_reject(ctx, cap, err);
         return rp;
     }
 
-    // End-of-iteration decrement. If nothing was queued (empty
-    // iterable) or every queued item already settled synchronously,
-    // this is the last decrement and resolves `rp` immediately.
+    // End-of-iteration decrement. Hitting zero means everything settled
+    // synchronously (or the iterable was empty); fire the capability's
+    // resolve with the results array.
     let rem_v = object_get(state, ctx_intern_atom(ctx, PA_REM_KEY, 12));
     let rem_after = zjs_as_int32(rem_v) - 1;
     object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(rem_after));
     if rem_after == 0 {
-        promise_resolve_with(ctx, rp, results_v);
+        capability_call_resolve(ctx, cap, results_v);
+        capability_reject_if_pending(ctx, cap);
     }
     return rp;
 }
@@ -13564,17 +13570,24 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
 fn host_promise_race(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_promise_constructor_this(ctx, (char*)"race", 4) { return zjs_undefined(); }
-    let result = zjs_promise_new();
-    ctx_register_cell(ctx, (void*)result);
-    let rp = zjs_cell_from_ptr((void*)result);
+    let ctor_v = ctx.host_this;
+
+    let cap = new_promise_capability(ctx, ctor_v);
+    if !cap.ok { return zjs_undefined(); }
+    let rp = cap.promise;
     ctx_push_temp_root(ctx, rp);
     defer ctx_pop_temp_root(ctx);
-    let ctor_v = ctx.host_this;
+    let cap_resolve = cap.resolve;
+    let cap_reject  = cap.reject;
+    ctx_push_temp_root(ctx, cap_resolve);
+    defer ctx_pop_temp_root(ctx);
+    ctx_push_temp_root(ctx, cap_reject);
+    defer ctx_pop_temp_root(ctx);
 
     let ctor_resolve_fn = promise_resolve_lookup(ctx, ctor_v);
     if ctx.pending_throw_active {
         let err = consume_pending_throw(ctx);
-        promise_settle(ctx, rp, err, false);
+        capability_call_reject(ctx, cap, err);
         return rp;
     }
 
@@ -13582,27 +13595,19 @@ fn host_promise_race(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let iter = iter_get(ctx, iter_arg);
     if ctx.pending_throw_active {
         let err = consume_pending_throw(ctx);
-        promise_settle(ctx, rp, err, false);
+        capability_call_reject(ctx, cap, err);
         return rp;
     }
     ctx_push_temp_root(ctx, iter);
     defer ctx_pop_temp_root(ctx);
 
-    let resolve_ptr: void* = NULL; raw { resolve_ptr = (void*)host_promise_resolve_fn; }
-    let reject_ptr:  void* = NULL; raw { reject_ptr  = (void*)host_promise_reject_fn; }
-    let resolve_fn = ctx_make_host_function(ctx, (char*)"resolve", resolve_ptr);
-    let reject_fn  = ctx_make_host_function(ctx, (char*)"reject", reject_ptr);
-    zjs_as_host_function(resolve_fn).bound = rp;
-    zjs_as_host_function(reject_fn).bound  = rp;
-
-    // race has no counter — the first item that settles wins via its
-    // bound resolve/reject. An empty iterable leaves `rp` pending
-    // forever (spec-correct: race([]) never settles).
+    // race has no counter — the first item that settles wins via the
+    // capability's resolve/reject. Empty iterable → never settles.
     while true {
         let step = iter_step(ctx, iter);
         if ctx.pending_throw_active {
             let err = consume_pending_throw(ctx);
-            promise_settle(ctx, rp, err, false);
+            capability_call_reject(ctx, cap, err);
             return rp;
         }
         if step.done { break; }
@@ -13610,7 +13615,7 @@ fn host_promise_race(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         let item_pv = promise_resolve_call(ctx, ctor_resolve_fn, ctor_v, item);
         if ctx.pending_throw_active {
             let err = consume_pending_throw(ctx);
-            promise_settle(ctx, rp, err, false);
+            capability_call_reject(ctx, cap, err);
             return rp;
         }
         if zjs_is_promise(item_pv) == 0 {
@@ -13622,11 +13627,11 @@ fn host_promise_race(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         }
         let ip = zjs_as_promise(item_pv);
         if ip.state == PROMISE_FULFILLED {
-            microtask_enqueue(ctx, resolve_fn, ip.value, zjs_undefined(), true);
+            microtask_enqueue(ctx, cap_resolve, ip.value, zjs_undefined(), true);
         } else if ip.state == PROMISE_REJECTED {
-            microtask_enqueue(ctx, reject_fn, ip.value, zjs_undefined(), false);
+            microtask_enqueue(ctx, cap_reject, ip.value, zjs_undefined(), false);
         } else {
-            promise_attach_reaction(ctx, ip, resolve_fn, reject_fn, zjs_undefined());
+            promise_attach_reaction(ctx, ip, cap_resolve, cap_reject, zjs_undefined());
         }
     }
     return rp;
@@ -13666,8 +13671,12 @@ fn host_promise_all_settled_on_settle(ctx: ZjsContext*, args: ZjsValue*, argc: u
     let rem_v = object_get(shared, ctx_intern_atom(ctx, PA_REM_KEY, 12));
     let rem = zjs_as_int32(rem_v) - 1;
     object_set(ctx, shared, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(rem));
-    if rem == 0 && zjs_is_promise(p_v) != 0 {
-        promise_resolve_with(ctx, p_v, res_v);
+    if rem == 0 {
+        // p_v now stores the capability's resolve function (mirrors
+        // the Promise.all per-element shape — see host_promise_all).
+        let argv: ZjsValue[1]; argv[0] = res_v;
+        let argp: ZjsValue* = NULL; raw { argp = &argv[0]; }
+        zjs_call_value_with_this(ctx, p_v, zjs_undefined(), argp, 1);
     }
     return zjs_undefined();
 }
@@ -13681,17 +13690,24 @@ fn host_promise_all_settled_on_reject(ctx: ZjsContext*, args: ZjsValue*, argc: u
 
 fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_promise_constructor_this(ctx, (char*)"allSettled", 10) { return zjs_undefined(); }
-    let result = zjs_promise_new();
-    ctx_register_cell(ctx, (void*)result);
-    let rp = zjs_cell_from_ptr((void*)result);
+    let ctor_v = ctx.host_this;
+
+    let cap = new_promise_capability(ctx, ctor_v);
+    if !cap.ok { return zjs_undefined(); }
+    let rp = cap.promise;
     ctx_push_temp_root(ctx, rp);
     defer ctx_pop_temp_root(ctx);
-    let ctor_v = ctx.host_this;
+    let cap_resolve = cap.resolve;
+    let cap_reject  = cap.reject;
+    ctx_push_temp_root(ctx, cap_resolve);
+    defer ctx_pop_temp_root(ctx);
+    ctx_push_temp_root(ctx, cap_reject);
+    defer ctx_pop_temp_root(ctx);
 
     let ctor_resolve_fn = promise_resolve_lookup(ctx, ctor_v);
     if ctx.pending_throw_active {
         let err = consume_pending_throw(ctx);
-        promise_settle(ctx, rp, err, false);
+        capability_call_reject(ctx, cap, err);
         return rp;
     }
 
@@ -13699,7 +13715,7 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
     let iter = iter_get(ctx, iter_arg);
     if ctx.pending_throw_active {
         let err = consume_pending_throw(ctx);
-        promise_settle(ctx, rp, err, false);
+        capability_call_reject(ctx, cap, err);
         return rp;
     }
     ctx_push_temp_root(ctx, iter);
@@ -13711,7 +13727,7 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
 
     let state_v = ctx_new_object(ctx);
     let state = zjs_as_object(state_v);
-    object_set(ctx, state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), cap_resolve);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(1));
 
@@ -13731,7 +13747,7 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
 
         let per_state_v = ctx_new_object(ctx);
         let per_state = zjs_as_object(per_state_v);
-        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
+        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), cap_resolve);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_REM_KEY, 12), state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_IDX_KEY, 12), zjs_int32((i32)i));
@@ -13761,7 +13777,7 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
     }
     if iter_throw {
         let err = consume_pending_throw(ctx);
-        promise_settle(ctx, rp, err, false);
+        capability_call_reject(ctx, cap, err);
         return rp;
     }
 
@@ -13769,7 +13785,8 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
     let rem_after = zjs_as_int32(rem_v) - 1;
     object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(rem_after));
     if rem_after == 0 {
-        promise_resolve_with(ctx, rp, results_v);
+        capability_call_resolve(ctx, cap, results_v);
+        capability_reject_if_pending(ctx, cap);
     }
     return rp;
 }
@@ -13784,14 +13801,13 @@ fn host_promise_any_on_fulfill(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     let per_v = hf.bound;
     if zjs_is_object(per_v) == 0 { return zjs_undefined(); }
     let per = zjs_as_object(per_v);
-    let p_v = object_get(per, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12));
+    // PA_PROMISE_KEY now holds cap.resolve. Calling it is idempotent
+    // (the underlying promise stays at its first settled state).
+    let cap_resolve = object_get(per, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12));
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
-    if zjs_is_promise(p_v) != 0 {
-        let p = zjs_as_promise(p_v);
-        if p.state == PROMISE_PENDING {
-            promise_resolve_with(ctx, p_v, v);
-        }
-    }
+    let argv: ZjsValue[1]; argv[0] = v;
+    let argp: ZjsValue* = NULL; raw { argp = &argv[0]; }
+    zjs_call_value_with_this(ctx, cap_resolve, zjs_undefined(), argp, 1);
     return zjs_undefined();
 }
 
@@ -13815,30 +13831,38 @@ fn host_promise_any_on_reject(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Z
     let rem_v = object_get(shared, ctx_intern_atom(ctx, PA_REM_KEY, 12));
     let rem = zjs_as_int32(rem_v) - 1;
     object_set(ctx, shared, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(rem));
-    if rem == 0 && zjs_is_promise(p_v) != 0 {
-        let p = zjs_as_promise(p_v);
-        if p.state == PROMISE_PENDING {
-            let agg = build_aggregate_error(ctx, errs_v,
-                                            (char*)"All promises were rejected", 26);
-            promise_settle(ctx, p_v, agg, false);
-        }
+    if rem == 0 {
+        // Capability-aware: shared holds cap.reject under PA_REJECT_KEY.
+        let cap_reject = object_get(shared, ctx_intern_atom(ctx, PA_REJECT_KEY, 13));
+        let agg = build_aggregate_error(ctx, errs_v,
+                                        (char*)"All promises were rejected", 26);
+        let argv: ZjsValue[1]; argv[0] = agg;
+        let argp: ZjsValue* = NULL; raw { argp = &argv[0]; }
+        zjs_call_value_with_this(ctx, cap_reject, zjs_undefined(), argp, 1);
     }
     return zjs_undefined();
 }
 
 fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_promise_constructor_this(ctx, (char*)"any", 3) { return zjs_undefined(); }
-    let result = zjs_promise_new();
-    ctx_register_cell(ctx, (void*)result);
-    let rp = zjs_cell_from_ptr((void*)result);
+    let ctor_v = ctx.host_this;
+
+    let cap = new_promise_capability(ctx, ctor_v);
+    if !cap.ok { return zjs_undefined(); }
+    let rp = cap.promise;
     ctx_push_temp_root(ctx, rp);
     defer ctx_pop_temp_root(ctx);
-    let ctor_v = ctx.host_this;
+    let cap_resolve = cap.resolve;
+    let cap_reject  = cap.reject;
+    ctx_push_temp_root(ctx, cap_resolve);
+    defer ctx_pop_temp_root(ctx);
+    ctx_push_temp_root(ctx, cap_reject);
+    defer ctx_pop_temp_root(ctx);
 
     let ctor_resolve_fn = promise_resolve_lookup(ctx, ctor_v);
     if ctx.pending_throw_active {
         let err = consume_pending_throw(ctx);
-        promise_settle(ctx, rp, err, false);
+        capability_call_reject(ctx, cap, err);
         return rp;
     }
 
@@ -13846,7 +13870,7 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let iter = iter_get(ctx, iter_arg);
     if ctx.pending_throw_active {
         let err = consume_pending_throw(ctx);
-        promise_settle(ctx, rp, err, false);
+        capability_call_reject(ctx, cap, err);
         return rp;
     }
     ctx_push_temp_root(ctx, iter);
@@ -13858,11 +13882,14 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
     let state_v = ctx_new_object(ctx);
     let state = zjs_as_object(state_v);
-    // The on-reject helper looks up the result promise + errors array
-    // through PA_*_KEYS the same way .all does; stash them here too.
-    object_set(ctx, state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
+    // The on-reject helper consults the shared state for cap.reject
+    // (used when every input has rejected and we need to build the
+    // AggregateError); PA_PROMISE_KEY carries cap.resolve to the
+    // on-fulfill helper.
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), cap_resolve);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), errs_v);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(1));
+    object_set(ctx, state, ctx_intern_atom(ctx, PA_REJECT_KEY, 13), cap_reject);
 
     let onf_ptr: void* = NULL; raw { onf_ptr = (void*)host_promise_any_on_fulfill; }
     let onr_ptr: void* = NULL; raw { onr_ptr = (void*)host_promise_any_on_reject; }
@@ -13880,7 +13907,7 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
         let per_state_v = ctx_new_object(ctx);
         let per_state = zjs_as_object(per_state_v);
-        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), rp);
+        object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), cap_resolve);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), errs_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_REM_KEY, 12), state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_IDX_KEY, 12), zjs_int32((i32)i));
@@ -13910,23 +13937,19 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     }
     if iter_throw {
         let err = consume_pending_throw(ctx);
-        promise_settle(ctx, rp, err, false);
+        capability_call_reject(ctx, cap, err);
         return rp;
     }
 
-    // End-of-iteration decrement. If we never bumped (empty iterable)
-    // or every input already rejected synchronously, reject rp with
-    // an AggregateError carrying the collected reasons.
+    // End-of-iteration decrement. If empty iterable or all already
+    // rejected synchronously, build the AggregateError and reject.
     let rem_v = object_get(state, ctx_intern_atom(ctx, PA_REM_KEY, 12));
     let rem_after = zjs_as_int32(rem_v) - 1;
     object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(rem_after));
     if rem_after == 0 {
-        let p = zjs_as_promise(rp);
-        if p.state == PROMISE_PENDING {
-            let agg = build_aggregate_error(ctx, errs_v,
-                                            (char*)"All promises were rejected", 26);
-            promise_settle(ctx, rp, agg, false);
-        }
+        let agg = build_aggregate_error(ctx, errs_v,
+                                        (char*)"All promises were rejected", 26);
+        capability_call_reject(ctx, cap, agg);
     }
     return rp;
 }

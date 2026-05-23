@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-23 17:20 UTC",
+    "when": "2026-05-23 17:54 UTC",
     "total": 14524,
-    "passed": 11961,
-    "failed": 1917,
+    "passed": 11982,
+    "failed": 1896,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -4845,10 +4845,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Promise[Symbol.species] is Promise Expected SameValue(\u00abundefined\u00bb, \u00ab[object Function]\u00bb) to be tru"
     },
     {
-      "path": "test/built-ins/Promise/all/S25.4.4.1_A4.1_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/built-ins/Promise/all/call-resolve-element-after-return.js",
       "reason": "[sloppy] zjs: throw: (unknown): callCount after call to all() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
@@ -4859,26 +4855,6 @@
     {
       "path": "test/built-ins/Promise/all/call-resolve-element.js",
       "reason": "[sloppy] zjs: throw: (unknown): callCount after call to all() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/capability-executor-called-twice.js",
-      "reason": "[sloppy] zjs: throw: (unknown): executor initially called with no arguments Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"abc\"\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/capability-executor-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): executor not called at all Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/all/capability-resolve-throws-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/ctx-ctor-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/all/ctx-ctor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-resolve-error-close.js",
@@ -4989,10 +4965,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Promise/all/resolve-throws-iterator-return-null-or-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Promise/all/same-reject-function.js",
       "reason": "[sloppy] zjs: throw: (unknown): p1.then call count Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
@@ -5019,26 +4991,6 @@
     {
       "path": "test/built-ins/Promise/allKeyed/proto.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/capability-executor-called-twice.js",
-      "reason": "[sloppy] zjs: throw: (unknown): executor initially called with no arguments Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"abc\"\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/capability-executor-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): executor not called at all Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/capability-resolve-throws-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/ctx-ctor-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/ctx-ctor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-resolve-error-close.js",
@@ -5169,10 +5121,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Promise/allSettled/resolve-throws-iterator-return-null-or-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Promise/allSettledKeyed/extensible.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
     },
@@ -5197,20 +5145,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000"
     },
     {
-      "path": "test/built-ins/Promise/any/capability-executor-called-twice.js",
-      "reason": "[sloppy] zjs: throw: (unknown): executor initially called with no arguments Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"abc\"\u00bb) to be true"
+      "path": "test/built-ins/Promise/any/call-reject-element-after-return.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Promise capability resolve/reject is not callable\u0000"
     },
     {
-      "path": "test/built-ins/Promise/any/capability-executor-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): executor not called at all Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/any/ctx-ctor-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/any/ctx-ctor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true"
+      "path": "test/built-ins/Promise/any/call-reject-element-items.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Promise capability resolve/reject is not callable\u0000"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-resolve-on-promises-every-iteration-of-custom.js",
@@ -5281,6 +5221,14 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
+      "path": "test/built-ins/Promise/any/resolve-before-loop-exit-from-same.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Promise capability resolve/reject is not callable\u0000"
+    },
+    {
+      "path": "test/built-ins/Promise/any/resolve-before-loop-exit.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Promise capability resolve/reject is not callable\u0000"
+    },
+    {
       "path": "test/built-ins/Promise/any/resolve-ignores-late-rejection-deferred.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -5291,10 +5239,6 @@
     {
       "path": "test/built-ins/Promise/any/resolve-throws-iterator-return-is-not-callable.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/any/resolve-throws-iterator-return-null-or-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/exception-after-resolve-in-executor.js",
@@ -5473,30 +5417,6 @@
       "reason": "async test never signaled completion"
     },
     {
-      "path": "test/built-ins/Promise/race/S25.4.4.3_A3.1_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/race/S25.4.4.3_A3.1_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/race/capability-executor-called-twice.js",
-      "reason": "[sloppy] zjs: throw: (unknown): executor initially called with no arguments Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"abc\"\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/race/capability-executor-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): executor not called at all Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/race/ctx-ctor-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Promise/race/ctx-ctor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Promise/race/invoke-resolve-error-close.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
@@ -5575,10 +5495,6 @@
     {
       "path": "test/built-ins/Promise/race/resolve-throws-iterator-return-is-not-callable.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/Promise/race/resolve-throws-iterator-return-null-or-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/race/same-reject-function.js",
