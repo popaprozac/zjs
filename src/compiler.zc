@@ -23,6 +23,12 @@ struct Local {
     name_length: u32;
     reg:         u8;
     captured:    bool;       // true if a nested function captures this local
+    // ECMA-262 §13.3 lexical-scoping. `var` declarations hoist to the
+    // enclosing function (scope_id 0); `let`/`const`/`class` bind to
+    // the block they're declared in. find_local_index filters by the
+    // compiler's active scope stack so `{ let e = … }` doesn't shadow
+    // an outer `var e` once the block exits.
+    scope_id:    u32;
 }
 
 struct Compiler {
@@ -182,6 +188,21 @@ struct Compiler {
     loop_depth:    u32;
     loop_stack:    LoopFrame*;
     loop_cap:      u32;
+
+    // ECMA-262 lexical scope tracker. scope_stack holds the IDs of all
+    // currently-active scopes (innermost on top). cur_scope_id mirrors
+    // the top of stack so the common path (add_local) is one field
+    // load instead of an indirection. next_scope_id is monotonically
+    // incremented as new blocks are entered; both the collect_locals
+    // pre-pass and compile_stmt walk the AST in the same order so the
+    // IDs they assign to each block match. scope 0 is the function-top
+    // scope (always present on the stack); `var` declarations always
+    // bind here regardless of where they're textually written.
+    scope_stack:   u32*;
+    scope_top:     u32;
+    scope_cap:     u32;
+    cur_scope_id:  u32;
+    next_scope_id: u32;
 }
 
 struct LoopFrame {
@@ -215,6 +236,16 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.this_reg = -1;
     c.preferred_dst = -1;
     c.enclosing_class_id = -1;
+    // Scope tracker — start with the function-top scope (id 0) on the
+    // stack. New scopes get unique ids from next_scope_id; the field is
+    // reset between the collect_locals and compile_stmt passes so both
+    // assign the same ids to the same syntactic blocks.
+    c.scope_stack = alloc_n<u32>(8);
+    c.scope_cap = 8;
+    c.scope_top = 1;
+    c.scope_stack[0] = 0;
+    c.cur_scope_id = 0;
+    c.next_scope_id = 1;
     // Push onto the ctx-wide active-compiler stack so GC sees this
     // compiler's mid-flight constants + ICs as roots.
     c.outer_compiler = ctx.active_compiler;
@@ -427,6 +458,7 @@ fn compiler_free(c: Compiler*) -> void {
     dealloc(c.active_finallies);
     dealloc(c.locals);
     dealloc(c.ics);
+    dealloc(c.scope_stack);
     dealloc(c);
 }
 
@@ -468,7 +500,7 @@ fn alloc_ic_slot(c: Compiler*, name: ZjsString*) -> u32 {
 
 // --- Locals ---------------------------------------------------------
 
-fn add_local(c: Compiler*, name_start: u32, name_length: u32, reg: u8) -> void {
+fn add_local_scoped(c: Compiler*, name_start: u32, name_length: u32, reg: u8, scope_id: u32) -> void {
     if c.local_count >= c.local_cap {
         let new_cap: u32 = if c.local_cap == 0 { 8 } else { c.local_cap * 2 };
         c.locals = realloc_n<Local>(c.locals, (usize)c.local_cap, (usize)new_cap);
@@ -479,20 +511,73 @@ fn add_local(c: Compiler*, name_start: u32, name_length: u32, reg: u8) -> void {
         name_length: name_length,
         reg:         reg,
         captured:    false,
+        scope_id:    scope_id,
     };
     c.local_count = c.local_count + 1;
+}
+
+fn add_local(c: Compiler*, name_start: u32, name_length: u32, reg: u8) -> void {
+    add_local_scoped(c, name_start, name_length, reg, c.cur_scope_id);
+}
+
+// Enter a new lexical block. Pushes a fresh scope id onto the stack;
+// subsequent `let`/`const`/`class` declarations bind here. `var` and
+// function-hoisted declarations bypass this and bind at scope 0.
+fn enter_scope(c: Compiler*) -> void {
+    if c.scope_top >= c.scope_cap {
+        let new_cap: u32 = if c.scope_cap == 0 { 8 } else { c.scope_cap * 2 };
+        c.scope_stack = realloc_n<u32>(c.scope_stack, (usize)c.scope_cap, (usize)new_cap);
+        c.scope_cap = new_cap;
+    }
+    let new_id = c.next_scope_id;
+    c.next_scope_id = c.next_scope_id + 1;
+    c.scope_stack[c.scope_top] = new_id;
+    c.scope_top = c.scope_top + 1;
+    c.cur_scope_id = new_id;
+}
+
+fn exit_scope(c: Compiler*) -> void {
+    if c.scope_top > 1 {
+        c.scope_top = c.scope_top - 1;
+        c.cur_scope_id = c.scope_stack[c.scope_top - 1];
+    }
+}
+
+// Reset scope tracking before re-walking the AST. Both the collect_locals
+// and compile_stmt passes call enter_scope/exit_scope deterministically;
+// resetting between them re-issues the same ids so locals registered in
+// the first pass can be looked up by name in the second.
+fn reset_scope_walk(c: Compiler*) -> void {
+    c.scope_top = 1;
+    c.scope_stack[0] = 0;
+    c.cur_scope_id = 0;
+    c.next_scope_id = 1;
+}
+
+// True if `scope_id` is currently visible — i.e. somewhere on the active
+// scope stack. O(depth); typically 1-3.
+fn scope_id_is_active(c: Compiler*, scope_id: u32) -> bool {
+    let i: u32 = 0;
+    while i < c.scope_top {
+        if c.scope_stack[i] == scope_id { return true; }
+        i = i + 1;
+    }
+    return false;
 }
 
 // Returns the index in c.locals (so callers can flip the captured flag).
 // -1 if not found. Walks top-down so a more recently added binding
 // (e.g. a nested catch parameter) wins over an earlier one with the
-// same name.
+// same name. Skips entries whose scope is no longer active — that's
+// how block-scoped `let` stops shadowing the enclosing `var` once the
+// block exits.
 fn find_local_index(c: Compiler*, name: char*, name_len: u32) -> i32 {
     if c.local_count == 0 { return -1; }
     let i: i32 = (i32)c.local_count - 1;
     while i >= 0 {
         let idx = (u32)i;
-        if c.locals[idx].name_length == name_len {
+        if c.locals[idx].name_length == name_len
+           && scope_id_is_active(c, c.locals[idx].scope_id) {
             let local_name = c.source + c.locals[idx].name_start;
             let eq: int = 0;
             raw { eq = (memcmp(local_name, name, name_len) == 0) ? 1 : 0; }
@@ -510,13 +595,15 @@ fn local_is_captured_index(c: Compiler*, idx: i32) -> bool {
 
 // Returns the local's register, or -1 if not found. Walks top-down
 // so a more recently added binding (e.g. a nested catch parameter)
-// shadows an outer one with the same name.
+// shadows an outer one with the same name. Out-of-scope entries are
+// skipped (same rationale as find_local_index).
 fn lookup_local(c: Compiler*, name: char*, name_len: u32) -> i32 {
     if c.local_count == 0 { return -1; }
     let i: i32 = (i32)c.local_count - 1;
     while i >= 0 {
         let idx = (u32)i;
-        if c.locals[idx].name_length == name_len {
+        if c.locals[idx].name_length == name_len
+           && scope_id_is_active(c, c.locals[idx].scope_id) {
             let local_name = c.source + c.locals[idx].name_start;
             let eq: int = 0;
             raw { eq = (memcmp(local_name, name, name_len) == 0) ? 1 : 0; }
@@ -2632,13 +2719,45 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     let param_count = regular_param_count;
 
     // 2. Hoist var/let/const declarations from the body into fixed
-    //    locals, plus nested-FunctionDecl name bindings.
-    if node.left != NULL { collect_locals(c, node.left); }
+    //    locals, plus nested-FunctionDecl name bindings. The body's
+    //    outer { … } IS the function-scope lexical environment — we
+    //    must walk INTO its children rather than the wrapper BlockStmt
+    //    itself, otherwise top-level `let` inside the function body
+    //    would land in a nested block scope and be invisible to
+    //    sibling closures that capture it.
+    if node.left != NULL {
+        if node.left.kind == NodeKind::BlockStmt {
+            let bi: u32 = 0;
+            while bi < node.left.children_count {
+                collect_locals(c, node.left.children[bi]);
+                bi = bi + 1;
+            }
+        } else {
+            collect_locals(c, node.left);
+        }
+    }
 
     // 2b. Capture analysis — walk the body looking for nested
     //     functions that reference our locals. Sets c.needs_env and
-    //     marks specific locals as captured.
-    if node.left != NULL { analyze_captures(c, node.left); }
+    //     marks specific locals as captured. Reset the scope tracker
+    //     first so the ids assigned to inner blocks line up with the
+    //     ones collect_locals just assigned (both walks must produce
+    //     the same scope_id at the same syntactic point).
+    reset_scope_walk(c);
+    if node.left != NULL {
+        if node.left.kind == NodeKind::BlockStmt {
+            let bi: u32 = 0;
+            while bi < node.left.children_count {
+                analyze_captures(c, node.left.children[bi]);
+                bi = bi + 1;
+            }
+        } else {
+            analyze_captures(c, node.left);
+        }
+    }
+
+    // 2c. Reset again so compile_stmt below re-issues matching ids.
+    reset_scope_walk(c);
 
     // 2b'. Phase 3.9j — detect "transitive outer refs": references
     //      inside this function's body (including nested closures)
@@ -2794,10 +2913,18 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     }
 
     // 4. Compile body. Arrow concise body is an expression; everything
-    //    else is a BlockStmt.
+    //    else is a BlockStmt. The outer braces of a function body are
+    //    the function scope itself — iterate children directly so we
+    //    don't double-enter a block scope (which would put body-level
+    //    `let` inside a nested scope, mismatching what collect_locals
+    //    did at the same syntactic point).
     if node.left != NULL {
         if node.left.kind == NodeKind::BlockStmt {
-            compile_stmt(c, node.left);
+            let bi: u32 = 0;
+            while bi < node.left.children_count {
+                compile_stmt(c, node.left.children[bi]);
+                bi = bi + 1;
+            }
         } else {
             let r = compile_expr(c, node.left);
             emit(c, make_inst_a(Op::Return, r));
@@ -4370,6 +4497,23 @@ fn analyze_captures(c: Compiler*, node: AstNode*) -> void {
     if node == NULL { return; }
     let k = node.kind;
 
+    if k == NodeKind::BlockStmt {
+        // Walk into the block with its scope active so scan_inner_for_captures
+        // (which calls find_local_index against our locals) sees the block's
+        // own let/const bindings as in-scope at the inner function's
+        // definition site. Without this, a closure declared inside a block
+        // that captures a block-scoped local would miss the binding and
+        // get an unrooted/empty reference.
+        enter_scope(c);
+        let i: u32 = 0;
+        while i < node.children_count {
+            analyze_captures(c, node.children[i]);
+            i = i + 1;
+        }
+        exit_scope(c);
+        return;
+    }
+
     if k == NodeKind::FunctionDecl || k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc {
         // Found a nested function. Scan its body for outer-name refs.
         if node.left != NULL {
@@ -4765,15 +4909,18 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
     if k == NodeKind::VarDecl {
         // Script-top `var x` stays on globalThis; let/const become
         // script-scope locals. Inside a function, the declaration's
-        // kind doesn't matter — all three are function-scope locals.
+        // kind doesn't matter — all three are function-scope locals,
+        // but `var` hoists to the function-top scope while let/const
+        // stay block-scoped (see add_local vs add_local_scoped).
         let is_var_kind = node.op == TokenKind::KwVar;
         if c.is_script && is_var_kind { return; }
+        let scope_id = if is_var_kind { 0u32 } else { c.cur_scope_id };
         let i: u32 = 0;
         while i < node.children_count {
             let decl = node.children[i];
             if decl.name_length > 0 {
                 let reg = alloc_reg(c);
-                add_local(c, decl.name_start, decl.name_length, reg);
+                add_local_scoped(c, decl.name_start, decl.name_length, reg, scope_id);
             } else if decl.third != NULL {
                 collect_pattern_locals(c, decl.third);
             }
@@ -4801,6 +4948,20 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
     }
     if k == NodeKind::ExportDecl {
         if node.left != NULL { collect_locals(c, node.left); }
+        return;
+    }
+
+    if k == NodeKind::BlockStmt {
+        // Block introduces a fresh lexical scope; let/const inside this
+        // body bind to the block, var still hoists. compile_stmt walks
+        // the same node and enters a scope in lockstep so the ids match.
+        enter_scope(c);
+        let i: u32 = 0;
+        while i < node.children_count {
+            collect_locals(c, node.children[i]);
+            i = i + 1;
+        }
+        exit_scope(c);
         return;
     }
 
@@ -4859,11 +5020,16 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     }
 
     if k == NodeKind::BlockStmt {
+        // Mirrors collect_locals — both passes enter+exit a scope in
+        // lockstep so the ids assigned to the block agree, which is
+        // what makes find_local_index filter correctly.
+        enter_scope(c);
         let i: u32 = 0;
         while i < node.children_count {
             compile_stmt(c, node.children[i]);
             i = i + 1;
         }
+        exit_scope(c);
         return;
     }
     if k == NodeKind::VarDecl {
@@ -5637,6 +5803,12 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             catch_reg = alloc_reg(c);
             if node.name_length > 0 { added_catch_local = true; }
             if catch_reg + 1 > c.fixed_regs { c.fixed_regs = catch_reg + 1; }
+        } else if has_catch {
+            // Optional catch binding (`catch { … }`) — still need a sink
+            // register for EnterTry to deposit the thrown value into so
+            // we don't clobber reg 0 (which may hold an unrelated local).
+            catch_reg = alloc_reg(c);
+            if catch_reg + 1 > c.fixed_regs { c.fixed_regs = catch_reg + 1; }
         }
 
         if !has_finally {
@@ -5979,8 +6151,11 @@ fn hoist_program_decls(c: Compiler*, node: AstNode*) -> void {
     }
     if k == NodeKind::ClassExpr { return; }
     if k == NodeKind::VarDecl {
-        // Hoist every declarator under this binding. We treat var/let/const
-        // alike for hoisting purposes — see comment in compile_program.
+        // Only `var` hoists into the global object (ECMA-262 §10.2.11).
+        // `let` / `const` are block-scoped — pre-declaring them as
+        // globals here would let bare reads after the block silently
+        // see `undefined` instead of throwing ReferenceError.
+        if node.op != TokenKind::KwVar { return; }
         let j: u32 = 0;
         while j < node.children_count {
             let decl = node.children[j];
@@ -6023,6 +6198,7 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     if is_module {
         c.is_function = true;
         collect_locals(c, root);
+        reset_scope_walk(c);
         analyze_captures(c, root);
         if c.needs_env {
             c.env_reg = alloc_reg(c);
@@ -6036,11 +6212,15 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
         c.is_function = true;
         c.is_script   = true;
         if root != NULL { collect_locals(c, root); }
+        reset_scope_walk(c);
         if root != NULL { analyze_captures(c, root); }
         if c.needs_env {
             c.env_reg = alloc_reg(c);
         }
     }
+    // Reset scope tracking so compile_stmt re-enters each block with
+    // the same ids collect_locals + analyze_captures just assigned.
+    reset_scope_walk(c);
 
     // Reserve a stable program-result register. Every top-level
     // expression statement Movs into it; the final Return reads from
