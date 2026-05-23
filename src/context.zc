@@ -14370,8 +14370,19 @@ fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
             m = ((kn == 6 && memcmp(kd, "length", 6) == 0)
               || (kn == 4 && memcmp(kd, "name",   4) == 0)) ? 1 : 0;
         }
-        if m != 0 { return zjs_bool(1); }
         let hf = zjs_as_host_function(this_val);
+        if m != 0 {
+            // `delete fn.name` records the override as a deleted
+            // sentinel on hf.props; honor it here so isConfigurable
+            // sees the property go away.
+            if hf.props != NULL {
+                let s_ov = class_find_slot(hf.props.cls, ks);
+                if s_ov >= 0 && zjs_is_deleted(hf.props.slots[(u32)s_ov]) != 0 {
+                    return zjs_bool(0);
+                }
+            }
+            return zjs_bool(1);
+        }
         if hf.props != NULL {
             let slot = class_find_slot(hf.props.cls, ks);
             if slot >= 0 && zjs_is_deleted(hf.props.slots[(u32)slot]) == 0 { return zjs_bool(1); }

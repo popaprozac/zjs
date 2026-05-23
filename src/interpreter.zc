@@ -1027,11 +1027,22 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             if is_call  != 0 { return ctx.fn_call_v; }
             if is_apply != 0 { return ctx.fn_apply_v; }
             // ECMA-262 §10.2.4: every built-in function exposes a
-            // `length` (param count). We don't track the C function's
-            // arity yet, so report 0 — enough to satisfy "the property
-            // exists" tests. `name` echoes the host fn's display name.
-            if is_length != 0 { return zjs_int32((i32)hf.arity); }
-            if is_name != 0 {
+            // `length` (param count) and a `name`. Both are
+            // [[Configurable]]: true so `delete fn.name` etc. must
+            // actually remove them. We use a deleted-sentinel slot
+            // on hf.props to record that override — check there
+            // first, then synthesize the default if no override
+            // exists.
+            if is_length != 0 || is_name != 0 {
+                if hf.props != NULL {
+                    let s_ov = class_find_slot(hf.props.cls, ks);
+                    if s_ov >= 0 {
+                        let v_ov = hf.props.slots[(u32)s_ov];
+                        if zjs_is_deleted(v_ov) != 0 { return zjs_undefined(); }
+                        return v_ov;
+                    }
+                }
+                if is_length != 0 { return zjs_int32((i32)hf.arity); }
                 if hf.name == NULL { return ctx_intern_string(ctx, (char*)"", 0); }
                 let n_len: usize = 0;
                 raw { n_len = strlen(hf->name); }
@@ -1509,13 +1520,35 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let ks = zjs_as_string(key);
         let is_proto: int = 0;
+        let is_name: int = 0;
+        let is_length: int = 0;
         let kd = ks.data;
         let kn = ks.length;
-        raw { is_proto = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0; }
+        raw {
+            is_proto  = (kn == 9 && memcmp(kd, "prototype", 9) == 0) ? 1 : 0;
+            is_name   = (kn == 4 && memcmp(kd, "name",   4) == 0) ? 1 : 0;
+            is_length = (kn == 6 && memcmp(kd, "length", 6) == 0) ? 1 : 0;
+        }
         let hf = zjs_as_host_function(obj);
         if is_proto != 0 && zjs_is_object(value) != 0 {
             hf.prototype = zjs_as_object(value);
             return;
+        }
+        // ECMA-262 §10.2.4: built-in function `name` / `length`
+        // descriptors are { writable: false, configurable: true }.
+        // Sloppy mode silently ignores writes to non-writable own
+        // properties. (Strict-mode TypeError would require strict-
+        // tracking on the calling frame; skip for now — Hermes/qjs
+        // also no-op in their default config.) If a deleted-sentinel
+        // override exists in props, fall through to the normal write
+        // path so post-delete reassignment recreates the property.
+        if is_name != 0 || is_length != 0 {
+            let overridden: bool = false;
+            if hf.props != NULL {
+                let s_ov = class_find_slot(hf.props.cls, ks);
+                if s_ov >= 0 { overridden = true; }
+            }
+            if !overridden { return; }
         }
         // Arbitrary property — lazily create the props object.
         if hf.props == NULL {
@@ -5095,6 +5128,39 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     // Array elements aren't tracked with attrs yet, so
                     // they're always configurable per spec.
                     a.elements[(u32)idx] = zjs_deleted();
+                }
+            } else if obj_tag == TAG_HOST_FUNCTION {
+                // Host functions synthesize `name` / `length` lazily
+                // from hf.name / hf.arity rather than storing them as
+                // real own slots. To honor `delete builtinFn.name`
+                // (configurable: true per spec), record the override
+                // by installing a deleted sentinel on hf.props — the
+                // synthesizing reader checks for it first.
+                let key_str = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+                let name = zjs_as_string(key_str);
+                let is_synth_name: bool =
+                    (name.length == 4 && name.data[0] == (char)'n' && name.data[1] == (char)'a'
+                     && name.data[2] == (char)'m' && name.data[3] == (char)'e')
+                    || (name.length == 6 && name.data[0] == (char)'l' && name.data[1] == (char)'e'
+                        && name.data[2] == (char)'n' && name.data[3] == (char)'g'
+                        && name.data[4] == (char)'t' && name.data[5] == (char)'h');
+                let hf = zjs_as_host_function(obj_v);
+                if is_synth_name {
+                    if hf.props == NULL {
+                        let pv = ctx_new_object(ctx);
+                        hf.props = zjs_as_object(pv);
+                    }
+                    object_set(ctx, hf.props, name, zjs_deleted());
+                } else if props_o != NULL {
+                    let slot = class_find_slot(props_o.cls, name);
+                    if slot >= 0 {
+                        let a = object_get_attrs(props_o, (u32)slot);
+                        if (a & PROP_CONFIGURABLE) == 0 {
+                            ok = false;
+                        } else {
+                            props_o.slots[(u32)slot] = zjs_deleted();
+                        }
+                    }
                 }
             } else if props_o != NULL {
                 let key_str = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };

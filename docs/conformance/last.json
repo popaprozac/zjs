@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-23 03:36 UTC",
+    "when": "2026-05-23 03:56 UTC",
     "total": 14524,
-    "passed": 11102,
-    "failed": 2776,
+    "passed": 11343,
+    "failed": 2535,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -6277,14 +6277,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): New arrayLike.length is 2**53 - 1 Expected SameValue(\u00ab0\u00bb, \u00ab9007199254740991\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Array/prototype/push/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/push/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Array/prototype/push/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Array.prototype.push) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be t"
     },
@@ -6339,14 +6331,6 @@
     {
       "path": "test/built-ins/Array/prototype/pop/length-near-integer-limit.js",
       "reason": "[sloppy] zjs: throw: (unknown): arrayLike['9007199254740990'] is returned from pop() Expected SameValue(\u00abundefined\u00bb, \u00ab\"9007199254"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/pop/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/pop/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/not-a-constructor.js",
@@ -6422,7 +6406,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -6451,14 +6435,6 @@
     {
       "path": "test/built-ins/Array/prototype/indexOf/length-zero-returns-minus-one.js",
       "reason": "[sloppy] zjs: throw: (unknown): Length should be checked before ToInteger(fromIndex)."
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/not-a-constructor.js",
@@ -6569,14 +6545,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Constructor invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Array.prototype.map) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be tr"
     },
@@ -6649,24 +6617,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): callCnt Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Array.prototype.forEach) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to b"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/resizable-buffer.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents."
-    },
-    {
-      "path": "test/built-ins/Object/keys/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Object/keys/not-a-constructor.js",
@@ -6745,10 +6701,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object"
     },
     {
-      "path": "test/built-ins/Object/create/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Object/create/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Object.create) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
@@ -6765,20 +6717,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Object.getPrototypeOf(obj) Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Object/getPrototypeOf/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Object/getPrototypeOf/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Object.getPrototypeOf) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be "
-    },
-    {
-      "path": "test/built-ins/Object/setPrototypeOf/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Object/setPrototypeOf/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Object/setPrototypeOf/not-a-constructor.js",
@@ -6798,11 +6738,7 @@
     },
     {
       "path": "test/built-ins/JSON/parse/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 2; length value should be 2; length descriptor should be config"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 2; length value should be 2"
     },
     {
       "path": "test/built-ins/JSON/parse/not-a-constructor.js",
@@ -6878,11 +6814,7 @@
     },
     {
       "path": "test/built-ins/JSON/stringify/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 3; length value should be 3; length descriptor should be config"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 3; length value should be 3"
     },
     {
       "path": "test/built-ins/JSON/stringify/not-a-constructor.js",
@@ -6953,14 +6885,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): JSON.stringify(\"\\uD834\") Expected SameValue(\u00ab\"\\\"\ufffd\ufffd\ufffd\\\"\"\u00bb, \u00ab\"\\\"\\\\ud834\\\"\"\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/String/prototype/indexOf/S15.5.4.7_A9.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #2: delete String.prototype.indexOf.length; String.prototype.indexOf.hasOwnProperty('length') ret"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/String/prototype/indexOf/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(String.prototype.indexOf) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to "
     },
@@ -6989,14 +6913,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: [obje"
     },
     {
-      "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A9.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #2: delete String.prototype.slice.length; String.prototype.slice.hasOwnProperty('length') return "
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/String/prototype/slice/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(String.prototype.slice) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be"
     },
@@ -7009,10 +6925,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): String.prototype.slice throws in its toprimitive step. Expected a TypeError to be thrown but no e"
     },
     {
-      "path": "test/built-ins/String/prototype/split/checking-if-deleting-the-string-prototype-split-length-property-fails.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of `!String.prototype.split.hasOwnProperty('length')` is true"
-    },
-    {
       "path": "test/built-ins/String/prototype/split/cstm-split-get-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
     },
@@ -7023,10 +6935,6 @@
     {
       "path": "test/built-ins/String/prototype/split/cstm-split-on-bigint-primitive.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: n is not defined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/String/prototype/split/not-a-constructor.js",
@@ -7086,107 +6994,39 @@
     },
     {
       "path": "test/built-ins/Math/abs/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1; length descriptor should be config"
-    },
-    {
-      "path": "test/built-ins/Math/abs/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1"
     },
     {
       "path": "test/built-ins/Math/abs/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.abs) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/acos/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/acos/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/acos/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.acos) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/acosh/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/acosh/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/acosh/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.acosh) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/asin/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/asin/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/asin/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.asin) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/asinh/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/asinh/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/asinh/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.asinh) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/atan/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/atan/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/atan/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.atan) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/atan2/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/atan2/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/atan2/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.atan2) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/atanh/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/atanh/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/atanh/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.atanh) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/cbrt/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/cbrt/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/cbrt/not-a-constructor.js",
@@ -7194,71 +7034,27 @@
     },
     {
       "path": "test/built-ins/Math/ceil/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1; length descriptor should be config"
-    },
-    {
-      "path": "test/built-ins/Math/ceil/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1"
     },
     {
       "path": "test/built-ins/Math/ceil/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.ceil) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/clz32/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/clz32/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/clz32/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.clz32) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/cos/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/cos/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/cos/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.cos) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/cosh/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/cosh/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/cosh/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.cosh) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/exp/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/exp/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/exp/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.exp) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/expm1/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/expm1/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/expm1/not-a-constructor.js",
@@ -7282,119 +7078,43 @@
     },
     {
       "path": "test/built-ins/Math/floor/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1; length descriptor should be config"
-    },
-    {
-      "path": "test/built-ins/Math/floor/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1"
     },
     {
       "path": "test/built-ins/Math/floor/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.floor) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/fround/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/fround/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/fround/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.fround) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/hypot/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/hypot/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/hypot/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.hypot) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/imul/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/imul/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/imul/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.imul) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/log/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/log/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/log/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.log) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/log10/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/log10/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/log10/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.log10) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/log1p/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/log1p/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/log1p/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.log1p) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/log2/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/log2/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/log2/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.log2) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/max/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/max/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/max/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.max) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/min/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/min/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/min/not-a-constructor.js",
@@ -7406,11 +7126,7 @@
     },
     {
       "path": "test/built-ins/Math/pow/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 2; length value should be 2; length descriptor should be config"
-    },
-    {
-      "path": "test/built-ins/Math/pow/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 2; length value should be 2"
     },
     {
       "path": "test/built-ins/Math/pow/not-a-constructor.js",
@@ -7419,14 +7135,6 @@
     {
       "path": "test/built-ins/Math/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): no [[Call]] Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Math/random/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/random/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/random/not-a-constructor.js",
@@ -7438,47 +7146,19 @@
     },
     {
       "path": "test/built-ins/Math/round/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1; length descriptor should be config"
-    },
-    {
-      "path": "test/built-ins/Math/round/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1"
     },
     {
       "path": "test/built-ins/Math/round/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.round) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/sign/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/sign/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/sign/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.sign) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/sin/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/sin/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/sin/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.sin) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/sinh/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/sinh/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/sinh/not-a-constructor.js",
@@ -7486,11 +7166,7 @@
     },
     {
       "path": "test/built-ins/Math/sqrt/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1; length descriptor should be config"
-    },
-    {
-      "path": "test/built-ins/Math/sqrt/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1"
     },
     {
       "path": "test/built-ins/Math/sqrt/not-a-constructor.js",
@@ -7537,36 +7213,12 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Math/tan/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/tan/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/tan/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.tan) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Math/tanh/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/tanh/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Math/tanh/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Math.tanh) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/trunc/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Math/trunc/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Math/trunc/not-a-constructor.js",
@@ -7659,14 +7311,6 @@
     {
       "path": "test/built-ins/Promise/all/invoke-then.js",
       "reason": "[sloppy] zjs: throw: (unknown): `then` invoked once for every iterated value Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Promise/all/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Promise/all/new-resolve-function.js",
@@ -7827,14 +7471,6 @@
     {
       "path": "test/built-ins/Promise/allSettled/invoke-then.js",
       "reason": "[sloppy] zjs: throw: (unknown): `then` invoked once for every iterated value Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Promise/allSettled/new-reject-function.js",
@@ -8001,14 +7637,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/built-ins/Promise/any/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Promise/any/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Promise/any/new-reject-function.js",
       "reason": "[sloppy] zjs: throw: (unknown): p1.then call count Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
@@ -8117,14 +7745,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/built-ins/Promise/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Promise/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Promise/promise.js",
       "reason": "[sloppy] zjs: throw: (unknown): Promise should be an own property"
     },
@@ -8137,14 +7757,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Promise\"\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Promise/prototype/catch/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/catch/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Promise/prototype/catch/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Promise.prototype.catch) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to b"
     },
@@ -8155,14 +7767,6 @@
     {
       "path": "test/built-ins/Promise/prototype/finally/invokes-then-with-non-function.js",
       "reason": "[sloppy] zjs: throw: (unknown): Invokes `then` method exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/finally/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/finally/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/not-a-constructor.js",
@@ -8239,14 +7843,6 @@
     {
       "path": "test/built-ins/Promise/prototype/then/deferred-is-resolved-value.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'then')"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/not-a-constructor.js",
@@ -8349,14 +7945,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): `then` invoked once for every iterated value Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Promise/race/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Promise/race/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Promise/race/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Promise.race) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
@@ -8445,14 +8033,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Promise/reject/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Promise/reject/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Promise/reject/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Promise.reject) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
@@ -8462,11 +8042,11 @@
     },
     {
       "path": "test/built-ins/Promise/reject-function-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1; length descriptor should be config"
+      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1"
     },
     {
       "path": "test/built-ins/Promise/reject-function-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor value should be ; name value should be ; name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: (unknown): name descriptor value should be ; name value should be"
     },
     {
       "path": "test/built-ins/Promise/reject-function-nonconstructor.js",
@@ -8505,14 +8085,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Promise/resolve/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Promise/resolve/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Promise.resolve) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
@@ -8542,11 +8114,11 @@
     },
     {
       "path": "test/built-ins/Promise/resolve-function-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1; length descriptor should be config"
+      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1"
     },
     {
       "path": "test/built-ins/Promise/resolve-function-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor value should be ; name value should be ; name descriptor should be configurable"
+      "reason": "[sloppy] zjs: throw: (unknown): name descriptor value should be ; name value should be"
     },
     {
       "path": "test/built-ins/Promise/resolve-function-nonconstructor.js",
@@ -8575,14 +8147,6 @@
     {
       "path": "test/built-ins/Promise/try/ctx-ctor.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/try/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Promise/try/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Promise/try/not-a-constructor.js",
@@ -8629,14 +8193,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Actual argument [undefined] shouldn't be primitive."
     },
     {
-      "path": "test/built-ins/Map/groupBy/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Map/groupBy/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Map/groupBy/string.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual argument [undefined] shouldn't be primitive."
     },
@@ -8673,20 +8229,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
-      "path": "test/built-ins/Map/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Map/map-iterable-throws-when-set-is-not-callable.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/built-ins/Map/map.js",
       "reason": "[sloppy] zjs: throw: (unknown): Map should be an own property"
-    },
-    {
-      "path": "test/built-ins/Map/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Map/newtarget.js",
@@ -8717,14 +8265,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): clear descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Map/prototype/clear/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/clear/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Map/prototype/clear/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Map.prototype.clear) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be tr"
     },
@@ -8737,14 +8277,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): delete descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Map/prototype/delete/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/delete/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Map/prototype/delete/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Map.prototype.delete) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be t"
     },
@@ -8755,14 +8287,6 @@
     {
       "path": "test/built-ins/Map/prototype/entries/entries.js",
       "reason": "[sloppy] zjs: throw: (unknown): entries descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/entries/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/entries/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Map/prototype/entries/not-a-constructor.js",
@@ -8781,14 +8305,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): forEach descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Map/prototype/forEach/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/forEach/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Map/prototype/forEach/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Map.prototype.forEach) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be "
     },
@@ -8797,28 +8313,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): get descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Map/prototype/get/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/get/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Map/prototype/get/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Map.prototype.get) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Map/prototype/getOrInsert/getOrInsert.js",
       "reason": "[sloppy] zjs: throw: (unknown): getOrInsert descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/getOrInsert/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/getOrInsert/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Map/prototype/getOrInsert/not-a-constructor.js",
@@ -8857,14 +8357,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): has descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Map/prototype/has/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/has/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Map/prototype/has/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Map.prototype.has) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
@@ -8873,24 +8365,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): keys descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Map/prototype/keys/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/keys/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Map/prototype/keys/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Map.prototype.keys) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be tru"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/set/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/set/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Map/prototype/set/not-a-constructor.js",
@@ -8921,14 +8397,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
     },
     {
-      "path": "test/built-ins/Map/prototype/values/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/values/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Map/prototype/values/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Map.prototype.values) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be t"
     },
@@ -8957,14 +8425,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'set')"
     },
     {
-      "path": "test/built-ins/Set/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Set/proto-from-ctor-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'global')"
     },
@@ -8989,14 +8449,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): add descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Set/prototype/add/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/add/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Set/prototype/add/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Set.prototype.add) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
@@ -9009,14 +8461,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): clear descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Set/prototype/clear/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/clear/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Set/prototype/clear/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Set.prototype.clear) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be tr"
     },
@@ -9027,14 +8471,6 @@
     {
       "path": "test/built-ins/Set/prototype/delete/delete.js",
       "reason": "[sloppy] zjs: throw: (unknown): delete descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/delete/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/delete/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Set/prototype/delete/not-a-constructor.js",
@@ -9051,14 +8487,6 @@
     {
       "path": "test/built-ins/Set/prototype/difference/difference.js",
       "reason": "[sloppy] zjs: throw: (unknown): difference descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Set/prototype/difference/not-a-constructor.js",
@@ -9083,14 +8511,6 @@
     {
       "path": "test/built-ins/Set/prototype/entries/entries.js",
       "reason": "[sloppy] zjs: throw: (unknown): entries descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/entries/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/entries/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Set/prototype/entries/not-a-constructor.js",
@@ -9149,14 +8569,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Set/prototype/forEach/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Set/prototype/forEach/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Set.prototype.forEach) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be "
     },
@@ -9173,14 +8585,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): has descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Set/prototype/has/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/has/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Set/prototype/has/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Set.prototype.has) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
     },
@@ -9195,14 +8599,6 @@
     {
       "path": "test/built-ins/Set/prototype/intersection/intersection.js",
       "reason": "[sloppy] zjs: throw: (unknown): intersection descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/intersection/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/intersection/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Set/prototype/intersection/not-a-constructor.js",
@@ -9249,14 +8645,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): isDisjointFrom descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Set/prototype/isDisjointFrom/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/isDisjointFrom/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Set/prototype/isDisjointFrom/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Set.prototype.isDisjointFrom) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb)"
     },
@@ -9289,14 +8677,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): isSubsetOf descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Set/prototype/isSubsetOf/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/isSubsetOf/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Set/prototype/isSubsetOf/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Set.prototype.isSubsetOf) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to "
     },
@@ -9327,14 +8707,6 @@
     {
       "path": "test/built-ins/Set/prototype/isSupersetOf/isSupersetOf.js",
       "reason": "[sloppy] zjs: throw: (unknown): isSupersetOf descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/isSupersetOf/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/isSupersetOf/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Set/prototype/isSupersetOf/not-a-constructor.js",
@@ -9393,14 +8765,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Set.prototype.symmetricDifference should not invoke .has on its argument"
     },
     {
-      "path": "test/built-ins/Set/prototype/symmetricDifference/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/symmetricDifference/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Set/prototype/symmetricDifference/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Set.prototype.symmetricDifference) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfa"
     },
@@ -9441,14 +8805,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable"
     },
     {
-      "path": "test/built-ins/Set/prototype/union/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/union/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Set/prototype/union/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Set.prototype.union) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be tr"
     },
@@ -9471,14 +8827,6 @@
     {
       "path": "test/built-ins/Set/prototype/union/union.js",
       "reason": "[sloppy] zjs: throw: (unknown): union descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/values/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/values/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Set/prototype/values/not-a-constructor.js",
@@ -9701,14 +9049,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): hour: Infinity Expected SameValue(\u00ab7728732140400000\u00bb, \u00abNaN\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Date/UTC/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/UTC/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/UTC/nans.js",
       "reason": "[sloppy] zjs: throw: (unknown): month Expected SameValue(\u00ab0\u00bb, \u00abNaN\u00bb) to be true"
     },
@@ -9745,28 +9085,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Same date value Expected SameValue(\u00abNaN\u00bb, \u00ab1438560000000\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Date/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/now/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/now/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.now) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/parse/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/parse/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/parse/not-a-constructor.js",
@@ -9897,28 +9217,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): constructor descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/getDate/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getDate/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/getDate/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.getDate) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be"
     },
     {
       "path": "test/built-ins/Date/prototype/getDate/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): getDate descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getDay/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getDay/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/getDay/not-a-constructor.js",
@@ -9929,28 +9233,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): getDay descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/getFullYear/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getFullYear/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/getFullYear/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.getFullYear) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) t"
     },
     {
       "path": "test/built-ins/Date/prototype/getFullYear/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): getFullYear descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getHours/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getHours/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/getHours/not-a-constructor.js",
@@ -9961,28 +9249,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): getHours descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/getMilliseconds/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getMilliseconds/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/getMilliseconds/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.getMilliseconds) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse"
     },
     {
       "path": "test/built-ins/Date/prototype/getMilliseconds/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): getMilliseconds descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getMinutes/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getMinutes/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/getMinutes/not-a-constructor.js",
@@ -9993,14 +9265,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): getMinutes descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/getMonth/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getMonth/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/getMonth/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.getMonth) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to b"
     },
@@ -10009,28 +9273,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): getMonth descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/getSeconds/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getSeconds/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/getSeconds/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.getSeconds) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to"
     },
     {
       "path": "test/built-ins/Date/prototype/getSeconds/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): getSeconds descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getTime/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getTime/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/getTime/not-a-constructor.js",
@@ -10045,14 +9293,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): -0 Expected SameValue(\u00ab-0\u00bb, \u00ab0\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Date/prototype/getTimezoneOffset/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getTimezoneOffset/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/getTimezoneOffset/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.getTimezoneOffset) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfal"
     },
@@ -10063,14 +9303,6 @@
     {
       "path": "test/built-ins/Date/prototype/getTimezoneOffset/this-value-invalid-date.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00abNaN\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getUTCDate/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getUTCDate/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/getUTCDate/not-a-constructor.js",
@@ -10113,28 +9345,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): first millisecond Expected SameValue(\u00abundefined\u00bb, \u00ab3\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Date/prototype/getUTCFullYear/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getUTCFullYear/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/getUTCFullYear/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.getUTCFullYear) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb"
     },
     {
       "path": "test/built-ins/Date/prototype/getUTCFullYear/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): getUTCFullYear descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getUTCHours/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getUTCHours/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/getUTCHours/not-a-constructor.js",
@@ -10145,28 +9361,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): getUTCHours descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/getUTCMilliseconds/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getUTCMilliseconds/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/getUTCMilliseconds/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.getUTCMilliseconds) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfa"
     },
     {
       "path": "test/built-ins/Date/prototype/getUTCMilliseconds/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): getUTCMilliseconds descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getUTCMinutes/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getUTCMinutes/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/getUTCMinutes/not-a-constructor.js",
@@ -10177,28 +9377,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): getUTCMinutes descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/getUTCMonth/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getUTCMonth/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/getUTCMonth/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.getUTCMonth) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) t"
     },
     {
       "path": "test/built-ins/Date/prototype/getUTCMonth/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): getUTCMonth descriptor should not be enumerable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getUTCSeconds/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/getUTCSeconds/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/getUTCSeconds/not-a-constructor.js",
@@ -10231,14 +9415,6 @@
     {
       "path": "test/built-ins/Date/prototype/setDate/date-value-read-before-tonumber-when-date-is-valid.js",
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setDate/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setDate/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/setDate/new-value-time-clip.js",
@@ -10283,14 +9459,6 @@
     {
       "path": "test/built-ins/Date/prototype/setFullYear/date-value-read-before-tonumber-when-date-is-valid.js",
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setFullYear/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setFullYear/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/setFullYear/new-value-time-clip.js",
@@ -10349,14 +9517,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Date/prototype/setHours/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setHours/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setHours/new-value-time-clip.js",
       "reason": "[sloppy] zjs: throw: (unknown): overflow due to hours Expected SameValue(\u00ab8640000086400000\u00bb, \u00abNaN\u00bb) to be true"
     },
@@ -10387,14 +9547,6 @@
     {
       "path": "test/built-ins/Date/prototype/setMilliseconds/date-value-read-before-tonumber-when-date-is-valid.js",
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMilliseconds/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMilliseconds/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/setMilliseconds/new-value-time-clip.js",
@@ -10445,14 +9597,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Date/prototype/setMinutes/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMinutes/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setMinutes/new-value-time-clip.js",
       "reason": "[sloppy] zjs: throw: (unknown): overflow due to minutes Expected SameValue(\u00ab8640000086400000\u00bb, \u00abNaN\u00bb) to be true"
     },
@@ -10491,14 +9635,6 @@
     {
       "path": "test/built-ins/Date/prototype/setMonth/date-value-read-before-tonumber-when-date-is-valid.js",
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMonth/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMonth/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/setMonth/new-value-time-clip.js",
@@ -10541,14 +9677,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Date/prototype/setSeconds/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setSeconds/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setSeconds/new-value-time-clip.js",
       "reason": "[sloppy] zjs: throw: (unknown): overflow due to seconds Expected SameValue(\u00ab8640000086400000\u00bb, \u00abNaN\u00bb) to be true"
     },
@@ -10567,14 +9695,6 @@
     {
       "path": "test/built-ins/Date/prototype/setTime/arg-to-number.js",
       "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setTime/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setTime/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/setTime/new-value-time-clip.js",
@@ -10601,14 +9721,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Date/prototype/setUTCDate/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCDate/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setUTCDate/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.setUTCDate) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to"
     },
@@ -10623,14 +9735,6 @@
     {
       "path": "test/built-ins/Date/prototype/setUTCFullYear/date-value-read-before-tonumber-when-date-is-valid.js",
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCFullYear/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCFullYear/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/setUTCFullYear/not-a-constructor.js",
@@ -10653,14 +9757,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Date/prototype/setUTCHours/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCHours/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setUTCHours/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.setUTCHours) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) t"
     },
@@ -10679,14 +9775,6 @@
     {
       "path": "test/built-ins/Date/prototype/setUTCMilliseconds/date-value-read-before-tonumber-when-date-is-valid.js",
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCMilliseconds/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCMilliseconds/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/setUTCMilliseconds/not-a-constructor.js",
@@ -10709,14 +9797,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Date/prototype/setUTCMinutes/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCMinutes/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setUTCMinutes/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.setUTCMinutes) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb)"
     },
@@ -10737,14 +9817,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Date/prototype/setUTCMonth/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCMonth/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setUTCMonth/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.setUTCMonth) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) t"
     },
@@ -10763,14 +9835,6 @@
     {
       "path": "test/built-ins/Date/prototype/setUTCSeconds/date-value-read-before-tonumber-when-date-is-valid.js",
       "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCSeconds/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCSeconds/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/setUTCSeconds/not-a-constructor.js",
@@ -10829,10 +9893,6 @@
       "reason": "[sloppy] zjs: throw: RangeError: Invalid time value"
     },
     {
-      "path": "test/built-ins/Date/prototype/toISOString/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
-    },
-    {
       "path": "test/built-ins/Date/prototype/toISOString/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date.prototype.toISOString) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) t"
     },
@@ -10847,14 +9907,6 @@
     {
       "path": "test/built-ins/Date/prototype/toJSON/invoke-result.js",
       "reason": "[sloppy] zjs: throw: TypeError: Date method called on non-Date"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toJSON/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toJSON/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/toJSON/non-finite.js",
@@ -10931,14 +9983,6 @@
     {
       "path": "test/built-ins/Date/prototype/toString/format.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00abnull\u00bb) to be false"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toString/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toString/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/toString/negative-year.js",
@@ -11043,14 +10087,6 @@
     {
       "path": "test/built-ins/Date/prototype/valueOf/S9.4_A3_T2.js",
       "reason": "[sloppy] zjs: throw: (unknown): d2.valueOf() returns NaN Expected SameValue(\u00abInfinity\u00bb, \u00abNaN\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/valueOf/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor should be configurable"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/valueOf/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable"
     },
     {
       "path": "test/built-ins/Date/prototype/valueOf/not-a-constructor.js",
