@@ -55,7 +55,7 @@ raw {
         "Await", "Yield", "GeneratorStart", "TemplateObject",
         "ArrayPush", "ArraySpread", "ObjectSpread",
         "ArrayRestFrom", "AssertCoercible",
-        "IterGet", "IterStep", "IterRestCollect", "IterClose",
+        "IterGet", "IterStep", "IterRestCollect", "IterClose", "IterNextRaw",
         "SpreadInvoke", "SpreadMethodInvoke", "SpreadNewInvoke",
         "MethodInvoke", "TailMethodInvoke",
         "DefineGetter", "DefineSetter", "DefineMethodGetter", "DefineMethodSetter",
@@ -5318,6 +5318,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let step = iter_step(ctx, regs[inst.b]);
             regs[inst.a] = step.value;
             regs[inst.c] = zjs_bool(step.done);
+            if ctx.pending_throw_active {
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+        } else if op == Op::IterNextRaw {
+            regs[inst.a] = iter_call_next_raw(ctx, regs[inst.b]);
             if ctx.pending_throw_active {
                 throwing = true; thrown = consume_pending_throw(ctx);
                 exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;

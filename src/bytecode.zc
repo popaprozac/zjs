@@ -255,6 +255,12 @@ enum Op {
     IterStep,         // a=value_dst, b=iter, c=done_dst
     IterRestCollect,  // a=dst_arr, b=iter, c=done_reg
     IterClose,        // a=iter, b=done_reg
+    // for-await-of: call iter.next() and write the RAW result (Promise
+    // or { value, done } object) into a single dst register. Caller is
+    // responsible for awaiting and reading .value / .done — the spec
+    // (§14.7.5.3) awaits the next() result BEFORE inspecting .done, so
+    // we can't split here the way IterStep does.
+    IterNextRaw,      // a=dst_result, b=iter
 
     // Variadic-call dispatch — used when an argument list contains
     // `...arr`. Args live in the array at regs[b+1] (plain SpreadInvoke)

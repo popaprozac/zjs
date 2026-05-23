@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-23 09:01 UTC",
+    "when": "2026-05-23 16:23 UTC",
     "total": 14524,
-    "passed": 11722,
-    "failed": 2156,
+    "passed": 11728,
+    "failed": 2150,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -957,10 +957,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-gen-method/yield-promise-reject-next-for-await-of-async-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/statements/class/async-gen-method/yield-promise-reject-next-yield-star-async-iterator.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -1023,10 +1019,6 @@
     {
       "path": "test/language/statements/class/async-gen-method-static/yield-as-identifier-reference.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-promise-reject-next-for-await-of-async-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/async-gen-method-static/yield-promise-reject-next-yield-star-async-iterator.js",
@@ -1479,10 +1471,6 @@
     {
       "path": "test/language/statements/class/elements/async-gen-private-method/yield-as-identifier-reference.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-promise-reject-next-for-await-of-async-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/async-gen-private-method/yield-promise-reject-next-yield-star-async-iterator.js",
@@ -3005,10 +2993,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/async-gen-method/yield-promise-reject-next-for-await-of-async-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/expressions/class/async-gen-method/yield-promise-reject-next-yield-star-async-iterator.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -3079,10 +3063,6 @@
     {
       "path": "test/language/expressions/class/async-gen-method-static/yield-as-identifier-reference.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-promise-reject-next-for-await-of-async-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/async-gen-method-static/yield-promise-reject-next-yield-star-async-iterator.js",
@@ -3431,10 +3411,6 @@
     {
       "path": "test/language/expressions/class/elements/async-gen-private-method/yield-as-identifier-reference.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-promise-reject-next-for-await-of-async-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/async-gen-private-method/yield-promise-reject-next-yield-star-async-iterator.js",

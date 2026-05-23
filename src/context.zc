@@ -3403,6 +3403,47 @@ fn iter_step(ctx: ZjsContext*, iter: ZjsValue) -> IterStep {
     return IterStep{ value: v_v, done: false };
 }
 
+// Call iter.next() and return the raw result without splitting into
+// {value, done}. for-await uses this — per ECMA-262 §14.7.5.3, the
+// next() result must be awaited BEFORE the .done / .value reads
+// (async iterators return a Promise that resolves to the iterator
+// result; sync iterators return the result object directly and the
+// await is a no-op pass-through).
+fn iter_call_next_raw(ctx: ZjsContext*, iter: ZjsValue) -> ZjsValue {
+    // Fast-path TAG_ARRAY_ITER: iter_step handles this internally
+    // without going through property_get / call. Replicate it here and
+    // synthesize a fresh { value, done } result object so the for-await
+    // sequence (Await + LoadProp .value/.done) sees the same shape it
+    // would from a user-defined async iterator.
+    if zjs_is_array_iter(iter) != 0 {
+        let step = iter_step(ctx, iter);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let obj_v = ctx_new_object(ctx);
+        let obj = zjs_as_object(obj_v);
+        object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"value", 5), step.value);
+        object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"done",  4), zjs_bool(step.done));
+        return obj_v;
+    }
+    let nullp: ZjsValue* = NULL;
+    let next_atom = ctx_intern_atom(ctx, (char*)"next", 4);
+    let next_fn = property_get(ctx, iter, zjs_cell_from_ptr((void*)next_atom));
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let next_callable: bool =
+        zjs_is_function(next_fn) != 0
+        || zjs_is_closure(next_fn) != 0
+        || zjs_is_host_function(next_fn) != 0;
+    if !next_callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"iterator.next is not callable", 29);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let result_v: ZjsValue = zjs_undefined();
+    raw { result_v = zjs_call_value_with_this(ctx, next_fn, iter, nullp, 0); }
+    return result_v;
+}
+
 // Spec IteratorClose with normal completion: calls iter.return() if
 // the iterator has one. Spec also has a "with abrupt" variant that
 // rethrows the original completion if return() throws — for now we
