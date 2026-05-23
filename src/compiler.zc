@@ -29,6 +29,11 @@ struct Local {
     // compiler's active scope stack so `{ let e = … }` doesn't shadow
     // an outer `var e` once the block exits.
     scope_id:    u32;
+    // Canonical interned name. Stored so identifier lookups in
+    // find_local_index reduce to a pointer compare AND so source-text
+    // variants of the same identifier (`\u{79}` vs `y`) match — the
+    // atom table decodes escapes before deduping.
+    name_atom:   ZjsString*;
 }
 
 struct Compiler {
@@ -506,12 +511,17 @@ fn add_local_scoped(c: Compiler*, name_start: u32, name_length: u32, reg: u8, sc
         c.locals = realloc_n<Local>(c.locals, (usize)c.local_cap, (usize)new_cap);
         c.local_cap = new_cap;
     }
+    let atom: ZjsString* = NULL;
+    if name_length > 0 {
+        atom = ctx_intern_atom(c.ctx, c.source + name_start, name_length);
+    }
     c.locals[c.local_count] = Local{
         name_start:  name_start,
         name_length: name_length,
         reg:         reg,
         captured:    false,
         scope_id:    scope_id,
+        name_atom:   atom,
     };
     c.local_count = c.local_count + 1;
 }
@@ -570,18 +580,18 @@ fn scope_id_is_active(c: Compiler*, scope_id: u32) -> bool {
 // (e.g. a nested catch parameter) wins over an earlier one with the
 // same name. Skips entries whose scope is no longer active — that's
 // how block-scoped `let` stops shadowing the enclosing `var` once the
-// block exits.
+// block exits. Compares by canonical atom pointer (set at add_local
+// time via the escape-decoding atom table) so `let \u{79} = 1; y`
+// resolves correctly.
 fn find_local_index(c: Compiler*, name: char*, name_len: u32) -> i32 {
     if c.local_count == 0 { return -1; }
+    let lookup_atom = ctx_intern_atom(c.ctx, name, name_len);
     let i: i32 = (i32)c.local_count - 1;
     while i >= 0 {
         let idx = (u32)i;
-        if c.locals[idx].name_length == name_len
+        if c.locals[idx].name_atom == lookup_atom
            && scope_id_is_active(c, c.locals[idx].scope_id) {
-            let local_name = c.source + c.locals[idx].name_start;
-            let eq: int = 0;
-            raw { eq = (memcmp(local_name, name, name_len) == 0) ? 1 : 0; }
-            if eq != 0 { return (i32)idx; }
+            return (i32)idx;
         }
         i = i - 1;
     }
@@ -599,15 +609,13 @@ fn local_is_captured_index(c: Compiler*, idx: i32) -> bool {
 // skipped (same rationale as find_local_index).
 fn lookup_local(c: Compiler*, name: char*, name_len: u32) -> i32 {
     if c.local_count == 0 { return -1; }
+    let lookup_atom = ctx_intern_atom(c.ctx, name, name_len);
     let i: i32 = (i32)c.local_count - 1;
     while i >= 0 {
         let idx = (u32)i;
-        if c.locals[idx].name_length == name_len
+        if c.locals[idx].name_atom == lookup_atom
            && scope_id_is_active(c, c.locals[idx].scope_id) {
-            let local_name = c.source + c.locals[idx].name_start;
-            let eq: int = 0;
-            raw { eq = (memcmp(local_name, name, name_len) == 0) ? 1 : 0; }
-            if eq != 0 { return (i32)c.locals[idx].reg; }
+            return (i32)c.locals[idx].reg;
         }
         i = i - 1;
     }
