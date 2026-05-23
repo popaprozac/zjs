@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-23 16:36 UTC",
+    "when": "2026-05-23 16:45 UTC",
     "total": 14524,
-    "passed": 11937,
-    "failed": 1941,
+    "passed": 11938,
+    "failed": 1940,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -4515,10 +4515,6 @@
     {
       "path": "test/built-ins/String/prototype/indexOf/position-tointeger-errors.js",
       "reason": "[sloppy] zjs: throw: (unknown): ToInteger: Symbol => TypeError Expected a TypeError to be thrown but no exception was thrown at a"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/position-tointeger-toprimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToPrimitive: throw when @@toPrimitive is not callable Expected a TypeError to be thrown but no ex"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/searchstring-tostring-errors.js",

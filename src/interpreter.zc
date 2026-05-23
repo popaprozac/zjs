@@ -5538,8 +5538,22 @@ fn zjs_to_primitive(ctx: ZjsContext*, v: ZjsValue, prefer_string: bool) -> ZjsVa
     let toprim_key = ctx_intern_atom(ctx, (char*)"@@toPrimitive", 13);
     let toprim_fn = property_get(ctx, v, zjs_cell_from_ptr((void*)toprim_key));
     if ctx.pending_throw_active { return zjs_undefined(); }
-    if zjs_is_function(toprim_fn) != 0 || zjs_is_closure(toprim_fn) != 0
-       || zjs_is_host_function(toprim_fn) != 0 {
+    // Spec §7.1.1 step 4 via GetMethod: undefined/null means "no
+    // override, fall through to valueOf/toString"; anything else that
+    // isn't callable is a TypeError. Without this check zjs silently
+    // skipped malformed @@toPrimitive overrides instead of rejecting.
+    let toprim_present = zjs_is_undefined(toprim_fn) == 0 && zjs_is_null(toprim_fn) == 0;
+    let toprim_callable = zjs_is_function(toprim_fn) != 0
+                          || zjs_is_closure(toprim_fn) != 0
+                          || zjs_is_host_function(toprim_fn) != 0;
+    if toprim_present && !toprim_callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"@@toPrimitive is not callable", 29);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return zjs_undefined();
+    }
+    if toprim_callable {
         let hint_str = if prefer_string {
             ctx_intern_string(ctx, (char*)"string", 6)
         } else {
