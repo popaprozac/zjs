@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-23 08:28 UTC",
+    "when": "2026-05-23 09:01 UTC",
     "total": 14524,
-    "passed": 11415,
-    "failed": 2463,
+    "passed": 11722,
+    "failed": 2156,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -1317,35 +1317,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -1357,18 +1333,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -1377,35 +1341,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -1417,43 +1357,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-method-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-private-getter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-private-method.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-private-setter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-rs-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -1481,26 +1389,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-private-getter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-private-method.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-private-setter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -1525,35 +1413,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -1565,18 +1429,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -1585,35 +1437,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -1623,18 +1451,6 @@
     {
       "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-generator-method-privatename-identifier.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-method-string-literal-names.js",
@@ -1957,35 +1773,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/multiple-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/multiple-definitions-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -1997,18 +1789,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/multiple-definitions-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -2017,35 +1797,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -2055,18 +1811,6 @@
     {
       "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-static-generator-method-privatename-identifier.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/multiple-stacked-definitions-string-literal-names.js",
@@ -2097,35 +1841,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -2137,18 +1857,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/new-no-sc-line-method-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -2157,35 +1865,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/new-sc-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/new-sc-line-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -2197,18 +1881,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/new-sc-line-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -2217,35 +1889,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/new-sc-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/new-sc-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -2255,18 +1903,6 @@
     {
       "path": "test/language/statements/class/elements/new-sc-line-method-rs-static-generator-method-privatename-identifier.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/new-sc-line-method-string-literal-names.js",
@@ -2477,35 +2113,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/regular-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/regular-definitions-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -2517,43 +2129,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/regular-definitions-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/same-line-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-async-gen-rs-private-getter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-async-gen-rs-private-method.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-async-gen-rs-private-setter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-async-gen-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-async-gen-rs-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -2581,26 +2161,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/language/statements/class/elements/same-line-async-method-rs-private-getter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-async-method-rs-private-method.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-async-method-rs-private-setter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-async-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-async-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/statements/class/elements/same-line-async-method-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -2625,35 +2185,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/same-line-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -2665,18 +2201,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/same-line-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -2685,35 +2209,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/same-line-method-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/same-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/same-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -2723,18 +2223,6 @@
     {
       "path": "test/language/statements/class/elements/same-line-method-rs-static-generator-method-privatename-identifier.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/same-line-method-string-literal-names.js",
@@ -3049,35 +2537,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/wrapped-in-sc-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/wrapped-in-sc-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -3087,18 +2551,6 @@
     {
       "path": "test/language/statements/class/elements/wrapped-in-sc-rs-static-generator-method-privatename-identifier.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/wrapped-in-sc-string-literal-names.js",
@@ -3821,35 +3273,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -3861,22 +3289,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -3885,35 +3297,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -3925,51 +3313,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-method-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-private-getter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-private-method.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-private-setter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-static-async-generator-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -3981,51 +3329,11 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-string-literal-names.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-private-getter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-private-method.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-private-setter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-static-async-generator-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -4037,22 +3345,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-string-literal-names.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -4061,35 +3353,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -4101,22 +3369,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-static-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -4125,35 +3377,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -4163,22 +3391,6 @@
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-static-generator-method-privatename-identifier.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-method-string-literal-names.js",
@@ -4525,35 +3737,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/multiple-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/multiple-definitions-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -4565,22 +3753,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/multiple-definitions-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -4589,35 +3761,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -4627,22 +3775,6 @@
     {
       "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-static-generator-method-privatename-identifier.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/elements/multiple-stacked-definitions-string-literal-names.js",
@@ -4685,35 +3817,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -4725,22 +3833,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/new-no-sc-line-method-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -4749,35 +3841,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -4789,22 +3857,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/new-sc-line-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -4813,35 +3865,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/new-sc-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/new-sc-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -4851,22 +3879,6 @@
     {
       "path": "test/language/expressions/class/elements/new-sc-line-method-rs-static-generator-method-privatename-identifier.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/elements/new-sc-line-method-string-literal-names.js",
@@ -5001,35 +4013,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -5041,51 +4029,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/regular-definitions-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/same-line-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-rs-private-getter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-rs-private-method.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-rs-private-setter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-rs-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-rs-static-async-generator-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -5097,51 +4045,11 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/expressions/class/elements/same-line-async-gen-string-literal-names.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/same-line-async-method-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-method-rs-private-getter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-method-rs-private-method.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-method-rs-private-setter.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-method-rs-static-async-generator-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -5153,22 +4061,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/language/expressions/class/elements/same-line-async-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-method-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/expressions/class/elements/same-line-async-method-string-literal-names.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -5177,35 +4069,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/same-line-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -5217,22 +4085,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/same-line-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -5241,35 +4093,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/same-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/same-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -5279,22 +4107,6 @@
     {
       "path": "test/language/expressions/class/elements/same-line-method-rs-static-generator-method-privatename-identifier.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/elements/same-line-method-string-literal-names.js",
@@ -5649,35 +4461,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-static-async-generator-method-privatename-identifier-alt.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-static-async-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -5687,22 +4475,6 @@
     {
       "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-static-generator-method-privatename-identifier.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-static-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-static-privatename-identifier-by-classname.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-static-privatename-identifier-initializer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-static-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/elements/wrapped-in-sc-string-literal-names.js",

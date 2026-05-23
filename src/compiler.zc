@@ -3260,50 +3260,13 @@ fn intern_method_name_atom(c: Compiler*, name_start: u32, name_length: u32) -> Z
     return intern_ident_atom(c.ctx, mn, ml);
 }
 
-// Intern an identifier-name source slice as an atom. If the slice
-// contains `\uXXXX` / `\u{...}` escapes, decode them first; otherwise
-// it's a straight intern of the raw bytes. The decoded form is
-// ASCII-only because the lexer rejects non-ASCII escape code points.
+// Intern an identifier-name source slice as an atom. ctx_intern_atom
+// already detects `\uXXXX` / `\u{...}` escapes in its input and
+// decodes them to UTF-8, so we forward directly. (Earlier in the
+// project this function did its own decode, but it ASCII-truncated
+// non-BMP code points — `℘` lost the high bytes.)
 fn intern_ident_atom(ctx: ZjsContext*, src: char*, len: u32) -> ZjsString* {
-    let has_escape: bool = false;
-    let i: u32 = 0;
-    while i < len {
-        if src[i] == (char)92 { has_escape = true; break; }
-        i = i + 1;
-    }
-    if !has_escape { return ctx_intern_atom(ctx, src, len); }
-    let buf = alloc_n<char>((usize)(len + 1));
-    let out: u32 = 0;
-    i = 0;
-    while i < len {
-        let ch = src[i];
-        if ch == (char)92 && i + 1 < len && src[i + 1] == (char)'u' {
-            // \u{...} or \uXXXX. Lexer already validated; just decode.
-            let cp: u32 = 0;
-            let j: u32 = i + 2;
-            if j < len && src[j] == (char)'{' {
-                j = j + 1;
-                while j < len && src[j] != (char)'}' {
-                    cp = (cp << 4) | (u32)hex_digit_val((u8)src[j]);
-                    j = j + 1;
-                }
-                if j < len && src[j] == (char)'}' { j = j + 1; }
-            } else {
-                let k: u32 = 0;
-                while k < 4 && j < len {
-                    cp = (cp << 4) | (u32)hex_digit_val((u8)src[j]);
-                    j = j + 1; k = k + 1;
-                }
-            }
-            // Lexer guarantees cp <= 0x7F.
-            buf[out] = (char)cp; out = out + 1;
-            i = j;
-            continue;
-        }
-        buf[out] = ch; out = out + 1; i = i + 1;
-    }
-    buf[out] = (char)0;
-    return ctx_intern_atom_take(ctx, buf, out);
+    return ctx_intern_atom(ctx, src, len);
 }
 
 // `cls_node` is a ClassDecl or ClassExpr. Returns the register holding
