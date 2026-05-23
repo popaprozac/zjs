@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-23 16:45 UTC",
+    "when": "2026-05-23 16:53 UTC",
     "total": 14524,
-    "passed": 11938,
-    "failed": 1940,
+    "passed": 11943,
+    "failed": 1935,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -1889,6 +1889,10 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
+      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-private-field-super-access.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatename-constructor.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -2494,34 +2498,6 @@
     },
     {
       "path": "test/language/statements/class/super/in-constructor-superproperty-evaluation.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/super/in-constructor.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/super/in-getter.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/super/in-methods.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/super/in-setter.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/super/in-static-getter.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/super/in-static-methods.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
-    },
-    {
-      "path": "test/language/statements/class/super/in-static-setter.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
     },
     {
@@ -3374,6 +3350,10 @@
     },
     {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage.js",
+      "reason": "[sloppy] expected SyntaxError, got Test262"
+    },
+    {
+      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-field-super-access.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {

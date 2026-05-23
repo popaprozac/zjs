@@ -1827,6 +1827,31 @@ fn emit_store_prop_atom(c: Compiler*, obj_r: u8, name_atom: ZjsString*, val_r: u
 }
 
 fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
+    // `super.x` (without call) — read the property from the enclosing
+    // class's parent.prototype rather than dispatching to compile_expr
+    // on the SuperExpr leaf (which has no standalone value). compile_call
+    // already handles super.x(...) via is_super_member; this is the
+    // bare-property-access variant.
+    if node.left != NULL && node.left.kind == NodeKind::SuperExpr {
+        if c.enclosing_class_parent == NULL {
+            c.had_error = true;
+            return alloc_reg(c);
+        }
+        let parent_r = compile_expr(c, c.enclosing_class_parent);
+        let proto_key = emit_load_name_string(c, (char*)"prototype", 9);
+        let holder_r = alloc_reg(c);
+        emit(c, make_inst_abc(Op::LoadElem, holder_r, parent_r, proto_key));
+        if proto_key + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        if parent_r != holder_r && parent_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        let key_r = emit_load_name_string(c, c.source + node.name_start, node.name_length);
+        let dst = alloc_dst(c);
+        emit(c, make_inst_abc(Op::LoadElem, dst, holder_r, key_r));
+        if key_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        if holder_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        if c.next_reg <= dst { c.next_reg = dst + 1; }
+        return dst;
+    }
+
     // LoadProp / LoadElem read obj before writing dst, so the object
     // expression can always borrow (we'd never mutate the receiver
     // before using it). The dst honors the caller's preferred_dst
