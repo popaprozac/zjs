@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-23 16:23 UTC",
+    "when": "2026-05-23 16:36 UTC",
     "total": 14524,
-    "passed": 11728,
-    "failed": 2150,
+    "passed": 11937,
+    "failed": 1941,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -857,22 +857,6 @@
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/statements/for-of/yield-star-from-catch.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Second iteration: pre-yield Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for-of/yield-star-from-finally.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Second iteration: pre-yield Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for-of/yield-star-from-try.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Second iteration: pre-yield Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/for-of/yield-star.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Second iteration: pre-yield Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/try/12.14-7.js",
       "reason": "[sloppy] zjs: throw: (unknown): e instanceof ReferenceError"
     },
@@ -957,55 +941,7 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-gen-method/yield-promise-reject-next-yield-star-async-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/yield-promise-reject-next-yield-star-sync-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/statements/class/async-gen-method/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/yield-star-getiter-sync-not-callable-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/yield-star-getiter-sync-not-callable-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/yield-star-getiter-sync-not-callable-object-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/yield-star-getiter-sync-not-callable-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/yield-star-getiter-sync-returns-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/yield-star-getiter-sync-returns-null-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/yield-star-getiter-sync-returns-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/yield-star-getiter-sync-returns-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/yield-star-getiter-sync-returns-symbol-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method/yield-star-getiter-sync-returns-undefined-throw.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -1021,55 +957,7 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/async-gen-method-static/yield-promise-reject-next-yield-star-async-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-promise-reject-next-yield-star-sync-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/statements/class/async-gen-method-static/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-star-getiter-sync-not-callable-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-star-getiter-sync-not-callable-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-star-getiter-sync-not-callable-object-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-star-getiter-sync-not-callable-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-star-getiter-sync-returns-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-star-getiter-sync-returns-null-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-star-getiter-sync-returns-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-star-getiter-sync-returns-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-star-getiter-sync-returns-symbol-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/yield-star-getiter-sync-returns-undefined-throw.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -1197,10 +1085,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/definition/methods-gen-yield-star-before-newline.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object]\u00bb, \u00abundefined\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/definition/methods-gen-yield-weak-binding.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -1309,44 +1193,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-gen-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-method-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-method-string-literal-names.js",
@@ -1405,44 +1257,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-method-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-method-string-literal-names.js",
@@ -1473,55 +1293,7 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-promise-reject-next-yield-star-async-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-promise-reject-next-yield-star-sync-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/statements/class/elements/async-gen-private-method/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-star-getiter-sync-not-callable-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-star-getiter-sync-not-callable-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-star-getiter-sync-not-callable-object-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-star-getiter-sync-not-callable-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-star-getiter-sync-returns-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-star-getiter-sync-returns-null-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-star-getiter-sync-returns-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-star-getiter-sync-returns-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-star-getiter-sync-returns-symbol-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method/yield-star-getiter-sync-returns-undefined-throw.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -1559,46 +1331,6 @@
     {
       "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-promise-reject-next.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-star-getiter-sync-not-callable-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-star-getiter-sync-not-callable-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-star-getiter-sync-not-callable-object-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-star-getiter-sync-not-callable-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-star-getiter-sync-returns-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-star-getiter-sync-returns-null-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-star-getiter-sync-returns-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-star-getiter-sync-returns-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-star-getiter-sync-returns-symbol-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-star-getiter-sync-returns-undefined-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-star-sync-throw.js",
@@ -1761,44 +1493,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-definitions-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/multiple-definitions-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/multiple-stacked-definitions-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/multiple-stacked-definitions-string-literal-names.js",
@@ -1829,22 +1529,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/new-no-sc-line-method-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -1853,44 +1537,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/new-sc-line-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/new-sc-line-method-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/new-sc-line-method-string-literal-names.js",
@@ -2101,22 +1753,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/regular-definitions-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/regular-definitions-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -2173,44 +1809,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-gen-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/class/elements/same-line-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/same-line-method-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/same-line-method-string-literal-names.js",
@@ -2523,22 +2127,6 @@
     {
       "path": "test/language/statements/class/elements/wrapped-in-sc-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/wrapped-in-sc-string-literal-names.js",
@@ -2993,55 +2581,7 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/async-gen-method/yield-promise-reject-next-yield-star-async-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/yield-promise-reject-next-yield-star-sync-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/expressions/class/async-gen-method/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/yield-star-getiter-sync-not-callable-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/yield-star-getiter-sync-not-callable-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/yield-star-getiter-sync-not-callable-object-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/yield-star-getiter-sync-not-callable-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/yield-star-getiter-sync-returns-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/yield-star-getiter-sync-returns-null-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/yield-star-getiter-sync-returns-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/yield-star-getiter-sync-returns-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/yield-star-getiter-sync-returns-symbol-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method/yield-star-getiter-sync-returns-undefined-throw.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -3065,55 +2605,7 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-promise-reject-next-yield-star-async-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-promise-reject-next-yield-star-sync-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/expressions/class/async-gen-method-static/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-star-getiter-sync-not-callable-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-star-getiter-sync-not-callable-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-star-getiter-sync-not-callable-object-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-star-getiter-sync-not-callable-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-star-getiter-sync-returns-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-star-getiter-sync-returns-null-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-star-getiter-sync-returns-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-star-getiter-sync-returns-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-star-getiter-sync-returns-symbol-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/yield-star-getiter-sync-returns-undefined-throw.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -3253,22 +2745,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -3277,35 +2753,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-method-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-rs-static-generator-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -3317,14 +2769,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-string-literal-names.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -3333,44 +2777,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-static-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-method-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-method-string-literal-names.js",
@@ -3413,55 +2825,7 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-promise-reject-next-yield-star-async-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-promise-reject-next-yield-star-sync-iterator.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/expressions/class/elements/async-gen-private-method/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-star-getiter-sync-not-callable-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-star-getiter-sync-not-callable-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-star-getiter-sync-not-callable-object-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-star-getiter-sync-not-callable-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-star-getiter-sync-returns-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-star-getiter-sync-returns-null-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-star-getiter-sync-returns-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-star-getiter-sync-returns-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-star-getiter-sync-returns-symbol-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method/yield-star-getiter-sync-returns-undefined-throw.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -3499,46 +2863,6 @@
     {
       "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-promise-reject-next.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'next')"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-not-callable-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-not-callable-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-not-callable-object-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-not-callable-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-returns-boolean-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-returns-null-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-returns-number-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-returns-string-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-returns-symbol-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-star-getiter-sync-returns-undefined-throw.js",
-      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-star-sync-throw.js",
@@ -3713,44 +3037,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-definitions-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/multiple-definitions-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/multiple-stacked-definitions-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/elements/multiple-stacked-definitions-string-literal-names.js",
@@ -3793,22 +3085,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/new-no-sc-line-method-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
@@ -3817,44 +3093,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/new-sc-line-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/new-sc-line-method-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/elements/new-sc-line-method-string-literal-names.js",
@@ -3989,35 +3233,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/regular-definitions-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/regular-definitions-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/same-line-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-rs-static-generator-method-privatename-identifier.js",
       "reason": "[sloppy] async test never signaled completion"
     },
     {
@@ -4029,14 +3249,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/language/expressions/class/elements/same-line-async-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
       "path": "test/language/expressions/class/elements/same-line-async-method-string-literal-names.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -4045,44 +3257,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-gen-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/language/expressions/class/elements/same-line-gen-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/same-line-method-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/elements/same-line-method-string-literal-names.js",
@@ -4435,22 +3615,6 @@
     {
       "path": "test/language/expressions/class/elements/wrapped-in-sc-computed-symbol-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-static-async-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-static-async-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-static-generator-method-privatename-identifier-alt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-rs-static-generator-method-privatename-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/elements/wrapped-in-sc-string-literal-names.js",
