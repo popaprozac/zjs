@@ -378,7 +378,29 @@ fn run_eval(source: char*) -> int {
 // `zjs run <path>`: read the file, eval, exit 0 on no-throw / 1 on
 // throw. Used by the test262 conformance runner — it only needs the
 // throw/no-throw signal plus, on throw, a short diagnostic.
-fn run_module_file(path: char*) -> int {
+// Build [argv0, script_path, ...user_args] and install on process.argv
+// before any JS body runs. Match Node's convention so consumer code
+// that does `process.argv.slice(2)` Just Works.
+raw {
+    extern void zjs_set_process_argv(ZjsContext* ctx, uint32_t argc, char** argv);
+}
+
+fn install_process_argv(ctx: ZjsContext*, argv0: char*, script_path: char*,
+                        user_argc: u32, user_argv: char**) -> void {
+    let total: u32 = 2 + user_argc;
+    let buf = alloc_n<char*>((usize)total);
+    buf[0] = argv0;
+    buf[1] = script_path;
+    let i: u32 = 0;
+    while i < user_argc {
+        buf[2 + i] = user_argv[i];
+        i = i + 1;
+    }
+    raw { zjs_set_process_argv(ctx, (uint32_t)total, buf); }
+    dealloc(buf);
+}
+
+fn run_module_file_with_argv(path: char*, argv0: char*, user_argc: u32, user_argv: char**) -> int {
     // Resolve to an absolute path so relative imports in the module
     // body see a stable base. realpath() returns NULL when the file
     // doesn't exist; fall back to the literal path in that case so
@@ -392,6 +414,7 @@ fn run_module_file(path: char*) -> int {
     let ctx = zjs_new_context();
     if ctx == NULL { eprintln "zjs: failed to create context"; return 2; }
     defer zjs_free_context(ctx);
+    install_process_argv(ctx, argv0, abs_p, user_argc, user_argv);
     let _ = zjs_eval_module(ctx, abs_p);
     if zjs_had_error(ctx) != 0 {
         let err = zjs_get_error(ctx);
@@ -500,7 +523,8 @@ fn report_uncaught_error(ctx: ZjsContext*) -> void {
     raw { fputs("zjs: throw\n", stderr); }
 }
 
-fn run_file(path: char*, gc_stats: bool) -> int {
+fn run_file_with_argv(path: char*, gc_stats: bool,
+                      argv0: char*, user_argc: u32, user_argv: char**) -> int {
     let len: usize = 0;
     let buf = slurp_file(path, true, &len);
     if buf == NULL { eprintln "zjs: cannot open file"; return 2; }
@@ -509,6 +533,7 @@ fn run_file(path: char*, gc_stats: bool) -> int {
     let ctx = zjs_new_context();
     if ctx == NULL { eprintln "zjs: failed to create context"; return 2; }
     defer zjs_free_context(ctx);
+    install_process_argv(ctx, argv0, path, user_argc, user_argv);
 
     // Auto-detect: AOT-compiled bytecode files start with the ZJSb
     // magic; everything else is treated as source. Lets `zjs run x.js`
@@ -749,21 +774,31 @@ fn main(argc: int, argv: char**) -> int {
         // both work.
         let path: char* = NULL;
         let gc_stats: bool = false;
+        let path_idx: i32 = -1;
         let i: i32 = 2;
         while i < argc {
             if libc_str::strcmp(argv[i], "--gc-stats") == 0 {
                 gc_stats = true;
             } else if path == NULL {
                 path = argv[i];
+                path_idx = i;
             }
             i = i + 1;
         }
         if path == NULL { return print_usage(); }
-        return run_file(path, gc_stats);
+        // Anything after the script path is forwarded as user argv
+        // (process.argv.slice(2) gets these).
+        let uargc: u32 = if path_idx + 1 < argc { (u32)(argc - path_idx - 1) } else { 0 };
+        let uargv: char** = NULL;
+        if uargc > 0 { raw { uargv = &argv[path_idx + 1]; } }
+        return run_file_with_argv(path, gc_stats, argv[0], uargc, uargv);
     }
     if libc_str::strcmp(argv[1], "module") == 0 {
         if argc < 3 { return print_usage(); }
-        return run_module_file(argv[2]);
+        let uargc: u32 = if argc > 3 { (u32)(argc - 3) } else { 0 };
+        let uargv: char** = NULL;
+        if uargc > 0 { raw { uargv = &argv[3]; } }
+        return run_module_file_with_argv(argv[2], argv[0], uargc, uargv);
     }
     if libc_str::strcmp(argv[1], "compile") == 0 {
         // zjs compile <in.js> -o <out.zbc>

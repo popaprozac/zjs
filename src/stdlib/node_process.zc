@@ -1,0 +1,288 @@
+// node:process — process state + lifecycle accessors.
+//
+// Also exposed as `globalThis.process` (Node convention; lots of npm
+// code expects `process.env.X` without an import). Same object —
+// `import process from 'node:process'` and `globalThis.process` are
+// reference-equal.
+//
+// argv defaults to []. Embedders set it via the public ABI
+// `zjs_set_process_argv(ctx, argc, argv)` after context creation
+// (the CLI does this for `zjs run/module/eval` invocations).
+
+raw {
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <unistd.h>
+    #include <time.h>
+    #include <errno.h>
+    extern char** environ;
+}
+
+fn host_process_cwd(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let buf: char[4096];
+    let bp: char* = NULL;
+    let ok: int = 0;
+    raw {
+        bp = getcwd(&buf[0], 4096);
+        ok = bp ? 1 : 0;
+    }
+    if ok == 0 {
+        let err = build_typed_error(ctx, (char*)"Error", 5,
+                                    (char*)"getcwd failed", 13);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let nlen: u32 = 0; raw { nlen = (uint32_t)strlen(bp); }
+    return ctx_intern_string(ctx, bp, nlen);
+}
+
+fn host_process_chdir(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 1 || zjs_is_string(args[0]) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"chdir requires a string", 23);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let s = zjs_as_string(args[0]);
+    let path_buf = alloc_n<char>((usize)s.length + 1);
+    mem_copy<char>(path_buf, s.data, (usize)s.length);
+    path_buf[s.length] = (char)0;
+    let rc: int = 0;
+    raw { rc = chdir(path_buf); }
+    dealloc(path_buf);
+    if rc < 0 {
+        let err = build_typed_error(ctx, (char*)"Error", 5,
+                                    (char*)"chdir failed", 12);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return zjs_undefined();
+}
+
+fn host_process_exit(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let code: int = 0;
+    if argc >= 1 && zjs_is_int32(args[0]) != 0 {
+        code = (int)zjs_as_int32(args[0]);
+    }
+    raw { exit(code); }
+    return zjs_undefined();
+}
+
+// process.hrtime([prev]) → [seconds, nanoseconds] tuple. With a prev
+// tuple, returns the diff since prev. Matches Node's spec.
+fn host_process_hrtime(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let sec: i64 = 0;
+    let nsec: i64 = 0;
+    raw {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        sec = (long long)ts.tv_sec;
+        nsec = (long long)ts.tv_nsec;
+    }
+    // Diff mode: arg[0] is [prevS, prevNs]
+    if argc >= 1 && zjs_is_array(args[0]) != 0 {
+        let prev = zjs_as_array(args[0]);
+        if prev.length >= 2 {
+            let p0 = prev.elements[0];
+            let p1 = prev.elements[1];
+            let prev_s:  i64 = if zjs_is_int32(p0) != 0 { (i64)zjs_as_int32(p0) } else { (i64)zjs_to_double(p0) };
+            let prev_ns: i64 = if zjs_is_int32(p1) != 0 { (i64)zjs_as_int32(p1) } else { (i64)zjs_to_double(p1) };
+            sec = sec - prev_s;
+            nsec = nsec - prev_ns;
+            if nsec < 0 { sec = sec - 1; nsec = nsec + 1000000000; }
+        }
+    }
+    let arr_v = ctx_new_array(ctx, 2);
+    let arr = zjs_as_array(arr_v);
+    arr.elements[0] = zjs_double((f64)sec);
+    arr.elements[1] = zjs_double((f64)nsec);
+    arr.length = 2;
+    return arr_v;
+}
+
+// nextTick(cb, ...args) — run `cb(...args)` at the next microtask.
+// Node's nextTick has higher priority than promise then/catch, but
+// for our purposes (and most consumer code) microtask is close enough.
+fn host_process_next_tick(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 1 { return zjs_undefined(); }
+    let cb = args[0];
+    let callable = zjs_is_function(cb) != 0 || zjs_is_closure(cb) != 0 || zjs_is_host_function(cb) != 0;
+    if !callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"nextTick callback is not a function", 35);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    // Microtask shape: handler, arg, result_promise, is_fulfilled.
+    // We don't need a result promise — use undefined and a sentinel.
+    let arg_v: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
+    microtask_enqueue(ctx, cb, arg_v, zjs_undefined(), true);
+    return zjs_undefined();
+}
+
+// Builds a fresh env object every call so mutations to process.env
+// don't accidentally persist across reads. Cheap (just snapshots
+// `environ` at call time) — Node's process.env is also a snapshot,
+// not a live mirror.
+fn build_process_env(ctx: ZjsContext*) -> ZjsValue {
+    let o_v = ctx_new_object(ctx);
+    let o = zjs_as_object(o_v);
+    let i: u32 = 0;
+    raw {
+        char** ep = environ;
+        if (ep) {
+            for (; *ep; ++ep) {
+                const char* eq = strchr(*ep, '=');
+                if (!eq) continue;
+                uint32_t klen = (uint32_t)(eq - *ep);
+                uint32_t vlen = (uint32_t)strlen(eq + 1);
+                ZjsString* k = ctx_intern_atom(ctx, *ep, klen);
+                ZjsValue v = ctx_intern_string(ctx, eq + 1, vlen);
+                object_set(ctx, o, k, v);
+            }
+        }
+    }
+    return o_v;
+}
+
+// Construct the process object at registration time. Stored on
+// ctx.process_obj so node:process and globalThis.process can both
+// hand back the same reference (Node consumers rely on identity).
+fn build_process_object(ctx: ZjsContext*) -> ZjsObject* {
+    let o_v = ctx_new_object(ctx);
+    let o = zjs_as_object(o_v);
+
+    // Static-ish fields.
+    let platform_p: char* = NULL;
+    raw {
+        #if defined(__APPLE__)
+            platform_p = (char*)"darwin";
+        #elif defined(__linux__)
+            platform_p = (char*)"linux";
+        #elif defined(_WIN32)
+            platform_p = (char*)"win32";
+        #else
+            platform_p = (char*)"unknown";
+        #endif
+    }
+    let arch_p: char* = NULL;
+    raw {
+        #if defined(__aarch64__) || defined(__arm64__)
+            arch_p = (char*)"arm64";
+        #elif defined(__x86_64__) || defined(_M_X64)
+            arch_p = (char*)"x64";
+        #elif defined(__i386__)
+            arch_p = (char*)"ia32";
+        #else
+            arch_p = (char*)"unknown";
+        #endif
+    }
+    let plen: u32 = 0; raw { plen = (uint32_t)strlen(platform_p); }
+    let alen: u32 = 0; raw { alen = (uint32_t)strlen(arch_p); }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"platform", 8),
+               ctx_intern_string(ctx, platform_p, plen));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"arch", 4),
+               ctx_intern_string(ctx, arch_p, alen));
+    let pid: i32 = 0; raw { pid = (int32_t)getpid(); }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"pid", 3), zjs_int32(pid));
+
+    // argv — start empty; embedder fills via zjs_set_process_argv.
+    let argv_v = ctx_new_array(ctx, 0);
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"argv", 4), argv_v);
+
+    // env — snapshot at object-build time.
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"env", 3), build_process_env(ctx));
+
+    // versions — small fixed map.
+    let ver_v = ctx_new_object(ctx);
+    let ver = zjs_as_object(ver_v);
+    object_set(ctx, ver, ctx_intern_atom(ctx, (char*)"zjs", 3),
+               ctx_intern_string(ctx, (char*)"0.0.1-phase0", 12));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"versions", 8), ver_v);
+
+    // Methods.
+    let cwd_ptr: void*  = NULL; raw { cwd_ptr  = (void*)host_process_cwd; }
+    let chd_ptr: void*  = NULL; raw { chd_ptr  = (void*)host_process_chdir; }
+    let exi_ptr: void*  = NULL; raw { exi_ptr  = (void*)host_process_exit; }
+    let hrt_ptr: void*  = NULL; raw { hrt_ptr  = (void*)host_process_hrtime; }
+    let ntk_ptr: void*  = NULL; raw { ntk_ptr  = (void*)host_process_next_tick; }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"cwd", 3),
+               ctx_make_host_function(ctx, (char*)"cwd", cwd_ptr));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"chdir", 5),
+               ctx_make_host_function(ctx, (char*)"chdir", chd_ptr));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"exit", 4),
+               ctx_make_host_function(ctx, (char*)"exit", exi_ptr));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"hrtime", 6),
+               ctx_make_host_function(ctx, (char*)"hrtime", hrt_ptr));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"nextTick", 8),
+               ctx_make_host_function(ctx, (char*)"nextTick", ntk_ptr));
+
+    return o;
+}
+
+// Lazily build + cache the process object. Both populate_node_process
+// and the globalThis installer route through this so identity holds.
+fn get_or_build_process_object(ctx: ZjsContext*) -> ZjsObject* {
+    if ctx.process_obj != NULL { return ctx.process_obj; }
+    ctx.process_obj = build_process_object(ctx);
+    return ctx.process_obj;
+}
+
+fn populate_node_process(ctx: ZjsContext*, exports: ZjsObject*) -> void {
+    let p = get_or_build_process_object(ctx);
+    // Mirror every property of the process object onto exports so
+    // `import { cwd, env, platform } from 'node:process'` works.
+    if p.cls != NULL {
+        let cls = p.cls;
+        while cls != NULL && cls.parent != NULL {
+            let nm = cls.transition_name;
+            let slot = cls.transition_slot;
+            object_set(ctx, exports, nm, p.slots[slot]);
+            cls = cls.parent;
+        }
+    }
+    // Default export = the process object itself.
+    object_set(ctx, exports, ctx_intern_atom(ctx, (char*)"default", 7),
+               zjs_cell_from_ptr((void*)p));
+}
+
+fn zjs_register_node_process(ctx: ZjsContext*) -> void {
+    // Install globalThis.process for the Node convention. Module
+    // import sees the same object via the populate callback below.
+    let p = get_or_build_process_object(ctx);
+    let proc_v = zjs_cell_from_ptr((void*)p);
+    let slot = ctx_intern_global(ctx, (char*)"process", 7);
+    ctx.globals[slot].value = proc_v;
+    ctx.globals[slot].defined = true;
+    if ctx.global_this_obj != NULL {
+        object_set(ctx, ctx.global_this_obj,
+                   ctx_intern_atom(ctx, (char*)"process", 7), proc_v);
+    }
+    let ptr: void* = NULL; raw { ptr = (void*)populate_node_process; }
+    ctx_register_builtin_module(ctx, (char*)"node:process", ptr);
+}
+
+// Public ABI: embedder fills process.argv after context creation.
+// Call before any JS that reads `process.argv` runs. Each arg is
+// interned as a ZjsString and stored in the array.
+fn zjs_set_process_argv(ctx: ZjsContext*, argc: u32, argv: char**) -> void {
+    if ctx == NULL { return; }
+    let p = get_or_build_process_object(ctx);
+    let arr_v = ctx_new_array(ctx, argc);
+    let arr = zjs_as_array(arr_v);
+    arr.length = argc;
+    let i: u32 = 0;
+    while i < argc {
+        let s: char* = NULL;
+        raw { s = argv[i]; }
+        if s != NULL {
+            let slen: u32 = 0; raw { slen = (uint32_t)strlen(s); }
+            arr.elements[i] = ctx_intern_string(ctx, s, slen);
+        } else {
+            arr.elements[i] = zjs_undefined();
+        }
+        i = i + 1;
+    }
+    object_set(ctx, p, ctx_intern_atom(ctx, (char*)"argv", 4), arr_v);
+}

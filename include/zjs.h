@@ -319,6 +319,18 @@ ZjsValue zjs_eval_module_source(ZjsContext* ctx,
                                 const char* virtual_path);
 
 /* -----------------------------------------------------------------------
+ * Set process.argv. Idiomatic call:
+ *   zjs_set_process_argv(ctx, argc, argv);
+ * where argc/argv match Node's convention: argv[0] = executable path,
+ * argv[1] = script path, argv[2..] = user-supplied arguments.
+ *
+ * Each entry is interned as a ZjsString. May be called more than once
+ * (subsequent calls overwrite). If never called, process.argv defaults
+ * to an empty array.
+ * --------------------------------------------------------------------- */
+void zjs_set_process_argv(ZjsContext* ctx, uint32_t argc, char** argv);
+
+/* -----------------------------------------------------------------------
  * Event loop — web-API Phase B (timers).
  *
  * The engine exposes its pending-work state through these three

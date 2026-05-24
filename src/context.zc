@@ -464,6 +464,10 @@ struct ZjsContext {
     builtin_modules:      ZjsBuiltinModule*;
     builtin_module_count: u32;
     builtin_module_cap:   u32;
+    // node:process — the canonical process object. Both
+    // `import 'node:process'` and globalThis.process resolve to this
+    // same cell so identity comparisons hold.
+    process_obj:          ZjsObject*;
 }
 
 def MODULE_STATE_UNRESOLVED: u8 = 0;
@@ -1610,6 +1614,9 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     if ctx.global_this_obj != NULL {
         let gt_val = zjs_cell_from_ptr((void*)ctx.global_this_obj);
         gc_mark_value(gt_val);
+    }
+    if ctx.process_obj != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.process_obj));
     }
     // Phase 3.8d cached helpers
     gc_mark_value(ctx.fn_call_v);
@@ -17896,6 +17903,7 @@ fn builtin_module_find(ctx: ZjsContext*, name: ZjsString*) -> ZjsBuiltinModule* 
 fn ctx_register_stdlib_modules(ctx: ZjsContext*) -> void {
     zjs_register_node_path(ctx);
     zjs_register_node_fs(ctx);
+    zjs_register_node_process(ctx);
 }
 
 fn module_cache_find(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {
