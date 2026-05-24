@@ -106,6 +106,73 @@ static inline void zjs_random_bytes(void* buf, size_t len) {
 #endif
 }
 
+// One-shot message digest. Writes `digest_len` bytes into `out`.
+//   algo: 1=SHA-1 (20), 256, 384, 512
+// Returns 0 on success, -1 on unknown algorithm or backend failure.
+// Apple: CommonCrypto. Linux: OpenSSL (libcrypto, already linked via
+// libcurl). Windows: BCrypt.
+#if defined(__APPLE__)
+#  include <CommonCrypto/CommonDigest.h>
+#elif defined(_WIN32)
+#  include <bcrypt.h>
+#else
+#  include <openssl/sha.h>
+#endif
+
+static inline int zjs_digest_oneshot(int algo, const void* data, size_t len,
+                                     unsigned char* out, size_t* out_len) {
+#if defined(__APPLE__)
+    switch (algo) {
+        case 1:
+            CC_SHA1((const unsigned char*)data, (CC_LONG)len, out);
+            *out_len = CC_SHA1_DIGEST_LENGTH;
+            return 0;
+        case 256:
+            CC_SHA256((const unsigned char*)data, (CC_LONG)len, out);
+            *out_len = CC_SHA256_DIGEST_LENGTH;
+            return 0;
+        case 384:
+            CC_SHA384((const unsigned char*)data, (CC_LONG)len, out);
+            *out_len = CC_SHA384_DIGEST_LENGTH;
+            return 0;
+        case 512:
+            CC_SHA512((const unsigned char*)data, (CC_LONG)len, out);
+            *out_len = CC_SHA512_DIGEST_LENGTH;
+            return 0;
+        default:
+            return -1;
+    }
+#elif defined(_WIN32)
+    const wchar_t* alg = NULL;
+    switch (algo) {
+        case 1:   alg = BCRYPT_SHA1_ALGORITHM; break;
+        case 256: alg = BCRYPT_SHA256_ALGORITHM; break;
+        case 384: alg = BCRYPT_SHA384_ALGORITHM; break;
+        case 512: alg = BCRYPT_SHA512_ALGORITHM; break;
+        default: return -1;
+    }
+    BCRYPT_ALG_HANDLE h = NULL;
+    if (BCryptOpenAlgorithmProvider(&h, alg, NULL, 0) != 0) return -1;
+    DWORD dlen = 0, cb = 0;
+    BCryptGetProperty(h, BCRYPT_HASH_LENGTH, (PUCHAR)&dlen, sizeof(dlen), &cb, 0);
+    if (BCryptHash(h, NULL, 0, (PUCHAR)data, (ULONG)len, out, dlen) != 0) {
+        BCryptCloseAlgorithmProvider(h, 0);
+        return -1;
+    }
+    BCryptCloseAlgorithmProvider(h, 0);
+    *out_len = (size_t)dlen;
+    return 0;
+#else
+    switch (algo) {
+        case 1:   SHA1((const unsigned char*)data, len, out);   *out_len = SHA_DIGEST_LENGTH;    return 0;
+        case 256: SHA256((const unsigned char*)data, len, out); *out_len = SHA256_DIGEST_LENGTH; return 0;
+        case 384: SHA384((const unsigned char*)data, len, out); *out_len = SHA384_DIGEST_LENGTH; return 0;
+        case 512: SHA512((const unsigned char*)data, len, out); *out_len = SHA512_DIGEST_LENGTH; return 0;
+        default:  return -1;
+    }
+#endif
+}
+
 // Peak resident set size in bytes since process start. Used by
 // `--gc-stats` to report a memory-usage upper bound. Returns 0 if
 // the platform query fails.

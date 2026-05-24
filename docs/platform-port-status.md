@@ -33,6 +33,7 @@ macOS development instead of bouncing between machines per commit.
 | `node:fs` / `node:fs/promises` | ✅ POSIX (`node_fs.zc`) | ✅ same | ✅ POSIX | ❌ not yet — needs `<windows.h>` / `_open` / `FindFirstFile` variants | Sync I/O under the hood, promise variants wrap settled results. POSIX-only today: `open`/`read`/`write`/`stat`/`lstat`/`opendir`/`readdir`/`mkdir`/`unlink`/`rename`/`access`. Stat field `st_birthtimespec` is Apple-only — Linux falls back to `st_ctime`. |
 | `node:process` + `globalThis.process` | ✅ POSIX (`node_process.zc`) | ✅ same | ✅ POSIX | ❌ needs `_getcwd` / `_chdir` / `GetEnvironmentStringsW` / `QueryPerformanceCounter` | argv/env/platform/arch/cwd/chdir/exit/hrtime/nextTick/versions/pid. `extern char** environ` works on all POSIX targets but Windows needs `_environ` or `GetEnvironmentStrings`. |
 | `node:os` | ✅ Apple `<sys/sysctl.h>` + mach `host_statistics64` (`node_os.zc`) | ✅ same | ✅ `<sys/sysinfo.h>` + `/proc/cpuinfo` | ❌ needs `GetSystemInfo` / `GlobalMemoryStatusEx` / `GetComputerNameExA` | tmpdir/homedir/platform/arch/type/release/EOL/cpus/totalmem/freemem/hostname/userInfo. cpus() returns the same model+speed N times — true per-core data deferred. |
+| `crypto.subtle.digest` (SHA-1/256/384/512) | ✅ CommonCrypto (`portability.h::zjs_digest_oneshot`) | ✅ same | ✅ OpenSSL `<openssl/sha.h>` (already linked via libcurl) | ⚠️ BCrypt wired but unbuilt | Returns `Uint8Array` (spec says ArrayBuffer; close enough for now). HMAC sign/verify deferred to #252. |
 
 ---
 
