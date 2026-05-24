@@ -17904,6 +17904,7 @@ fn ctx_register_stdlib_modules(ctx: ZjsContext*) -> void {
     zjs_register_node_path(ctx);
     zjs_register_node_fs(ctx);
     zjs_register_node_process(ctx);
+    zjs_register_node_os(ctx);
 }
 
 fn module_cache_find(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {

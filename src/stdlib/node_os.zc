@@ -1,0 +1,288 @@
+// node:os — operating-system info accessors.
+//
+// Apple/Linux POSIX today; Windows shims tracked in
+// docs/platform-port-status.md. Surface is the common app-code subset:
+// tmpdir / homedir / platform / arch / type / release / EOL / cpus /
+// totalmem / freemem / hostname / userInfo.
+
+raw {
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <unistd.h>
+    #include <sys/utsname.h>
+    #include <pwd.h>
+
+    #if defined(__APPLE__)
+        #include <sys/sysctl.h>
+        #include <mach/mach.h>
+        #include <mach/mach_host.h>
+    #elif defined(__linux__)
+        #include <sys/sysinfo.h>
+    #endif
+}
+
+fn os_string(ctx: ZjsContext*, s: char*) -> ZjsValue {
+    if s == NULL { return ctx_intern_string(ctx, (char*)"", 0); }
+    let n: u32 = 0; raw { n = (uint32_t)strlen(s); }
+    return ctx_intern_string(ctx, s, n);
+}
+
+fn host_os_tmpdir(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let p: char* = NULL;
+    raw {
+        p = getenv("TMPDIR");
+        if (!p || !*p) p = "/tmp";
+    }
+    return os_string(ctx, p);
+}
+
+fn host_os_homedir(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let p: char* = NULL;
+    raw {
+        p = getenv("HOME");
+        if (!p || !*p) {
+            struct passwd* pw = getpwuid(getuid());
+            p = pw ? pw->pw_dir : (char*)"/";
+        }
+    }
+    return os_string(ctx, p);
+}
+
+fn host_os_platform(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let p: char* = NULL;
+    raw {
+        #if defined(__APPLE__)
+            p = (char*)"darwin";
+        #elif defined(__linux__)
+            p = (char*)"linux";
+        #elif defined(_WIN32)
+            p = (char*)"win32";
+        #else
+            p = (char*)"unknown";
+        #endif
+    }
+    return os_string(ctx, p);
+}
+
+fn host_os_arch(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let p: char* = NULL;
+    raw {
+        #if defined(__aarch64__) || defined(__arm64__)
+            p = (char*)"arm64";
+        #elif defined(__x86_64__) || defined(_M_X64)
+            p = (char*)"x64";
+        #elif defined(__i386__)
+            p = (char*)"ia32";
+        #else
+            p = (char*)"unknown";
+        #endif
+    }
+    return os_string(ctx, p);
+}
+
+fn host_os_type(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let buf: char[256];
+    let p: char* = NULL;
+    raw {
+        struct utsname un;
+        if (uname(&un) == 0) { strncpy(&buf[0], un.sysname, 255); buf[255] = 0; p = &buf[0]; }
+        else p = (char*)"Unknown";
+    }
+    return os_string(ctx, p);
+}
+
+fn host_os_release(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let buf: char[256];
+    let p: char* = NULL;
+    raw {
+        struct utsname un;
+        if (uname(&un) == 0) { strncpy(&buf[0], un.release, 255); buf[255] = 0; p = &buf[0]; }
+        else p = (char*)"";
+    }
+    return os_string(ctx, p);
+}
+
+fn host_os_hostname(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let buf: char[256];
+    raw { if (gethostname(&buf[0], 256) != 0) buf[0] = 0; buf[255] = 0; }
+    let p: char* = NULL; raw { p = &buf[0]; }
+    return os_string(ctx, p);
+}
+
+fn host_os_totalmem(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let bytes: f64 = 0.0;
+    raw {
+        #if defined(__APPLE__)
+            int64_t mem = 0;
+            size_t len = sizeof(mem);
+            if (sysctlbyname("hw.memsize", &mem, &len, NULL, 0) == 0) bytes = (double)mem;
+        #elif defined(__linux__)
+            struct sysinfo si;
+            if (sysinfo(&si) == 0) bytes = (double)si.totalram * (double)si.mem_unit;
+        #endif
+    }
+    return zjs_double(bytes);
+}
+
+fn host_os_freemem(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let bytes: f64 = 0.0;
+    raw {
+        #if defined(__APPLE__)
+            mach_port_t port = mach_host_self();
+            vm_size_t page_size = 0;
+            host_page_size(port, &page_size);
+            vm_statistics64_data_t vmstat;
+            mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+            if (host_statistics64(port, HOST_VM_INFO64, (host_info64_t)&vmstat, &count) == KERN_SUCCESS) {
+                // Available = free + inactive (typical "freemem" metric)
+                bytes = ((double)vmstat.free_count + (double)vmstat.inactive_count) * (double)page_size;
+            }
+        #elif defined(__linux__)
+            struct sysinfo si;
+            if (sysinfo(&si) == 0) bytes = (double)si.freeram * (double)si.mem_unit;
+        #endif
+    }
+    return zjs_double(bytes);
+}
+
+fn host_os_cpus(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let count: i32 = 1;
+    let model_buf: char[256];
+    let model_p: char* = NULL;
+    let speed_mhz: f64 = 0.0;
+    raw {
+        model_buf[0] = 0;
+        #if defined(__APPLE__)
+            size_t cnt_len = sizeof(count);
+            sysctlbyname("hw.ncpu", &count, &cnt_len, NULL, 0);
+            size_t m_len = 256;
+            sysctlbyname("machdep.cpu.brand_string", &model_buf[0], &m_len, NULL, 0);
+            int64_t hz = 0;
+            size_t h_len = sizeof(hz);
+            if (sysctlbyname("hw.cpufrequency", &hz, &h_len, NULL, 0) == 0) {
+                speed_mhz = (double)hz / 1e6;
+            }
+        #elif defined(__linux__)
+            long n = sysconf(_SC_NPROCESSORS_ONLN);
+            if (n > 0) count = (int)n;
+            // /proc/cpuinfo first model name + cpu MHz — cheap enough.
+            FILE* f = fopen("/proc/cpuinfo", "r");
+            if (f) {
+                char line[512];
+                while (fgets(line, sizeof(line), f)) {
+                    if (model_buf[0] == 0 && strncmp(line, "model name", 10) == 0) {
+                        char* colon = strchr(line, ':');
+                        if (colon) {
+                            colon += 2;
+                            size_t L = strlen(colon);
+                            if (L > 0 && colon[L-1] == '\n') colon[--L] = 0;
+                            strncpy(model_buf, colon, 255); model_buf[255] = 0;
+                        }
+                    } else if (speed_mhz == 0.0 && strncmp(line, "cpu MHz", 7) == 0) {
+                        char* colon = strchr(line, ':');
+                        if (colon) speed_mhz = atof(colon + 1);
+                    }
+                    if (model_buf[0] && speed_mhz != 0.0) break;
+                }
+                fclose(f);
+            }
+        #endif
+        if (model_buf[0] == 0) strcpy(model_buf, "unknown");
+        model_p = &model_buf[0];
+    }
+    if count < 1 { count = 1; }
+    let arr_v = ctx_new_array(ctx, (u32)count);
+    let arr = zjs_as_array(arr_v);
+    arr.length = (u32)count;
+    let mlen: u32 = 0; raw { mlen = (uint32_t)strlen(model_p); }
+    let model_str = ctx_intern_string(ctx, model_p, mlen);
+    let model_atom = ctx_intern_atom(ctx, (char*)"model", 5);
+    let speed_atom = ctx_intern_atom(ctx, (char*)"speed", 5);
+    let speed_v = zjs_double(speed_mhz);
+    let i: u32 = 0;
+    while i < (u32)count {
+        let entry_v = ctx_new_object(ctx);
+        let entry = zjs_as_object(entry_v);
+        object_set(ctx, entry, model_atom, model_str);
+        object_set(ctx, entry, speed_atom, speed_v);
+        arr.elements[i] = entry_v;
+        i = i + 1;
+    }
+    return arr_v;
+}
+
+fn host_os_user_info(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let uid: i32 = 0;
+    let gid: i32 = 0;
+    let username_buf: char[256];
+    let homedir_buf: char[1024];
+    let shell_buf: char[256];
+    raw {
+        username_buf[0] = 0;
+        homedir_buf[0] = 0;
+        shell_buf[0] = 0;
+        uid = (int32_t)getuid();
+        gid = (int32_t)getgid();
+        struct passwd* pw = getpwuid((uid_t)uid);
+        if (pw) {
+            strncpy(username_buf, pw->pw_name ? pw->pw_name : "", 255); username_buf[255] = 0;
+            strncpy(homedir_buf, pw->pw_dir ? pw->pw_dir : "", 1023);   homedir_buf[1023] = 0;
+            strncpy(shell_buf, pw->pw_shell ? pw->pw_shell : "", 255);   shell_buf[255] = 0;
+        }
+    }
+    let o_v = ctx_new_object(ctx);
+    let o = zjs_as_object(o_v);
+    let u_p: char* = NULL; raw { u_p = &username_buf[0]; }
+    let h_p: char* = NULL; raw { h_p = &homedir_buf[0]; }
+    let s_p: char* = NULL; raw { s_p = &shell_buf[0]; }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"uid", 3),      zjs_int32(uid));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"gid", 3),      zjs_int32(gid));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"username", 8), os_string(ctx, u_p));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"homedir", 7),  os_string(ctx, h_p));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"shell", 5),    os_string(ctx, s_p));
+    return o_v;
+}
+
+fn os_attach(ctx: ZjsContext*, obj: ZjsObject*, name: char*, name_len: u32, ptr: void*) -> void {
+    object_set(ctx, obj, ctx_intern_atom(ctx, name, name_len),
+               ctx_make_host_function(ctx, name, ptr));
+}
+
+fn populate_node_os(ctx: ZjsContext*, exports: ZjsObject*) -> void {
+    let p1: void* = NULL; raw { p1 = (void*)host_os_tmpdir; }
+    let p2: void* = NULL; raw { p2 = (void*)host_os_homedir; }
+    let p3: void* = NULL; raw { p3 = (void*)host_os_platform; }
+    let p4: void* = NULL; raw { p4 = (void*)host_os_arch; }
+    let p5: void* = NULL; raw { p5 = (void*)host_os_type; }
+    let p6: void* = NULL; raw { p6 = (void*)host_os_release; }
+    let p7: void* = NULL; raw { p7 = (void*)host_os_hostname; }
+    let p8: void* = NULL; raw { p8 = (void*)host_os_totalmem; }
+    let p9: void* = NULL; raw { p9 = (void*)host_os_freemem; }
+    let pA: void* = NULL; raw { pA = (void*)host_os_cpus; }
+    let pB: void* = NULL; raw { pB = (void*)host_os_user_info; }
+    os_attach(ctx, exports, (char*)"tmpdir", 6,   p1);
+    os_attach(ctx, exports, (char*)"homedir", 7,  p2);
+    os_attach(ctx, exports, (char*)"platform", 8, p3);
+    os_attach(ctx, exports, (char*)"arch", 4,     p4);
+    os_attach(ctx, exports, (char*)"type", 4,     p5);
+    os_attach(ctx, exports, (char*)"release", 7,  p6);
+    os_attach(ctx, exports, (char*)"hostname", 8, p7);
+    os_attach(ctx, exports, (char*)"totalmem", 8, p8);
+    os_attach(ctx, exports, (char*)"freemem", 7,  p9);
+    os_attach(ctx, exports, (char*)"cpus", 4,     pA);
+    os_attach(ctx, exports, (char*)"userInfo", 8, pB);
+    // EOL constant.
+    let eol_v: ZjsValue = ctx_intern_string(ctx, (char*)"\n", 1);
+    raw {
+        #if defined(_WIN32)
+            eol_v = ctx_intern_string(ctx, (char*)"\r\n", 2);
+        #endif
+    }
+    object_set(ctx, exports, ctx_intern_atom(ctx, (char*)"EOL", 3), eol_v);
+}
+
+fn zjs_register_node_os(ctx: ZjsContext*) -> void {
+    let ptr: void* = NULL; raw { ptr = (void*)populate_node_os; }
+    ctx_register_builtin_module(ctx, (char*)"node:os", ptr);
+}
