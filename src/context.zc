@@ -14371,6 +14371,31 @@ fn host_performance_now(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     return zjs_double(ms);
 }
 
+// reportError(error) — surfaces an error as if uncaught. Without a
+// proper uncaughtException hook, we print to stderr and continue
+// (matches the WinterTC minimum — "the runtime reports it somehow").
+fn host_report_error(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_undefined(); }
+    let e = args[0];
+    let name_v: ZjsValue = ctx_intern_string(ctx, (char*)"Error", 5);
+    let msg_v:  ZjsValue = zjs_to_string(ctx, e);
+    if zjs_is_object(e) != 0 {
+        let o = zjs_as_object(e);
+        let n = property_get(ctx, e, ctx_intern_string(ctx, (char*)"name", 4));
+        if zjs_is_string(n) != 0 { name_v = n; }
+        let m = property_get(ctx, e, ctx_intern_string(ctx, (char*)"message", 7));
+        if zjs_is_string(m) != 0 { msg_v = m; }
+    }
+    let name_s = zjs_as_string(name_v);
+    let msg_s  = zjs_as_string(msg_v);
+    raw {
+        fprintf(stderr, "Uncaught (in reportError) %.*s: %.*s\n",
+                (int)name_s->length, name_s->data,
+                (int)msg_s->length,  msg_s->data);
+    }
+    return zjs_undefined();
+}
+
 // btoa(binary_string) — base64 encode each character's low byte.
 // WHATWG semantics: argument is a "binary string" where each code
 // unit must fit in a byte; otherwise throws InvalidCharacterError.
@@ -17354,10 +17379,19 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ctx_register_host_function(ctx, (char*)"queueMicrotask", qmt_ptr);
 
     // performance.now() — monotonic high-res clock as a global.
+    // timeOrigin is captured at context-init time (Unix epoch ms).
     let perf_v = ctx_new_object(ctx);
     let perf_now_ptr: void* = NULL; raw { perf_now_ptr = (void*)host_performance_now; }
     object_set(ctx, zjs_as_object(perf_v), ctx_intern_atom(ctx, (char*)"now", 3),
                ctx_make_host_function(ctx, (char*)"now", perf_now_ptr));
+    let origin_ms: f64 = 0.0;
+    raw {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        origin_ms = (double)ts.tv_sec * 1000.0 + (double)ts.tv_nsec / 1e6;
+    }
+    object_set(ctx, zjs_as_object(perf_v), ctx_intern_atom(ctx, (char*)"timeOrigin", 10),
+               zjs_double(origin_ms));
     let perf_slot = ctx_intern_global(ctx, (char*)"performance", 11);
     ctx.globals[perf_slot].value = perf_v;
     ctx.globals[perf_slot].defined = true;
@@ -17367,6 +17401,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let atob_ptr: void* = NULL; raw { atob_ptr = (void*)host_atob; }
     ctx_register_host_function(ctx, (char*)"btoa", btoa_ptr);
     ctx_register_host_function(ctx, (char*)"atob", atob_ptr);
+
+    // reportError — WinterTC-required global for surfacing errors
+    // that no JS frame caught (typically from microtask queues).
+    let rep_err_ptr: void* = NULL; raw { rep_err_ptr = (void*)host_report_error; }
+    ctx_register_host_function(ctx, (char*)"reportError", rep_err_ptr);
 
     // Timers — web-API Phase B. Backing infrastructure lives in
     // zjs_next_timer_ms / zjs_run_pending_timers; these globals
@@ -17484,6 +17523,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // runs lazily on first `import 'node:foo'`. Default install is
     // "complete engine"; a minimal embed can skip these registrations.
     ctx_register_stdlib_modules(ctx);
+
+    // Pure-JS WinterTC web globals (EventTarget, Event, CustomEvent,
+    // DOMException). Runs a bootstrap snippet now that classes, Map,
+    // Object.defineProperty etc. are all in place.
+    zjs_install_web_events(ctx);
 }
 
 fn proto_mark_nonenum(proto: ZjsObject*) -> void {

@@ -45,6 +45,7 @@ import "./stdlib/node_path.zc";
 import "./stdlib/node_fs.zc";
 import "./stdlib/node_process.zc";
 import "./stdlib/node_os.zc";
+import "./stdlib/web_events.zc";
 
 raw {
     #include <string.h>
