@@ -40,6 +40,9 @@ import "./eval.zc";
 import "./interpreter.zc";
 import "./aot.zc";
 
+// --- Standard library (task #190, docs/stdlib-design.md) ---
+import "./stdlib/node_path.zc";
+
 raw {
     #include <string.h>
 }

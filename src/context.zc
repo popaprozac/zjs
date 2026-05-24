@@ -458,6 +458,12 @@ struct ZjsContext {
     // relative to this module's abs_path; exports write into this
     // module's exports object. NULL when not in a module body.
     current_module:     ZjsModuleRecord*;
+    // Built-in (synthetic) modules — `node:fs` etc. Registered at
+    // context init via ctx_register_builtin_module. Lazily populated
+    // on first import. See docs/stdlib-design.md.
+    builtin_modules:      ZjsBuiltinModule*;
+    builtin_module_count: u32;
+    builtin_module_cap:   u32;
 }
 
 def MODULE_STATE_UNRESOLVED: u8 = 0;
@@ -472,6 +478,22 @@ struct ZjsModuleRecord {
     exports:   ZjsObject*;       // populated by Op-emitted export calls
     state:     u8;
     error:     ZjsValue;         // when state == ERRORED
+}
+
+// Built-in synthetic module. Two flavors:
+//   - native: `populate` is a C callback invoked once with a fresh
+//     empty exports object on first import. Used for modules that
+//     wrap host functions (`node:fs`, `node:os`, ...).
+//   - source: `source`/`source_len` point at a static JS source
+//     buffer; first import compiles + evaluates it as an ES module.
+//     Used for pure-JS modules (`node:path`).
+// The resulting ZjsModuleRecord is cached on the entry.
+struct ZjsBuiltinModule {
+    name:       ZjsString*;        // canonical specifier, e.g. "node:fs"
+    populate:   void*;             // native: fn(ZjsContext*, ZjsObject*) -> void
+    source:     char*;             // source variant: pointer to static JS
+    source_len: u32;
+    record:     ZjsModuleRecord*;  // NULL until first import
 }
 
 fn zjs_new_context() -> ZjsContext* {
@@ -1771,6 +1793,23 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         let s = ctx.atoms[a].str;
         if s != NULL { s.header.mark = 1; }
         a = a + 1;
+    }
+    // ES module cache — each loaded module's exports object plus its
+    // compiled body (if any) must stay alive across collections.
+    let mi: u32 = 0;
+    while mi < ctx.module_cache_count {
+        let mr = ctx.module_cache[mi];
+        if mr != NULL {
+            if mr.abs_path != NULL { mr.abs_path.header.mark = 1; }
+            if mr.exports != NULL {
+                gc_mark_value(zjs_cell_from_ptr((void*)mr.exports));
+            }
+            if mr.function != NULL {
+                gc_mark_value(zjs_cell_from_ptr((void*)mr.function));
+            }
+            gc_mark_value(mr.error);
+        }
+        mi = mi + 1;
     }
 }
 
@@ -17432,6 +17471,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
             mark_proto_methods_non_constructor(ctx, zjs_as_object(jv));
         }
     }
+
+    // === Standard library — Ring 1 builtin modules (task #190) ===
+    // See docs/stdlib-design.md. Each module's populate() callback
+    // runs lazily on first `import 'node:foo'`. Default install is
+    // "complete engine"; a minimal embed can skip these registrations.
+    ctx_register_stdlib_modules(ctx);
 }
 
 fn proto_mark_nonenum(proto: ZjsObject*) -> void {
@@ -17779,6 +17824,79 @@ fn module_resolve_specifier(ctx: ZjsContext*, base_abs_path: ZjsString*, spec: Z
     return s;
 }
 
+// Grow + claim a fresh slot in the builtin_modules array, return a
+// pointer for the caller to fill. Internal helper.
+fn ctx_alloc_builtin_module(ctx: ZjsContext*, name: char*) -> ZjsBuiltinModule* {
+    if ctx.builtin_module_count >= ctx.builtin_module_cap {
+        let new_cap: u32 = if ctx.builtin_module_cap == 0 { 8 } else { ctx.builtin_module_cap * 2 };
+        ctx.builtin_modules = realloc_n<ZjsBuiltinModule>(
+            ctx.builtin_modules, (usize)ctx.builtin_module_cap, (usize)new_cap);
+        ctx.builtin_module_cap = new_cap;
+    }
+    let nlen: u32 = 0;
+    raw { nlen = (uint32_t)strlen(name); }
+    let nm = ctx_intern_atom(ctx, name, nlen);
+    let entry: ZjsBuiltinModule* = NULL;
+    raw { entry = &ctx->builtin_modules[ctx->builtin_module_count]; }
+    entry.name       = nm;
+    entry.populate   = NULL;
+    entry.source     = NULL;
+    entry.source_len = 0;
+    entry.record     = NULL;
+    ctx.builtin_module_count = ctx.builtin_module_count + 1;
+    return entry;
+}
+
+// Register a native built-in module under `name`. `populate` is a C
+// callback `void (*)(ZjsContext*, ZjsObject* exports)` — called once
+// on first import to attach host functions / values.
+fn ctx_register_builtin_module(ctx: ZjsContext*, name: char*, populate: void*) -> void {
+    let e = ctx_alloc_builtin_module(ctx, name);
+    e.populate = populate;
+}
+
+// Register a pure-JS built-in module under `name`. `source` is a
+// pointer to static JS source; `source_len` is its byte length. On
+// first import the source is compiled + evaluated as an ES module.
+fn ctx_register_builtin_module_source(ctx: ZjsContext*, name: char*,
+                                      source: char*, source_len: u32) -> void {
+    let e = ctx_alloc_builtin_module(ctx, name);
+    e.source     = source;
+    e.source_len = source_len;
+}
+
+fn builtin_module_find(ctx: ZjsContext*, name: ZjsString*) -> ZjsBuiltinModule* {
+    if name == NULL { return NULL; }
+    let i: u32 = 0;
+    while i < ctx.builtin_module_count {
+        let m: ZjsBuiltinModule* = NULL;
+        raw { m = &ctx->builtin_modules[i]; }
+        if m.name == name { return m; }
+        // Atom interning should dedupe, but fall back to byte compare.
+        if m.name != NULL && m.name.length == name.length {
+            let eq: bool = true;
+            raw {
+                if (memcmp(m->name->data, name->data, name->length) != 0) eq = false;
+            }
+            if eq { return m; }
+        }
+        i = i + 1;
+    }
+    return NULL;
+}
+
+// Entry point — registers every Ring-1 builtin module the engine
+// knows about. Default `zjs_new_context()` calls this. Embedders
+// wanting a minimal engine can either skip it or selectively call
+// the per-module helpers (zjs_register_node_path, ...) after a
+// future zjs_new_minimal_context().
+//
+// Per-module registrations live alongside their populate / source
+// functions (e.g. zjs_register_node_path in src/stdlib/node_path.zc).
+fn ctx_register_stdlib_modules(ctx: ZjsContext*) -> void {
+    zjs_register_node_path(ctx);
+}
+
 fn module_cache_find(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {
     let i: u32 = 0;
     while i < ctx.module_cache_count {
@@ -17934,6 +18052,46 @@ fn ctx_load_module(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {
             ctx.pending_throw_value  = existing.error;
             return existing;
         }
+    }
+
+    // Built-in (synthetic) module shortcut — `node:fs`, `node:path`,
+    // etc. Skips file I/O entirely.
+    let bm = builtin_module_find(ctx, abs_path);
+    if bm != NULL {
+        if bm.record != NULL { return bm.record; }
+        // Source variant — compile + evaluate as a normal ES module.
+        // ctx_eval_module_with_source registers the record + pushes
+        // it to the cache itself, so we just cache the result back
+        // onto the builtin entry.
+        if bm.source != NULL {
+            let copy: char* = NULL;
+            raw {
+                copy = (char*)malloc((size_t)bm->source_len + 1);
+                memcpy(copy, bm->source, bm->source_len);
+                copy[bm->source_len] = 0;
+            }
+            let m = ctx_eval_module_with_source(ctx, abs_path, copy);
+            if m != NULL { bm.record = m; }
+            return m;
+        }
+        // Native variant — hand an empty exports object to the
+        // populate callback.
+        let exp_v = ctx_new_object(ctx);
+        let m = alloc<ZjsModuleRecord>();
+        m.abs_path = abs_path;
+        m.function = NULL;
+        m.exports  = zjs_as_object(exp_v);
+        m.state    = MODULE_STATE_EVALUATED;
+        m.error    = zjs_undefined();
+        bm.record = m;
+        module_cache_push(ctx, m);
+        let pop_ptr = bm.populate;
+        if pop_ptr != NULL {
+            raw {
+                ((void (*)(ZjsContext*, ZjsObject*))pop_ptr)(ctx, m->exports);
+            }
+        }
+        return m;
     }
 
     // Read file.
