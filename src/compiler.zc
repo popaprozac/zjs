@@ -3461,6 +3461,26 @@ fn emit_export_one(c: Compiler*, local_reg: u8, name_atom: ZjsString*) -> void {
     emit(c, make_inst_ab(Op::ExportBind, local_reg, (u8)name_idx));
 }
 
+// Like emit_export_one but takes a local index. If the local is
+// captured (its canonical home is env.<name>, not the bare reg —
+// see FunctionDecl emit at line ~5293), load from env into a temp
+// first. Otherwise just use the bare reg.
+fn emit_export_local(c: Compiler*, local_idx: u32, name_atom: ZjsString*) -> void {
+    let local = c.locals[local_idx];
+    let reg = local.reg;
+    if local.captured && local.name_length > 0 {
+        let n_atom = ctx_intern_atom(c.ctx,
+                                     c.source + local.name_start,
+                                     local.name_length);
+        let tmp = alloc_reg(c);
+        emit_load_prop_atom(c, tmp, c.env_reg, n_atom);
+        emit_export_one(c, tmp, name_atom);
+        release_reg(c, tmp);
+        return;
+    }
+    emit_export_one(c, reg, name_atom);
+}
+
 fn find_local_reg(c: Compiler*, name_start: u32, name_length: u32) -> i32 {
     let src = c.source;
     let i: u32 = 0;
@@ -3501,17 +3521,17 @@ fn compile_export_decl(c: Compiler*, node: AstNode*) -> void {
             let i: u32 = 0;
             while i < d.children_count {
                 let dl = d.children[i];
-                let lr = find_local_reg(c, dl.name_start, dl.name_length);
-                if lr < 0 { c.had_error = true; return; }
+                let li = find_local_index(c, c.source + dl.name_start, dl.name_length);
+                if li < 0 { c.had_error = true; return; }
                 let nm = ctx_intern_atom(c.ctx, c.source + dl.name_start, dl.name_length);
-                emit_export_one(c, (u8)lr, nm);
+                emit_export_local(c, (u32)li, nm);
                 i = i + 1;
             }
         } else if d.kind == NodeKind::FunctionDecl || d.kind == NodeKind::ClassDecl {
-            let lr = find_local_reg(c, d.name_start, d.name_length);
-            if lr < 0 { c.had_error = true; return; }
+            let li = find_local_index(c, c.source + d.name_start, d.name_length);
+            if li < 0 { c.had_error = true; return; }
             let nm = ctx_intern_atom(c.ctx, c.source + d.name_start, d.name_length);
-            emit_export_one(c, (u8)lr, nm);
+            emit_export_local(c, (u32)li, nm);
         }
         return;
     }
@@ -3541,9 +3561,9 @@ fn compile_export_decl(c: Compiler*, node: AstNode*) -> void {
             emit_export_one(c, tmp, export_name_atom);
             if tmp + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
         } else {
-            let lr = find_local_reg(c, cl.name_start, cl.name_length);
-            if lr < 0 { c.had_error = true; return; }
-            emit_export_one(c, (u8)lr, export_name_atom);
+            let li = find_local_index(c, c.source + cl.name_start, cl.name_length);
+            if li < 0 { c.had_error = true; return; }
+            emit_export_local(c, (u32)li, export_name_atom);
         }
         i = i + 1;
     }
