@@ -2886,6 +2886,13 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
         collect_pattern_locals(c, rest_binding.third);
     }
     let param_count = regular_param_count;
+    // env_binding_count includes the rest binding (one local past the
+    // regular params), since the env-mirror loop below also needs to
+    // mirror a captured rest-binding into the env object. param_count
+    // itself stays arity-only — it backs Function.length, the register
+    // floor, and the param-distribution loop.
+    let env_binding_count = regular_param_count;
+    if has_rest && rest_binding != NULL { env_binding_count = env_binding_count + 1; }
 
     // 2. Hoist var/let/const declarations from the body into fixed
     //    locals, plus nested-FunctionDecl name bindings. The body's
@@ -3029,12 +3036,13 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
         }
         let j: u32 = 0;
         while j < c.local_count {
-            // Params first — they all have indices < param_count.
-            // We mirror captured-param values into env at entry.
-            // Skip destructuring-param placeholders (name_length=0):
-            // their inner-binding locals get mirrored by
-            // destructure_pattern below via bind_destructure_target.
-            if j < param_count && c.locals[j].captured && c.locals[j].name_length > 0 {
+            // Params first — they all have indices < env_binding_count
+            // (regular params + optional rest binding). We mirror
+            // captured-param values into env at entry. Skip
+            // destructuring-param placeholders (name_length=0): their
+            // inner-binding locals get mirrored by destructure_pattern
+            // below via bind_destructure_target.
+            if j < env_binding_count && c.locals[j].captured && c.locals[j].name_length > 0 {
                 let name_atom = ctx_intern_atom(c.ctx,
                                                 c.source + c.locals[j].name_start,
                                                 c.locals[j].name_length);
