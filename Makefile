@@ -99,7 +99,7 @@ ENGINE_SRC := src/lib.zc src/context.zc src/value.zc \
               src/stdlib/node_process.zc src/stdlib/node_os.zc \
               src/stdlib/web_polyfills.zc \
               src/stdlib/web_events.zc src/stdlib/web_abort.zc \
-              src/stdlib/web_clone.zc
+              src/stdlib/web_clone.zc src/stdlib/web_blob.zc
 
 LIB_SRC         := src/lib.zc
 CLI_SRC         := tools/zjs.zc

@@ -11192,6 +11192,12 @@ fn host_text_decoder_decode(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
     if argc == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
     let src = args[0];
     if zjs_is_undefined(src) != 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    // Fast path: Uint8Array — direct byte copy.
+    if zjs_is_uint8_array(src) != 0 {
+        let u = zjs_as_uint8_array(src);
+        if u.length == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+        return ctx_intern_string(ctx, (char*)u.bytes, u.length);
+    }
     // Fast path: real array of small ints.
     if zjs_is_array(src) != 0 {
         let a = zjs_as_array(src);
@@ -17647,6 +17653,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     zjs_install_web_abort(ctx);
     // structuredClone — depends on Map/DOMException, no event dep.
     zjs_install_web_clone(ctx);
+    // Blob / File / FormData — depends on TextEncoder + Uint8Array.
+    zjs_install_web_blob(ctx);
 }
 
 fn proto_mark_nonenum(proto: ZjsObject*) -> void {
