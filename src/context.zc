@@ -9715,6 +9715,27 @@ fn host_fetch(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         hi = hi + 1;
     }
 
+    // AbortSignal — if init.signal.aborted is already true, reject
+    // immediately. Mid-request cancellation isn't wired into the
+    // native HTTP backend yet (separate plumbing); this handles the
+    // common pre-aborted case.
+    if argc >= 2 && zjs_is_object(args[1]) != 0 {
+        let init2 = zjs_as_object(args[1]);
+        let sig_v = property_get(ctx, args[1], ctx_intern_string(ctx, (char*)"signal", 6));
+        if zjs_is_object(sig_v) != 0 {
+            let ab_v = property_get(ctx, sig_v, ctx_intern_string(ctx, (char*)"aborted", 7));
+            if zjs_to_bool_coerce(ab_v) {
+                let reason = property_get(ctx, sig_v, ctx_intern_string(ctx, (char*)"reason", 6));
+                if zjs_is_undefined(reason) != 0 {
+                    reason = build_typed_error(ctx, (char*)"AbortError", 10,
+                                               (char*)"The operation was aborted", 25);
+                }
+                promise_settle(ctx, pv, reason, false);
+                return pv;
+            }
+        }
+    }
+
     // --- Kick off via async ABI; engine event-loop polls the handle. ---
     let url_cstr: char* = us.data;
     let h_ptr: void* = NULL;
@@ -17528,6 +17549,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // DOMException). Runs a bootstrap snippet now that classes, Map,
     // Object.defineProperty etc. are all in place.
     zjs_install_web_events(ctx);
+    // AbortController / AbortSignal — depends on EventTarget +
+    // DOMException above, so installed after web_events.
+    zjs_install_web_abort(ctx);
 }
 
 fn proto_mark_nonenum(proto: ZjsObject*) -> void {
