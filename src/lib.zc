@@ -42,6 +42,7 @@ import "./aot.zc";
 
 // --- Standard library (task #190, docs/stdlib-design.md) ---
 import "./stdlib/node_path.zc";
+import "./stdlib/node_fs.zc";
 
 raw {
     #include <string.h>

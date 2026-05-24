@@ -30,6 +30,7 @@ macOS development instead of bouncing between machines per commit.
 | Event-loop wait | ✅ `CFRunLoopRunInMode` (required for fetch async) | ✅ same | _n/a_ (`nanosleep`) | _n/a_ (`nanosleep`) | Apple-only because NSURLSession's completion needs the runloop |
 | iOS cross-compile | ✅ via zapp's xcrun pattern | — | _n/a_ | _n/a_ | Re-verify when iOS target is exercised |
 | zig cc cross-compile to non-Apple | ✅ native macOS | _n/a_ | ❌ broken (#206) | ❌ broken (#206) | `//> macos: framework: Foundation` directive leaks into target when zig cc cross-compiles from a Mac host |
+| `node:fs` / `node:fs/promises` | ✅ POSIX (`node_fs.zc`) | ✅ same | ✅ POSIX | ❌ not yet — needs `<windows.h>` / `_open` / `FindFirstFile` variants | Sync I/O under the hood, promise variants wrap settled results. POSIX-only today: `open`/`read`/`write`/`stat`/`lstat`/`opendir`/`readdir`/`mkdir`/`unlink`/`rename`/`access`. Stat field `st_birthtimespec` is Apple-only — Linux falls back to `st_ctime`. |
 
 ---
 

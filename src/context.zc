@@ -17895,6 +17895,7 @@ fn builtin_module_find(ctx: ZjsContext*, name: ZjsString*) -> ZjsBuiltinModule* 
 // functions (e.g. zjs_register_node_path in src/stdlib/node_path.zc).
 fn ctx_register_stdlib_modules(ctx: ZjsContext*) -> void {
     zjs_register_node_path(ctx);
+    zjs_register_node_fs(ctx);
 }
 
 fn module_cache_find(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {

@@ -1,0 +1,1007 @@
+// node:fs + node:fs/promises — file system access.
+//
+// Scope: the common app-code surface — read/write/dir/stat plus a few
+// mutators. Promise-first; a sync subset (`readFileSync` etc.) covers
+// startup-config patterns. Real async I/O is on a thread pool —
+// today we run sync under the hood and hand back already-settled
+// Promises so the API shape is locked in. Apple/Linux first; Windows
+// port (separate paths via the platform-port-status loop) deferred.
+//
+// Exports:
+//   node:fs           — sync functions + a `promises` namespace
+//   node:fs/promises  — promise-returning equivalents
+//
+// Errors carry Node-shaped fields: `.code` (e.g. 'ENOENT', 'EISDIR'),
+// `.errno`, `.syscall`, `.path` — enough for `err.code === 'ENOENT'`
+// patterns that show up everywhere.
+
+raw {
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <errno.h>
+    #include <unistd.h>
+    #include <fcntl.h>
+    #include <sys/stat.h>
+    #include <sys/types.h>
+    #include <dirent.h>
+}
+
+// === Path-arg coercion =================================================
+
+// Copy a JS string argument into a NUL-terminated C path buffer.
+// Caller is responsible for free(). Returns NULL on missing / wrong-type
+// (caller throws/rejects as appropriate).
+fn fs_path_from_arg(args: ZjsValue*, argc: u32, idx: u32) -> char* {
+    if idx >= argc { return NULL; }
+    let v = args[idx];
+    if zjs_is_string(v) == 0 { return NULL; }
+    let s = zjs_as_string(v);
+    let out: char* = NULL;
+    raw {
+        out = (char*)malloc((size_t)s->length + 1);
+        if (out) { memcpy(out, s->data, s->length); out[s->length] = 0; }
+    }
+    return out;
+}
+
+// === Error construction ================================================
+//
+// Node's fs errors carry .code (string), .errno (negative int), .syscall
+// (string), and .path. Tests / app code rely on `err.code === 'ENOENT'`.
+fn fs_build_error(ctx: ZjsContext*, syscall: char*, path: char*, err_no: int) -> ZjsValue {
+    let code_str: char* = NULL;
+    raw {
+        // strerror gives a human message; map errno → canonical code.
+        switch (err_no) {
+            case ENOENT:  code_str = (char*)"ENOENT";  break;
+            case EACCES:  code_str = (char*)"EACCES";  break;
+            case EEXIST:  code_str = (char*)"EEXIST";  break;
+            case EISDIR:  code_str = (char*)"EISDIR";  break;
+            case ENOTDIR: code_str = (char*)"ENOTDIR"; break;
+            case ENOTEMPTY: code_str = (char*)"ENOTEMPTY"; break;
+            case EMFILE:  code_str = (char*)"EMFILE";  break;
+            case EBADF:   code_str = (char*)"EBADF";   break;
+            case ENOSPC:  code_str = (char*)"ENOSPC";  break;
+            case EPERM:   code_str = (char*)"EPERM";   break;
+            case EROFS:   code_str = (char*)"EROFS";   break;
+            case EINVAL:  code_str = (char*)"EINVAL";  break;
+            case EIO:     code_str = (char*)"EIO";     break;
+            default:      code_str = (char*)"UNKNOWN"; break;
+        }
+    }
+    let msg_buf: char[512];
+    let msg_len: int = 0;
+    raw {
+        msg_len = snprintf(&msg_buf[0], 512, "%s: %s, %s%s%s",
+                           code_str, strerror(err_no),
+                           syscall,
+                           (path && *path) ? " '" : "",
+                           path ? path : "");
+        if (path && *path) {
+            int n = (int)strlen(&msg_buf[0]);
+            if (n < 510) { msg_buf[n] = '\''; msg_buf[n+1] = 0; }
+        }
+    }
+    let msg_p: char* = NULL; raw { msg_p = &msg_buf[0]; }
+    let err_v = build_typed_error(ctx, (char*)"Error", 5, msg_p, (u32)msg_len);
+    // Decorate with Node-style fields.
+    if zjs_is_object(err_v) != 0 {
+        let eo = zjs_as_object(err_v);
+        let code_len: u32 = 0;
+        raw { code_len = (uint32_t)strlen(code_str); }
+        object_set(ctx, eo, ctx_intern_atom(ctx, (char*)"code", 4),
+                   ctx_intern_string(ctx, code_str, code_len));
+        object_set(ctx, eo, ctx_intern_atom(ctx, (char*)"errno", 5),
+                   zjs_int32((i32)(-err_no)));
+        if syscall != NULL {
+            let sl: u32 = 0; raw { sl = (uint32_t)strlen(syscall); }
+            object_set(ctx, eo, ctx_intern_atom(ctx, (char*)"syscall", 7),
+                       ctx_intern_string(ctx, syscall, sl));
+        }
+        if path != NULL {
+            let pl: u32 = 0; raw { pl = (uint32_t)strlen(path); }
+            object_set(ctx, eo, ctx_intern_atom(ctx, (char*)"path", 4),
+                       ctx_intern_string(ctx, path, pl));
+        }
+    }
+    return err_v;
+}
+
+// === Stats object ======================================================
+
+fn fs_build_stats(ctx: ZjsContext*, st_ptr: void*) -> ZjsValue {
+    let o_v = ctx_new_object(ctx);
+    let o = zjs_as_object(o_v);
+    let size: f64 = 0.0;
+    let mode: i32 = 0;
+    let mtime_ms: f64 = 0.0;
+    let atime_ms: f64 = 0.0;
+    let ctime_ms: f64 = 0.0;
+    let birthtime_ms: f64 = 0.0;
+    let is_file: int = 0;
+    let is_dir: int = 0;
+    let is_link: int = 0;
+    let nlink: i32 = 0;
+    let uid: i32 = 0;
+    let gid: i32 = 0;
+    let ino: f64 = 0.0;
+    raw {
+        struct stat* s = (struct stat*)st_ptr;
+        size = (double)s->st_size;
+        mode = (int32_t)s->st_mode;
+        nlink = (int32_t)s->st_nlink;
+        uid = (int32_t)s->st_uid;
+        gid = (int32_t)s->st_gid;
+        ino = (double)s->st_ino;
+        #ifdef __APPLE__
+            mtime_ms = (double)s->st_mtimespec.tv_sec * 1000.0 + (double)s->st_mtimespec.tv_nsec / 1e6;
+            atime_ms = (double)s->st_atimespec.tv_sec * 1000.0 + (double)s->st_atimespec.tv_nsec / 1e6;
+            ctime_ms = (double)s->st_ctimespec.tv_sec * 1000.0 + (double)s->st_ctimespec.tv_nsec / 1e6;
+            birthtime_ms = (double)s->st_birthtimespec.tv_sec * 1000.0 + (double)s->st_birthtimespec.tv_nsec / 1e6;
+        #else
+            mtime_ms = (double)s->st_mtime * 1000.0;
+            atime_ms = (double)s->st_atime * 1000.0;
+            ctime_ms = (double)s->st_ctime * 1000.0;
+            birthtime_ms = ctime_ms;
+        #endif
+        is_file = S_ISREG(s->st_mode) ? 1 : 0;
+        is_dir  = S_ISDIR(s->st_mode) ? 1 : 0;
+        is_link = S_ISLNK(s->st_mode) ? 1 : 0;
+    }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"size", 4),       zjs_double(size));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"mode", 4),       zjs_int32(mode));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"nlink", 5),      zjs_int32(nlink));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"uid", 3),        zjs_int32(uid));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"gid", 3),        zjs_int32(gid));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"ino", 3),        zjs_double(ino));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"mtimeMs", 7),    zjs_double(mtime_ms));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"atimeMs", 7),    zjs_double(atime_ms));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"ctimeMs", 7),    zjs_double(ctime_ms));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"birthtimeMs", 11), zjs_double(birthtime_ms));
+    // Date wrappers — convenient for `s.mtime.toISOString()`.
+    let mt = zjs_date_new(mtime_ms);
+    ctx_register_cell(ctx, (void*)mt);
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"mtime", 5), zjs_cell_from_ptr((void*)mt));
+    let at = zjs_date_new(atime_ms);
+    ctx_register_cell(ctx, (void*)at);
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"atime", 5), zjs_cell_from_ptr((void*)at));
+    let ct = zjs_date_new(ctime_ms);
+    ctx_register_cell(ctx, (void*)ct);
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"ctime", 5), zjs_cell_from_ptr((void*)ct));
+    let bt = zjs_date_new(birthtime_ms);
+    ctx_register_cell(ctx, (void*)bt);
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"birthtime", 9), zjs_cell_from_ptr((void*)bt));
+    // is*() methods — bound functions that close over the flags via a
+    // shared closure isn't ideal; for now we stash booleans on the
+    // object and provide thunks.
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"__isFile", 8),      zjs_bool(is_file));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"__isDirectory", 13), zjs_bool(is_dir));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"__isSymbolicLink", 16), zjs_bool(is_link));
+    let isfile_ptr: void* = NULL; raw { isfile_ptr = (void*)host_stats_is_file; }
+    let isdir_ptr:  void* = NULL; raw { isdir_ptr  = (void*)host_stats_is_directory; }
+    let islink_ptr: void* = NULL; raw { islink_ptr = (void*)host_stats_is_symbolic_link; }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"isFile", 6),
+               ctx_make_host_function(ctx, (char*)"isFile", isfile_ptr));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"isDirectory", 11),
+               ctx_make_host_function(ctx, (char*)"isDirectory", isdir_ptr));
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"isSymbolicLink", 14),
+               ctx_make_host_function(ctx, (char*)"isSymbolicLink", islink_ptr));
+    return o_v;
+}
+
+fn host_stats_is_file(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = ctx.host_this;
+    if zjs_is_object(t) == 0 { return zjs_bool(0); }
+    let v = property_get(ctx, t, ctx_intern_string(ctx, (char*)"__isFile", 8));
+    return v;
+}
+fn host_stats_is_directory(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = ctx.host_this;
+    if zjs_is_object(t) == 0 { return zjs_bool(0); }
+    return property_get(ctx, t, ctx_intern_string(ctx, (char*)"__isDirectory", 13));
+}
+fn host_stats_is_symbolic_link(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = ctx.host_this;
+    if zjs_is_object(t) == 0 { return zjs_bool(0); }
+    return property_get(ctx, t, ctx_intern_string(ctx, (char*)"__isSymbolicLink", 16));
+}
+
+// === Promise helpers ===================================================
+
+fn fs_resolved_promise(ctx: ZjsContext*, value: ZjsValue) -> ZjsValue {
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    promise_settle(ctx, pv, value, true);
+    return pv;
+}
+
+fn fs_rejected_promise(ctx: ZjsContext*, reason: ZjsValue) -> ZjsValue {
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    promise_settle(ctx, pv, reason, false);
+    return pv;
+}
+
+// === Sync core (used by both fs.*Sync and fs.promises.*) ===============
+//
+// Each sync_* returns a ZjsValue on success or sets ctx.pending_throw +
+// returns undefined on failure. The Sync host fn surfaces the throw
+// directly; the promise host fn converts a pending throw into a
+// rejected promise.
+
+fn fs_consume_throw_as_reason(ctx: ZjsContext*) -> ZjsValue {
+    let r = ctx.pending_throw_value;
+    ctx.pending_throw_active = false;
+    ctx.pending_throw_value  = zjs_undefined();
+    return r;
+}
+
+fn fs_sync_read_file(ctx: ZjsContext*, path: char*, want_string: bool) -> ZjsValue {
+    let fd: int = -1;
+    let buf_len: i64 = 0;
+    let buf: char* = NULL;
+    let err_no: int = 0;
+    raw {
+        fd = open(path, O_RDONLY);
+        if (fd < 0) { err_no = errno; }
+        else {
+            struct stat st;
+            if (fstat(fd, &st) < 0) { err_no = errno; close(fd); fd = -1; }
+            else {
+                buf_len = (long long)st.st_size;
+                buf = (char*)malloc((size_t)buf_len + 1);
+                if (!buf) { err_no = ENOMEM; close(fd); fd = -1; }
+                else {
+                    ssize_t got = 0;
+                    ssize_t off = 0;
+                    while (off < buf_len && (got = read(fd, buf + off, (size_t)(buf_len - off))) > 0) {
+                        off += got;
+                    }
+                    if (got < 0) { err_no = errno; free(buf); buf = NULL; close(fd); fd = -1; }
+                    else {
+                        buf_len = (long long)off;
+                        buf[buf_len] = 0;
+                        close(fd);
+                    }
+                }
+            }
+        }
+    }
+    if err_no != 0 {
+        let err = fs_build_error(ctx, (char*)"open", path, err_no);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    if want_string {
+        let s = ctx_intern_string_take(ctx, buf, (u32)buf_len);
+        return s;
+    }
+    // Default: Uint8Array
+    let arr = zjs_uint8_array_new((u32)buf_len);
+    ctx_register_cell(ctx, (void*)arr);
+    raw { memcpy(arr->bytes, buf, (size_t)buf_len); }
+    raw { free(buf); }
+    return zjs_cell_from_ptr((void*)arr);
+}
+
+// Determines if a 2nd arg requests utf-8 string output. Accepts either
+// the bare string "utf8"/"utf-8" or an `{ encoding: "utf8" }` object.
+fn fs_wants_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> bool {
+    if argc < 2 { return false; }
+    let opt = args[1];
+    if zjs_is_string(opt) != 0 {
+        let s = zjs_as_string(opt);
+        let utf8: bool = false;
+        raw {
+            if (s->length == 4 && memcmp(s->data, "utf8", 4) == 0) utf8 = true;
+            else if (s->length == 5 && memcmp(s->data, "utf-8", 5) == 0) utf8 = true;
+        }
+        return utf8;
+    }
+    if zjs_is_object(opt) != 0 {
+        let enc = property_get(ctx, opt, ctx_intern_string(ctx, (char*)"encoding", 8));
+        if zjs_is_string(enc) != 0 {
+            let s = zjs_as_string(enc);
+            let utf8: bool = false;
+            raw {
+                if (s->length == 4 && memcmp(s->data, "utf8", 4) == 0) utf8 = true;
+                else if (s->length == 5 && memcmp(s->data, "utf-8", 5) == 0) utf8 = true;
+            }
+            return utf8;
+        }
+    }
+    return false;
+}
+
+fn host_fs_read_file_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"path must be a string", 21);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let want_string = fs_wants_string(ctx, args, argc);
+    let r = fs_sync_read_file(ctx, path, want_string);
+    raw { free(path); }
+    return r;
+}
+
+fn host_fs_read_file(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"path must be a string", 21);
+        return fs_rejected_promise(ctx, err);
+    }
+    let want_string = fs_wants_string(ctx, args, argc);
+    let r = fs_sync_read_file(ctx, path, want_string);
+    raw { free(path); }
+    if ctx.pending_throw_active {
+        return fs_rejected_promise(ctx, fs_consume_throw_as_reason(ctx));
+    }
+    return fs_resolved_promise(ctx, r);
+}
+
+fn fs_sync_write_file(ctx: ZjsContext*, path: char*, data_v: ZjsValue) -> ZjsValue {
+    let data_ptr: char* = NULL;
+    let data_len: u32 = 0;
+    let owned: bool = false;
+    if zjs_is_string(data_v) != 0 {
+        let s = zjs_as_string(data_v);
+        data_ptr = s.data;
+        data_len = s.length;
+    } else if zjs_is_uint8_array(data_v) != 0 {
+        let u = zjs_as_uint8_array(data_v);
+        raw { data_ptr = (char*)u->bytes; }
+        data_len = u.length;
+    } else {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"data must be a string or Uint8Array", 35);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let err_no: int = 0;
+    raw {
+        int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (fd < 0) { err_no = errno; }
+        else {
+            ssize_t off = 0;
+            while (off < (ssize_t)data_len) {
+                ssize_t w = write(fd, data_ptr + off, (size_t)(data_len - off));
+                if (w < 0) { err_no = errno; break; }
+                off += w;
+            }
+            close(fd);
+        }
+    }
+    if err_no != 0 {
+        let err = fs_build_error(ctx, (char*)"open", path, err_no);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return zjs_undefined();
+}
+
+fn host_fs_write_file_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL || argc < 2 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"writeFile requires path and data", 32);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        if path != NULL { raw { free(path); } }
+        return zjs_undefined();
+    }
+    let r = fs_sync_write_file(ctx, path, args[1]);
+    raw { free(path); }
+    return r;
+}
+
+fn host_fs_write_file(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL || argc < 2 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"writeFile requires path and data", 32);
+        if path != NULL { raw { free(path); } }
+        return fs_rejected_promise(ctx, err);
+    }
+    let r = fs_sync_write_file(ctx, path, args[1]);
+    raw { free(path); }
+    if ctx.pending_throw_active {
+        return fs_rejected_promise(ctx, fs_consume_throw_as_reason(ctx));
+    }
+    return fs_resolved_promise(ctx, r);
+}
+
+// === stat / lstat / exists =============================================
+
+fn fs_sync_stat(ctx: ZjsContext*, path: char*, follow_link: bool) -> ZjsValue {
+    let err_no: int = 0;
+    let stat_buf: char[256];      // sizeof(struct stat) ≤ 144 on macOS/Linux
+    let buf_p: void* = NULL; raw { buf_p = &stat_buf[0]; }
+    raw {
+        int rc = follow_link
+            ? stat(path, (struct stat*)buf_p)
+            : lstat(path, (struct stat*)buf_p);
+        if (rc < 0) err_no = errno;
+    }
+    if err_no != 0 {
+        let err = fs_build_error(ctx, (char*)"stat", path, err_no);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return fs_build_stats(ctx, buf_p);
+}
+
+fn host_fs_stat_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let r = fs_sync_stat(ctx, path, true);
+    raw { free(path); }
+    return r;
+}
+
+fn host_fs_stat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        return fs_rejected_promise(ctx, err);
+    }
+    let r = fs_sync_stat(ctx, path, true);
+    raw { free(path); }
+    if ctx.pending_throw_active {
+        return fs_rejected_promise(ctx, fs_consume_throw_as_reason(ctx));
+    }
+    return fs_resolved_promise(ctx, r);
+}
+
+fn host_fs_lstat_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let r = fs_sync_stat(ctx, path, false);
+    raw { free(path); }
+    return r;
+}
+
+fn host_fs_lstat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        return fs_rejected_promise(ctx, err);
+    }
+    let r = fs_sync_stat(ctx, path, false);
+    raw { free(path); }
+    if ctx.pending_throw_active {
+        return fs_rejected_promise(ctx, fs_consume_throw_as_reason(ctx));
+    }
+    return fs_resolved_promise(ctx, r);
+}
+
+fn host_fs_exists_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL { return zjs_bool(0); }
+    let rc: int = 0;
+    raw { rc = access(path, F_OK); free(path); }
+    return zjs_bool(if rc == 0 { 1 } else { 0 });
+}
+
+// === readdir ==========================================================
+
+fn fs_sync_readdir(ctx: ZjsContext*, path: char*) -> ZjsValue {
+    let err_no: int = 0;
+    let count: u32 = 0;
+    // Two-pass: count then collect. Avoids realloc dance on arrays.
+    let dir_h: void* = NULL;
+    raw {
+        DIR* d = opendir(path);
+        if (!d) err_no = errno;
+        else {
+            struct dirent* ent;
+            while ((ent = readdir(d)) != NULL) {
+                if (ent->d_name[0] == '.' &&
+                    (ent->d_name[1] == 0 || (ent->d_name[1] == '.' && ent->d_name[2] == 0))) continue;
+                count++;
+            }
+            rewinddir(d);
+            dir_h = (void*)d;
+        }
+    }
+    if err_no != 0 {
+        let err = fs_build_error(ctx, (char*)"scandir", path, err_no);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let arr_v = ctx_new_array(ctx, count);
+    let arr = zjs_as_array(arr_v);
+    arr.length = count;
+    let i: u32 = 0;
+    let arr_ptr: void* = NULL; raw { arr_ptr = (void*)arr; }
+    let ctx_p: void* = NULL; raw { ctx_p = (void*)ctx; }
+    raw {
+        DIR* d2 = (DIR*)dir_h;
+        struct dirent* ent2;
+        while ((ent2 = readdir(d2)) != NULL) {
+            if (ent2->d_name[0] == '.' &&
+                (ent2->d_name[1] == 0 || (ent2->d_name[1] == '.' && ent2->d_name[2] == 0))) continue;
+            uint32_t nlen = (uint32_t)strlen(ent2->d_name);
+            ZjsValue name = ctx_intern_string((ZjsContext*)ctx_p, ent2->d_name, nlen);
+            ((ZjsArray*)arr_ptr)->elements[i] = name;
+            i++;
+        }
+        closedir(d2);
+    }
+    return arr_v;
+}
+
+fn host_fs_readdir_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let r = fs_sync_readdir(ctx, path);
+    raw { free(path); }
+    return r;
+}
+
+fn host_fs_readdir(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        return fs_rejected_promise(ctx, err);
+    }
+    let r = fs_sync_readdir(ctx, path);
+    raw { free(path); }
+    if ctx.pending_throw_active {
+        return fs_rejected_promise(ctx, fs_consume_throw_as_reason(ctx));
+    }
+    return fs_resolved_promise(ctx, r);
+}
+
+// === mkdir (with optional recursive walk) ==============================
+
+fn fs_recursive_mkdir(path: char*) -> int {
+    // Walk path; for each '/', try mkdir on the prefix. Errors that
+    // mean "already exists" are non-fatal.
+    let err_no: int = 0;
+    raw {
+        char buf[4096];
+        size_t plen = strlen(path);
+        if (plen >= sizeof(buf)) { err_no = ENAMETOOLONG; }
+        else {
+            memcpy(buf, path, plen + 1);
+            for (size_t i = 1; i <= plen; i++) {
+                if (buf[i] == '/' || i == plen) {
+                    char saved = buf[i];
+                    buf[i] = 0;
+                    if (mkdir(buf, 0755) < 0 && errno != EEXIST) { err_no = errno; buf[i] = saved; break; }
+                    buf[i] = saved;
+                }
+            }
+        }
+    }
+    return err_no;
+}
+
+fn fs_sync_mkdir(ctx: ZjsContext*, path: char*, recursive: bool) -> ZjsValue {
+    let err_no: int = 0;
+    if recursive {
+        err_no = fs_recursive_mkdir(path);
+    } else {
+        raw { if (mkdir(path, 0755) < 0) err_no = errno; }
+    }
+    if err_no != 0 {
+        let err = fs_build_error(ctx, (char*)"mkdir", path, err_no);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return zjs_undefined();
+}
+
+fn fs_extract_recursive_option(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> bool {
+    if argc < 2 { return false; }
+    let opt = args[1];
+    if zjs_is_object(opt) == 0 { return false; }
+    let v = property_get(ctx, opt, ctx_intern_string(ctx, (char*)"recursive", 9));
+    return zjs_to_bool_coerce(v);
+}
+
+fn host_fs_mkdir_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let recursive = fs_extract_recursive_option(ctx, args, argc);
+    let r = fs_sync_mkdir(ctx, path, recursive);
+    raw { free(path); }
+    return r;
+}
+
+fn host_fs_mkdir(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        return fs_rejected_promise(ctx, err);
+    }
+    let recursive = fs_extract_recursive_option(ctx, args, argc);
+    let r = fs_sync_mkdir(ctx, path, recursive);
+    raw { free(path); }
+    if ctx.pending_throw_active {
+        return fs_rejected_promise(ctx, fs_consume_throw_as_reason(ctx));
+    }
+    return fs_resolved_promise(ctx, r);
+}
+
+// === unlink / rm / rmdir ==============================================
+
+fn fs_sync_unlink(ctx: ZjsContext*, path: char*) -> ZjsValue {
+    let err_no: int = 0;
+    raw { if (unlink(path) < 0) err_no = errno; }
+    if err_no != 0 {
+        let err = fs_build_error(ctx, (char*)"unlink", path, err_no);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return zjs_undefined();
+}
+
+fn host_fs_unlink_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let r = fs_sync_unlink(ctx, path);
+    raw { free(path); }
+    return r;
+}
+
+fn host_fs_unlink(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        return fs_rejected_promise(ctx, err);
+    }
+    let r = fs_sync_unlink(ctx, path);
+    raw { free(path); }
+    if ctx.pending_throw_active {
+        return fs_rejected_promise(ctx, fs_consume_throw_as_reason(ctx));
+    }
+    return fs_resolved_promise(ctx, r);
+}
+
+// Walk a directory recursively unlinking everything, then rmdir self.
+// Returns errno on failure, 0 on success.
+fn fs_rm_recursive(path: char*) -> int {
+    let rc: int = 0;
+    raw {
+        struct stat st;
+        if (lstat(path, &st) < 0) { rc = errno; }
+        else if (S_ISDIR(st.st_mode)) {
+            DIR* d = opendir(path);
+            if (!d) { rc = errno; }
+            else {
+                struct dirent* ent;
+                char child[4096];
+                size_t plen = strlen(path);
+                while (rc == 0 && (ent = readdir(d)) != NULL) {
+                    if (ent->d_name[0] == '.' &&
+                        (ent->d_name[1] == 0 || (ent->d_name[1] == '.' && ent->d_name[2] == 0))) continue;
+                    size_t nlen = strlen(ent->d_name);
+                    if (plen + 1 + nlen + 1 > sizeof(child)) { rc = ENAMETOOLONG; break; }
+                    memcpy(child, path, plen);
+                    child[plen] = '/';
+                    memcpy(child + plen + 1, ent->d_name, nlen + 1);
+                    rc = fs_rm_recursive(child);
+                }
+                closedir(d);
+                if (rc == 0 && rmdir(path) < 0) rc = errno;
+            }
+        } else {
+            if (unlink(path) < 0) rc = errno;
+        }
+    }
+    return rc;
+}
+
+fn fs_extract_force_option(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> bool {
+    if argc < 2 { return false; }
+    let opt = args[1];
+    if zjs_is_object(opt) == 0 { return false; }
+    let v = property_get(ctx, opt, ctx_intern_string(ctx, (char*)"force", 5));
+    return zjs_to_bool_coerce(v);
+}
+
+fn fs_sync_rm(ctx: ZjsContext*, path: char*, recursive: bool, force: bool) -> ZjsValue {
+    let err_no: int = 0;
+    if recursive {
+        err_no = fs_rm_recursive(path);
+    } else {
+        raw {
+            struct stat st;
+            if (lstat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
+                if (rmdir(path) < 0) err_no = errno;
+            } else {
+                if (unlink(path) < 0) err_no = errno;
+            }
+        }
+    }
+    if err_no == ENOENT && force { return zjs_undefined(); }
+    if err_no != 0 {
+        let err = fs_build_error(ctx, (char*)"rm", path, err_no);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return zjs_undefined();
+}
+
+fn host_fs_rm_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let recursive = fs_extract_recursive_option(ctx, args, argc);
+    let force     = fs_extract_force_option(ctx, args, argc);
+    let r = fs_sync_rm(ctx, path, recursive, force);
+    raw { free(path); }
+    return r;
+}
+
+fn host_fs_rm(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        return fs_rejected_promise(ctx, err);
+    }
+    let recursive = fs_extract_recursive_option(ctx, args, argc);
+    let force     = fs_extract_force_option(ctx, args, argc);
+    let r = fs_sync_rm(ctx, path, recursive, force);
+    raw { free(path); }
+    if ctx.pending_throw_active {
+        return fs_rejected_promise(ctx, fs_consume_throw_as_reason(ctx));
+    }
+    return fs_resolved_promise(ctx, r);
+}
+
+// === rename + copyFile + access =======================================
+
+fn fs_sync_rename(ctx: ZjsContext*, src: char*, dst: char*) -> ZjsValue {
+    let err_no: int = 0;
+    raw { if (rename(src, dst) < 0) err_no = errno; }
+    if err_no != 0 {
+        let err = fs_build_error(ctx, (char*)"rename", src, err_no);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return zjs_undefined();
+}
+
+fn host_fs_rename_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let src = fs_path_from_arg(args, argc, 0);
+    let dst = fs_path_from_arg(args, argc, 1);
+    if src == NULL || dst == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"src and dst must be strings", 27);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        if src != NULL { raw { free(src); } }
+        if dst != NULL { raw { free(dst); } }
+        return zjs_undefined();
+    }
+    let r = fs_sync_rename(ctx, src, dst);
+    raw { free(src); free(dst); }
+    return r;
+}
+
+fn host_fs_rename(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let src = fs_path_from_arg(args, argc, 0);
+    let dst = fs_path_from_arg(args, argc, 1);
+    if src == NULL || dst == NULL {
+        if src != NULL { raw { free(src); } }
+        if dst != NULL { raw { free(dst); } }
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"src and dst must be strings", 27);
+        return fs_rejected_promise(ctx, err);
+    }
+    let r = fs_sync_rename(ctx, src, dst);
+    raw { free(src); free(dst); }
+    if ctx.pending_throw_active {
+        return fs_rejected_promise(ctx, fs_consume_throw_as_reason(ctx));
+    }
+    return fs_resolved_promise(ctx, r);
+}
+
+fn fs_sync_copy_file(ctx: ZjsContext*, src: char*, dst: char*) -> ZjsValue {
+    let err_no: int = 0;
+    raw {
+        int in_fd = open(src, O_RDONLY);
+        if (in_fd < 0) { err_no = errno; }
+        else {
+            int out_fd = open(dst, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+            if (out_fd < 0) { err_no = errno; close(in_fd); }
+            else {
+                char buf[8192];
+                ssize_t r;
+                while ((r = read(in_fd, buf, sizeof(buf))) > 0) {
+                    ssize_t off = 0;
+                    while (off < r) {
+                        ssize_t w = write(out_fd, buf + off, (size_t)(r - off));
+                        if (w < 0) { err_no = errno; off = r; break; }
+                        off += w;
+                    }
+                    if (err_no) break;
+                }
+                if (r < 0 && err_no == 0) err_no = errno;
+                close(in_fd);
+                close(out_fd);
+            }
+        }
+    }
+    if err_no != 0 {
+        let err = fs_build_error(ctx, (char*)"copyFile", src, err_no);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return zjs_undefined();
+}
+
+fn host_fs_copy_file_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let src = fs_path_from_arg(args, argc, 0);
+    let dst = fs_path_from_arg(args, argc, 1);
+    if src == NULL || dst == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"src and dst must be strings", 27);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        if src != NULL { raw { free(src); } }
+        if dst != NULL { raw { free(dst); } }
+        return zjs_undefined();
+    }
+    let r = fs_sync_copy_file(ctx, src, dst);
+    raw { free(src); free(dst); }
+    return r;
+}
+
+fn host_fs_copy_file(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let src = fs_path_from_arg(args, argc, 0);
+    let dst = fs_path_from_arg(args, argc, 1);
+    if src == NULL || dst == NULL {
+        if src != NULL { raw { free(src); } }
+        if dst != NULL { raw { free(dst); } }
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"src and dst must be strings", 27);
+        return fs_rejected_promise(ctx, err);
+    }
+    let r = fs_sync_copy_file(ctx, src, dst);
+    raw { free(src); free(dst); }
+    if ctx.pending_throw_active {
+        return fs_rejected_promise(ctx, fs_consume_throw_as_reason(ctx));
+    }
+    return fs_resolved_promise(ctx, r);
+}
+
+fn host_fs_access_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let path = fs_path_from_arg(args, argc, 0);
+    if path == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"path must be a string", 21);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let mode: int = 0;  // F_OK
+    if argc >= 2 && zjs_is_int32(args[1]) != 0 {
+        mode = (int)zjs_as_int32(args[1]);
+    }
+    let err_no: int = 0;
+    raw { if (access(path, mode) < 0) err_no = errno; }
+    if err_no != 0 {
+        let err = fs_build_error(ctx, (char*)"access", path, err_no);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        raw { free(path); }
+        return zjs_undefined();
+    }
+    raw { free(path); }
+    return zjs_undefined();
+}
+
+fn host_fs_access(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    host_fs_access_sync(ctx, args, argc);
+    if ctx.pending_throw_active {
+        return fs_rejected_promise(ctx, fs_consume_throw_as_reason(ctx));
+    }
+    return fs_resolved_promise(ctx, zjs_undefined());
+}
+
+// === Population + registration ========================================
+
+fn fs_attach(ctx: ZjsContext*, obj: ZjsObject*, name: char*, name_len: u32, ptr: void*) -> void {
+    object_set(ctx, obj, ctx_intern_atom(ctx, name, name_len),
+               ctx_make_host_function(ctx, name, ptr));
+}
+
+fn populate_node_fs_promises(ctx: ZjsContext*, exports: ZjsObject*) -> void {
+    let p1: void* = NULL; raw { p1 = (void*)host_fs_read_file; }
+    let p2: void* = NULL; raw { p2 = (void*)host_fs_write_file; }
+    let p3: void* = NULL; raw { p3 = (void*)host_fs_readdir; }
+    let p4: void* = NULL; raw { p4 = (void*)host_fs_stat; }
+    let p5: void* = NULL; raw { p5 = (void*)host_fs_lstat; }
+    let p6: void* = NULL; raw { p6 = (void*)host_fs_mkdir; }
+    let p7: void* = NULL; raw { p7 = (void*)host_fs_unlink; }
+    let p8: void* = NULL; raw { p8 = (void*)host_fs_rm; }
+    let p9: void* = NULL; raw { p9 = (void*)host_fs_copy_file; }
+    let pA: void* = NULL; raw { pA = (void*)host_fs_rename; }
+    let pB: void* = NULL; raw { pB = (void*)host_fs_access; }
+    fs_attach(ctx, exports, (char*)"readFile", 8, p1);
+    fs_attach(ctx, exports, (char*)"writeFile", 9, p2);
+    fs_attach(ctx, exports, (char*)"readdir", 7, p3);
+    fs_attach(ctx, exports, (char*)"stat", 4, p4);
+    fs_attach(ctx, exports, (char*)"lstat", 5, p5);
+    fs_attach(ctx, exports, (char*)"mkdir", 5, p6);
+    fs_attach(ctx, exports, (char*)"unlink", 6, p7);
+    fs_attach(ctx, exports, (char*)"rm", 2, p8);
+    fs_attach(ctx, exports, (char*)"copyFile", 8, p9);
+    fs_attach(ctx, exports, (char*)"rename", 6, pA);
+    fs_attach(ctx, exports, (char*)"access", 6, pB);
+}
+
+fn populate_node_fs(ctx: ZjsContext*, exports: ZjsObject*) -> void {
+    let s1: void* = NULL; raw { s1 = (void*)host_fs_read_file_sync; }
+    let s2: void* = NULL; raw { s2 = (void*)host_fs_write_file_sync; }
+    let s3: void* = NULL; raw { s3 = (void*)host_fs_readdir_sync; }
+    let s4: void* = NULL; raw { s4 = (void*)host_fs_stat_sync; }
+    let s5: void* = NULL; raw { s5 = (void*)host_fs_lstat_sync; }
+    let s6: void* = NULL; raw { s6 = (void*)host_fs_mkdir_sync; }
+    let s7: void* = NULL; raw { s7 = (void*)host_fs_unlink_sync; }
+    let s8: void* = NULL; raw { s8 = (void*)host_fs_rm_sync; }
+    let s9: void* = NULL; raw { s9 = (void*)host_fs_copy_file_sync; }
+    let sA: void* = NULL; raw { sA = (void*)host_fs_rename_sync; }
+    let sB: void* = NULL; raw { sB = (void*)host_fs_access_sync; }
+    let sC: void* = NULL; raw { sC = (void*)host_fs_exists_sync; }
+    fs_attach(ctx, exports, (char*)"readFileSync", 12, s1);
+    fs_attach(ctx, exports, (char*)"writeFileSync", 13, s2);
+    fs_attach(ctx, exports, (char*)"readdirSync", 11, s3);
+    fs_attach(ctx, exports, (char*)"statSync", 8, s4);
+    fs_attach(ctx, exports, (char*)"lstatSync", 9, s5);
+    fs_attach(ctx, exports, (char*)"mkdirSync", 9, s6);
+    fs_attach(ctx, exports, (char*)"unlinkSync", 10, s7);
+    fs_attach(ctx, exports, (char*)"rmSync", 6, s8);
+    fs_attach(ctx, exports, (char*)"copyFileSync", 12, s9);
+    fs_attach(ctx, exports, (char*)"renameSync", 10, sA);
+    fs_attach(ctx, exports, (char*)"accessSync", 10, sB);
+    fs_attach(ctx, exports, (char*)"existsSync", 10, sC);
+    // node:fs.promises namespace — same surface as node:fs/promises.
+    let promises_v = ctx_new_object(ctx);
+    let promises = zjs_as_object(promises_v);
+    populate_node_fs_promises(ctx, promises);
+    object_set(ctx, exports, ctx_intern_atom(ctx, (char*)"promises", 8), promises_v);
+    // POSIX access() mode constants.
+    object_set(ctx, exports, ctx_intern_atom(ctx, (char*)"F_OK", 4), zjs_int32(0));
+    object_set(ctx, exports, ctx_intern_atom(ctx, (char*)"R_OK", 4), zjs_int32(4));
+    object_set(ctx, exports, ctx_intern_atom(ctx, (char*)"W_OK", 4), zjs_int32(2));
+    object_set(ctx, exports, ctx_intern_atom(ctx, (char*)"X_OK", 4), zjs_int32(1));
+}
+
+fn zjs_register_node_fs(ctx: ZjsContext*) -> void {
+    let fs_ptr: void*  = NULL; raw { fs_ptr  = (void*)populate_node_fs; }
+    let fsp_ptr: void* = NULL; raw { fsp_ptr = (void*)populate_node_fs_promises; }
+    ctx_register_builtin_module(ctx, (char*)"node:fs", fs_ptr);
+    ctx_register_builtin_module(ctx, (char*)"node:fs/promises", fsp_ptr);
+}

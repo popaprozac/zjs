@@ -95,7 +95,7 @@ ENGINE_SRC := src/lib.zc src/context.zc src/value.zc \
               src/ast.zc src/parser.zc \
               src/bytecode.zc src/compiler.zc src/interpreter.zc \
               src/eval.zc src/aot.zc \
-              src/stdlib/node_path.zc
+              src/stdlib/node_path.zc src/stdlib/node_fs.zc
 
 LIB_SRC         := src/lib.zc
 CLI_SRC         := tools/zjs.zc
