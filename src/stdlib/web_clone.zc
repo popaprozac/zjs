@@ -1,0 +1,109 @@
+// structuredClone — deep clone primitive used by postMessage-style
+// patterns. Pure JS; relies on Map/Set/Date/RegExp/Uint8Array all
+// already in place.
+
+raw {
+    static const char WEB_CLONE_SOURCE[] =
+        "var __structuredCloneImpl = (function() {\n"
+        "  var TA_CLASSES;\n"
+        "  function getTAClasses() {\n"
+        "    if (TA_CLASSES) return TA_CLASSES;\n"
+        "    TA_CLASSES = [];\n"
+        "    var names = ['Uint8Array','Int8Array','Uint8ClampedArray',\n"
+        "                 'Uint16Array','Int16Array','Uint32Array','Int32Array',\n"
+        "                 'Float32Array','Float64Array'];\n"
+        "    for (var i = 0; i < names.length; ++i) {\n"
+        "      var c = globalThis[names[i]];\n"
+        "      if (c) TA_CLASSES.push(c);\n"
+        "    }\n"
+        "    return TA_CLASSES;\n"
+        "  }\n"
+        "  function isTypedArray(v) {\n"
+        "    var cs = getTAClasses();\n"
+        "    for (var i = 0; i < cs.length; ++i) {\n"
+        "      if (v instanceof cs[i]) return cs[i];\n"
+        "    }\n"
+        "    return null;\n"
+        "  }\n"
+        "  function clone(v, seen) {\n"
+        "    if (v === null) return null;\n"
+        "    var t = typeof v;\n"
+        "    if (t === 'undefined' || t === 'boolean' || t === 'number' || t === 'string' || t === 'bigint') return v;\n"
+        "    if (t === 'function') throw new DOMException('Function cannot be cloned', 'DataCloneError');\n"
+        "    if (t === 'symbol') throw new DOMException('Symbol cannot be cloned', 'DataCloneError');\n"
+        "    if (seen.has(v)) return seen.get(v);\n"
+        "    if (v instanceof Date) {\n"
+        "      var d = new Date(v.getTime()); seen.set(v, d); return d;\n"
+        "    }\n"
+        "    if (v instanceof RegExp) {\n"
+        "      var r = new RegExp(v.source, v.flags); seen.set(v, r); return r;\n"
+        "    }\n"
+        "    var TA = isTypedArray(v);\n"
+        "    if (TA) {\n"
+        "      var copy = new TA(v.length);\n"
+        "      for (var i = 0; i < v.length; ++i) copy[i] = v[i];\n"
+        "      seen.set(v, copy);\n"
+        "      return copy;\n"
+        "    }\n"
+        "    if (v instanceof Map) {\n"
+        "      var m = new Map(); seen.set(v, m);\n"
+        "      v.forEach(function(val, key) { m.set(clone(key, seen), clone(val, seen)); });\n"
+        "      return m;\n"
+        "    }\n"
+        "    if (v instanceof Set) {\n"
+        "      var s = new Set(); seen.set(v, s);\n"
+        "      v.forEach(function(val) { s.add(clone(val, seen)); });\n"
+        "      return s;\n"
+        "    }\n"
+        "    if (v instanceof Error) {\n"
+        "      var Ctor = v.constructor || Error;\n"
+        "      var e = new Ctor(v.message); seen.set(v, e);\n"
+        "      if (v.name !== undefined) e.name = v.name;\n"
+        "      if (v.stack !== undefined) e.stack = v.stack;\n"
+        "      return e;\n"
+        "    }\n"
+        "    if (Array.isArray(v)) {\n"
+        "      var a = new Array(v.length); seen.set(v, a);\n"
+        "      for (var i = 0; i < v.length; ++i) a[i] = clone(v[i], seen);\n"
+        "      return a;\n"
+        "    }\n"
+        "    if (t === 'object') {\n"
+        "      var o = {}; seen.set(v, o);\n"
+        "      var keys = Object.keys(v);\n"
+        "      for (var i = 0; i < keys.length; ++i) o[keys[i]] = clone(v[keys[i]], seen);\n"
+        "      return o;\n"
+        "    }\n"
+        "    throw new DOMException('Value cannot be cloned', 'DataCloneError');\n"
+        "  }\n"
+        "  return function structuredClone(value, options) {\n"
+        "    return clone(value, new Map());\n"
+        "  };\n"
+        "})();\n"
+        "var structuredClone = __structuredCloneImpl;\n";
+}
+
+fn zjs_install_web_clone(ctx: ZjsContext*) -> void {
+    let src: char* = NULL;
+    raw { src = (char*)WEB_CLONE_SOURCE; }
+    let r = zjs_eval(ctx, src);
+    if ctx.had_error {
+        let err = ctx.last_error;
+        let name_s: ZjsString* = NULL;
+        let msg_s:  ZjsString* = NULL;
+        if zjs_is_object(err) != 0 {
+            let n = property_get(ctx, err, ctx_intern_string(ctx, (char*)"name", 4));
+            let m = property_get(ctx, err, ctx_intern_string(ctx, (char*)"message", 7));
+            if zjs_is_string(n) != 0 { name_s = zjs_as_string(n); }
+            if zjs_is_string(m) != 0 { msg_s  = zjs_as_string(m); }
+        }
+        raw {
+            fprintf(stderr, "[stdlib] web_clone bootstrap failed: %.*s: %.*s\n",
+                    name_s ? (int)name_s->length : 7,
+                    name_s ? name_s->data : "Unknown",
+                    msg_s  ? (int)msg_s->length  : 0,
+                    msg_s  ? msg_s->data  : "");
+        }
+        ctx.had_error = false;
+        ctx.last_error = zjs_undefined();
+    }
+}

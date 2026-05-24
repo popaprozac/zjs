@@ -17552,6 +17552,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // AbortController / AbortSignal — depends on EventTarget +
     // DOMException above, so installed after web_events.
     zjs_install_web_abort(ctx);
+    // structuredClone — depends on Map/DOMException, no event dep.
+    zjs_install_web_clone(ctx);
 }
 
 fn proto_mark_nonenum(proto: ZjsObject*) -> void {

@@ -47,6 +47,7 @@ import "./stdlib/node_process.zc";
 import "./stdlib/node_os.zc";
 import "./stdlib/web_events.zc";
 import "./stdlib/web_abort.zc";
+import "./stdlib/web_clone.zc";
 
 raw {
     #include <string.h>
