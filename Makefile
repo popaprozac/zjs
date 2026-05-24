@@ -97,6 +97,7 @@ ENGINE_SRC := src/lib.zc src/context.zc src/value.zc \
               src/eval.zc src/aot.zc \
               src/stdlib/node_path.zc src/stdlib/node_fs.zc \
               src/stdlib/node_process.zc src/stdlib/node_os.zc \
+              src/stdlib/web_polyfills.zc \
               src/stdlib/web_events.zc src/stdlib/web_abort.zc \
               src/stdlib/web_clone.zc
 

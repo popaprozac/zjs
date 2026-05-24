@@ -17632,6 +17632,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // "complete engine"; a minimal embed can skip these registrations.
     ctx_register_stdlib_modules(ctx);
 
+    // Array.prototype / Array static polyfills — every/some/find/
+    // findIndex/filter/reduce/includes/lastIndexOf/at/flat/flatMap/
+    // reverse/sort/splice + Array.from / Array.of. Pure JS, runs
+    // first so the other bootstraps can rely on these.
+    zjs_install_web_polyfills(ctx);
+
     // Pure-JS WinterTC web globals (EventTarget, Event, CustomEvent,
     // DOMException). Runs a bootstrap snippet now that classes, Map,
     // Object.defineProperty etc. are all in place.
