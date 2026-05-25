@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-25 07:21 UTC",
+    "when": "2026-05-25 09:16 UTC",
     "total": 14524,
-    "passed": 12010,
-    "failed": 1868,
+    "passed": 12015,
+    "failed": 1863,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -6373,18 +6373,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): order of operations / precision in MakeTime Expected SameValue(\u00ab-280499435020770752\u00bb, \u00ab29312\u00bb) to"
     },
     {
-      "path": "test/built-ins/Date/UTC/infinity-make-day.js",
-      "reason": "[sloppy] zjs: throw: (unknown): year: Infinity - single arg Expected SameValue(\u00ab67767976201996795904\u00bb, \u00abNaN\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/UTC/infinity-make-time.js",
-      "reason": "[sloppy] zjs: throw: (unknown): hour: Infinity Expected SameValue(\u00ab7728732140400000\u00bb, \u00abNaN\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/UTC/nans.js",
-      "reason": "[sloppy] zjs: throw: (unknown): month Expected SameValue(\u00ab0\u00bb, \u00abNaN\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Date/UTC/non-integer-values.js",
       "reason": "[sloppy] zjs: throw: (unknown): positive non-integer values Expected SameValue(\u00ab0.9\u00bb, \u00ab0\u00bb) to be true"
     },
@@ -7210,14 +7198,6 @@
     },
     {
       "path": "test/built-ins/Date/prototype/toISOString/15.9.5.43-0-13.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toISOString/15.9.5.43-0-14.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toISOString/15.9.5.43-0-15.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError to be thrown but no exception was thrown at all"
     },
     {

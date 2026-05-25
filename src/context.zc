@@ -7924,6 +7924,53 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
         json_buf_putc(b, '}');
         return;
     }
+    // Uint8Array and the wider TypedArray family. Per spec these are
+    // ordinary objects with own enumerable indexed properties — V8 /
+    // SpiderMonkey emit them as `{"0":x,"1":y,...}`. (No spec-defined
+    // toJSON, no special-cased fast-path output.)
+    if zjs_is_uint8_array(v) != 0 {
+        let u = zjs_as_uint8_array(v);
+        json_buf_putc(b, '{');
+        let i: u32 = 0;
+        while i < u.length {
+            if i > 0 { json_buf_putc(b, ','); }
+            let buf: char[16];
+            let blen: int = 0;
+            raw { blen = snprintf(&buf[0], 16, "%u", (unsigned)i); }
+            let bp: char* = NULL; raw { bp = &buf[0]; }
+            json_emit_string(b, bp, (u32)blen);
+            json_buf_putc(b, ':');
+            let n: int = 0;
+            raw { n = (int)u->bytes[i]; }
+            let tmp: char[8];
+            let nlen: int = 0;
+            raw { nlen = snprintf(&tmp[0], 8, "%d", n); }
+            let tp: char* = NULL; raw { tp = &tmp[0]; }
+            json_buf_puts(b, tp, (u32)nlen);
+            i = i + 1;
+        }
+        json_buf_putc(b, '}');
+        return;
+    }
+    if zjs_is_typed_array(v) != 0 {
+        let ta = zjs_as_typed_array(v);
+        json_buf_putc(b, '{');
+        let i: u32 = 0;
+        while i < ta.length {
+            if i > 0 { json_buf_putc(b, ','); }
+            let buf: char[16];
+            let blen: int = 0;
+            raw { blen = snprintf(&buf[0], 16, "%u", (unsigned)i); }
+            let bp: char* = NULL; raw { bp = &buf[0]; }
+            json_emit_string(b, bp, (u32)blen);
+            json_buf_putc(b, ':');
+            let elem_v = ta_load(ta, i);
+            json_stringify_value(ctx, jc, b, elem_v);
+            i = i + 1;
+        }
+        json_buf_putc(b, '}');
+        return;
+    }
     // Functions, closures, host functions, hidden classes — not
     // serializable. Real JSON.stringify returns undefined for these at
     // top level; inside containers it emits null. MVP: emit null.
@@ -10023,22 +10070,32 @@ fn date_compose_utc_ms(year: f64, month: f64, day: f64,
                        ms_part: f64) -> f64 {
     let result: f64 = 0.0;
     raw {
-        // Spec: year < 100 maps to 1900-relative. ECMA-262 §21.4.1.13.
-        double yr = year;
-        if (yr >= 0.0 && yr <= 99.0) yr += 1900.0;
-        struct tm t;
-        memset(&t, 0, sizeof(t));
-        t.tm_year = (int)yr - 1900;
-        t.tm_mon  = (int)month;
-        t.tm_mday = (int)day;
-        t.tm_hour = (int)hour;
-        t.tm_min  = (int)minute;
-        t.tm_sec  = (int)second;
-        time_t secs = zjs_timegm(&t);
-        if (secs == (time_t)-1) {
-            result = 0.0/0.0;   // NaN
+        // Per ECMA-262 §21.4.1.13, MakeDay/MakeTime/MakeDate return
+        // NaN if ANY input isn't finite. Without this guard, (int)NaN
+        // is impl-defined (typically 0) and `new Date(2026, undefined)`
+        // silently becomes Jan 1 2026 instead of an Invalid Date.
+        if (!isfinite(year) || !isfinite(month) || !isfinite(day)
+            || !isfinite(hour) || !isfinite(minute) || !isfinite(second)
+            || !isfinite(ms_part)) {
+            result = 0.0/0.0;
         } else {
-            result = (double)secs * 1000.0 + ms_part;
+            // Spec: year < 100 maps to 1900-relative. §21.4.1.13.
+            double yr = year;
+            if (yr >= 0.0 && yr <= 99.0) yr += 1900.0;
+            struct tm t;
+            memset(&t, 0, sizeof(t));
+            t.tm_year = (int)yr - 1900;
+            t.tm_mon  = (int)month;
+            t.tm_mday = (int)day;
+            t.tm_hour = (int)hour;
+            t.tm_min  = (int)minute;
+            t.tm_sec  = (int)second;
+            time_t secs = zjs_timegm(&t);
+            if (secs == (time_t)-1) {
+                result = 0.0/0.0;
+            } else {
+                result = (double)secs * 1000.0 + ms_part;
+            }
         }
     }
     return result;

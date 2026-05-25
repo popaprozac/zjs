@@ -519,3 +519,12 @@
 {"when": "2026-05-25 06:40 UTC", "total": 14524, "passed": 12010, "failed": 1868, "skipped": 646, "platform": "macOS"}
 {"when": "2026-05-25 07:11 UTC", "total": 14524, "passed": 12010, "failed": 1868, "skipped": 646, "platform": "macOS"}
 {"when": "2026-05-25 07:21 UTC", "total": 14524, "passed": 12010, "failed": 1868, "skipped": 646, "platform": "macOS"}
+{"when": "2026-05-25 07:53 UTC", "total": 14524, "passed": 11712, "failed": 2166, "skipped": 646, "platform": "macOS"}
+{"when": "2026-05-25 08:04 UTC", "total": 14524, "passed": 11712, "failed": 2166, "skipped": 646, "platform": "macOS"}
+{"when": "2026-05-25 08:31 UTC", "total": 14524, "passed": 12015, "failed": 1863, "skipped": 646, "platform": "macOS"}
+{"when": "2026-05-25 08:39 UTC", "total": 14524, "passed": 12015, "failed": 1863, "skipped": 646, "platform": "macOS"}
+{"when": "2026-05-25 08:46 UTC", "total": 14524, "passed": 11712, "failed": 2166, "skipped": 646, "platform": "macOS"}
+{"when": "2026-05-25 08:53 UTC", "total": 14524, "passed": 11712, "failed": 2166, "skipped": 646, "platform": "macOS"}
+{"when": "2026-05-25 09:00 UTC", "total": 14524, "passed": 11712, "failed": 2166, "skipped": 646, "platform": "macOS"}
+{"when": "2026-05-25 09:07 UTC", "total": 14524, "passed": 12015, "failed": 1863, "skipped": 646, "platform": "macOS"}
+{"when": "2026-05-25 09:16 UTC", "total": 14524, "passed": 12015, "failed": 1863, "skipped": 646, "platform": "macOS"}
