@@ -303,6 +303,12 @@ enum Op {
                       //   into a fresh closure cell.
     LoadEnv,          // a=dst
                       //   dst = current closure's env (or undefined if no closure).
+    LoadCallee,       // a=dst
+                      //   dst = the function value currently invoking
+                      //   this frame (the closure if one was made,
+                      //   else the bare Function*). Used to bind the
+                      //   name inside `(function name() { ... name ... })`
+                      //   per §15.7.1 (the "name" SS).
 
     // Heap-cell creation + access (Phase 3.1b).
     NewRegex,         // a=dst, b=src_const_idx, c=flags_const_idx.

@@ -3958,6 +3958,18 @@ fn interpret_inner_full(ctx: ZjsContext*,
             } else {
                 regs[inst.a] = zjs_undefined();
             }
+        } else if op == Op::LoadCallee {
+            // a = dst. The function value currently invoking this
+            // frame — a Closure if one was created, otherwise the
+            // bare Function* cell. Used by named function expressions
+            // to bind `name` inside their own body.
+            if ctx.current_closure != NULL {
+                regs[inst.a] = zjs_cell_from_ptr((void*)ctx.current_closure);
+            } else if ctx.frames[cur_idx].f != NULL {
+                regs[inst.a] = zjs_cell_from_ptr((void*)ctx.frames[cur_idx].f);
+            } else {
+                regs[inst.a] = zjs_undefined();
+            }
         } else if op == Op::LoadProp {
             let dst = inst.a;
             let obj_reg = inst.b;

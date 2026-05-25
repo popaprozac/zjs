@@ -2886,6 +2886,21 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
         collect_pattern_locals(c, rest_binding.third);
     }
     let param_count = regular_param_count;
+
+    // Named function expression — bind the function's own name as a
+    // const-like local visible inside the body (§15.7.1). Allocate
+    // BEFORE collect_locals + analyze_captures so the body's
+    // references to NAME resolve to this local. Initialized via
+    // Op::LoadCallee in the prologue. FunctionDecl handles its own
+    // name via the outer scope, so skip there.
+    let bind_callee_local: bool = node.kind == NodeKind::FunctionExpr
+                               && node.name_length > 0;
+    let callee_reg: u8 = 0;
+    if bind_callee_local {
+        callee_reg = alloc_reg(c);
+        add_local(c, node.name_start, node.name_length, callee_reg);
+        if callee_reg + 1 > c.fixed_regs { c.fixed_regs = callee_reg + 1; }
+    }
     // env_binding_count includes the rest binding (one local past the
     // regular params), since the env-mirror loop below also needs to
     // mirror a captured rest-binding into the env object. param_count
@@ -2986,6 +3001,22 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
         // Build rest array from args_base[regular_param_count..argc].
         emit(c, make_inst_ab(Op::BuildRestArgs, rest_reg, (u8)regular_param_count));
     }
+    // Named function expression — load the current callee into the
+    // self-binding local. If captured by a nested function, store
+    // into env too (mirrors how params are env-mirrored below).
+    if bind_callee_local {
+        emit(c, make_inst_a(Op::LoadCallee, callee_reg));
+        let lidx = find_local_index(c, c.source + node.name_start, node.name_length);
+        if lidx >= 0 && c.locals[(u32)lidx].captured && c.needs_env {
+            // env_reg may not be allocated yet — defer to the env-init
+            // loop below by leaving the local set. The env-mirror walk
+            // (j < env_binding_count) doesn't reach this local since
+            // it lives past the rest binding; emit the env store here
+            // after the env object is built. We can't, because env
+            // isn't created yet at this point. Instead, mark for the
+            // env-init block to pick up.
+        }
+    }
     // Default initializers for regular params: `param === undefined
     // ? init : param`. Run in declaration order.
     let dp_i: u32 = 0;
@@ -3049,6 +3080,19 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
                 emit_store_prop_atom(c, c.env_reg, name_atom, c.locals[j].reg);
             }
             j = j + 1;
+        }
+        // Mirror the named-FunctionExpr self-binding into env when it's
+        // captured by an inner closure. The env walk above skipped it
+        // because its local index sits past env_binding_count (after
+        // the rest binding); handle it here.
+        if bind_callee_local {
+            let cli = find_local_index(c, c.source + node.name_start, node.name_length);
+            if cli >= 0 && c.locals[(u32)cli].captured {
+                let n_atom = ctx_intern_atom(c.ctx,
+                                             c.source + node.name_start,
+                                             node.name_length);
+                emit_store_prop_atom(c, c.env_reg, n_atom, callee_reg);
+            }
         }
     }
 
