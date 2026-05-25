@@ -91,70 +91,68 @@ Mapping WinterTC Minimum Common API to current state:
 | `WebSocket` | ✅ shipped | — |
 | `console` | ✅ shipped | — |
 | `globalThis` / `queueMicrotask` | ✅ shipped | — |
-| `crypto.randomUUID` | 🟡 partial | Tier 2 |
-| `crypto.subtle` (digest, HMAC sign/verify) | ❌ | Tier 2 |
-| `AbortController` / `AbortSignal` | ❌ | Tier 2 |
-| `structuredClone` | ❌ | Tier 2 |
-| `btoa` / `atob` | ❌ | Tier 2 |
-| `performance.now` / `performance.timeOrigin` | ❌ | Tier 2 |
-| `EventTarget` / `Event` / `CustomEvent` | ❌ | Tier 2 |
-| `DOMException` | ❌ | Tier 2 |
-| `reportError` | ❌ | Tier 2 |
-| `Blob` / `File` / `FormData` | ❌ | Tier 3 |
-| WHATWG Streams | ❌ | Tier 3 |
+| `crypto.randomUUID` | ✅ shipped | — |
+| `crypto.subtle.digest` (SHA-1/256/384/512) | ✅ shipped | — |
+| `crypto.subtle` HMAC sign/verify | ❌ | Tier 2 follow-up (#252) |
+| `AbortController` / `AbortSignal` | ✅ shipped | — |
+| `structuredClone` | ✅ shipped | — |
+| `btoa` / `atob` | ✅ shipped | — |
+| `performance.now` / `performance.timeOrigin` | ✅ shipped | — |
+| `EventTarget` / `Event` / `CustomEvent` | ✅ shipped | — |
+| `DOMException` | ✅ shipped | — |
+| `reportError` | ✅ shipped | — |
+| `Blob` / `File` / `FormData` | ✅ shipped | — |
+| WHATWG Streams | ❌ | Tier 3 (#255) |
 
 Closing Tiers 2 and 3 = WinterTC-compliant. Conformance suite at
 <https://github.com/wintercg/api-test> gives a measurable number to
 sit alongside the test262 dashboard.
 
-## Tier 1 — bootstrap minimum (next)
+## Tier 1 — bootstrap minimum ✅ shipped
 
-Goal: make zjs runnable as an app-script host. Order of work:
+Shipped in Phase 5.0. All four modules registered via the builtin
+module loader; per-module status:
 
-1. **`node:fs/promises`** + small sync subset
-   - Promise-first surface: `readFile`, `writeFile`, `readdir`,
-     `stat`, `mkdir` (`{recursive}`), `unlink`, `rm` (`{recursive,force}`),
-     `copyFile`, `rename`, `access`
-   - Sync subset for startup: `readFileSync`, `writeFileSync`,
-     `existsSync`, `statSync`
-   - Defer: streams, watch, file handles. Streams land with Tier 3.
-   - Apple-native first (`NSFileManager` / posix). Linux/Windows shims
-     in the platform-port-status loop.
+1. **`node:fs` + `node:fs/promises`** ✅ — read/write/readdir/stat/
+   lstat/mkdir({recursive})/unlink/rm({recursive,force})/copyFile/
+   rename/access + exists. Errors carry `.code`/`.errno`/`.syscall`/
+   `.path`. Sync I/O backed by POSIX (Apple/Linux); promise variants
+   wrap settled results (real async via thread pool is a follow-up).
+2. **`node:path`** ✅ — POSIX `join`/`resolve`/`normalize`/`dirname`/
+   `basename`/`extname`/`parse`/`format`/`isAbsolute`/`relative`
+   + `sep`/`delimiter`. Pure JS, inlined source.
+3. **`node:process`** ✅ — `argv`/`env`/`platform`/`arch`/`pid`/
+   `versions`/`cwd`/`chdir`/`exit`/`hrtime`/`nextTick`. Also
+   `globalThis.process` (Node convention). Embedders set argv via
+   the new `zjs_set_process_argv(ctx, argc, argv)` ABI; the CLI
+   wires it for `zjs run/module`.
+4. **`node:os`** ✅ — `tmpdir`/`homedir`/`platform`/`arch`/`type`/
+   `release`/`hostname`/`cpus`/`totalmem`/`freemem`/`userInfo`/`EOL`.
+   Apple via sysctlbyname + mach `host_statistics64`; Linux via
+   `<sys/sysinfo.h>` + `/proc/cpuinfo`.
 
-2. **`node:path`** — pure JS, inline source. `posix` + `win32` flavors,
-   default = host. `join`, `resolve`, `normalize`, `dirname`,
-   `basename`, `extname`, `parse`/`format`, `isAbsolute`, `relative`,
-   `sep`, `delimiter`.
+## Tier 2 — WinterTC web globals ✅ shipped (except HMAC)
 
-3. **`node:process`** — promote/unify what's already global:
-   `argv`, `env`, `cwd()`, `chdir()`, `exit(code)`, `platform`,
-   `arch`, `versions`, `pid`, `hrtime`, `nextTick(cb)` (microtask).
-
-4. **`node:os`** — `tmpdir()`, `homedir()`, `platform()`, `arch()`,
-   `type()`, `release()`, `EOL`, `cpus()`, `totalmem()`, `freemem()`,
-   `userInfo()`, `hostname()`.
-
-## Tier 2 — finish WinterTC
-
-In rough order of leverage:
-
-- `AbortController` / `AbortSignal` — cascades into fetch/timers/streams
-- `crypto.subtle.digest` (sha-1/256/384/512), `crypto.randomUUID`
-- `crypto.subtle.sign` / `verify` (HMAC)
-- `structuredClone` (deep-copy primitive)
-- `EventTarget` / `Event` / `CustomEvent`
-- `DOMException`
-- `performance.now` / `performance.timeOrigin`
-- `btoa` / `atob`
-- `reportError`
+- ✅ `AbortController` / `AbortSignal` (+ `.timeout`, `.any`, `.abort`,
+  `.throwIfAborted`); pre-aborted-signal fast-path in `fetch`
+- ✅ `crypto.subtle.digest` (SHA-1/256/384/512 via Apple CommonCrypto /
+  Linux OpenSSL / Windows BCrypt); `crypto.randomUUID`
+- ❌ `crypto.subtle.sign` / `verify` (HMAC) — follow-up #252
+- ✅ `structuredClone` (deep-copy with cycle preservation; throws
+  `DataCloneError` on functions/symbols)
+- ✅ `EventTarget` / `Event` / `CustomEvent`
+- ✅ `DOMException` (with legacy `.code` map)
+- ✅ `performance.now` / `performance.timeOrigin`
+- ✅ `btoa` / `atob`
+- ✅ `reportError`
 
 ## Tier 3 — networking, streams, real-app features
 
-- WHATWG `ReadableStream` / `WritableStream` / `TransformStream`
-- `Blob`, `File`, `FormData`
-- `node:net` (TCP), `node:http` (server)
-- `node:child_process` (spawn)
-- DX: `node:util`, `node:events`, `node:assert`
+- ✅ `Blob`, `File`, `FormData`
+- ❌ WHATWG `ReadableStream` / `WritableStream` / `TransformStream` (#255)
+- ❌ `node:net` (TCP), `node:http` (server)
+- ❌ `node:child_process` (spawn)
+- ❌ DX: `node:util`, `node:events`, `node:assert`
 
 ## Implementation notes
 

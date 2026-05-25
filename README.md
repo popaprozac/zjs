@@ -41,18 +41,64 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 | 4.2 | Perf pass against Hermes — string ropes (O(n²)→O(n) concat, 3.8x speedup); super-instructions (`JmpIfNot{Eq,Ne,StrictEq,StrictNe}`, `JmpIfNullish` + nullish-literal peephole, `f.this_reg` metadata hoist replacing per-call `LoadThis`, `borrow_local_ok` at `ReturnStmt`); `libzjs.a` static archive for iOS embedding; WebSocket keep-alive ping/pong; `hermes`/`shermes` added to bench-compare |
 | 4.3 | Symbol semantics cleanup — `@@*` shim keys filtered from `Object.keys` / `getOwnPropertyNames` / `for-in` / `JSON.stringify`; `Object.getOwnPropertySymbols` implemented (walks both young + old cell pools for live Symbols); `Symbol.toPrimitive` dispatch in `zjs_to_primitive` (§7.1.1 step 4); JSON.stringify skips Symbol-valued properties |
 | 4.4 | Private class fields + methods (`#name`) — lexer `PrivateName` token, compile-time mangling to `__zjs_priv_<class_id>_<name>` already-filtered keys (each class gets a fresh id from `ctx.class_id_counter`). Fields, methods, static fields, static methods all supported. ~+1,500 test262 unlocks |
-| **4.6** | **Proxy + Reflect — `TAG_PROXY` cell, `property_get` / `property_set` detour to `handler.get`/`handler.set` traps, revoked-proxy TypeError, `Reflect.{get,set,has}`. Infrastructure in place for the remaining traps (deleteProperty, ownKeys, etc.)** |
-
-**Tests:** 941 in-tree assertions pass (378 smoke + 48 lexer + 84 parser + 431 interpreter).
+| 4.5    | Async iteration — `for-await-of` (sync + async iterables), `Symbol.asyncIterator`, async generator method parsing |
+| 4.6    | Proxy + Reflect — `TAG_PROXY` cell, `property_get` / `property_set` detour to `handler.get`/`handler.set` traps, revoked-proxy TypeError, `Reflect.{get,set,has}`. Infrastructure in place for the remaining traps |
+| 4.7    | Subclassing parity — `class Sub extends Promise/Array/Map/Set/Date/RegExp {}` carries a per-instance `[[Prototype]]`; `super()` propagates outer `new.target`; `NewPromiseCapability` protocol lifted out of Promise.all/race/any/allSettled |
+| 4.8    | Conformance polish — Symbol.toPrimitive, IteratorClose on abrupt completion, captured-FunctionDecl exports, captured rest parameter, contextual keywords (`from`/`as`), named function expression self-binding, per-iteration env for `for (let\|const x of/in iter)` |
+| **5.0** | **Standard library (task #190, `docs/stdlib-design.md`) — node-flavored modules under `node:` prefix + WinterTC web globals. See "Standard library" below.** |
 
 **Conformance (two framings, intentionally):**
 
-- **Curated subset — 74.6%** (10,347 of 13,878 tests pass). The Phase 4.3 → 4.7 arc unmasked private class fields, Proxy/Reflect, async iteration (partial), for-await-of on sync iterables, async-generator method parsing, propertyHelper.js include, plus stale-skipped features that were actually shipping (TypedArray, Generator, destructuring-assignment, optional-chaining, etc). Denominator grew by ~5,900 vs the start of the arc; **passed-count is up ~3,600**. The rate dropped because newly-attempted tests include spec edge cases (property descriptor verification, IteratorClose, Unicode-identifier escapes) we don't enforce yet — those are the queued follow-ups. This number answers **"of the parts we claim to support, how spec-correct are we?"**.
-- **Full suite — 37.3%** (17,303 of 46,364 tests pass against `test/language/` + `test/built-ins/` with no feature-skip list, matching the methodology of dashboards like [test262.fyi](https://test262.fyi)). This number answers **"across the entire spec surface, how complete is the engine?"** — missing-feature failures are real failures here. Run via `make test262-full`. For context: QuickJS NG reports 82.4% on the same methodology; the ~45-point gap is the remaining feature breadth (BigInt, WeakRef, async iteration / async generators), not bugs in features we do ship.
+- **Curated subset — 86.5%** (12,003 of 13,878 tests pass). The Phase 4.3 → 4.8 arc unmasked private class fields, Proxy/Reflect, async iteration, subclass-built-ins (Promise/Array/Map/Set/Date/RegExp), plus stale-skipped features that were actually shipping. This number answers **"of the parts we claim to support, how spec-correct are we?"**.
+- **Full suite** — `make test262-full` runs `test/language/` + `test/built-ins/` with no feature-skip list, matching the methodology of dashboards like [test262.fyi](https://test262.fyi). This number answers **"across the entire spec surface, how complete is the engine?"** — missing-feature failures are real failures here.
 
 Both numbers are useful; quoting only one out of context is misleading. Live dashboard for the curated subset at `docs/conformance/index.html` (macOS) — Windows results at `docs/conformance/index-windows.html`, Linux at `docs/conformance/index-linux.html`.
 
 **Perf:** vs qjs (our closest peer — both jitless interpreters), zjs ahead on 17 / tied on 1 / behind on 3 of 21 microbenches. vs hermes (Meta's jitless engine, the design-space ceiling), zjs ahead on 5 / behind on 14 of 19 measurable — richards within 1.40×, splay 1.65×, with widest gaps on numeric / alloc-heavy benches (mandelbrot, nbody, object_alloc) where Hermes's generational GC and specialized arithmetic opcodes are the structural lead. Live charts at `docs/perf/index.html` (macOS) — Windows results at `docs/perf/index-windows.html`, Linux at `docs/perf/index-linux.html`, cross-engine at `docs/perf/compare.html`.
+
+## Standard library
+
+Node-flavored modules under the `node:` prefix + WinterTC-aligned web
+globals. Design notes in `docs/stdlib-design.md`.
+
+**Node-flavored (`import x from 'node:foo'`):**
+
+| Module | Surface |
+|---|---|
+| `node:path` | `join`, `resolve`, `normalize`, `dirname`, `basename`, `extname`, `parse`, `format`, `isAbsolute`, `relative`, `sep`, `delimiter` (POSIX) |
+| `node:fs` | `readFileSync`, `writeFileSync`, `readdirSync`, `statSync`, `lstatSync`, `mkdirSync({recursive})`, `unlinkSync`, `rmSync({recursive,force})`, `copyFileSync`, `renameSync`, `accessSync`, `existsSync` + `F_OK/R_OK/W_OK/X_OK` + `promises` namespace |
+| `node:fs/promises` | promise-returning equivalents (`readFile`, `writeFile`, `readdir`, `stat`, `lstat`, `mkdir`, `unlink`, `rm`, `copyFile`, `rename`, `access`). Errors carry `.code` / `.errno` / `.syscall` / `.path` so `err.code === 'ENOENT'` checks work. |
+| `node:process` | `argv`, `env`, `platform`, `arch`, `pid`, `versions`, `cwd()`, `chdir()`, `exit(code)`, `hrtime([prev])`, `nextTick(cb)` — also exposed as `globalThis.process` (Node convention) |
+| `node:os` | `tmpdir`, `homedir`, `platform`, `arch`, `type`, `release`, `hostname`, `cpus`, `totalmem`, `freemem`, `userInfo`, `EOL` |
+
+**WinterTC web globals** ([Minimum Common API](https://min-common-api.proposal.wintertc.org/)):
+
+`fetch` / `Request` / `Response` / `Headers` · `URL` / `URLSearchParams` · `TextEncoder` / `TextDecoder` · `WebSocket` · `setTimeout` / `setInterval` / `clearTimeout` / `clearInterval` · `queueMicrotask` · `console` · `globalThis` · `performance.now` / `performance.timeOrigin` · `crypto.getRandomValues` / `crypto.randomUUID` / `crypto.subtle.digest` (SHA-1/256/384/512) · `btoa` / `atob` · `reportError` · `Event` / `CustomEvent` / `EventTarget` · `AbortController` / `AbortSignal` (+ `.timeout`, `.any`, `.abort`, `.throwIfAborted`) · `DOMException` · `structuredClone` · `Blob` / `File` / `FormData`
+
+```js
+import path from 'node:path';
+import * as fs from 'node:fs/promises';
+
+const dir = path.dirname(process.argv[1]);
+const text = await fs.readFile(path.join(dir, 'config.json'), 'utf8');
+console.log(JSON.parse(text));
+
+// AbortSignal-aware fetch
+const ctrl = new AbortController();
+setTimeout(() => ctrl.abort(), 5_000);
+const res = await fetch('https://api.example.com', { signal: ctrl.signal });
+```
+
+**Bundle control** is at the C-ABI layer: `zjs_new_context()` registers
+everything by default. Embedders wanting a smaller surface skip the
+registration calls. Build-time flags (`-DZJS_NO_NETWORK`,
+`-DZJS_NO_CHILD_PROCESS`, `-DZJS_NO_FS`) drop the genuinely fat
+dependency chains.
+
+Not yet shipped: WHATWG Streams (ReadableStream / WritableStream /
+TransformStream), `node:net` / `node:http` (server side — `fetch`
+covers client), `node:child_process`. Tracked as Tier 3 in
+`docs/stdlib-design.md`.
 
 Per-phase plans live in `docs/phases/`.
 
@@ -243,13 +289,19 @@ zjs/
 ├── src/
 │   ├── lib.zc              # Library entry; re-exports public API
 │   ├── value.zc            # NaN-boxed ZjsValue + arithmetic helpers
-│   ├── context.zc          # Globals table, function ownership
+│   ├── context.zc          # Globals table, function ownership, host fns
 │   ├── token.zc / lexer.zc # Lexer
 │   ├── ast.zc / parser.zc  # Parser
 │   ├── bytecode.zc         # Opcode enum + Inst + Function
 │   ├── compiler.zc         # AST → bytecode
 │   ├── interpreter.zc      # Bytecode → ZjsValue
-│   └── eval.zc             # Lex → parse → compile → interpret pipeline
+│   ├── eval.zc             # Lex → parse → compile → interpret pipeline
+│   ├── aot.zc              # AOT bytecode serializer / deserializer
+│   ├── platform/           # Per-OS native shims (http, ws, portability)
+│   └── stdlib/             # node:* modules + WinterTC web globals
+│       ├── node_path.zc, node_fs.zc, node_process.zc, node_os.zc
+│       └── web_events.zc, web_abort.zc, web_clone.zc, web_blob.zc,
+│           web_polyfills.zc
 ├── tools/zjs.zc            # CLI
 ├── tests/
 │   ├── embed_smoke.c       # Pure-C consumer test (NaN-box + eval)
@@ -258,7 +310,10 @@ zjs/
 │   ├── interpreter_test.zc # End-to-end eval tests
 │   └── test262_runner.c    # test262 conformance harness
 ├── docs/
-│   ├── jitless-design-study.md         # Phase 1 — Hermes/QuickJS/LLInt synthesis
+│   ├── jitless-design-study.md   # Phase 1 — Hermes/QuickJS/LLInt synthesis
+│   ├── stdlib-design.md          # Standard library design + roadmap
+│   ├── platform-port-status.md   # Per-OS porting ledger
+│   ├── aot-bytecode-format.md, cross-compile.md, gc-experiment.md, …
 │   └── phases/phase-2-*.md, phase-3-*.md
 └── Makefile
 ```
