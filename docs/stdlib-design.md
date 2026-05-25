@@ -157,8 +157,11 @@ module loader; per-module status:
 - ✅ `node:events` (EventEmitter)
 - ✅ `node:util` (promisify, callbackify, types, inspect, format)
 - ✅ `node:assert` (ok, strictEqual, deepStrictEqual, throws, …)
+- ✅ `node:child_process` — sync trio (`spawnSync`/`execSync`/`execFileSync`)
+  + thin async wrappers (`exec`/`execFile`) on top of `queueMicrotask`.
+  True async `spawn()` with ChildProcess EventEmitter is a follow-up
+  (needs streams ↔ event-loop integration).
 - ❌ `node:net` (TCP), `node:http` (server)
-- ❌ `node:child_process` (spawn)
 
 ## Implementation notes
 

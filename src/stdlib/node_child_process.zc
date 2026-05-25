@@ -1,0 +1,615 @@
+// node:child_process — spawn external commands.
+//
+// First cut covers the sync trio: spawnSync / execSync / execFileSync.
+// Async exec / execFile (callback-shaped) wrap the sync variants via
+// queueMicrotask once the module is loaded — see the JS coda at the
+// bottom of populate_node_child_process. The full `spawn()` /
+// ChildProcess EventEmitter / fork / IPC surface is a separate commit
+// — needs streams integration to surface stdout/stderr without
+// blocking.
+//
+// POSIX-first (macOS + Linux + iOS — though iOS sandbox rejects
+// fork/exec at runtime, mirroring Node's behavior there). Windows
+// shim deferred (will land in src/platform/process_windows.c).
+//
+// Errors carry Node-shaped fields: `.code` ('ENOENT', 'EACCES',
+// 'E2BIG' etc.), `.errno`, `.syscall`, `.path` where applicable.
+
+raw {
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <string.h>
+    #include <errno.h>
+    #include <unistd.h>
+    #include <fcntl.h>
+    #include <sys/types.h>
+    #include <sys/wait.h>
+    #include <poll.h>
+    #include <signal.h>
+}
+
+// === argv / env helpers ================================================
+
+// Read a JS string into a NUL-terminated malloc'd C buffer. Caller frees.
+fn cp_cstr_from_value(v: ZjsValue) -> char* {
+    if zjs_is_string(v) == 0 { return NULL; }
+    let s = zjs_as_string(v);
+    let out: char* = NULL;
+    raw {
+        out = (char*)malloc((size_t)s->length + 1);
+        if (out) { memcpy(out, s->data, s->length); out[s->length] = 0; }
+    }
+    return out;
+}
+
+// Build a NULL-terminated argv from `file` and a JS array of args.
+// On success, returns a malloc'd `char**` whose entries are also
+// malloc'd. Caller frees with cp_argv_free.
+fn cp_argv_build(ctx: ZjsContext*, file: char*, args_v: ZjsValue) -> char** {
+    let n: u32 = 0;
+    let has_args = zjs_is_array(args_v) != 0;
+    if has_args { n = zjs_as_array(args_v).length; }
+    let argv: char** = NULL;
+    raw { argv = (char**)calloc((size_t)(n + 2), sizeof(char*)); }
+    if argv == NULL { return NULL; }
+    // argv[0] = file (a copy, freed alongside the rest).
+    let file_copy: char* = NULL;
+    raw {
+        size_t fl = strlen(file);
+        file_copy = (char*)malloc(fl + 1);
+        if (file_copy) memcpy(file_copy, file, fl + 1);
+    }
+    if file_copy == NULL { raw { free(argv); } return NULL; }
+    raw { argv[0] = file_copy; }
+    let i: u32 = 0;
+    while i < n {
+        let av = property_get(ctx, args_v, zjs_int32((i32)i));
+        if ctx.pending_throw_active {
+            // Tear down what we built so far.
+            let j: u32 = 0;
+            while j <= i { raw { free(argv[j]); } j = j + 1; }
+            raw { free(argv); }
+            return NULL;
+        }
+        let s_v: ZjsValue = if zjs_is_string(av) != 0 { av } else { zjs_to_string(ctx, av) };
+        if ctx.pending_throw_active {
+            let j: u32 = 0;
+            while j <= i { raw { free(argv[j]); } j = j + 1; }
+            raw { free(argv); }
+            return NULL;
+        }
+        let cs = cp_cstr_from_value(s_v);
+        raw { argv[i + 1] = cs; }
+        i = i + 1;
+    }
+    raw { argv[n + 1] = NULL; }
+    return argv;
+}
+
+fn cp_argv_free(argv: char**) -> void {
+    if argv == NULL { return; }
+    raw {
+        for (size_t i = 0; argv[i] != NULL; ++i) free(argv[i]);
+        free(argv);
+    }
+}
+
+// === errno → Node-style error =========================================
+
+fn cp_build_error(ctx: ZjsContext*, syscall: char*, file: char*, err_no: int) -> ZjsValue {
+    let code_str: char* = NULL;
+    raw {
+        switch (err_no) {
+            case ENOENT:    code_str = (char*)"ENOENT";    break;
+            case EACCES:    code_str = (char*)"EACCES";    break;
+            case ENOEXEC:   code_str = (char*)"ENOEXEC";   break;
+            case E2BIG:     code_str = (char*)"E2BIG";     break;
+            case EMFILE:    code_str = (char*)"EMFILE";    break;
+            case ENFILE:    code_str = (char*)"ENFILE";    break;
+            case EPERM:     code_str = (char*)"EPERM";     break;
+            case ENOMEM:    code_str = (char*)"ENOMEM";    break;
+            case EINVAL:    code_str = (char*)"EINVAL";    break;
+            case EAGAIN:    code_str = (char*)"EAGAIN";    break;
+            case ECHILD:    code_str = (char*)"ECHILD";    break;
+            default:        code_str = (char*)"UNKNOWN";   break;
+        }
+    }
+    let msg_buf: char[512];
+    let msg_len: int = 0;
+    raw {
+        msg_len = snprintf(&msg_buf[0], 512, "spawn %s %s: %s",
+                           file ? file : "?", code_str, strerror(err_no));
+    }
+    let msg_p: char* = NULL; raw { msg_p = &msg_buf[0]; }
+    let err_v = build_typed_error(ctx, (char*)"Error", 5, msg_p, (u32)msg_len);
+    if zjs_is_object(err_v) != 0 {
+        let eo = zjs_as_object(err_v);
+        let code_len: u32 = 0; raw { code_len = (uint32_t)strlen(code_str); }
+        object_set(ctx, eo, ctx_intern_atom(ctx, (char*)"code", 4),
+                   ctx_intern_string(ctx, code_str, code_len));
+        object_set(ctx, eo, ctx_intern_atom(ctx, (char*)"errno", 5),
+                   zjs_int32((i32)(-err_no)));
+        let sl: u32 = 0; raw { sl = (uint32_t)strlen(syscall); }
+        object_set(ctx, eo, ctx_intern_atom(ctx, (char*)"syscall", 7),
+                   ctx_intern_string(ctx, syscall, sl));
+        if file != NULL {
+            let fl: u32 = 0; raw { fl = (uint32_t)strlen(file); }
+            object_set(ctx, eo, ctx_intern_atom(ctx, (char*)"path", 4),
+                       ctx_intern_string(ctx, file, fl));
+        }
+    }
+    return err_v;
+}
+
+// === Capture helpers ===================================================
+//
+// Grow-by-doubling buffer. cap = 0 means uninitialized.
+fn cp_buf_append(buf: char**, len: usize*, cap: usize*, src: char*, n: usize) -> bool {
+    if n == 0 { return true; }
+    let need = len[0] + n;
+    if need > cap[0] {
+        let new_cap = if cap[0] == 0 { (usize)4096 } else { cap[0] * 2 };
+        while new_cap < need { new_cap = new_cap * 2; }
+        let nb: char* = NULL;
+        raw { nb = (char*)realloc(buf[0], new_cap); }
+        if nb == NULL { return false; }
+        buf[0] = nb;
+        cap[0] = new_cap;
+    }
+    raw { memcpy(buf[0] + len[0], src, n); }
+    len[0] = len[0] + n;
+    return true;
+}
+
+// === posix spawn-and-capture ==========================================
+//
+// Returns 0 on successful fork+wait; -1 on syscall error (err_no_out).
+// child exit-status is encoded in *status_out (>=0) or *signal_out (>0
+// → killed by signal). Caller frees out_buf / err_buf.
+fn cp_spawn_capture(file: char*, argv: char**, cwd: char*,
+                    in_data: char*, in_len: usize,
+                    out_buf_p: char**, out_len_p: usize*,
+                    err_buf_p: char**, err_len_p: usize*,
+                    status_out: int*, signal_out: int*,
+                    err_no_out: int*) -> int {
+    let stdin_p:  int[2];
+    let stdout_p: int[2];
+    let stderr_p: int[2];
+    let want_stdin = (in_data != NULL && in_len > 0);
+    let rc: int = 0;
+    raw {
+        if (want_stdin && pipe(stdin_p) < 0)  { *err_no_out = errno; rc = -1; }
+        else if (pipe(stdout_p) < 0)          { *err_no_out = errno; rc = -1; }
+        else if (pipe(stderr_p) < 0)          { *err_no_out = errno; rc = -1; }
+    }
+    if rc != 0 { return -1; }
+    let pid: int = 0;
+    raw { pid = (int)fork(); }
+    if pid < 0 {
+        raw { *err_no_out = errno; }
+        return -1;
+    }
+    if pid == 0 {
+        // === child ===
+        raw {
+            if (want_stdin) {
+                dup2(stdin_p[0], STDIN_FILENO);
+                close(stdin_p[0]); close(stdin_p[1]);
+            }
+            dup2(stdout_p[1], STDOUT_FILENO);
+            dup2(stderr_p[1], STDERR_FILENO);
+            close(stdout_p[0]); close(stdout_p[1]);
+            close(stderr_p[0]); close(stderr_p[1]);
+            if (cwd && *cwd) {
+                if (chdir(cwd) < 0) _exit(127);
+            }
+            execvp(file, argv);
+            // Distinguish "not found" (ENOENT) from "no permission"
+            // (EACCES) the way the shell does.
+            _exit(errno == ENOENT ? 127 : 126);
+        }
+    }
+    // === parent ===
+    raw {
+        close(stdout_p[1]);
+        close(stderr_p[1]);
+        if (want_stdin) close(stdin_p[0]);
+    }
+    // Write stdin if any, then close.
+    if want_stdin {
+        let written: usize = 0;
+        while written < in_len {
+            let n: int = 0;
+            raw { n = (int)write(stdin_p[1], in_data + written, in_len - written); }
+            if n < 0 {
+                let er: int = 0;
+                raw { er = errno; }
+                if er == 4 { continue; } // EINTR
+                break;
+            }
+            written = written + (usize)n;
+        }
+        raw { close(stdin_p[1]); }
+    }
+    // Drain stdout + stderr via poll until both close.
+    let out_cap: usize = 0;
+    let err_cap: usize = 0;
+    out_buf_p[0] = NULL; out_len_p[0] = 0;
+    err_buf_p[0] = NULL; err_len_p[0] = 0;
+    let scratch: char[4096];
+    let scratch_p: char* = NULL; raw { scratch_p = &scratch[0]; }
+    let fds_open: int = 2;
+    while fds_open > 0 {
+        let pfds: struct pollfd[2];
+        raw {
+            pfds[0].fd = stdout_p[0]; pfds[0].events = POLLIN; pfds[0].revents = 0;
+            pfds[1].fd = stderr_p[0]; pfds[1].events = POLLIN; pfds[1].revents = 0;
+            if (stdout_p[0] < 0) pfds[0].fd = -1;
+            if (stderr_p[0] < 0) pfds[1].fd = -1;
+        }
+        let pr: int = 0;
+        raw { pr = poll(pfds, 2, -1); }
+        if pr < 0 {
+            let er: int = 0; raw { er = errno; }
+            if er == 4 { continue; } // EINTR
+            break;
+        }
+        let i: int = 0;
+        while i < 2 {
+            let revents_i: int = 0;
+            let fd_i: int = -1;
+            raw {
+                revents_i = pfds[i].revents;
+                fd_i = pfds[i].fd;
+            }
+            if fd_i < 0 { i = i + 1; continue; }
+            if revents_i != 0 {
+                let nread: int = 0;
+                raw { nread = (int)read(fd_i, scratch_p, 4096); }
+                if nread > 0 {
+                    if i == 0 {
+                        cp_buf_append(out_buf_p, out_len_p, &out_cap, scratch_p, (usize)nread);
+                    } else {
+                        cp_buf_append(err_buf_p, err_len_p, &err_cap, scratch_p, (usize)nread);
+                    }
+                } else {
+                    // EOF or error → close this fd.
+                    raw { close(fd_i); }
+                    if i == 0 { raw { stdout_p[0] = -1; } }
+                    else      { raw { stderr_p[0] = -1; } }
+                    fds_open = fds_open - 1;
+                }
+            }
+            i = i + 1;
+        }
+    }
+    // Reap child.
+    let wstatus: int = 0;
+    let wpid: int = 0;
+    while true {
+        raw { wpid = (int)waitpid(pid, &wstatus, 0); }
+        if wpid >= 0 { break; }
+        let er: int = 0; raw { er = errno; }
+        if er == 4 { continue; } // EINTR
+        raw { *err_no_out = er; }
+        return -1;
+    }
+    raw {
+        if (WIFEXITED(wstatus))      { *status_out = WEXITSTATUS(wstatus); *signal_out = 0; }
+        else if (WIFSIGNALED(wstatus)) { *status_out = -1; *signal_out = WTERMSIG(wstatus); }
+        else                           { *status_out = 0;  *signal_out = 0; }
+    }
+    return 0;
+}
+
+// === Result-object packaging ==========================================
+
+// signal-number → name (matches Node's `Signals` type — short list).
+fn cp_signal_name(sig: int) -> char* {
+    let nm: char* = NULL;
+    raw {
+        switch (sig) {
+            case SIGHUP:  nm = (char*)"SIGHUP";  break;
+            case SIGINT:  nm = (char*)"SIGINT";  break;
+            case SIGQUIT: nm = (char*)"SIGQUIT"; break;
+            case SIGILL:  nm = (char*)"SIGILL";  break;
+            case SIGABRT: nm = (char*)"SIGABRT"; break;
+            case SIGFPE:  nm = (char*)"SIGFPE";  break;
+            case SIGKILL: nm = (char*)"SIGKILL"; break;
+            case SIGSEGV: nm = (char*)"SIGSEGV"; break;
+            case SIGPIPE: nm = (char*)"SIGPIPE"; break;
+            case SIGALRM: nm = (char*)"SIGALRM"; break;
+            case SIGTERM: nm = (char*)"SIGTERM"; break;
+            case SIGBUS:  nm = (char*)"SIGBUS";  break;
+            case SIGUSR1: nm = (char*)"SIGUSR1"; break;
+            case SIGUSR2: nm = (char*)"SIGUSR2"; break;
+            default: nm = NULL; break;
+        }
+    }
+    return nm;
+}
+
+// Wrap a captured byte buffer in a Uint8Array. Copies the bytes
+// (Uint8Array owns its own backing).
+fn cp_bytes_to_uint8array(ctx: ZjsContext*, buf: char*, len: usize) -> ZjsValue {
+    let a = zjs_uint8_array_new((u32)len);
+    ctx_register_cell(ctx, (void*)a);
+    if len > 0 {
+        raw { memcpy(a->bytes, buf, len); }
+    }
+    return zjs_cell_from_ptr((void*)a);
+}
+
+// Encode bytes as a UTF-8 JS string (no validation — bytes copied
+// verbatim; matches Node's "utf8" encoding behavior).
+fn cp_bytes_to_string(ctx: ZjsContext*, buf: char*, len: usize) -> ZjsValue {
+    if buf == NULL || len == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    return ctx_intern_string(ctx, buf, (u32)len);
+}
+
+fn cp_opt_get(ctx: ZjsContext*, opts_v: ZjsValue, name: char*, name_len: u32) -> ZjsValue {
+    if zjs_is_object(opts_v) == 0 { return zjs_undefined(); }
+    return property_get(ctx, opts_v, ctx_intern_string(ctx, name, name_len));
+}
+
+fn cp_encoding_is_string(ctx: ZjsContext*, opts_v: ZjsValue) -> bool {
+    let enc = cp_opt_get(ctx, opts_v, (char*)"encoding", 8);
+    if zjs_is_string(enc) == 0 { return false; }
+    let s = zjs_as_string(enc);
+    let is_buf: int = 0;
+    raw {
+        if (s->length == 6 && memcmp(s->data, "buffer", 6) == 0) is_buf = 1;
+    }
+    if is_buf != 0 { return false; }
+    return true;
+}
+
+// === spawnSync =========================================================
+//
+// spawnSync(file, args, options) → { pid, output, stdout, stderr,
+//   status, signal, error }. Matches Node's surface; options.input,
+//   options.cwd, options.encoding honored.
+fn host_cp_spawn_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 || zjs_is_string(args[0]) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"spawnSync: file must be a string", 32);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let file = cp_cstr_from_value(args[0]);
+    let args_v: ZjsValue = if argc >= 2 && zjs_is_array(args[1]) != 0 { args[1] } else { zjs_undefined() };
+    let opts_v: ZjsValue = if argc >= 3 && zjs_is_object(args[2]) != 0 { args[2] }
+                          else if argc >= 2 && zjs_is_object(args[1]) != 0 && zjs_is_array(args[1]) == 0 { args[1] }
+                          else { zjs_undefined() };
+    let argv = cp_argv_build(ctx, file, args_v);
+    if argv == NULL {
+        if ctx.pending_throw_active { raw { free(file); } return zjs_undefined(); }
+        let err = build_typed_error(ctx, (char*)"Error", 5, (char*)"spawn: argv build failed", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        raw { free(file); }
+        return zjs_undefined();
+    }
+    // options.cwd
+    let cwd: char* = NULL;
+    if zjs_is_object(opts_v) != 0 {
+        let cv = cp_opt_get(ctx, opts_v, (char*)"cwd", 3);
+        if zjs_is_string(cv) != 0 { cwd = cp_cstr_from_value(cv); }
+    }
+    // options.input — accepts string or Uint8Array.
+    let in_data: char* = NULL;
+    let in_len: usize = 0;
+    if zjs_is_object(opts_v) != 0 {
+        let iv = cp_opt_get(ctx, opts_v, (char*)"input", 5);
+        if zjs_is_string(iv) != 0 {
+            let s = zjs_as_string(iv);
+            raw { in_data = s->data; in_len = s->length; }
+        } else if zjs_is_uint8_array(iv) != 0 {
+            let u = zjs_as_uint8_array(iv);
+            raw { in_data = (char*)u->bytes; in_len = u->length; }
+        }
+    }
+    let out_buf: char* = NULL; let out_len: usize = 0;
+    let err_buf: char* = NULL; let err_len: usize = 0;
+    let status_out: int = 0; let signal_out: int = 0; let err_no_out: int = 0;
+    let rc = cp_spawn_capture(file, argv, cwd, in_data, in_len,
+                              &out_buf, &out_len, &err_buf, &err_len,
+                              &status_out, &signal_out, &err_no_out);
+    cp_argv_free(argv);
+    let result_v = ctx_new_object(ctx);
+    let result = zjs_as_object(result_v);
+    ctx_push_temp_root(ctx, result_v);
+    defer ctx_pop_temp_root(ctx);
+    let want_str = cp_encoding_is_string(ctx, opts_v);
+    if rc != 0 {
+        // Spawn failed to start.
+        let e = cp_build_error(ctx, (char*)"spawnSync", file, err_no_out);
+        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"error", 5), e);
+        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"pid", 3), zjs_int32(0));
+        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"status", 6), zjs_null());
+        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"signal", 6), zjs_null());
+        // stdout/stderr fields filled with empty strings/buffers for caller convenience.
+        if want_str {
+            let empty = ctx_intern_string(ctx, (char*)"", 0);
+            object_set(ctx, result, ctx_intern_atom(ctx, (char*)"stdout", 6), empty);
+            object_set(ctx, result, ctx_intern_atom(ctx, (char*)"stderr", 6), empty);
+        }
+        raw { free(file); if (cwd) free(cwd); }
+        return result_v;
+    }
+    let stdout_v: ZjsValue = if want_str { cp_bytes_to_string(ctx, out_buf, out_len) }
+                             else { cp_bytes_to_uint8array(ctx, out_buf, out_len) };
+    if want_str { raw { free(out_buf); } } // string-cast copied; free.
+    let stderr_v: ZjsValue = if want_str { cp_bytes_to_string(ctx, err_buf, err_len) }
+                             else { cp_bytes_to_uint8array(ctx, err_buf, err_len) };
+    if want_str { raw { free(err_buf); } }
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"pid", 3), zjs_int32(0));
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"stdout", 6), stdout_v);
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"stderr", 6), stderr_v);
+    let output_v = ctx_new_array(ctx, 3);
+    let output = zjs_as_array(output_v);
+    array_set(output, 0, zjs_null());
+    array_set(output, 1, stdout_v);
+    array_set(output, 2, stderr_v);
+    output.length = 3;
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"output", 6), output_v);
+    if signal_out != 0 {
+        let nm = cp_signal_name(signal_out);
+        if nm != NULL {
+            let nl: u32 = 0; raw { nl = (uint32_t)strlen(nm); }
+            object_set(ctx, result, ctx_intern_atom(ctx, (char*)"signal", 6),
+                       ctx_intern_string(ctx, nm, nl));
+        } else {
+            object_set(ctx, result, ctx_intern_atom(ctx, (char*)"signal", 6), zjs_null());
+        }
+        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"status", 6), zjs_null());
+    } else {
+        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"signal", 6), zjs_null());
+        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"status", 6), zjs_int32(status_out));
+    }
+    raw { free(file); if (cwd) free(cwd); }
+    return result_v;
+}
+
+// === execFileSync ======================================================
+//
+// Like spawnSync, but returns stdout directly and throws on non-zero exit.
+fn host_cp_exec_file_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let r = host_cp_spawn_sync(ctx, args, argc);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let err = property_get(ctx, r, ctx_intern_string(ctx, (char*)"error", 5));
+    if zjs_is_object(err) != 0 {
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let status = property_get(ctx, r, ctx_intern_string(ctx, (char*)"status", 6));
+    if zjs_is_int32(status) != 0 && zjs_as_int32(status) != 0 {
+        let msg = build_typed_error(ctx, (char*)"Error", 5,
+                                    (char*)"Command failed", 14);
+        if zjs_is_object(msg) != 0 {
+            let mo = zjs_as_object(msg);
+            object_set(ctx, mo, ctx_intern_atom(ctx, (char*)"status", 6), status);
+            let so = property_get(ctx, r, ctx_intern_string(ctx, (char*)"stderr", 6));
+            object_set(ctx, mo, ctx_intern_atom(ctx, (char*)"stderr", 6), so);
+            let stdo = property_get(ctx, r, ctx_intern_string(ctx, (char*)"stdout", 6));
+            object_set(ctx, mo, ctx_intern_atom(ctx, (char*)"stdout", 6), stdo);
+        }
+        ctx.pending_throw_active = true; ctx.pending_throw_value = msg;
+        return zjs_undefined();
+    }
+    return property_get(ctx, r, ctx_intern_string(ctx, (char*)"stdout", 6));
+}
+
+// === execSync ==========================================================
+//
+// Shells out: `/bin/sh -c "command"`. Returns stdout (Buffer by default,
+// string if options.encoding is set and not 'buffer'). Throws on non-zero.
+fn host_cp_exec_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 || zjs_is_string(args[0]) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"execSync: command must be a string", 34);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let sh_argv: ZjsValue[3];
+    sh_argv[0] = ctx_intern_string(ctx, (char*)"-c", 2);
+    sh_argv[1] = args[0];
+    let arr_v = ctx_new_array(ctx, 2);
+    let arr = zjs_as_array(arr_v);
+    array_set(arr, 0, sh_argv[0]);
+    array_set(arr, 1, sh_argv[1]);
+    arr.length = 2;
+    let opts_v: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let call_args: ZjsValue[3];
+    call_args[0] = ctx_intern_string(ctx, (char*)"/bin/sh", 7);
+    call_args[1] = arr_v;
+    call_args[2] = opts_v;
+    let ca_ptr: ZjsValue* = NULL; raw { ca_ptr = &call_args[0]; }
+    return host_cp_exec_file_sync(ctx, ca_ptr, 3);
+}
+
+// === Registration ======================================================
+
+fn cp_attach(ctx: ZjsContext*, exports: ZjsObject*, name: char*, name_len: u32, ptr: void*) -> void {
+    let atom = ctx_intern_atom(ctx, name, name_len);
+    let fv   = ctx_make_host_function_arity(ctx, name, ptr, 1);
+    object_set(ctx, exports, atom, fv);
+}
+
+fn populate_node_child_process(ctx: ZjsContext*, exports: ZjsObject*) -> void {
+    let p1: void* = NULL; raw { p1 = (void*)host_cp_spawn_sync; }
+    let p2: void* = NULL; raw { p2 = (void*)host_cp_exec_sync; }
+    let p3: void* = NULL; raw { p3 = (void*)host_cp_exec_file_sync; }
+    cp_attach(ctx, exports, (char*)"spawnSync",     9,  p1);
+    cp_attach(ctx, exports, (char*)"execSync",      8,  p2);
+    cp_attach(ctx, exports, (char*)"execFileSync", 12,  p3);
+    // Async exec / execFile: thin queueMicrotask wrappers. Honest
+    // "fake async" — same thread, same blocking syscalls, just defers
+    // the result to the next microtask. True async needs the
+    // event-loop integration that lands with spawn() + ChildProcess.
+    raw {
+        // Avoids Object.assign — that built-in has a bug (zjs returns
+        // undefined when given a target). Manual shallow copy here
+        // until that's fixed in the engine.
+        static const char CP_ASYNC_BOOTSTRAP[] =
+            "(function(exports) {\n"
+            "  function defer(fn) { queueMicrotask(fn); }\n"
+            "  function mergeOpts(options) {\n"
+            "    var out = { encoding: 'utf8' };\n"
+            "    if (options) {\n"
+            "      for (var k in options) {\n"
+            "        if (Object.prototype.hasOwnProperty.call(options, k)) out[k] = options[k];\n"
+            "      }\n"
+            "    }\n"
+            "    return out;\n"
+            "  }\n"
+            "  exports.exec = function(cmd, options, cb) {\n"
+            "    if (typeof options === 'function') { cb = options; options = undefined; }\n"
+            "    var opts = mergeOpts(options);\n"
+            "    defer(function() {\n"
+            "      try {\n"
+            "        var out = exports.execSync(cmd, opts);\n"
+            "        cb && cb(null, out, '');\n"
+            "      } catch (e) {\n"
+            "        cb && cb(e, e.stdout || '', e.stderr || '');\n"
+            "      }\n"
+            "    });\n"
+            "  };\n"
+            "  exports.execFile = function(file, args, options, cb) {\n"
+            "    if (typeof args === 'function')         { cb = args; args = []; options = undefined; }\n"
+            "    else if (typeof options === 'function') { cb = options; options = undefined; }\n"
+            "    var opts = mergeOpts(options);\n"
+            "    defer(function() {\n"
+            "      try {\n"
+            "        var out = exports.execFileSync(file, args || [], opts);\n"
+            "        cb && cb(null, out, '');\n"
+            "      } catch (e) {\n"
+            "        cb && cb(e, e.stdout || '', e.stderr || '');\n"
+            "      }\n"
+            "    });\n"
+            "  };\n"
+            "  return exports;\n"
+            "});\n";
+    }
+    // Push the bootstrap onto the existing exports object by calling
+    // the IIFE with `exports` bound.
+    let src: char* = NULL;
+    raw { src = (char*)CP_ASYNC_BOOTSTRAP; }
+    let fn_v = zjs_eval(ctx, src);
+    if zjs_is_function(fn_v) != 0 || zjs_is_closure(fn_v) != 0 {
+        let exports_v: ZjsValue = zjs_cell_from_ptr((void*)exports);
+        let call_args: ZjsValue[1];
+        call_args[0] = exports_v;
+        let ca_ptr: ZjsValue* = NULL; raw { ca_ptr = &call_args[0]; }
+        raw { zjs_call_value_with_this(ctx, fn_v, zjs_undefined(), ca_ptr, 1); }
+        if ctx.pending_throw_active {
+            // Bootstrap failure isn't fatal — sync API still works.
+            ctx.pending_throw_active = false;
+            ctx.pending_throw_value  = zjs_undefined();
+        }
+    }
+}
+
+fn zjs_register_node_child_process(ctx: ZjsContext*) -> void {
+    let p: void* = NULL; raw { p = (void*)populate_node_child_process; }
+    ctx_register_builtin_module(ctx, (char*)"node:child_process", p);
+}
