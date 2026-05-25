@@ -93,7 +93,7 @@ Mapping WinterTC Minimum Common API to current state:
 | `globalThis` / `queueMicrotask` | ✅ shipped | — |
 | `crypto.randomUUID` | ✅ shipped | — |
 | `crypto.subtle.digest` (SHA-1/256/384/512) | ✅ shipped | — |
-| `crypto.subtle` HMAC sign/verify | ❌ | Tier 2 follow-up (#252) |
+| `crypto.subtle.importKey` + HMAC `sign`/`verify` | ✅ shipped | — |
 | `AbortController` / `AbortSignal` | ✅ shipped | — |
 | `structuredClone` | ✅ shipped | — |
 | `btoa` / `atob` | ✅ shipped | — |
@@ -137,7 +137,8 @@ module loader; per-module status:
   `.throwIfAborted`); pre-aborted-signal fast-path in `fetch`
 - ✅ `crypto.subtle.digest` (SHA-1/256/384/512 via Apple CommonCrypto /
   Linux OpenSSL / Windows BCrypt); `crypto.randomUUID`
-- ❌ `crypto.subtle.sign` / `verify` (HMAC) — follow-up #252
+- ✅ `crypto.subtle.importKey` + HMAC `sign` / `verify` (same backends;
+  constant-time verify)
 - ✅ `structuredClone` (deep-copy with cycle preservation; throws
   `DataCloneError` on functions/symbols)
 - ✅ `EventTarget` / `Event` / `CustomEvent`

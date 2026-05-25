@@ -73,7 +73,7 @@ globals. Design notes in `docs/stdlib-design.md`.
 
 **WinterTC web globals** ([Minimum Common API](https://min-common-api.proposal.wintertc.org/)):
 
-`fetch` / `Request` / `Response` / `Headers` · `URL` / `URLSearchParams` · `TextEncoder` / `TextDecoder` · `WebSocket` · `setTimeout` / `setInterval` / `clearTimeout` / `clearInterval` · `queueMicrotask` · `console` · `globalThis` · `performance.now` / `performance.timeOrigin` · `crypto.getRandomValues` / `crypto.randomUUID` / `crypto.subtle.digest` (SHA-1/256/384/512) · `btoa` / `atob` · `reportError` · `Event` / `CustomEvent` / `EventTarget` · `AbortController` / `AbortSignal` (+ `.timeout`, `.any`, `.abort`, `.throwIfAborted`) · `DOMException` · `structuredClone` · `Blob` / `File` / `FormData` · `ReadableStream` / `WritableStream` / `TransformStream` / `CountQueuingStrategy` / `ByteLengthQueuingStrategy`
+`fetch` / `Request` / `Response` / `Headers` · `URL` / `URLSearchParams` · `TextEncoder` / `TextDecoder` · `WebSocket` · `setTimeout` / `setInterval` / `clearTimeout` / `clearInterval` · `queueMicrotask` · `console` · `globalThis` · `performance.now` / `performance.timeOrigin` · `crypto.getRandomValues` / `crypto.randomUUID` / `crypto.subtle.digest` / `crypto.subtle.importKey` / `crypto.subtle.sign` / `crypto.subtle.verify` (SHA-1/256/384/512, HMAC) · `btoa` / `atob` · `reportError` · `Event` / `CustomEvent` / `EventTarget` · `AbortController` / `AbortSignal` (+ `.timeout`, `.any`, `.abort`, `.throwIfAborted`) · `DOMException` · `structuredClone` · `Blob` / `File` / `FormData` · `ReadableStream` / `WritableStream` / `TransformStream` / `CountQueuingStrategy` / `ByteLengthQueuingStrategy`
 
 ```js
 import path from 'node:path';
@@ -96,8 +96,8 @@ registration calls. Build-time flags (`-DZJS_NO_NETWORK`,
 dependency chains.
 
 Not yet shipped: `node:net` / `node:http` (server side — `fetch`
-covers client), `node:child_process`, `crypto.subtle.sign` / `verify`
-(HMAC). Tracked in `docs/stdlib-design.md`.
+covers client), `node:child_process`. Tracked in
+`docs/stdlib-design.md`.
 
 Per-phase plans live in `docs/phases/`.
 
