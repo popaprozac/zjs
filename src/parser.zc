@@ -484,6 +484,13 @@ fn is_binding_ident(k: TokenKind) -> bool {
     if k == TokenKind::KwYield    { return true; }
     if k == TokenKind::KwAwait    { return true; }
     if k == TokenKind::KwAsync    { return true; }
+    // `from` / `as` are contextual keywords — reserved only inside
+    // import/export specifier syntax (§16.2.2 / §16.2.3). Elsewhere
+    // they're plain identifiers. The import/export parsers check
+    // peek_kind(p) == KwAs/KwFrom directly, so allowing them as
+    // binding idents doesn't break specifier parsing.
+    if k == TokenKind::KwFrom     { return true; }
+    if k == TokenKind::KwAs       { return true; }
     return false;
 }
 
@@ -1440,7 +1447,7 @@ fn parse_function_decl(p: Parser*, is_async: bool) -> AstNode* {
     }
 
     let name_tok = peek(p);
-    if name_tok.kind != TokenKind::Identifier {
+    if !is_binding_ident_tok(p, name_tok, p.source) {
         p.had_error = true;
         return NULL;
     }
@@ -2253,10 +2260,15 @@ fn parse_function_expr(p: Parser*, is_async: bool) -> AstNode* {
 
     let name_start: u32 = 0;
     let name_length: u32 = 0;
-    if peek_kind(p) == TokenKind::Identifier {
-        let name_tok = advance(p);
-        name_start = name_tok.start;
-        name_length = name_tok.length;
+    // Function-expr names are OPTIONAL. Peek before assuming an
+    // identifier sits here — if it's an LParen we have an anonymous
+    // function expr. Contextual keywords (`from`, `as`, `of`, etc.)
+    // are also valid names per is_binding_ident_tok.
+    let nt = peek(p);
+    if nt.kind != TokenKind::LParen && is_binding_ident_tok(p, nt, p.source) {
+        advance(p);
+        name_start = nt.start;
+        name_length = nt.length;
     }
 
     if !expect_kind(p, TokenKind::LParen) { return NULL; }
