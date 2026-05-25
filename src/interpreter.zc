@@ -995,10 +995,19 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                     cur = cur.proto;
                 }
             }
-            // Closure's underlying Function.props — static methods on a
-            // closure-wrapped class ctor land here. Reached only when
-            // the proto walk found nothing.
+            // Per-closure expando first — only set on non-class
+            // closures (class ctors keep cl.props == NULL and go
+            // through f.props below).
             let cl_pp = zjs_as_closure(obj);
+            if cl_pp.props != NULL {
+                let s_cl = class_find_slot(cl_pp.props.cls, ks);
+                if s_cl >= 0 {
+                    let v_cl = cl_pp.props.slots[(u32)s_cl];
+                    if zjs_is_deleted(v_cl) == 0 { return v_cl; }
+                }
+            }
+            // Closure's underlying Function.props — class ctor statics +
+            // fallback for anything not on the per-instance bag.
             let fp_pp = cl_pp.function;
             let f_pp: Function* = NULL;
             raw { f_pp = (Function*)fp_pp; }
@@ -1504,11 +1513,11 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         property_set(ctx, zjs_cell_from_ptr((void*)f.props), key, value);
         return;
     }
-    // Closure-wrapped CLASS constructor: route static-method writes
-    // through the underlying Function's .props the same as TAG_FUNCTION.
-    // Gate on is_class_constructor so generic closures (multi-instanced
-    // function declarations) don't accidentally share their .props —
-    // independent per-closure props needs a struct change and is deferred.
+    // Closure: class ctors share .prototype + statics through the
+    // underlying Function* (one template per class declaration).
+    // Generic closures get per-instance props — independent expandos
+    // so writes through one don't leak to others sharing the same
+    // Function* template.
     if tag == TAG_CLOSURE {
         let cl = zjs_as_closure(obj);
         let fp2 = cl.function;
@@ -1533,8 +1542,28 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
             property_set(ctx, zjs_cell_from_ptr((void*)f2.props), key, value);
             return;
         }
-        // Non-class closure: writes silently drop until per-closure props
-        // land. Matches the long-standing engine behavior.
+        // Generic closure: per-instance bag.
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        let ks3 = zjs_as_string(key);
+        let kd3 = ks3.data;
+        let kn3 = ks3.length;
+        let is_proto3:  int = 0;
+        let is_name3:   int = 0;
+        let is_length3: int = 0;
+        raw {
+            is_proto3  = (kn3 == 9 && memcmp(kd3, "prototype", 9) == 0) ? 1 : 0;
+            is_name3   = (kn3 == 4 && memcmp(kd3, "name",      4) == 0) ? 1 : 0;
+            is_length3 = (kn3 == 6 && memcmp(kd3, "length",    6) == 0) ? 1 : 0;
+        }
+        // .prototype on a generic closure would alias the shared
+        // template; .name / .length are writable:false sloppy-drop.
+        if is_proto3 != 0 || is_name3 != 0 || is_length3 != 0 { return; }
+        if cl.props == NULL {
+            let pv = ctx_new_object(ctx);
+            cl.props = zjs_as_object(pv);
+        }
+        property_set(ctx, zjs_cell_from_ptr((void*)cl.props), key, value);
+        return;
     }
     if tag == TAG_HOST_FUNCTION {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
@@ -4413,9 +4442,24 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     if class_find_slot(f.props.cls, name) >= 0 { present = 1; }
                 }
             }
-            // Closure: still no own-props (closures wrap a Function
-            // and would alias if they piggybacked on f.props). Leave
-            // present=0 for now; revisit if a harness needs it.
+            // Closure: probe per-instance props first, then the
+            // underlying Function*.props (class statics).
+            if present == 0 && zjs_is_closure(obj) != 0 {
+                let cl_in = zjs_as_closure(obj);
+                let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+                let name_in = zjs_as_string(key_str_val);
+                if cl_in.props != NULL {
+                    if class_find_slot(cl_in.props.cls, name_in) >= 0 { present = 1; }
+                }
+                if present == 0 {
+                    let fp_in = cl_in.function;
+                    let f_in: Function* = NULL;
+                    raw { f_in = (Function*)fp_in; }
+                    if f_in.props != NULL {
+                        if class_find_slot(f_in.props.cls, name_in) >= 0 { present = 1; }
+                    }
+                }
+            }
             regs[inst.a] = zjs_bool(present);
         } else if op == Op::Instanceof {
             // val instanceof ctor — spec InstanceofOperator:
@@ -5157,7 +5201,15 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let fp2 = cl.function;
                 let ff2: Function* = NULL;
                 raw { ff2 = (Function*)fp2; }
-                props_o = ff2.props;
+                // Class ctors share their statics on Function*.props;
+                // generic closures own their per-instance bag.
+                if ff2.is_class_constructor {
+                    props_o = ff2.props;
+                } else if cl.props != NULL {
+                    props_o = cl.props;
+                } else {
+                    props_o = ff2.props;
+                }
             } else if obj_tag == TAG_HOST_FUNCTION {
                 let hf = zjs_as_host_function(obj_v);
                 props_o = hf.props;

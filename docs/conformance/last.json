@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-25 21:31 UTC",
+    "when": "2026-05-25 21:42 UTC",
     "total": 14524,
-    "passed": 11853,
-    "failed": 2025,
+    "passed": 11856,
+    "failed": 2022,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -5794,7 +5794,7 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-element-function-multiple-calls.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abTypeError: Promise.resolve is not callable\u00bb, \u00abTest262Error: \u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): rejectCallCount after call to allSettled() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-element-function-name.js",
@@ -5890,23 +5890,11 @@
     },
     {
       "path": "test/built-ins/Promise/any/call-reject-element-after-return.js",
-      "reason": "[sloppy] zjs: throw: (unknown): errorArray after call to any() Expected SameValue(\u00abundefined\u00bb, \u00ab\"onRejectedValue\"\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): callCount after call to any() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/any/call-reject-element-items.js",
-      "reason": "[sloppy] zjs: throw: (unknown): error.errors is array"
-    },
-    {
-      "path": "test/built-ins/Promise/any/capability-reject-throws-no-close.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/any/capability-resolve-throws-no-close.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/any/capability-resolve-throws-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] zjs: throw: (unknown): callCount after call to any() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-resolve-error-close.js",
@@ -5986,7 +5974,7 @@
     },
     {
       "path": "test/built-ins/Promise/any/reject-from-same-thenable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): callCount after call to any() Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: TypeError: value is not a function"
     },
     {
       "path": "test/built-ins/Promise/any/reject-ignored-deferred.js",
@@ -5998,11 +5986,11 @@
     },
     {
       "path": "test/built-ins/Promise/any/resolve-before-loop-exit-from-same.js",
-      "reason": "[sloppy] zjs: throw: (unknown): error is array"
+      "reason": "[sloppy] zjs: throw: TypeError: value is not a function"
     },
     {
       "path": "test/built-ins/Promise/any/resolve-before-loop-exit.js",
-      "reason": "[sloppy] zjs: throw: (unknown): error is array"
+      "reason": "[sloppy] zjs: throw: (unknown): callCount after call to any() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/any/resolve-ignores-late-rejection-deferred.js",

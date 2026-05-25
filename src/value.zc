@@ -1586,6 +1586,7 @@ struct ZjsClosure {
     header:   CellHeader;        // { type_tag = TAG_CLOSURE }
     function: void*;              // Function* — opaque to value.zc (defined in bytecode.zc)
     env:      ZjsObject*;        // captured environment; may be NULL for arity-0 captures
+    props:    ZjsObject*;        // per-instance expando bag (NULL until first write)
 }
 
 fn zjs_cell_from_ptr(p: void*) -> ZjsValue {
@@ -1949,6 +1950,7 @@ fn zjs_closure_new(function: void*, env: ZjsObject*) -> ZjsClosure* {
     cl.header.type_tag = TAG_CLOSURE;
     cl.function = function;
     cl.env = env;
+    cl.props = NULL;
     return cl;
 }
 

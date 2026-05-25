@@ -1206,6 +1206,11 @@ fn gc_mark_cell_children(p: void*) -> void {
             let env_val = zjs_cell_from_ptr((void*)cl.env);
             gc_mark_value(env_val);
         }
+        // Per-instance expando bag.
+        if cl.props != NULL {
+            let pv = zjs_cell_from_ptr((void*)cl.props);
+            gc_mark_value(pv);
+        }
         return;
     }
 
@@ -4923,7 +4928,15 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         let fp2 = cl.function;
         let f2: Function* = NULL;
         raw { f2 = (Function*)fp2; }
-        receiver_obj = f2.props;
+        // Class ctors share statics on Function*.props; generic
+        // closures expose their per-instance bag.
+        if f2.is_class_constructor {
+            receiver_obj = f2.props;
+        } else if cl.props != NULL {
+            receiver_obj = cl.props;
+        } else {
+            receiver_obj = f2.props;
+        }
     } else if zjs_is_host_function(args[0]) != 0 {
         let hf = zjs_as_host_function(args[0]);
         receiver_obj = hf.props;
