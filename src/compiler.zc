@@ -5590,9 +5590,37 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         let saved_fixed = c.fixed_regs;
         if i_r + 1 > c.fixed_regs { c.fixed_regs = i_r + 1; }
 
+        // Per-iter env (mirror of compile_for_of_live; closes #250 for
+        // for-in too). Same trigger: `let`/`const` binding + an env is
+        // already in use by this function.
+        let need_per_iter_env_i: bool = false;
+        if c.needs_env {
+            let bi_look = node.left;
+            while bi_look != NULL && bi_look.kind == NodeKind::Paren {
+                bi_look = bi_look.left;
+            }
+            if bi_look != NULL
+               && bi_look.kind == NodeKind::VarDecl
+               && bi_look.op != TokenKind::KwVar {
+                need_per_iter_env_i = true;
+            }
+        }
+        let saved_env_ri: u8 = 0;
+        if need_per_iter_env_i {
+            saved_env_ri = alloc_reg(c);
+            emit(c, make_inst_ab(Op::Mov, saved_env_ri, c.env_reg));
+            if saved_env_ri + 1 > c.fixed_regs { c.fixed_regs = saved_env_ri + 1; }
+        }
+
         let loop_top = (u32)c.code_count;
         // `continue` goes to the increment step; set after body.
         loop_push(c);
+
+        if need_per_iter_env_i {
+            emit(c, make_inst_a(Op::NewObject, c.env_reg));
+            let outer_atom = ctx_intern_atom(c.ctx, OUTER_ENV_KEY, OUTER_ENV_KEY_LEN);
+            emit_store_prop_atom(c, c.env_reg, outer_atom, saved_env_ri);
+        }
         emit(c, make_inst_ab(Op::ArrayLength, len_r, iter_r));
         let cond_r = alloc_reg(c);
         emit(c, make_inst_abc(Op::CmpLt, cond_r, i_r, len_r));
@@ -5640,6 +5668,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             while bi_m < frame_m.break_count {
                 patch_jump(c, frame_m.break_patches[bi_m]);
                 bi_m = bi_m + 1;
+            }
+            if need_per_iter_env_i {
+                emit(c, make_inst_ab(Op::Mov, c.env_reg, saved_env_ri));
             }
             loop_pop(c);
             c.fixed_regs = saved_fixed;
@@ -5701,6 +5732,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             while bi_p < frame_p.break_count {
                 patch_jump(c, frame_p.break_patches[bi_p]);
                 bi_p = bi_p + 1;
+            }
+            if need_per_iter_env_i {
+                emit(c, make_inst_ab(Op::Mov, c.env_reg, saved_env_ri));
             }
             loop_pop(c);
             c.fixed_regs = saved_fixed;
@@ -5765,6 +5799,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         while bi < frame_o.break_count {
             patch_jump(c, frame_o.break_patches[bi]);
             bi = bi + 1;
+        }
+        if need_per_iter_env_i {
+            emit(c, make_inst_ab(Op::Mov, c.env_reg, saved_env_ri));
         }
         loop_pop(c);
 
@@ -6185,9 +6222,44 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
     let saved_fixed = c.fixed_regs;
     if done_r + 1 > c.fixed_regs { c.fixed_regs = done_r + 1; }
 
+    // Per-iteration env (closes #250). `for (let|const ... of ...)`
+    // should create a fresh binding each iteration so closures captured
+    // in iteration N see iteration-N's value. We allocate a fresh env
+    // object at the top of each iter and chain __outer__ to the saved
+    // outer env. MakeClosure inside the body reads c.env_reg, which now
+    // points at the per-iter env, so closures close over the right one.
+    // Skip for `var` (function-scoped) or when c.needs_env is false
+    // (no captures in this function at all).
+    let need_per_iter_env: bool = false;
+    if c.needs_env {
+        let binding_lookahead = node.left;
+        while binding_lookahead != NULL && binding_lookahead.kind == NodeKind::Paren {
+            binding_lookahead = binding_lookahead.left;
+        }
+        if binding_lookahead != NULL
+           && binding_lookahead.kind == NodeKind::VarDecl
+           && binding_lookahead.op != TokenKind::KwVar {
+            need_per_iter_env = true;
+        }
+    }
+    let saved_env_r: u8 = 0;
+    if need_per_iter_env {
+        saved_env_r = alloc_reg(c);
+        emit(c, make_inst_ab(Op::Mov, saved_env_r, c.env_reg));
+        if saved_env_r + 1 > c.fixed_regs { c.fixed_regs = saved_env_r + 1; }
+    }
+
     let loop_top = (u32)c.code_count;
     loop_push(c);
     loop_set_continue(c, loop_top);
+
+    // Fresh env per iteration — runs BEFORE IterStep so the env exists
+    // even if the body's binding writeback uses c.env_reg directly.
+    if need_per_iter_env {
+        emit(c, make_inst_a(Op::NewObject, c.env_reg));
+        let outer_atom = ctx_intern_atom(c.ctx, OUTER_ENV_KEY, OUTER_ENV_KEY_LEN);
+        emit_store_prop_atom(c, c.env_reg, outer_atom, saved_env_r);
+    }
 
     let value_r = alloc_reg(c);
     let jmp_exit_idx: u32 = 0;
@@ -6316,6 +6388,12 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
         bi = bi + 1;
     }
     emit(c, make_inst_ab(Op::IterClose, iter_r, done_r));
+    // Restore the outer env so code after the loop reads the right
+    // env (matters when the body left c.env_reg pointing at a
+    // per-iter env).
+    if need_per_iter_env {
+        emit(c, make_inst_ab(Op::Mov, c.env_reg, saved_env_r));
+    }
 
     loop_pop(c);
     c.fixed_regs = saved_fixed;
