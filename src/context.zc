@@ -17655,6 +17655,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     zjs_install_web_clone(ctx);
     // Blob / File / FormData — depends on TextEncoder + Uint8Array.
     zjs_install_web_blob(ctx);
+    // WHATWG Streams — ReadableStream / WritableStream / TransformStream
+    // + queuing strategies. The largest of the web-globals bootstraps
+    // (~50KB of source); registered in its own call so an embedder
+    // wanting a tinier engine can selectively skip it.
+    zjs_install_web_streams(ctx);
 }
 
 fn proto_mark_nonenum(proto: ZjsObject*) -> void {
