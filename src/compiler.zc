@@ -233,6 +233,12 @@ struct LoopFrame {
     // pushed. Break/continue targeting this frame must inline every
     // finally body above this depth before jumping.
     finally_depth_at_entry: u32;
+    // Phase 4.8 — distinguishes real iteration loops from switch frames
+    // (which only push to receive `break` patches). `continue` walks
+    // past non-iter frames so `continue` inside a switch jumps to the
+    // enclosing for/while update, not into nothing. Default true; set
+    // to false when pushing a switch frame.
+    is_iter: bool;
 }
 
 // --- Lifecycle ------------------------------------------------------
@@ -338,6 +344,10 @@ fn loop_push(c: Compiler*) -> void {
     // Phase 3.9d — snapshot the active-finally depth so break/continue
     // can inline only the finallies above this point.
     c.loop_stack[c.loop_depth].finally_depth_at_entry = c.active_finally_count;
+    // Default to "real iteration loop" so existing call sites (for/
+    // while/do/for-of/for-in) work unchanged; switch flips to false
+    // right after loop_push.
+    c.loop_stack[c.loop_depth].is_iter = true;
     c.loop_depth = c.loop_depth + 1;
 }
 
@@ -5452,8 +5462,11 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // After all case tests, jump to default (or end if no default).
         let to_default_or_end = emit(c, make_inst_i16(Op::Jmp, 0));
 
-        // Push a loop frame so `break` patches end up here.
+        // Push a loop frame so `break` patches end up here. Mark it
+        // non-iter so `continue` walks past this frame to the enclosing
+        // for/while update (closes #261).
         loop_push(c);
+        c.loop_stack[c.loop_depth - 1].is_iter = false;
 
         // Emit each case body, capturing the label position so we can
         // patch the test-jumps to it.
@@ -5938,9 +5951,18 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     }
     if k == NodeKind::ContinueStmt {
         if c.loop_depth == 0 { c.had_error = true; return; }
-        let frame_idx: i32 = (i32)c.loop_depth - 1;
+        let frame_idx: i32 = -1;
         if node.name_length > 0 {
             frame_idx = find_labeled_loop(c, c.source + node.name_start, node.name_length);
+            if frame_idx < 0 { c.had_error = true; return; }
+        } else {
+            // Unlabeled continue targets the innermost iteration loop;
+            // walk past switch frames (#261).
+            let walk: i32 = (i32)c.loop_depth - 1;
+            while walk >= 0 {
+                if c.loop_stack[(u32)walk].is_iter { frame_idx = walk; break; }
+                walk = walk - 1;
+            }
             if frame_idx < 0 { c.had_error = true; return; }
         }
         // Same finally unwind as break.
