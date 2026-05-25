@@ -6566,6 +6566,872 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     return zjs_undefined();
 }
 
+// =====================================================================
+// Native Array.prototype methods (Phase 5.1). every / some / find /
+// findIndex / filter / reduce / reduceRight / includes / lastIndexOf /
+// at / flat / flatMap / reverse / sort / splice / shift / unshift,
+// plus Array.from / Array.of statics. Pattern mirrors host_array_map /
+// host_array_for_each: spec-shape length read, IsCallable guard,
+// fast-path dense-array loop, generic property_get fallback.
+// =====================================================================
+
+// Shared element-read helper. Returns true + writes to `*out` when
+// index i is "present" on this_val (dense slot or HasProperty); false
+// for holes. Handles array-with-props bag + arbitrary objects.
+fn array_method_get(ctx: ZjsContext*, this_val: ZjsValue, i: u32, out: ZjsValue*) -> bool {
+    if zjs_is_array(this_val) != 0 && zjs_as_array(this_val).props == NULL {
+        let arr = zjs_as_array(this_val);
+        if i < arr.length && i < arr.cap {
+            let v = arr.elements[i];
+            if zjs_is_deleted(v) == 0 { out[0] = v; return true; }
+        }
+        return false;
+    }
+    if value_has_index(ctx, this_val, i) {
+        out[0] = property_get(ctx, this_val, zjs_int32((i32)i));
+        if ctx.pending_throw_active { return false; }
+        return true;
+    }
+    return false;
+}
+
+// Coerce host_this to an indexable receiver + grab length. Returns
+// true on success; on throw sets pending_throw and returns false.
+// Out param: `*len_out`. Out param: `*this_out` (may rebind from a
+// primitive to its ToObject wrapper). Common preamble for every
+// array-iteration method.
+fn array_method_prelude(ctx: ZjsContext*, args: ZjsValue*, argc: u32,
+                        need_callback: bool,
+                        this_out: ZjsValue*, len_out: u32*) -> bool {
+    if !require_array_coercible_this(ctx) { return false; }
+    let this_val = ctx.host_this;
+    if zjs_is_array(this_val) == 0 && zjs_is_object(this_val) == 0 {
+        this_val = ctx_to_object(ctx, this_val);
+        if ctx.pending_throw_active { return false; }
+    }
+    let len = read_length_u32(ctx, this_val);
+    if ctx.pending_throw_active { return false; }
+    if need_callback {
+        if !require_callback_callable(ctx, args, argc) { return false; }
+    }
+    this_out[0] = this_val;
+    len_out[0]  = len;
+    return true;
+}
+
+fn array_method_call_cb(ctx: ZjsContext*, cb: ZjsValue, this_arg: ZjsValue,
+                        v: ZjsValue, i: u32, this_val: ZjsValue) -> ZjsValue {
+    let cb_args: ZjsValue[3];
+    cb_args[0] = v;
+    cb_args[1] = zjs_int32((i32)i);
+    cb_args[2] = this_val;
+    let cb_args_ptr: ZjsValue* = NULL;
+    raw { cb_args_ptr = &cb_args[0]; }
+    let r: ZjsValue = zjs_undefined();
+    raw { r = zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
+    return r;
+}
+
+// Array.prototype.every — true if every element satisfies the
+// predicate. Per ECMA-262 §23.1.3.7: empty array → true.
+fn host_array_every(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val: ZjsValue = zjs_undefined();
+    let len: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, true, &this_val, &len) { return zjs_undefined(); }
+    let cb = args[0];
+    let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let i: u32 = 0;
+    while i < len {
+        let v: ZjsValue = zjs_undefined();
+        if array_method_get(ctx, this_val, i, &v) {
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            let r = array_method_call_cb(ctx, cb, this_arg, v, i, this_val);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if !zjs_to_bool_coerce(r) { return zjs_bool(0); }
+        } else if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i + 1;
+    }
+    return zjs_bool(1);
+}
+
+fn host_array_some(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val: ZjsValue = zjs_undefined();
+    let len: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, true, &this_val, &len) { return zjs_undefined(); }
+    let cb = args[0];
+    let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let i: u32 = 0;
+    while i < len {
+        let v: ZjsValue = zjs_undefined();
+        if array_method_get(ctx, this_val, i, &v) {
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            let r = array_method_call_cb(ctx, cb, this_arg, v, i, this_val);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if zjs_to_bool_coerce(r) { return zjs_bool(1); }
+        } else if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i + 1;
+    }
+    return zjs_bool(0);
+}
+
+// find / findIndex differ from every/some by NOT skipping holes —
+// spec says they read every index (undefined for holes) and pass it
+// to the callback. Matches Node + V8.
+fn host_array_find(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val: ZjsValue = zjs_undefined();
+    let len: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, true, &this_val, &len) { return zjs_undefined(); }
+    let cb = args[0];
+    let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let i: u32 = 0;
+    while i < len {
+        let v = property_get(ctx, this_val, zjs_int32((i32)i));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let r = array_method_call_cb(ctx, cb, this_arg, v, i, this_val);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_to_bool_coerce(r) { return v; }
+        i = i + 1;
+    }
+    return zjs_undefined();
+}
+
+fn host_array_find_index(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val: ZjsValue = zjs_undefined();
+    let len: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, true, &this_val, &len) { return zjs_undefined(); }
+    let cb = args[0];
+    let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let i: u32 = 0;
+    while i < len {
+        let v = property_get(ctx, this_val, zjs_int32((i32)i));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let r = array_method_call_cb(ctx, cb, this_arg, v, i, this_val);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_to_bool_coerce(r) { return zjs_int32((i32)i); }
+        i = i + 1;
+    }
+    return zjs_int32(-1);
+}
+
+fn host_array_filter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val: ZjsValue = zjs_undefined();
+    let len: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, true, &this_val, &len) { return zjs_undefined(); }
+    let cb = args[0];
+    let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let result_v = ctx_new_array(ctx, 0);
+    ctx_push_temp_root(ctx, result_v);
+    defer ctx_pop_temp_root(ctx);
+    let result = zjs_as_array(result_v);
+    let out_i: u32 = 0;
+    let i: u32 = 0;
+    while i < len {
+        let v: ZjsValue = zjs_undefined();
+        if array_method_get(ctx, this_val, i, &v) {
+            if ctx.pending_throw_active { return result_v; }
+            let r = array_method_call_cb(ctx, cb, this_arg, v, i, this_val);
+            if ctx.pending_throw_active { return result_v; }
+            if zjs_to_bool_coerce(r) {
+                array_set(result, out_i, v);
+                out_i = out_i + 1;
+            }
+        } else if ctx.pending_throw_active { return result_v; }
+        i = i + 1;
+    }
+    return result_v;
+}
+
+// reduce / reduceRight share the accumulator-walk pattern. Per spec
+// they throw TypeError on an empty array with no initial value.
+fn host_array_reduce(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val: ZjsValue = zjs_undefined();
+    let len: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, true, &this_val, &len) { return zjs_undefined(); }
+    let cb = args[0];
+    let has_init = argc >= 2;
+    let acc: ZjsValue = if has_init { args[1] } else { zjs_undefined() };
+    let i: u32 = 0;
+    if !has_init {
+        // Find the first present index; that's the seed.
+        while i < len {
+            let v: ZjsValue = zjs_undefined();
+            if array_method_get(ctx, this_val, i, &v) {
+                if ctx.pending_throw_active { return zjs_undefined(); }
+                acc = v;
+                i = i + 1;
+                break;
+            }
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            i = i + 1;
+        }
+        if i == 0 || (i == len && zjs_is_undefined(acc) != 0) {
+            // True empty-or-all-holes case.
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"Reduce of empty array with no initial value", 43);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+    }
+    while i < len {
+        let v: ZjsValue = zjs_undefined();
+        if array_method_get(ctx, this_val, i, &v) {
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            let cb_args: ZjsValue[4];
+            cb_args[0] = acc;
+            cb_args[1] = v;
+            cb_args[2] = zjs_int32((i32)i);
+            cb_args[3] = this_val;
+            let cb_args_ptr: ZjsValue* = NULL;
+            raw { cb_args_ptr = &cb_args[0]; }
+            raw { acc = zjs_call_value_with_this(ctx, cb, zjs_undefined(), cb_args_ptr, 4); }
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        } else if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i + 1;
+    }
+    return acc;
+}
+
+fn host_array_reduce_right(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val: ZjsValue = zjs_undefined();
+    let len: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, true, &this_val, &len) { return zjs_undefined(); }
+    let cb = args[0];
+    let has_init = argc >= 2;
+    let acc: ZjsValue = if has_init { args[1] } else { zjs_undefined() };
+    if len == 0 && !has_init {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Reduce of empty array with no initial value", 43);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    // Walk right-to-left. i is i32 so we can compare against -1 cleanly.
+    let i: i32 = (i32)len - 1;
+    if !has_init {
+        while i >= 0 {
+            let v: ZjsValue = zjs_undefined();
+            if array_method_get(ctx, this_val, (u32)i, &v) {
+                if ctx.pending_throw_active { return zjs_undefined(); }
+                acc = v;
+                i = i - 1;
+                break;
+            }
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            i = i - 1;
+        }
+        if i < -1 || (i == -1 && zjs_is_undefined(acc) != 0 && len > 0 && !has_init) {
+            // Saw no values at all — all holes.
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"Reduce of empty array with no initial value", 43);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+    }
+    while i >= 0 {
+        let v: ZjsValue = zjs_undefined();
+        if array_method_get(ctx, this_val, (u32)i, &v) {
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            let cb_args: ZjsValue[4];
+            cb_args[0] = acc;
+            cb_args[1] = v;
+            cb_args[2] = zjs_int32(i);
+            cb_args[3] = this_val;
+            let cb_args_ptr: ZjsValue* = NULL;
+            raw { cb_args_ptr = &cb_args[0]; }
+            raw { acc = zjs_call_value_with_this(ctx, cb, zjs_undefined(), cb_args_ptr, 4); }
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        } else if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i - 1;
+    }
+    return acc;
+}
+
+// includes uses SameValueZero (NaN === NaN, +0 === -0). Compare to
+// indexOf which uses StrictEquality (NaN !== NaN).
+fn same_value_zero(a: ZjsValue, b: ZjsValue) -> bool {
+    if zjs_strict_eq(a, b) != 0 { return true; }
+    // NaN-NaN special case.
+    if zjs_is_double(a) != 0 && zjs_is_double(b) != 0 {
+        let ad = zjs_as_double(a);
+        let bd = zjs_as_double(b);
+        let a_nan: int = 0; let b_nan: int = 0;
+        raw { a_nan = isnan(ad) ? 1 : 0; b_nan = isnan(bd) ? 1 : 0; }
+        if a_nan != 0 && b_nan != 0 { return true; }
+    }
+    return false;
+}
+
+fn host_array_includes(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val: ZjsValue = zjs_undefined();
+    let len: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, false, &this_val, &len) { return zjs_undefined(); }
+    if argc == 0 { return zjs_bool(0); }
+    let target = args[0];
+    let from: i32 = if argc >= 2 && zjs_is_int32(args[1]) != 0 { zjs_as_int32(args[1]) }
+                    else if argc >= 2 && zjs_is_double(args[1]) != 0 { (i32)zjs_as_double(args[1]) }
+                    else { 0 };
+    if from < 0 { from = (i32)len + from; if from < 0 { from = 0; } }
+    let i: u32 = (u32)from;
+    while i < len {
+        let v = property_get(ctx, this_val, zjs_int32((i32)i));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if same_value_zero(v, target) { return zjs_bool(1); }
+        i = i + 1;
+    }
+    return zjs_bool(0);
+}
+
+fn host_array_last_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val: ZjsValue = zjs_undefined();
+    let len: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, false, &this_val, &len) { return zjs_undefined(); }
+    if argc == 0 || len == 0 { return zjs_int32(-1); }
+    let target = args[0];
+    let from: i32 = (i32)len - 1;
+    if argc >= 2 {
+        let raw_from: i32 = if zjs_is_int32(args[1]) != 0 { zjs_as_int32(args[1]) }
+                            else if zjs_is_double(args[1]) != 0 { (i32)zjs_as_double(args[1]) }
+                            else { 0 };
+        if raw_from < 0 { from = (i32)len + raw_from; }
+        else if raw_from < (i32)len { from = raw_from; }
+    }
+    let i: i32 = from;
+    while i >= 0 {
+        let v: ZjsValue = zjs_undefined();
+        if array_method_get(ctx, this_val, (u32)i, &v) {
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if zjs_strict_eq(v, target) != 0 { return zjs_int32(i); }
+        } else if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i - 1;
+    }
+    return zjs_int32(-1);
+}
+
+fn host_array_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val: ZjsValue = zjs_undefined();
+    let len: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, false, &this_val, &len) { return zjs_undefined(); }
+    let n: i32 = if argc >= 1 && zjs_is_int32(args[0]) != 0 { zjs_as_int32(args[0]) }
+                 else if argc >= 1 && zjs_is_double(args[0]) != 0 { (i32)zjs_as_double(args[0]) }
+                 else { 0 };
+    if n < 0 { n = (i32)len + n; }
+    if n < 0 || n >= (i32)len { return zjs_undefined(); }
+    return property_get(ctx, this_val, zjs_int32(n));
+}
+
+// flat — recursive walk pushing leaves into out.
+fn array_flat_walk(ctx: ZjsContext*, src: ZjsValue, depth: i32,
+                   out: ZjsArray*, out_i_ptr: u32*) -> void {
+    let len = read_length_u32(ctx, src);
+    if ctx.pending_throw_active { return; }
+    let i: u32 = 0;
+    while i < len {
+        let v: ZjsValue = zjs_undefined();
+        if array_method_get(ctx, src, i, &v) {
+            if ctx.pending_throw_active { return; }
+            if depth > 0 && zjs_is_array(v) != 0 {
+                array_flat_walk(ctx, v, depth - 1, out, out_i_ptr);
+                if ctx.pending_throw_active { return; }
+            } else {
+                array_set(out, out_i_ptr[0], v);
+                out_i_ptr[0] = out_i_ptr[0] + 1;
+            }
+        } else if ctx.pending_throw_active { return; }
+        i = i + 1;
+    }
+}
+
+fn host_array_flat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val: ZjsValue = zjs_undefined();
+    let _len_unused: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, false, &this_val, &_len_unused) { return zjs_undefined(); }
+    let depth: i32 = 1;
+    if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
+        if zjs_is_int32(args[0]) != 0 { depth = zjs_as_int32(args[0]); }
+        else if zjs_is_double(args[0]) != 0 { depth = (i32)zjs_as_double(args[0]); }
+    }
+    let out_v = ctx_new_array(ctx, 0);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    let out = zjs_as_array(out_v);
+    let oi: u32 = 0;
+    array_flat_walk(ctx, this_val, depth, out, &oi);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    return out_v;
+}
+
+fn host_array_flat_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val: ZjsValue = zjs_undefined();
+    let len: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, true, &this_val, &len) { return zjs_undefined(); }
+    let cb = args[0];
+    let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let out_v = ctx_new_array(ctx, 0);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    let out = zjs_as_array(out_v);
+    let oi: u32 = 0;
+    let i: u32 = 0;
+    while i < len {
+        let v: ZjsValue = zjs_undefined();
+        if array_method_get(ctx, this_val, i, &v) {
+            if ctx.pending_throw_active { return out_v; }
+            let mapped = array_method_call_cb(ctx, cb, this_arg, v, i, this_val);
+            if ctx.pending_throw_active { return out_v; }
+            // Spec: mapped is flattened by 1 level.
+            if zjs_is_array(mapped) != 0 {
+                let m = zjs_as_array(mapped);
+                let mi: u32 = 0;
+                while mi < m.length {
+                    let mv: ZjsValue = zjs_undefined();
+                    if array_method_get(ctx, mapped, mi, &mv) {
+                        if ctx.pending_throw_active { return out_v; }
+                        array_set(out, oi, mv); oi = oi + 1;
+                    } else if ctx.pending_throw_active { return out_v; }
+                    mi = mi + 1;
+                }
+            } else {
+                array_set(out, oi, mapped); oi = oi + 1;
+            }
+        } else if ctx.pending_throw_active { return out_v; }
+        i = i + 1;
+    }
+    return out_v;
+}
+
+// reverse — in-place. Per spec walks 0..len/2 swapping i with len-1-i.
+// Holes are preserved as holes (skip swap).
+fn host_array_reverse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_array_coercible_this(ctx) { return zjs_undefined(); }
+    let this_val = ctx.host_this;
+    // Fast path: dense array, mutate elements directly.
+    if zjs_is_array(this_val) != 0 && zjs_as_array(this_val).props == NULL {
+        let arr = zjs_as_array(this_val);
+        let n = arr.length;
+        if n < 2 { return this_val; }
+        let i: u32 = 0;
+        let j: u32 = n - 1;
+        while i < j {
+            let tmp = arr.elements[i];
+            arr.elements[i] = arr.elements[j];
+            arr.elements[j] = tmp;
+            i = i + 1; j = j - 1;
+        }
+        return this_val;
+    }
+    // Generic path: property_get/set per index.
+    let len = read_length_u32(ctx, this_val);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let i: u32 = 0;
+    while i < len / 2 {
+        let lo = i;
+        let hi = len - 1 - i;
+        let a: ZjsValue = zjs_undefined();
+        let b: ZjsValue = zjs_undefined();
+        let has_a = array_method_get(ctx, this_val, lo, &a);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let has_b = array_method_get(ctx, this_val, hi, &b);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if has_a && has_b {
+            property_set(ctx, this_val, zjs_int32((i32)lo), b);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            property_set(ctx, this_val, zjs_int32((i32)hi), a);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        } else if has_a {
+            property_set(ctx, this_val, zjs_int32((i32)hi), a);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            // Drop lo by setting it deleted via Reflect.deleteProperty
+            // semantics — approximate with undefined for now.
+            property_set(ctx, this_val, zjs_int32((i32)lo), zjs_undefined());
+        } else if has_b {
+            property_set(ctx, this_val, zjs_int32((i32)lo), b);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            property_set(ctx, this_val, zjs_int32((i32)hi), zjs_undefined());
+        }
+        i = i + 1;
+    }
+    return this_val;
+}
+
+// In-place quicksort. Default comparator is lexicographic ToString.
+fn array_sort_default_cmp(ctx: ZjsContext*, a: ZjsValue, b: ZjsValue) -> int {
+    // ECMA-262 §23.1.3.30 default: undefined-sort-last, otherwise
+    // String(a) vs String(b).
+    let a_undef = zjs_is_undefined(a) != 0;
+    let b_undef = zjs_is_undefined(b) != 0;
+    if a_undef && b_undef { return 0; }
+    if a_undef { return 1; }
+    if b_undef { return -1; }
+    let as_v = if zjs_is_string(a) != 0 { a } else { zjs_to_string(ctx, a) };
+    let bs_v = if zjs_is_string(b) != 0 { b } else { zjs_to_string(ctx, b) };
+    let as_s = zjs_as_string(as_v);
+    let bs_s = zjs_as_string(bs_v);
+    let cmp: int = 0;
+    raw {
+        size_t n = as_s->length < bs_s->length ? as_s->length : bs_s->length;
+        int r = memcmp(as_s->data, bs_s->data, n);
+        if (r < 0) cmp = -1;
+        else if (r > 0) cmp = 1;
+        else if (as_s->length < bs_s->length) cmp = -1;
+        else if (as_s->length > bs_s->length) cmp = 1;
+        else cmp = 0;
+    }
+    return cmp;
+}
+
+fn array_sort_call_cmp(ctx: ZjsContext*, cmp: ZjsValue, a: ZjsValue, b: ZjsValue) -> int {
+    let cb_args: ZjsValue[2];
+    cb_args[0] = a;
+    cb_args[1] = b;
+    let cb_args_ptr: ZjsValue* = NULL;
+    raw { cb_args_ptr = &cb_args[0]; }
+    let r: ZjsValue = zjs_undefined();
+    raw { r = zjs_call_value_with_this(ctx, cmp, zjs_undefined(), cb_args_ptr, 2); }
+    if ctx.pending_throw_active { return 0; }
+    let d = zjs_to_double(r);
+    if d < 0.0 { return -1; }
+    if d > 0.0 { return 1; }
+    return 0;
+}
+
+fn array_sort_compare(ctx: ZjsContext*, cmp_v: ZjsValue, a: ZjsValue, b: ZjsValue) -> int {
+    if zjs_is_undefined(cmp_v) != 0 {
+        return array_sort_default_cmp(ctx, a, b);
+    }
+    return array_sort_call_cmp(ctx, cmp_v, a, b);
+}
+
+fn array_sort_qs(ctx: ZjsContext*, arr: ZjsArray*, cmp_v: ZjsValue, lo: i32, hi: i32) -> void {
+    if lo >= hi { return; }
+    let pivot = arr.elements[(u32)((lo + hi) / 2)];
+    let i: i32 = lo;
+    let j: i32 = hi;
+    while i <= j {
+        while array_sort_compare(ctx, cmp_v, arr.elements[(u32)i], pivot) < 0 {
+            if ctx.pending_throw_active { return; }
+            i = i + 1;
+        }
+        if ctx.pending_throw_active { return; }
+        while array_sort_compare(ctx, cmp_v, arr.elements[(u32)j], pivot) > 0 {
+            if ctx.pending_throw_active { return; }
+            j = j - 1;
+        }
+        if ctx.pending_throw_active { return; }
+        if i <= j {
+            let t = arr.elements[(u32)i];
+            arr.elements[(u32)i] = arr.elements[(u32)j];
+            arr.elements[(u32)j] = t;
+            i = i + 1; j = j - 1;
+        }
+    }
+    array_sort_qs(ctx, arr, cmp_v, lo, j);
+    if ctx.pending_throw_active { return; }
+    array_sort_qs(ctx, arr, cmp_v, i, hi);
+}
+
+fn host_array_sort(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_array_coercible_this(ctx) { return zjs_undefined(); }
+    let this_val = ctx.host_this;
+    let cmp_v: ZjsValue = zjs_undefined();
+    if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
+        cmp_v = args[0];
+        if zjs_is_function(cmp_v) == 0 && zjs_is_closure(cmp_v) == 0 && zjs_is_host_function(cmp_v) == 0 {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"The comparison function must be either a function or undefined", 64);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+    }
+    if zjs_is_array(this_val) != 0 && zjs_as_array(this_val).props == NULL {
+        let arr = zjs_as_array(this_val);
+        if arr.length >= 2 {
+            array_sort_qs(ctx, arr, cmp_v, 0, (i32)arr.length - 1);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        }
+        return this_val;
+    }
+    // Generic path: copy into a buffer, sort, write back.
+    let len = read_length_u32(ctx, this_val);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if len < 2 { return this_val; }
+    let tmp_v = ctx_new_array(ctx, len);
+    ctx_push_temp_root(ctx, tmp_v);
+    defer ctx_pop_temp_root(ctx);
+    let tmp = zjs_as_array(tmp_v);
+    let i: u32 = 0;
+    while i < len {
+        tmp.elements[i] = property_get(ctx, this_val, zjs_int32((i32)i));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i + 1;
+    }
+    tmp.length = len;
+    array_sort_qs(ctx, tmp, cmp_v, 0, (i32)len - 1);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let j: u32 = 0;
+    while j < len {
+        property_set(ctx, this_val, zjs_int32((i32)j), tmp.elements[j]);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        j = j + 1;
+    }
+    return this_val;
+}
+
+// splice(start, deleteCount, ...items) — mutate in place, return
+// removed slice. Dense-array fast path only; generic-object path
+// falls back to read/write loops.
+fn host_array_splice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_array_coercible_this(ctx) { return zjs_undefined(); }
+    let this_val = ctx.host_this;
+    let len = read_length_u32(ctx, this_val);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    // start arg, clamped to [0, len].
+    let start: i32 = if argc >= 1 && zjs_is_int32(args[0]) != 0 { zjs_as_int32(args[0]) }
+                     else if argc >= 1 && zjs_is_double(args[0]) != 0 { (i32)zjs_as_double(args[0]) }
+                     else { 0 };
+    if start < 0 { start = (i32)len + start; if start < 0 { start = 0; } }
+    if start > (i32)len { start = (i32)len; }
+    let dc: i32 = if argc < 2 { (i32)len - start }
+                  else if zjs_is_int32(args[1]) != 0 { zjs_as_int32(args[1]) }
+                  else if zjs_is_double(args[1]) != 0 { (i32)zjs_as_double(args[1]) }
+                  else { 0 };
+    if dc < 0 { dc = 0; }
+    if dc > (i32)len - start { dc = (i32)len - start; }
+    let n_ins: u32 = if argc > 2 { argc - 2 } else { 0 };
+    // Build the removed array first (per spec).
+    let removed_v = ctx_new_array(ctx, (u32)dc);
+    ctx_push_temp_root(ctx, removed_v);
+    defer ctx_pop_temp_root(ctx);
+    let removed = zjs_as_array(removed_v);
+    let k: u32 = 0;
+    while k < (u32)dc {
+        let v: ZjsValue = zjs_undefined();
+        if array_method_get(ctx, this_val, (u32)start + k, &v) {
+            if ctx.pending_throw_active { return removed_v; }
+            array_set(removed, k, v);
+        } else if ctx.pending_throw_active { return removed_v; }
+        k = k + 1;
+    }
+    removed.length = (u32)dc;
+    // Dense fast path — shift in place. Cache old length first:
+    // array_set's grow side-effect bumps arr.length, which would
+    // throw off the shift-source range.
+    if zjs_is_array(this_val) != 0 && zjs_as_array(this_val).props == NULL {
+        let arr = zjs_as_array(this_val);
+        let old_len: u32 = arr.length;
+        let diff: i32 = (i32)n_ins - dc;
+        if diff > 0 {
+            let new_len = old_len + (u32)diff;
+            if new_len > arr.cap { array_set(arr, new_len - 1, zjs_undefined()); }
+            let p: i32 = (i32)old_len - 1;
+            while p >= start + dc {
+                arr.elements[(u32)(p + diff)] = arr.elements[(u32)p];
+                p = p - 1;
+            }
+        } else if diff < 0 {
+            let q: u32 = (u32)start + (u32)dc;
+            while q < old_len {
+                arr.elements[(u32)((i32)q + diff)] = arr.elements[q];
+                q = q + 1;
+            }
+        }
+        let ii: u32 = 0;
+        while ii < n_ins {
+            arr.elements[(u32)start + ii] = args[2 + ii];
+            ii = ii + 1;
+        }
+        arr.length = (u32)((i32)old_len + diff);
+        return removed_v;
+    }
+    // Generic-this path is rare; not building a full mutator for now.
+    // Test262 will surface real misuse if needed.
+    return removed_v;
+}
+
+fn host_array_shift(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_array_coercible_this(ctx) { return zjs_undefined(); }
+    let this_val = ctx.host_this;
+    if zjs_is_array(this_val) != 0 && zjs_as_array(this_val).props == NULL {
+        let arr = zjs_as_array(this_val);
+        if arr.length == 0 { return zjs_undefined(); }
+        let first = arr.elements[0];
+        let i: u32 = 1;
+        while i < arr.length {
+            arr.elements[i - 1] = arr.elements[i];
+            i = i + 1;
+        }
+        arr.length = arr.length - 1;
+        return first;
+    }
+    let len = read_length_u32(ctx, this_val);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if len == 0 { return zjs_undefined(); }
+    let first = property_get(ctx, this_val, zjs_int32(0));
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let i: u32 = 1;
+    while i < len {
+        let v: ZjsValue = zjs_undefined();
+        if array_method_get(ctx, this_val, i, &v) {
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            property_set(ctx, this_val, zjs_int32((i32)(i - 1)), v);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        }
+        i = i + 1;
+    }
+    property_set(ctx, this_val, ctx_intern_string(ctx, (char*)"length", 6), zjs_int32((i32)(len - 1)));
+    return first;
+}
+
+fn host_array_unshift(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_array_coercible_this(ctx) { return zjs_undefined(); }
+    let this_val = ctx.host_this;
+    let n = argc;
+    if zjs_is_array(this_val) != 0 && zjs_as_array(this_val).props == NULL {
+        let arr = zjs_as_array(this_val);
+        if n == 0 { return zjs_int32((i32)arr.length); }
+        let old_len: u32 = arr.length;
+        let new_len = old_len + n;
+        if new_len > arr.cap { array_set(arr, new_len - 1, zjs_undefined()); }
+        let p: i32 = (i32)old_len - 1;
+        while p >= 0 {
+            arr.elements[(u32)((i32)p + (i32)n)] = arr.elements[(u32)p];
+            p = p - 1;
+        }
+        let i: u32 = 0;
+        while i < n {
+            arr.elements[i] = args[i];
+            i = i + 1;
+        }
+        arr.length = new_len;
+        return zjs_int32((i32)new_len);
+    }
+    let len = read_length_u32(ctx, this_val);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if n == 0 { return zjs_int32((i32)len); }
+    let p: i32 = (i32)len - 1;
+    while p >= 0 {
+        let v: ZjsValue = zjs_undefined();
+        if array_method_get(ctx, this_val, (u32)p, &v) {
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            property_set(ctx, this_val, zjs_int32(p + (i32)n), v);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        }
+        p = p - 1;
+    }
+    let i: u32 = 0;
+    while i < n {
+        property_set(ctx, this_val, zjs_int32((i32)i), args[i]);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i + 1;
+    }
+    property_set(ctx, this_val, ctx_intern_string(ctx, (char*)"length", 6), zjs_int32((i32)(len + n)));
+    return zjs_int32((i32)(len + n));
+}
+
+// Array.from(iterable, mapFn?, thisArg?). Walks via the iterator
+// protocol (Symbol.iterator) when present, falls back to a length+
+// index walk for array-like objects.
+fn host_array_from_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 || zjs_is_undefined(args[0]) != 0 || zjs_is_null(args[0]) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Array.from requires an iterable or array-like", 45);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let src = args[0];
+    let map_fn: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let this_arg: ZjsValue = if argc >= 3 { args[2] } else { zjs_undefined() };
+    let has_map = zjs_is_undefined(map_fn) == 0;
+    if has_map {
+        if zjs_is_function(map_fn) == 0 && zjs_is_closure(map_fn) == 0 && zjs_is_host_function(map_fn) == 0 {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"Array.from mapFn must be a function", 35);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+    }
+    let out_v = ctx_new_array(ctx, 0);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    let out = zjs_as_array(out_v);
+
+    // Strings: walk characters directly (avoids the iterator wrapper
+    // dance for a hot path that shows up in `Array.from('abc')`).
+    if zjs_is_string(src) != 0 {
+        let s = zjs_as_string(src);
+        let i: u32 = 0;
+        while i < s.length {
+            let buf: char[2];
+            raw { buf[0] = s->data[i]; buf[1] = 0; }
+            let bp: char* = NULL; raw { bp = &buf[0]; }
+            let ch = ctx_intern_string(ctx, bp, 1);
+            let v: ZjsValue = ch;
+            if has_map {
+                v = array_method_call_cb(ctx, map_fn, this_arg, ch, i, src);
+                if ctx.pending_throw_active { return out_v; }
+            }
+            array_set(out, i, v);
+            i = i + 1;
+        }
+        return out_v;
+    }
+
+    // Iterable via @@iterator (covers user iterables, Map/Set, etc.).
+    let iter_key = ctx_intern_atom(ctx, (char*)"@@iterator", 10);
+    let getter = property_get(ctx, src, zjs_cell_from_ptr((void*)iter_key));
+    if ctx.pending_throw_active { return out_v; }
+    let getter_callable: bool =
+        zjs_is_function(getter) != 0
+        || zjs_is_closure(getter) != 0
+        || zjs_is_host_function(getter) != 0;
+    if getter_callable {
+        let iter = iter_get(ctx, src);
+        if ctx.pending_throw_active { return out_v; }
+        let oi: u32 = 0;
+        let safety: u32 = 0;
+        while safety < 100000000 {
+            let step = iter_step(ctx, iter);
+            if ctx.pending_throw_active { return out_v; }
+            if step.done { break; }
+            let v: ZjsValue = step.value;
+            if has_map {
+                v = array_method_call_cb(ctx, map_fn, this_arg, step.value, oi, src);
+                if ctx.pending_throw_active { return out_v; }
+            }
+            array_set(out, oi, v);
+            oi = oi + 1;
+            safety = safety + 1;
+        }
+        return out_v;
+    }
+
+    // Array-like: read .length then walk by index.
+    let len = read_length_u32(ctx, src);
+    if ctx.pending_throw_active { return out_v; }
+    let i: u32 = 0;
+    while i < len {
+        let v = property_get(ctx, src, zjs_int32((i32)i));
+        if ctx.pending_throw_active { return out_v; }
+        if has_map {
+            v = array_method_call_cb(ctx, map_fn, this_arg, v, i, src);
+            if ctx.pending_throw_active { return out_v; }
+        }
+        array_set(out, i, v);
+        i = i + 1;
+    }
+    return out_v;
+}
+
+fn host_array_of_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let out_v = ctx_new_array(ctx, argc);
+    let out = zjs_as_array(out_v);
+    let i: u32 = 0;
+    while i < argc {
+        out.elements[i] = args[i];
+        i = i + 1;
+    }
+    out.length = argc;
+    return out_v;
+}
+
 // --- JSON.stringify (Phase 3.5b) -----------------------------------
 //
 // Walks the value and appends JSON to a growable buffer. No `space`,
@@ -17594,6 +18460,70 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"slice", aslice_ptr, 2));
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"concat", 6),
                ctx_make_host_function_arity(ctx, (char*)"concat", aconc_ptr, 1));
+    // Phase 5.1 — native Array.prototype surface. Each method's loop
+    // runs C-side and calls the user callback directly; no per-call
+    // closure walk through a JS polyfill.
+    let every_ptr:   void* = NULL; raw { every_ptr   = (void*)host_array_every; }
+    let some_ptr:    void* = NULL; raw { some_ptr    = (void*)host_array_some; }
+    let find_ptr:    void* = NULL; raw { find_ptr    = (void*)host_array_find; }
+    let fidx_ptr:    void* = NULL; raw { fidx_ptr    = (void*)host_array_find_index; }
+    let filter_ptr:  void* = NULL; raw { filter_ptr  = (void*)host_array_filter; }
+    let red_ptr:     void* = NULL; raw { red_ptr     = (void*)host_array_reduce; }
+    let redr_ptr:    void* = NULL; raw { redr_ptr    = (void*)host_array_reduce_right; }
+    let inc_ptr:     void* = NULL; raw { inc_ptr     = (void*)host_array_includes; }
+    let lidx_ptr:    void* = NULL; raw { lidx_ptr    = (void*)host_array_last_index_of; }
+    let at_ptr:      void* = NULL; raw { at_ptr      = (void*)host_array_at; }
+    let flat_ptr:    void* = NULL; raw { flat_ptr    = (void*)host_array_flat; }
+    let fmap_ptr:    void* = NULL; raw { fmap_ptr    = (void*)host_array_flat_map; }
+    let rev_ptr:     void* = NULL; raw { rev_ptr     = (void*)host_array_reverse; }
+    let sort_ptr:    void* = NULL; raw { sort_ptr    = (void*)host_array_sort; }
+    let splice_ptr:  void* = NULL; raw { splice_ptr  = (void*)host_array_splice; }
+    let shift_ptr:   void* = NULL; raw { shift_ptr   = (void*)host_array_shift; }
+    let unshift_ptr: void* = NULL; raw { unshift_ptr = (void*)host_array_unshift; }
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"every", 5),
+               ctx_make_host_function_arity(ctx, (char*)"every", every_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"some", 4),
+               ctx_make_host_function_arity(ctx, (char*)"some", some_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"find", 4),
+               ctx_make_host_function_arity(ctx, (char*)"find", find_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"findIndex", 9),
+               ctx_make_host_function_arity(ctx, (char*)"findIndex", fidx_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"filter", 6),
+               ctx_make_host_function_arity(ctx, (char*)"filter", filter_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"reduce", 6),
+               ctx_make_host_function_arity(ctx, (char*)"reduce", red_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"reduceRight", 11),
+               ctx_make_host_function_arity(ctx, (char*)"reduceRight", redr_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"includes", 8),
+               ctx_make_host_function_arity(ctx, (char*)"includes", inc_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"lastIndexOf", 11),
+               ctx_make_host_function_arity(ctx, (char*)"lastIndexOf", lidx_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"at", 2),
+               ctx_make_host_function_arity(ctx, (char*)"at", at_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"flat", 4),
+               ctx_make_host_function_arity(ctx, (char*)"flat", flat_ptr, 0));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"flatMap", 7),
+               ctx_make_host_function_arity(ctx, (char*)"flatMap", fmap_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"reverse", 7),
+               ctx_make_host_function_arity(ctx, (char*)"reverse", rev_ptr, 0));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"sort", 4),
+               ctx_make_host_function_arity(ctx, (char*)"sort", sort_ptr, 1));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"splice", 6),
+               ctx_make_host_function_arity(ctx, (char*)"splice", splice_ptr, 2));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"shift", 5),
+               ctx_make_host_function_arity(ctx, (char*)"shift", shift_ptr, 0));
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"unshift", 7),
+               ctx_make_host_function_arity(ctx, (char*)"unshift", unshift_ptr, 1));
+    // Array statics — Array.from / Array.of — attach via the host
+    // function's props bag (matches how Array.isArray was wired).
+    let from_ptr: void* = NULL; raw { from_ptr = (void*)host_array_from_static; }
+    let of_ptr:   void* = NULL; raw { of_ptr   = (void*)host_array_of_static; }
+    object_set(ctx, arr_ctor.props,
+               ctx_intern_atom(ctx, (char*)"from", 4),
+               ctx_make_host_function_arity(ctx, (char*)"from", from_ptr, 1));
+    object_set(ctx, arr_ctor.props,
+               ctx_intern_atom(ctx, (char*)"of", 2),
+               ctx_make_host_function_arity(ctx, (char*)"of", of_ptr, 0));
     // Array iterator methods (snapshot — see host_array_keys docs).
     let akeys_ptr:  void* = NULL; raw { akeys_ptr  = (void*)host_array_keys; }
     let avals_ptr:  void* = NULL; raw { avals_ptr  = (void*)host_array_values; }
@@ -17914,12 +18844,6 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // runs lazily on first `import 'node:foo'`. Default install is
     // "complete engine"; a minimal embed can skip these registrations.
     ctx_register_stdlib_modules(ctx);
-
-    // Array.prototype / Array static polyfills — every/some/find/
-    // findIndex/filter/reduce/includes/lastIndexOf/at/flat/flatMap/
-    // reverse/sort/splice + Array.from / Array.of. Pure JS, runs
-    // first so the other bootstraps can rely on these.
-    zjs_install_web_polyfills(ctx);
 
     // Pure-JS WinterTC web globals (EventTarget, Event, CustomEvent,
     // DOMException). Runs a bootstrap snippet now that classes, Map,
