@@ -70,6 +70,9 @@ globals. Design notes in `docs/stdlib-design.md`.
 | `node:fs/promises` | promise-returning equivalents (`readFile`, `writeFile`, `readdir`, `stat`, `lstat`, `mkdir`, `unlink`, `rm`, `copyFile`, `rename`, `access`). Errors carry `.code` / `.errno` / `.syscall` / `.path` so `err.code === 'ENOENT'` checks work. |
 | `node:process` | `argv`, `env`, `platform`, `arch`, `pid`, `versions`, `cwd()`, `chdir()`, `exit(code)`, `hrtime([prev])`, `nextTick(cb)` — also exposed as `globalThis.process` (Node convention) |
 | `node:os` | `tmpdir`, `homedir`, `platform`, `arch`, `type`, `release`, `hostname`, `cpus`, `totalmem`, `freemem`, `userInfo`, `EOL` |
+| `node:events` | `EventEmitter` — `on`/`off`/`once`/`prependListener`/`removeListener`/`removeAllListeners`/`listeners`/`listenerCount`/`eventNames`/`emit`; `'error'` without listener throws (Node convention) |
+| `node:util` | `promisify` (+ `.custom` symbol), `callbackify`, `types.is{Promise,Date,RegExp,Map,Set,Uint8Array,ArrayBuffer,TypedArray}`, `inspect` (cycle-safe), `format` (printf-style `%s %d %i %f %j %o %O %%`) |
+| `node:assert` | `ok`/`equal`/`notEqual`/`strictEqual`/`notStrictEqual`/`deepStrictEqual` (alias `deepEqual`)/`throws`/`doesNotThrow`/`fail` + `AssertionError`; `assert.strict === assert` |
 
 **WinterTC web globals** ([Minimum Common API](https://min-common-api.proposal.wintertc.org/)):
 
@@ -98,6 +101,24 @@ dependency chains.
 Not yet shipped: `node:net` / `node:http` (server side — `fetch`
 covers client), `node:child_process`. Tracked in
 `docs/stdlib-design.md`.
+
+```js
+// Async iteration over a stream
+import { ReadableStream } from 'node:stream/web';  // also globals
+const rs = new ReadableStream({ start(c) { c.enqueue('a'); c.enqueue('b'); c.close(); } });
+for await (const chunk of rs) console.log(chunk);  // a, b
+
+// HMAC signing
+const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('secret'),
+  { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode('payload'));
+
+// Node-style EventEmitter
+import EventEmitter from 'node:events';
+const ee = new EventEmitter();
+ee.on('data', d => console.log(d));
+ee.emit('data', 42);
+```
 
 Per-phase plans live in `docs/phases/`.
 

@@ -154,9 +154,11 @@ module loader; per-module status:
   (+ `CountQueuingStrategy` / `ByteLengthQueuingStrategy`). Pipe
   + async-iter wired. BYOB and `.tee()` deferred — neither has a
   current consumer.
+- ✅ `node:events` (EventEmitter)
+- ✅ `node:util` (promisify, callbackify, types, inspect, format)
+- ✅ `node:assert` (ok, strictEqual, deepStrictEqual, throws, …)
 - ❌ `node:net` (TCP), `node:http` (server)
 - ❌ `node:child_process` (spawn)
-- ❌ DX: `node:util`, `node:events`, `node:assert`
 
 ## Implementation notes
 
