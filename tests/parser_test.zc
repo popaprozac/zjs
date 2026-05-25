@@ -6,10 +6,10 @@
 
 // Platform-native HTTP backend — link platform impl into the test binary.
 //> macos: framework: Foundation
-//> macos: cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
+//> macos: cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c
 //> ios:   framework: Foundation
-//> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
-//> linux: cflags:    src/platform/http_linux.c src/platform/ws_linux.c src/platform/http_async.c
+//> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c
+//> linux: cflags:    src/platform/http_linux.c src/platform/ws_linux.c src/platform/http_async.c src/platform/socket_posix.c
 //> linux: link:      -lcurl -lwebsockets
 //> windows: cflags:  src/platform/http_windows.c src/platform/ws_windows.c
 //> windows: link:    -lbcrypt -lpsapi -lwinhttp

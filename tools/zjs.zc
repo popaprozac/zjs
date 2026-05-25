@@ -12,10 +12,10 @@
 // CLI is its own `zc build` entry point — directives don't propagate
 // via import.
 //> macos: framework: Foundation
-//> macos: cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
+//> macos: cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c
 //> ios:   framework: Foundation
-//> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m
-//> linux: cflags:    src/platform/http_linux.c src/platform/ws_linux.c src/platform/http_async.c
+//> ios:   cflags:    -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c
+//> linux: cflags:    src/platform/http_linux.c src/platform/ws_linux.c src/platform/http_async.c src/platform/socket_posix.c
 //> linux: link:      -lcurl -lwebsockets
 //> windows: cflags:  src/platform/http_windows.c src/platform/ws_windows.c
 //> windows: link:    -lbcrypt -lpsapi -lwinhttp
@@ -416,6 +416,17 @@ fn run_module_file_with_argv(path: char*, argv0: char*, user_argc: u32, user_arg
     defer zjs_free_context(ctx);
     install_process_argv(ctx, argv0, abs_p, user_argc, user_argv);
     let _ = zjs_eval_module(ctx, abs_p);
+    // Same event-loop driver as `run`: keep ticking until no timers,
+    // microtasks, fetches, websockets, or net servers remain.
+    let max_wall_ms: i64 = 10000;
+    let wall_so_far: i64 = 0;
+    while zjs_has_pending_work(ctx) != 0 && wall_so_far < max_wall_ms {
+        let wait_ms = zjs_next_timer_ms(ctx);
+        if wait_ms < 0 || wait_ms > 50 { wait_ms = 50; }
+        if wait_ms > 0 { event_loop_wait(wait_ms); wall_so_far = wall_so_far + wait_ms; }
+        zjs_run_pending_timers(ctx);
+        if zjs_had_error(ctx) != 0 { break; }
+    }
     if zjs_had_error(ctx) != 0 {
         let err = zjs_get_error(ctx);
         if zjs_is_object(err) != 0 {

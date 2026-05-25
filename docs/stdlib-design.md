@@ -161,7 +161,11 @@ module loader; per-module status:
   + thin async wrappers (`exec`/`execFile`) on top of `queueMicrotask`.
   True async `spawn()` with ChildProcess EventEmitter is a follow-up
   (needs streams ↔ event-loop integration).
-- ❌ `node:net` (TCP), `node:http` (server)
+- ✅ `node:net` (TCP server) + `node:http` (HTTP/1.1 server) — POSIX
+  BSD sockets (Apple/Linux/iOS), single-threaded poll() inside the
+  event-loop tick. Server-side only (createServer/listen/Server/Socket;
+  no `net.connect`, no keep-alive, no chunked transfer-encoding).
+  Windows port deferred.
 
 ## Implementation notes
 

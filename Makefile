@@ -16,15 +16,15 @@ UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 SHLIB_EXT := dylib
 RPATH_FLAG := -Wl,-rpath,@loader_path
-PLATFORM_SRC     := src/platform/http_apple.m src/platform/ws_apple.m
-PLATFORM_OBJS    := $(BUILD_DIR)/http_apple.o $(BUILD_DIR)/ws_apple.o
+PLATFORM_SRC     := src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c
+PLATFORM_OBJS    := $(BUILD_DIR)/http_apple.o $(BUILD_DIR)/ws_apple.o $(BUILD_DIR)/socket_posix.o
 PLATFORM_LDFLAGS := -framework Foundation -fobjc-arc
 PLATFORM_CFLAGS  := -fobjc-arc
 else
 SHLIB_EXT := so
 RPATH_FLAG := -Wl,-rpath,'$$ORIGIN'
-PLATFORM_SRC     := src/platform/http_linux.c src/platform/http_async.c src/platform/ws_linux.c
-PLATFORM_OBJS    := $(BUILD_DIR)/http_linux.o $(BUILD_DIR)/http_async.o $(BUILD_DIR)/ws_linux.o
+PLATFORM_SRC     := src/platform/http_linux.c src/platform/http_async.c src/platform/ws_linux.c src/platform/socket_posix.c
+PLATFORM_OBJS    := $(BUILD_DIR)/http_linux.o $(BUILD_DIR)/http_async.o $(BUILD_DIR)/ws_linux.o $(BUILD_DIR)/socket_posix.o
 PLATFORM_LDFLAGS := -lpthread -lcurl -lwebsockets
 PLATFORM_CFLAGS  :=
 endif
@@ -99,6 +99,7 @@ ENGINE_SRC := src/lib.zc src/context.zc src/value.zc \
               src/stdlib/node_process.zc src/stdlib/node_os.zc \
               src/stdlib/node_dx.zc \
               src/stdlib/node_child_process.zc \
+              src/stdlib/node_net.zc src/stdlib/node_http.zc \
               src/stdlib/web_events.zc src/stdlib/web_abort.zc \
               src/stdlib/web_clone.zc src/stdlib/web_blob.zc \
               src/stdlib/web_streams.zc

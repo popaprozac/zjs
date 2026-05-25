@@ -1,0 +1,428 @@
+// node:net — TCP servers and sockets.
+//
+// Scope (Tier 3.E v0.1): server side only.
+//   net.createServer((sock) => {...}) → Server
+//   server.listen(port[, host[, cb]]) → Server
+//   server.close([cb])               → Server
+//   Socket — write / end / destroy + 'data' / 'end' / 'close' / 'error' events
+//
+// Backend: src/platform/socket_native.h (POSIX BSD on Apple+Linux+iOS,
+// Winsock TBD). Single-threaded poll() inside the event-loop tick —
+// see ctx_net_pump_all + the call site in timer_tick. No worker
+// threads — matches the WebSocket Apple backend's integration style.
+//
+// Client side (net.connect / new net.Socket().connect) is deferred —
+// the immediate use case is http.createServer for the stdlib, and
+// outbound HTTP already has a richer story via fetch().
+
+raw {
+    #include <stdint.h>
+    #include <string.h>
+    #include "platform/socket_native.h"
+}
+
+// =====================================================================
+// Server registration table — parallels ctx.websockets / pending_fetches.
+// Each entry is (native handle, JS Server value).
+// =====================================================================
+
+fn ctx_net_register(ctx: ZjsContext*, native: void*, js_val: ZjsValue) -> void {
+    if ctx.net_server_count >= ctx.net_server_cap {
+        let new_cap: u32 = if ctx.net_server_cap == 0 { 4 } else { ctx.net_server_cap * 2 };
+        ctx.net_servers       = realloc_n<void*>(ctx.net_servers,       (usize)ctx.net_server_cap, (usize)new_cap);
+        ctx.net_server_jsvals = realloc_n<ZjsValue>(ctx.net_server_jsvals, (usize)ctx.net_server_cap, (usize)new_cap);
+        ctx.net_server_cap = new_cap;
+    }
+    ctx.net_servers[ctx.net_server_count]       = native;
+    ctx.net_server_jsvals[ctx.net_server_count] = js_val;
+    ctx.net_server_count = ctx.net_server_count + 1;
+}
+
+fn ctx_net_unregister(ctx: ZjsContext*, native: void*) -> void {
+    let i: u32 = 0;
+    while i < ctx.net_server_count {
+        if ctx.net_servers[i] == native {
+            let last = ctx.net_server_count - 1;
+            ctx.net_servers[i]       = ctx.net_servers[last];
+            ctx.net_server_jsvals[i] = ctx.net_server_jsvals[last];
+            ctx.net_server_count = last;
+            return;
+        }
+        i = i + 1;
+    }
+}
+
+// =====================================================================
+// Per-tick pump: drain pending native events on each server and route
+// them to the JS-side __pump method on the Server instance. Called
+// from timer_tick alongside ws_drain_events / http_drain_pending_fetches.
+// =====================================================================
+
+fn ctx_net_pump_all(ctx: ZjsContext*) -> void {
+    let i: u32 = 0;
+    while i < ctx.net_server_count {
+        let js_val = ctx.net_server_jsvals[i];
+        // Call server.__pump() — drains events until queue empty.
+        let pump_key = ctx_intern_string(ctx, (char*)"__pump", 6);
+        let pump_fn  = property_get(ctx, js_val, pump_key);
+        if zjs_is_undefined(pump_fn) == 0 {
+            raw { zjs_call_value_with_this(ctx, pump_fn, js_val, NULL, 0); }
+            if ctx.pending_throw_active {
+                ctx.had_error  = true;
+                ctx.last_error = consume_pending_throw(ctx);
+            }
+        }
+        i = i + 1;
+    }
+}
+
+// =====================================================================
+// Native host functions exposed to JS via __zjs_net_* globals. The JS
+// bootstrap below wraps them into Server/Socket classes.
+// =====================================================================
+
+// __zjs_net_listen(host: string|null, port: int) → handle (Uint8Array
+// of 8 bytes holding the pointer) or null on failure.
+fn host_net_listen_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let host: char* = NULL;
+    let host_buf: char[256];
+    if argc >= 1 && zjs_is_string(args[0]) != 0 {
+        let s = zjs_as_string(args[0]);
+        let n: usize = s.length;
+        if n > 255 { n = 255; }
+        raw { memcpy(&host_buf[0], s->data, n); host_buf[n] = 0; }
+        raw { host = &host_buf[0]; }
+    }
+    let port: int = 0;
+    if argc >= 2 {
+        if zjs_is_int32(args[1]) != 0 { port = zjs_as_int32(args[1]); }
+        else if zjs_is_double(args[1]) != 0 { port = (int)zjs_as_double(args[1]); }
+    }
+    let handle: void* = NULL;
+    raw { handle = (void*)zjs_net_listen(host, port, 0); }
+    if handle == NULL { return zjs_null(); }
+    // Wrap the pointer in a Uint8Array so it survives GC + JS can pass
+    // it around without exposing a raw pointer type. The 9th byte
+    // marks "live" — set to 0 by close() so a stale handle becomes a
+    // visible no-op on the JS side.
+    let bytes = zjs_uint8_array_new(9);
+    ctx_register_cell(ctx, (void*)bytes);
+    raw {
+        uint64_t p = (uint64_t)(uintptr_t)handle;
+        bytes->bytes[0] = (uint8_t)(p);
+        bytes->bytes[1] = (uint8_t)(p >> 8);
+        bytes->bytes[2] = (uint8_t)(p >> 16);
+        bytes->bytes[3] = (uint8_t)(p >> 24);
+        bytes->bytes[4] = (uint8_t)(p >> 32);
+        bytes->bytes[5] = (uint8_t)(p >> 40);
+        bytes->bytes[6] = (uint8_t)(p >> 48);
+        bytes->bytes[7] = (uint8_t)(p >> 56);
+        bytes->bytes[8] = 1; // live
+    }
+    return zjs_cell_from_ptr((void*)bytes);
+}
+
+// Unwrap the handle Uint8Array → native pointer. Returns NULL if the
+// handle isn't a live Uint8Array, or has been marked dead.
+fn handle_from_value(v: ZjsValue) -> void* {
+    if zjs_is_uint8_array(v) == 0 { return NULL; }
+    let u = zjs_as_uint8_array(v);
+    if u.length < 9 { return NULL; }
+    let live: u8 = 0;
+    raw { live = u->bytes[8]; }
+    if live == 0 { return NULL; }
+    let p: void* = NULL;
+    raw {
+        uint64_t bits = ((uint64_t)u->bytes[0])
+                      | ((uint64_t)u->bytes[1] << 8)
+                      | ((uint64_t)u->bytes[2] << 16)
+                      | ((uint64_t)u->bytes[3] << 24)
+                      | ((uint64_t)u->bytes[4] << 32)
+                      | ((uint64_t)u->bytes[5] << 40)
+                      | ((uint64_t)u->bytes[6] << 48)
+                      | ((uint64_t)u->bytes[7] << 56);
+        p = (void*)(uintptr_t)bits;
+    }
+    return p;
+}
+
+// __zjs_net_server_port(handle) → int
+fn host_net_server_port_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 1 { return zjs_int32(0); }
+    let h = handle_from_value(args[0]);
+    if h == NULL { return zjs_int32(0); }
+    let p: int = 0;
+    raw { p = zjs_net_server_port((ZjsNetServer*)h); }
+    return zjs_int32((i32)p);
+}
+
+// __zjs_net_register(handle, server_js)
+fn host_net_register_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 2 { return zjs_undefined(); }
+    let h = handle_from_value(args[0]);
+    if h == NULL { return zjs_undefined(); }
+    ctx_net_register(ctx, h, args[1]);
+    return zjs_undefined();
+}
+
+// __zjs_net_destroy(handle)
+fn host_net_destroy_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 1 { return zjs_undefined(); }
+    let h = handle_from_value(args[0]);
+    if h == NULL { return zjs_undefined(); }
+    ctx_net_unregister(ctx, h);
+    raw { zjs_net_destroy((ZjsNetServer*)h); }
+    // Mark the handle dead so any future use returns NULL.
+    let u = zjs_as_uint8_array(args[0]);
+    raw { u->bytes[8] = 0; }
+    return zjs_undefined();
+}
+
+// __zjs_net_send(handle, client_id_lo, client_id_hi, data) → int (bytes written, -1 on error)
+fn host_net_send_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 4 { return zjs_int32(-1); }
+    let h = handle_from_value(args[0]);
+    if h == NULL { return zjs_int32(-1); }
+    let lo: u32 = if zjs_is_int32(args[1]) != 0 { (u32)zjs_as_int32(args[1]) }
+                  else if zjs_is_double(args[1]) != 0 { (u32)zjs_as_double(args[1]) }
+                  else { 0 };
+    let hi: u32 = if zjs_is_int32(args[2]) != 0 { (u32)zjs_as_int32(args[2]) }
+                  else if zjs_is_double(args[2]) != 0 { (u32)zjs_as_double(args[2]) }
+                  else { 0 };
+    let id: u64 = 0;
+    raw { id = ((uint64_t)hi << 32) | (uint64_t)lo; }
+
+    // data may be a string or Uint8Array.
+    let buf: char* = NULL;
+    let buf_len: usize = 0;
+    let data = args[3];
+    if zjs_is_string(data) != 0 {
+        let s = zjs_as_string(data);
+        raw { buf = s->data; buf_len = s->length; }
+    } else if zjs_is_uint8_array(data) != 0 {
+        let u = zjs_as_uint8_array(data);
+        raw { buf = (char*)u->bytes; buf_len = u->length; }
+    } else {
+        return zjs_int32(-1);
+    }
+    let n: int = 0;
+    raw { n = zjs_net_send((ZjsNetServer*)h, id, (const uint8_t*)buf, buf_len); }
+    return zjs_int32((i32)n);
+}
+
+// __zjs_net_close_client(handle, lo, hi)
+fn host_net_close_client_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 3 { return zjs_undefined(); }
+    let h = handle_from_value(args[0]);
+    if h == NULL { return zjs_undefined(); }
+    let lo: u32 = if zjs_is_int32(args[1]) != 0 { (u32)zjs_as_int32(args[1]) } else { 0 };
+    let hi: u32 = if zjs_is_int32(args[2]) != 0 { (u32)zjs_as_int32(args[2]) } else { 0 };
+    let id: u64 = 0;
+    raw { id = ((uint64_t)hi << 32) | (uint64_t)lo; }
+    raw { zjs_net_close_client((ZjsNetServer*)h, id); }
+    return zjs_undefined();
+}
+
+// __zjs_net_poll(handle) → null or { kind, client_id_lo, client_id_hi, binary?, text?, peer_addr?, peer_port? }
+fn host_net_poll_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 1 { return zjs_null(); }
+    let h = handle_from_value(args[0]);
+    if h == NULL { return zjs_null(); }
+    let kind: int = 0;
+    let client_id: u64 = 0;
+    let bin_ptr: u8* = NULL; let bin_len: usize = 0;
+    let txt_ptr: char* = NULL; let txt_len: usize = 0;
+    let peer_addr_buf: char[48];
+    let peer_port: int = 0;
+    raw {
+        ZjsNetEvent _e;
+        memset(&_e, 0, sizeof(_e));
+        kind = zjs_net_poll((ZjsNetServer*)h, &_e);
+        client_id = _e.client_id;
+        bin_ptr = _e.binary; bin_len = _e.binary_len;
+        txt_ptr = _e.text;   txt_len = _e.text_len;
+        memcpy(&peer_addr_buf[0], _e.peer_addr, 48);
+        peer_port = _e.peer_port;
+    }
+    if kind == 0 { return zjs_null(); }
+    let result_v = ctx_new_object(ctx);
+    let result = zjs_as_object(result_v);
+    ctx_push_temp_root(ctx, result_v);
+    defer ctx_pop_temp_root(ctx);
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"kind", 4), zjs_int32((i32)kind));
+    let lo: u32 = 0; let hi: u32 = 0;
+    raw { lo = (uint32_t)(client_id & 0xFFFFFFFFu); hi = (uint32_t)(client_id >> 32); }
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"id_lo", 5), zjs_int32((i32)lo));
+    object_set(ctx, result, ctx_intern_atom(ctx, (char*)"id_hi", 5), zjs_int32((i32)hi));
+    if bin_ptr != NULL && bin_len > 0 {
+        let u = zjs_uint8_array_new((u32)bin_len);
+        ctx_register_cell(ctx, (void*)u);
+        raw { memcpy(u->bytes, bin_ptr, bin_len); free(bin_ptr); }
+        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"binary", 6), zjs_cell_from_ptr((void*)u));
+    } else if bin_ptr != NULL {
+        raw { free(bin_ptr); }
+    }
+    if txt_ptr != NULL {
+        let s_v = ctx_intern_string(ctx, txt_ptr, (u32)txt_len);
+        raw { free(txt_ptr); }
+        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"text", 4), s_v);
+    }
+    if kind == 1 {
+        // ACCEPT: peer_addr / peer_port
+        let pa_p: char* = NULL; raw { pa_p = &peer_addr_buf[0]; }
+        let pa_len: u32 = 0; raw { pa_len = (uint32_t)strlen(pa_p); }
+        let pa_v = ctx_intern_string(ctx, pa_p, pa_len);
+        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"peer_addr", 9), pa_v);
+        object_set(ctx, result, ctx_intern_atom(ctx, (char*)"peer_port", 9), zjs_int32((i32)peer_port));
+    }
+    return result_v;
+}
+
+// =====================================================================
+// JS bootstrap — installs Server / Socket on top of the native primitives.
+// =====================================================================
+
+raw {
+    static const char NODE_NET_MODULE[] =
+        "import { EventEmitter } from 'node:events';\n"
+        "\n"
+        "function _splitId(lo, hi) { return ((hi >>> 0) * 0x100000000) + (lo >>> 0); }\n"
+        "\n"
+        "class Socket extends EventEmitter {\n"
+        "  constructor(handle, lo, hi, peerAddr, peerPort) {\n"
+        "    super();\n"
+        "    this.__h = handle;\n"
+        "    this.__lo = lo;\n"
+        "    this.__hi = hi;\n"
+        "    this.remoteAddress = peerAddr;\n"
+        "    this.remotePort = peerPort;\n"
+        "    this.destroyed = false;\n"
+        "    this.bytesRead = 0;\n"
+        "    this.bytesWritten = 0;\n"
+        "  }\n"
+        "  write(data) {\n"
+        "    if (this.destroyed) return false;\n"
+        "    var n = globalThis.__zjs_net_send(this.__h, this.__lo, this.__hi, data);\n"
+        "    if (n < 0) {\n"
+        "      this.emit('error', new Error('write failed'));\n"
+        "      return false;\n"
+        "    }\n"
+        "    this.bytesWritten += n;\n"
+        "    return true;\n"
+        "  }\n"
+        "  end(data) {\n"
+        "    if (data !== undefined && !this.destroyed) this.write(data);\n"
+        "    if (!this.destroyed) {\n"
+        "      globalThis.__zjs_net_close_client(this.__h, this.__lo, this.__hi);\n"
+        "      this.destroyed = true;\n"
+        "    }\n"
+        "  }\n"
+        "  destroy() { this.end(); }\n"
+        "}\n"
+        "\n"
+        "class Server extends EventEmitter {\n"
+        "  constructor(connectionListener) {\n"
+        "    super();\n"
+        "    this.__h = null;\n"
+        "    this.__sockets = Object.create(null);\n"
+        "    this.listening = false;\n"
+        "    if (typeof connectionListener === 'function') {\n"
+        "      this.on('connection', connectionListener);\n"
+        "    }\n"
+        "  }\n"
+        "  listen(port, host, cb) {\n"
+        "    if (typeof host === 'function') { cb = host; host = undefined; }\n"
+        "    if (typeof port === 'function') { cb = port; port = 0; host = undefined; }\n"
+        "    if (typeof cb === 'function') this.once('listening', cb);\n"
+        "    this.__h = globalThis.__zjs_net_listen(host || '0.0.0.0', port | 0);\n"
+        "    if (!this.__h) {\n"
+        "      var self = this;\n"
+        "      queueMicrotask(function() { self.emit('error', new Error('listen failed')); });\n"
+        "      return this;\n"
+        "    }\n"
+        "    globalThis.__zjs_net_register(this.__h, this);\n"
+        "    return this;\n"
+        "  }\n"
+        "  address() {\n"
+        "    if (!this.__h) return null;\n"
+        "    return { port: globalThis.__zjs_net_server_port(this.__h), family: 'IPv4', address: '0.0.0.0' };\n"
+        "  }\n"
+        "  close(cb) {\n"
+        "    var self = this;\n"
+        "    if (this.__h) {\n"
+        "      globalThis.__zjs_net_destroy(this.__h);\n"
+        "      this.__h = null;\n"
+        "      this.listening = false;\n"
+        "    }\n"
+        "    if (typeof cb === 'function') queueMicrotask(function() { cb(); });\n"
+        "    queueMicrotask(function() { self.emit('close'); });\n"
+        "    return this;\n"
+        "  }\n"
+        "  __pump() {\n"
+        "    if (!this.__h) return;\n"
+        "    var maxPerTick = 64;\n"
+        "    while (maxPerTick-- > 0) {\n"
+        "      var ev = globalThis.__zjs_net_poll(this.__h);\n"
+        "      if (!ev) return;\n"
+        "      var kind = ev.kind;\n"
+        "      var id = _splitId(ev.id_lo, ev.id_hi);\n"
+        "      if (kind === 5) {\n"
+        "        this.listening = true;\n"
+        "        this.emit('listening');\n"
+        "      } else if (kind === 1) {\n"
+        "        var sock = new Socket(this.__h, ev.id_lo, ev.id_hi, ev.peer_addr || '', ev.peer_port || 0);\n"
+        "        this.__sockets[id] = sock;\n"
+        "        this.emit('connection', sock);\n"
+        "      } else if (kind === 2) {\n"
+        "        var s = this.__sockets[id];\n"
+        "        if (s) { s.bytesRead += ev.binary.length; s.emit('data', ev.binary); }\n"
+        "      } else if (kind === 3) {\n"
+        "        var s = this.__sockets[id];\n"
+        "        if (s) { s.emit('end'); s.emit('close'); delete this.__sockets[id]; }\n"
+        "      } else if (kind === 4) {\n"
+        "        if (id === 0) this.emit('error', new Error(ev.text || 'net error'));\n"
+        "        else {\n"
+        "          var s = this.__sockets[id];\n"
+        "          if (s) s.emit('error', new Error(ev.text || 'net error'));\n"
+        "        }\n"
+        "      }\n"
+        "    }\n"
+        "  }\n"
+        "}\n"
+        "\n"
+        "function createServer(connectionListener) { return new Server(connectionListener); }\n"
+        "\n"
+        "export { Server, Socket, createServer };\n"
+        "export default { Server: Server, Socket: Socket, createServer: createServer };\n";
+}
+
+fn zjs_install_node_net_globals(ctx: ZjsContext*) -> void {
+    let p1: void* = NULL; raw { p1 = (void*)host_net_listen_impl; }
+    let p2: void* = NULL; raw { p2 = (void*)host_net_register_impl; }
+    let p3: void* = NULL; raw { p3 = (void*)host_net_destroy_impl; }
+    let p4: void* = NULL; raw { p4 = (void*)host_net_send_impl; }
+    let p5: void* = NULL; raw { p5 = (void*)host_net_close_client_impl; }
+    let p6: void* = NULL; raw { p6 = (void*)host_net_poll_impl; }
+    let p7: void* = NULL; raw { p7 = (void*)host_net_server_port_impl; }
+    let gt = ctx.global_this_obj;
+    object_set(ctx, gt, ctx_intern_atom(ctx, (char*)"__zjs_net_listen", 16),
+               ctx_make_host_function_arity(ctx, (char*)"__zjs_net_listen", p1, 2));
+    object_set(ctx, gt, ctx_intern_atom(ctx, (char*)"__zjs_net_register", 18),
+               ctx_make_host_function_arity(ctx, (char*)"__zjs_net_register", p2, 2));
+    object_set(ctx, gt, ctx_intern_atom(ctx, (char*)"__zjs_net_destroy", 17),
+               ctx_make_host_function_arity(ctx, (char*)"__zjs_net_destroy", p3, 1));
+    object_set(ctx, gt, ctx_intern_atom(ctx, (char*)"__zjs_net_send", 14),
+               ctx_make_host_function_arity(ctx, (char*)"__zjs_net_send", p4, 4));
+    object_set(ctx, gt, ctx_intern_atom(ctx, (char*)"__zjs_net_close_client", 22),
+               ctx_make_host_function_arity(ctx, (char*)"__zjs_net_close_client", p5, 3));
+    object_set(ctx, gt, ctx_intern_atom(ctx, (char*)"__zjs_net_poll", 14),
+               ctx_make_host_function_arity(ctx, (char*)"__zjs_net_poll", p6, 1));
+    object_set(ctx, gt, ctx_intern_atom(ctx, (char*)"__zjs_net_server_port", 21),
+               ctx_make_host_function_arity(ctx, (char*)"__zjs_net_server_port", p7, 1));
+}
+
+fn zjs_register_node_net(ctx: ZjsContext*) -> void {
+    let src: char* = NULL; raw { src = (char*)NODE_NET_MODULE; }
+    let slen: u32 = 0; raw { slen = (uint32_t)strlen(src); }
+    ctx_register_builtin_module_source(ctx, (char*)"node:net", src, slen);
+}

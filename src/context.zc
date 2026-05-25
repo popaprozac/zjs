@@ -399,6 +399,14 @@ struct ZjsContext {
     pending_fetch_count:    u32;
     pending_fetch_cap:      u32;
 
+    // Live node:net servers — drained on each event-loop tick. Parallel
+    // arrays: native ZjsNetServer* handle + JS Server instance value.
+    // GC marks the JS instances so handlers stay reachable.
+    net_servers:          void**;
+    net_server_jsvals:    ZjsValue*;
+    net_server_count:     u32;
+    net_server_cap:       u32;
+
     // Timer queue (2026-05-18, web-API Phase B). Each entry represents
     // a setTimeout / setInterval reservation. `due_ms` is the
     // monotonic-clock ms when it next fires. `period_ms` is 0 for
@@ -1774,6 +1782,14 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         gc_mark_value(ctx.pending_fetch_promises[pfi]);
         gc_mark_value(ctx.pending_fetch_urls[pfi]);
         pfi = pfi + 1;
+    }
+    // Registered node:net Server instances — kept alive by the
+    // engine until close() runs, so handlers fire even when user
+    // code dropped the only reference.
+    let nsi: u32 = 0;
+    while nsi < ctx.net_server_count {
+        gc_mark_value(ctx.net_server_jsvals[nsi]);
+        nsi = nsi + 1;
     }
     // Pending timer callbacks + their captured args must stay alive
     // across collections — they're scheduled to run but not yet
@@ -12777,6 +12793,7 @@ fn zjs_has_pending_work(ctx: ZjsContext*) -> int {
     // deliver async events (open / message / error / close).
     if ctx.websocket_count > 0 { return 1; }
     if ctx.pending_fetch_count > 0 { return 1; }
+    if ctx.net_server_count > 0 { return 1; }
     return 0;
 }
 
@@ -12820,6 +12837,7 @@ fn zjs_run_pending_timers(ctx: ZjsContext*) -> void {
     // where I/O completion can race with setTimeout).
     if ctx.websocket_count > 0 { ws_drain_events(ctx); }
     if ctx.pending_fetch_count > 0 { http_drain_pending_fetches(ctx); }
+    if ctx.net_server_count > 0 { ctx_net_pump_all(ctx); }
     // Drain microtasks unconditionally. Promise resolutions from
     // fetch / WS event handlers enqueue .then callbacks as
     // microtasks — without this, an async fetch with no timers in
@@ -18982,6 +19000,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // (~50KB of source); registered in its own call so an embedder
     // wanting a tinier engine can selectively skip it.
     zjs_install_web_streams(ctx);
+    // node:net native host-fn globals (__zjs_net_*). The JS bootstrap
+    // for the module uses these via globalThis.
+    zjs_install_node_net_globals(ctx);
 }
 
 fn proto_mark_nonenum(proto: ZjsObject*) -> void {
@@ -19405,6 +19426,8 @@ fn ctx_register_stdlib_modules(ctx: ZjsContext*) -> void {
     zjs_register_node_os(ctx);
     zjs_register_node_dx(ctx);
     zjs_register_node_child_process(ctx);
+    zjs_register_node_net(ctx);
+    zjs_register_node_http(ctx);
 }
 
 fn module_cache_find(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {
