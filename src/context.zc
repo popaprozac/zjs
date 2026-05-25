@@ -4806,6 +4806,54 @@ fn host_object_get_own_property_symbols(ctx: ZjsContext*, args: ZjsValue*, argc:
     return out_v;
 }
 
+// Object.assign(target, ...sources) — copy own enumerable string-
+// keyed properties from each source to target. Symbol keys are also
+// copied (the codebase's Object.keys already includes them in the
+// generic-object path). null/undefined sources are silently skipped;
+// a null/undefined target throws TypeError per spec.
+fn host_object_assign(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 || zjs_is_undefined(args[0]) != 0 || zjs_is_null(args[0]) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Cannot convert undefined or null to object", 43);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let target = ctx_to_object(ctx, args[0]);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    ctx_push_temp_root(ctx, target);
+    defer ctx_pop_temp_root(ctx);
+    let s: u32 = 1;
+    while s < argc {
+        let src = args[s];
+        if zjs_is_undefined(src) == 0 && zjs_is_null(src) == 0 {
+            // Lean on Object.keys to enumerate own enumerable keys
+            // (incl. integer-string keys + Symbol keys per the
+            // existing implementation). The "from" arg shape mirrors
+            // Object.keys's signature: argv[0] is the receiver.
+            let keys_args: ZjsValue[1];
+            keys_args[0] = src;
+            let ka_ptr: ZjsValue* = NULL;
+            raw { ka_ptr = &keys_args[0]; }
+            let keys_v = host_object_keys(ctx, ka_ptr, 1);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if zjs_is_array(keys_v) != 0 {
+                let karr = zjs_as_array(keys_v);
+                let i: u32 = 0;
+                while i < karr.length {
+                    let k = karr.elements[i];
+                    let v = property_get(ctx, src, k);
+                    if ctx.pending_throw_active { return zjs_undefined(); }
+                    property_set(ctx, target, k, v);
+                    if ctx.pending_throw_active { return zjs_undefined(); }
+                    i = i + 1;
+                }
+            }
+        }
+        s = s + 1;
+    }
+    return target;
+}
+
 fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let arg0 = if argc >= 1 { args[0] } else { zjs_undefined() };
     if !require_object_keys_arg(ctx, arg0) { return zjs_undefined(); }
@@ -18378,6 +18426,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"setPrototypeOf", spo_ptr, 2));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"is", 2),
                ctx_make_host_function_arity(ctx, (char*)"is", ois_ptr, 2));
+    let oassign_ptr: void* = NULL; raw { oassign_ptr = (void*)host_object_assign; }
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"assign", 6),
+               ctx_make_host_function_arity(ctx, (char*)"assign", oassign_ptr, 2));
     // Phase 3.9a — Object.defineProperty / defineProperties /
     // getOwnPropertyDescriptor.
     let dp_ptr:   void* = NULL; raw { dp_ptr   = (void*)host_object_define_property; }
