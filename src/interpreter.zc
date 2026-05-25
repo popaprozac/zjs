@@ -3271,6 +3271,13 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let fp2 = cl.function;
                 let target2: Function* = NULL;
                 raw { target2 = (Function*)fp2; }
+                // Class ctor invoked without `new` — TypeError per spec.
+                if target2.is_class_constructor {
+                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                (char*)"Class constructor cannot be invoked without 'new'", 50);
+                    throwing = true; thrown = err; exit_reason = 3;
+                    ctx.frames[cur_idx].ip = ip + 1; break;
+                }
                 if target2.is_generator {
                     let gen = zjs_generator_new();
                     ctx_register_cell(ctx, (void*)gen);
@@ -3389,6 +3396,13 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let fp2 = cl.function;
                 let target2: Function* = NULL;
                 raw { target2 = (Function*)fp2; }
+                // Class ctor invoked without `new` — TypeError per spec.
+                if target2.is_class_constructor {
+                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                (char*)"Class constructor cannot be invoked without 'new'", 50);
+                    throwing = true; thrown = err; exit_reason = 3;
+                    ctx.frames[cur_idx].ip = ip + 1; break;
+                }
                 if target2.is_generator {
                     let gen = zjs_generator_new();
                     ctx_register_cell(ctx, (void*)gen);
@@ -3506,6 +3520,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let fp2 = cl.function;
                 let target2: Function* = NULL;
                 raw { target2 = (Function*)fp2; }
+                if !is_method && target2.is_class_constructor {
+                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                (char*)"Class constructor cannot be invoked without 'new'", 50);
+                    throwing = true; thrown = err; exit_reason = 3;
+                    ctx.frames[cur_idx].ip = ip + 1; break;
+                }
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame(ctx, target2, argv_ptr, argc, dst);
                 if target2.is_async { wire_async_call(ctx, target2, regs_base, dst); }
@@ -5846,6 +5866,18 @@ fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsVal
         let fp = zjs_cell_as_ptr(callee);
         let target: Function* = NULL;
         raw { target = (Function*)fp; }
+        // ECMA-262 §10.2.1.1 [[Call]] on a class constructor throws
+        // TypeError. Skipped when new_target_active is set (Op::Super
+        // Call uses this helper after setting new_target_active=true,
+        // and Op::NewInvoke takes a different path entirely).
+        if target.is_class_constructor && !ctx.new_target_active {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"Class constructor cannot be invoked without 'new'", 50);
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = err;
+            ctx.host_this = saved;
+            return zjs_undefined();
+        }
         // Generator function: building the iterator is the entire
         // call. The body doesn't run until iter.next() — Op::Invoke
         // gates on this same flag.
@@ -5865,6 +5897,14 @@ fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsVal
         let fp2 = cl.function;
         let target2: Function* = NULL;
         raw { target2 = (Function*)fp2; }
+        if target2.is_class_constructor && !ctx.new_target_active {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"Class constructor cannot be invoked without 'new'", 50);
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = err;
+            ctx.host_this = saved;
+            return zjs_undefined();
+        }
         if target2.is_generator {
             r = make_generator_iter(ctx, target2, args, argc);
             zjs_as_generator(r).saved_current_closure = cl;

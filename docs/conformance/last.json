@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-25 21:42 UTC",
+    "when": "2026-05-25 22:02 UTC",
     "total": 14524,
-    "passed": 11856,
-    "failed": 2022,
+    "passed": 11858,
+    "failed": 2020,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -1041,10 +1041,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get string\"\u00bb) to be true"
     },
     {
-      "path": "test/language/statements/class/arguments/default-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a ReferenceError"
-    },
-    {
       "path": "test/language/statements/class/async-gen-meth-escaped-async.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -1315,10 +1311,6 @@
     {
       "path": "test/language/statements/class/definition/prototype-getter.js",
       "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor"
-    },
-    {
-      "path": "test/language/statements/class/definition/prototype-wiring.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
     },
     {
       "path": "test/language/statements/class/definition/setters-non-configurable-err.js",
@@ -2898,7 +2890,7 @@
     },
     {
       "path": "test/language/statements/class/subclass/binding.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a Test262Error"
+      "reason": "[sloppy] zjs: throw: (unknown): The result of `this !== obj` is `true` Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Array/contructor-calls-super-multiple-arguments.js",
