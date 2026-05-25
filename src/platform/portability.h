@@ -173,6 +173,73 @@ static inline int zjs_digest_oneshot(int algo, const void* data, size_t len,
 #endif
 }
 
+// One-shot HMAC. Same algo codes as zjs_digest_oneshot (1, 256, 384,
+// 512). Writes the MAC bytes to `out`, sets `*out_len` to the digest
+// size. Returns 0 on success, -1 on unsupported algorithm.
+#if defined(__APPLE__)
+#  include <CommonCrypto/CommonHMAC.h>
+#elif !defined(_WIN32)
+#  include <openssl/hmac.h>
+#endif
+
+static inline int zjs_hmac_oneshot(int algo,
+                                   const void* key, size_t key_len,
+                                   const void* data, size_t data_len,
+                                   unsigned char* out, size_t* out_len) {
+#if defined(__APPLE__)
+    CCHmacAlgorithm cc_algo;
+    switch (algo) {
+        case 1:   cc_algo = kCCHmacAlgSHA1;   *out_len = CC_SHA1_DIGEST_LENGTH;   break;
+        case 256: cc_algo = kCCHmacAlgSHA256; *out_len = CC_SHA256_DIGEST_LENGTH; break;
+        case 384: cc_algo = kCCHmacAlgSHA384; *out_len = CC_SHA384_DIGEST_LENGTH; break;
+        case 512: cc_algo = kCCHmacAlgSHA512; *out_len = CC_SHA512_DIGEST_LENGTH; break;
+        default:  return -1;
+    }
+    CCHmac(cc_algo, key, key_len, data, data_len, out);
+    return 0;
+#elif defined(_WIN32)
+    const wchar_t* alg = NULL;
+    switch (algo) {
+        case 1:   alg = BCRYPT_SHA1_ALGORITHM;   break;
+        case 256: alg = BCRYPT_SHA256_ALGORITHM; break;
+        case 384: alg = BCRYPT_SHA384_ALGORITHM; break;
+        case 512: alg = BCRYPT_SHA512_ALGORITHM; break;
+        default:  return -1;
+    }
+    BCRYPT_ALG_HANDLE h = NULL;
+    if (BCryptOpenAlgorithmProvider(&h, alg, NULL,
+                                    BCRYPT_ALG_HANDLE_HMAC_FLAG) != 0) return -1;
+    DWORD dlen = 0, cb = 0;
+    BCryptGetProperty(h, BCRYPT_HASH_LENGTH, (PUCHAR)&dlen, sizeof(dlen), &cb, 0);
+    BCRYPT_HASH_HANDLE hh = NULL;
+    if (BCryptCreateHash(h, &hh, NULL, 0, (PUCHAR)key, (ULONG)key_len, 0) != 0) {
+        BCryptCloseAlgorithmProvider(h, 0);
+        return -1;
+    }
+    BCryptHashData(hh, (PUCHAR)data, (ULONG)data_len, 0);
+    BCryptFinishHash(hh, out, dlen, 0);
+    BCryptDestroyHash(hh);
+    BCryptCloseAlgorithmProvider(h, 0);
+    *out_len = (size_t)dlen;
+    return 0;
+#else
+    const EVP_MD* md = NULL;
+    switch (algo) {
+        case 1:   md = EVP_sha1();   break;
+        case 256: md = EVP_sha256(); break;
+        case 384: md = EVP_sha384(); break;
+        case 512: md = EVP_sha512(); break;
+        default:  return -1;
+    }
+    unsigned int olen = 0;
+    if (!HMAC(md, key, (int)key_len, (const unsigned char*)data, data_len, out, &olen)) {
+        return -1;
+    }
+    *out_len = (size_t)olen;
+    return 0;
+#endif
+}
+
 // Peak resident set size in bytes since process start. Used by
 // `--gc-stats` to report a memory-usage upper bound. Returns 0 if
 // the platform query fails.

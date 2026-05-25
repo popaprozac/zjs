@@ -11411,6 +11411,235 @@ fn host_crypto_subtle_digest(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zj
     return pv;
 }
 
+// Helpers for crypto.subtle.{importKey,sign,verify}. Resolves the
+// HMAC hash algorithm number (1/256/384/512) from a string or
+// {name: 'HMAC', hash: 'SHA-256'} object. Returns -1 on unknown.
+fn crypto_resolve_hash_algo(ctx: ZjsContext*, alg_v: ZjsValue) -> int {
+    let name_v = alg_v;
+    if zjs_is_object(alg_v) != 0 && zjs_is_string(alg_v) == 0 {
+        // For HMAC the hash sits at .hash (string or object).
+        let h = property_get(ctx, alg_v, ctx_intern_string(ctx, (char*)"hash", 4));
+        if zjs_is_object(h) != 0 && zjs_is_string(h) == 0 {
+            name_v = property_get(ctx, h, ctx_intern_string(ctx, (char*)"name", 4));
+        } else {
+            name_v = h;
+        }
+    }
+    if zjs_is_string(name_v) == 0 { return -1; }
+    let s = zjs_as_string(name_v);
+    let algo: int = -1;
+    raw {
+        if (s->length == 5 && memcmp(s->data, "SHA-1", 5) == 0) algo = 1;
+        else if (s->length == 7 && memcmp(s->data, "SHA-256", 7) == 0) algo = 256;
+        else if (s->length == 7 && memcmp(s->data, "SHA-384", 7) == 0) algo = 384;
+        else if (s->length == 7 && memcmp(s->data, "SHA-512", 7) == 0) algo = 512;
+    }
+    return algo;
+}
+
+// Extract bytes from a Uint8Array or string. Writes (ptr, len) to
+// the output pointers. Returns true on success. String is treated as
+// utf-8 bytes (matches digest's input convention).
+fn crypto_extract_bytes(v: ZjsValue, out_ptr: u8**, out_len: u32*) -> bool {
+    if zjs_is_uint8_array(v) != 0 {
+        let u = zjs_as_uint8_array(v);
+        out_ptr[0] = u.bytes;
+        out_len[0] = u.length;
+        return true;
+    }
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        raw { *out_ptr = (uint8_t*)s->data; }
+        out_len[0] = s.length;
+        return true;
+    }
+    return false;
+}
+
+// crypto.subtle.importKey(format, keyData, algorithm, extractable, keyUsages)
+// MVP: format must be 'raw'; algorithm.name must be 'HMAC'; returns a
+// CryptoKey-shaped object carrying the raw bytes + algorithm so sign/
+// verify can use them. Not extractable in any meaningful sense.
+fn host_crypto_subtle_import_key(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    if argc < 3 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"importKey requires (format, keyData, algorithm, ...)", 51);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    // format
+    let fmt_v = args[0];
+    let fmt_ok: bool = false;
+    if zjs_is_string(fmt_v) != 0 {
+        let fs = zjs_as_string(fmt_v);
+        raw { if (fs->length == 3 && memcmp(fs->data, "raw", 3) == 0) fmt_ok = true; }
+    }
+    if !fmt_ok {
+        let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
+                                    (char*)"Only 'raw' importKey format supported", 37);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    // algorithm.name must be HMAC
+    let alg = args[2];
+    let alg_name_v: ZjsValue = alg;
+    if zjs_is_object(alg) != 0 && zjs_is_string(alg) == 0 {
+        alg_name_v = property_get(ctx, alg, ctx_intern_string(ctx, (char*)"name", 4));
+    }
+    if zjs_is_string(alg_name_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"algorithm.name required", 23);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let an = zjs_as_string(alg_name_v);
+    let is_hmac: bool = false;
+    raw { if (an->length == 4 && memcmp(an->data, "HMAC", 4) == 0) is_hmac = true; }
+    if !is_hmac {
+        let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
+                                    (char*)"Only HMAC importKey supported", 29);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let hash_algo = crypto_resolve_hash_algo(ctx, alg);
+    if hash_algo < 0 {
+        let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
+                                    (char*)"Unrecognized HMAC hash", 22);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    // keyData → copy bytes into a fresh Uint8Array so mutation
+    // through the caller's reference doesn't affect future sign/verify.
+    let kd = args[1];
+    let kp: u8* = NULL;
+    let klen: u32 = 0;
+    if !crypto_extract_bytes(kd, &kp, &klen) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"keyData must be Uint8Array or string", 36);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let key_bytes = zjs_uint8_array_new(klen);
+    ctx_register_cell(ctx, (void*)key_bytes);
+    if klen > 0 { raw { memcpy(key_bytes->bytes, kp, klen); } }
+    // Build the CryptoKey object — opaque shape mirroring the web
+    // spec's accessors. Internal slots are prefixed `__` so they're
+    // filtered from Object.keys / for-in.
+    let key_obj_v = ctx_new_object(ctx);
+    let key_obj = zjs_as_object(key_obj_v);
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"type", 4),
+               ctx_intern_string(ctx, (char*)"secret", 6));
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"extractable", 11),
+               zjs_bool(if argc >= 4 { (if zjs_to_bool_coerce(args[3]) { 1 } else { 0 }) } else { 0 }));
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"algorithm", 9), alg);
+    let usages_v = if argc >= 5 { args[4] } else { ctx_new_array(ctx, 0) };
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"usages", 6), usages_v);
+    // Internal slots — hidden from Object.keys via the __ prefix.
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_bytes", 15),
+               zjs_cell_from_ptr((void*)key_bytes));
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_algo", 14),
+               zjs_int32((i32)hash_algo));
+    promise_settle(ctx, pv, key_obj_v, true);
+    return pv;
+}
+
+// Shared sign / verify body. mode=0 sign, mode=1 verify.
+fn crypto_sign_or_verify(ctx: ZjsContext*, args: ZjsValue*, argc: u32, is_verify: bool) -> ZjsValue {
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    let want_argc: u32 = if is_verify { 4 } else { 3 };
+    if argc < want_argc {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"sign/verify: bad arity", 22);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let key_v = args[1];
+    if zjs_is_object(key_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"key must be a CryptoKey", 23);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let algo_v = property_get(ctx, key_v, ctx_intern_string(ctx, (char*)"__zjs_key_algo", 14));
+    let key_bytes_v = property_get(ctx, key_v, ctx_intern_string(ctx, (char*)"__zjs_key_bytes", 15));
+    if zjs_is_int32(algo_v) == 0 || zjs_is_uint8_array(key_bytes_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"InvalidAccessError", 18,
+                                    (char*)"key is not a CryptoKey from this engine", 39);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let algo = (int)zjs_as_int32(algo_v);
+    let key_arr = zjs_as_uint8_array(key_bytes_v);
+    let key_p: u8* = key_arr.bytes;
+    let key_n: u32 = key_arr.length;
+    let data_idx: u32 = if is_verify { 3 } else { 2 };
+    let data_p: u8* = NULL;
+    let data_n: u32 = 0;
+    if !crypto_extract_bytes(args[data_idx], &data_p, &data_n) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"data must be Uint8Array or string", 33);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let mac: u8[64];
+    let mac_len: usize = 0;
+    let rc: int = 0;
+    raw {
+        rc = zjs_hmac_oneshot(algo, key_p, (size_t)key_n,
+                              data_p, (size_t)data_n,
+                              &mac[0], &mac_len);
+    }
+    if rc != 0 {
+        let err = build_typed_error(ctx, (char*)"OperationError", 14,
+                                    (char*)"HMAC backend failed", 19);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    if is_verify {
+        let sig_p: u8* = NULL;
+        let sig_n: u32 = 0;
+        if !crypto_extract_bytes(args[2], &sig_p, &sig_n) {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"signature must be Uint8Array", 28);
+            promise_settle(ctx, pv, err, false);
+            return pv;
+        }
+        let eq: bool = false;
+        if sig_n == (u32)mac_len {
+            // Constant-time compare. Compiler is free to optimize but
+            // the early-exit ladder we'd write naively leaks timing,
+            // so OR the diffs.
+            let acc: u32 = 0;
+            let i: u32 = 0;
+            while i < sig_n {
+                acc = acc | (u32)((u8)sig_p[i] ^ mac[i]);
+                i = i + 1;
+            }
+            eq = acc == 0;
+        }
+        promise_settle(ctx, pv, zjs_bool(if eq { 1 } else { 0 }), true);
+        return pv;
+    }
+    // sign: hand back a Uint8Array with the MAC.
+    let result = zjs_uint8_array_new((u32)mac_len);
+    ctx_register_cell(ctx, (void*)result);
+    raw { memcpy(result->bytes, &mac[0], mac_len); }
+    promise_settle(ctx, pv, zjs_cell_from_ptr((void*)result), true);
+    return pv;
+}
+
+fn host_crypto_subtle_sign(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return crypto_sign_or_verify(ctx, args, argc, false);
+}
+fn host_crypto_subtle_verify(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return crypto_sign_or_verify(ctx, args, argc, true);
+}
+
 // =====================================================================
 // Timers — web-API Phase B (2026-05-18). setTimeout / setInterval /
 // clear* as globals. The engine maintains a queue of pending timers;
@@ -17601,8 +17830,17 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let subtle_v = ctx_new_object(ctx);
     let subtle_o = zjs_as_object(subtle_v);
     let csd_ptr: void* = NULL; raw { csd_ptr = (void*)host_crypto_subtle_digest; }
+    let cik_ptr: void* = NULL; raw { cik_ptr = (void*)host_crypto_subtle_import_key; }
+    let csi_ptr: void* = NULL; raw { csi_ptr = (void*)host_crypto_subtle_sign; }
+    let csv_ptr: void* = NULL; raw { csv_ptr = (void*)host_crypto_subtle_verify; }
     object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"digest", 6),
                ctx_make_host_function_arity(ctx, (char*)"digest", csd_ptr, 2));
+    object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"importKey", 9),
+               ctx_make_host_function_arity(ctx, (char*)"importKey", cik_ptr, 5));
+    object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"sign", 4),
+               ctx_make_host_function_arity(ctx, (char*)"sign", csi_ptr, 3));
+    object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"verify", 6),
+               ctx_make_host_function_arity(ctx, (char*)"verify", csv_ptr, 4));
     object_set(ctx, crypto_o, ctx_intern_atom(ctx, (char*)"subtle", 6), subtle_v);
     let crypto_slot = ctx_intern_global(ctx, (char*)"crypto", 6);
     ctx.globals[crypto_slot].value = crypto_v;
