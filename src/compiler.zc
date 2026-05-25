@@ -3233,6 +3233,17 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     }
     f.uses_arguments = c.arguments_reg >= 0;
     f.has_rest_param = has_rest;
+    // Repurposing the otherwise-unset Function.needs_env to mean "this
+    // function body references at least one outer-scope name." Drives
+    // the wrap-or-not decision at the FunctionDecl/FunctionExpr emit
+    // site — see the `inner_has_captures_from` callers in this file.
+    // The conservative `inner_has_captures_from(c)` check used to
+    // over-wrap top-level FunctionDecls (e.g. `function assert(){}`)
+    // into closures whenever any sibling captured a script-scope let,
+    // even when the wrapped function didn't read outer scope itself.
+    // That broke property writes on the over-wrapped function (TAG_
+    // CLOSURE non-class writes silently drop). See #265.
+    f.needs_env = c.has_outer_refs;
     // For ordinary functions / arrow funcs the parser stashes the
     // async flag in bool_value. For MethodDef, bool_value already
     // carries is_static — so we keep the async flag in `num` instead
@@ -3301,9 +3312,10 @@ fn compile_function_value(c: Compiler*, node: AstNode*) -> u8 {
     emit(c, make_inst_a_u16(Op::LoadConst, dst, idx));
 
     // If the inner function referenced any outer-scope name, wrap it
-    // in a closure with the current env. The outer (c) must have
-    // needs_env = true for this to be reachable.
-    if f.needs_env || inner_has_captures_from(c) {
+    // in a closure with the current env. f.needs_env carries the
+    // inner's has_outer_refs flag (set in compile_function). Precise
+    // — wrap exactly when the inner reads outer scope.
+    if f.needs_env {
         let cls_reg = alloc_reg(c);
         let env = closure_env_reg(c);
         emit(c, make_inst_abc(Op::MakeClosure, cls_reg, dst, env.reg));
@@ -3790,7 +3802,7 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     emit(c, make_inst_a_u16(Op::LoadConst, ctor_reg, ctor_idx));
 
     // Closure wrap if the inner captures from us (matches FunctionDecl).
-    if ctor_fn.needs_env || inner_has_captures_from(c) {
+    if ctor_fn.needs_env {
         let cls_reg = alloc_reg(c);
         let env_reg: u8 = 0;
         if c.needs_env { env_reg = c.env_reg; }
@@ -3886,7 +3898,7 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
                 let midx = add_const(c, mval);
                 let mreg = alloc_reg(c);
                 emit(c, make_inst_a_u16(Op::LoadConst, mreg, midx));
-                if mfn.needs_env || inner_has_captures_from(c) {
+                if mfn.needs_env {
                     let mcls = alloc_reg(c);
                     let env_reg2: u8 = 0;
                     if c.needs_env { env_reg2 = c.env_reg; }
@@ -5345,8 +5357,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         let r = alloc_reg(c);
         emit(c, make_inst_a_u16(Op::LoadConst, r, idx));
 
-        // Closure wrap if the inner captures from us.
-        let needs_wrap = f.needs_env || inner_has_captures_from(c);
+        // Closure wrap if the inner captures outer scope (f.needs_env
+        // is c.has_outer_refs on the inner, set in compile_function).
+        let needs_wrap = f.needs_env;
         if needs_wrap {
             let cls_reg = alloc_reg(c);
             let env = closure_env_reg(c);

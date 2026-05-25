@@ -3290,7 +3290,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
             } else {
-                regs[dst] = zjs_undefined();
+                // Method call on a non-callable — TypeError per spec.
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"property is not a function", 26);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip + 1; break;
             }
         } else if op == Op::Invoke {
             // Plain call: this = undefined for the callee. JS callees
@@ -3412,7 +3416,15 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
             } else {
-                regs[dst] = zjs_undefined();
+                // Calling a non-callable value — TypeError per spec.
+                // Previously we silently returned undefined here, which
+                // masked many test262 failures (assert.X = ... silently
+                // dropping → assert.X being undefined → call silently
+                // no-opping → test "passes"). See #265.
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"value is not a function", 23);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip + 1; break;
             }
         } else if op == Op::SpreadInvoke || op == Op::SpreadMethodInvoke {
             // Variadic dispatch — args live in the array at regs[base+1]
