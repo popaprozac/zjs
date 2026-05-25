@@ -102,7 +102,7 @@ Mapping WinterTC Minimum Common API to current state:
 | `DOMException` | ✅ shipped | — |
 | `reportError` | ✅ shipped | — |
 | `Blob` / `File` / `FormData` | ✅ shipped | — |
-| WHATWG Streams | ❌ | Tier 3 (#255) |
+| WHATWG Streams | ✅ shipped | — |
 
 Closing Tiers 2 and 3 = WinterTC-compliant. Conformance suite at
 <https://github.com/wintercg/api-test> gives a measurable number to
@@ -149,7 +149,10 @@ module loader; per-module status:
 ## Tier 3 — networking, streams, real-app features
 
 - ✅ `Blob`, `File`, `FormData`
-- ❌ WHATWG `ReadableStream` / `WritableStream` / `TransformStream` (#255)
+- ✅ WHATWG `ReadableStream` / `WritableStream` / `TransformStream`
+  (+ `CountQueuingStrategy` / `ByteLengthQueuingStrategy`). Pipe
+  + async-iter wired. BYOB and `.tee()` deferred — neither has a
+  current consumer.
 - ❌ `node:net` (TCP), `node:http` (server)
 - ❌ `node:child_process` (spawn)
 - ❌ DX: `node:util`, `node:events`, `node:assert`

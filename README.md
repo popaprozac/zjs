@@ -49,7 +49,7 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 
 **Conformance (two framings, intentionally):**
 
-- **Curated subset — 86.5%** (12,003 of 13,878). The Phase 4.3 → 4.8 arc unmasked private class fields, Proxy/Reflect, async iteration, subclass-built-ins (Promise/Array/Map/Set/Date/RegExp), plus stale-skipped features that were actually shipping. This number answers **"of the parts we claim to support, how spec-correct are we?"**.
+- **Curated subset — 86.5%** (12,010 of 13,878). The Phase 4.3 → 4.8 arc unmasked private class fields, Proxy/Reflect, async iteration, subclass-built-ins (Promise/Array/Map/Set/Date/RegExp), plus stale-skipped features that were actually shipping. This number answers **"of the parts we claim to support, how spec-correct are we?"**.
 - **Full suite — 54.1%** (25,084 of 46,364) against `test/language/` + `test/built-ins/` with no feature-skip list, matching the methodology of dashboards like [test262.fyi](https://test262.fyi). Missing-feature failures count as real failures here. Run via `make test262-full`. This number answers **"across the entire spec surface, how complete is the engine?"** — the ~30pt gap to QuickJS NG (~82%) is mostly BigInt, WeakRef, full async-generator semantics, and Temporal.
 
 Both numbers are useful; quoting only one out of context is misleading. Live dashboard for the curated subset at `docs/conformance/index.html` (macOS) — Windows results at `docs/conformance/index-windows.html`, Linux at `docs/conformance/index-linux.html`.
@@ -73,7 +73,7 @@ globals. Design notes in `docs/stdlib-design.md`.
 
 **WinterTC web globals** ([Minimum Common API](https://min-common-api.proposal.wintertc.org/)):
 
-`fetch` / `Request` / `Response` / `Headers` · `URL` / `URLSearchParams` · `TextEncoder` / `TextDecoder` · `WebSocket` · `setTimeout` / `setInterval` / `clearTimeout` / `clearInterval` · `queueMicrotask` · `console` · `globalThis` · `performance.now` / `performance.timeOrigin` · `crypto.getRandomValues` / `crypto.randomUUID` / `crypto.subtle.digest` (SHA-1/256/384/512) · `btoa` / `atob` · `reportError` · `Event` / `CustomEvent` / `EventTarget` · `AbortController` / `AbortSignal` (+ `.timeout`, `.any`, `.abort`, `.throwIfAborted`) · `DOMException` · `structuredClone` · `Blob` / `File` / `FormData`
+`fetch` / `Request` / `Response` / `Headers` · `URL` / `URLSearchParams` · `TextEncoder` / `TextDecoder` · `WebSocket` · `setTimeout` / `setInterval` / `clearTimeout` / `clearInterval` · `queueMicrotask` · `console` · `globalThis` · `performance.now` / `performance.timeOrigin` · `crypto.getRandomValues` / `crypto.randomUUID` / `crypto.subtle.digest` (SHA-1/256/384/512) · `btoa` / `atob` · `reportError` · `Event` / `CustomEvent` / `EventTarget` · `AbortController` / `AbortSignal` (+ `.timeout`, `.any`, `.abort`, `.throwIfAborted`) · `DOMException` · `structuredClone` · `Blob` / `File` / `FormData` · `ReadableStream` / `WritableStream` / `TransformStream` / `CountQueuingStrategy` / `ByteLengthQueuingStrategy`
 
 ```js
 import path from 'node:path';
@@ -95,10 +95,9 @@ registration calls. Build-time flags (`-DZJS_NO_NETWORK`,
 `-DZJS_NO_CHILD_PROCESS`, `-DZJS_NO_FS`) drop the genuinely fat
 dependency chains.
 
-Not yet shipped: WHATWG Streams (ReadableStream / WritableStream /
-TransformStream), `node:net` / `node:http` (server side — `fetch`
-covers client), `node:child_process`. Tracked as Tier 3 in
-`docs/stdlib-design.md`.
+Not yet shipped: `node:net` / `node:http` (server side — `fetch`
+covers client), `node:child_process`, `crypto.subtle.sign` / `verify`
+(HMAC). Tracked in `docs/stdlib-design.md`.
 
 Per-phase plans live in `docs/phases/`.
 
