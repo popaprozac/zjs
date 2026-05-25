@@ -252,6 +252,12 @@ enum Op {
     //              regs[a].return() (best-effort). Spec
     //              IteratorClose(NormalCompletion).
     IterGet,          // a=dst_iter, b=src
+    // for-await-of uses this instead of IterGet so we look up
+    // `@@asyncIterator` first per §14.7.5.3, falling back to
+    // `@@iterator` (whose next() result the awaiter wraps in
+    // Promise.resolve). Without this, `for await (... of obj)`
+    // where obj only exposes Symbol.asyncIterator silently bails.
+    IterGetAsync,     // a=dst_iter, b=src
     IterStep,         // a=value_dst, b=iter, c=done_dst
     IterRestCollect,  // a=dst_arr, b=iter, c=done_reg
     IterClose,        // a=iter, b=done_reg

@@ -6214,7 +6214,14 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
 
     let src_r = compile_expr(c, node.right);
     let iter_r = alloc_reg(c);
-    emit(c, make_inst_ab(Op::IterGet, iter_r, src_r));
+    // for-await needs the spec's async GetIterator (look up
+    // @@asyncIterator first, fall back to @@iterator). Plain for-of
+    // uses the sync path.
+    if node.bool_value {
+        emit(c, make_inst_ab(Op::IterGetAsync, iter_r, src_r));
+    } else {
+        emit(c, make_inst_ab(Op::IterGet, iter_r, src_r));
+    }
     if src_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
     let done_r = alloc_reg(c);
     emit(c, make_inst_a(Op::LoadFalse, done_r));

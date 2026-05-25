@@ -3357,6 +3357,45 @@ fn iter_get(ctx: ZjsContext*, src: ZjsValue) -> ZjsValue {
     return zjs_undefined();
 }
 
+// Async-aware GetIterator. Spec §7.4.5: prefer `@@asyncIterator`;
+// fall back to `@@iterator` (sync) — the caller (for-await loop)
+// awaits each result so a sync iter yielding plain {value, done}
+// works fine here.
+fn iter_get_async(ctx: ZjsContext*, src: ZjsValue) -> ZjsValue {
+    if zjs_is_undefined(src) != 0 || zjs_is_null(src) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"value is not async iterable", 27);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let key = ctx_intern_atom(ctx, (char*)"@@asyncIterator", 15);
+    let getter = property_get(ctx, src, zjs_cell_from_ptr((void*)key));
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let callable: bool =
+        zjs_is_function(getter) != 0
+        || zjs_is_closure(getter) != 0
+        || zjs_is_host_function(getter) != 0;
+    if callable {
+        let nullp: ZjsValue* = NULL;
+        let iter: ZjsValue = zjs_undefined();
+        raw { iter = zjs_call_value_with_this(ctx, getter, src, nullp, 0); }
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if !value_is_js_object(iter) {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"async iterator result is not an object", 38);
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        return iter;
+    }
+    // Fall back to sync @@iterator. The for-await loop awaits every
+    // next() result via Op::Await, so a sync iter's plain {value,
+    // done} return is awaited (no-op for non-Promise values).
+    return iter_get(ctx, src);
+}
+
 // Spec IteratorStep: calls iter.next(); returns {value, done}. On
 // abrupt completion sets ctx.pending_throw_active and returns
 // {undefined, true} (treat as done so callers stop).
