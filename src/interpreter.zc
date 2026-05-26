@@ -2041,6 +2041,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
         // Throw unwinding now happens in the OUTER loop, before
         // re-entering this inner loop — see the top of the outer while.
 
+        let prev_ip: usize = ip;
         let inst = code[ip];
         let op = inst.op;
         // Op profiling — gated on $ZJS_PROFILE_OPS=1. atexit dumper
@@ -2062,6 +2063,19 @@ fn interpret_inner_full(ctx: ZjsContext*,
             // GC safe-point on the way out — only the return value
             // survives the frame.
             ctx_maybe_gc(ctx);
+            // ZJS_TRACE_UNWIND surfaces Op::Return only when it's the
+            // entry-frame returning (the moment that ends interpret()'s
+            // top-level invocation). Inner Returns fire constantly and
+            // would flood the log. If a bench-loop body's Op::Return
+            // hits here, it means the loop's outer frame just popped —
+            // i.e., the JS execution silently terminated.
+            raw {
+                if (zjs_trace_unwind_enabled && ctx->frame_count == entry_frame + 1) {
+                    fprintf(stderr,
+                        "[zjs:trace_unwind] Op::Return at entry-frame f=%p ip=%zu code_len=%zu a=%u\n",
+                        (void*)f, (size_t)ip, (size_t)code_len, (unsigned)inst.a);
+                }
+            }
             // Spec: derived-class constructor must call super() before
             // returning. If super wasn't called, `this` is in TDZ —
             // throw ReferenceError.
@@ -3812,6 +3826,13 @@ fn interpret_inner_full(ctx: ZjsContext*,
         } else if op == Op::TailInvoke || op == Op::TailMethodInvoke {
             // Tail call: replace this frame in-place. The new function
             // returns directly to OUR original caller.
+            raw {
+                if (zjs_trace_unwind_enabled && ctx->frame_count == entry_frame + 1) {
+                    fprintf(stderr,
+                        "[zjs:trace_unwind] Op::TailInvoke at entry-frame f=%p ip=%zu code_len=%zu\n",
+                        (void*)f, (size_t)ip, (size_t)code_len);
+                }
+            }
             let base = inst.b;
             let argc = (u32)inst.c;
             let callee = regs[base];
@@ -5815,6 +5836,19 @@ fn interpret_inner_full(ctx: ZjsContext*,
         //     (property accessors fire callbacks)
 
         ip = ip + 1;
+        // Trace any post-dispatch ip that would land outside the
+        // current function's code range — the inner while will exit
+        // on the next iteration and we'll take the ran-off-end path.
+        // If ip > code_len (vs == code_len), an op JUMPED out of
+        // range, not "fell off the natural end" — that's the bug
+        // shape worth distinguishing.
+        raw {
+            if (zjs_trace_unwind_enabled && ip > code_len) {
+                fprintf(stderr,
+                    "[zjs:trace_unwind] ip OUT-OF-RANGE after dispatch op=%d prev_ip=%zu new_ip=%zu code_len=%zu f=%p\n",
+                    (int)op, (size_t)prev_ip, (size_t)ip, (size_t)code_len, (void*)f);
+            }
+        }
         }   // end inner while ip < code_len
 
         // Inner loop exited. Decide why and how to handle.
