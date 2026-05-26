@@ -5254,6 +5254,27 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
         return;
     }
 
+    if k == NodeKind::ForStmt {
+        // ECMA-262 §13.7.4: a for-statement with a LexicalDeclaration
+        // init runs in a fresh declarative environment. We don't
+        // distinguish let/const vs var here — var-decls hoist to
+        // scope_id=0 explicitly inside the VarDecl branch, so wrapping
+        // a fresh scope around the for-statement is a no-op for var
+        // bindings while correctly isolating let/const inits and any
+        // let/const declared in the body block.
+        enter_scope(c);
+        if node.left  != NULL { collect_locals(c, node.left); }
+        if node.right != NULL { collect_locals(c, node.right); }
+        if node.third != NULL { collect_locals(c, node.third); }
+        let i: u32 = 0;
+        while i < node.children_count {
+            collect_locals(c, node.children[i]);
+            i = i + 1;
+        }
+        exit_scope(c);
+        return;
+    }
+
     if node.left  != NULL { collect_locals(c, node.left); }
     if node.right != NULL { collect_locals(c, node.right); }
     if node.third != NULL { collect_locals(c, node.third); }
@@ -5872,6 +5893,10 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::ForStmt {
+        // Enter a fresh scope so the init's let/const (and any
+        // let/const inside the body) doesn't leak past the loop. See
+        // collect_locals's matching enter_scope for the rationale.
+        enter_scope(c);
         // init
         if node.left != NULL { compile_stmt_or_expr(c, node.left); }
         // Reset AFTER init: ECMA-262 ForBodyEvaluation step 1 sets
@@ -5918,6 +5943,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             bi = bi + 1;
         }
         loop_pop(c);
+        exit_scope(c);
         return;
     }
     if k == NodeKind::ReturnStmt {

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-26 15:46 UTC",
+    "when": "2026-05-26 15:58 UTC",
     "total": 14524,
-    "passed": 11978,
-    "failed": 1900,
+    "passed": 11979,
+    "failed": 1899,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -261,10 +261,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/for/head-let-destructuring.js",
-      "reason": "[sloppy] zjs: throw: (unknown): binding is block-scoped Expected SameValue(\u00ab\"number\"\u00bb, \u00ab\"undefined\"\u00bb) to be true"
-    },
-    {
       "path": "test/language/statements/for/head-lhs-let.js",
       "reason": "zjs: throw: SyntaxError: parse error"
     },
@@ -278,19 +274,19 @@
     },
     {
       "path": "test/language/statements/for/scope-body-lex-boundary.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"second\"\u00bb, \u00ab\"first\"\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: ReferenceError: x is not defined"
     },
     {
       "path": "test/language/statements/for/scope-body-lex-open.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: ReferenceError: x is not defined"
     },
     {
       "path": "test/language/statements/for/scope-head-lex-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: ReferenceError: x is not defined"
     },
     {
       "path": "test/language/statements/for/scope-head-lex-open.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: ReferenceError: x is not defined"
     },
     {
       "path": "test/language/statements/for-in/S12.6.4_A7_T2.js",
