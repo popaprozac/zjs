@@ -335,5 +335,98 @@ cross-all: cross-linux-arm64 cross-linux-x64
 # users build natively; universal-binary support is a separate
 # packaging concern.
 
+# ============================================================================
+# iOS cross-compile — produces libzjs.a per arch and a packaged
+# zjs.xcframework so an iOS app can drop us in directly.
+#
+# Targets (all macOS-host only; requires Xcode CLT):
+#   make ios-device          # libzjs.a for arm64-apple-ios
+#   make ios-simulator       # fat libzjs.a (arm64 + x86_64 simulator)
+#   make ios-xcframework     # zjs.xcframework bundling both
+#   make ios-all             # alias for ios-xcframework
+#
+# Output layout under build/ios/:
+#   device/libzjs.a          (arm64, iPhoneOS SDK)
+#   simulator-arm64/libzjs.a (arm64, iPhoneSimulator SDK)
+#   simulator-x64/libzjs.a   (x86_64, iPhoneSimulator SDK)
+#   simulator/libzjs.a       (lipo'd fat of the two above)
+#   zjs.xcframework/         (drop into Xcode)
+#
+# Pattern: we run `zc transpile` once to emit C, then drive clang ourselves
+# with the right -arch / -isysroot / -m...version-min triple per arch.
+# This sidesteps zc's --cc plumbing (which truncates long sysroot paths)
+# and zc's link step (Apple ld treats `--static` as unknown). The CLI
+# binary isn't built for iOS — apps embed libzjs.a, no shell needed.
+# ============================================================================
+
+IOS_DIR     := $(BUILD_DIR)/ios
+IOS_MIN     := 15.0
+IOS_DEV_SDK := $(shell xcrun --sdk iphoneos --show-sdk-path 2>/dev/null)
+IOS_SIM_SDK := $(shell xcrun --sdk iphonesimulator --show-sdk-path 2>/dev/null)
+
+# Build a libzjs.a for one (arch, sdk, version-min-flag, output dir) tuple.
+# Compiles libzjs.c (transpiled) + the Apple platform .m + socket_posix.c
+# + tre_full.c, then `ar rcs` packs them. Each iOS arch gets its own
+# transpile output (cheap; deterministic) so concurrent runs don't race.
+#
+# Args: $(1)=arch  $(2)=sdk path  $(3)=version-min flag  $(4)=output dir
+define ios_build_arch
+	@mkdir -p $(4)
+	@echo "  ios   $(1)  ($(2))"
+	$(ZC) transpile $(ZC_FLAGS) $(LIB_SRC) -o $(4)/libzjs.c >/dev/null
+	$(CLANG) -O3 -arch $(1) -isysroot $(2) $(3) -Isrc $(ZC_STDLIB_INCS) \
+	  $(ZC_C_WARNS) -c $(4)/libzjs.c -o $(4)/libzjs.o
+	$(CLANG) -O3 -arch $(1) -isysroot $(2) $(3) -fobjc-arc -Isrc \
+	  $(ZC_C_WARNS) -c src/platform/http_apple.m -o $(4)/http_apple.o
+	$(CLANG) -O3 -arch $(1) -isysroot $(2) $(3) -fobjc-arc -Isrc \
+	  $(ZC_C_WARNS) -c src/platform/ws_apple.m -o $(4)/ws_apple.o
+	$(CLANG) -O3 -arch $(1) -isysroot $(2) $(3) -Isrc $(ZC_C_WARNS) \
+	  -c src/platform/socket_posix.c -o $(4)/socket_posix.o
+	$(CLANG) -O3 -arch $(1) -isysroot $(2) $(3) -Isrc $(ZC_STDLIB_INCS) \
+	  $(ZC_C_WARNS) -c $(TRE_FULL_SRC) -o $(4)/tre_full.o
+	@rm -f $(4)/libzjs.a
+	ar rcs $(4)/libzjs.a \
+	  $(4)/libzjs.o $(4)/http_apple.o $(4)/ws_apple.o \
+	  $(4)/socket_posix.o $(4)/tre_full.o
+	@file $(4)/libzjs.a
+endef
+
+.PHONY: ios-device ios-simulator-arm64 ios-simulator-x64 ios-simulator ios-xcframework ios-all
+
+ios-device:
+	@[ -n "$(IOS_DEV_SDK)" ] || \
+	  (echo "iPhoneOS SDK not found (xcrun --sdk iphoneos --show-sdk-path)" && exit 1)
+	$(call ios_build_arch,arm64,$(IOS_DEV_SDK),-miphoneos-version-min=$(IOS_MIN),$(IOS_DIR)/device)
+
+ios-simulator-arm64:
+	@[ -n "$(IOS_SIM_SDK)" ] || \
+	  (echo "iPhoneSimulator SDK not found (xcrun --sdk iphonesimulator --show-sdk-path)" && exit 1)
+	$(call ios_build_arch,arm64,$(IOS_SIM_SDK),-mios-simulator-version-min=$(IOS_MIN),$(IOS_DIR)/simulator-arm64)
+
+ios-simulator-x64:
+	@[ -n "$(IOS_SIM_SDK)" ] || \
+	  (echo "iPhoneSimulator SDK not found (xcrun --sdk iphonesimulator --show-sdk-path)" && exit 1)
+	$(call ios_build_arch,x86_64,$(IOS_SIM_SDK),-mios-simulator-version-min=$(IOS_MIN),$(IOS_DIR)/simulator-x64)
+
+# Fat lib for the simulator — both arches in one .a so xcframework can
+# treat "ios-simulator" as a single slice.
+ios-simulator: ios-simulator-arm64 ios-simulator-x64
+	@mkdir -p $(IOS_DIR)/simulator
+	lipo -create -output $(IOS_DIR)/simulator/libzjs.a \
+	  $(IOS_DIR)/simulator-arm64/libzjs.a $(IOS_DIR)/simulator-x64/libzjs.a
+	@lipo -info $(IOS_DIR)/simulator/libzjs.a
+
+ios-xcframework: ios-device ios-simulator
+	@rm -rf $(IOS_DIR)/zjs.xcframework
+	xcodebuild -create-xcframework \
+	  -library $(IOS_DIR)/device/libzjs.a -headers include \
+	  -library $(IOS_DIR)/simulator/libzjs.a -headers include \
+	  -output $(IOS_DIR)/zjs.xcframework
+	@echo
+	@echo "iOS xcframework: $(IOS_DIR)/zjs.xcframework"
+	@ls $(IOS_DIR)/zjs.xcframework/
+
+ios-all: ios-xcframework
+
 clean:
 	rm -rf $(BUILD_DIR)

@@ -132,21 +132,32 @@ Two-or-three `raw { #ifdef _WIN32 ... }` guards in `src/context.zc`
 around the Date methods + a `tools/zjs.zc` shim for module loading
 should close the gap. Out of scope for this experiment.
 
-## iOS gap
+## iOS — resolved (2026-05-26)
 
-Two paths tried, neither worked cleanly:
+Both prior approaches hit zc's `--cc` plumbing:
 
 1. **`zig cc -target aarch64-ios -isysroot $SDK`** — zig's `aarch64-ios`
    target doesn't pick up the macOS-style `-isysroot`; the include
    path search misses iOS SDK headers and fails at `<stdio.h>`.
-2. **xcrun-resolved `clang -arch arm64 -isysroot $SDK -mios-version-min=15`** —
-   zc invokes the command but produces a 0-byte output; need to dig
-   into what zc strips out of the compose during the link step.
+2. **xcrun-resolved `clang -arch arm64 -isysroot $SDK -mios-version-min=15`
+   passed as `zc build --cc '...'`** — produced 0-byte output. The actual
+   cause: when the iOS SDK path runs ~102 characters, zc truncates the
+   `--cc` argument at a fixed internal limit; clang reports a sysroot it
+   never received (`/Applications/Xcode.app/Contents/De`) and the build
+   never reaches the link phase. Even when we worked around the truncation
+   (`--cc` pointing to a wrapper script), zc's link step passed `--static`
+   to Apple's `ld`, which rejects it (`-static` is the Apple form).
 
-Working iOS cross-compile in `zapp` uses a multi-stage pipeline
-(`native/build.zc` overlay + `_zapp_build_ios.zc` injection). Porting
-that pattern to zjs is its own small project — same shape as the
-deferred Phase 0.5 in the original plan.
+**Working approach (#270, doc: `docs/ios.md`):** skip zc's link plumbing
+entirely. Run `zc transpile` once to emit C, then drive `clang` ourselves
+for each iOS arch with the right `-arch / -isysroot / -m...version-min`
+triple, and pack the resulting `.o` files with `ar rcs`. Same pattern the
+macOS `libzjs.a` Makefile target already uses; iOS is just three more
+arches (device-arm64, sim-arm64, sim-x64) fed into `lipo` and
+`xcodebuild -create-xcframework`.
+
+Targets: `make ios-device`, `ios-simulator`, `ios-xcframework`, `ios-all`.
+Output: `build/ios/zjs.xcframework` — drop into Xcode.
 
 ## When to switch
 

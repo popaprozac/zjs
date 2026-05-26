@@ -362,6 +362,20 @@ None of these are urgent — the spike's env-reg cache already pushed
 of the realizable single-Mov-elimination perf lives. Document the
 gap and move on.
 
+## iOS xcframework — landed (2026-05-26)
+
+`make ios-all` produces `build/ios/zjs.xcframework` bundling
+`libzjs.a` for arm64 device + arm64/x86_64 simulator. Drop into
+Xcode, link Foundation + CoreFoundation, `#include "zjs.h"`. See
+`docs/ios.md`. Standalone — no zapp dependency.
+
+The original Phase 0.5 plan called for porting zapp's multi-stage
+`_zapp_build_ios.zc` overlay. We didn't need to — the right move
+was to skip zc's `--cc` plumbing on iOS entirely and drive
+`clang` directly from the Makefile (which already had the same
+shape for the macOS `libzjs.a` target). Documented in
+`docs/cross-compile.md`.
+
 ## Major arcs landed
 
 Kept here for context — these were once on this list and are now
