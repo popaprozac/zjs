@@ -341,6 +341,13 @@ struct ZjsContext {
     // throw (`throwing = true; thrown = pending_throw_value`).
     pending_throw_active: bool;
     pending_throw_value:  ZjsValue;
+    // Seed for the next interpreter entry frame's outer_promise.
+    // Set by interpret_with_outer_promise before calling
+    // interpret_inner; consumed by the inner loop's frame-setup. Lets
+    // host-side async invocation (Function.bind / call / apply on an
+    // async target) bind the outer Promise that Op::Return resolves
+    // and Op::Await suspends on. undefined when no seed pending.
+    async_outer_seed: ZjsValue;
     // Microtask queue. Each microtask is 4 consecutive slots:
     //   handler (callable or undefined), arg, result_promise, is_fulfilled_path.
     microtask_queue: ZjsValue*;
@@ -533,6 +540,7 @@ fn zjs_new_context() -> ZjsContext* {
         // calloc gave us {bits: 0}; explicitly initialize the implicit
         // host receiver to JS `undefined`.
         result.host_this = zjs_undefined();
+        result.async_outer_seed = zjs_undefined();
 
         // Strong-root table: -1 sentinel means "no free slot, append".
         result.roots_free_head = -1;
@@ -14122,106 +14130,167 @@ fn date_set_components(time_ms: f64, has_mask: u32, vals: f64*, nan_to_zero: boo
     return date_compose_utc_ms(y, mo, d, h, mn, s, ml);
 }
 
+// Full ECMA-262 ToNumber for a Date setX argument. zjs_to_double
+// handles primitives + strings but returns NaN for object operands
+// without invoking ToPrimitive — fine for in-bytecode ops which
+// pre-coerce via zjs_to_primitive at the dispatch site, but the
+// Date setX host functions get raw object operands and need the
+// valueOf/@@toPrimitive walk inline. Symbol throws TypeError per
+// §7.1.4 step 4.
+fn date_arg_to_number(ctx: ZjsContext*, v: ZjsValue) -> f64 {
+    let p = v;
+    let tag: u8 = zjs_cell_tag(v);
+    if tag == TAG_OBJECT || tag == TAG_ARRAY
+       || tag == TAG_FUNCTION || tag == TAG_CLOSURE || tag == TAG_HOST_FUNCTION
+       || tag == TAG_DATE || tag == TAG_REGEXP
+       || tag == TAG_MAP || tag == TAG_SET {
+        p = zjs_to_primitive(ctx, v, false);
+        if ctx.pending_throw_active { return 0.0; }
+    }
+    if zjs_is_symbol(p) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Cannot convert a Symbol value to a number", 41);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return 0.0;
+    }
+    return zjs_to_double(p);
+}
+
+// Spec for every Date.prototype.setX (§21.4.4.x): step 3 reads
+// dateObject.[[DateValue]] into `t` BEFORE any ToNumber on the
+// arguments. ToNumber can fire a user valueOf which may itself call
+// setTime — so reading t before lets us observe the original time
+// and produces the right NaN-or-not decision at step 8. Earlier
+// impls read d.time_ms only at date_set_components-call time, so a
+// mid-flight valueOf side-effect could change the basis we computed
+// against. Capture t at entry, then use t (not d.time_ms) below.
 fn host_date_set_millis(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let d = date_require_this(ctx);
     if d == NULL { return zjs_undefined(); }
+    let t: f64 = d.time_ms;
     let vals: f64[7]; let i: u32 = 0; while i < 7 { vals[i] = 0.0; i = i + 1; }
     // Spec: ToNumber argument before anything else (arg coercion order).
-    let ms_v = if argc > 0 { zjs_to_double(args[0]) } else { 0.0/0.0 };
+    let ms_v = if argc > 0 { date_arg_to_number(ctx, args[0]) } else { 0.0/0.0 };
     if ctx.pending_throw_active { return zjs_undefined(); }
     vals[6] = ms_v;
-    d.time_ms = date_set_components(d.time_ms, 64, &vals[0], false);
+    let is_t_nan: int = 0;
+    raw { is_t_nan = isnan(t) ? 1 : 0; }
+    if is_t_nan != 0 { d.time_ms = 0.0/0.0; return zjs_double(d.time_ms); }
+    d.time_ms = date_set_components(t, 64, &vals[0], false);
     return zjs_double(d.time_ms);
 }
 
 fn host_date_set_seconds(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let d = date_require_this(ctx);
     if d == NULL { return zjs_undefined(); }
+    let t: f64 = d.time_ms;
     let vals: f64[7]; let i: u32 = 0; while i < 7 { vals[i] = 0.0; i = i + 1; }
     let mask: u32 = 0;
-    if argc > 0 { vals[5] = zjs_to_double(args[0]); mask = mask | 32; }
+    if argc > 0 { vals[5] = date_arg_to_number(ctx, args[0]); mask = mask | 32; }
     if ctx.pending_throw_active { return zjs_undefined(); }
-    if argc > 1 { vals[6] = zjs_to_double(args[1]); mask = mask | 64; }
+    if argc > 1 { vals[6] = date_arg_to_number(ctx, args[1]); mask = mask | 64; }
     if ctx.pending_throw_active { return zjs_undefined(); }
     if mask == 0 { d.time_ms = 0.0/0.0; return zjs_double(d.time_ms); }
-    d.time_ms = date_set_components(d.time_ms, mask, &vals[0], false);
+    let is_t_nan: int = 0;
+    raw { is_t_nan = isnan(t) ? 1 : 0; }
+    if is_t_nan != 0 { d.time_ms = 0.0/0.0; return zjs_double(d.time_ms); }
+    d.time_ms = date_set_components(t, mask, &vals[0], false);
     return zjs_double(d.time_ms);
 }
 
 fn host_date_set_minutes(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let d = date_require_this(ctx);
     if d == NULL { return zjs_undefined(); }
+    let t: f64 = d.time_ms;
     let vals: f64[7]; let i: u32 = 0; while i < 7 { vals[i] = 0.0; i = i + 1; }
     let mask: u32 = 0;
-    if argc > 0 { vals[4] = zjs_to_double(args[0]); mask = mask | 16; }
+    if argc > 0 { vals[4] = date_arg_to_number(ctx, args[0]); mask = mask | 16; }
     if ctx.pending_throw_active { return zjs_undefined(); }
-    if argc > 1 { vals[5] = zjs_to_double(args[1]); mask = mask | 32; }
+    if argc > 1 { vals[5] = date_arg_to_number(ctx, args[1]); mask = mask | 32; }
     if ctx.pending_throw_active { return zjs_undefined(); }
-    if argc > 2 { vals[6] = zjs_to_double(args[2]); mask = mask | 64; }
+    if argc > 2 { vals[6] = date_arg_to_number(ctx, args[2]); mask = mask | 64; }
     if ctx.pending_throw_active { return zjs_undefined(); }
     if mask == 0 { d.time_ms = 0.0/0.0; return zjs_double(d.time_ms); }
-    d.time_ms = date_set_components(d.time_ms, mask, &vals[0], false);
+    let is_t_nan: int = 0;
+    raw { is_t_nan = isnan(t) ? 1 : 0; }
+    if is_t_nan != 0 { d.time_ms = 0.0/0.0; return zjs_double(d.time_ms); }
+    d.time_ms = date_set_components(t, mask, &vals[0], false);
     return zjs_double(d.time_ms);
 }
 
 fn host_date_set_hours(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let d = date_require_this(ctx);
     if d == NULL { return zjs_undefined(); }
+    let t: f64 = d.time_ms;
     let vals: f64[7]; let i: u32 = 0; while i < 7 { vals[i] = 0.0; i = i + 1; }
     let mask: u32 = 0;
-    if argc > 0 { vals[3] = zjs_to_double(args[0]); mask = mask | 8; }
+    if argc > 0 { vals[3] = date_arg_to_number(ctx, args[0]); mask = mask | 8; }
     if ctx.pending_throw_active { return zjs_undefined(); }
-    if argc > 1 { vals[4] = zjs_to_double(args[1]); mask = mask | 16; }
+    if argc > 1 { vals[4] = date_arg_to_number(ctx, args[1]); mask = mask | 16; }
     if ctx.pending_throw_active { return zjs_undefined(); }
-    if argc > 2 { vals[5] = zjs_to_double(args[2]); mask = mask | 32; }
+    if argc > 2 { vals[5] = date_arg_to_number(ctx, args[2]); mask = mask | 32; }
     if ctx.pending_throw_active { return zjs_undefined(); }
-    if argc > 3 { vals[6] = zjs_to_double(args[3]); mask = mask | 64; }
+    if argc > 3 { vals[6] = date_arg_to_number(ctx, args[3]); mask = mask | 64; }
     if ctx.pending_throw_active { return zjs_undefined(); }
     if mask == 0 { d.time_ms = 0.0/0.0; return zjs_double(d.time_ms); }
-    d.time_ms = date_set_components(d.time_ms, mask, &vals[0], false);
+    let is_t_nan: int = 0;
+    raw { is_t_nan = isnan(t) ? 1 : 0; }
+    if is_t_nan != 0 { d.time_ms = 0.0/0.0; return zjs_double(d.time_ms); }
+    d.time_ms = date_set_components(t, mask, &vals[0], false);
     return zjs_double(d.time_ms);
 }
 
 fn host_date_set_date(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let d = date_require_this(ctx);
     if d == NULL { return zjs_undefined(); }
+    let t: f64 = d.time_ms;
     let vals: f64[7]; let i: u32 = 0; while i < 7 { vals[i] = 0.0; i = i + 1; }
     let mask: u32 = 0;
-    if argc > 0 { vals[2] = zjs_to_double(args[0]); mask = mask | 4; }
+    if argc > 0 { vals[2] = date_arg_to_number(ctx, args[0]); mask = mask | 4; }
     if ctx.pending_throw_active { return zjs_undefined(); }
     if mask == 0 { d.time_ms = 0.0/0.0; return zjs_double(d.time_ms); }
-    d.time_ms = date_set_components(d.time_ms, mask, &vals[0], false);
+    let is_t_nan: int = 0;
+    raw { is_t_nan = isnan(t) ? 1 : 0; }
+    if is_t_nan != 0 { d.time_ms = 0.0/0.0; return zjs_double(d.time_ms); }
+    d.time_ms = date_set_components(t, mask, &vals[0], false);
     return zjs_double(d.time_ms);
 }
 
 fn host_date_set_month(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let d = date_require_this(ctx);
     if d == NULL { return zjs_undefined(); }
+    let t: f64 = d.time_ms;
     let vals: f64[7]; let i: u32 = 0; while i < 7 { vals[i] = 0.0; i = i + 1; }
     let mask: u32 = 0;
-    if argc > 0 { vals[1] = zjs_to_double(args[0]); mask = mask | 2; }
+    if argc > 0 { vals[1] = date_arg_to_number(ctx, args[0]); mask = mask | 2; }
     if ctx.pending_throw_active { return zjs_undefined(); }
-    if argc > 1 { vals[2] = zjs_to_double(args[1]); mask = mask | 4; }
+    if argc > 1 { vals[2] = date_arg_to_number(ctx, args[1]); mask = mask | 4; }
     if ctx.pending_throw_active { return zjs_undefined(); }
     if mask == 0 { d.time_ms = 0.0/0.0; return zjs_double(d.time_ms); }
-    d.time_ms = date_set_components(d.time_ms, mask, &vals[0], false);
+    let is_t_nan: int = 0;
+    raw { is_t_nan = isnan(t) ? 1 : 0; }
+    if is_t_nan != 0 { d.time_ms = 0.0/0.0; return zjs_double(d.time_ms); }
+    d.time_ms = date_set_components(t, mask, &vals[0], false);
     return zjs_double(d.time_ms);
 }
 
 fn host_date_set_full_year(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let d = date_require_this(ctx);
     if d == NULL { return zjs_undefined(); }
+    // setFullYear is the exception — step 3: "If t is NaN, let t be
+    // +0𝔽". Captured t is still read before ToNumber per spec.
+    let t: f64 = d.time_ms;
     let vals: f64[7]; let i: u32 = 0; while i < 7 { vals[i] = 0.0; i = i + 1; }
     let mask: u32 = 0;
-    if argc > 0 { vals[0] = zjs_to_double(args[0]); mask = mask | 1; }
+    if argc > 0 { vals[0] = date_arg_to_number(ctx, args[0]); mask = mask | 1; }
     if ctx.pending_throw_active { return zjs_undefined(); }
-    if argc > 1 { vals[1] = zjs_to_double(args[1]); mask = mask | 2; }
+    if argc > 1 { vals[1] = date_arg_to_number(ctx, args[1]); mask = mask | 2; }
     if ctx.pending_throw_active { return zjs_undefined(); }
-    if argc > 2 { vals[2] = zjs_to_double(args[2]); mask = mask | 4; }
+    if argc > 2 { vals[2] = date_arg_to_number(ctx, args[2]); mask = mask | 4; }
     if ctx.pending_throw_active { return zjs_undefined(); }
     if mask == 0 { d.time_ms = 0.0/0.0; return zjs_double(d.time_ms); }
-    // setFullYear: NaN time → treat as 0.
-    d.time_ms = date_set_components(d.time_ms, mask, &vals[0], true);
+    d.time_ms = date_set_components(t, mask, &vals[0], true);
     return zjs_double(d.time_ms);
 }
 

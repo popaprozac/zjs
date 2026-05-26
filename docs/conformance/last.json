@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-26 05:37 UTC",
+    "when": "2026-05-26 15:46 UTC",
     "total": 14524,
-    "passed": 11893,
-    "failed": 1985,
+    "passed": 11978,
+    "failed": 1900,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -1102,27 +1102,7 @@
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/async-method/returns-async-arrow-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/async-method/returns-async-arrow.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/async-method/returns-async-function-returns-arguments-from-own-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/async-method/returns-async-function-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/async-method/returns-async-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/async-method-static/dflt-params-ref-later.js",
@@ -1486,51 +1466,11 @@
     },
     {
       "path": "test/language/statements/class/elements/async-private-method/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method/returns-async-arrow-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method/returns-async-arrow.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method/returns-async-function-returns-arguments-from-own-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method/returns-async-function-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method/returns-async-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/async-private-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method-static/returns-async-arrow-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method-static/returns-async-arrow.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method-static/returns-async-function-returns-arguments-from-own-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method-static/returns-async-function-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/elements/async-private-method-static/returns-async-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/statements/class/elements/class-field-is-observable-by-proxy.js",
@@ -3186,27 +3126,7 @@
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/returns-async-arrow-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/returns-async-arrow.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/returns-async-function-returns-arguments-from-own-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/returns-async-function-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/async-method/returns-async-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/async-method-static/dflt-params-ref-later.js",
@@ -3490,51 +3410,11 @@
     },
     {
       "path": "test/language/expressions/class/elements/async-private-method/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method/returns-async-arrow-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method/returns-async-arrow.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method/returns-async-function-returns-arguments-from-own-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method/returns-async-function-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method/returns-async-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-arrow-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-arrow.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-function-returns-arguments-from-own-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-function-returns-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] async test never signaled completion"
     },
     {
       "path": "test/language/expressions/class/elements/class-name-static-initializer-anonymous.js",
@@ -7365,24 +7245,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): prototype should be an own property"
     },
     {
-      "path": "test/built-ins/Date/prototype/setDate/arg-coercion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToNumber invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setDate/arg-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setDate/arg-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setDate/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setDate/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): time updated in valueOf Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setDate/new-value-time-clip.js",
@@ -7393,36 +7257,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): setDate descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/setFullYear/arg-date-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setFullYear/arg-date-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setFullYear/arg-month-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setFullYear/arg-month-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setFullYear/arg-year-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setFullYear/arg-year-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): application of specified value Expected SameValue(\u00ab-2129718216998\u00bb, \u00abNaN\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setFullYear/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): date value correctly updated Expected SameValue(\u00ab1901\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setFullYear/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): date value correctly updated Expected SameValue(\u00ab1901\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setFullYear/new-value-time-clip.js",
@@ -7433,48 +7277,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): setFullYear descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/setHours/arg-coercion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [valueOf hour, valueOf min, valueOf sec, valueOf ms] should have the same "
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setHours/arg-hour-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setHours/arg-hour-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setHours/arg-min-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setHours/arg-min-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setHours/arg-ms-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setHours/arg-ms-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setHours/arg-sec-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setHours/arg-sec-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setHours/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setHours/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): time updated in valueOf Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setHours/new-value-time-clip.js",
@@ -7485,24 +7289,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): setHours descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/setMilliseconds/arg-coercion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToNumber invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMilliseconds/arg-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMilliseconds/arg-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setMilliseconds/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMilliseconds/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): time updated in valueOf Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setMilliseconds/new-value-time-clip.js",
@@ -7513,40 +7301,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): setMilliseconds descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/setMinutes/arg-coercion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [valueOf min, valueOf sec, valueOf ms] should have the same contents."
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMinutes/arg-min-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMinutes/arg-min-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMinutes/arg-ms-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMinutes/arg-ms-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMinutes/arg-sec-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMinutes/arg-sec-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setMinutes/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMinutes/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): time updated in valueOf Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setMinutes/new-value-time-clip.js",
@@ -7557,32 +7313,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): setMinutes descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/setMonth/arg-coercion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [valueOf month, valueOf date] should have the same contents."
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMonth/arg-date-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMonth/arg-date-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMonth/arg-month-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMonth/arg-month-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setMonth/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setMonth/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): time updated in valueOf Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setMonth/new-value-time-clip.js",
@@ -7593,32 +7325,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): setMonth descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/setSeconds/arg-coercion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [valueOf sec, valueOf ms] should have the same contents."
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setSeconds/arg-ms-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setSeconds/arg-ms-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setSeconds/arg-sec-to-number-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setSeconds/arg-sec-to-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setSeconds/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setSeconds/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): time updated in valueOf Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setSeconds/new-value-time-clip.js",
@@ -7645,16 +7353,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): setTime descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/setUTCDate/arg-coercion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToNumber invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setUTCDate/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCDate/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): time updated in valueOf Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setUTCDate/prop-desc.js",
@@ -7662,91 +7362,51 @@
     },
     {
       "path": "test/built-ins/Date/prototype/setUTCFullYear/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): date value correctly updated Expected SameValue(\u00ab1901\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setUTCFullYear/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): date value correctly updated Expected SameValue(\u00ab1901\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setUTCFullYear/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): setUTCFullYear descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/setUTCHours/arg-coercion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [valueOf hour, valueOf min, valueOf sec, valueOf ms] should have the same "
-    },
-    {
       "path": "test/built-ins/Date/prototype/setUTCHours/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCHours/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): time updated in valueOf Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setUTCHours/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): setUTCHours descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/setUTCMilliseconds/arg-coercion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToNumber invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Date/prototype/setUTCMilliseconds/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCMilliseconds/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): time updated in valueOf Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setUTCMilliseconds/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): setUTCMilliseconds descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/setUTCMinutes/arg-coercion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [valueOf min, valueOf sec, valueOf ms] should have the same contents."
-    },
-    {
       "path": "test/built-ins/Date/prototype/setUTCMinutes/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCMinutes/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): time updated in valueOf Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setUTCMinutes/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): setUTCMinutes descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/setUTCMonth/arg-coercion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [valueOf month, valueOf date] should have the same contents."
-    },
-    {
       "path": "test/built-ins/Date/prototype/setUTCMonth/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCMonth/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): time updated in valueOf Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setUTCMonth/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): setUTCMonth descriptor should not be enumerable"
     },
     {
-      "path": "test/built-ins/Date/prototype/setUTCSeconds/arg-coercion-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [valueOf sec, valueOf ms] should have the same contents."
-    },
-    {
       "path": "test/built-ins/Date/prototype/setUTCSeconds/date-value-read-before-tonumber-when-date-is-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/setUTCSeconds/date-value-read-before-tonumber-when-date-is-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
+      "reason": "[sloppy] zjs: throw: (unknown): time updated in valueOf Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/setUTCSeconds/prop-desc.js",

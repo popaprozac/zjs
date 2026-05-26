@@ -1774,6 +1774,28 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
     return r;
 }
 
+// Variant of interpret() that pre-binds the entry frame's
+// outer_promise. Used when a host caller invokes an async function
+// (e.g. via Function.prototype.bind / call / apply, or
+// zjs_call_value_with_this) — the async body's Op::Return resolves
+// outer_promise with the return value, and Op::Await on a pending
+// Promise can suspend cleanly because frame.outer_promise is set.
+fn interpret_with_outer_promise(ctx: ZjsContext*, entry_f: Function*,
+                                args: ZjsValue*, arg_count: u32,
+                                outer_promise: ZjsValue) -> InterpretResult {
+    raw { if (zjs_profile_ops_enabled < 0) zjs_profile_ops_init(); }
+    let saved_ctx = gc_set_active_ctx(ctx);
+    // push_call_frame inside interpret_inner zeroes outer_promise
+    // before the dispatch loop runs. We can't pre-set it before the
+    // push, so use a context-level slot the inner loop picks up.
+    let saved_seed = ctx.async_outer_seed;
+    ctx.async_outer_seed = outer_promise;
+    let r = interpret_inner(ctx, entry_f, args, arg_count, NULL);
+    ctx.async_outer_seed = saved_seed;
+    gc_set_active_ctx(saved_ctx);
+    return r;
+}
+
 // Resume a suspended generator. Hands off to interpret_inner_full
 // with the gen parameter set; the dispatch loop then yields-or-
 // returns its iter-result up via final_result.
@@ -1839,6 +1861,13 @@ fn interpret_inner_full(ctx: ZjsContext*,
     let entry_frame: u32 = ctx.frame_count;
     push_call_frame(ctx, entry_f, args, arg_count, 0);
     defer pop_call_frames_to(ctx, entry_frame);
+    // Consume the async-outer-seed if the host caller wired one up.
+    // Only applies to fresh calls (cont == NULL && gen == NULL) —
+    // resumes and generator-restarts manage their own outer_promise.
+    if cont == NULL && gen == NULL && zjs_is_promise(ctx.async_outer_seed) != 0 {
+        ctx.frames[ctx.frame_count - 1].outer_promise = ctx.async_outer_seed;
+        ctx.async_outer_seed = zjs_undefined();
+    }
     if cont != NULL {
         let pf_idx = ctx.frame_count - 1;
         let r_base = ctx.frames[pf_idx].regs_base;
@@ -6083,6 +6112,24 @@ fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsVal
         // gates on this same flag.
         if target.is_generator {
             r = make_generator_iter(ctx, target, args, argc);
+        } else if target.is_async {
+            // Async target: bind an outer Promise to the entry frame so
+            // Op::Return resolves it and Op::Await on a pending Promise
+            // can suspend cleanly. Mirrors Op::Invoke + wire_async_call.
+            // The call's "result" is the Promise; the body's actual
+            // return value reaches the Promise via promise_resolve_with.
+            let outer_p = zjs_promise_new();
+            ctx_register_cell(ctx, (void*)outer_p);
+            let outer_p_v = zjs_cell_from_ptr((void*)outer_p);
+            let rr = interpret_with_outer_promise(ctx, target, args, argc, outer_p_v);
+            if rr.is_throw {
+                // Synchronous throw before any await would have already
+                // settled the outer Promise via Op::Throw's unwind path.
+                // But if interpret returned is_throw without settlement
+                // (entry-frame final_result path), reject explicitly.
+                promise_settle(ctx, outer_p_v, rr.value, false);
+            }
+            r = outer_p_v;
         } else {
             let rr = interpret(ctx, target, args, argc);
             if rr.is_throw {
@@ -6108,6 +6155,18 @@ fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsVal
         if target2.is_generator {
             r = make_generator_iter(ctx, target2, args, argc);
             zjs_as_generator(r).saved_current_closure = cl;
+        } else if target2.is_async {
+            let outer_p = zjs_promise_new();
+            ctx_register_cell(ctx, (void*)outer_p);
+            let outer_p_v = zjs_cell_from_ptr((void*)outer_p);
+            let saved_cl = ctx.current_closure;
+            ctx.current_closure = cl;
+            let rr = interpret_with_outer_promise(ctx, target2, args, argc, outer_p_v);
+            ctx.current_closure = saved_cl;
+            if rr.is_throw {
+                promise_settle(ctx, outer_p_v, rr.value, false);
+            }
+            r = outer_p_v;
         } else {
             let saved_cl = ctx.current_closure;
             ctx.current_closure = cl;
