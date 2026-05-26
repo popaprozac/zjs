@@ -309,6 +309,59 @@ so we don't lose them.
   `object_alloc` points at generational specifically. Bench pause
   time + throughput + footprint before committing.
 
+## Top-level expression-statement `Mov result_reg, r` — single-stmt loop bodies
+
+**The cost:** for `for (...) { sum = sum + i; }` at top level, every
+iteration emits `Add sum, sum, i` followed by `Mov result_reg, sum`
+to keep the script's completion value updated. The Mov is ~20% of
+`int_loop`'s dispatch budget; similar shape in `closure_call`'s outer
+loop (`last = inc();`).
+
+**Why it's necessary today:** ECMA-262 §13.7.4 ForBodyEvaluation
+tracks V across abrupt completions via UpdateEmpty — so abrupt
+completion mid-block (`{ x = 1; continue; }`) must observe the
+prior expression's value (1, not undefined). The per-statement Mov
+to a fixed `result_reg` is what carries V forward across those
+abrupt edges. Naive "skip the Mov, emit one at body bottom" silently
+drops the UpdateEmpty value (verified against spec).
+
+**Attempted (and reverted) — TEE-bit side bitset:** mark the IPs of
+producing ops with a side-table bit; dispatch loop tail copies
+`regs[inst.a]` to `regs[result_reg]` when set. Spec-compliant, but
+the per-op check (load bitset + shift + AND + branch ≈ 5 cycles)
+exceeds the Mov it replaces in single-statement bodies — the only
+shape that actually appears on the hot path of `int_loop`,
+`closure_call`, etc. Branch attempted at `perf/expr-stmt-tee-fusion`
+(2026-05-26), measured a 28–37% regression on `closure_call` /
+`richards`, reverted. Multi-statement bodies WOULD win but aren't
+the hot path on any current bench.
+
+**Paths still open (any future poke):**
+
+- **Co-encoded TEE bit in `inst.op`** — steal the high bit of the
+  opcode byte; cheaper check (~2 cycles), but requires masking every
+  `op == Op::X` compare in the dispatch (≈120 sites) or doubling the
+  enum into Op / OpTee variants. Best case is break-even for
+  single-stmt bodies, modest win on multi.
+
+- **Smart V-tracker register allocation** — pre-pass identifies the
+  dominant V-producing local for hot loops, aliases its register
+  with `result_reg` so the assignment writes to V naturally. Zero
+  interpreter cost. Fragile around multiple V-trackers, captured
+  locals (live in env, not registers), and conditional flow — needs
+  scope-aware analysis.
+
+- **Direct-threaded dispatch + per-op completion hook** — once we
+  move off switch-chain dispatch (the AOT phase), the TEE check
+  could fold into the tail of each opcode's handler instead of a
+  shared loop tail. The per-op overhead amortizes because there's
+  no central branch to skip.
+
+None of these are urgent — the spike's env-reg cache already pushed
+`closure_call` from 5× to 2.3× behind Hermes, which is where most
+of the realizable single-Mov-elimination perf lives. Document the
+gap and move on.
+
 ## Major arcs landed
 
 Kept here for context — these were once on this list and are now
