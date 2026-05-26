@@ -2190,12 +2190,21 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
             }
             if zjs_is_string(av) != 0 || zjs_is_string(bv) != 0 {
+                // String-concat path. zjs_string_concat -> zjs_to_string
+                // throws TypeError on Symbol per ECMA-262 §7.1.17, so the
+                // Symbol-side check is handled inside.
                 regs[inst.a] = zjs_string_concat(ctx, av, bv);
                 if ctx.pending_throw_active {
                     throwing = true; thrown = consume_pending_throw(ctx);
                     exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
             } else {
+                // Numeric path. ToNumber on Symbol throws TypeError.
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
                 regs[inst.a] = zjs_arith_add(av, bv);
             }
         } else if op == Op::Sub {
@@ -2217,6 +2226,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
                 }
+            }
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
             }
             regs[inst.a] = zjs_arith_sub(av, bv);
         } else if op == Op::AddImm {
@@ -2249,7 +2263,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
                 if zjs_is_string(av) != 0 {
                     regs[inst.a] = zjs_string_concat(ctx, av, bv);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
                 } else {
+                    if zjs_is_symbol(av) != 0 {
+                        raise_symbol_to_number(ctx);
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
                     regs[inst.a] = zjs_arith_add(av, bv);
                 }
             }
@@ -2275,6 +2298,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
                 }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
                 regs[inst.a] = zjs_arith_sub(av, bv);
             }
         } else if op == Op::CmpLtImm {
@@ -2290,6 +2318,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         throwing = true; thrown = consume_pending_throw(ctx);
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
+                }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
                 regs[inst.a] = zjs_bool(zjs_cmp_lt(av, bv));
             }
@@ -2307,6 +2340,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
                 }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
                 regs[inst.a] = zjs_bool(zjs_cmp_le(av, bv));
             }
         } else if op == Op::CmpGtImm {
@@ -2322,6 +2360,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         throwing = true; thrown = consume_pending_throw(ctx);
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
+                }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
                 // a > b is `b < a` (CmpGt's actual semantics — order swap).
                 regs[inst.a] = zjs_bool(zjs_cmp_lt(bv, av));
@@ -2339,6 +2382,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         throwing = true; thrown = consume_pending_throw(ctx);
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
+                }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
                 regs[inst.a] = zjs_bool(zjs_cmp_le(bv, av));
             }
@@ -2361,6 +2409,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         throwing = true; thrown = consume_pending_throw(ctx);
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
+                }
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
                 cond_true = zjs_cmp_lt(av, bv);
             }
@@ -2390,6 +2443,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
                 }
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
                 cond_true = zjs_cmp_le(av, bv);
             }
             if !cond_true {
@@ -2417,6 +2475,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         throwing = true; thrown = consume_pending_throw(ctx);
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
+                }
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
                 cond_true = zjs_cmp_lt(bv, av);
             }
@@ -2446,6 +2509,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
                 }
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
                 cond_true = zjs_cmp_le(bv, av);
             }
             if !cond_true {
@@ -2468,6 +2536,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         throwing = true; thrown = consume_pending_throw(ctx);
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
+                }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
                 cond_true = zjs_cmp_lt(av, bv);
             }
@@ -2492,6 +2565,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
                 }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
                 cond_true = zjs_cmp_le(av, bv);
             }
             if !cond_true {
@@ -2515,6 +2593,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
                 }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
                 cond_true = zjs_cmp_lt(bv, av);
             }
             if !cond_true {
@@ -2537,6 +2620,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         throwing = true; thrown = consume_pending_throw(ctx);
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
+                }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
                 cond_true = zjs_cmp_le(bv, av);
             }
@@ -2919,6 +3007,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     }
                 }
             }
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
             regs[inst.a] = zjs_arith_mul(av, bv);
         } else if op == Op::Div {
             let av = regs[inst.b]; let bv = regs[inst.c];
@@ -2939,6 +3032,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
                 }
+            }
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
             }
             regs[inst.a] = zjs_arith_div(av, bv);
         } else if op == Op::Mod {
@@ -2961,6 +3059,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     }
                 }
             }
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
             regs[inst.a] = zjs_arith_mod(av, bv);
         } else if op == Op::Pow {
             let av = regs[inst.b]; let bv = regs[inst.c];
@@ -2982,21 +3085,62 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     }
                 }
             }
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
             regs[inst.a] = zjs_arith_pow(av, bv);
 
         // --- bitwise --------------------------------------------
         } else if op == Op::BitAnd {
-            regs[inst.a] = zjs_bit_and(regs[inst.b], regs[inst.c]);
+            let av = regs[inst.b]; let bv = regs[inst.c];
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+            regs[inst.a] = zjs_bit_and(av, bv);
         } else if op == Op::BitOr {
-            regs[inst.a] = zjs_bit_or(regs[inst.b], regs[inst.c]);
+            let av = regs[inst.b]; let bv = regs[inst.c];
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+            regs[inst.a] = zjs_bit_or(av, bv);
         } else if op == Op::BitXor {
-            regs[inst.a] = zjs_bit_xor(regs[inst.b], regs[inst.c]);
+            let av = regs[inst.b]; let bv = regs[inst.c];
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+            regs[inst.a] = zjs_bit_xor(av, bv);
         } else if op == Op::Shl {
-            regs[inst.a] = zjs_shl(regs[inst.b], regs[inst.c]);
+            let av = regs[inst.b]; let bv = regs[inst.c];
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+            regs[inst.a] = zjs_shl(av, bv);
         } else if op == Op::Shr {
-            regs[inst.a] = zjs_shr(regs[inst.b], regs[inst.c]);
+            let av = regs[inst.b]; let bv = regs[inst.c];
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+            regs[inst.a] = zjs_shr(av, bv);
         } else if op == Op::UShr {
-            regs[inst.a] = zjs_ushr(regs[inst.b], regs[inst.c]);
+            let av = regs[inst.b]; let bv = regs[inst.c];
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+            regs[inst.a] = zjs_ushr(av, bv);
 
         // --- comparison -----------------------------------------
         } else if op == Op::CmpEq {
@@ -3098,6 +3242,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     }
                 }
             }
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
             regs[inst.a] = zjs_bool(zjs_cmp_lt(av, bv));
         } else if op == Op::CmpLe {
             let av = regs[inst.b]; let bv = regs[inst.c];
@@ -3118,6 +3267,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     }
                 }
+            }
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
             }
             regs[inst.a] = zjs_bool(zjs_cmp_le(av, bv));
         } else if op == Op::CmpGt {
@@ -3140,6 +3294,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     }
                 }
             }
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
             regs[inst.a] = zjs_bool(zjs_cmp_lt(bv, av));
         } else if op == Op::CmpGe {
             let av = regs[inst.b]; let bv = regs[inst.c];
@@ -3161,6 +3320,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     }
                 }
             }
+            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
             regs[inst.a] = zjs_bool(zjs_cmp_le(bv, av));
 
         // --- unary ----------------------------------------------
@@ -3173,9 +3337,20 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
             }
+            if zjs_is_symbol(v) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
             regs[inst.a] = zjs_arith_neg(v);
         } else if op == Op::BitNot {
-            regs[inst.a] = zjs_bit_not(regs[inst.b]);
+            let v = regs[inst.b];
+            if zjs_is_symbol(v) != 0 {
+                raise_symbol_to_number(ctx);
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+            regs[inst.a] = zjs_bit_not(v);
         } else if op == Op::LogicalNot {
             let b = zjs_to_bool_coerce(regs[inst.b]);
             regs[inst.a] = zjs_bool(if b != 0 { 0 } else { 1 });
@@ -5651,6 +5826,21 @@ fn is_object_like(v: ZjsValue) -> int {
         return 1;
     }
     return 0;
+}
+
+// Raise TypeError("Cannot convert a Symbol value to a number") on
+// the pending-throw bridge. Used by Op::Add / Sub / Mul / Div / Mod
+// / Pow / Neg / Bit* / Shl / Shr / UShr / Cmp{Lt,Le,Gt,Ge}* /
+// JmpIfNot{Lt,Le,Gt,Ge}* sites — anywhere ECMA-262 §7.1.4 ToNumeric
+// would be invoked on a primitive that turned out to be a Symbol.
+// Returns true so callers can `if (raise_symbol_to_number(...)) {
+// throwing = true; ... break; }` in one line.
+fn raise_symbol_to_number(ctx: ZjsContext*) -> bool {
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                (char*)"Cannot convert a Symbol value to a number", 41);
+    ctx.pending_throw_active = true;
+    ctx.pending_throw_value  = err;
+    return true;
 }
 
 // Read + clear the pending-throw bridge state. Called from each

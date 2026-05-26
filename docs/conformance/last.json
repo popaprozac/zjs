@@ -1,25 +1,13 @@
 {
   "summary": {
-    "when": "2026-05-26 02:46 UTC",
+    "when": "2026-05-26 05:37 UTC",
     "total": 14524,
-    "passed": 11888,
-    "failed": 1990,
+    "passed": 11893,
+    "failed": 1985,
     "skipped": 646,
     "platform": "macOS"
   },
   "failures": [
-    {
-      "path": "test/language/expressions/addition/coerce-symbol-to-prim-return-prim.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToNumber(Symbol): right-hand side Expected a TypeError to be thrown but no exception was thrown a"
-    },
-    {
-      "path": "test/language/expressions/addition/order-of-evaluation.js",
-      "reason": "[sloppy] zjs: throw: (unknown): GetValue(lhs) throws. Expected a TypeError to be thrown but no exception was thrown at all"
-    },
-    {
-      "path": "test/language/expressions/addition/symbol-to-string.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
-    },
     {
       "path": "test/language/expressions/subtraction/order-of-evaluation.js",
       "reason": "[sloppy] zjs: throw: (unknown): ?ToNumeric(lhs) throws. Expected a TypeError but got a Test262Error"
@@ -250,15 +238,15 @@
     },
     {
       "path": "test/language/statements/for/dstr/const-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/for/dstr/let-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/for/dstr/var-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a ReferenceError"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/for/head-const-bound-names-in-stmt.js",
@@ -658,11 +646,11 @@
     },
     {
       "path": "test/language/statements/for-of/dstr/const-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/for-of/dstr/let-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-id-identifier-yield-ident-valid.js",
@@ -790,7 +778,7 @@
     },
     {
       "path": "test/language/statements/for-of/dstr/var-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/for-of/escaped-of.js",
@@ -978,7 +966,7 @@
     },
     {
       "path": "test/language/statements/try/dstr/ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/try/early-catch-duplicates.js",
@@ -1258,11 +1246,11 @@
     },
     {
       "path": "test/language/statements/class/definition/fn-name-accessor-get.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/definition/fn-name-accessor-set.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'set')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/definition/fn-name-gen-method.js",
@@ -1330,55 +1318,55 @@
     },
     {
       "path": "test/language/statements/class/dstr/async-gen-meth-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/dstr/async-gen-meth-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/dstr/async-gen-meth-static-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/dstr/async-gen-meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/dstr/gen-meth-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/dstr/gen-meth-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/dstr/gen-meth-static-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/dstr/gen-meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/dstr/meth-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/dstr/meth-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/dstr/meth-static-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/dstr/meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-gen-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-gen-string-literal-names.js",
@@ -1386,7 +1374,7 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-method-string-literal-names.js",
@@ -1394,7 +1382,7 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-string-literal-names.js",
@@ -1402,7 +1390,7 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-string-literal-names.js",
@@ -1410,7 +1398,7 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-string-literal-names.js",
@@ -1418,7 +1406,7 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-method-string-literal-names.js",
@@ -1682,7 +1670,7 @@
     },
     {
       "path": "test/language/statements/class/elements/multiple-definitions-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/multiple-definitions-string-literal-names.js",
@@ -1690,7 +1678,7 @@
     },
     {
       "path": "test/language/statements/class/elements/multiple-stacked-definitions-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/multiple-stacked-definitions-string-literal-names.js",
@@ -1734,7 +1722,7 @@
     },
     {
       "path": "test/language/statements/class/elements/new-no-sc-line-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/new-no-sc-line-method-string-literal-names.js",
@@ -1742,7 +1730,7 @@
     },
     {
       "path": "test/language/statements/class/elements/new-sc-line-gen-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/new-sc-line-gen-string-literal-names.js",
@@ -1750,7 +1738,7 @@
     },
     {
       "path": "test/language/statements/class/elements/new-sc-line-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/new-sc-line-method-string-literal-names.js",
@@ -2234,11 +2222,11 @@
     },
     {
       "path": "test/language/statements/class/elements/redeclaration-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/regular-definitions-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/regular-definitions-string-literal-names.js",
@@ -2246,7 +2234,7 @@
     },
     {
       "path": "test/language/statements/class/elements/same-line-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/same-line-async-gen-string-literal-names.js",
@@ -2254,7 +2242,7 @@
     },
     {
       "path": "test/language/statements/class/elements/same-line-async-method-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/same-line-async-method-string-literal-names.js",
@@ -2262,7 +2250,7 @@
     },
     {
       "path": "test/language/statements/class/elements/same-line-gen-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/same-line-gen-string-literal-names.js",
@@ -2270,7 +2258,7 @@
     },
     {
       "path": "test/language/statements/class/elements/same-line-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/same-line-method-string-literal-names.js",
@@ -2646,7 +2634,7 @@
     },
     {
       "path": "test/language/statements/class/elements/wrapped-in-sc-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/statements/class/elements/wrapped-in-sc-string-literal-names.js",
@@ -3334,55 +3322,55 @@
     },
     {
       "path": "test/language/expressions/class/dstr/async-gen-meth-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/dstr/async-gen-meth-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/dstr/async-gen-meth-static-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/dstr/async-gen-meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/dstr/gen-meth-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/dstr/gen-meth-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/dstr/gen-meth-static-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/dstr/gen-meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/dstr/meth-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/dstr/meth-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/dstr/meth-static-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/dstr/meth-static-dflt-ary-init-iter-get-err-array-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-gen-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-gen-string-literal-names.js",
@@ -3390,7 +3378,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-method-string-literal-names.js",
@@ -3398,7 +3386,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-string-literal-names.js",
@@ -3406,7 +3394,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-string-literal-names.js",
@@ -3414,7 +3402,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-gen-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-gen-string-literal-names.js",
@@ -3422,7 +3410,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-method-string-literal-names.js",
@@ -3670,7 +3658,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/multiple-definitions-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/multiple-definitions-string-literal-names.js",
@@ -3678,7 +3666,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/multiple-stacked-definitions-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/multiple-stacked-definitions-string-literal-names.js",
@@ -3722,7 +3710,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/new-no-sc-line-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/new-no-sc-line-method-string-literal-names.js",
@@ -3730,7 +3718,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/new-sc-line-gen-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/new-sc-line-gen-string-literal-names.js",
@@ -3738,7 +3726,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/new-sc-line-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/new-sc-line-method-string-literal-names.js",
@@ -3966,11 +3954,11 @@
     },
     {
       "path": "test/language/expressions/class/elements/redeclaration-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/regular-definitions-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/regular-definitions-string-literal-names.js",
@@ -3978,7 +3966,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/same-line-async-gen-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/same-line-async-gen-string-literal-names.js",
@@ -3986,7 +3974,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/same-line-async-method-computed-symbol-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/same-line-async-method-string-literal-names.js",
@@ -3994,7 +3982,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/same-line-gen-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/same-line-gen-string-literal-names.js",
@@ -4002,7 +3990,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/same-line-method-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/same-line-method-string-literal-names.js",
@@ -4362,7 +4350,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/wrapped-in-sc-computed-symbol-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol() should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/language/expressions/class/elements/wrapped-in-sc-string-literal-names.js",
@@ -5301,10 +5289,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"object\"\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/JSON/parse/text-non-string-primitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a SyntaxError"
-    },
-    {
       "path": "test/built-ins/JSON/stringify/length.js",
       "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 3; length value should be 3"
     },
@@ -5378,7 +5362,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/searchstring-tostring-errors.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToString: Symbol => TypeError Expected a TypeError to be thrown but no exception was thrown at al"
+      "reason": "[sloppy] zjs: throw: (unknown): ToString: @@toPrimitive => Symbol => TypeError Expected a TypeError to be thrown but no exception"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/searchstring-tostring-toprimitive.js",
@@ -5391,10 +5375,6 @@
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",
       "reason": "[sloppy] zjs: throw: (unknown): #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: [obje"
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/this-value-tostring-throws-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): If this value is a Symbol, String.prototype.slice should throw a TypeError Expected a TypeError t"
     },
     {
       "path": "test/built-ins/String/prototype/slice/this-value-tostring-throws-toprimitive.js",
@@ -5558,19 +5538,19 @@
     },
     {
       "path": "test/built-ins/Promise/Symbol.species/length.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Promise/Symbol.species/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'set')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Promise/Symbol.species/return-value.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Promise/Symbol.species/symbol-species-name.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Promise/Symbol.species/symbol-species.js",
@@ -6102,7 +6082,7 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/then/ctor-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Promise/prototype/then/deferred-is-resolved-value.js",
@@ -6326,19 +6306,19 @@
     },
     {
       "path": "test/built-ins/Map/Symbol.species/length.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Map/Symbol.species/return-value.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Map/Symbol.species/symbol-species-name.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Map/Symbol.species/symbol-species.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'set')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Map/get-set-method-failure.js",
@@ -6506,19 +6486,19 @@
     },
     {
       "path": "test/built-ins/Set/Symbol.species/length.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Set/Symbol.species/return-value.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Set/Symbol.species/symbol-species-name.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Set/Symbol.species/symbol-species.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'set')"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Set/is-a-constructor.js",
@@ -7262,7 +7242,7 @@
     },
     {
       "path": "test/built-ins/Date/prototype/Symbol.toPrimitive/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol(Symbol.toPrimitive) should be an own property"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Date/prototype/Symbol.toPrimitive/this-val-non-obj.js",

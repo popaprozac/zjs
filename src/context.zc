@@ -19076,6 +19076,16 @@ fn zjs_get_error(ctx: ZjsContext*) -> ZjsValue {
 
 fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
     if zjs_is_string(v) != 0 { return v; }
+    // ECMA-262 §7.1.17: abstract ToString on a Symbol throws TypeError.
+    // Explicit Symbol.prototype.toString and the String() call form
+    // bypass this (they call SymbolDescriptiveString directly).
+    if zjs_is_symbol(v) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Cannot convert a Symbol value to a string", 41);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return zjs_undefined();
+    }
 
     let buf: char[64];
     let len: usize = 0;
