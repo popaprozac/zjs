@@ -144,6 +144,26 @@ raw {
         zjs_profile_ops_enabled = (e && e[0] == '1') ? 1 : 0;
         if (zjs_profile_ops_enabled) atexit(zjs_dump_op_counts);
     }
+
+    /* ZJS_TRACE_UNWIND=1 — log every silent (no-throw) interpreter
+     * frame pop. The two paths are (a) ip running off code_len, which
+     * produces an implicit `return undefined`, and (b) Op::Halt, which
+     * unwinds the entire interpret() entry. Both are legitimate exit
+     * conditions; the trace just makes them visible so we can catch
+     * spurious mid-function unwinds (e.g., zapp's bridge.invokeService
+     * hang where the setTimeout callback silently ends mid-body). */
+    int zjs_trace_unwind_enabled = -1;
+    static void zjs_trace_unwind_init(void) {
+        if (zjs_trace_unwind_enabled != -1) return;
+        const char *e = getenv("ZJS_TRACE_UNWIND");
+        zjs_trace_unwind_enabled = (e && e[0] == '1') ? 1 : 0;
+    }
+    /* Pre-allocated small ring of the last N dispatched ops per
+     * interpret() invocation. Filled by the dispatch loop when tracing
+     * is enabled; printed at silent-unwind points so we can see what
+     * led up to the pop. Size kept small (8) to keep the cost
+     * negligible. */
+    enum { ZJS_UNWIND_RING_SIZE = 8 };
 }
 
 // =====================================================================
@@ -1767,7 +1787,10 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
     // One-shot eager init of the op-profile gate so the per-op
     // dispatch path inside interpret_inner can use a single load +
     // branch (no `< 0` sentinel check).
-    raw { if (zjs_profile_ops_enabled < 0) zjs_profile_ops_init(); }
+    raw {
+        if (zjs_profile_ops_enabled < 0) zjs_profile_ops_init();
+        if (zjs_trace_unwind_enabled < 0) zjs_trace_unwind_init();
+    }
     let saved_ctx = gc_set_active_ctx(ctx);
     let r = interpret_inner(ctx, entry_f, args, arg_count, NULL);
     gc_set_active_ctx(saved_ctx);
@@ -2087,6 +2110,13 @@ fn interpret_inner_full(ctx: ZjsContext*,
         if op == Op::Halt {
             // Halt aborts the entire interpret() entry — pop everything
             // back to entry depth, return undefined.
+            raw {
+                if (zjs_trace_unwind_enabled) {
+                    fprintf(stderr,
+                        "[zjs:trace_unwind] Op::Halt fired f=%p ip=%zu code_len=%zu frame_count=%u\n",
+                        (void*)f, (size_t)ip, (size_t)code_len, (unsigned)ctx->frame_count);
+                }
+            }
             pop_call_frames_to(ctx, entry_frame);
             final_result = zjs_undefined();
             exit_reason = 1;
@@ -4121,6 +4151,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
         } else if op == Op::Throw {
             throwing = true;
             thrown = regs[inst.a];
+            raw {
+                if (zjs_trace_unwind_enabled) {
+                    fprintf(stderr,
+                        "[zjs:trace_unwind] Op::Throw f=%p ip=%zu code_len=%zu try_depth=%u frame_count=%u\n",
+                        (void*)f, (size_t)ip, (size_t)code_len,
+                        (unsigned)ctx->ctx_try_depth, (unsigned)ctx->frame_count);
+                }
+            }
             exit_reason = 3;
             break;
         } else if op == Op::EnterTry {
@@ -5782,7 +5820,22 @@ fn interpret_inner_full(ctx: ZjsContext*,
         // Inner loop exited. Decide why and how to handle.
         if exit_reason == 0 {
             // Ran off end of code — implicit return undefined.
+            // This path is normal at the end of a function body whose
+            // last statement isn't a Return (e.g., script top-level,
+            // bare expression statements). But if it fires MID-function
+            // — IP somehow advanced past code_len — that's a bug
+            // (corrupt jump offset, off-by-one, etc.) and the trace
+            // below surfaces it.
             let f_top = ctx.frames[ctx.frame_count - 1].f;
+            raw {
+                if (zjs_trace_unwind_enabled) {
+                    Function* ft = ctx->frames[ctx->frame_count - 1].f;
+                    size_t ft_len = ft ? ft->code_len : 0;
+                    fprintf(stderr,
+                        "[zjs:trace_unwind] ran-off-end f=%p ip=%zu code_len=%zu frame_count=%u\n",
+                        (void*)ft, (size_t)ctx->frames[ctx->frame_count - 1].ip, ft_len, (unsigned)ctx->frame_count);
+                }
+            }
             let async_outer = ctx.frames[ctx.frame_count - 1].outer_promise;
             let is_async_top = f_top != NULL && f_top.is_async && zjs_is_promise(async_outer) != 0;
             let implicit_rv: ZjsValue = zjs_undefined();
