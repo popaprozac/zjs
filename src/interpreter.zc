@@ -1965,12 +1965,31 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             let top_idx: u32 = ctx.frame_count - 1;
             let caught: bool = false;
+            raw {
+                if (zjs_trace_unwind_enabled) {
+                    Function* tf = ctx->frames[top_idx].f;
+                    size_t tflen = tf ? tf->code_len : 0;
+                    fprintf(stderr,
+                        "[zjs:trace_unwind] unwind throw f=%p ip=%zu code_len=%zu frame_count=%u try_depth=%u\n",
+                        (void*)tf, (size_t)ctx->frames[top_idx].ip, tflen,
+                        (unsigned)ctx->frame_count, (unsigned)ctx->ctx_try_depth);
+                }
+            }
             if ctx.ctx_try_depth > 0 {
                 let td = ctx.ctx_try_depth - 1;
                 if ctx.ctx_try_stack[td].frame_index == top_idx {
                     let regs_base_c = ctx.frames[top_idx].regs_base;
                     let catch_reg_c = (u32)ctx.ctx_try_stack[td].catch_reg;
                     ctx.frames[top_idx].ip = ctx.ctx_try_stack[td].catch_ip;
+                    raw {
+                        if (zjs_trace_unwind_enabled) {
+                            Function* tf = ctx->frames[top_idx].f;
+                            size_t tflen = tf ? tf->code_len : 0;
+                            fprintf(stderr,
+                                "[zjs:trace_unwind]   caught: catch_ip=%zu (code_len=%zu)\n",
+                                (size_t)ctx->ctx_try_stack[td].catch_ip, tflen);
+                        }
+                    }
                     ctx.reg_stack[regs_base_c + catch_reg_c] = thrown;
                     ctx.ctx_try_depth = td;
                     throwing = false;
@@ -1978,6 +1997,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
             }
             if !caught {
+                raw {
+                    if (zjs_trace_unwind_enabled) {
+                        fprintf(stderr, "[zjs:trace_unwind]   uncaught: popping frame\n");
+                    }
+                }
                 // async function bubbling out an exception: settle the
                 // outer Promise as rejected. The caller's reg already
                 // holds that Promise (written at call time), so we
