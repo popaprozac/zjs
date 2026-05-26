@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-05-26 01:36 UTC",
+    "when": "2026-05-26 02:46 UTC",
     "total": 14524,
     "passed": 11888,
     "failed": 1990,
@@ -1554,11 +1554,11 @@
     },
     {
       "path": "test/language/statements/class/elements/computed-name-toprimitive-symbol.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown):"
     },
     {
       "path": "test/language/statements/class/elements/computed-name-toprimitive.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown):"
     },
     {
       "path": "test/language/statements/class/elements/computed-property-abrupt-completition.js",
@@ -3562,11 +3562,11 @@
     },
     {
       "path": "test/language/expressions/class/elements/computed-name-toprimitive-symbol.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown):"
     },
     {
       "path": "test/language/expressions/class/elements/computed-name-toprimitive.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown):"
     },
     {
       "path": "test/language/expressions/class/elements/derived-cls-direct-eval-contains-superproperty-1.js",

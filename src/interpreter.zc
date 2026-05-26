@@ -718,6 +718,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     if tag == TAG_OBJECT {
         let o = zjs_as_object(obj);
         let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+        if ctx.pending_throw_active { return zjs_undefined(); }
         let name = zjs_as_string(key_str_val);
         // globalThis: a property miss falls through to the globals
         // table so `var g = this; g.someGlobal` works at top level.
@@ -1446,6 +1447,9 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
     if tag == TAG_OBJECT {
         let o = zjs_as_object(obj);
         let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+        // ToPropertyKey can fail (e.g., user toString() throws) — bail
+        // before zjs_as_string dereferences undefined.
+        if ctx.pending_throw_active { return; }
         let name = zjs_as_string(key_str_val);
         // Walk the proto chain looking for an accessor whose setter
         // should fire (Phase 3.9b). A data property on the proto means
@@ -1760,6 +1764,10 @@ fn build_iter_result(ctx: ZjsContext*, value: ZjsValue, done: bool) -> ZjsValue 
 }
 
 fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u32) -> InterpretResult {
+    // One-shot eager init of the op-profile gate so the per-op
+    // dispatch path inside interpret_inner can use a single load +
+    // branch (no `< 0` sentinel check).
+    raw { if (zjs_profile_ops_enabled < 0) zjs_profile_ops_init(); }
     let saved_ctx = gc_set_active_ctx(ctx);
     let r = interpret_inner(ctx, entry_f, args, arg_count, NULL);
     gc_set_active_ctx(saved_ctx);
@@ -1986,8 +1994,10 @@ fn interpret_inner_full(ctx: ZjsContext*,
         // Op profiling — gated on $ZJS_PROFILE_OPS=1. atexit dumper
         // below logs per-op execution counts AND per-pair counts
         // (prev → this) for super-instruction fusion candidates.
+        // Lazy init moved to the outer entry below — the `< 0` check
+        // used to run per-op, adding ~1ns × (ops executed) for every
+        // run regardless of whether profiling was on.
         raw {
-            if (zjs_profile_ops_enabled < 0) zjs_profile_ops_init();
             if (zjs_profile_ops_enabled) {
                 int op_i = (int)op;
                 zjs_op_counts[op_i] += 1;

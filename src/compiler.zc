@@ -92,6 +92,16 @@ struct Compiler {
     // method_call's profile). -1 = not allocated.
     this_reg: i32;
 
+    // Hoisted current_closure.env. When this function references outer
+    // captures but has no own env (passthrough), each outer-capture
+    // access emits a fresh LoadEnv into a temp via emit_env_chain_walk.
+    // For closure bodies that read the same outer var multiple times
+    // (e.g. `count = count + 1; return count`) that's N LoadEnvs per
+    // call. compile_function emits one LoadEnv at prologue into this
+    // stable reg; emit_env_chain_walk returns it directly for depth==1.
+    // -1 = not allocated.
+    cached_outer_env_reg: i32;
+
     // 2026-05-16 — "preferred destination" hint for compile_expr.
     // When a caller knows where an expression's result should land
     // (e.g. assignment to a local: `i = i + 1`), it sets this to the
@@ -250,6 +260,7 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.last_expr_reg = -1;
     c.arguments_reg = -1;
     c.this_reg = -1;
+    c.cached_outer_env_reg = -1;
     c.preferred_dst = -1;
     c.enclosing_class_id = -1;
     // Scope tracker — start with the function-top scope (id 0) on the
@@ -2994,6 +3005,15 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
         c.this_reg = (i32)alloc_reg(c);
     }
 
+    // 2f. Hoist current_closure.env when the body reads outer captures
+    //     but has no own env (passthrough). emit_env_chain_walk's
+    //     depth==1 path then returns this stable reg, skipping the
+    //     fresh LoadEnv emit per access. Big win for closure bodies
+    //     that touch the same captured var multiple times.
+    if c.has_outer_refs && !c.needs_env {
+        c.cached_outer_env_reg = (i32)alloc_reg(c);
+    }
+
     // 3. Locals are now fixed; temps live above this watermark.
     c.fixed_regs = c.next_reg;
 
@@ -3003,6 +3023,11 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     //     body get stored when their VarDecl executes.
     if c.arguments_reg >= 0 {
         emit(c, make_inst_a(Op::BuildArguments, (u8)c.arguments_reg));
+    }
+    // Seed the cached outer-env reg once. emit_env_chain_walk's
+    // depth==1 reads return this reg directly afterward.
+    if c.cached_outer_env_reg >= 0 {
+        emit(c, make_inst_a(Op::LoadEnv, (u8)c.cached_outer_env_reg));
     }
     // No prologue Op::LoadThis emit — the interpreter seeds
     // regs[f.this_reg] from ctx.host_this on frame entry, saving the
@@ -3364,6 +3389,9 @@ fn closure_env_reg(c: Compiler*) -> ClosureEnvReg {
         return ClosureEnvReg{ reg: c.env_reg, is_temp: false };
     }
     if c.has_outer_refs {
+        if c.cached_outer_env_reg >= 0 {
+            return ClosureEnvReg{ reg: (u8)c.cached_outer_env_reg, is_temp: false };
+        }
         let temp = alloc_reg(c);
         emit(c, make_inst_a(Op::LoadEnv, temp));
         return ClosureEnvReg{ reg: temp, is_temp: true };
@@ -4580,9 +4608,15 @@ fn outer_capture_depth(c: Compiler*, name: char*, name_len: u32) -> u32 {
 }
 
 // Emit a register holding the env at `depth` levels up the chain.
-// Always allocates a fresh register that the caller must release.
+// Allocates a fresh temp register OR returns the cached prologue reg
+// when depth==1 and one is set up. release_reg on the returned value
+// is a no-op for the cached (sub-fixed_regs) reg, so callers don't
+// need to special-case the borrow.
 // depth must be >= 1.
 fn emit_env_chain_walk(c: Compiler*, depth: u32) -> u8 {
+    if depth == 1 && c.cached_outer_env_reg >= 0 {
+        return (u8)c.cached_outer_env_reg;
+    }
     let env_r = alloc_reg(c);
     emit(c, make_inst_a(Op::LoadEnv, env_r));
     let outer_atom = ctx_intern_atom(c.ctx, OUTER_ENV_KEY, OUTER_ENV_KEY_LEN);
