@@ -115,7 +115,13 @@ fn zjs_get_property(ctx: ZjsContext*, obj: ZjsValue, name: char*) -> ZjsValue {
     if ctx == NULL || name == NULL { return zjs_undefined(); }
     let nlen: usize = 0;
     raw { nlen = strlen(name); }
-    let key = ctx_intern_string(ctx, name, (u32)nlen);
+    // Atom-intern the key. property_set on a fresh non-atom ZjsString
+    // stores that string as the hidden class's transition_name; the
+    // class walker assumes transition_names are atoms (pinned via the
+    // atom-table root), so a non-atom key gets swept on the next GC
+    // and leaves cls.transition_name dangling.
+    let key_atom = ctx_intern_atom(ctx, name, (u32)nlen);
+    let key = zjs_cell_from_ptr((void*)key_atom);
     let r = property_get(ctx, obj, key);
     if ctx.pending_throw_active {
         // Surface the pending throw through the same had_error path
@@ -132,7 +138,13 @@ fn zjs_set_property(ctx: ZjsContext*, obj: ZjsValue, name: char*, value: ZjsValu
     if ctx == NULL || name == NULL { return; }
     let nlen: usize = 0;
     raw { nlen = strlen(name); }
-    let key = ctx_intern_string(ctx, name, (u32)nlen);
+    // Atom-intern the key — the property store will hand this string
+    // to the hidden-class transition, and gc_mark_hidden_class assumes
+    // transition_names are atoms (already pinned by the atom-table
+    // root walk). A fresh non-atom ZjsString would otherwise get
+    // swept on the next GC, leaving cls.transition_name dangling.
+    let key_atom = ctx_intern_atom(ctx, name, (u32)nlen);
+    let key = zjs_cell_from_ptr((void*)key_atom);
     property_set(ctx, obj, key, value);
     if ctx.pending_throw_active {
         ctx.had_error = true;
