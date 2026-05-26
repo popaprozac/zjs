@@ -1984,10 +1984,23 @@ fn class_find_slot(cls: ZjsHiddenClass*, name: ZjsString*) -> i32 {
 // Find an existing transition from `cls` on `name`. Returns NULL if
 // no such edge exists yet.
 fn class_find_transition(cls: ZjsHiddenClass*, name: ZjsString*) -> ZjsHiddenClass* {
+    // Move-to-front on hit. Empty_class accumulates dozens of
+    // transitions during bootstrap (every distinct property name ever
+    // installed on a fresh {}), and the bridge bench's `{i:1}` literal
+    // pays a linear scan over all of them per iteration. With MTF the
+    // hot transitions converge to index 0, so the steady-state scan
+    // is a single pointer-compare.
     let i: u32 = 0;
     while i < cls.trans_count {
         if zjs_string_equals(cls.trans_names[i], name) != 0 {
-            return cls.trans_children[i];
+            let child = cls.trans_children[i];
+            if i != 0 {
+                cls.trans_names[i]    = cls.trans_names[0];
+                cls.trans_children[i] = cls.trans_children[0];
+                cls.trans_names[0]    = name;
+                cls.trans_children[0] = child;
+            }
+            return child;
         }
         i = i + 1;
     }
