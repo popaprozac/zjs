@@ -219,7 +219,14 @@ fn zjs_call(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsValue, argv: ZjsVal
     ctx.had_error = false;
     ctx.last_error = zjs_undefined();
     let r = zjs_call_value_with_this(ctx, callee, this_val, argv, argc);
+    // Pin r across drain_microtasks: each pending .then callback fires
+    // an interpret() that may ctx_maybe_gc, and r is otherwise only
+    // reachable from this C frame. Without the pin, a microtask drain
+    // can reclaim freshly-returned cells before they reach the
+    // embedder (manifests as silent dangling-ZjsValue corruption).
+    ctx_push_temp_root(ctx, r);
     drain_microtasks(ctx);
+    ctx_pop_temp_root(ctx);
     if ctx.pending_throw_active {
         ctx.had_error = true;
         ctx.last_error = consume_pending_throw(ctx);

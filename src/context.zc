@@ -663,6 +663,23 @@ fn ctx_replace_top_temp_root(ctx: ZjsContext*, v: ZjsValue) -> void {
     }
 }
 
+// Public scoped-root ABI — thin wrappers around the internal temp_root
+// stack so embedders can protect transient ZjsValues across host-API
+// calls without resorting to the heavyweight handle-based zjs_root.
+// See include/zjs.h for the lifetime contract and walker example.
+fn zjs_pin(ctx: ZjsContext*, value: ZjsValue) -> void {
+    if ctx == NULL { return; }
+    ctx_push_temp_root(ctx, value);
+}
+fn zjs_unpin(ctx: ZjsContext*) -> void {
+    if ctx == NULL { return; }
+    ctx_pop_temp_root(ctx);
+}
+fn zjs_pin_replace(ctx: ZjsContext*, value: ZjsValue) -> void {
+    if ctx == NULL { return; }
+    ctx_replace_top_temp_root(ctx, value);
+}
+
 // =====================================================================
 // Strong roots — public zjs_root / zjs_unroot ABI.
 //

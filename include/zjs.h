@@ -410,6 +410,46 @@ uint32_t zjs_root(ZjsContext* ctx, ZjsValue value);
 void     zjs_unroot(ZjsContext* ctx, uint32_t handle);
 ZjsValue zjs_root_get(ZjsContext* ctx, uint32_t handle);
 
+/* -----------------------------------------------------------------------
+ * Scoped roots — stack-discipline GC protection for transient values.
+ *
+ * IMPORTANT lifetime rule: any ZjsValue you receive from a zjs_* call
+ * (eval, call, get_property, get_element, new_string, …) is live only
+ * until your NEXT zjs_* call that can allocate. The engine's mark-
+ * sweep GC may fire inside that next call to reclaim cells your C
+ * stack still holds but the GC root walk can't see.
+ *
+ * For recursive walkers — your favorite shape is `keys = zjs_call
+ * (Object.keys, obj); for (i...) walk(zjs_get_property(obj, keys[i]))`
+ * — protect each held value with zjs_pin / zjs_unpin:
+ *
+ *     void walk_object(ZjsContext* ctx, ZjsValue obj) {
+ *         ZjsValue keys = call_object_keys(ctx, obj);
+ *         zjs_pin(ctx, keys);              // keys is now a GC root
+ *         uint32_t n = zjs_array_length(keys);
+ *         for (uint32_t i = 0; i < n; i++) {
+ *             ZjsValue child = zjs_get_property(ctx, obj,
+ *                                  c_str(zjs_get_element(ctx, keys, i)));
+ *             walk(ctx, child);            // may recurse, may allocate
+ *         }
+ *         zjs_unpin(ctx);                  // keys can be reclaimed now
+ *     }
+ *
+ * Stack discipline: every zjs_pin MUST be paired with exactly one
+ * zjs_unpin in the same C function (or its callees). zjs_pin_replace
+ * overwrites the top slot — useful in loops that allocate a fresh
+ * value each iteration (push once, replace each iter, pop at end).
+ *
+ * vs zjs_root: zjs_root is the heavyweight handle-based form for
+ * values held across event-loop ticks (uv I/O callbacks, timers).
+ * zjs_pin is the lightweight stack-based form for values held across
+ * a couple of host-API calls inside one C frame. They use separate
+ * stacks; you can mix them.
+ * --------------------------------------------------------------------- */
+void zjs_pin(ZjsContext* ctx, ZjsValue value);
+void zjs_unpin(ZjsContext* ctx);
+void zjs_pin_replace(ZjsContext* ctx, ZjsValue value);
+
 #ifdef __cplusplus
 }
 #endif
