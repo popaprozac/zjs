@@ -260,5 +260,80 @@ test: all
 	@$(INTERP_TEST)
 	@echo '--- All checks passed ---'
 
+# ============================================================================
+# Cross-compile via `zc --cc 'zig cc -target ...'`
+#
+# zc applies platform directives based on the HOST OS, not the zig
+# `-target` flag, so macOS-only directives (`framework: Foundation`,
+# the http_apple.m / ws_apple.m cflags) leak through when cross-
+# compiling to Linux/Windows from a Mac host (#206).
+#
+# Workaround: stage a temp tree where the host-incompatible directives
+# are sed-stripped out and a target-appropriate set is substituted in.
+# zc then sees a single uncontested platform tag, picks it up, and
+# delegates the rest to zig cc.
+#
+# Targets:
+#   make cross-linux-arm64
+#   make cross-linux-x64
+#   make cross-macos-x64      # static, smaller, distributable
+#   make cross-all            # all three
+#
+# Output lands in $(BUILD_DIR)/zjs.<platform>.<arch>.
+# ============================================================================
+
+CROSS_DIR := $(BUILD_DIR)/cross-stage
+
+# Renames `//> <other-platform>:` directives to `//> <host>:` in the
+# staged tree so zc, which keys off the host OS, applies the cross-
+# target's flags. Drops the Apple directives outright when target!=Apple.
+#
+# Args:
+#   $(1) — staging dir (absolute path)
+#   $(2) — target host tag to retain ("linux" or "windows" or "macos")
+define cross_stage_with_target
+	@mkdir -p $(1)
+	@rsync -a --delete --exclude=$(BUILD_DIR) --exclude=.git --exclude=vendor \
+	  --exclude=docs ./ $(1)/
+	@find $(1)/src $(1)/tools $(1)/tests -name '*.zc' -exec sed -i '' \
+	    $(if $(filter-out macos,$(2)),-e '/^\/\/> macos:/d' -e '/^\/\/> ios:/d',) \
+	    -e 's| -Isrc | -I$(1)/src |g' \
+	    -e 's| src/platform/| $(1)/src/platform/|g' \
+	    $(if $(filter linux,$(2)),\
+	      -e 's| $(1)/src/platform/http_linux.c| $(1)/src/platform/http_stub.c|g' \
+	      -e 's| $(1)/src/platform/ws_linux.c| $(1)/src/platform/ws_stub.c|g' \
+	      -e 's|-lcurl||g' \
+	      -e 's|-lwebsockets||g',) \
+	    -e 's|^//> $(2):|//> macos:|g' \
+	    {} \;
+endef
+
+cross-linux-arm64:
+	$(call cross_stage_with_target,$(abspath $(CROSS_DIR)),linux)
+	cd $(CROSS_DIR) && zc build --release \
+	  --cc 'zig cc -target aarch64-linux-musl -s' \
+	  tools/zjs.zc -o $(abspath $(BUILD_DIR))/zjs.linux.arm64
+	@ls -la $(BUILD_DIR)/zjs.linux.arm64
+	@file $(BUILD_DIR)/zjs.linux.arm64 2>/dev/null | head -1
+
+cross-linux-x64:
+	$(call cross_stage_with_target,$(abspath $(CROSS_DIR)),linux)
+	cd $(CROSS_DIR) && zc build --release \
+	  --cc 'zig cc -target x86_64-linux-musl -s' \
+	  tools/zjs.zc -o $(abspath $(BUILD_DIR))/zjs.linux.x64
+	@ls -la $(BUILD_DIR)/zjs.linux.x64
+	@file $(BUILD_DIR)/zjs.linux.x64 2>/dev/null | head -1
+
+cross-all: cross-linux-arm64 cross-linux-x64
+	@echo
+	@echo 'Cross builds:'
+	@ls -la $(BUILD_DIR)/zjs.linux.arm64 $(BUILD_DIR)/zjs.linux.x64
+	@file    $(BUILD_DIR)/zjs.linux.arm64 $(BUILD_DIR)/zjs.linux.x64 2>/dev/null
+
+# cross-macos-x64 deferred — zig cc -target x86_64-macos needs the
+# Apple SDK on PATH (Foundation, CommonCrypto, etc.). Native macOS
+# users build natively; universal-binary support is a separate
+# packaging concern.
+
 clean:
 	rm -rf $(BUILD_DIR)

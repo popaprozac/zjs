@@ -18854,10 +18854,14 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // zjs_next_timer_ms / zjs_run_pending_timers; these globals
     // install / cancel reservations.
     let st_ptr:  void* = NULL; raw { st_ptr  = (void*)host_set_timeout; }
-    let si_ptr:  void* = NULL; raw { si_ptr  = (void*)host_set_interval; }
+    // Named `siv_ptr` (not `si_ptr`) to dodge musl <signal.h>'s
+    // `si_ptr` macro — picked up when node:child_process pulls in
+    // <signal.h> at TU scope, then collides with this local on the
+    // cross-musl build path. Functionally arbitrary identifier.
+    let siv_ptr: void* = NULL; raw { siv_ptr = (void*)host_set_interval; }
     let ct_ptr:  void* = NULL; raw { ct_ptr  = (void*)host_clear_timeout; }
     ctx_register_host_function(ctx, (char*)"setTimeout",   st_ptr);
-    ctx_register_host_function(ctx, (char*)"setInterval",  si_ptr);
+    ctx_register_host_function(ctx, (char*)"setInterval",  siv_ptr);
     ctx_register_host_function(ctx, (char*)"clearTimeout", ct_ptr);
     // clearInterval is the same operation as clearTimeout (both
     // dispatch on id); aliasing matches what browsers and Node do.

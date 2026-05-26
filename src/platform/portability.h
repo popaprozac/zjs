@@ -28,16 +28,30 @@
 #  include <sys/resource.h>
 #  include <limits.h>
    // arc4random_buf landed in glibc 2.36 (Aug 2022). On older Linux
-   // (Ubuntu 20.04 / 22.04 LTS, RHEL ≤ 8) and on non-glibc libcs (musl)
-   // it's missing, which becomes an undefined-reference at link time.
-   // Fall back to getrandom(2) — Linux 3.17+, glibc 2.25+, also in
-   // musl ≥ 1.1.20.
+   // (Ubuntu 20.04 / 22.04 LTS, RHEL ≤ 8) and on non-glibc libcs (musl,
+   // which is what zig cc's `-target *-linux-musl` ships) it's missing
+   // — becomes an undefined-reference at link time. Fall back to
+   // getrandom(2): Linux 3.17+, glibc 2.25+, musl ≥ 1.1.20.
+   //
+   // The nested form is deliberate: the preprocessor evaluates BOTH
+   // sides of `||` before short-circuiting, so `!__GLIBC_PREREQ(2, 36)`
+   // on a libc that doesn't define the macro still tokenizes — and
+   // zig cc's preprocessor (clang front-end) rejects the empty-macro
+   // function-call form. Splitting into a defined() gate and a nested
+   // version-check keeps the second clause out of the token stream
+   // when GLIBC_PREREQ isn't a thing.
 #  if defined(__linux__)
 #    include <features.h>
-#    if !defined(__GLIBC_PREREQ) || !__GLIBC_PREREQ(2, 36)
+#    if defined(__GLIBC_PREREQ)
+#      if !__GLIBC_PREREQ(2, 36)
+#        define ZJS_USE_GETRANDOM 1
+#      endif
+#    else
+#      define ZJS_USE_GETRANDOM 1   /* musl / uClibc / etc. */
+#    endif
+#    if defined(ZJS_USE_GETRANDOM)
 #      include <sys/random.h>
 #      include <errno.h>
-#      define ZJS_USE_GETRANDOM 1
 #    endif
 #  endif
 #endif
@@ -115,8 +129,14 @@ static inline void zjs_random_bytes(void* buf, size_t len) {
 #  include <CommonCrypto/CommonDigest.h>
 #elif defined(_WIN32)
 #  include <bcrypt.h>
-#else
+#elif defined(__has_include) && __has_include(<openssl/sha.h>)
 #  include <openssl/sha.h>
+#  define ZJS_HAS_OPENSSL_SHA 1
+#else
+   // No crypto backend available (zig cc cross to musl without an
+   // OpenSSL sysroot, etc.). crypto.subtle.digest will return -1 and
+   // surface as a TypeError from the JS API; embedders that need it
+   // ship a -lcrypto sysroot or use a host-clang build.
 #endif
 
 static inline int zjs_digest_oneshot(int algo, const void* data, size_t len,
@@ -162,7 +182,7 @@ static inline int zjs_digest_oneshot(int algo, const void* data, size_t len,
     BCryptCloseAlgorithmProvider(h, 0);
     *out_len = (size_t)dlen;
     return 0;
-#else
+#elif defined(ZJS_HAS_OPENSSL_SHA)
     switch (algo) {
         case 1:   SHA1((const unsigned char*)data, len, out);   *out_len = SHA_DIGEST_LENGTH;    return 0;
         case 256: SHA256((const unsigned char*)data, len, out); *out_len = SHA256_DIGEST_LENGTH; return 0;
@@ -170,6 +190,9 @@ static inline int zjs_digest_oneshot(int algo, const void* data, size_t len,
         case 512: SHA512((const unsigned char*)data, len, out); *out_len = SHA512_DIGEST_LENGTH; return 0;
         default:  return -1;
     }
+#else
+    (void)algo; (void)data; (void)len; (void)out; (void)out_len;
+    return -1;
 #endif
 }
 
@@ -178,8 +201,9 @@ static inline int zjs_digest_oneshot(int algo, const void* data, size_t len,
 // size. Returns 0 on success, -1 on unsupported algorithm.
 #if defined(__APPLE__)
 #  include <CommonCrypto/CommonHMAC.h>
-#elif !defined(_WIN32)
+#elif !defined(_WIN32) && defined(__has_include) && __has_include(<openssl/hmac.h>)
 #  include <openssl/hmac.h>
+#  define ZJS_HAS_OPENSSL_HMAC 1
 #endif
 
 static inline int zjs_hmac_oneshot(int algo,
@@ -222,7 +246,7 @@ static inline int zjs_hmac_oneshot(int algo,
     BCryptCloseAlgorithmProvider(h, 0);
     *out_len = (size_t)dlen;
     return 0;
-#else
+#elif defined(ZJS_HAS_OPENSSL_HMAC)
     const EVP_MD* md = NULL;
     switch (algo) {
         case 1:   md = EVP_sha1();   break;
@@ -237,6 +261,10 @@ static inline int zjs_hmac_oneshot(int algo,
     }
     *out_len = (size_t)olen;
     return 0;
+#else
+    (void)algo; (void)key; (void)key_len; (void)data; (void)data_len;
+    (void)out; (void)out_len;
+    return -1;
 #endif
 }
 

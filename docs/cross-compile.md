@@ -46,29 +46,46 @@ which trims the static-Linux binary from ~5 MB to ~700 KB.
 
 ## Results
 
-| Target                              | Binary size (release, stripped) | Status |
-|-------------------------------------|--------------------------------:|:------:|
-| macOS arm64 (system clang via `zc`) | 696 KB                          |   ✅   |
-| macOS arm64 (`zig cc`)              | 627 KB (**−10%**)               |   ✅   |
-| macOS x86_64 (`zig cc -target`)     | (not retested post-D.0)         |   ⚠️   |
-| Linux arm64 (`zig cc -target`, static musl) | broken — see below     |   ❌   |
-| Linux x86_64 (`zig cc -target`, static musl) | broken — see below    |   ❌   |
+| Target                                       | Binary size (release, stripped) | Status |
+|----------------------------------------------|--------------------------------:|:------:|
+| macOS arm64 (system clang via `zc`)          | 961 KB                          |   ✅   |
+| macOS arm64 (`zig cc`)                       | 856 KB (**−11%**)               |   ✅   |
+| Linux arm64 (`zig cc -target`, static musl)  | 983 KB (`make cross-linux-arm64`) |   ✅   |
+| Linux x86_64 (`zig cc -target`, static musl) | 1039 KB (`make cross-linux-x64`) |   ✅   |
+| macOS x86_64 (`zig cc -target`)              | needs Apple SDK plumbing       |   ⚠️   |
 
 **Note (2026-05-18):** Numbers re-measured after Phase D.0 (fetch via
 NSURLSession on Apple). Native macOS zig cc still gives the documented
 ~10% size win.
 
-### Linux/non-Apple cross-compile temporarily broken — task #206
+### Linux cross-compile — `make cross-linux-{arm64,x64}` (resolved 2026-05-26)
 
-The platform-native fetch backend added `//> macos: framework:
-Foundation` directives. `zc` applies platform-tagged directives based
-on the **host** OS, not zig's `-target` flag, so cross-compiling to
-Linux from a Mac host fails with `unable to find framework
-'Foundation'`. Tracked as #206. Workarounds:
-1. Generate a Linux-specific entry .zc that omits the macOS directives.
-2. Wait for `zc` to grow target-aware directive filtering.
-3. Add a Makefile target that strips the directives during a
-   cross-compile preprocess step.
+Two compounding problems blocked Linux cross-builds; #206 batched
+the fixes together:
+
+1. `zc` keys platform directives off the **host** OS, not zig's
+   `-target` flag — so on a Mac host, `//> macos: framework:
+   Foundation` was always applied, even when targeting Linux. Fix:
+   stage the source tree into `build/cross-stage/`, sed-strip
+   `//> macos:` / `//> ios:` lines, and rename `//> linux:` →
+   `//> macos:` so the host-tagged dispatch picks them up.
+2. Once zc was applying the right directives, the linker needed
+   `libcurl` and `libwebsockets` (Linux's fetch/WebSocket backends)
+   which zig cc's musl sysroot doesn't ship. Fix: also sed-substitute
+   `http_linux.c`/`ws_linux.c` with the existing `http_stub.c`/
+   `ws_stub.c` so fetch / WebSocket on cross-built binaries cleanly
+   return "not configured" — and drop `-lcurl -lwebsockets`.
+3. Three smaller portability fixes baked into `portability.h`:
+   - `__GLIBC_PREREQ` was tested without first checking `defined()`;
+     musl doesn't define the macro and zig's clang front-end refuses
+     the empty function-call form. Split into nested `#if`.
+   - `<openssl/sha.h>` is now `__has_include`-gated; missing OpenSSL
+     turns `zjs_digest_oneshot` / `zjs_hmac_oneshot` into stub returns
+     instead of build failures.
+   - Renamed a `si_ptr` local in `context.zc` — musl `<signal.h>`
+     defines `si_ptr` as a struct-field macro, so name collisions
+     happen whenever node:child_process pulls in signal.h at TU scope.
+
 | Windows x86_64 (`zig cc -target *-windows-gnu`) | —                   |  ⚠️ POSIX gaps |
 | iOS device arm64                    | —                               |  ⚠️ needs SDK plumbing |
 | iOS simulator arm64                 | —                               |  ⚠️ needs SDK plumbing |
