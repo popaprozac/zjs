@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-26 01:01 UTC",
+    "when": "2026-05-26 01:36 UTC",
     "total": 14524,
-    "passed": 11858,
-    "failed": 2020,
+    "passed": 11888,
+    "failed": 1990,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -5493,14 +5493,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1"
     },
     {
-      "path": "test/built-ins/Math/max/Math.max_each-element-coerced.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Math/min/Math.min_each-element-coerced.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Math/pow/applying-the-exp-operator_A1.js",
       "reason": "[sloppy] zjs: throw: (unknown): 1 Expected SameValue(\u00ab1\u00bb, \u00abNaN\u00bb) to be true"
     },
@@ -7201,10 +7193,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): reject minus zero as extended year Expected SameValue(\u00ab-1000\u00bb, \u00abNaN\u00bb) to be true"
     },
     {
-      "path": "test/built-ins/Date/parse/zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/Date/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): Date should be an own property"
     },
@@ -7221,32 +7209,8 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Date/prototype/S15.9.5_A03_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.hasOwnProperty(\"toDateString\") must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/S15.9.5_A04_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.hasOwnProperty(\"toTimeString\") must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/S15.9.5_A05_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.hasOwnProperty(\"toLocaleString\") must return true Expected SameValue(\u00abfalse\u00bb, \u00abtru"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/S15.9.5_A06_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.hasOwnProperty(\"toLocaleDateString\") must return true Expected SameValue(\u00abfalse\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Date/prototype/S15.9.5_A07_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.hasOwnProperty(\"toLocaleTimeString\") must return true Expected SameValue(\u00abfalse\u00bb, "
-    },
-    {
       "path": "test/built-ins/Date/prototype/S15.9.5_A17_T1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.hasOwnProperty(\"getUTCDay\") must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) t"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/S15.9.5_A42_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.hasOwnProperty(\"toUTCString\") must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb)"
     },
     {
       "path": "test/built-ins/Date/prototype/Symbol.toPrimitive/hint-default-first-invalid.js",
@@ -7810,31 +7774,15 @@
     },
     {
       "path": "test/built-ins/Date/prototype/toDateString/format.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toDateString/invalid-date.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toDateString/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toDateString/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00abnull\u00bb) to be false"
     },
     {
       "path": "test/built-ins/Date/prototype/toDateString/negative-year.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toDateString/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
+      "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.toDateString serializes year -1 to \"-0001\" Expected SameValue(\u00abundefined\u00bb, \u00ab\"-0001"
     },
     {
       "path": "test/built-ins/Date/prototype/toDateString/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): toDateString should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): toDateString descriptor should not be enumerable"
     },
     {
       "path": "test/built-ins/Date/prototype/toISOString/15.9.5.43-0-10.js",
@@ -7881,52 +7829,16 @@
       "reason": "[sloppy] zjs: throw: TypeError: Date method called on non-Date"
     },
     {
-      "path": "test/built-ins/Date/prototype/toLocaleDateString/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toLocaleDateString/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toLocaleDateString/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
-    },
-    {
       "path": "test/built-ins/Date/prototype/toLocaleDateString/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): toLocaleDateString should be an own property"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toLocaleString/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toLocaleString/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toLocaleString/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
+      "reason": "[sloppy] zjs: throw: (unknown): toLocaleDateString descriptor should not be enumerable"
     },
     {
       "path": "test/built-ins/Date/prototype/toLocaleString/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): toLocaleString should be an own property"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toLocaleTimeString/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toLocaleTimeString/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toLocaleTimeString/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
+      "reason": "[sloppy] zjs: throw: (unknown): toLocaleString descriptor should not be enumerable"
     },
     {
       "path": "test/built-ins/Date/prototype/toLocaleTimeString/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): toLocaleTimeString should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): toLocaleTimeString descriptor should not be enumerable"
     },
     {
       "path": "test/built-ins/Date/prototype/toString/format.js",
@@ -7966,63 +7878,31 @@
     },
     {
       "path": "test/built-ins/Date/prototype/toTimeString/format.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toTimeString/invalid-date.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toTimeString/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toTimeString/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toTimeString/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00abnull\u00bb) to be false"
     },
     {
       "path": "test/built-ins/Date/prototype/toTimeString/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): toTimeString should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): toTimeString descriptor should not be enumerable"
     },
     {
       "path": "test/built-ins/Date/prototype/toUTCString/day-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"Sun, 23 Mar 2014 00:00:00 GMT\"\u00bb, \u00ab\"2014-03-23T00:00:00.000Z\"\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/toUTCString/format.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toUTCString/invalid-date.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toUTCString/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00abnull\u00bb) to be false"
     },
     {
       "path": "test/built-ins/Date/prototype/toUTCString/month-names.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toUTCString/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"Wed, 01 Jan 2014 00:00:00 GMT\"\u00bb, \u00ab\"2014-01-01T00:00:00.000Z\"\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Date/prototype/toUTCString/negative-year.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Date/prototype/toUTCString/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value"
+      "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.toUTCString serializes year -1 to \"-0001\" Expected SameValue(\u00abundefined\u00bb, \u00ab\"-0001\""
     },
     {
       "path": "test/built-ins/Date/prototype/toUTCString/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): toUTCString should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): toUTCString descriptor should not be enumerable"
     },
     {
       "path": "test/built-ins/Date/prototype/valueOf/S9.4_A3_T1.js",
