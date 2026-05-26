@@ -1969,10 +1969,34 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if (zjs_trace_unwind_enabled) {
                     Function* tf = ctx->frames[top_idx].f;
                     size_t tflen = tf ? tf->code_len : 0;
+                    /* Decode the thrown value enough to identify it.
+                     * For Error-shaped objects, try to read .message
+                     * as a string. For string throws, dump the string.
+                     * Otherwise just show the cell tag. */
+                    uint8_t tag = zjs_cell_tag(thrown);
+                    const char* msg = NULL;
+                    if (tag == TAG_OBJECT) {
+                        ZjsString* msg_atom = ctx_intern_atom(ctx, (char*)"message", 7);
+                        ZjsValue mv = property_get(ctx, thrown, zjs_cell_from_ptr((void*)msg_atom));
+                        /* property_get might set pending_throw; we don't
+                         * care here, just consume and ignore. */
+                        if (ctx->pending_throw_active) {
+                            ctx->pending_throw_active = false;
+                            ctx->pending_throw_value = zjs_undefined();
+                        }
+                        if (zjs_is_string(mv)) {
+                            ZjsString* s = zjs_as_string(mv);
+                            msg = s ? s->data : NULL;
+                        }
+                    } else if (zjs_is_string(thrown)) {
+                        ZjsString* s = zjs_as_string(thrown);
+                        msg = s ? s->data : NULL;
+                    }
                     fprintf(stderr,
-                        "[zjs:trace_unwind] unwind throw f=%p ip=%zu code_len=%zu frame_count=%u try_depth=%u\n",
+                        "[zjs:trace_unwind] unwind throw f=%p ip=%zu code_len=%zu frame_count=%u try_depth=%u thrown_tag=%u msg=%s\n",
                         (void*)tf, (size_t)ctx->frames[top_idx].ip, tflen,
-                        (unsigned)ctx->frame_count, (unsigned)ctx->ctx_try_depth);
+                        (unsigned)ctx->frame_count, (unsigned)ctx->ctx_try_depth,
+                        (unsigned)tag, msg ? msg : "(non-string)");
                 }
             }
             if ctx.ctx_try_depth > 0 {
