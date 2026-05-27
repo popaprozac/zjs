@@ -1,0 +1,44 @@
+// node:tty — terminal detection.
+//
+// Compat-driven (2026-05-27): supports-color (used by chalk, debug,
+// inquirer, ora, and ~half the CLI ecosystem) imports node:tty at
+// module-init and calls `tty.isatty(1)` / `tty.isatty(2)`. Without
+// this module the import fails with "module not found" before any
+// user code runs.
+//
+// v0.1 surface: isatty(fd) only. ReadStream / WriteStream classes are
+// larger and rarely used directly by libraries — defer until something
+// actually needs them.
+
+raw {
+    #include <unistd.h>
+}
+
+import "../value.zc";
+import "../context.zc";
+
+// tty.isatty(fd) → bool. Returns true if `fd` refers to a tty device.
+// Non-integer / negative fd → false (matches Node behavior).
+fn host_tty_isatty(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 1 { return zjs_bool(0); }
+    let fd_v = args[0];
+    if zjs_is_int32(fd_v) == 0 && zjs_is_double(fd_v) == 0 {
+        return zjs_bool(0);
+    }
+    let fd: i32 = zjs_to_int32(fd_v);
+    if fd < 0 { return zjs_bool(0); }
+    let r: int = 0;
+    raw { r = isatty((int)fd); }
+    return zjs_bool(if r != 0 { 1 } else { 0 });
+}
+
+fn populate_node_tty(ctx: ZjsContext*, exports: ZjsObject*) -> void {
+    let p: void* = NULL; raw { p = (void*)host_tty_isatty; }
+    object_set(ctx, exports, ctx_intern_atom(ctx, (char*)"isatty", 6),
+               ctx_make_host_function_arity(ctx, (char*)"isatty", p, 1));
+}
+
+fn zjs_register_node_tty(ctx: ZjsContext*) -> void {
+    let ptr: void* = NULL; raw { ptr = (void*)populate_node_tty; }
+    ctx_register_builtin_module(ctx, (char*)"node:tty", ptr);
+}

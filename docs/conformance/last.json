@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-05-27 22:36 UTC",
+    "when": "2026-05-27 23:47 UTC",
     "total": 14524,
     "passed": 12076,
     "failed": 1802,
@@ -4838,7 +4838,7 @@
     },
     {
       "path": "test/built-ins/JSON/stringify/value-string-escape-ascii.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Every ASCII 0x5c serializes to \\\\ Expected SameValue(\u00ab136\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown)"
     },
     {
       "path": "test/built-ins/JSON/stringify/value-string-escape-unicode.js",

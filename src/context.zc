@@ -5190,6 +5190,110 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return arr_v;
 }
 
+// Object.values(o) — ECMA-262 §20.1.2.22.
+// Object.entries(o) — ECMA-262 §20.1.2.5.
+// Both reuse host_object_keys to get the enumerable own keys in
+// canonical order, then walk that array reading each value (and for
+// entries, packaging [key, value]). Lets chalk, lodash, debug, and a
+// thousand other npm packages that iterate via Object.entries work.
+fn object_values_or_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32, want_entries: bool) -> ZjsValue {
+    let arg0 = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let keys_v = host_object_keys(ctx, args, argc);
+    if zjs_is_array(keys_v) == 0 { return ctx_new_array(ctx, 0); }
+    let keys = zjs_as_array(keys_v);
+    let n = keys.length;
+    ctx_push_temp_root(ctx, keys_v);
+    defer ctx_pop_temp_root(ctx);
+    let out_v = ctx_new_array(ctx, n);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    let out = zjs_as_array(out_v);
+    let i: u32 = 0;
+    while i < n {
+        let key_v = keys.elements[i];
+        let val_v = property_get(ctx, arg0, key_v);
+        if want_entries {
+            let pair_v = ctx_new_array(ctx, 2);
+            let pair = zjs_as_array(pair_v);
+            array_set(pair, 0, key_v);
+            array_set(pair, 1, val_v);
+            pair.length = 2;
+            array_set(out, i, pair_v);
+        } else {
+            array_set(out, i, val_v);
+        }
+        i = i + 1;
+    }
+    out.length = n;
+    return out_v;
+}
+
+fn host_object_values(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return object_values_or_entries(ctx, args, argc, false);
+}
+
+fn host_object_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return object_values_or_entries(ctx, args, argc, true);
+}
+
+// Object.fromEntries(iterable) — inverse of Object.entries. Accepts
+// any iterable of [key, value] pairs (Map.entries(), an array of
+// arrays, etc.). MVP: only handles Array of pair-Arrays; the full
+// iterable protocol path lands when GetIterator surfaces a real need.
+fn host_object_from_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let out_v = ctx_new_object(ctx);
+    let out = zjs_as_object(out_v);
+    if argc < 1 { return out_v; }
+    let src = args[0];
+    if zjs_is_array(src) == 0 {
+        // TODO: full iterable protocol. Map.prototype.entries() returns
+        // an iterator that needs to be walked via next() — the
+        // GetIterator/IteratorStep path. For now plain Maps fall through
+        // here as the array case (Array.from-style coerce) which works
+        // because Map carries an entries-array fast path internally.
+        if zjs_is_map(src) != 0 {
+            let m = zjs_as_map(src);
+            let i: u32 = 0;
+            while i < m.count {
+                let e = m.entries + i;
+                if !e.deleted {
+                    let k = e.key;
+                    let v = e.value;
+                    if zjs_is_string(k) != 0 {
+                        object_set(ctx, out, zjs_as_string(k), v);
+                    } else {
+                        let ks_v = zjs_to_string(ctx, k);
+                        if zjs_is_string(ks_v) != 0 { object_set(ctx, out, zjs_as_string(ks_v), v); }
+                    }
+                }
+                i = i + 1;
+            }
+        }
+        return out_v;
+    }
+    let a = zjs_as_array(src);
+    let n = a.length;
+    let i: u32 = 0;
+    while i < n {
+        let pair = a.elements[i];
+        if zjs_is_array(pair) != 0 {
+            let p = zjs_as_array(pair);
+            if p.length >= 2 {
+                let k = p.elements[0];
+                let v = p.elements[1];
+                if zjs_is_string(k) != 0 {
+                    object_set(ctx, out, zjs_as_string(k), v);
+                } else {
+                    let ks = zjs_to_string(ctx, k);
+                    if zjs_is_string(ks) != 0 { object_set(ctx, out, zjs_as_string(ks), v); }
+                }
+            }
+        }
+        i = i + 1;
+    }
+    return out_v;
+}
+
 // Returns the numeric value if `name` is a CanonicalNumericIndexString
 // for a non-negative integer in u32 range, else -1.
 fn string_as_array_index(name: ZjsString*) -> i64 {
@@ -18626,6 +18730,18 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let oassign_ptr: void* = NULL; raw { oassign_ptr = (void*)host_object_assign; }
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"assign", 6),
                ctx_make_host_function_arity(ctx, (char*)"assign", oassign_ptr, 2));
+    // ES2017 Object.values / Object.entries + ES2019 Object.fromEntries —
+    // chalk and lodash and ~half of npm walk objects via these. Mirror
+    // the keys / assign attachment pattern.
+    let ovals_ptr: void* = NULL; raw { ovals_ptr = (void*)host_object_values; }
+    let oents_ptr: void* = NULL; raw { oents_ptr = (void*)host_object_entries; }
+    let ofe_ptr:   void* = NULL; raw { ofe_ptr   = (void*)host_object_from_entries; }
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"values", 6),
+               ctx_make_host_function_arity(ctx, (char*)"values", ovals_ptr, 1));
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"entries", 7),
+               ctx_make_host_function_arity(ctx, (char*)"entries", oents_ptr, 1));
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"fromEntries", 11),
+               ctx_make_host_function_arity(ctx, (char*)"fromEntries", ofe_ptr, 1));
     // Phase 3.9a — Object.defineProperty / defineProperties /
     // getOwnPropertyDescriptor.
     let dp_ptr:   void* = NULL; raw { dp_ptr   = (void*)host_object_define_property; }
@@ -19595,6 +19711,7 @@ fn ctx_register_stdlib_modules(ctx: ZjsContext*) -> void {
     zjs_register_node_fs(ctx);
     zjs_register_node_process(ctx);
     zjs_register_node_os(ctx);
+    zjs_register_node_tty(ctx);
     zjs_register_node_dx(ctx);
     zjs_register_node_child_process(ctx);
     zjs_register_node_net(ctx);
@@ -19794,6 +19911,18 @@ fn ctx_load_module(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {
             raw {
                 ((void (*)(ZjsContext*, ZjsObject*))pop_ptr)(ctx, m->exports);
             }
+        }
+        // CJS-interop default export. ESM `import X from 'node:foo'`
+        // requires a "default" binding. Node's convention (and the
+        // shape bundlers like esbuild / bun / rollup emit when they
+        // leave node: imports external) is: the entire exports
+        // object IS the default. Wire it here unless the populate
+        // callback set its own explicit default (rare — node_process
+        // does it manually to point at the live globalThis.process).
+        let dflt_atom = ctx_intern_atom(ctx, (char*)"default", 7);
+        let existing_dflt_slot = class_find_slot(m.exports.cls, dflt_atom);
+        if existing_dflt_slot < 0 {
+            object_set(ctx, m.exports, dflt_atom, zjs_cell_from_ptr((void*)m.exports));
         }
         return m;
     }
