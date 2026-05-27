@@ -258,6 +258,18 @@ fn zjs_eval_bytecode(ctx: ZjsContext*, data: u8*, len: usize) -> ZjsValue {
 
 fn zjs_compile_to_bytecode(ctx: ZjsContext*, source: char*, out_len: usize*) -> u8* {
     if out_len != NULL { out_len[0] = 0; }
+    // Embedders that only load pre-compiled .zbc (the common case —
+    // bytecode is produced once at build time by a developer-side
+    // tool, then shipped to devices) can opt out of the writer half
+    // with -DZJS_NO_AOT_WRITER. The symbol stays in the ABI for
+    // backwards-compat; it just returns NULL. Drops ~8-12 KB by
+    // letting dead-strip remove aot_write_function + aot_w_* +
+    // aot_serialize_program.
+    raw {
+    #ifdef ZJS_NO_AOT_WRITER
+        return NULL;
+    #endif
+    }
     if ctx == NULL || source == NULL { return NULL; }
     let f = zjs_compile(ctx, source);
     if f == NULL { return NULL; }

@@ -5,6 +5,21 @@ a representative embedder shape: a tiny C consumer linked statically
 against `libzjs.a`, with `-Wl,-dead_strip` + `strip -S` applied. Numbers
 reflect what an embedder actually ships, not the intermediate `.a`.
 
+**Updated 2026-05-27 (banked):** LTO-by-default + `ZJS_NO_AOT_WRITER`
+have landed. Default Makefile builds get LTO automatically (`ZJS_NO_LTO=1`
+opts out for fast inner-loop dev). `ZJS_TIER=minimal` now includes
+`ZJS_NO_AOT_WRITER` — the writer half stubs out, `zjs_compile_to_bytecode`
+returns NULL, and dead-strip removes ~8-12 KB of writer code. Reader is
+unaffected (loading pre-built `.zbc` still works at every tier).
+
+| Tier               | Before this pass | After this pass | Delta |
+| ------------------ | ---------------: | --------------: | ----: |
+| default (full)     | 824.6 KB         | **803.1 KB**    | -21.5 KB |
+| `ZJS_TIER=ring1`   | 752.4 KB         | **715.3 KB**    | -37.1 KB |
+| `ZJS_TIER=minimal` | 703.6 KB         | **665.9 KB**    | -37.7 KB |
+
+test262 unchanged at 87.0% on default tier.
+
 Host: `Darwin 25.5.0 arm64`, Apple clang 21.0.0, zig 0.16.0.
 
 ## Tier sizes (smoke binary, dead-strip + strip -S)
@@ -106,15 +121,32 @@ for the major collection. Won't blow the budget.
 
 ## Recommendations
 
-1. **Enable LTO in default Makefile.** Free 21 KB. No downside for
-   release builds; only slows the link by a second or two.
-2. **Add `ZJS_NO_AOT` flag.** The reader half is small; the writer is
-   ~8 KB and unused by embedders that ship only `.zbc` produced ahead of
-   time. Same pattern as the Web/Node gates.
-3. **Refactor `ctx_init_builtins` to be table-driven.** This is the
-   largest single function in the engine, structured as a long sequence
+1. **Enable LTO in default Makefile.** ✓ Landed 2026-05-27 (`-flto=thin`
+   on all engine objects; opt out with `ZJS_NO_LTO=1`).
+2. **Add `ZJS_NO_AOT` flag.** ✓ Landed 2026-05-27 as `ZJS_NO_AOT_WRITER`
+   (writer half only; reader stays so `.zbc` loading works at all tiers).
+3. **Refactor `ctx_init_builtins` to be table-driven.** Still the largest
+   single function in the engine (35.6 KB). Structured as a long sequence
    of repetitive `register(...)` calls. A driver loop over a const table
-   should halve its size. Best ROI of the unclaimed wins.
+   should halve its size. Best remaining ROI for in-engine size wins —
+   would land another 12-18 KB.
 4. **Defer regex replacement** until after generational GC and the next
    conformance push. It's a multi-week project; current tre is correct
    and fast, just large.
+
+## Path to 550 KB (zapp budget) — updated
+
+After this pass, minimal-tier embedder is **665.9 KB**. Need ~115 KB to
+hit 550 KB. Realistic remaining steps:
+
+| Win                                | Est.       | Effort |
+| ---------------------------------- | ---------: | ------ |
+| Table-drive `ctx_init_builtins`    | 12-18 KB   | medium |
+| `ZJS_NO_JSON` opt-out              |  8-10 KB   | small  |
+| `ZJS_NO_FETCH_HOST` opt-out        |  8-12 KB   | small  |
+| Lighter regex than tre             | 25-35 KB   | large  |
+| `ZJS_NO_REGEX` (spec-breaking)     | 45-55 KB   | nuclear |
+
+Without the regex-replacement, the available opt-out wins on top of
+minimal are ~30-40 KB → **~630 KB**. Sub-550 KB still requires either
+a lighter regex or the spec-breaking opt-out.

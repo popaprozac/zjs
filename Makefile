@@ -163,16 +163,18 @@ lib-static: $(LIBA)
 #   ZJS_NO_WEB_BLOB       — drop Blob / File / FormData
 #   ZJS_NO_WEB_STREAMS    — drop ReadableStream / WritableStream / TransformStream (largest)
 #   ZJS_NO_NODE_NET       — drop node:net host-fn globals
+#   ZJS_NO_AOT_WRITER     — drop the bytecode emitter half (reader stays);
+#                           zjs_compile_to_bytecode() returns NULL
 #
 # Presets (each implies the matching ZJS_NO_* set):
-#   ZJS_TIER=minimal      — drop everything Ring-1 / Ring-2 (ES core only)
+#   ZJS_TIER=minimal      — drop everything Ring-1 / Ring-2 + AOT writer (ES core only, reader-only)
 #   ZJS_TIER=ring1        — keep web globals, drop node: modules
 #   default               — everything
 ZJS_TIER ?=
 ifeq ($(ZJS_TIER),minimal)
   ZJS_TIER_DEFINES := -DZJS_NO_NODE_MODULES -DZJS_NO_WEB_EVENTS -DZJS_NO_WEB_ABORT \
                      -DZJS_NO_WEB_CLONE -DZJS_NO_WEB_BLOB -DZJS_NO_WEB_STREAMS \
-                     -DZJS_NO_NODE_NET
+                     -DZJS_NO_NODE_NET -DZJS_NO_AOT_WRITER
 else ifeq ($(ZJS_TIER),ring1)
   ZJS_TIER_DEFINES := -DZJS_NO_NODE_MODULES -DZJS_NO_NODE_NET
 else
@@ -187,17 +189,30 @@ ZJS_TIER_DEFINES += $(ZJS_FEATURE_DEFINES)
 # only one symbol is reachable.
 DEADSTRIP_CFLAGS := -ffunction-sections -fdata-sections
 
+# Link-time optimization on by default for release artifacts. Lets the
+# linker inline cross-translation-unit, fold duplicates, and prove
+# more dead-code-elimination opportunities — saves ~21 KB on minimal
+# tier (measured 2026-05-27, docs/binary-size-audit.md). Adds ~1-2s
+# to link time on debug iteration, so disable with ZJS_NO_LTO=1 if
+# you're rebuilding in a tight inner loop.
+ZJS_NO_LTO ?=
+ifeq ($(ZJS_NO_LTO),)
+  LTO_CFLAGS := -flto=thin
+else
+  LTO_CFLAGS :=
+endif
+
 $(LIBA_C): $(ENGINE_SRC) $(PLATFORM_SRC) include/zjs.h | $(BUILD_DIR) stdlib-link
 	$(ZC) transpile $(ZC_FLAGS) $(LIB_SRC) -o $@
 
 $(LIBA_OBJ): $(LIBA_C)
-	$(CLANG) -O3 -fPIC -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(ZJS_TIER_DEFINES) -c $< -o $@
+	$(CLANG) -O3 -fPIC -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) $(ZJS_TIER_DEFINES) -c $< -o $@
 
 $(BUILD_DIR)/%.o: src/platform/%.m | $(BUILD_DIR)
-	$(CLANG) -O3 -fPIC $(PLATFORM_CFLAGS) -Isrc $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) -c $< -o $@
+	$(CLANG) -O3 -fPIC $(PLATFORM_CFLAGS) -Isrc $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/%.o: src/platform/%.c | $(BUILD_DIR)
-	$(CLANG) -O3 -fPIC -Isrc $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) -c $< -o $@
+	$(CLANG) -O3 -fPIC -Isrc $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
 
 # Bundle tre into the static archive — the .so build pulls tre_full.c
 # through zc's @link plumbing, but lib-static does its own clang+ar dance
@@ -207,7 +222,7 @@ TRE_FULL_SRC := $(ZC_ROOT)/std/third-party/tre/tre_full.c
 TRE_FULL_OBJ := $(BUILD_DIR)/tre_full.o
 
 $(TRE_FULL_OBJ): $(TRE_FULL_SRC) | $(BUILD_DIR)
-	$(CLANG) -O3 -fPIC -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) -c $< -o $@
+	$(CLANG) -O3 -fPIC -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
 
 $(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(TRE_FULL_OBJ)
 	@rm -f $@
