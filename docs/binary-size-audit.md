@@ -125,11 +125,17 @@ for the major collection. Won't blow the budget.
    on all engine objects; opt out with `ZJS_NO_LTO=1`).
 2. **Add `ZJS_NO_AOT` flag.** ✓ Landed 2026-05-27 as `ZJS_NO_AOT_WRITER`
    (writer half only; reader stays so `.zbc` loading works at all tiers).
-3. **Refactor `ctx_init_builtins` to be table-driven.** Still the largest
-   single function in the engine (35.6 KB). Structured as a long sequence
-   of repetitive `register(...)` calls. A driver loop over a const table
-   should halve its size. Best remaining ROI for in-engine size wins —
-   would land another 12-18 KB.
+3. **Refactor `ctx_init_builtins` to be table-driven.** ⚠ Partially
+   landed 2026-05-27 — Date/Map/Set/DataView/Headers prototypes now
+   use a static-const-table + `zjs_install_methods` helper. **Result
+   surprise: binary size unchanged (665.9 KB → 666.0 KB).** Source
+   compressed by 55 lines but LTO was already inlining + deduping the
+   per-call sequence, so the predicted 12-18 KB win didn't materialize.
+   The Phase 3 prediction underestimated thin-LTO. Keeping the
+   refactor for source clarity (table additions are now one-liners)
+   but the trade is "fewer lines, equal binary." Decision: don't
+   blanket-rewrite the remaining protos for size — only convert as a
+   nice-to-have when touching the surrounding code for other reasons.
 4. **Defer regex replacement** until after generational GC and the next
    conformance push. It's a multi-week project; current tre is correct
    and fast, just large.

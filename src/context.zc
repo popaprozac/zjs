@@ -2690,6 +2690,62 @@ fn ctx_make_host_function_arity(ctx: ZjsContext*, name: char*, fn_ptr: void*, ar
     return v;
 }
 
+// =====================================================================
+// Table-driven builtin registration.
+//
+// ctx_init_builtins is the largest single function in the engine
+// (~35 KB of code, 1700+ lines pre-refactor). The bulk of that is
+// repetitive `object_set(proto, intern("name", N), make_host_fn_arity("name", ptr, K))`
+// install sequences. Each install compiles to ~40 bytes of call
+// setup; folding them all through one loop body lets the compiler
+// emit the call sequence once.
+//
+// Schema: static const ZjsBuiltinSpec table[] = {
+//     {"name", N, (void*)host_xyz, arity_or_NEG_for_no_arity},
+//     ...
+// };
+// zjs_install_proto_methods(ctx, proto, table, N);
+//
+// arity = -1 means "use ctx_make_host_function (no arity-set
+// variant)". Otherwise the value is the arity passed to
+// ctx_make_host_function_arity.
+// =====================================================================
+
+raw {
+    typedef struct {
+        const char* name;
+        uint32_t    name_len;
+        void*       fn_ptr;
+        int32_t     arity;
+    } ZjsBuiltinSpec;
+}
+
+fn zjs_install_methods(ctx: ZjsContext*, target: ZjsObject*, table_p: void*, count: usize) -> void {
+    if target == NULL || table_p == NULL { return; }
+    let i: usize = 0;
+    while i < count {
+        let name: char* = NULL;
+        let name_len: u32 = 0;
+        let fn_ptr: void* = NULL;
+        let arity: i32 = 0;
+        raw {
+            const ZjsBuiltinSpec* spec = &((const ZjsBuiltinSpec*)table_p)[i];
+            name = (char*)spec->name;
+            name_len = spec->name_len;
+            fn_ptr = spec->fn_ptr;
+            arity = spec->arity;
+        }
+        let hf: ZjsValue = zjs_undefined();
+        if arity < 0 {
+            hf = ctx_make_host_function(ctx, name, fn_ptr);
+        } else {
+            hf = ctx_make_host_function_arity(ctx, name, fn_ptr, (u32)arity);
+        }
+        object_set(ctx, target, ctx_intern_atom(ctx, name, name_len), hf);
+        i = i + 1;
+    }
+}
+
 // --- Built-in implementations ---------------------------------------
 
 // Error("msg") — produces { message, name: "Error" }. Decorates the
@@ -17712,124 +17768,63 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ctx.date_proto = zjs_as_object(date_proto_v);
     date_hf.prototype = ctx.date_proto;
     object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), date_ctor_v);
-    let d_gt:  void* = NULL; raw { d_gt  = (void*)host_date_get_time; }
-    let d_st:  void* = NULL; raw { d_st  = (void*)host_date_set_time; }
-    let d_vo:  void* = NULL; raw { d_vo  = (void*)host_date_value_of; }
-    let d_iso: void* = NULL; raw { d_iso = (void*)host_date_to_iso_string; }
-    let d_str: void* = NULL; raw { d_str = (void*)host_date_to_string; }
-    let d_jsn: void* = NULL; raw { d_jsn = (void*)host_date_to_json; }
-    let d_y:   void* = NULL; raw { d_y   = (void*)host_date_get_year; }
-    let d_mo:  void* = NULL; raw { d_mo  = (void*)host_date_get_month; }
-    let d_dt:  void* = NULL; raw { d_dt  = (void*)host_date_get_date; }
-    let d_dy:  void* = NULL; raw { d_dy  = (void*)host_date_get_day; }
-    let d_h:   void* = NULL; raw { d_h   = (void*)host_date_get_hours; }
-    let d_mn:  void* = NULL; raw { d_mn  = (void*)host_date_get_minutes; }
-    let d_s:   void* = NULL; raw { d_s   = (void*)host_date_get_seconds; }
-    let d_ml:  void* = NULL; raw { d_ml  = (void*)host_date_get_millis; }
-    let d_tz:  void* = NULL; raw { d_tz  = (void*)host_date_get_tzoffset; }
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getTime", 7),
-               ctx_make_host_function_arity(ctx, (char*)"getTime", d_gt, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"valueOf", 7),
-               ctx_make_host_function_arity(ctx, (char*)"valueOf", d_vo, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setTime", 7),
-               ctx_make_host_function_arity(ctx, (char*)"setTime", d_st, 1));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"toISOString", 11),
-               ctx_make_host_function_arity(ctx, (char*)"toISOString", d_iso, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
-               ctx_make_host_function_arity(ctx, (char*)"toString", d_str, 0));
-    // Pragmatic v0.1: all the toX-String / toLocaleX-String methods
-    // currently delegate to toString (ISO format). Spec splits them
-    // by component (date/time/timezone) and respects the system
-    // locale; full Intl support lands later. The host-fn presence is
-    // what most test262 tests probe — these aliases satisfy
-    // `Date.prototype.hasOwnProperty("toDateString")` etc., and call
-    // sites that just want "some string for this date" round-trip
-    // fine through toISOString output.
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"toDateString", 12),
-               ctx_make_host_function_arity(ctx, (char*)"toDateString", d_str, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"toTimeString", 12),
-               ctx_make_host_function_arity(ctx, (char*)"toTimeString", d_str, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"toUTCString", 11),
-               ctx_make_host_function_arity(ctx, (char*)"toUTCString", d_str, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"toLocaleString", 14),
-               ctx_make_host_function_arity(ctx, (char*)"toLocaleString", d_str, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"toLocaleDateString", 18),
-               ctx_make_host_function_arity(ctx, (char*)"toLocaleDateString", d_str, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"toLocaleTimeString", 18),
-               ctx_make_host_function_arity(ctx, (char*)"toLocaleTimeString", d_str, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6),
-               ctx_make_host_function_arity(ctx, (char*)"toJSON", d_jsn, 1));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getFullYear", 11),
-               ctx_make_host_function_arity(ctx, (char*)"getFullYear", d_y, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCFullYear", 14),
-               ctx_make_host_function_arity(ctx, (char*)"getUTCFullYear", d_y, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getMonth", 8),
-               ctx_make_host_function_arity(ctx, (char*)"getMonth", d_mo, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCMonth", 11),
-               ctx_make_host_function_arity(ctx, (char*)"getUTCMonth", d_mo, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getDate", 7),
-               ctx_make_host_function_arity(ctx, (char*)"getDate", d_dt, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCDate", 10),
-               ctx_make_host_function_arity(ctx, (char*)"getUTCDate", d_dt, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getDay", 6),
-               ctx_make_host_function_arity(ctx, (char*)"getDay", d_dy, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getHours", 8),
-               ctx_make_host_function_arity(ctx, (char*)"getHours", d_h, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCHours", 11),
-               ctx_make_host_function_arity(ctx, (char*)"getUTCHours", d_h, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getMinutes", 10),
-               ctx_make_host_function_arity(ctx, (char*)"getMinutes", d_mn, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCMinutes", 13),
-               ctx_make_host_function_arity(ctx, (char*)"getUTCMinutes", d_mn, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getSeconds", 10),
-               ctx_make_host_function_arity(ctx, (char*)"getSeconds", d_s, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCSeconds", 13),
-               ctx_make_host_function_arity(ctx, (char*)"getUTCSeconds", d_s, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getMilliseconds", 15),
-               ctx_make_host_function_arity(ctx, (char*)"getMilliseconds", d_ml, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getUTCMilliseconds", 18),
-               ctx_make_host_function_arity(ctx, (char*)"getUTCMilliseconds", d_ml, 0));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"getTimezoneOffset", 17),
-               ctx_make_host_function_arity(ctx, (char*)"getTimezoneOffset", d_tz, 0));
-    // setX methods — UTC-only, so local + UTC variants share implementations.
-    let d_sml: void* = NULL; raw { d_sml = (void*)host_date_set_millis; }
-    let d_ssc: void* = NULL; raw { d_ssc = (void*)host_date_set_seconds; }
-    let d_smn: void* = NULL; raw { d_smn = (void*)host_date_set_minutes; }
-    let d_shr: void* = NULL; raw { d_shr = (void*)host_date_set_hours; }
-    let d_sdt: void* = NULL; raw { d_sdt = (void*)host_date_set_date; }
-    let d_smo: void* = NULL; raw { d_smo = (void*)host_date_set_month; }
-    let d_syr: void* = NULL; raw { d_syr = (void*)host_date_set_full_year; }
-    let d_sly: void* = NULL; raw { d_sly = (void*)host_date_set_year; }
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setMilliseconds", 15),
-               ctx_make_host_function_arity(ctx, (char*)"setMilliseconds", d_sml, 1));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setUTCMilliseconds", 18),
-               ctx_make_host_function_arity(ctx, (char*)"setUTCMilliseconds", d_sml, 1));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setSeconds", 10),
-               ctx_make_host_function_arity(ctx, (char*)"setSeconds", d_ssc, 2));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setUTCSeconds", 13),
-               ctx_make_host_function_arity(ctx, (char*)"setUTCSeconds", d_ssc, 2));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setMinutes", 10),
-               ctx_make_host_function_arity(ctx, (char*)"setMinutes", d_smn, 3));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setUTCMinutes", 13),
-               ctx_make_host_function_arity(ctx, (char*)"setUTCMinutes", d_smn, 3));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setHours", 8),
-               ctx_make_host_function_arity(ctx, (char*)"setHours", d_shr, 4));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setUTCHours", 11),
-               ctx_make_host_function_arity(ctx, (char*)"setUTCHours", d_shr, 4));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setDate", 7),
-               ctx_make_host_function_arity(ctx, (char*)"setDate", d_sdt, 1));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setUTCDate", 10),
-               ctx_make_host_function_arity(ctx, (char*)"setUTCDate", d_sdt, 1));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setMonth", 8),
-               ctx_make_host_function_arity(ctx, (char*)"setMonth", d_smo, 2));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setUTCMonth", 11),
-               ctx_make_host_function_arity(ctx, (char*)"setUTCMonth", d_smo, 2));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setFullYear", 11),
-               ctx_make_host_function_arity(ctx, (char*)"setFullYear", d_syr, 3));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setUTCFullYear", 14),
-               ctx_make_host_function_arity(ctx, (char*)"setUTCFullYear", d_syr, 3));
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"setYear", 7),
-               ctx_make_host_function_arity(ctx, (char*)"setYear", d_sly, 1));
+    // Date.prototype methods (table-driven — see zjs_install_methods).
+    // Pragmatic v0.1: all toX-String / toLocaleX-String methods alias to
+    // toString (ISO format). The host-fn presence is what most test262
+    // tests probe — these aliases satisfy hasOwnProperty + call-through.
+    let date_table_p: void* = NULL;
+    let date_table_n: usize = 0;
+    raw {
+        static const ZjsBuiltinSpec date_proto_specs[] = {
+            {"getTime",            7, (void*)host_date_get_time,      0},
+            {"valueOf",            7, (void*)host_date_value_of,      0},
+            {"setTime",            7, (void*)host_date_set_time,      1},
+            {"toISOString",       11, (void*)host_date_to_iso_string, 0},
+            {"toString",           8, (void*)host_date_to_string,     0},
+            {"toDateString",      12, (void*)host_date_to_string,     0},
+            {"toTimeString",      12, (void*)host_date_to_string,     0},
+            {"toUTCString",       11, (void*)host_date_to_string,     0},
+            {"toLocaleString",    14, (void*)host_date_to_string,     0},
+            {"toLocaleDateString",18, (void*)host_date_to_string,     0},
+            {"toLocaleTimeString",18, (void*)host_date_to_string,     0},
+            {"toJSON",             6, (void*)host_date_to_json,       1},
+            {"getFullYear",       11, (void*)host_date_get_year,      0},
+            {"getUTCFullYear",    14, (void*)host_date_get_year,      0},
+            {"getMonth",           8, (void*)host_date_get_month,     0},
+            {"getUTCMonth",       11, (void*)host_date_get_month,     0},
+            {"getDate",            7, (void*)host_date_get_date,      0},
+            {"getUTCDate",        10, (void*)host_date_get_date,      0},
+            {"getDay",             6, (void*)host_date_get_day,       0},
+            {"getHours",           8, (void*)host_date_get_hours,     0},
+            {"getUTCHours",       11, (void*)host_date_get_hours,     0},
+            {"getMinutes",        10, (void*)host_date_get_minutes,   0},
+            {"getUTCMinutes",     13, (void*)host_date_get_minutes,   0},
+            {"getSeconds",        10, (void*)host_date_get_seconds,   0},
+            {"getUTCSeconds",     13, (void*)host_date_get_seconds,   0},
+            {"getMilliseconds",   15, (void*)host_date_get_millis,    0},
+            {"getUTCMilliseconds",18, (void*)host_date_get_millis,    0},
+            {"getTimezoneOffset", 17, (void*)host_date_get_tzoffset,  0},
+            // setX — UTC-only impls, local + UTC variants share.
+            {"setMilliseconds",   15, (void*)host_date_set_millis,    1},
+            {"setUTCMilliseconds",18, (void*)host_date_set_millis,    1},
+            {"setSeconds",        10, (void*)host_date_set_seconds,   2},
+            {"setUTCSeconds",     13, (void*)host_date_set_seconds,   2},
+            {"setMinutes",        10, (void*)host_date_set_minutes,   3},
+            {"setUTCMinutes",     13, (void*)host_date_set_minutes,   3},
+            {"setHours",           8, (void*)host_date_set_hours,     4},
+            {"setUTCHours",       11, (void*)host_date_set_hours,     4},
+            {"setDate",            7, (void*)host_date_set_date,      1},
+            {"setUTCDate",        10, (void*)host_date_set_date,      1},
+            {"setMonth",           8, (void*)host_date_set_month,     2},
+            {"setUTCMonth",       11, (void*)host_date_set_month,     2},
+            {"setFullYear",       11, (void*)host_date_set_full_year, 3},
+            {"setUTCFullYear",    14, (void*)host_date_set_full_year, 3},
+            {"setYear",            7, (void*)host_date_set_year,      1},
+        };
+        date_table_p = (void*)date_proto_specs;
+        date_table_n = sizeof(date_proto_specs) / sizeof(date_proto_specs[0]);
+    }
+    zjs_install_methods(ctx, ctx.date_proto, date_table_p, date_table_n);
     // RegExp — real constructor + prototype carrying .test (.exec next
     // commit). property_get on TAG_REGEXP walks ctx.regexp_proto.
     let regexp_ctor_ptr: void* = NULL; raw { regexp_ctor_ptr = (void*)host_regexp_ctor; }
@@ -18120,48 +18115,34 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         }
     }
     // Map (2026-05-16).
-    let map_ctor_ptr:    void* = NULL; raw { map_ctor_ptr    = (void*)host_map_ctor; }
-    let map_get_ptr:     void* = NULL; raw { map_get_ptr     = (void*)host_map_get; }
-    let map_set_ptr:     void* = NULL; raw { map_set_ptr     = (void*)host_map_set; }
-    let map_has_ptr:     void* = NULL; raw { map_has_ptr     = (void*)host_map_has; }
-    let map_delete_ptr:  void* = NULL; raw { map_delete_ptr  = (void*)host_map_delete; }
-    let map_clear_ptr:   void* = NULL; raw { map_clear_ptr   = (void*)host_map_clear; }
-    let map_goi_ptr:     void* = NULL; raw { map_goi_ptr     = (void*)host_map_get_or_insert; }
-    let map_goic_ptr:    void* = NULL; raw { map_goic_ptr    = (void*)host_map_get_or_insert_computed; }
-    let map_foreach_ptr: void* = NULL; raw { map_foreach_ptr = (void*)host_map_for_each; }
-    let map_keys_ptr:    void* = NULL; raw { map_keys_ptr    = (void*)host_map_keys; }
-    let map_vals_ptr:    void* = NULL; raw { map_vals_ptr    = (void*)host_map_values; }
-    let map_ents_ptr:    void* = NULL; raw { map_ents_ptr    = (void*)host_map_entries; }
+    let map_ctor_ptr: void* = NULL; raw { map_ctor_ptr = (void*)host_map_ctor; }
     let map_ctor_v = ctx_register_host_function(ctx, (char*)"Map", map_ctor_ptr);
     let map_proto_v = ctx_new_object(ctx);
     ctx.map_proto = zjs_as_object(map_proto_v);
     zjs_as_host_function(map_ctor_v).prototype = ctx.map_proto;
     object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), map_ctor_v);
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"get",      3),
-               ctx_make_host_function_arity(ctx, (char*)"get",      map_get_ptr,     1));
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"set",      3),
-               ctx_make_host_function_arity(ctx, (char*)"set",      map_set_ptr,     2));
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"has",      3),
-               ctx_make_host_function_arity(ctx, (char*)"has",      map_has_ptr,     1));
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"delete",   6),
-               ctx_make_host_function_arity(ctx, (char*)"delete",   map_delete_ptr,  1));
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"clear",    5),
-               ctx_make_host_function_arity(ctx, (char*)"clear",    map_clear_ptr,   0));
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"getOrInsert", 11),
-               ctx_make_host_function_arity(ctx, (char*)"getOrInsert", map_goi_ptr, 2));
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"getOrInsertComputed", 19),
-               ctx_make_host_function_arity(ctx, (char*)"getOrInsertComputed", map_goic_ptr, 2));
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"forEach",  7),
-               ctx_make_host_function_arity(ctx, (char*)"forEach",  map_foreach_ptr, 1));
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"keys",     4),
-               ctx_make_host_function_arity(ctx, (char*)"keys",     map_keys_ptr,    0));
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"values",   6),
-               ctx_make_host_function_arity(ctx, (char*)"values",   map_vals_ptr,    0));
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"entries",  7),
-               ctx_make_host_function_arity(ctx, (char*)"entries",  map_ents_ptr,    0));
     // @@iterator on Map.prototype === entries.
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
-               ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", map_ents_ptr, 0));
+    let map_table_p: void* = NULL;
+    let map_table_n: usize = 0;
+    raw {
+        static const ZjsBuiltinSpec map_proto_specs[] = {
+            {"get",                  3, (void*)host_map_get,                    1},
+            {"set",                  3, (void*)host_map_set,                    2},
+            {"has",                  3, (void*)host_map_has,                    1},
+            {"delete",               6, (void*)host_map_delete,                 1},
+            {"clear",                5, (void*)host_map_clear,                  0},
+            {"getOrInsert",         11, (void*)host_map_get_or_insert,          2},
+            {"getOrInsertComputed", 19, (void*)host_map_get_or_insert_computed, 2},
+            {"forEach",              7, (void*)host_map_for_each,               1},
+            {"keys",                 4, (void*)host_map_keys,                   0},
+            {"values",               6, (void*)host_map_values,                 0},
+            {"entries",              7, (void*)host_map_entries,                0},
+            {"@@iterator",          10, (void*)host_map_entries,                0},
+        };
+        map_table_p = (void*)map_proto_specs;
+        map_table_n = sizeof(map_proto_specs) / sizeof(map_proto_specs[0]);
+    }
+    zjs_install_methods(ctx, ctx.map_proto, map_table_p, map_table_n);
     // Static: Map.groupBy(items, callback). Returns a fresh Map keyed
     // by callback output (SameValueZero), each value an array of items.
     let map_groupby_ptr: void* = NULL; raw { map_groupby_ptr = (void*)host_map_group_by; }
@@ -18170,61 +18151,41 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"groupBy", map_groupby_ptr, 2));
 
     // Set (2026-05-16).
-    let set_ctor_ptr:    void* = NULL; raw { set_ctor_ptr    = (void*)host_set_ctor; }
-    let set_add_ptr:     void* = NULL; raw { set_add_ptr     = (void*)host_set_add; }
-    let set_has_ptr:     void* = NULL; raw { set_has_ptr     = (void*)host_set_has; }
-    let set_delete_ptr:  void* = NULL; raw { set_delete_ptr  = (void*)host_set_delete; }
-    let set_clear_ptr:   void* = NULL; raw { set_clear_ptr   = (void*)host_set_clear; }
-    let set_foreach_ptr: void* = NULL; raw { set_foreach_ptr = (void*)host_set_for_each; }
-    let set_keys_ptr:    void* = NULL; raw { set_keys_ptr    = (void*)host_set_keys; }
-    let set_vals_ptr:    void* = NULL; raw { set_vals_ptr    = (void*)host_set_values; }
-    let set_ents_ptr:    void* = NULL; raw { set_ents_ptr    = (void*)host_set_entries; }
+    let set_ctor_ptr: void* = NULL; raw { set_ctor_ptr = (void*)host_set_ctor; }
     let set_ctor_v = ctx_register_host_function(ctx, (char*)"Set", set_ctor_ptr);
     let set_proto_v = ctx_new_object(ctx);
     ctx.set_proto = zjs_as_object(set_proto_v);
     zjs_as_host_function(set_ctor_v).prototype = ctx.set_proto;
     object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), set_ctor_v);
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"add",      3),
-               ctx_make_host_function_arity(ctx, (char*)"add",      set_add_ptr,     1));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"has",      3),
-               ctx_make_host_function_arity(ctx, (char*)"has",      set_has_ptr,     1));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"delete",   6),
-               ctx_make_host_function_arity(ctx, (char*)"delete",   set_delete_ptr,  1));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"clear",    5),
-               ctx_make_host_function_arity(ctx, (char*)"clear",    set_clear_ptr,   0));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"forEach",  7),
-               ctx_make_host_function_arity(ctx, (char*)"forEach",  set_foreach_ptr, 1));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"keys",     4),
-               ctx_make_host_function_arity(ctx, (char*)"keys",     set_keys_ptr,    0));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"values",   6),
-               ctx_make_host_function_arity(ctx, (char*)"values",   set_vals_ptr,    0));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"entries",  7),
-               ctx_make_host_function_arity(ctx, (char*)"entries",  set_ents_ptr,    0));
-    // @@iterator on Set.prototype === values (per spec).
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
-               ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", set_vals_ptr, 0));
-    // ES2025 Set composition methods (set-methods proposal).
-    let set_diff_ptr:  void* = NULL; raw { set_diff_ptr  = (void*)host_set_difference; }
-    let set_inter_ptr: void* = NULL; raw { set_inter_ptr = (void*)host_set_intersection; }
-    let set_union_ptr: void* = NULL; raw { set_union_ptr = (void*)host_set_union; }
-    let set_sym_ptr:   void* = NULL; raw { set_sym_ptr   = (void*)host_set_symmetric_difference; }
-    let set_sub_ptr:   void* = NULL; raw { set_sub_ptr   = (void*)host_set_is_subset_of; }
-    let set_sup_ptr:   void* = NULL; raw { set_sup_ptr   = (void*)host_set_is_superset_of; }
-    let set_dj_ptr:    void* = NULL; raw { set_dj_ptr    = (void*)host_set_is_disjoint_from; }
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"difference", 10),
-               ctx_make_host_function_arity(ctx, (char*)"difference", set_diff_ptr, 1));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"intersection", 12),
-               ctx_make_host_function_arity(ctx, (char*)"intersection", set_inter_ptr, 1));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"union", 5),
-               ctx_make_host_function_arity(ctx, (char*)"union", set_union_ptr, 1));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"symmetricDifference", 19),
-               ctx_make_host_function_arity(ctx, (char*)"symmetricDifference", set_sym_ptr, 1));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"isSubsetOf", 10),
-               ctx_make_host_function_arity(ctx, (char*)"isSubsetOf", set_sub_ptr, 1));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"isSupersetOf", 12),
-               ctx_make_host_function_arity(ctx, (char*)"isSupersetOf", set_sup_ptr, 1));
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"isDisjointFrom", 14),
-               ctx_make_host_function_arity(ctx, (char*)"isDisjointFrom", set_dj_ptr, 1));
+    // @@iterator on Set.prototype === values (per spec) — same fn ptr,
+    // different name. ES2025 set-methods proposal adds difference /
+    // intersection / union / symmetricDifference / isSubsetOf /
+    // isSupersetOf / isDisjointFrom.
+    let set_table_p: void* = NULL;
+    let set_table_n: usize = 0;
+    raw {
+        static const ZjsBuiltinSpec set_proto_specs[] = {
+            {"add",                  3, (void*)host_set_add,                    1},
+            {"has",                  3, (void*)host_set_has,                    1},
+            {"delete",               6, (void*)host_set_delete,                 1},
+            {"clear",                5, (void*)host_set_clear,                  0},
+            {"forEach",              7, (void*)host_set_for_each,               1},
+            {"keys",                 4, (void*)host_set_keys,                   0},
+            {"values",               6, (void*)host_set_values,                 0},
+            {"entries",              7, (void*)host_set_entries,                0},
+            {"@@iterator",          10, (void*)host_set_values,                 0},
+            {"difference",          10, (void*)host_set_difference,             1},
+            {"intersection",        12, (void*)host_set_intersection,           1},
+            {"union",                5, (void*)host_set_union,                  1},
+            {"symmetricDifference", 19, (void*)host_set_symmetric_difference,   1},
+            {"isSubsetOf",          10, (void*)host_set_is_subset_of,           1},
+            {"isSupersetOf",        12, (void*)host_set_is_superset_of,         1},
+            {"isDisjointFrom",      14, (void*)host_set_is_disjoint_from,       1},
+        };
+        set_table_p = (void*)set_proto_specs;
+        set_table_n = sizeof(set_proto_specs) / sizeof(set_proto_specs[0]);
+    }
+    zjs_install_methods(ctx, ctx.set_proto, set_table_p, set_table_n);
 
     // (Proxy is now a real ctor — see Phase 4.6 registration above.)
 
@@ -18332,46 +18293,37 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     }
 
     // === DataView ===
-    let dv_ctor_ptr:  void* = NULL; raw { dv_ctor_ptr  = (void*)host_data_view_ctor; }
+    let dv_ctor_ptr: void* = NULL; raw { dv_ctor_ptr = (void*)host_data_view_ctor; }
     let dv_ctor_v = ctx_register_host_function(ctx, (char*)"DataView", dv_ctor_ptr);
     let dv_proto_v = ctx_new_object(ctx);
     ctx.data_view_proto = zjs_as_object(dv_proto_v);
     zjs_as_host_function(dv_ctor_v).prototype = ctx.data_view_proto;
     object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), dv_ctor_v);
-
-    let dv_gi8_p:  void* = NULL; raw { dv_gi8_p  = (void*)host_dv_get_int8; }
-    let dv_gu8_p:  void* = NULL; raw { dv_gu8_p  = (void*)host_dv_get_uint8; }
-    let dv_gi16_p: void* = NULL; raw { dv_gi16_p = (void*)host_dv_get_int16; }
-    let dv_gu16_p: void* = NULL; raw { dv_gu16_p = (void*)host_dv_get_uint16; }
-    let dv_gi32_p: void* = NULL; raw { dv_gi32_p = (void*)host_dv_get_int32; }
-    let dv_gu32_p: void* = NULL; raw { dv_gu32_p = (void*)host_dv_get_uint32; }
-    let dv_gf32_p: void* = NULL; raw { dv_gf32_p = (void*)host_dv_get_float32; }
-    let dv_gf64_p: void* = NULL; raw { dv_gf64_p = (void*)host_dv_get_float64; }
-    let dv_si8_p:  void* = NULL; raw { dv_si8_p  = (void*)host_dv_set_int8; }
-    let dv_su8_p:  void* = NULL; raw { dv_su8_p  = (void*)host_dv_set_uint8; }
-    let dv_si16_p: void* = NULL; raw { dv_si16_p = (void*)host_dv_set_int16; }
-    let dv_su16_p: void* = NULL; raw { dv_su16_p = (void*)host_dv_set_uint16; }
-    let dv_si32_p: void* = NULL; raw { dv_si32_p = (void*)host_dv_set_int32; }
-    let dv_su32_p: void* = NULL; raw { dv_su32_p = (void*)host_dv_set_uint32; }
-    let dv_sf32_p: void* = NULL; raw { dv_sf32_p = (void*)host_dv_set_float32; }
-    let dv_sf64_p: void* = NULL; raw { dv_sf64_p = (void*)host_dv_set_float64; }
-
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"getInt8", 7),    ctx_make_host_function(ctx, (char*)"getInt8",    dv_gi8_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"getUint8", 8),   ctx_make_host_function(ctx, (char*)"getUint8",   dv_gu8_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"getInt16", 8),   ctx_make_host_function(ctx, (char*)"getInt16",   dv_gi16_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"getUint16", 9),  ctx_make_host_function(ctx, (char*)"getUint16",  dv_gu16_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"getInt32", 8),   ctx_make_host_function(ctx, (char*)"getInt32",   dv_gi32_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"getUint32", 9),  ctx_make_host_function(ctx, (char*)"getUint32",  dv_gu32_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"getFloat32", 10), ctx_make_host_function(ctx, (char*)"getFloat32", dv_gf32_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"getFloat64", 10), ctx_make_host_function(ctx, (char*)"getFloat64", dv_gf64_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"setInt8", 7),    ctx_make_host_function(ctx, (char*)"setInt8",    dv_si8_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"setUint8", 8),   ctx_make_host_function(ctx, (char*)"setUint8",   dv_su8_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"setInt16", 8),   ctx_make_host_function(ctx, (char*)"setInt16",   dv_si16_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"setUint16", 9),  ctx_make_host_function(ctx, (char*)"setUint16",  dv_su16_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"setInt32", 8),   ctx_make_host_function(ctx, (char*)"setInt32",   dv_si32_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"setUint32", 9),  ctx_make_host_function(ctx, (char*)"setUint32",  dv_su32_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"setFloat32", 10), ctx_make_host_function(ctx, (char*)"setFloat32", dv_sf32_p));
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"setFloat64", 10), ctx_make_host_function(ctx, (char*)"setFloat64", dv_sf64_p));
+    let dv_table_p: void* = NULL;
+    let dv_table_n: usize = 0;
+    raw {
+        static const ZjsBuiltinSpec dv_proto_specs[] = {
+            {"getInt8",     7, (void*)host_dv_get_int8,    -1},
+            {"getUint8",    8, (void*)host_dv_get_uint8,   -1},
+            {"getInt16",    8, (void*)host_dv_get_int16,   -1},
+            {"getUint16",   9, (void*)host_dv_get_uint16,  -1},
+            {"getInt32",    8, (void*)host_dv_get_int32,   -1},
+            {"getUint32",   9, (void*)host_dv_get_uint32,  -1},
+            {"getFloat32", 10, (void*)host_dv_get_float32, -1},
+            {"getFloat64", 10, (void*)host_dv_get_float64, -1},
+            {"setInt8",     7, (void*)host_dv_set_int8,    -1},
+            {"setUint8",    8, (void*)host_dv_set_uint8,   -1},
+            {"setInt16",    8, (void*)host_dv_set_int16,   -1},
+            {"setUint16",   9, (void*)host_dv_set_uint16,  -1},
+            {"setInt32",    8, (void*)host_dv_set_int32,   -1},
+            {"setUint32",   9, (void*)host_dv_set_uint32,  -1},
+            {"setFloat32", 10, (void*)host_dv_set_float32, -1},
+            {"setFloat64", 10, (void*)host_dv_set_float64, -1},
+        };
+        dv_table_p = (void*)dv_proto_specs;
+        dv_table_n = sizeof(dv_proto_specs) / sizeof(dv_proto_specs[0]);
+    }
+    zjs_install_methods(ctx, ctx.data_view_proto, dv_table_p, dv_table_n);
 
     ctx_register_host_function(ctx, (char*)"BigInt",      eval_ptr);
     ctx_register_host_function(ctx, (char*)"BigInt64Array",     eval_ptr);
@@ -18412,41 +18364,34 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, ws_ctor_hf.props, ctx_intern_atom(ctx, (char*)"CLOSED",     6),  zjs_int32(3));
 
     // === Headers / Response / fetch — web-API Phase D.0 (2026-05-18). ===
-    let h_ctor_ptr:  void* = NULL; raw { h_ctor_ptr  = (void*)host_headers_ctor; }
-    let h_get_ptr:   void* = NULL; raw { h_get_ptr   = (void*)host_headers_get; }
-    let h_set_ptr:   void* = NULL; raw { h_set_ptr   = (void*)host_headers_set; }
-    let h_has_ptr:   void* = NULL; raw { h_has_ptr   = (void*)host_headers_has; }
-    let h_del_ptr:   void* = NULL; raw { h_del_ptr   = (void*)host_headers_delete; }
-    let h_fe_ptr:    void* = NULL; raw { h_fe_ptr    = (void*)host_headers_for_each; }
-    let h_keys_ptr:  void* = NULL; raw { h_keys_ptr  = (void*)host_headers_keys; }
-    let h_vals_ptr:  void* = NULL; raw { h_vals_ptr  = (void*)host_headers_values; }
-    let h_ents_ptr:  void* = NULL; raw { h_ents_ptr  = (void*)host_headers_entries; }
+    let h_ctor_ptr: void* = NULL; raw { h_ctor_ptr = (void*)host_headers_ctor; }
     let h_ctor_v = ctx_register_host_function(ctx, (char*)"Headers", h_ctor_ptr);
     let h_proto_v = ctx_new_object(ctx);
     ctx.headers_proto = zjs_as_object(h_proto_v);
     zjs_as_host_function(h_ctor_v).prototype = ctx.headers_proto;
     object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), h_ctor_v);
-    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"get", 3),
-               ctx_make_host_function_arity(ctx, (char*)"get", h_get_ptr, 1));
-    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"set", 3),
-               ctx_make_host_function_arity(ctx, (char*)"set", h_set_ptr, 2));
-    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"has", 3),
-               ctx_make_host_function_arity(ctx, (char*)"has", h_has_ptr, 1));
-    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"append", 6),
-               ctx_make_host_function_arity(ctx, (char*)"append", h_set_ptr, 2));
-    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"delete", 6),
-               ctx_make_host_function_arity(ctx, (char*)"delete", h_del_ptr, 1));
-    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"forEach", 7),
-               ctx_make_host_function_arity(ctx, (char*)"forEach", h_fe_ptr, 1));
-    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"keys", 4),
-               ctx_make_host_function(ctx, (char*)"keys", h_keys_ptr));
-    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"values", 6),
-               ctx_make_host_function(ctx, (char*)"values", h_vals_ptr));
-    let h_ents_fn = ctx_make_host_function(ctx, (char*)"entries", h_ents_ptr);
-    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"entries", 7), h_ents_fn);
-    // Iteration default is entries — matches the spec
-    // (`for (const [k, v] of headers)` walks name/value pairs).
-    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10), h_ents_fn);
+    // Iteration default is entries (Headers walks name/value pairs).
+    // `append` and `set` share the host_headers_set impl (spec says
+    // append concatenates; v0.1 collapses both to "set last wins").
+    let h_table_p: void* = NULL;
+    let h_table_n: usize = 0;
+    raw {
+        static const ZjsBuiltinSpec headers_proto_specs[] = {
+            {"get",         3, (void*)host_headers_get,       1},
+            {"set",         3, (void*)host_headers_set,       2},
+            {"has",         3, (void*)host_headers_has,       1},
+            {"append",      6, (void*)host_headers_set,       2},
+            {"delete",      6, (void*)host_headers_delete,    1},
+            {"forEach",     7, (void*)host_headers_for_each,  1},
+            {"keys",        4, (void*)host_headers_keys,     -1},
+            {"values",      6, (void*)host_headers_values,   -1},
+            {"entries",     7, (void*)host_headers_entries,  -1},
+            {"@@iterator", 10, (void*)host_headers_entries,  -1},
+        };
+        h_table_p = (void*)headers_proto_specs;
+        h_table_n = sizeof(headers_proto_specs) / sizeof(headers_proto_specs[0]);
+    }
+    zjs_install_methods(ctx, ctx.headers_proto, h_table_p, h_table_n);
 
     let r_status_ptr:   void* = NULL; raw { r_status_ptr   = (void*)host_response_status; }
     let r_ok_ptr:       void* = NULL; raw { r_ok_ptr       = (void*)host_response_ok; }
