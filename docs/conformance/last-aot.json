@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-05-27 14:13 UTC",
+    "when": "2026-05-27 14:11 UTC",
     "total": 14524,
     "passed": 11979,
     "failed": 1899,
@@ -7604,22 +7604,5 @@
       "path": "test/built-ins/Date/year-zero.js",
       "reason": "[sloppy] zjs: throw: (unknown): reject minus zero as extended year Expected SameValue(\u00ab-1000\u00bb, \u00abNaN\u00bb) to be true"
     }
-  ],
-  "skip_counts": {
-    "feature:BigInt": 117,
-    "feature:tail-call-optimization": 20,
-    "feature:u180e": 2,
-    "include:asyncHelpers.js": 25,
-    "flag:module": 15,
-    "feature:Symbol.asyncIterator": 352,
-    "feature:decorators": 24,
-    "include:testTypedArray.js": 4,
-    "feature:WeakMap": 17,
-    "feature:WeakSet": 11,
-    "feature:SharedArrayBuffer": 2,
-    "feature:WeakRef": 2,
-    "include:proxyTrapsHelper.js": 1,
-    "include:byteConversionValues.js": 1,
-    "include:promiseHelper.js": 53
-  }
+  ]
 }

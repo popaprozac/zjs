@@ -2369,6 +2369,25 @@ fn ctx_intern_atom(ctx: ZjsContext*, data: char*, length: u32) -> ZjsString* {
 
 // Same as above, but adopts ownership of an already-malloc'd
 // null-terminated buffer. Frees the buffer on dedup hit.
+// Same dedup as ctx_intern_atom but skips the `\uXXXX` escape decode.
+// Used by the AOT reader: serialized string bytes are already in their
+// decoded form (parse_string_literal ran at compile time), so a second
+// decode would corrupt strings containing literal backslash-u
+// sequences (`"\\u0022"` → wrongly collapsed to `"`). Caller copies
+// the bytes into a fresh ZjsString via zjs_string_new.
+fn ctx_intern_atom_no_decode(ctx: ZjsContext*, data: char*, length: u32) -> ZjsString* {
+    let h = atom_hash(data, length);
+    let existing = atom_table_lookup(ctx, data, length, h);
+    if existing != NULL { return existing; }
+    if ctx.atom_count * 10 >= ctx.atom_cap * 7 {
+        atom_table_grow(ctx);
+    }
+    let s = zjs_string_new(data, length);
+    ctx_register_cell(ctx, (void*)s);
+    atom_table_insert_unchecked(ctx, s, h);
+    return s;
+}
+
 fn ctx_intern_atom_take(ctx: ZjsContext*, data: char*, length: u32) -> ZjsString* {
     let h = atom_hash(data, length);
     let existing = atom_table_lookup(ctx, data, length, h);

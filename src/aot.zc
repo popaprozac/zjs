@@ -21,7 +21,7 @@ def ZJS_AOT_MAGIC0: u8 = 'Z' as u8;
 def ZJS_AOT_MAGIC1: u8 = 'J' as u8;
 def ZJS_AOT_MAGIC2: u8 = 'S' as u8;
 def ZJS_AOT_MAGIC3: u8 = 'b' as u8;
-def ZJS_AOT_VERSION: u32 = 3;
+def ZJS_AOT_VERSION: u32 = 5;
 
 def ZJS_AOT_TAG_INT32:    u8 = 0;
 def ZJS_AOT_TAG_DOUBLE:   u8 = 1;
@@ -185,7 +185,12 @@ fn aot_r_str(r: AotReader*, ctx: ZjsContext*) -> ZjsString* {
     if !aot_r_ensure(r, (usize)n) { return NULL; }
     let data: char* = NULL;
     raw { data = (char*)&(r->buf[r->pos]); }
-    let atom = ctx_intern_atom(ctx, data, n);
+    // _no_decode: serialized bytes are already in their decoded form
+    // (parse_string_literal ran at compile time). The plain
+    // ctx_intern_atom would re-decode any `\uXXXX` it sees, mangling
+    // string literals that intentionally contain literal `\u`
+    // sequences (broke JSON.parse('\\u0022...') under AOT).
+    let atom = ctx_intern_atom_no_decode(ctx, data, n);
     r.pos = r.pos + (usize)n;
     return atom;
 }
@@ -284,6 +289,76 @@ fn aot_read_value(r: AotReader*, ctx: ZjsContext*) -> ZjsValue {
 // each name in the current context, build a remap[old_slot →
 // new_slot], and rewrite every global op's operand.
 // =====================================================================
+
+// Function.props — the expando bag that holds compile-time-set
+// properties like `.name` on class constructors and methods. The
+// compiler builds this object during compile_class_value /
+// compile_function method handling; at runtime it's read back via
+// LoadProp ("name") on the Function. Without serializing it,
+// `class C {}; C.name` returns undefined under AOT.
+//
+// Format per slot: name atom (aot_w_str) + attrs byte + value
+// (aot_write_value, recursive — handles nested Functions). Slots are
+// emitted in their compile-time install order so the rehydrated
+// object has the same hidden-class shape as the original.
+fn aot_write_object_props(w: AotWriter*, ctx: ZjsContext*, o: ZjsObject*) -> bool {
+    if o == NULL || o.cls == NULL {
+        aot_w_u32(w, 0);
+        return true;
+    }
+    let n: u32 = o.cls.prop_count;
+    aot_w_u32(w, n);
+    if n == 0 { return true; }
+    // Walk the class parent chain to recover each slot's transition
+    // name. Stash into a stack array indexed by slot, then emit in
+    // ascending slot order — matches the compile-time install order
+    // that built the shape.
+    let names: ZjsString*[64];
+    if n > 64 {
+        // Lazy MVP cap — class-constructor props bags are tiny (a few
+        // entries: name, length, maybe a couple more). If we ever
+        // need more, switch to alloc_n.
+        aot_w_u32(w, 0);  // overwrite count: emit empty rather than corrupting
+        return false;
+    }
+    let init_i: u32 = 0;
+    while init_i < n { names[init_i] = NULL; init_i = init_i + 1; }
+    let cur: ZjsHiddenClass* = o.cls;
+    while cur != NULL && cur.parent != NULL {
+        if cur.transition_slot < n {
+            names[cur.transition_slot] = cur.transition_name;
+        }
+        cur = cur.parent;
+    }
+    let i: u32 = 0;
+    while i < n {
+        aot_w_str(w, names[i]);
+        let attrs_b: u8 = if o.attrs != NULL { o.attrs[i] } else { PROP_DEFAULT };
+        aot_w_u8(w, attrs_b);
+        if !aot_write_value(w, ctx, o.slots[i]) { return false; }
+        i = i + 1;
+    }
+    return true;
+}
+
+fn aot_read_object_props(r: AotReader*, ctx: ZjsContext*) -> ZjsObject* {
+    let n = aot_r_u32(r);
+    if n == 0 { return NULL; }
+    let pv = ctx_new_object(ctx);
+    let o = zjs_as_object(pv);
+    let i: u32 = 0;
+    while i < n {
+        let nm = aot_r_str(r, ctx);
+        let attrs_b = aot_r_u8(r);
+        let val = aot_read_value(r, ctx);
+        if r.err { return NULL; }
+        if nm != NULL {
+            object_define_property_slot(ctx, o, nm, val, attrs_b);
+        }
+        i = i + 1;
+    }
+    return o;
+}
 
 fn aot_inst_is_global_ref(op: Op) -> bool {
     return op == Op::DefineGlobal
@@ -420,6 +495,15 @@ fn aot_write_function(w: AotWriter*, ctx: ZjsContext*, f: Function*) -> bool {
     aot_w_u32(w, (u32)(i32)f.this_reg);
 
     if !aot_write_value(w, ctx, f.parent_ctor) { return false; }
+
+    // Function.props — compile-time-set expando bag (Function.name on
+    // class ctors / methods, etc.). NULL flag + empty when absent.
+    if f.props == NULL {
+        aot_w_u8(w, 0);
+    } else {
+        aot_w_u8(w, 1);
+        if !aot_write_object_props(w, ctx, f.props) { return false; }
+    }
 
     // Tagged-template tables. Each segment carries a u8 cooked-valid
     // flag (cooked might be undefined for an invalid escape) plus the
@@ -585,6 +669,12 @@ fn aot_read_function(r: AotReader*, ctx: ZjsContext*) -> Function* {
 
     f.parent_ctor = aot_read_value(r, ctx);
     if r.err { function_free(f); return NULL; }
+
+    let has_props = aot_r_u8(r);
+    if has_props != 0 {
+        f.props = aot_read_object_props(r, ctx);
+        if r.err { function_free(f); return NULL; }
+    }
 
     let tc = aot_r_u32(r);
     f.template_count = tc;
