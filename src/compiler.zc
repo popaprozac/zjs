@@ -4366,6 +4366,54 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
         return base;
     }
 
+    // Specialized built-in dispatch. Pattern: `Math.sqrt(x)` where `Math`
+    // is the global Math (not a local / not a captured outer). Folds
+    // LoadGlobal(Math) + LoadProp(sqrt) + MethodInvoke into a single op.
+    // Doesn't honor user-installed overrides on Math — same compromise
+    // as Hermes/V8 take for known intrinsics.
+    if is_method && !has_spread_arg
+       && callee.kind == NodeKind::Member
+       && callee.left != NULL && callee.left.kind == NodeKind::IdentExpr
+       && callee.left.end - callee.left.start == 4
+       && arg_count == 1 {
+        let obj_name = c.source + callee.left.start;
+        let is_math: int = 0;
+        raw { is_math = (memcmp(obj_name, "Math", 4) == 0) ? 1 : 0; }
+        if is_math != 0 {
+            // `Math` must resolve to global — no local or captured outer
+            // shadow.
+            let math_local = find_local_index(c, obj_name, 4);
+            let math_outer: u32 = 0;
+            if math_local < 0 { math_outer = outer_capture_depth(c, obj_name, 4); }
+            if math_local < 0 && math_outer == 0 {
+                let method_name = c.source + callee.name_start;
+                let method_len  = callee.name_length;
+                let is_sqrt:  int = 0;
+                let is_abs:   int = 0;
+                let is_floor: int = 0;
+                let is_ceil:  int = 0;
+                raw {
+                    is_sqrt  = (method_len == 4 && memcmp(method_name, "sqrt",  4) == 0) ? 1 : 0;
+                    is_abs   = (method_len == 3 && memcmp(method_name, "abs",   3) == 0) ? 1 : 0;
+                    is_floor = (method_len == 5 && memcmp(method_name, "floor", 5) == 0) ? 1 : 0;
+                    is_ceil  = (method_len == 4 && memcmp(method_name, "ceil",  4) == 0) ? 1 : 0;
+                }
+                if is_sqrt != 0 || is_abs != 0 || is_floor != 0 || is_ceil != 0 {
+                    let spec_op: Op = Op::MathSqrt;
+                    if      is_abs   != 0 { spec_op = Op::MathAbs; }
+                    else if is_floor != 0 { spec_op = Op::MathFloor; }
+                    else if is_ceil  != 0 { spec_op = Op::MathCeil; }
+                    let dst = alloc_reg(c);
+                    let arg_r = compile_expr(c, node.children[0]);
+                    emit(c, make_inst_ab(spec_op, dst, arg_r));
+                    if arg_r + 1 == c.next_reg && arg_r != dst { c.next_reg = c.next_reg - 1; }
+                    if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+                    return dst;
+                }
+            }
+        }
+    }
+
     if is_method {
         // Method call: regs[base]=method, regs[base+1]=receiver,
         // regs[base+2..]=args. Receiver is the member's object; LoadProp

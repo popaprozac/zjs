@@ -135,6 +135,17 @@ enum Op {
     LoadProp,         // a=dst, b=obj_reg, c=ic_slot (u8)
     StoreProp,        // a=obj_reg, b=ic_slot (u8), c=val_reg
 
+    // Specialized built-in calls — fold LoadGlobal(Math) + LoadProp(.<m>) +
+    // MethodInvoke into a single dispatch. Compiler emits these when it
+    // statically proves the receiver is the global Math object (i.e., `Math`
+    // is not a local or captured outer binding) and the method name matches.
+    // Caveat: user-installed overrides on Math (`Math.sqrt = fn`) are NOT
+    // honored on a specialized site — same compromise as Hermes/V8.
+    MathSqrt,         // a=dst, b=arg_reg
+    MathAbs,          // a=dst, b=arg_reg
+    MathFloor,        // a=dst, b=arg_reg
+    MathCeil,         // a=dst, b=arg_reg
+
     // Iteration setup (Phase 3.4).
     //
     // IterPrepare normalizes the iterable into a plain array of items
