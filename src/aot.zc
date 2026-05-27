@@ -21,7 +21,7 @@ def ZJS_AOT_MAGIC0: u8 = 'Z' as u8;
 def ZJS_AOT_MAGIC1: u8 = 'J' as u8;
 def ZJS_AOT_MAGIC2: u8 = 'S' as u8;
 def ZJS_AOT_MAGIC3: u8 = 'b' as u8;
-def ZJS_AOT_VERSION: u32 = 1;
+def ZJS_AOT_VERSION: u32 = 3;
 
 def ZJS_AOT_TAG_INT32:    u8 = 0;
 def ZJS_AOT_TAG_DOUBLE:   u8 = 1;
@@ -355,6 +355,18 @@ fn aot_write_function(w: AotWriter*, ctx: ZjsContext*, f: Function*) -> bool {
             aot_w_u32(w, name_len);
             aot_w_bytes(w, (u8*)name, (usize)name_len);
         }
+        // Per-slot `defined` flag. hoist_program_decls sets defined=true
+        // at compile time for every `var x;` and top-level function/class
+        // decl, so the runtime LoadGlobal succeeds with undefined value
+        // (not ReferenceError). That side-effect doesn't replay in a
+        // fresh deserialize context — without serializing the flag,
+        // `var x; console.log(x)` threw ReferenceError under AOT.
+        // Built-ins are also defined=true at compile time, but the new
+        // context's bootstrap independently sets them — applying the
+        // flag as OR (only set true, never unset) keeps both cases
+        // working without false positives on undeclared refs (which
+        // stay defined=false at compile time and must throw under AOT).
+        aot_w_u8(w, if ctx.globals[gi].defined { 1 } else { 0 });
         gi = gi + 1;
     }
 
@@ -399,6 +411,13 @@ fn aot_write_function(w: AotWriter*, ctx: ZjsContext*, f: Function*) -> bool {
 
     aot_w_u8(w, aot_pack_flags(f));
     aot_w_u8(w, f.env_reg);
+    // this_reg is the slot the interpreter seeds with ctx.host_this on
+    // first entry to the frame (cheaper than emitting Op::LoadThis per
+    // reference). -1 means the body doesn't use `this`; any
+    // non-negative value indicates the slot. Forgetting to serialize
+    // this turned `class A { constructor() { this.x = 7 } }` into
+    // silently dropping the assignment in AOT-loaded code.
+    aot_w_u32(w, (u32)(i32)f.this_reg);
 
     if !aot_write_value(w, ctx, f.parent_ctor) { return false; }
 
@@ -449,6 +468,7 @@ fn aot_read_function(r: AotReader*, ctx: ZjsContext*) -> Function* {
             if r.err { dealloc(remap); function_free(f); return NULL; }
             if nlen == 0 {
                 remap[gi] = (u16)gi;
+                let _ = aot_r_u8(r);  // defined-flag for empty slot — discard
             } else {
                 if !aot_r_ensure(r, (usize)nlen) {
                     dealloc(remap); function_free(f); return NULL;
@@ -458,6 +478,14 @@ fn aot_read_function(r: AotReader*, ctx: ZjsContext*) -> Function* {
                 let new_slot = ctx_intern_global(ctx, nptr, nlen);
                 r.pos = r.pos + (usize)nlen;
                 remap[gi] = (u16)new_slot;
+                // OR in the compile-time `defined` flag — see writer
+                // comment. Only ever sets true; an already-defined
+                // built-in slot stays defined, an undeclared reference
+                // stays defined=false and throws ReferenceError on read.
+                let def_flag = aot_r_u8(r);
+                if def_flag != 0 {
+                    ctx.globals[new_slot].defined = true;
+                }
             }
             gi = gi + 1;
         }
@@ -553,6 +581,7 @@ fn aot_read_function(r: AotReader*, ctx: ZjsContext*) -> Function* {
 
     aot_unpack_flags(f, aot_r_u8(r));
     f.env_reg = aot_r_u8(r);
+    f.this_reg = (i32)(u32)aot_r_u32(r);
 
     f.parent_ctor = aot_read_value(r, ctx);
     if r.err { function_free(f); return NULL; }
