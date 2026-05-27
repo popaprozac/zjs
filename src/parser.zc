@@ -1693,6 +1693,40 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
         field.left = init_expr;
         return field;
     }
+    // ECMA-262 §15.7.1 (Class Definitions) Static Semantics: Early Errors.
+    //   It is a Syntax Error if PropName of MethodDefinition is "constructor"
+    //   and SpecialMethod of MethodDefinition is true (async / generator /
+    //   getter / setter).
+    //   It is a Syntax Error if PropName of MethodDefinition is "constructor"
+    //   and the method is static (constructor is an instance-method-only name).
+    //   It is a Syntax Error if PropName of MethodDefinition is "prototype"
+    //   when the method is static (the class machinery owns Class.prototype).
+    if computed_key == NULL && name_tok.length > 0 {
+        let nd_full = p.source + name_tok.start;
+        let nl_full: u32 = name_tok.length;
+        let nd: char* = nd_full;
+        let nl: u32 = nl_full;
+        if name_tok.kind == TokenKind::StringLit && nl >= 2 {
+            raw { nd = (char*)(nd_full + 1); }
+            nl = nl - 2;
+        }
+        if nl == 11 {
+            let is_ctor: int = 0;
+            raw { is_ctor = (memcmp(nd, "constructor", 11) == 0) ? 1 : 0; }
+            if is_ctor != 0 {
+                let is_special = is_async_method || is_gen_method
+                              || acc_kind == TokenKind::KwGet
+                              || acc_kind == TokenKind::KwSet;
+                if is_special || is_static { p.had_error = true; return NULL; }
+            }
+        }
+        if is_static && nl == 9 {
+            let is_proto: int = 0;
+            raw { is_proto = (memcmp(nd, "prototype", 9) == 0) ? 1 : 0; }
+            if is_proto != 0 { p.had_error = true; return NULL; }
+        }
+    }
+
     // ECMA-262: an async-method's params are parsed in [+Await] context
     // and a generator-method's params in [+Yield]; in both modes the
     // respective keyword is reserved as a BindingIdentifier. Toggle

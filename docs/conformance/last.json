@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-27 14:13 UTC",
+    "when": "2026-05-27 15:02 UTC",
     "total": 14524,
-    "passed": 11979,
-    "failed": 1899,
+    "passed": 12001,
+    "failed": 1877,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -2361,46 +2361,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-ctor-async-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-ctor-async-meth.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-ctor-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-ctor-get.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-special-meth-ctor-set.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-async-gen-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-async-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-gen-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-get-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-private-async-gen-meth-constructor.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -2418,10 +2378,6 @@
     },
     {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-privatename-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-set-meth-prototype.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -2550,23 +2506,23 @@
     },
     {
       "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-accessor-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-async-gen-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-async-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-gen-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/wrapped-in-sc-computed-symbol-names.js",
@@ -4017,46 +3973,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-async-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-async-meth.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-gen.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-get.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-special-meth-ctor-set.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-async-gen-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-async-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-gen-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-get-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-meth-prototype.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-private-async-gen-meth-constructor.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -4074,10 +3990,6 @@
     },
     {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-privatename-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-set-meth-prototype.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -4206,23 +4118,23 @@
     },
     {
       "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-accessor-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-async-gen-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-async-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-gen-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/expressions/class/elements/wrapped-in-sc-computed-symbol-names.js",
