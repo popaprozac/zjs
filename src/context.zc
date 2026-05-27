@@ -19161,27 +19161,46 @@ fn zjs_install_stdlib_extensions(ctx: ZjsContext*) -> void {
     // === Standard library — Ring 1 builtin modules (task #190) ===
     // See docs/stdlib-design.md. Each module's populate() callback
     // runs lazily on first `import 'node:foo'`.
-    ctx_register_stdlib_modules(ctx);
+    //
+    // Each install call below is gated by a ZJS_NO_* preprocessor
+    // macro. When defined at build time (see Makefile ZJS_TIER /
+    // ZJS_FEATURE_DEFINES), the call is preprocessed out, the impl
+    // becomes unreferenced from the engine, and link-time -dead_strip
+    // drops it. Per-function sections keep the dead-strip granular.
+    raw {
+        #ifndef ZJS_NO_NODE_MODULES
+        ctx_register_stdlib_modules(ctx);
+        #endif
 
-    // Pure-JS WinterTC web globals (EventTarget, Event, CustomEvent,
-    // DOMException). Runs a bootstrap snippet now that classes, Map,
-    // Object.defineProperty etc. are all in place.
-    zjs_install_web_events(ctx);
-    // AbortController / AbortSignal — depends on EventTarget +
-    // DOMException above, so installed after web_events.
-    zjs_install_web_abort(ctx);
-    // structuredClone — depends on Map/DOMException, no event dep.
-    zjs_install_web_clone(ctx);
-    // Blob / File / FormData — depends on TextEncoder + Uint8Array.
-    zjs_install_web_blob(ctx);
-    // WHATWG Streams — ReadableStream / WritableStream / TransformStream
-    // + queuing strategies. The largest of the web-globals bootstraps
-    // (~50KB of source); skipping just this one shaves measurable
-    // memory + binary if the embedder doesn't need it.
-    zjs_install_web_streams(ctx);
-    // node:net native host-fn globals (__zjs_net_*). The JS bootstrap
-    // for the module uses these via globalThis.
-    zjs_install_node_net_globals(ctx);
+        // Pure-JS WinterTC web globals (EventTarget, Event, CustomEvent,
+        // DOMException). Bootstrap snippet runs JS now that classes,
+        // Map, Object.defineProperty etc. are all in place.
+        #ifndef ZJS_NO_WEB_EVENTS
+        zjs_install_web_events(ctx);
+        #endif
+        // AbortController / AbortSignal — depends on EventTarget +
+        // DOMException above. Dropping web_events must drop web_abort.
+        #ifndef ZJS_NO_WEB_ABORT
+        zjs_install_web_abort(ctx);
+        #endif
+        // structuredClone — depends on Map / DOMException, no event dep.
+        #ifndef ZJS_NO_WEB_CLONE
+        zjs_install_web_clone(ctx);
+        #endif
+        // Blob / File / FormData — depends on TextEncoder + Uint8Array.
+        #ifndef ZJS_NO_WEB_BLOB
+        zjs_install_web_blob(ctx);
+        #endif
+        // WHATWG Streams — the largest of the web-globals bootstraps
+        // (~50KB of source). Skip if the embedder doesn't need them.
+        #ifndef ZJS_NO_WEB_STREAMS
+        zjs_install_web_streams(ctx);
+        #endif
+        // node:net native host-fn globals (__zjs_net_*).
+        #ifndef ZJS_NO_NODE_NET
+        zjs_install_node_net_globals(ctx);
+        #endif
+    }
 }
 
 fn proto_mark_nonenum(proto: ZjsObject*) -> void {

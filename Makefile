@@ -148,17 +148,56 @@ $(LIB): $(ENGINE_SRC) $(PLATFORM_SRC) include/zjs.h | $(BUILD_DIR) stdlib-link
 # ourselves with the same flag set zc would have used.
 lib-static: $(LIBA)
 
+# --- Tier flags (Phase 2) -----------------------------------------------
+# Embedders can drop Ring-1 / Ring-2 stdlib pieces from the build entirely
+# (not just at runtime via zjs_new_minimal_context). When a piece is
+# excluded here, the install call inside zjs_install_stdlib_extensions is
+# preprocessed out, leaving the implementation as unreferenced code that
+# the linker's -dead_strip removes function-by-function.
+#
+# Per-feature flags:
+#   ZJS_NO_NODE_MODULES   — drop the `node:` module loader entirely
+#   ZJS_NO_WEB_EVENTS     — drop EventTarget / Event / CustomEvent / DOMException
+#   ZJS_NO_WEB_ABORT      — drop AbortController / AbortSignal (needs web_events)
+#   ZJS_NO_WEB_CLONE      — drop structuredClone
+#   ZJS_NO_WEB_BLOB       — drop Blob / File / FormData
+#   ZJS_NO_WEB_STREAMS    — drop ReadableStream / WritableStream / TransformStream (largest)
+#   ZJS_NO_NODE_NET       — drop node:net host-fn globals
+#
+# Presets (each implies the matching ZJS_NO_* set):
+#   ZJS_TIER=minimal      — drop everything Ring-1 / Ring-2 (ES core only)
+#   ZJS_TIER=ring1        — keep web globals, drop node: modules
+#   default               — everything
+ZJS_TIER ?=
+ifeq ($(ZJS_TIER),minimal)
+  ZJS_TIER_DEFINES := -DZJS_NO_NODE_MODULES -DZJS_NO_WEB_EVENTS -DZJS_NO_WEB_ABORT \
+                     -DZJS_NO_WEB_CLONE -DZJS_NO_WEB_BLOB -DZJS_NO_WEB_STREAMS \
+                     -DZJS_NO_NODE_NET
+else ifeq ($(ZJS_TIER),ring1)
+  ZJS_TIER_DEFINES := -DZJS_NO_NODE_MODULES -DZJS_NO_NODE_NET
+else
+  ZJS_TIER_DEFINES :=
+endif
+# Per-feature overrides: append any user-set ZJS_NO_* defines.
+ZJS_TIER_DEFINES += $(ZJS_FEATURE_DEFINES)
+
+# Per-function / per-data sections so the linker (-dead_strip on Darwin,
+# --gc-sections on Linux) can drop the install impls that ZJS_NO_* gated
+# out of the call graph. Without this, the whole libzjs.o stays even if
+# only one symbol is reachable.
+DEADSTRIP_CFLAGS := -ffunction-sections -fdata-sections
+
 $(LIBA_C): $(ENGINE_SRC) $(PLATFORM_SRC) include/zjs.h | $(BUILD_DIR) stdlib-link
 	$(ZC) transpile $(ZC_FLAGS) $(LIB_SRC) -o $@
 
 $(LIBA_OBJ): $(LIBA_C)
-	$(CLANG) -O3 -fPIC -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) -c $< -o $@
+	$(CLANG) -O3 -fPIC -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(ZJS_TIER_DEFINES) -c $< -o $@
 
 $(BUILD_DIR)/%.o: src/platform/%.m | $(BUILD_DIR)
-	$(CLANG) -O3 -fPIC $(PLATFORM_CFLAGS) -Isrc $(ZC_C_WARNS) -c $< -o $@
+	$(CLANG) -O3 -fPIC $(PLATFORM_CFLAGS) -Isrc $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/%.o: src/platform/%.c | $(BUILD_DIR)
-	$(CLANG) -O3 -fPIC -Isrc $(ZC_C_WARNS) -c $< -o $@
+	$(CLANG) -O3 -fPIC -Isrc $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) -c $< -o $@
 
 # Bundle tre into the static archive — the .so build pulls tre_full.c
 # through zc's @link plumbing, but lib-static does its own clang+ar dance
@@ -168,7 +207,7 @@ TRE_FULL_SRC := $(ZC_ROOT)/std/third-party/tre/tre_full.c
 TRE_FULL_OBJ := $(BUILD_DIR)/tre_full.o
 
 $(TRE_FULL_OBJ): $(TRE_FULL_SRC) | $(BUILD_DIR)
-	$(CLANG) -O3 -fPIC -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) -c $< -o $@
+	$(CLANG) -O3 -fPIC -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) -c $< -o $@
 
 $(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(TRE_FULL_OBJ)
 	@rm -f $@
