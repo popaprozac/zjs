@@ -313,8 +313,14 @@ def execution_modes(meta):
     if "noStrict" in flags:   return ["sloppy"]
     return ["sloppy", "strict"]
 
-def run_one(zjs_bin, source, timeout_s):
-    """Run zjs on the given source. Returns (exit_code, stderr_text, stdout_text)."""
+def run_one(zjs_bin, source, timeout_s, aot=False):
+    """Run zjs on the given source. Returns (exit_code, stderr_text, stdout_text).
+
+    In aot mode: compile the source to a .zbc bytecode file first, then
+    run THAT instead of the .js. Used by `--aot` to flush out any
+    serialization gaps — a regression vs the non-aot run means an op or
+    Function field isn't round-tripping correctly.
+    """
     # Force UTF-8 on the tempfile — test262 sources are UTF-8, and on
     # Windows the default text-mode encoding (cp1252) chokes on the
     # full Unicode range (arrows, math symbols, etc).
@@ -322,12 +328,31 @@ def run_one(zjs_bin, source, timeout_s):
                                      encoding="utf-8") as f:
         f.write(source)
         path = f.name
+    zbc_path = path + ".zbc"
     try:
+        if aot:
+            # Compile to bytecode. If the compile itself fails (parser
+            # error, syntax-error-on-purpose tests, etc.) we still
+            # return that as the engine outcome — same shape classify()
+            # expects from a runtime throw. The bytecode-eval branch
+            # below only runs on successful compile.
+            cr = subprocess.run(
+                [str(zjs_bin), "compile", path, "-o", zbc_path],
+                capture_output=True,
+                timeout=timeout_s,
+            )
+            if cr.returncode != 0:
+                return cr.returncode, cr.stderr.decode("utf-8", errors="replace"), \
+                       cr.stdout.decode("utf-8", errors="replace")
+            run_target = zbc_path
+        else:
+            run_target = path
+
         # Capture as bytes so tests with non-UTF8 throws (intentional or
         # accidental) don't blow up the runner's decoder. Decode with
         # errors="replace" to keep classify happy.
         r = subprocess.run(
-            [str(zjs_bin), "run", path],
+            [str(zjs_bin), "run", run_target],
             capture_output=True,
             timeout=timeout_s,
         )
@@ -335,8 +360,9 @@ def run_one(zjs_bin, source, timeout_s):
     except subprocess.TimeoutExpired:
         return -1, "TIMEOUT", ""
     finally:
-        try: os.unlink(path)
-        except OSError: pass
+        for p in (path, zbc_path):
+            try: os.unlink(p)
+            except OSError: pass
 
 def classify(meta, exit_code, stderr, stdout=""):
     """Map (engine outcome, expected outcome) → 'pass' or 'fail (reason)'.
@@ -552,6 +578,12 @@ def main():
                          "number — missing-feature failures count as "
                          "failures, not skips. Forces --no-record so it "
                          "doesn't pollute the curated dashboard.")
+    ap.add_argument("--aot", action="store_true",
+                    help="Round-trip every test through the AOT pipeline: "
+                         "compile to .zbc, then eval the bytecode. Used to "
+                         "validate AOT serializer/deserializer coverage. "
+                         "Forces --no-record (these numbers aren't the "
+                         "conformance dashboard's).")
     args = ap.parse_args()
 
     if not ZJS_BIN.exists():
@@ -578,6 +610,11 @@ def main():
               "with no feature skips. This does NOT update the curated "
               "dashboard — it's a one-shot 'where are we vs the full spec' "
               "measurement.", file=sys.stderr)
+    if args.aot:
+        args.no_record = True
+        print("[aot] every test compiled to .zbc then run from bytecode. "
+              "Counts AOT-pipeline regressions vs the normal run.",
+              file=sys.stderr)
 
     tests = gather_tests(args.test262, cfg, args.filter)
     if args.limit > 0:
@@ -612,7 +649,7 @@ def main():
         for mode in modes:
             full = build_source(args.test262, src, meta,
                                 strict_mode=(mode == "strict"))
-            exit_code, stderr, stdout = run_one(ZJS_BIN, full, args.timeout)
+            exit_code, stderr, stdout = run_one(ZJS_BIN, full, args.timeout, aot=args.aot)
             v, r = classify(meta, exit_code, stderr, stdout)
             if v != "pass":
                 verdict = v
@@ -650,6 +687,14 @@ def main():
     if passed + failed > 0:
         print(f"  pass rate: {passed / (passed + failed) * 100:.1f}%")
 
+    if args.aot:
+        # AOT mode skips the main dashboard but writes its own failure
+        # dump so a follow-up diff can isolate serialization gaps.
+        aot_path = OUT_DIR / "last-aot.json"
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        with open(aot_path, "w", encoding="utf-8") as f:
+            json.dump({"summary": summary, "failures": failure_log}, f, indent=2)
+        print(f"\nAOT failure log: {aot_path}")
     if args.no_record:
         return 0
 
