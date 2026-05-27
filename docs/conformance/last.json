@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-27 15:02 UTC",
+    "when": "2026-05-27 16:16 UTC",
     "total": 14524,
-    "passed": 12001,
-    "failed": 1877,
+    "passed": 12076,
+    "failed": 1802,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -95,10 +95,6 @@
     {
       "path": "test/language/expressions/in/S11.8.7_A1.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: in\u00a0Number is not defined"
-    },
-    {
-      "path": "test/language/expressions/in/private-field-invalid-identifier-complex.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/in/private-field-rhs-yield-absent.js",
@@ -1734,11 +1730,11 @@
     },
     {
       "path": "test/language/statements/class/elements/private-field-visible-to-direct-eval-on-initializer.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/private-field-visible-to-direct-eval.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/private-field-with-initialized-id-is-visible-in-computed-properties.js",
@@ -1790,11 +1786,11 @@
     },
     {
       "path": "test/language/statements/class/elements/private-getter-visible-to-direct-eval-on-initializer.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/private-getter-visible-to-direct-eval.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/private-indirect-eval-err-contains-newtarget.js",
@@ -1870,11 +1866,11 @@
     },
     {
       "path": "test/language/statements/class/elements/private-method-visible-to-direct-eval-on-initializer.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/private-method-visible-to-direct-eval.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/private-methods/prod-private-async-generator.js",
@@ -1942,11 +1938,11 @@
     },
     {
       "path": "test/language/statements/class/elements/private-setter-visible-to-direct-eval-on-initializer.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/private-setter-visible-to-direct-eval.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/private-static-field-shadowed-by-field-on-nested-class.js",
@@ -1970,11 +1966,11 @@
     },
     {
       "path": "test/language/statements/class/elements/private-static-field-visible-to-direct-eval.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/private-static-getter-visible-to-direct-eval.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/private-static-method-not-writable.js",
@@ -2002,11 +1998,11 @@
     },
     {
       "path": "test/language/statements/class/elements/private-static-method-visible-to-direct-eval.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/private-static-setter-visible-to-direct-eval.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/privatefield-on-proxy.js",
@@ -2103,22 +2099,6 @@
     {
       "path": "test/language/statements/class/elements/privatemethods-on-proxy.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [method, __zjs_priv_21_f] and expected [method] should have the same contents."
-    },
-    {
-      "path": "test/language/statements/class/elements/privatename-not-valid-earlyerr-script-1.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/privatename-not-valid-earlyerr-script-2.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/privatename-not-valid-earlyerr-script-3.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/privatename-not-valid-earlyerr-script-4.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/elements/privatename-valid-no-earlyerr.js",
@@ -2313,22 +2293,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage-chained-usage.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage-function-expression.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage-recursive.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-private-field-super-access.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -2342,18 +2306,6 @@
     },
     {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatename-identifier-invalid-zwnj-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatename-in-computed-property-missing.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatename-whitespace-error-call-expr.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatename-whitespace-error-member-expr.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -2378,118 +2330,6 @@
     },
     {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-privatename-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/field-init-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/field-init-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/field-init-fn-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/field-init-fn-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/field-init-fn-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/field-init-fn-member-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/field-init-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/field-init-member-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/fields-init-heritage-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/fields-init-heritage-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/fields-init-heritage-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/fields-init-heritage-member-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-fn-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-fn-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-fn-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-fn-member-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-heritage-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-heritage-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-heritage-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-heritage-member-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-member-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-outter-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-outter-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-outter-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/invalid-names/method-outter-member-expression-this.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -3925,22 +3765,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage-chained-usage.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage-function-expression.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage-recursive.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-environment-on-class-heritage.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-field-super-access.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -3954,18 +3778,6 @@
     },
     {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-identifier-invalid-zwnj-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-in-computed-property-missing.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-whitespace-error-call-expr.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-whitespace-error-member-expr.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -3990,118 +3802,6 @@
     },
     {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-privatename-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/field-init-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/field-init-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/field-init-fn-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/field-init-fn-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/field-init-fn-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/field-init-fn-member-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/field-init-heritage-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/field-init-heritage-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/field-init-heritage-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/field-init-heritage-member-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/field-init-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/field-init-member-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-fn-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-fn-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-fn-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-fn-member-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-heritage-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-heritage-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-heritage-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-heritage-member-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-member-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-outter-call-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-outter-call-expression-this.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-outter-member-expression-bad-reference.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/invalid-names/method-outter-member-expression-this.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
