@@ -3501,6 +3501,20 @@ fn compile_import_decl(c: Compiler*, node: AstNode*) -> void {
     let spec_idx = add_atom_const(c, spec);
     if spec_idx > 255 { c.had_error = true; return; }
 
+    // Side-effect-only import (`import 'foo';`) — no bindings to wire,
+    // but the module must still load (executing its body has the side
+    // effect the program wanted). Emit one ImportBind with "*" so the
+    // resolver runs; the resulting namespace is discarded.
+    if node.children_count == 0 {
+        let star_atom = ctx_intern_atom(c.ctx, (char*)"*", 1);
+        let name_idx = add_atom_const(c, star_atom);
+        if name_idx > 255 { c.had_error = true; return; }
+        let tmp = alloc_reg(c);
+        emit(c, make_inst_abc(Op::ImportBind, tmp, (u8)spec_idx, (u8)name_idx));
+        release_reg(c, tmp);
+        return;
+    }
+
     let i: u32 = 0;
     while i < node.children_count {
         let cl = node.children[i];

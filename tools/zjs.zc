@@ -28,6 +28,7 @@ raw {
     #include <stdio.h>
     #include <string.h>
     #include <time.h>
+    #include <signal.h>
     #include "../src/platform/portability.h"
     #ifdef __APPLE__
     // Avoid including any CoreFoundation header — MacTypes.h's
@@ -45,6 +46,17 @@ raw {
                                      CFTimeInterval seconds,
                                      Boolean returnAfterSourceHandled);
     #endif
+
+    // Shutdown flag — set by SIGINT / SIGTERM handler, polled by the
+    // event-loop driver. sig_atomic_t is the only type the C standard
+    // guarantees can be safely written from a signal handler and read
+    // from the main flow without a memory barrier.
+    static volatile sig_atomic_t g_shutdown_requested = 0;
+
+    static void zjs_cli_sig_handler(int sig) {
+        (void)sig;
+        g_shutdown_requested = 1;
+    }
 }
 
 // Wait `ms` milliseconds while letting platform-level dispatch
@@ -65,6 +77,57 @@ fn event_loop_wait(ms: i64) -> void {
             nanosleep(&_ts, NULL);
         #endif
     }
+}
+
+// Install SIGINT + SIGTERM handlers so Ctrl-C and `kill <pid>` set
+// the shutdown flag instead of hard-killing the process mid-fetch.
+// Called once at CLI startup.
+fn install_signal_handlers() -> void {
+    raw {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = zjs_cli_sig_handler;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = SA_RESTART;
+        sigaction(SIGINT,  &sa, NULL);
+        sigaction(SIGTERM, &sa, NULL);
+    }
+}
+
+fn shutdown_requested() -> bool {
+    let r: int = 0;
+    raw { r = (int)g_shutdown_requested; }
+    return r != 0;
+}
+
+// Single event-loop driver — used by every CLI subcommand that needs
+// to pump async work after the top-level body returns. Replaces three
+// near-duplicate copies (run, eval, module run).
+//
+//   max_wall_ms < 0  → run until no more pending work (daemon shape).
+//                      The right choice for `run` / `module run` —
+//                      an HTTP server or WebSocket app should keep
+//                      ticking forever, exiting only on Ctrl-C / error.
+//   max_wall_ms >= 0 → bounded; useful for `eval` where the user
+//                      typed a one-shot and we don't want to hang
+//                      on a stray setInterval.
+//
+// Returns 0 on clean drain, 1 if shutdown was requested via SIGINT/TERM.
+fn run_event_loop(ctx: ZjsContext*, max_wall_ms: i64) -> int {
+    let wall_so_far: i64 = 0;
+    while zjs_has_pending_work(ctx) != 0 {
+        if shutdown_requested() { return 1; }
+        if max_wall_ms >= 0 && wall_so_far >= max_wall_ms { break; }
+        let wait_ms = zjs_next_timer_ms(ctx);
+        if wait_ms < 0 || wait_ms > 50 { wait_ms = 50; }
+        if wait_ms > 0 {
+            event_loop_wait(wait_ms);
+            wall_so_far = wall_so_far + wait_ms;
+        }
+        zjs_run_pending_timers(ctx);
+        if zjs_had_error(ctx) != 0 { break; }
+    }
+    return 0;
 }
 
 // =====================================================================
@@ -356,22 +419,9 @@ fn run_eval(source: char*) -> int {
     let result = zjs_eval(ctx, source);
     print_value(result);
 
-    // Drain pending async work (timers, microtasks, WebSocket events)
-    // so handlers attached during eval get a chance to fire before
-    // the process exits. Cap the loop at ~10s of wall time so an
-    // accidental infinite stream of events doesn't hang the CLI.
-    let max_wall_ms: i64 = 10000;
-    let wall_so_far: i64 = 0;
-    while zjs_has_pending_work(ctx) != 0 && wall_so_far < max_wall_ms {
-        let wait_ms = zjs_next_timer_ms(ctx);
-        // No timer? still loop with a short sleep so WS poll can run.
-        if wait_ms < 0 || wait_ms > 50 { wait_ms = 50; }
-        if wait_ms > 0 {
-            event_loop_wait(wait_ms);
-            wall_so_far = wall_so_far + wait_ms;
-        }
-        zjs_run_pending_timers(ctx);
-    }
+    // `eval` is a one-shot — 10 s wall cap is a safety net against a
+    // stray setInterval running forever from a user one-liner.
+    let _eval_loop_rc = run_event_loop(ctx, 10000);
     return 0;
 }
 
@@ -416,17 +466,11 @@ fn run_module_file_with_argv(path: char*, argv0: char*, user_argc: u32, user_arg
     defer zjs_free_context(ctx);
     install_process_argv(ctx, argv0, abs_p, user_argc, user_argv);
     let _ = zjs_eval_module(ctx, abs_p);
-    // Same event-loop driver as `run`: keep ticking until no timers,
-    // microtasks, fetches, websockets, or net servers remain.
-    let max_wall_ms: i64 = 10000;
-    let wall_so_far: i64 = 0;
-    while zjs_has_pending_work(ctx) != 0 && wall_so_far < max_wall_ms {
-        let wait_ms = zjs_next_timer_ms(ctx);
-        if wait_ms < 0 || wait_ms > 50 { wait_ms = 50; }
-        if wait_ms > 0 { event_loop_wait(wait_ms); wall_so_far = wall_so_far + wait_ms; }
-        zjs_run_pending_timers(ctx);
-        if zjs_had_error(ctx) != 0 { break; }
-    }
+    // Daemon shape: run until pending work is drained or Ctrl-C.
+    // Long-running modules (HTTP servers, WebSocket apps) need no
+    // wall-clock cap — that was a copy-paste from `eval` that broke
+    // any module wanting to live past 10 seconds.
+    let _loop_rc = run_event_loop(ctx, -1);
     if zjs_had_error(ctx) != 0 {
         let err = zjs_get_error(ctx);
         if zjs_is_object(err) != 0 {
@@ -560,17 +604,9 @@ fn run_file_with_argv(path: char*, gc_stats: bool,
         if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); rc = 1; }
     }
 
-    // Event-loop driver — keep running until no timers / microtasks
-    // remain. setTimeout / setInterval code stops being a no-op for
-    // `zjs run file.js`. nanosleep when the next timer is in the
-    // future; fire immediately when due.
-    while zjs_has_pending_work(ctx) != 0 {
-        let wait_ms = zjs_next_timer_ms(ctx);
-        if wait_ms < 0 || wait_ms > 50 { wait_ms = 50; }
-        if wait_ms > 0 { event_loop_wait(wait_ms); }
-        zjs_run_pending_timers(ctx);
-        if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); rc = 1; break; }
-    }
+    // Daemon shape — pump until pending work drains or Ctrl-C arrives.
+    let _run_loop_rc = run_event_loop(ctx, -1);
+    if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); rc = 1; }
 
     if gc_stats {
         // One-shot dump after the script body + microtask drain. All
@@ -757,6 +793,13 @@ fn print_usage() -> int {
 
 fn main(argc: int, argv: char**) -> int {
     if argc < 2 { return print_usage(); }
+
+    // Trap Ctrl-C / kill so long-running modules (HTTP servers,
+    // WebSocket apps, queue workers) can drain on shutdown instead of
+    // being torn down mid-handler. The flag is polled inside the
+    // event-loop driver; subcommands that don't drive the loop
+    // (parse / lex / --version) are unaffected.
+    install_signal_handlers();
 
     if libc_str::strcmp(argv[1], "--version") == 0 { return run_version(); }
 

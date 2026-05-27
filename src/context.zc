@@ -19453,12 +19453,30 @@ fn module_resolve_specifier(ctx: ZjsContext*, base_abs_path: ZjsString*, spec: Z
     let sd = spec.data;
     let sl = spec.length;
     let is_relative: bool = false;
+    let is_file_url: bool = false;
     raw {
         is_relative = (sl >= 2 && sd[0] == '.' && (sd[1] == '/' || (sd[1] == '.' && sl >= 3 && sd[2] == '/'))) ? true : false;
+        // file:// URL scheme — common for tooling that hands paths as URLs
+        // (Bun, deno, modern Node ESM). Strip the prefix and treat the
+        // remainder as an absolute path.
+        is_file_url = (sl >= 7 && sd[0] == 'f' && sd[1] == 'i' && sd[2] == 'l' && sd[3] == 'e'
+                       && sd[4] == ':' && sd[5] == '/' && sd[6] == '/') ? true : false;
+    }
+    if is_file_url {
+        // file:///abs/path: strip "file://", keep the leading "/" of
+        // the abs path. That makes "file:///tmp/x.js" → "/tmp/x.js"
+        // and "file://localhost/tmp/x.js" → "localhost/tmp/x.js" which
+        // will fail to read (we don't support remote file authorities).
+        let off: u32 = 7;
+        let new_len: u32 = sl - off;
+        let buf = alloc_n<char>((usize)(new_len + 1));
+        raw { memcpy(buf, sd + off, new_len); buf[new_len] = 0; }
+        return ctx_intern_atom_take(ctx, buf, new_len);
     }
     if !is_relative {
-        // Treat as already a usable path. Real ESM resolution (URL
-        // schemes, package.json, node_modules) is out of scope for now.
+        // Treat as already a usable path. https:// + npm: + bare specifiers
+        // (node_modules-style) aren't supported — they'll fall through to
+        // ctx_load_module's file-read and surface "module not found".
         return spec;
     }
     if base_abs_path == NULL {
@@ -19791,8 +19809,35 @@ fn ctx_load_module(ctx: ZjsContext*, abs_path: ZjsString*) -> ZjsModuleRecord* {
     let src = read_file_to_string(path_c);
     dealloc(path_buf);
     if src == NULL {
-        let err = build_typed_error(ctx, (char*)"Error", 5,
-                                    (char*)"module not found", 16);
+        // Diagnose the common "couldn't resolve" cases with a hint —
+        // a bare specifier (`react`) or an https:/npm: URL won't read
+        // as a local file, so make that explicit rather than the
+        // generic "module not found" which suggests a missing file.
+        let sd = abs_path.data;
+        let sl = abs_path.length;
+        let looks_like_url: bool = false;
+        let looks_like_bare: bool = false;
+        raw {
+            looks_like_url =
+                (sl >= 8 && sd[0] == 'h' && sd[1] == 't' && sd[2] == 't' && sd[3] == 'p'
+                 && (sd[4] == 's' || sd[4] == ':')) ||
+                (sl >= 4 && sd[0] == 'n' && sd[1] == 'p' && sd[2] == 'm' && sd[3] == ':');
+            // "bare specifier" = no slash and not starting with . — looks
+            // like `react`, `lodash`, etc. We don't walk node_modules.
+            int has_slash = 0;
+            for (uint32_t i = 0; i < sl; i++) { if (sd[i] == '/') { has_slash = 1; break; } }
+            looks_like_bare = !has_slash && sl > 0 && sd[0] != '.';
+        }
+        let msg: char* = (char*)"module not found";
+        let mlen: u32 = 16;
+        if looks_like_url {
+            msg = (char*)"unsupported module URL scheme (only file:// and node: are resolved)";
+            mlen = 67;
+        } else if looks_like_bare {
+            msg = (char*)"bare specifier not resolved (use ./relative or node:builtin)";
+            mlen = 60;
+        }
+        let err = build_typed_error(ctx, (char*)"Error", 5, msg, mlen);
         ctx.pending_throw_active = true;
         ctx.pending_throw_value  = err;
         return NULL;
