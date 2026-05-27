@@ -14,7 +14,48 @@ extern "C" {
 
 typedef struct ZjsContext ZjsContext;
 
+/* Default constructor — ES core + every Ring-1 / Ring-2 stdlib extension
+ * (EventTarget, AbortController, Blob, Streams, node:fs/path/process/os/
+ * dx/child_process/net/http, etc.). Suitable for general-purpose embedding.
+ */
 ZjsContext* zjs_new_context(void);
+
+/* Minimal constructor — ES core only. Skips ALL Ring-1 web globals AND
+ * the `node:` module registry. Use when you're building tight (iOS
+ * worker, embedded scripting) and want to opt in to just the stdlib
+ * pieces you actually use. After zjs_new_minimal_context() you can
+ * call any subset of the installers below, or call
+ * zjs_install_stdlib_extensions() to mirror the default.
+ *
+ * Base built-ins (Object/Array/Function/Date/Map/Set/Promise/RegExp/
+ * JSON/Math/Symbol/URL/URLSearchParams/console/the TypedArray family/
+ * Proxy/Reflect/ArrayBuffer/DataView/error constructors/etc.) are
+ * still present — they live in the core bootstrap.
+ */
+ZjsContext* zjs_new_minimal_context(void);
+
+/* Convenience: install everything zjs_new_context would have installed
+ * on top of the minimal context. Equivalent to the default constructor
+ * minus the core init that already ran. */
+void zjs_install_stdlib_extensions(ZjsContext* ctx);
+
+/* Individual Ring-1 web-globals installers. Dependency order documented
+ * in src/context.zc — call them in the order shown here for a clean
+ * install (web_events before web_abort; web_blob requires Uint8Array
+ * which is in core; web_clone requires Map + DOMException). */
+void zjs_install_web_events(ZjsContext* ctx);   /* EventTarget / Event / CustomEvent / DOMException */
+void zjs_install_web_abort(ZjsContext* ctx);    /* AbortController / AbortSignal — needs web_events */
+void zjs_install_web_clone(ZjsContext* ctx);    /* structuredClone — needs web_events for DOMException */
+void zjs_install_web_blob(ZjsContext* ctx);     /* Blob / File / FormData */
+void zjs_install_web_streams(ZjsContext* ctx);  /* ReadableStream / WritableStream / TransformStream (~50KB) */
+
+/* node: module loader entry — registers `node:fs`, `node:path`,
+ * `node:process`, `node:os`, `node:dx`, `node:child_process`,
+ * `node:net`, `node:http` for `import 'node:foo'` resolution. */
+void ctx_register_stdlib_modules(ZjsContext* ctx);
+/* node:net host-fn globals (`__zjs_net_*`) the JS bootstrap uses. */
+void zjs_install_node_net_globals(ZjsContext* ctx);
+
 void        zjs_free_context(ZjsContext* ctx);
 
 /* -----------------------------------------------------------------------

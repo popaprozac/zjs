@@ -515,64 +515,90 @@ struct ZjsBuiltinModule {
     record:     ZjsModuleRecord*;  // NULL until first import
 }
 
+// Shared bootstrap — everything up to (but not including) the Ring-1 /
+// Ring-2 stdlib extensions. The two public entry points call this and
+// then opt in to whatever stdlib pieces they need.
+fn ctx_bootstrap_core(result: ZjsContext*) -> void {
+    // GC initial threshold: collect after the first 4096 cell allocations,
+    // then adapt to 2× live count after each collection.
+    result.gc_threshold = 4096;
+    // Instrumentation counters — calloc gave us zeros, but be
+    // explicit so the field meanings are visible at the call site.
+    result.gc_collections    = 0;
+    result.gc_pause_ns_total = 0;
+    result.gc_pause_ns_max   = 0;
+    result.gc_cells_freed    = 0;
+    result.gc_cells_kept     = 0;
+    result.gc_minors         = 0;
+    result.gc_majors         = 0;
+    result.gc_promoted       = 0;
+    // Young-generation scaffolding. Fire a minor GC every ~1024
+    // young allocations until tuning says otherwise; small enough
+    // to keep pauses tight, large enough that the per-minor
+    // overhead doesn't dominate.
+    result.young_threshold   = 1024;
+    result.cells_since_minor = 0;
+    // calloc gave us {bits: 0}; explicitly initialize the implicit
+    // host receiver to JS `undefined`.
+    result.host_this = zjs_undefined();
+    result.async_outer_seed = zjs_undefined();
+
+    // Strong-root table: -1 sentinel means "no free slot, append".
+    result.roots_free_head = -1;
+
+    // Pre-size the high-churn tables that ctx_init_builtins fills
+    // before any user script runs. Without this, the atom and
+    // globals tables grow ~5× during builtin registration, each
+    // grow rehashing every prior entry.
+    //   atoms: ~210 strings registered (prototype method names,
+    //          builtin globals, error type names). 512 → 1 grow.
+    //   globals: ~60 names (Object/Array/Math/JSON/.../WebSocket).
+    //          128 → 0 grows.
+    //
+    // young_cells deliberately NOT pre-sized — the 8KB allocation
+    // costs more in cold-page-fault time than it saves in
+    // realloc growth, since young_cells starts at 64 and only
+    // doubles. The atom/globals tables, by contrast, rehash all
+    // prior entries on every grow, so skipping that work is the
+    // real win.
+    result.atoms = alloc_n<AtomEntry>(512);
+    result.atom_cap = 512;
+    result.globals = alloc_n<GlobalEntry>(128);
+    result.global_cap = 128;
+
+    // Root empty class — registered as a cell, kept alive via the
+    // context pointer itself (we mark it during gc_mark_roots).
+    let empty = zjs_hidden_class_new(NULL, NULL, 0, 0);
+    ctx_register_cell(result, (void*)empty);
+    result.empty_class = empty;
+
+    ctx_init_builtins(result);
+}
+
+// Default entry point: full ES core + every Ring-1 / Ring-2 stdlib
+// extension the engine ships. Matches existing embedder behavior.
 fn zjs_new_context() -> ZjsContext* {
     let result = alloc<ZjsContext>();
-    if result != NULL {
-        // GC initial threshold: collect after the first 4096 cell allocations,
-        // then adapt to 2× live count after each collection.
-        result.gc_threshold = 4096;
-        // Instrumentation counters — calloc gave us zeros, but be
-        // explicit so the field meanings are visible at the call site.
-        result.gc_collections    = 0;
-        result.gc_pause_ns_total = 0;
-        result.gc_pause_ns_max   = 0;
-        result.gc_cells_freed    = 0;
-        result.gc_cells_kept     = 0;
-        result.gc_minors         = 0;
-        result.gc_majors         = 0;
-        result.gc_promoted       = 0;
-        // Young-generation scaffolding. Fire a minor GC every ~1024
-        // young allocations until tuning says otherwise; small enough
-        // to keep pauses tight, large enough that the per-minor
-        // overhead doesn't dominate.
-        result.young_threshold   = 1024;
-        result.cells_since_minor = 0;
-        // calloc gave us {bits: 0}; explicitly initialize the implicit
-        // host receiver to JS `undefined`.
-        result.host_this = zjs_undefined();
-        result.async_outer_seed = zjs_undefined();
+    if result == NULL { return NULL; }
+    ctx_bootstrap_core(result);
+    zjs_install_stdlib_extensions(result);
+    return result;
+}
 
-        // Strong-root table: -1 sentinel means "no free slot, append".
-        result.roots_free_head = -1;
-
-        // Pre-size the high-churn tables that ctx_init_builtins fills
-        // before any user script runs. Without this, the atom and
-        // globals tables grow ~5× during builtin registration, each
-        // grow rehashing every prior entry.
-        //   atoms: ~210 strings registered (prototype method names,
-        //          builtin globals, error type names). 512 → 1 grow.
-        //   globals: ~60 names (Object/Array/Math/JSON/.../WebSocket).
-        //          128 → 0 grows.
-        //
-        // young_cells deliberately NOT pre-sized — the 8KB allocation
-        // costs more in cold-page-fault time than it saves in
-        // realloc growth, since young_cells starts at 64 and only
-        // doubles. The atom/globals tables, by contrast, rehash all
-        // prior entries on every grow, so skipping that work is the
-        // real win.
-        result.atoms = alloc_n<AtomEntry>(512);
-        result.atom_cap = 512;
-        result.globals = alloc_n<GlobalEntry>(128);
-        result.global_cap = 128;
-
-        // Root empty class — registered as a cell, kept alive via the
-        // context pointer itself (we mark it during gc_mark_roots).
-        let empty = zjs_hidden_class_new(NULL, NULL, 0, 0);
-        ctx_register_cell(result, (void*)empty);
-        result.empty_class = empty;
-
-        ctx_init_builtins(result);
-    }
+// Minimal entry point: ES core only — no Web globals (EventTarget /
+// AbortController / Blob / Streams / etc.) and no `node:` modules.
+// The base built-ins (Object/Array/Function/Date/Map/Set/Promise/
+// TypedArrays/RegExp/JSON/Math/URL/URLSearchParams/console/etc.) are
+// all still there because they live inside ctx_init_builtins.
+//
+// Embedders building tight (zapp on iOS, etc.) can call this and then
+// individually opt in via zjs_install_web_events / web_abort /
+// web_clone / web_blob / web_streams, or zjs_install_node_net_globals,
+// or by calling zjs_install_stdlib_extensions to mirror the default.
+fn zjs_new_minimal_context() -> ZjsContext* {
+    let result = alloc<ZjsContext>();
+    if result == NULL { return NULL; }
+    ctx_bootstrap_core(result);
     return result;
 }
 
@@ -19120,10 +19146,21 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         }
     }
 
+    // Ring-1 / Ring-2 stdlib extensions live in their own helper
+    // (zjs_install_stdlib_extensions). They're NOT called from here —
+    // ctx_init_builtins finishes only the ES-core surface. The default
+    // entry point zjs_new_context invokes the helper after this
+    // returns; zjs_new_minimal_context skips it.
+}
+
+// Tiered stdlib: Ring-1 (web globals via JS bootstrap) + Ring-2 (node:
+// modules via the loader). Called by the full-context bootstrap; an
+// embedder wanting a smaller engine builds with a minimal context and
+// then opts in to whichever pieces they need.
+fn zjs_install_stdlib_extensions(ctx: ZjsContext*) -> void {
     // === Standard library — Ring 1 builtin modules (task #190) ===
     // See docs/stdlib-design.md. Each module's populate() callback
-    // runs lazily on first `import 'node:foo'`. Default install is
-    // "complete engine"; a minimal embed can skip these registrations.
+    // runs lazily on first `import 'node:foo'`.
     ctx_register_stdlib_modules(ctx);
 
     // Pure-JS WinterTC web globals (EventTarget, Event, CustomEvent,
@@ -19139,8 +19176,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     zjs_install_web_blob(ctx);
     // WHATWG Streams — ReadableStream / WritableStream / TransformStream
     // + queuing strategies. The largest of the web-globals bootstraps
-    // (~50KB of source); registered in its own call so an embedder
-    // wanting a tinier engine can selectively skip it.
+    // (~50KB of source); skipping just this one shaves measurable
+    // memory + binary if the embedder doesn't need it.
     zjs_install_web_streams(ctx);
     // node:net native host-fn globals (__zjs_net_*). The JS bootstrap
     // for the module uses these via globalThis.
