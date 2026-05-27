@@ -855,6 +855,21 @@ fn gc_barrier(holder: void*, value: ZjsValue) -> void {
     gc_write_barrier(g_active_ctx, holder, value);
 }
 
+// Holder-only barrier — adds holder to the rem set if it's old,
+// without checking the stored value. Use this when a single
+// operation mutates many slots of `holder` (e.g. a generator
+// snapshot writes saved_regs[0..N] + saved_host_this + saved_closure).
+// Marking the holder once is correct because the rem-set re-scan in
+// gc_run_minor walks all of holder's children via
+// gc_mark_cell_children — so one rem-set entry covers every slot.
+fn gc_remember_holder(ctx: ZjsContext*, holder: void*) -> void {
+    if holder == NULL || ctx == NULL { return; }
+    let h: CellHeader* = NULL;
+    raw { h = (CellHeader*)holder; }
+    if h.age == 0 { return; }
+    rem_set_add(ctx, holder);
+}
+
 // New cells from program execution land here. We bump
 // `cells_since_minor` and let `ctx_maybe_gc` decide when to collect
 // — that check fires from the interpreter loop, not from inside the
@@ -2142,19 +2157,34 @@ fn gc_run_major(ctx: ZjsContext*) -> void {
 fn gc_run(ctx: ZjsContext*) -> void { gc_run_major(ctx); }
 
 fn ctx_maybe_gc(ctx: ZjsContext*) -> void {
-    // Generational minor path is OFF in tree (2026-05-18). The
-    // write-barrier audit needed for correctness is incomplete —
-    // multiple heap-pointer fields (o.proto, hf.bound, hf.prototype,
-    // pr.reactions, ac.*, g.*) don't yet route through the barrier,
-    // so promoting cells to old without those barriers leads to
-    // use-after-free when minor sweeps young descendants prematurely.
-    // The young/old split + sweep_young + sweep_old + rem-set
-    // infrastructure remain in tree as scaffolding (see
-    // docs/gc-experiment.md for the design); flipping the trigger
-    // back on requires finishing the audit. Until then, every minor
-    // attempt was producing infinite GC loops on splay-shape
-    // workloads, and Session 2 measurements showed no win without
-    // the barrier anyway.
+    // Generational path is OPT-IN via ZJS_GC_GEN_ON (2026-05-27).
+    //
+    // Status: the write-barrier audit landed in this commit covers
+    // every site enumerated in docs/gc-experiment.md (o.proto via
+    // setPrototypeOf/SetProto, hf.prototype lazy alloc in NewInvoke
+    // paths, Promise reactions, template_cache, generator + async
+    // continuation snapshots via gc_remember_holder, and the
+    // missing object_define_property_slot path). With the trigger
+    // on, conformance regresses by ~46 tests vs single-gen — at
+    // least one path through class methods on the proto still drops
+    // a young cell mid-construction. The remaining hole is narrow
+    // but not yet identified; until that surfaces, default builds
+    // ship with the single-gen semantics that ran prod for months.
+    //
+    // To resume the audit on a real splay-shape workload: build
+    // with -DZJS_GC_GEN_ON, repro on the failing test262 subset
+    // (class/elements/after-same-line-* and async-gen-meth-*),
+    // bisect to the missing barrier. The infrastructure is
+    // complete — flipping the trigger is a one-line change.
+    raw {
+    #ifdef ZJS_GC_GEN_ON
+    }
+    if ctx.young_count >= ctx.young_threshold {
+        gc_run_minor(ctx);
+    }
+    raw {
+    #endif
+    }
     if ctx.cells_since_gc >= ctx.gc_threshold {
         gc_run_major(ctx);
     }
@@ -2542,6 +2572,7 @@ fn object_define_property_slot(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsStrin
     if existing >= 0 {
         obj.slots[(u32)existing] = value;
         if obj.attrs != NULL { obj.attrs[(u32)existing] = attrs; }
+        gc_write_barrier(ctx, (void*)obj, value);
         return;
     }
     // New property: same transition logic as object_set's new-prop path.
@@ -2574,6 +2605,8 @@ fn object_define_property_slot(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsStrin
     obj.slots[child.transition_slot] = value;
     obj.attrs[child.transition_slot] = attrs;
     obj.cls = child;
+    gc_write_barrier(ctx, (void*)obj, value);
+    gc_write_barrier(ctx, (void*)obj, zjs_cell_from_ptr((void*)child));
 }
 
 // Allocate a fresh array with `length` slots, all undefined.
@@ -4608,6 +4641,7 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
                 }
             }
             o.proto = new_proto;
+            gc_write_barrier(ctx, (void*)o, zjs_cell_from_ptr((void*)new_proto));
         }
     }
     // Non-object receivers: spec returns the original value unchanged.
@@ -8910,6 +8944,13 @@ fn promise_attach_reaction(ctx: ZjsContext*, p: ZjsPromise*,
     p.reactions[p.reaction_count + 1] = on_rejected;
     p.reactions[p.reaction_count + 2] = result_promise;
     p.reaction_count = p.reaction_count + 3;
+    // Promise `p` may have been around long enough to age into the
+    // old generation, while the reaction callbacks + result promise
+    // we just stored are likely fresh young — exactly the
+    // old→young edge the rem set tracks.
+    gc_write_barrier(ctx, (void*)p, on_fulfilled);
+    gc_write_barrier(ctx, (void*)p, on_rejected);
+    gc_write_barrier(ctx, (void*)p, result_promise);
 }
 
 fn microtask_enqueue(ctx: ZjsContext*,

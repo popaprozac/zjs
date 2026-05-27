@@ -263,3 +263,58 @@ starting fresh.
 Otherwise: revisit if a runtime-layer workload (txiki-style fetch +
 WebSocket + Timers stack on top of zjs) shows up as the next major
 arc.
+
+## Session 4 — barrier audit pass (2026-05-27)
+
+Added barriers covering the original §Verdict checklist:
+
+- `o.proto = ...` in `Op::SetProto` + `host_object_set_prototype_of`
+- `hf.prototype = ...` lazy alloc in all 9 NewInvoke / SuperCall sites
+- `p.reactions[i] = ...` in `promise_attach_reaction`
+- `f.template_cache[site] = cooked` after lazy build
+- Generator + async-cont snapshot writes via new `gc_remember_holder`
+  helper (one rem-set entry covers the whole saved_regs[] / saved_*
+  bundle)
+- `object_define_property_slot` — the missing path that doc'd
+  enumeration *didn't* catch: this is how every class method gets
+  installed on the proto, so without barriers here a young method
+  installed on a recently-promoted proto leaks through every minor
+
+What still doesn't work: with `ZJS_GC_GEN_ON` (the new opt-in flag),
+test262 regresses 87.0% → 86.7% (~46 tests). The buckets:
+
+- `class/elements/after-same-line-*` (12 tests): "should be an own
+  property" — instance field or method lost during minor between
+  class def and `new C()`. Repros at the engine level with `var C =
+  class { m(){} }; forceGC(); new C();` — `C.prototype.m` is
+  undefined post-GC. The barrier in `object_define_property_slot`
+  *should* cover this, so there's a path where the method isn't
+  installed through that helper, or the rem-set re-scan misses an
+  intermediate cell.
+- async-no-completion (9 tests): a Promise reaction stops firing
+  somewhere along the chain. Suspect: an `ac.function` (the
+  ZjsAsyncCont's pointer to the source Function*) — that field is
+  walked at line 1336 but uses the assumption "function is owned by
+  the context's function registry, no separate mark needed", which
+  is a single-gen assumption that breaks here.
+- "other" with empty `[strict]` / `[sloppy]` reason (~23 tests):
+  silent crash. Includes async-gen-meth-dflt-* and dstr-rest-getter
+  paths — all class-related.
+
+Trigger gated behind `-DZJS_GC_GEN_ON` build flag (in
+`ctx_maybe_gc`). Default builds ship with single-gen mark-sweep
+unchanged (87.0% conformance). All infrastructure in tree.
+
+To resume from here:
+1. Build with `-DZJS_GC_GEN_ON` and reproduce the
+   `C.prototype.m === undefined` post-GC issue at the smallest scale.
+2. Add tracing to `object_define_property_slot` and the class-build
+   compiler emit path to confirm whether method install actually
+   routes through that helper, or through `object_set` /
+   `obj.slots[]` direct writes elsewhere.
+3. Once class-methods are stable, repro the async-no-completion case
+   and verify ZjsAsyncCont's function field traversal.
+
+The trade remains right per §Verdict — until a real workload
+demands it, single-gen is fine. But the next push is one bisect
+session away, not one architecture project.

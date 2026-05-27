@@ -1604,7 +1604,9 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         }
         let hf = zjs_as_host_function(obj);
         if is_proto != 0 && zjs_is_object(value) != 0 {
-            hf.prototype = zjs_as_object(value);
+            let p = zjs_as_object(value);
+            hf.prototype = p;
+            gc_write_barrier(ctx, (void*)hf, zjs_cell_from_ptr((void*)p));
             return;
         }
         // ECMA-262 §10.2.4: built-in function `name` / `length`
@@ -2922,6 +2924,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
             // iter that hasn't been stepped yet.
             gen.resume_dst = 0;
             gen.state = GEN_INITIAL;
+            // Snapshot wrote N saved_regs + saved_ip. If gen is old,
+            // any of those regs holding a young cell pointer creates
+            // an old→young edge — re-scan all of gen's children on
+            // the next minor.
+            gc_remember_holder(ctx, (void*)gen);
             let ret_dst = pop_call_frame(ctx);
             let gen_v = zjs_cell_from_ptr((void*)gen);
             if ctx.frame_count <= entry_frame {
@@ -2987,6 +2994,10 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 raw_arr.frozen = true;
                 if cooked.props != NULL { cooked.props.frozen = true; }
                 f.template_cache[site] = cooked;
+                // f (the owning Function) is typically long-lived old;
+                // cooked is freshly built young. Record the edge so
+                // a minor walks into the cached array.
+                gc_write_barrier(ctx, (void*)f, zjs_cell_from_ptr((void*)cooked));
                 regs[inst.a] = cooked_v;
             }
         } else if op == Op::Yield {
@@ -3019,6 +3030,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
             gen.saved_host_this = ctx.host_this;
             gen.saved_current_closure = ctx.current_closure;
             gen.state = GEN_YIELDED;
+            // Snapshot wrote saved_regs + saved_host_this + saved_closure;
+            // any could be young while gen is old.
+            gc_remember_holder(ctx, (void*)gen);
 
             let yielded_value = regs[inst.b];
             let iter_result = build_iter_result(ctx, yielded_value, false);
@@ -3079,6 +3093,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     cont.saved_host_this = ctx.host_this;
                     cont.saved_current_closure = ctx.current_closure;
                     cont.outer_promise = frame_outer;
+                    // The continuation was just allocated above, so it's
+                    // young — gc_remember_holder is a no-op here, but
+                    // we record it explicitly for symmetry with the
+                    // generator paths and as documentation that this is
+                    // the right call point.
+                    gc_remember_holder(ctx, (void*)cont);
                     let cont_v = zjs_cell_from_ptr((void*)cont);
 
                     // Wire two host functions (fulfilled / rejected) into
@@ -4081,7 +4101,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
             if zjs_is_object(obj_v) != 0 {
                 let o = zjs_as_object(obj_v);
                 if zjs_is_object(proto_v) != 0 {
-                    o.proto = zjs_as_object(proto_v);
+                    let p = zjs_as_object(proto_v);
+                    o.proto = p;
+                    gc_write_barrier(ctx, (void*)o, zjs_cell_from_ptr((void*)p));
                 } else if zjs_is_null(proto_v) != 0 {
                     o.proto = NULL;
                 }
@@ -5165,6 +5187,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if f2.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     f2.prototype = zjs_as_object(pv);
+                    gc_write_barrier(ctx, (void*)f2, pv);
                     object_define_property_slot(ctx, f2.prototype,
                         ctx_intern_atom(ctx, (char*)"constructor", 11),
                         callee, PROP_WRITABLE | PROP_CONFIGURABLE);
@@ -5178,6 +5201,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if f3.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     f3.prototype = zjs_as_object(pv);
+                    gc_write_barrier(ctx, (void*)f3, pv);
                     object_define_property_slot(ctx, f3.prototype,
                         ctx_intern_atom(ctx, (char*)"constructor", 11),
                         callee, PROP_WRITABLE | PROP_CONFIGURABLE);
@@ -5188,6 +5212,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if hf.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     hf.prototype = zjs_as_object(pv);
+                    gc_write_barrier(ctx, (void*)hf, pv);
                     object_define_property_slot(ctx, hf.prototype,
                         ctx_intern_atom(ctx, (char*)"constructor", 11),
                         callee, PROP_WRITABLE | PROP_CONFIGURABLE);
@@ -5358,6 +5383,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if f.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     f.prototype = zjs_as_object(pv);
+                    gc_write_barrier(ctx, (void*)f, pv);
                     // F.prototype.constructor is writable + configurable
                     // but NOT enumerable per spec.
                     object_define_property_slot(ctx, f.prototype,
@@ -5373,6 +5399,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if f.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     f.prototype = zjs_as_object(pv);
+                    gc_write_barrier(ctx, (void*)f, pv);
                     // F.prototype.constructor is writable + configurable
                     // but NOT enumerable per spec.
                     object_define_property_slot(ctx, f.prototype,
@@ -5385,6 +5412,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if hf.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     hf.prototype = zjs_as_object(pv);
+                    gc_write_barrier(ctx, (void*)hf, pv);
                     object_define_property_slot(ctx, hf.prototype,
                         ctx_intern_atom(ctx, (char*)"constructor", 11),
                         callee, PROP_WRITABLE | PROP_CONFIGURABLE);
@@ -6192,6 +6220,7 @@ fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc
         if f.prototype == NULL {
             let pv = ctx_new_object(ctx);
             f.prototype = zjs_as_object(pv);
+            gc_write_barrier(ctx, (void*)f, pv);
             object_define_property_slot(ctx, f.prototype,
                 ctx_intern_atom(ctx, (char*)"constructor", 11),
                 callee, PROP_WRITABLE | PROP_CONFIGURABLE);
@@ -6205,6 +6234,7 @@ fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc
         if f2.prototype == NULL {
             let pv = ctx_new_object(ctx);
             f2.prototype = zjs_as_object(pv);
+            gc_write_barrier(ctx, (void*)f2, pv);
             object_define_property_slot(ctx, f2.prototype,
                 ctx_intern_atom(ctx, (char*)"constructor", 11),
                 callee, PROP_WRITABLE | PROP_CONFIGURABLE);
@@ -6215,6 +6245,7 @@ fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc
         if hf.prototype == NULL {
             let pv = ctx_new_object(ctx);
             hf.prototype = zjs_as_object(pv);
+            gc_write_barrier(ctx, (void*)hf, pv);
             object_define_property_slot(ctx, hf.prototype,
                 ctx_intern_atom(ctx, (char*)"constructor", 11),
                 callee, PROP_WRITABLE | PROP_CONFIGURABLE);
