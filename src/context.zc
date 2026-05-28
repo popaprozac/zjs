@@ -5981,6 +5981,47 @@ fn host_string_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
 // String.prototype.substring(start, end): like slice but clamps
 // negative args to 0 and swaps start/end if start > end.
+// String.prototype.substr(start, length) — ECMA-262 Annex B §B.2.2.1.
+// Legacy, kept for npm-compat (moment + ~hundreds of older packages).
+// Negative `start` is offset from end; missing or NaN `length` means
+// "rest of string". Result clamped to [0, len].
+fn host_string_substr(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let s = zjs_as_string(str_v);
+    let slen: i32 = (i32)s.length;
+    let start_d: f64 = if argc >= 1 { zjs_to_double(args[0]) } else { 0.0 };
+    if ctx.pending_throw_active { return ctx_intern_string(ctx, (char*)"", 0); }
+    let len_d: f64 = if argc >= 2 { zjs_to_double(args[1]) } else { (f64)slen; };
+    if ctx.pending_throw_active { return ctx_intern_string(ctx, (char*)"", 0); }
+    let is_nan_s: int = 0; raw { is_nan_s = isnan(start_d) ? 1 : 0; }
+    let is_nan_l: int = 0; raw { is_nan_l = isnan(len_d)   ? 1 : 0; }
+    if is_nan_s != 0 { start_d = 0.0; }
+    if is_nan_l != 0 { len_d   = 0.0; }
+    // Negative start wraps from the end (Annex B step 6).
+    if start_d < 0.0 {
+        start_d = (f64)slen + start_d;
+        if start_d < 0.0 { start_d = 0.0; }
+    }
+    if start_d > (f64)slen { start_d = (f64)slen; }
+    if len_d < 0.0 { len_d = 0.0; }
+    let start: i32 = (i32)start_d;
+    let end_d:   f64 = start_d + len_d;
+    if end_d > (f64)slen { end_d = (f64)slen; }
+    let end:   i32 = (i32)end_d;
+    if end < start { end = start; }
+    let outlen = (u32)(end - start);
+    let buf = alloc_n<char>((usize)(outlen + 1));
+    if outlen > 0 {
+        let src_at: char* = NULL;
+        let src_off = (u32)start;
+        raw { src_at = &s->data[src_off]; }
+        mem_copy<char>(buf, src_at, (usize)outlen);
+    }
+    buf[outlen] = (char)0;
+    return ctx_intern_string_take(ctx, buf, outlen);
+}
+
 fn host_string_substring(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let str_v = coerce_string_this(ctx);
     if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
@@ -19331,6 +19372,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let sinc_ptr:   void* = NULL; raw { sinc_ptr   = (void*)host_string_includes; }
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"substring", 9),
                ctx_make_host_function_arity(ctx, (char*)"substring", ssub_ptr, 2));
+    let sstr_ptr:   void* = NULL; raw { sstr_ptr  = (void*)host_string_substr; }
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"substr", 6),
+               ctx_make_host_function_arity(ctx, (char*)"substr", sstr_ptr, 2));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"trim", 4),
                ctx_make_host_function_arity(ctx, (char*)"trim", strim_ptr, 0));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"repeat", 6),
