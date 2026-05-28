@@ -710,6 +710,20 @@ fn add_const(c: Compiler*, v: ZjsValue) -> u16 {
 
 fn alloc_reg(c: Compiler*) -> u8 {
     let r = c.next_reg;
+    if c.next_reg == 255 {
+        // Bytecode instruction format addresses registers as u8 (Inst
+        // { op, a, b, c }). 256 wraps silently and corrupts everything
+        // downstream — we'd emit ops reading/writing the wrong slots.
+        // Surface as a hard compile error so the runtime sees NULL
+        // Function and reports cleanly. Triggered today by lodash's
+        // IIFE (237 fixed-locals + temps blow the limit). Real fix is
+        // widening regs to u16 or spilling overflowing locals into the
+        // closure env; both are non-trivial.
+        if !c.had_error {
+            raw { fprintf(stderr, "[zjs] compile error: function exceeds 255-register limit (locals=%u, max=%u). The bytecode instruction format uses u8 register operands — widen-to-u16 or env-spill is required to handle this source.\n", (unsigned)c->fixed_regs, (unsigned)c->max_reg); }
+        }
+        c.had_error = true;
+    }
     c.next_reg = c.next_reg + 1;
     if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
     return r;
@@ -3217,12 +3231,35 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     //    don't double-enter a block scope (which would put body-level
     //    `let` inside a nested scope, mismatching what collect_locals
     //    did at the same syntactic point).
+    //
+    // ECMA-262 §10.2.11 FunctionDeclarationInstantiation: function
+    // declarations at the top level of a function body are hoisted +
+    // initialized to their closure value BEFORE any user statement
+    // runs. Without this, lodash's UMD bundle (and any code with a
+    // `var x = foo(); function foo(){}` pattern) hits TypeError
+    // because `foo` is still undefined when called. We emit
+    // FunctionDecl children in a first pass, then skip them on the
+    // normal body walk so they're not emitted twice. (Nested
+    // FunctionDecls inside BlockStmts / IfStmts / etc. still go
+    // through the regular per-block recursion in compile_stmt and
+    // are NOT hoisted — matches ECMA-262 lexical scoping.)
     if node.left != NULL {
         if node.left.kind == NodeKind::BlockStmt {
             let bi: u32 = 0;
             while bi < node.left.children_count {
-                compile_stmt(c, node.left.children[bi]);
+                let cn = node.left.children[bi];
+                if cn != NULL && cn.kind == NodeKind::FunctionDecl {
+                    compile_stmt(c, cn);
+                }
                 bi = bi + 1;
+            }
+            let bj: u32 = 0;
+            while bj < node.left.children_count {
+                let cn2 = node.left.children[bj];
+                if cn2 == NULL || cn2.kind != NodeKind::FunctionDecl {
+                    compile_stmt(c, cn2);
+                }
+                bj = bj + 1;
             }
         } else {
             let r = compile_expr(c, node.left);
