@@ -556,6 +556,43 @@ fn alloc_ic_slot(c: Compiler*, name: ZjsString*) -> u32 {
 
 // --- Locals ---------------------------------------------------------
 
+// When the count of declared locals would push c.next_reg past this
+// watermark, additional locals env-spill: they go on the closure env
+// (captured=true) instead of consuming a register slot. Leaves
+// headroom (255 - threshold) above the spill point for expression
+// temps inside the body. Triggers in practice on lodash's UMD IIFE
+// (237 fixed-locals); ordinary code never reaches it.
+//
+// Reads/writes of spilled locals go through emit_load_prop_atom /
+// emit_store_prop_atom on c.env_reg — the same path captured locals
+// use, so the rest of the compiler doesn't need to know about the
+// spill mechanism. The cost is one map lookup per access, paid only
+// for the function bodies that exceed the watermark.
+def LOCAL_SPILL_THRESHOLD: u32 = 192;
+
+// Combined alloc-and-register helper. If we'd cross the spill
+// watermark, mark the local as env-captured instead of consuming a
+// register. Returns the register (0 when spilled — meaningless to
+// the caller since spilled access goes through env).
+fn alloc_and_add_local_scoped(c: Compiler*, name_start: u32, name_length: u32, scope_id: u32) -> u8 {
+    let spilled = (u32)c.next_reg >= LOCAL_SPILL_THRESHOLD;
+    let reg: u8 = 0;
+    if !spilled {
+        reg = alloc_reg(c);
+    } else {
+        c.needs_env = true;
+    }
+    add_local_scoped(c, name_start, name_length, reg, scope_id);
+    if spilled {
+        c.locals[c.local_count - 1].captured = true;
+    }
+    return reg;
+}
+
+fn alloc_and_add_local(c: Compiler*, name_start: u32, name_length: u32) -> u8 {
+    return alloc_and_add_local_scoped(c, name_start, name_length, c.cur_scope_id);
+}
+
 fn add_local_scoped(c: Compiler*, name_start: u32, name_length: u32, reg: u8, scope_id: u32) -> void {
     if c.local_count >= c.local_cap {
         let new_cap: u32 = if c.local_cap == 0 { 8 } else { c.local_cap * 2 };
@@ -5009,8 +5046,7 @@ fn collect_pattern_locals(c: Compiler*, pat: AstNode*) -> void {
     if pat == NULL { return; }
     let k = pat.kind;
     if k == NodeKind::IdentExpr {
-        let reg = alloc_reg(c);
-        add_local(c, pat.name_start, pat.name_length, reg);
+        alloc_and_add_local(c, pat.name_start, pat.name_length);
         return;
     }
     if k == NodeKind::ObjectPattern || k == NodeKind::ArrayPattern {
@@ -5329,8 +5365,7 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
         // globalThis per spec, NOT a script-scope lexical binding.
         // Module/function bodies register the function-name local.
         if c.is_function && !c.is_script {
-            let reg = alloc_reg(c);
-            add_local(c, node.name_start, node.name_length, reg);
+            alloc_and_add_local(c, node.name_start, node.name_length);
         }
         return;
     }
@@ -5340,8 +5375,7 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
     if k == NodeKind::ClassDecl {
         // ClassDecl is always lexical, even at script-top.
         if c.is_function {
-            let reg = alloc_reg(c);
-            add_local(c, node.name_start, node.name_length, reg);
+            alloc_and_add_local(c, node.name_start, node.name_length);
         }
         return;
     }
@@ -5362,8 +5396,7 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
         while i < node.children_count {
             let decl = node.children[i];
             if decl.name_length > 0 {
-                let reg = alloc_reg(c);
-                add_local_scoped(c, decl.name_start, decl.name_length, reg, scope_id);
+                alloc_and_add_local_scoped(c, decl.name_start, decl.name_length, scope_id);
             } else if decl.third != NULL {
                 collect_pattern_locals(c, decl.third);
             }
@@ -5382,8 +5415,7 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
         while i < node.children_count {
             let cl = node.children[i];
             if cl.name_length > 0 {
-                let reg = alloc_reg(c);
-                add_local(c, cl.name_start, cl.name_length, reg);
+                alloc_and_add_local(c, cl.name_start, cl.name_length);
             }
             i = i + 1;
         }
@@ -5416,8 +5448,7 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
             // try blocks but the name is fixed).
             let existing = lookup_local(c, c.source + node.name_start, node.name_length);
             if existing < 0 {
-                let reg = alloc_reg(c);
-                add_local(c, node.name_start, node.name_length, reg);
+                alloc_and_add_local(c, node.name_start, node.name_length);
             }
         }
         // Destructuring catch param (children[0]): each contained name

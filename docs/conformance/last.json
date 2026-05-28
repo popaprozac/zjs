@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-05-28 18:32 UTC",
+    "when": "2026-05-28 20:34 UTC",
     "total": 14524,
     "passed": 12077,
     "failed": 1801,
@@ -906,15 +906,15 @@
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-grow-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1, 2] should have the same contents. false\nzjs: throw: (unknown): Actu"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1, 2] should have the same contents. TestIterationAndResize: list of i"
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-shrink-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1, 2] should have the same contents. false\nzjs: throw: (unknown): Actu"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1, 2] should have the same contents. TestIterationAndResize: list of i"
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-shrink-to-zero-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1] should have the same contents. false\nzjs: throw: (unknown): Actual "
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1] should have the same contents. TestIterationAndResize: list of iter"
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer.js",
