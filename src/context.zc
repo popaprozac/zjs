@@ -3278,9 +3278,15 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
                 // (= slot index order). Then append to the result,
                 // skipping shadowed names.
                 let prop_count = cur.cls.prop_count;
-                let scratch: ZjsString*[64];
-                let scratch_del: bool[64];
-                let limit: u32 = if prop_count > 64 { 64 } else { prop_count };
+                // Heap-allocate the scratch so it scales with object
+                // size. Lodash UMD attaches 270+ methods to its `_`
+                // function; a fixed cap of 64 here would silently
+                // drop names past the cap. Manually dealloc'd at
+                // the end of each iteration (we can't `defer` inside
+                // the loop — Zen-c's defer is function-scoped).
+                let limit: u32 = prop_count;
+                let scratch = alloc_n<ZjsString*>((usize)limit);
+                let scratch_del = alloc_n<bool>((usize)limit);
                 let init_i: u32 = 0;
                 while init_i < limit {
                     scratch[init_i] = NULL;
@@ -3335,6 +3341,8 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
                     }
                     i = i + 1;
                 }
+                dealloc(scratch);
+                dealloc(scratch_del);
                 cur = cur.proto;
             }
             return arr_v;
@@ -5066,8 +5074,11 @@ fn host_object_get_own_property_symbols(ctx: ZjsContext*, args: ZjsValue*, argc:
     // that's still present + enumerable-or-not (spec returns all Symbol
     // keys, not just enumerable), look up the corresponding Symbol.
     let cap = o.cls.prop_count;
-    let scratch: ZjsString*[64];
-    let limit: u32 = if cap > 64 { 64 } else { cap };
+    // Heap scratch (sized to cap) so objects with > 64 properties don't
+    // get their Symbol-keyed slots silently dropped. defer dealloc.
+    let limit: u32 = cap;
+    let scratch = alloc_n<ZjsString*>((usize)limit);
+    defer dealloc(scratch);
     let i: u32 = 0;
     while i < limit { scratch[i] = NULL; i = i + 1; }
     let cls = o.cls;
@@ -5250,9 +5261,12 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let arr_v = ctx_new_array(ctx, cap);
     let arr = zjs_as_array(arr_v);
     // Build a name-by-slot scratch first, then compact down to only
-    // the present (non-deleted) ones in insertion order.
-    let scratch: ZjsString*[64];
-    let limit: u32 = if cap > 64 { 64 } else { cap };
+    // the present (non-deleted) ones in insertion order. Heap-allocated
+    // so we scale with the object — lodash's `_` function has 270+
+    // own-named methods; a static 64-cap would silently drop them.
+    let limit: u32 = cap;
+    let scratch = alloc_n<ZjsString*>((usize)limit);
+    defer dealloc(scratch);
     let init_i: u32 = 0;
     while init_i < limit { scratch[init_i] = NULL; init_i = init_i + 1; }
     let cls = o.cls;
@@ -5272,8 +5286,10 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // ascending numeric order, then string keys in insertion order.
     // Two-pass: separate integer-index keys, sort, emit; then string
     // keys in slot (= creation) order.
-    let int_keys: u32[64];
-    let int_names: ZjsString*[64];
+    let int_keys = alloc_n<u32>((usize)limit);
+    let int_names = alloc_n<ZjsString*>((usize)limit);
+    defer dealloc(int_keys);
+    defer dealloc(int_names);
     let int_count: u32 = 0;
     let i: u32 = 0;
     while i < limit {
@@ -5282,7 +5298,7 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             let is_internal = string_is_hidden_key(nm);
             if !is_internal {
                 let idx_v: i64 = string_as_array_index(nm);
-                if idx_v >= 0 && int_count < 64 {
+                if idx_v >= 0 && int_count < limit {
                     int_keys[int_count] = (u32)idx_v;
                     int_names[int_count] = nm;
                     int_count = int_count + 1;
