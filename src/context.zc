@@ -4641,6 +4641,15 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         return zjs_undefined();
     }
     let proto_v = if argc >= 2 { args[1] } else { zjs_undefined() };
+    // ECMA-262 §20.1.2.21: throw if Type(proto) is neither Object nor
+    // Null. Spec-strict, callables (functions / closures / host fns)
+    // are Objects too — but our internal proto chain stores ZjsObject*
+    // and the property-lookup walks `.cls / .slots`, which a callable
+    // doesn't have at the right offsets. Filed as #290: chalk's
+    //   var proto = Object.defineProperties(() => {}, {...});
+    //   Object.setPrototypeOf(builder, proto);
+    // pattern needs a polymorphic chain walk. Until then, reject
+    // callable protos with a strict-spec error.
     let proto_ok: bool = zjs_is_null(proto_v) != 0 || zjs_is_object(proto_v) != 0;
     if !proto_ok {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
