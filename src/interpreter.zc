@@ -4834,6 +4834,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
             // objects, arrays, functions, host functions, closures.
             let key = regs[inst.b];
             let obj = regs[inst.c];
+            // Symbol keys: route through the same coercion property_get
+            // uses (Symbol → its internal `key` string). Without this,
+            // the zjs_to_string(symbol) below would throw per spec and
+            // leave key_str_val as undefined; the subsequent
+            // zjs_as_string(undef) would read random memory and SIGSEGV.
+            // (#291 — surfaced by lodash-es's `Symbol.toStringTag in
+            // Object(value)` runtime check.)
+            key = symbol_key_coerce(key);
             let obj_like: bool =
                 zjs_is_object(obj) != 0
                 || zjs_is_array(obj) != 0
