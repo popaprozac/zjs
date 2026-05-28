@@ -1567,6 +1567,16 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         // test ? consequent : alternate.
         // Materialize both branches into the SAME register; JmpIfFalse
         // skips the consequent.
+        //
+        // The outer caller (e.g. `result = result === x ? a : result + b`)
+        // may have set c.preferred_dst to the LHS local's reg. If we
+        // leave it set, the FIRST inner alloc_dst — typically the test
+        // expression's binop — would write into that local's slot,
+        // clobbering `result` before the alt branch (`result + b`) ever
+        // reads it. Save + clear here; the Conditional itself uses
+        // alloc_reg (not the hint), so nothing in this layer needs it.
+        let saved_pd = c.preferred_dst;
+        c.preferred_dst = -1;
         let dst = alloc_reg(c);
         let test_r = compile_expr(c, node.left);
         let jmp_else = emit(c, make_inst_a_i16(Op::JmpIfFalse, test_r, 0));
@@ -1587,6 +1597,7 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         patch_jump(c, (u32)jmp_end);
 
         if c.next_reg <= dst { c.next_reg = dst + 1; }
+        c.preferred_dst = saved_pd;
         return dst;
     }
     if k == NodeKind::Assignment {
@@ -1629,6 +1640,20 @@ fn compile_logical(c: Compiler*, node: AstNode*) -> u8 {
     // dst is falsy; for || jump past right if dst is truthy; for ??
     // jump past right if dst is non-null-or-undefined (we approximate
     // as truthy for MVP — Strictly should be neither null nor undef).
+    //
+    // We Mov the RHS back into dst at the end (line below), so dst MUST
+    // be a writable temp — not a borrowed local register. Clear
+    // borrow_local_ok before compiling left so IdentExpr emits a
+    // defensive Mov into a fresh reg instead of handing us the local's
+    // reg directly. Same reasoning for preferred_dst: an outer
+    // assignment's hint refers to a destination, not a slot we may
+    // safely scribble through as scratch. Without this, `arr && f(arr)`
+    // clobbers `arr` with `arr.length` before f sees it. Restored at
+    // the end so peer expressions still benefit from the hints.
+    let saved_borrow = c.borrow_local_ok;
+    let saved_pd     = c.preferred_dst;
+    c.borrow_local_ok = false;
+    c.preferred_dst   = -1;
     let dst = compile_expr(c, node.left);
     let op_tok = node.op;
 
@@ -1653,6 +1678,8 @@ fn compile_logical(c: Compiler*, node: AstNode*) -> u8 {
     c.next_reg = saved_next;
 
     patch_jump(c, jmp_idx);
+    c.borrow_local_ok = saved_borrow;
+    c.preferred_dst   = saved_pd;
     return dst;
 }
 
