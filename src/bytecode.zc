@@ -571,6 +571,23 @@ struct Function {
     // before falling back to Object.prototype.
     props:          ZjsObject*;
 
+    // Per-Function [[Prototype]] override (Object.setPrototypeOf on a
+    // bare function value). Set when the user passes a non-capturing
+    // function to setPrototypeOf — chalk's
+    //   const c = (...) => strings.join(' ');   // no capture → bare fn
+    //   Object.setPrototypeOf(c, Chalk.prototype);
+    // pattern is the canonical case. NULL means "use the default
+    // chain — Function.prototype → Object.prototype".
+    //
+    // Limitation: Function* is shared per-source-location (no MakeClosure
+    // wrap when the body doesn't capture). So setPrototypeOf on one
+    // evaluation of `function f() {}` inside a loop affects every
+    // other iteration's `f` too. ES spec says distinct instances; we
+    // currently fold them. Fix path if a real test exposes this:
+    // unconditionally MakeClosure-wrap bare functions (small perf cost,
+    // clean semantics).
+    proto_override: ZjsObject*;
+
     // 2026-05-15 — set when this Function was emitted as a class
     // constructor. Op::Invoke / Op::MethodInvoke throw TypeError when
     // called without `new` (NewInvoke clears the flag's effect via

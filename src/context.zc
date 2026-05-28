@@ -1270,6 +1270,11 @@ fn gc_mark_cell_children(p: void*) -> void {
             let pv = zjs_cell_from_ptr((void*)cl.props);
             gc_mark_value(pv);
         }
+        // Per-instance prototype override (set by Object.setPrototypeOf).
+        if cl.proto_override != NULL {
+            let pov = zjs_cell_from_ptr((void*)cl.proto_override);
+            gc_mark_value(pov);
+        }
         return;
     }
 
@@ -1471,6 +1476,10 @@ fn gc_mark_cell_children(p: void*) -> void {
         // Expando bag (Function.props).
         if f.props != NULL {
             gc_mark_value(zjs_cell_from_ptr((void*)f.props));
+        }
+        // Per-Function [[Prototype]] override (Object.setPrototypeOf).
+        if f.proto_override != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)f.proto_override));
         }
         gc_mark_value(f.parent_ctor);
         // Tagged-template strings array cache — each entry is a
@@ -4665,8 +4674,46 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
             }
             o.proto = new_proto;
         }
+    } else if zjs_is_closure(obj_v) != 0 {
+        // Closure path (#287). chalk and many class-polyfill bundles do
+        //   const f = (...) => ...;
+        //   Object.setPrototypeOf(f, SomeClass.prototype);
+        // and then expect `f.method` to resolve via SomeClass.prototype.
+        // Store the override on the closure itself; property_get for
+        // TAG_CLOSURE walks it before falling back to Function.prototype.
+        let cl = zjs_as_closure(obj_v);
+        if zjs_is_null(proto_v) != 0 {
+            cl.proto_override = NULL;
+        } else {
+            cl.proto_override = zjs_as_object(proto_v);
+        }
+    } else if zjs_is_function(obj_v) != 0 {
+        // Bare Function path — same idea as closure but on Function*.
+        // Hits when the user setPrototypeOf's a non-capturing arrow /
+        // function decl (which our compiler leaves as a bare Function
+        // because there's no env to capture). See Function.proto_override
+        // comment in bytecode.zc for the per-source-location caveat.
+        let fp = zjs_cell_as_ptr(obj_v);
+        let f: Function* = NULL;
+        raw { f = (Function*)fp; }
+        if zjs_is_null(proto_v) != 0 {
+            f.proto_override = NULL;
+        } else {
+            f.proto_override = zjs_as_object(proto_v);
+        }
+    } else if zjs_is_host_function(obj_v) != 0 {
+        // Host-fn path. proto_override here is a ZjsValue (the field
+        // pre-dated this commit, exposed via getPrototypeOf only).
+        // setPrototypeOf now writes it; property_get consults it too.
+        let hf = zjs_as_host_function(obj_v);
+        if zjs_is_null(proto_v) != 0 {
+            hf.proto_override = zjs_undefined();
+        } else {
+            hf.proto_override = proto_v;
+        }
     }
-    // Non-object receivers: spec returns the original value unchanged.
+    // Other non-object/non-callable receivers: spec returns the original
+    // value unchanged.
     return obj_v;
 }
 
@@ -4697,12 +4744,20 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         let fp = zjs_cell_as_ptr(v);
         let ff: Function* = NULL;
         raw { ff = (Function*)fp; }
+        // Per-instance setPrototypeOf override wins.
+        if ff.proto_override != NULL {
+            return zjs_cell_from_ptr((void*)ff.proto_override);
+        }
         if zjs_is_undefined(ff.parent_ctor) == 0 { return ff.parent_ctor; }
         if ctx.function_proto == NULL { return zjs_null(); }
         return zjs_cell_from_ptr((void*)ctx.function_proto);
     }
     if zjs_is_closure(v) != 0 {
         let cl = zjs_as_closure(v);
+        // Per-instance override (Object.setPrototypeOf) takes precedence.
+        if cl.proto_override != NULL {
+            return zjs_cell_from_ptr((void*)cl.proto_override);
+        }
         let fp2 = cl.function;
         let ff2: Function* = NULL;
         raw { ff2 = (Function*)fp2; }

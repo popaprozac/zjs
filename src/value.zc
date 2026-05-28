@@ -1610,6 +1610,13 @@ struct ZjsClosure {
     function: void*;              // Function* — opaque to value.zc (defined in bytecode.zc)
     env:      ZjsObject*;        // captured environment; may be NULL for arity-0 captures
     props:    ZjsObject*;        // per-instance expando bag (NULL until first write)
+    // Per-instance [[Prototype]] override, set by Object.setPrototypeOf(closure, X).
+    // NULL means "default lookup chain — walk ctx.function_proto then ctx.object_proto"
+    // (the path before this field existed). When set, property_get walks
+    // proto_override first, BEFORE Function.prototype — this is what lets
+    // chalk's `(...) => ...; Object.setPrototypeOf(it, Chalk.prototype)`
+    // pattern resolve `.red`, `.bold`, etc. from Chalk.prototype.
+    proto_override: ZjsObject*;
 }
 
 fn zjs_cell_from_ptr(p: void*) -> ZjsValue {
@@ -1974,6 +1981,7 @@ fn zjs_closure_new(function: void*, env: ZjsObject*) -> ZjsClosure* {
     cl.function = function;
     cl.env = env;
     cl.props = NULL;
+    cl.proto_override = NULL;
     return cl;
 }
 

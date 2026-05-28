@@ -878,10 +878,35 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                     }
                 }
             }
+            // Per-Function setPrototypeOf override (#287). Walked before
+            // Function.prototype so the user's chosen proto wins. Same
+            // accessor-getter dispatch as the closure path.
+            if f_p.proto_override != NULL {
+                let cur = f_p.proto_override;
+                while cur != NULL {
+                    let s = class_find_slot(cur.cls, ks);
+                    if s >= 0 {
+                        let v = cur.slots[(u32)s];
+                        if zjs_is_deleted(v) == 0 {
+                            if zjs_is_accessor(v) != 0 {
+                                let acc = zjs_as_accessor(v);
+                                let g = acc.get;
+                                if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
+                                    let nullp: ZjsValue* = NULL;
+                                    return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                                }
+                                return zjs_undefined();
+                            }
+                            return v;
+                        }
+                    }
+                    cur = cur.proto;
+                }
+            }
             // Walk Function.prototype (which carries the call/apply
             // helpers and the constructor link to the Function global)
             // before Object.prototype.
-            if ctx.function_proto != NULL {
+            if f_p.proto_override == NULL && ctx.function_proto != NULL {
                 let cur = ctx.function_proto;
                 while cur != NULL {
                     let s = class_find_slot(cur.cls, ks);
@@ -981,6 +1006,43 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 }
                 return ctx_intern_string(ctx, (char*)"", 0);
             }
+            // Per-instance prototype override (Object.setPrototypeOf).
+            // Walked BEFORE Function.prototype because the user explicitly
+            // set this chain — they expect their proto's methods to win
+            // over the default callable surface. chalk's
+            //   const c = (...) => ...;
+            //   Object.setPrototypeOf(c, Chalk.prototype);
+            //   c.red('hi')          // → Chalk.prototype.red getter fires
+            // pattern relies on this order.
+            let cl_po = zjs_as_closure(obj);
+            if cl_po.proto_override != NULL {
+                let cur = cl_po.proto_override;
+                while cur != NULL {
+                    let s = class_find_slot(cur.cls, ks);
+                    if s >= 0 {
+                        let v = cur.slots[(u32)s];
+                        if zjs_is_deleted(v) == 0 {
+                            // Accessor descriptor — invoke getter with
+                            // `this` = the closure (the receiver of the
+                            // original property access).
+                            if zjs_is_accessor(v) != 0 {
+                                let acc = zjs_as_accessor(v);
+                                let g = acc.get;
+                                if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
+                                    let nullp: ZjsValue* = NULL;
+                                    return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                                }
+                                return zjs_undefined();
+                            }
+                            return v;
+                        }
+                    }
+                    cur = cur.proto;
+                }
+                // Override is set — don't fall through to Function.prototype
+                // (the user said this IS the prototype chain). Skip directly
+                // to Object.prototype as the chain-walk terminator.
+            }
             // Same proto walk as TAG_FUNCTION — Function.prototype first.
             // Goes before the cl.function.props check below because the
             // vast majority of closure property accesses are Function-
@@ -994,7 +1056,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             // shadow inherited — but no test262 test that we've seen
             // exercises this corner, and the perf win on hot closure-
             // property access paths is real (~3% richards).
-            if ctx.function_proto != NULL {
+            if cl_po.proto_override == NULL && ctx.function_proto != NULL {
                 let cur = ctx.function_proto;
                 while cur != NULL {
                     let s = class_find_slot(cur.cls, ks);
