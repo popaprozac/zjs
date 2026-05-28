@@ -4235,7 +4235,22 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
 fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc < 2 { return if argc > 0 { args[0] } else { zjs_undefined() }; }
     let obj_v = args[0];
-    if zjs_is_object(obj_v) == 0 { return obj_v; }
+    // ECMA-262 §19.1.2.3 step 1: receiver must be an Object. "Object"
+    // here includes callables (functions, closures, host functions) —
+    // chalk's `Object.defineProperties(() => {}, {...})` pattern. Route
+    // the descriptor writes via resolve_define_receiver so they land
+    // in the callable's .props bag (same place defineProperty stores).
+    // Previously we early-returned on non-plain-object receivers, so
+    // defineProperties silently no-op'd for callable targets (#290).
+    let recv_o: ZjsObject* = NULL;
+    if zjs_is_object(obj_v) != 0
+       || zjs_is_function(obj_v) != 0
+       || zjs_is_closure(obj_v) != 0
+       || zjs_is_host_function(obj_v) != 0
+       || zjs_is_array(obj_v) != 0 {
+        recv_o = resolve_define_receiver(ctx, obj_v);
+    }
+    if recv_o == NULL { return obj_v; }
     let props_v = args[1];
     // ECMA-262 §19.1.2.3 step 2: props is ToObject'd. Plain objects
     // use their own hidden class. Arrays / functions / host fns /
@@ -4641,22 +4656,60 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         return zjs_undefined();
     }
     let proto_v = if argc >= 2 { args[1] } else { zjs_undefined() };
-    // ECMA-262 §20.1.2.21: throw if Type(proto) is neither Object nor
-    // Null. Spec-strict, callables (functions / closures / host fns)
-    // are Objects too — but our internal proto chain stores ZjsObject*
-    // and the property-lookup walks `.cls / .slots`, which a callable
-    // doesn't have at the right offsets. Filed as #290: chalk's
+    // ECMA-262 §20.1.2.21: Type(proto) must be Object or Null. Type()
+    // includes callables (functions are objects). chalk uses
     //   var proto = Object.defineProperties(() => {}, {...});
     //   Object.setPrototypeOf(builder, proto);
-    // pattern needs a polymorphic chain walk. Until then, reject
-    // callable protos with a strict-spec error.
-    let proto_ok: bool = zjs_is_null(proto_v) != 0 || zjs_is_object(proto_v) != 0;
+    // We accept callable protos by extracting the callable's `.props`
+    // expando bag and treating IT as the proto. The bag holds every
+    // descriptor the user installed via defineProperty / defineProperties,
+    // so chain-walk + accessor invocation work normally; getters fire
+    // with `this = original receiver` per spec. Limitation:
+    // Object.getPrototypeOf returns the .props ZjsObject, not the
+    // callable, so `getPrototypeOf(builder) === origProto` is false.
+    // No real-world npm package observed checks for that identity (#290).
+    let proto_ok: bool = zjs_is_null(proto_v) != 0
+                      || zjs_is_object(proto_v) != 0
+                      || zjs_is_closure(proto_v) != 0
+                      || zjs_is_function(proto_v) != 0
+                      || zjs_is_host_function(proto_v) != 0;
     if !proto_ok {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                     (char*)"Object prototype may only be an Object or null", 47);
         ctx.pending_throw_active = true;
         ctx.pending_throw_value = err;
         return zjs_undefined();
+    }
+    // For callable protos: route to the bag where defineProperty
+    // actually stores descriptors. Closures route to function.props
+    // (resolve_define_receiver), not cl.props — so we extract the
+    // SAME bag here so chain-walks find what defineProperty wrote.
+    if zjs_is_closure(proto_v) != 0 {
+        let cl_p = zjs_as_closure(proto_v);
+        let fp_p = cl_p.function;
+        let f_p: Function* = NULL;
+        raw { f_p = (Function*)fp_p; }
+        if f_p.props == NULL {
+            let pv = ctx_new_object(ctx);
+            f_p.props = zjs_as_object(pv);
+        }
+        proto_v = zjs_cell_from_ptr((void*)f_p.props);
+    } else if zjs_is_function(proto_v) != 0 {
+        let fp_p = zjs_cell_as_ptr(proto_v);
+        let f_p: Function* = NULL;
+        raw { f_p = (Function*)fp_p; }
+        if f_p.props == NULL {
+            let pv = ctx_new_object(ctx);
+            f_p.props = zjs_as_object(pv);
+        }
+        proto_v = zjs_cell_from_ptr((void*)f_p.props);
+    } else if zjs_is_host_function(proto_v) != 0 {
+        let hf_p = zjs_as_host_function(proto_v);
+        if hf_p.props == NULL {
+            let pv = ctx_new_object(ctx);
+            hf_p.props = zjs_as_object(pv);
+        }
+        proto_v = zjs_cell_from_ptr((void*)hf_p.props);
     }
     if zjs_is_object(obj_v) != 0 {
         let o = zjs_as_object(obj_v);
