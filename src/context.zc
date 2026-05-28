@@ -6359,13 +6359,24 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         }
         let is_global = (r.flags & REGEX_FLAG_GLOBAL) != 0;
         let preg = r.preg;
-        let pmatch_buf: ZRegMatch[1];
+        // Capture-group count drives both the pmatch buffer size and
+        // the callback's argument layout. ECMA-262 §22.1.3.18 says a
+        // function replacer is called with (match, c1..cN, offset,
+        // string) — passing only (match, offset, string) (the
+        // pre-2026 layout) breaks lodash's stringToPath, which uses
+        // `quote` / `subString` capture args to decide how to parse a
+        // path token.
+        let total_groups: u32 = 0;
+        raw { total_groups = (uint32_t)lre_get_capture_count((const uint8_t*)preg); }
+        if total_groups == 0 { total_groups = 1; }
+        let pmatch_buf = alloc_n<ZRegMatch>((usize)total_groups);
+        defer dealloc(pmatch_buf);
         let cursor: u32 = 0;
         let scan: u32 = 0;
         while scan <= hay_n {
             let rc: int = -1;
             raw {
-                rc = lre_run(preg, hay_d, hay_n, scan, pmatch_buf, 1);
+                rc = lre_run(preg, hay_d, hay_n, scan, pmatch_buf, total_groups);
             }
             if rc != 0 { break; }
             // lre_run returns absolute byte offsets into hay_d.
@@ -6389,7 +6400,13 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
             let rep_len: u32 = 0;
             let rep_str_holder: ZjsValue = zjs_undefined();
             if repl_is_fn {
-                // fn(match, offset, str) — no captures yet for MVP.
+                // Spec-shape: fn(match, c1, c2, ..., cN, offset, string).
+                // arg count = total_groups + 2 (groups include the
+                // match itself at index 0, so captures are 1..N-1).
+                let cb_argc = total_groups + 2;
+                let cb_args = alloc_n<ZjsValue>((usize)cb_argc);
+                defer dealloc(cb_args);
+                // Slot 0: the full match string.
                 let mlen = mend - mstart;
                 let mbuf = alloc_n<char>((usize)(mlen + 1));
                 if mlen > 0 {
@@ -6398,15 +6415,28 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
                     mem_copy<char>(mbuf, msrc, (usize)mlen);
                 }
                 mbuf[mlen] = (char)0;
-                let mstr = ctx_intern_string_take(ctx, mbuf, mlen);
-                let cb_args: ZjsValue[3];
-                cb_args[0] = mstr;
-                cb_args[1] = zjs_int32((i32)mstart);
-                cb_args[2] = this_val;
+                cb_args[0] = ctx_intern_string_take(ctx, mbuf, mlen);
+                // Slots 1..total_groups-1: per-capture substrings.
+                // A capture that didn't participate (rm_so < 0) is
+                // undefined per spec.
+                let gi: u32 = 1;
+                while gi < total_groups {
+                    let gs = pmatch_buf[gi].rm_so;
+                    let ge = pmatch_buf[gi].rm_eo;
+                    if gs < 0 {
+                        cb_args[gi] = zjs_undefined();
+                    } else {
+                        cb_args[gi] = ctx_intern_string(ctx, hay_d + (u32)gs, (u32)(ge - gs));
+                    }
+                    gi = gi + 1;
+                }
+                // Tail slots: offset, then the input string.
+                cb_args[total_groups]     = zjs_int32((i32)mstart);
+                cb_args[total_groups + 1] = this_val;
                 let cb_argp: ZjsValue* = NULL;
-                raw { cb_argp = &cb_args[0]; }
+                raw { cb_argp = cb_args; }
                 let cb_r: ZjsValue = zjs_undefined();
-                raw { cb_r = zjs_call_value_with_this(ctx, repl_v, zjs_undefined(), cb_argp, 3); }
+                raw { cb_r = zjs_call_value_with_this(ctx, repl_v, zjs_undefined(), cb_argp, cb_argc); }
                 if zjs_is_string(cb_r) == 0 { cb_r = zjs_to_string(ctx, cb_r); }
                 rep_str_holder = cb_r;
                 rep_data = zjs_as_string(cb_r).data;
