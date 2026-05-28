@@ -8916,6 +8916,73 @@ fn regexp_free_void(p: void*) -> void {
     dealloc(r);
 }
 
+// JS char classes accept `\]` (escaped close-bracket) as a literal
+// `]`. POSIX/TRE does NOT — it requires literal `]` to be the FIRST
+// character of the class. Without translation, `/[\]]/` compiles as
+// the regex literal `\` followed by `]` (class-close) followed by
+// stray text, which never matches anything sensible (#293).
+//
+// rewrite_class_body finds the matching `]` for a class opened at
+// data[start] (data[start]=='['), rewrites the class body to drop
+// any `\]` escapes and prepends a literal `]` at the start of the
+// class when one is present. Returns the number of source bytes
+// consumed (including the opening `[` and closing `]`). The output
+// is appended to buf at out_p[0]; out_p[0] is advanced past the
+// rewritten class. Returns 0 if the class is unterminated — caller
+// passes the `[` through literally as a fallback.
+fn rewrite_class_body(data: char*, n: u32, start: u32,
+                      buf: char*, out_p: u32*) -> u32 {
+    let out = out_p[0];
+    let i = start + 1;
+    if i > n { return 0; }
+    let is_negation: bool = false;
+    if i < n && data[i] == (char)'^' { is_negation = true; i = i + 1; }
+    let body_start = i;
+    let has_lit_close: bool = false;
+    // First pass: scan to find the matching ']'. POSIX treats a literal
+    // ']' as first-class-member ONLY when it's right after `[` or `[^`.
+    // JS allows `\]` anywhere — track those and emit the literal once
+    // at the start of the rewritten class.
+    while i < n {
+        let c = data[i];
+        if c == (char)'\\' && i + 1 < n {
+            let nx = data[i + 1];
+            if nx == (char)']' { has_lit_close = true; i = i + 2; continue; }
+            // Pass through other escapes — they'll be handled below.
+            i = i + 2; continue;
+        }
+        if c == (char)']' { break; }
+        i = i + 1;
+    }
+    if i >= n { return 0; }
+    let body_end = i;
+    // Emit: '[' + maybe '^' + maybe ']' (literal) + body + ']'
+    buf[out] = (char)'['; out = out + 1;
+    if is_negation { buf[out] = (char)'^'; out = out + 1; }
+    if has_lit_close { buf[out] = (char)']'; out = out + 1; }
+    let j = body_start;
+    while j < body_end {
+        let c = data[j];
+        if c == (char)'\\' && j + 1 < body_end {
+            let nx = data[j + 1];
+            if nx == (char)']' { j = j + 2; continue; }  // already emitted
+            // Pass the escape through verbatim — TRE handles `\\`, `\^`,
+            // `\.`, etc. as escaped chars inside a class.
+            buf[out]     = c;
+            buf[out + 1] = nx;
+            out = out + 2;
+            j = j + 2;
+            continue;
+        }
+        buf[out] = c;
+        out = out + 1;
+        j = j + 1;
+    }
+    buf[out] = (char)']'; out = out + 1;
+    out_p[0] = out;
+    return (body_end + 1) - start;
+}
+
 // Translate one ZjsString of JS regex source into a heap-allocated
 // NUL-terminated POSIX ERE pattern. Caller owns the returned buffer
 // (dealloc<char>). Only the common escapes get rewritten; unsupported
@@ -8931,6 +8998,14 @@ fn regex_translate_to_posix(src: ZjsString*) -> char* {
     let i: u32 = 0;
     while i < n {
         let c = data[i];
+        // Unescaped `[` opens a character class. Hand off to the
+        // class-aware rewriter so `\]` → literal `]` (and lands at
+        // the front of the class where POSIX expects it).
+        if c == (char)'[' {
+            let consumed = rewrite_class_body(data, n, i, buf, &out);
+            if consumed > 0 { i = i + consumed; continue; }
+            // Unterminated class — fall through and pass `[` as-is.
+        }
         if c == (char)'\\' && i + 1 < n {
             let nx = data[i + 1];
             // Character-class shortcuts. Replace with POSIX ranges.
