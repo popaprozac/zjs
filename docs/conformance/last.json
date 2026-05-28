@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-05-28 06:49 UTC",
+    "when": "2026-05-28 07:29 UTC",
     "total": 14524,
     "passed": 12076,
     "failed": 1802,
@@ -1498,7 +1498,7 @@
     },
     {
       "path": "test/language/statements/class/elements/direct-eval-err-contains-newtarget.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): Expected S"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction C() { [user code] }\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/language/statements/class/elements/evaluation-error/computed-name-referenceerror.js",
@@ -1630,7 +1630,7 @@
     },
     {
       "path": "test/language/statements/class/elements/nested-direct-eval-err-contains-newtarget.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): Expected S"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction C() { [user code] }\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/language/statements/class/elements/nested-indirect-eval-err-contains-newtarget.js",
@@ -1818,7 +1818,7 @@
     },
     {
       "path": "test/language/statements/class/elements/private-method-comparison-multiple-evaluations-of-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be false\nzjs: throw: (unknown): E"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abfunction #m() { [user code] }\u00bb) to be false\n"
     },
     {
       "path": "test/language/statements/class/elements/private-method-double-initialisation-get-and-set.js",
@@ -1874,23 +1874,23 @@
     },
     {
       "path": "test/language/statements/class/elements/private-methods/prod-private-async-generator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
     },
     {
       "path": "test/language/statements/class/elements/private-methods/prod-private-async-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
     },
     {
       "path": "test/language/statements/class/elements/private-methods/prod-private-generator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
     },
     {
       "path": "test/language/statements/class/elements/private-methods/prod-private-method-initialize-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
     },
     {
       "path": "test/language/statements/class/elements/private-methods/prod-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
     },
     {
       "path": "test/language/statements/class/elements/private-setter-access-on-inner-arrow-function.js",
@@ -2494,15 +2494,15 @@
     },
     {
       "path": "test/language/statements/class/scope-name-lex-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): from instance method Expected SameValue(\u00abnull\u00bb, \u00ab[object Function]\u00bb) to be true\nzjs: throw: (unkn"
+      "reason": "[sloppy] zjs: throw: (unknown): from instance method Expected SameValue(\u00abnull\u00bb, \u00abfunction C() { [user code] }\u00bb) to be true\nzjs: t"
     },
     {
       "path": "test/language/statements/class/scope-name-lex-open-heritage.js",
-      "reason": "[sloppy] zjs: throw: (unknown): inner binding is independent Expected SameValue(\u00abnull\u00bb, \u00ab[object Function]\u00bb) to be true\nzjs: thro"
+      "reason": "[sloppy] zjs: throw: (unknown): inner binding is independent Expected SameValue(\u00abnull\u00bb, \u00abfunction C() { [user code] }\u00bb) to be tru"
     },
     {
       "path": "test/language/statements/class/scope-name-lex-open-no-heritage.js",
-      "reason": "[sloppy] zjs: throw: (unknown): inner binding value Expected SameValue(\u00abnull\u00bb, \u00ab[object Function]\u00bb) to be true\nzjs: throw: (unkno"
+      "reason": "[sloppy] zjs: throw: (unknown): inner binding value Expected SameValue(\u00abnull\u00bb, \u00abfunction C() { [user code] }\u00bb) to be true\nzjs: th"
     },
     {
       "path": "test/language/statements/class/scope-setter-paramsbody-var-open.js",
@@ -3242,7 +3242,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/direct-eval-err-contains-newtarget.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): Expected S"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction C() { [user code] }\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/language/expressions/class/elements/evaluation-error/computed-name-referenceerror.js",
@@ -3358,7 +3358,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/nested-direct-eval-err-contains-newtarget.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): Expected S"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction C() { [user code] }\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/language/expressions/class/elements/nested-indirect-eval-err-contains-newtarget.js",
@@ -3510,23 +3510,23 @@
     },
     {
       "path": "test/language/expressions/class/elements/private-methods/prod-private-async-generator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
     },
     {
       "path": "test/language/expressions/class/elements/private-methods/prod-private-async-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
     },
     {
       "path": "test/language/expressions/class/elements/private-methods/prod-private-generator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
     },
     {
       "path": "test/language/expressions/class/elements/private-methods/prod-private-method-initialize-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
     },
     {
       "path": "test/language/expressions/class/elements/private-methods/prod-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00ab[object Function]\u00bb, \u00abundefined\u00bb) t"
+      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
     },
     {
       "path": "test/language/expressions/class/elements/private-setter-access-on-inner-arrow-function.js",
@@ -4098,15 +4098,15 @@
     },
     {
       "path": "test/language/expressions/class/scope-name-lex-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): from instance method Expected SameValue(\u00ab\"outside\"\u00bb, \u00ab[object Function]\u00bb) to be true\nzjs: throw: "
+      "reason": "[sloppy] zjs: throw: (unknown): from instance method Expected SameValue(\u00ab\"outside\"\u00bb, \u00abfunction C() { [user code] }\u00bb) to be true\nz"
     },
     {
       "path": "test/language/expressions/class/scope-name-lex-open-heritage.js",
-      "reason": "[sloppy] zjs: throw: (unknown): from class heritage Expected SameValue(\u00ab\"outside\"\u00bb, \u00ab[object Function]\u00bb) to be true\nzjs: throw: ("
+      "reason": "[sloppy] zjs: throw: (unknown): from class heritage Expected SameValue(\u00ab\"outside\"\u00bb, \u00abfunction C() { [user code] }\u00bb) to be true\nzj"
     },
     {
       "path": "test/language/expressions/class/scope-name-lex-open-no-heritage.js",
-      "reason": "[sloppy] zjs: throw: (unknown): inner binding value Expected SameValue(\u00ab\"outside\"\u00bb, \u00ab[object Function]\u00bb) to be true\nzjs: throw: ("
+      "reason": "[sloppy] zjs: throw: (unknown): inner binding value Expected SameValue(\u00ab\"outside\"\u00bb, \u00abfunction C() { [user code] }\u00bb) to be true\nzj"
     },
     {
       "path": "test/language/expressions/class/scope-setter-paramsbody-var-open.js",
@@ -4862,7 +4862,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: [obje\nzjs: throw: "
+      "reason": "[sloppy] zjs: throw: (unknown): #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: funct\nzjs: throw: "
     },
     {
       "path": "test/built-ins/String/prototype/slice/this-value-tostring-throws-toprimitive.js",
@@ -5042,7 +5042,7 @@
     },
     {
       "path": "test/built-ins/Promise/Symbol.species/symbol-species.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Promise[Symbol.species] is Promise Expected SameValue(\u00abundefined\u00bb, \u00ab[object Function]\u00bb) to be tru"
+      "reason": "[sloppy] zjs: throw: (unknown): Promise[Symbol.species] is Promise Expected SameValue(\u00abundefined\u00bb, \u00abfunction Promise() { [native "
     },
     {
       "path": "test/built-ins/Promise/all/call-resolve-element-after-return.js",
@@ -5778,7 +5778,7 @@
     },
     {
       "path": "test/built-ins/Promise/try/ctx-ctor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true\nzjs: throw: (unknown): Ex"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction Promise() { [native code] }\u00bb, \u00abfunction SubPromise() { [user code] }"
     },
     {
       "path": "test/built-ins/Promise/try/prop-desc.js",
@@ -5786,7 +5786,7 @@
     },
     {
       "path": "test/built-ins/Promise/withResolvers/ctx-ctor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true\nzjs: throw: (unknown): Ex"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction Promise() { [native code] }\u00bb, \u00abfunction SubPromise() { [user code] }"
     },
     {
       "path": "test/built-ins/Promise/withResolvers/resolvers.js",
@@ -5862,7 +5862,7 @@
     },
     {
       "path": "test/built-ins/Map/prototype/Symbol.iterator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true\nzjs: throw: (unknown): Ex"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction @@iterator() { [native code] }\u00bb, \u00abfunction entries() { [native code]"
     },
     {
       "path": "test/built-ins/Map/prototype/Symbol.toStringTag.js",
@@ -5998,7 +5998,7 @@
     },
     {
       "path": "test/built-ins/Set/prototype/Symbol.iterator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Function]\u00bb, \u00ab[object Function]\u00bb) to be true\nzjs: throw: (unknown): Ex"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction @@iterator() { [native code] }\u00bb, \u00abfunction values() { [native code] "
     },
     {
       "path": "test/built-ins/Set/prototype/Symbol.toStringTag/property-descriptor.js",
@@ -6298,7 +6298,7 @@
     },
     {
       "path": "test/built-ins/Set/prototype/keys/keys.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of `Set.prototype.keys` is `Set.prototype.values` Expected SameValue(\u00ab[object Function]"
+      "reason": "[sloppy] zjs: throw: (unknown): The value of `Set.prototype.keys` is `Set.prototype.values` Expected SameValue(\u00abfunction keys() {"
     },
     {
       "path": "test/built-ins/Set/prototype/size/length.js",

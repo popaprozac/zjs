@@ -6139,6 +6139,105 @@ fn host_string_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
 //   * replacement: string (no `$1`/`$&` substitutions yet) OR function
 // For regex search without the `g` flag, replaces only the first
 // match. With `g`, replaces all non-overlapping matches.
+// String.prototype.replace's $-substitution. ECMA-262 §22.1.3.18 step 11
+// (GetSubstitution). Supports:
+//   $$        → "$"
+//   $&        → matched substring
+//   $`        → portion before the match
+//   $'        → portion after the match
+//   $N        → capture group N (1..9). When N > total captures or
+//               captures is NULL, the token is left literal (`$N`).
+// Returns an allocated buffer with the expanded text; caller frees.
+fn expand_replacement(rep_data: char*, rep_len: u32,
+                      hay_d: char*, hay_n: u32,
+                      mstart: u32, mend: u32,
+                      cap_starts: i32*, cap_ends: i32*, n_caps: u32,
+                      out_len_p: u32*) -> char* {
+    // First pass: compute output length.
+    let total: u32 = 0;
+    let i: u32 = 0;
+    while i < rep_len {
+        if rep_data[i] == (char)'$' && i + 1 < rep_len {
+            let c = rep_data[i + 1];
+            if c == (char)'$'        { total = total + 1; i = i + 2; continue; }
+            if c == (char)'&'        { total = total + (mend - mstart); i = i + 2; continue; }
+            if c == (char)'`'        { total = total + mstart; i = i + 2; continue; }
+            if c == (char)'\''       { total = total + (hay_n - mend); i = i + 2; continue; }
+            let is_digit: bool = c >= (char)'0' && c <= (char)'9';
+            if is_digit && cap_starts != NULL {
+                let n: u32 = 0;
+                raw { n = (uint32_t)(c - '0'); }
+                if n >= 1 && n <= n_caps {
+                    let cs = cap_starts[(u32)n];
+                    let ce = cap_ends[(u32)n];
+                    if cs >= 0 && ce >= cs { total = total + (u32)(ce - cs); }
+                    i = i + 2; continue;
+                }
+            }
+        }
+        total = total + 1;
+        i = i + 1;
+    }
+    // Second pass: write.
+    let out = alloc_n<char>((usize)(total + 1));
+    let off: u32 = 0;
+    i = 0;
+    while i < rep_len {
+        if rep_data[i] == (char)'$' && i + 1 < rep_len {
+            let c = rep_data[i + 1];
+            if c == (char)'$' { out[off] = (char)'$'; off = off + 1; i = i + 2; continue; }
+            if c == (char)'&' {
+                if mend > mstart {
+                    let src: char* = NULL;
+                    raw { src = &hay_d[mstart]; }
+                    mem_copy<char>(out + off, src, (usize)(mend - mstart));
+                    off = off + (mend - mstart);
+                }
+                i = i + 2; continue;
+            }
+            if c == (char)'`' {
+                if mstart > 0 {
+                    mem_copy<char>(out + off, hay_d, (usize)mstart);
+                    off = off + mstart;
+                }
+                i = i + 2; continue;
+            }
+            if c == (char)'\'' {
+                let post = hay_n - mend;
+                if post > 0 {
+                    let src: char* = NULL;
+                    raw { src = &hay_d[mend]; }
+                    mem_copy<char>(out + off, src, (usize)post);
+                    off = off + post;
+                }
+                i = i + 2; continue;
+            }
+            let is_digit: bool = c >= (char)'0' && c <= (char)'9';
+            if is_digit && cap_starts != NULL {
+                let n: u32 = 0;
+                raw { n = (uint32_t)(c - '0'); }
+                if n >= 1 && n <= n_caps {
+                    let cs = cap_starts[(u32)n];
+                    let ce = cap_ends[(u32)n];
+                    if cs >= 0 && ce >= cs {
+                        let src: char* = NULL;
+                        raw { src = &hay_d[(uint32_t)cs]; }
+                        mem_copy<char>(out + off, src, (usize)(ce - cs));
+                        off = off + (u32)(ce - cs);
+                    }
+                    i = i + 2; continue;
+                }
+            }
+        }
+        out[off] = rep_data[i];
+        off = off + 1;
+        i = i + 1;
+    }
+    out[off] = (char)0;
+    out_len_p[0] = off;
+    return out;
+}
+
 fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = coerce_string_this(ctx);
     if zjs_is_string(this_val) == 0 { return this_val; }
@@ -6222,8 +6321,36 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
                 rep_data = zjs_as_string(cb_r).data;
                 rep_len  = zjs_as_string(cb_r).length;
             } else {
-                rep_data = zjs_as_string(repl_str_v).data;
-                rep_len  = zjs_as_string(repl_str_v).length;
+                // String replacement — expand $&, $$, $`, $', $N tokens
+                // per spec (ECMA-262 GetSubstitution). lodash's
+                // `.replace(reRegExpChar, "\\$&")` to escape regex
+                // metachars depends on this.
+                let tmpl_data = zjs_as_string(repl_str_v).data;
+                let tmpl_len  = zjs_as_string(repl_str_v).length;
+                let exp_len: u32 = 0;
+                let nullp_i32: i32* = NULL;
+                let exp_buf = expand_replacement(tmpl_data, tmpl_len,
+                                                  hay_d, hay_n, mstart, mend,
+                                                  nullp_i32, nullp_i32, 0,
+                                                  &exp_len);
+                rep_data = exp_buf;
+                rep_len  = exp_len;
+                // We'll dealloc exp_buf after the copy below.
+                rep_str_holder = zjs_undefined();  // sentinel — caller owns exp_buf
+                while out_len + rep_len + 64 > out_cap {
+                    let new_cap = out_cap * 2 + 64;
+                    out_buf = realloc_n<char>(out_buf, (usize)out_cap, (usize)new_cap);
+                    out_cap = new_cap;
+                }
+                if rep_len > 0 {
+                    mem_copy<char>(out_buf + out_len, rep_data, (usize)rep_len);
+                    out_len = out_len + rep_len;
+                }
+                dealloc(exp_buf);
+                cursor = mend;
+                scan = if mend > scan { mend } else { scan + 1 };
+                if !is_global { break; }
+                continue;
             }
             while out_len + rep_len + 64 > out_cap {
                 let new_cap = out_cap * 2 + 64;
@@ -6301,8 +6428,33 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         rep_data = zjs_as_string(cb_r).data;
         rep_len  = zjs_as_string(cb_r).length;
     } else {
-        rep_data = zjs_as_string(repl_str_v).data;
-        rep_len  = zjs_as_string(repl_str_v).length;
+        // String-needle replace also runs $-substitution per spec.
+        let tmpl_data = zjs_as_string(repl_str_v).data;
+        let tmpl_len  = zjs_as_string(repl_str_v).length;
+        let exp_len: u32 = 0;
+        let nullp_i32: i32* = NULL;
+        let exp_buf = expand_replacement(tmpl_data, tmpl_len,
+                                          hay_d, hay_n, mstart, mend,
+                                          nullp_i32, nullp_i32, 0, &exp_len);
+        while out_len + exp_len + (hay_n - mend) + 64 > out_cap {
+            let new_cap = out_cap * 2 + 64;
+            out_buf = realloc_n<char>(out_buf, (usize)out_cap, (usize)new_cap);
+            out_cap = new_cap;
+        }
+        if exp_len > 0 {
+            mem_copy<char>(out_buf + out_len, exp_buf, (usize)exp_len);
+            out_len = out_len + exp_len;
+        }
+        dealloc(exp_buf);
+        let tail_len_s = hay_n - mend;
+        if tail_len_s > 0 {
+            let src_s: char* = NULL;
+            raw { src_s = &hay_d[mend]; }
+            mem_copy<char>(out_buf + out_len, src_s, (usize)tail_len_s);
+            out_len = out_len + tail_len_s;
+        }
+        out_buf[out_len] = (char)0;
+        return ctx_intern_string_take(ctx, out_buf, out_len);
     }
     while out_len + rep_len + (hay_n - mend) + 64 > out_cap {
         let new_cap = out_cap * 2 + 64;
@@ -17369,6 +17521,93 @@ fn host_function_bound_trampoline(ctx: ZjsContext*, args: ZjsValue*, argc: u32) 
     return r;
 }
 
+// Function.prototype.toString — ECMA-262 §22.2.5.13. Returns
+// "function NAME() { [native code] }" for built-ins and a same-shape
+// "function NAME() { [user code] }" for user fns / closures (we don't
+// retain source text). The exact body wording isn't pinned by the
+// spec but a chunk of npm — lodash, underscore, debug, mocha,
+// runtime-detection libraries — regex-tests the result against the
+// native pattern to decide whether a probed value is a real binding.
+// Returning "[object Function]" caused widespread misclassification
+// (#292). This is the named method wired onto Function.prototype;
+// zjs_to_string's general ToString path mirrors it.
+fn host_function_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = ctx.host_this;
+    let is_callable: bool =
+           zjs_is_host_function(v) != 0
+        || zjs_is_function(v) != 0
+        || zjs_is_closure(v) != 0;
+    if !is_callable {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Function.prototype.toString called on non-function", 51);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return zjs_undefined();
+    }
+    let nm: char* = NULL;
+    let nm_len: u32 = 0;
+    let body: char* = (char*)"[native code]";
+    let body_len: u32 = 13;
+    if zjs_is_host_function(v) != 0 {
+        let hf = zjs_as_host_function(v);
+        if hf.name != NULL {
+            nm = hf.name;
+            raw { nm_len = (uint32_t)strlen(nm); }
+        }
+    } else if zjs_is_function(v) != 0 {
+        let fp = zjs_cell_as_ptr(v);
+        let f: Function* = NULL;
+        raw { f = (Function*)fp; }
+        body = (char*)"[user code]";
+        body_len = 11;
+        if f.props != NULL {
+            let nm_atom = ctx_intern_atom(ctx, (char*)"name", 4);
+            let slot = class_find_slot(f.props.cls, nm_atom);
+            if slot >= 0 {
+                let nv: ZjsValue = f.props.slots[(u32)slot];
+                if zjs_is_string(nv) != 0 {
+                    let ns = zjs_as_string(nv);
+                    nm = ns.data; nm_len = ns.length;
+                }
+            }
+        }
+    } else if zjs_is_closure(v) != 0 {
+        let cl = zjs_as_closure(v);
+        body = (char*)"[user code]";
+        body_len = 11;
+        let fp2 = cl.function;
+        let f2: Function* = NULL;
+        raw { f2 = (Function*)fp2; }
+        if f2.props != NULL {
+            let nm_atom = ctx_intern_atom(ctx, (char*)"name", 4);
+            let slot = class_find_slot(f2.props.cls, nm_atom);
+            if slot >= 0 {
+                let nv: ZjsValue = f2.props.slots[(u32)slot];
+                if zjs_is_string(nv) != 0 {
+                    let ns = zjs_as_string(nv);
+                    nm = ns.data; nm_len = ns.length;
+                }
+            }
+        }
+    }
+    let total: u32 = 9 + nm_len + 5 + body_len + 2;  // "function "(9) + name + "() { "(5) + body + " }"(2)
+    let out_buf = alloc_n<char>((usize)(total + 1));
+    let off: u32 = 0;
+    raw { memcpy(out_buf + off, "function ", 9); }
+    off = off + 9;
+    if nm_len > 0 { raw { memcpy(out_buf + off, nm, nm_len); } off = off + nm_len; }
+    raw { memcpy(out_buf + off, "() { ", 5); }
+    off = off + 5;
+    raw { memcpy(out_buf + off, body, body_len); }
+    off = off + body_len;
+    raw { memcpy(out_buf + off, " }", 2); }
+    off = off + 2;
+    out_buf[off] = (char)0;
+    let r = ctx_intern_string(ctx, out_buf, total);
+    dealloc(out_buf);
+    return r;
+}
+
 fn host_function_bind(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let target = ctx.host_this;
     // Spec: target must be callable.
@@ -17704,6 +17943,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, ctx.function_proto,
                ctx_intern_atom(ctx, (char*)"bind", 4),
                ctx_make_host_function_arity(ctx, (char*)"bind", fbind_ptr, 1));
+    let fts_ptr: void* = NULL; raw { fts_ptr = (void*)host_function_to_string; }
+    object_set(ctx, ctx.function_proto,
+               ctx_intern_atom(ctx, (char*)"toString", 8),
+               ctx_make_host_function_arity(ctx, (char*)"toString", fts_ptr, 0));
 
     // --- globalThis (2026-05-15) ---
     // Top-level `this` resolves to this object; property reads on it
@@ -19453,11 +19696,89 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
         }
         raw { len = (size_t)snprintf(buf, 64, "[object Object]"); }
     } else if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 || zjs_is_host_function(v) != 0 {
-        // ECMA-262 leaves Function.prototype.toString.host_call_target
-        // implementation-defined for built-ins; the [object Function]
-        // form matches what Object.prototype.toString.call(fn) returns
-        // and keeps `fn + ""` consistent with `fn.toString() + ""`.
-        raw { len = (size_t)snprintf(buf, 64, "[object Function]"); }
+        // ECMA-262 §22.2.5.13 (Function.prototype.toString):
+        // - For built-in functions: "function NAME() { [native code] }".
+        //   Spec doesn't pin the exact body, but the shape — `function`
+        //   keyword, name, parens, body containing `[native code]` —
+        //   is what lodash / underscore / debug / runtime-detection
+        //   helpers across npm regex-test against to decide whether
+        //   a probed value is a real native binding. Returning
+        //   `[object Function]` previously caused lodash to misclassify
+        //   Object.create, Map, etc. as non-native and fall back to
+        //   broken empty-array paths (#292).
+        // - For user functions / closures: same shape but with
+        //   "[user code]" since we don't keep the original source.
+        let nm: char* = NULL;
+        let nm_len: u32 = 0;
+        let body: char* = (char*)"[native code]";
+        let body_len: u32 = 13;
+        if zjs_is_host_function(v) != 0 {
+            let hf = zjs_as_host_function(v);
+            if hf.name != NULL {
+                nm = hf.name;
+                raw { nm_len = (uint32_t)strlen(nm); }
+            }
+        } else if zjs_is_function(v) != 0 {
+            let fp = zjs_cell_as_ptr(v);
+            let f: Function* = NULL;
+            raw { f = (Function*)fp; }
+            body = (char*)"[user code]";
+            body_len = 11;
+            if f.props != NULL {
+                let nm_atom = ctx_intern_atom(ctx, (char*)"name", 4);
+                let slot = class_find_slot(f.props.cls, nm_atom);
+                if slot >= 0 {
+                    let nv: ZjsValue = f.props.slots[(u32)slot];
+                    if zjs_is_string(nv) != 0 {
+                        let ns = zjs_as_string(nv);
+                        nm = ns.data; nm_len = ns.length;
+                    }
+                }
+            }
+        } else if zjs_is_closure(v) != 0 {
+            let cl = zjs_as_closure(v);
+            body = (char*)"[user code]";
+            body_len = 11;
+            let fp2 = cl.function;
+            let f2: Function* = NULL;
+            raw { f2 = (Function*)fp2; }
+            if f2.props != NULL {
+                let nm_atom = ctx_intern_atom(ctx, (char*)"name", 4);
+                let slot = class_find_slot(f2.props.cls, nm_atom);
+                if slot >= 0 {
+                    let nv: ZjsValue = f2.props.slots[(u32)slot];
+                    if zjs_is_string(nv) != 0 {
+                        let ns = zjs_as_string(nv);
+                        nm = ns.data; nm_len = ns.length;
+                    }
+                }
+            }
+        }
+        // Build: "function <name>() { <body> }"
+        // Fixed parts: "function "(9) + "() { "(5) + " }"(2) = 16 bytes.
+        let total: u32 = 9 + nm_len + 5 + body_len + 2;
+        let out_buf = alloc_n<char>((usize)(total + 1));
+        let off: u32 = 0;
+        raw {
+            memcpy(out_buf + off, "function ", 9);
+        }
+        off = off + 9;
+        if nm_len > 0 {
+            raw { memcpy(out_buf + off, nm, nm_len); }
+            off = off + nm_len;
+        }
+        raw {
+            memcpy(out_buf + off, "() { ", 5);
+        }
+        off = off + 5;
+        raw { memcpy(out_buf + off, body, body_len); }
+        off = off + body_len;
+        raw { memcpy(out_buf + off, " }", 2); }
+        off = off + 2;
+        out_buf[off] = (char)0;
+        let r = ctx_intern_string(ctx, out_buf, total);
+        dealloc(out_buf);
+        return r;
     } else if zjs_is_array(v) != 0 {
         // Array → comma-joined elements, no surrounding []. Spec's
         // Array.prototype.toString delegates to Array.prototype.join.
