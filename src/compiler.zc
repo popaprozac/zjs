@@ -34,6 +34,14 @@ struct Local {
     // variants of the same identifier (`\u{79}` vs `y`) match — the
     // atom table decodes escapes before deduping.
     name_atom:   ZjsString*;
+    // #288: depth of the per-iter env this local lives ON. Loop-locals
+    // declared inside a for-of body's `let`/`const` get stored on that
+    // body's per-iter env at run-time; their lookup chain from a
+    // closure inside the same body needs ZERO extra __outer__ hops
+    // (depth=1 lands directly on the per-iter env). Locals declared
+    // OUTSIDE the per-iter env get the full set of hops. 0 = lives on
+    // the parent's normal env (default for ordinary locals).
+    per_iter_depth: u32;
 }
 
 struct Compiler {
@@ -123,6 +131,23 @@ struct Compiler {
     // references a name resolved in a parent scope. Drives whether
     // the outer needs to wrap the resulting function in MakeClosure.
     has_outer_refs: bool;
+
+    // Count of per-iteration envs currently open inside THIS compiler.
+    // compile_for_of_live increments this around the loop body when it
+    // emits a per-iter env (need_per_iter_env), then decrements on
+    // exit. A closure emitted inside that body inherits the count via
+    // the inner compiler's extra_env_hops below — every per-iter env
+    // adds one __outer__ hop the closure's chain-walk must traverse.
+    per_iter_envs_open: u32;
+
+    // Inherited from `parent.per_iter_envs_open` at closure birth.
+    // outer_capture_depth adds this to the computed depth so the
+    // chain-walk inside the closure walks past the per-iter env(s) to
+    // reach the real outer env. Closes #288 — chalk's for-of-body
+    // getter referencing module-scope const was reading undefined
+    // because depth-1 lookups landed at the per-iter env instead of
+    // the parent's normal env.
+    extra_env_hops: u32;
 
     // result tracking — the register holding the last evaluated
     // expression-statement value (so we can emit Return at the end).
@@ -548,6 +573,12 @@ fn add_local_scoped(c: Compiler*, name_start: u32, name_length: u32, reg: u8, sc
         captured:    false,
         scope_id:    scope_id,
         name_atom:   atom,
+        // #288: snapshot the count of per-iter envs that are currently
+        // open. If this local ends up captured, the per-iter env it
+        // lives on is exactly per_iter_depth levels deep from the
+        // function's natural env; outer_capture_depth uses this to
+        // skip the hop-correction for loop-vars.
+        per_iter_depth: c.per_iter_envs_open,
     };
     c.local_count = c.local_count + 1;
 }
@@ -2833,6 +2864,12 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     let c = compiler_new(parent_ctx, source);
     c.is_function = true;
     c.parent = parent;
+    // Inherit any open per-iter envs from the parent's current scope —
+    // they're an extra runtime __outer__ hop the closure must traverse
+    // (#288). NULL parent (top-level) has none.
+    if parent != NULL {
+        c.extra_env_hops = parent.per_iter_envs_open;
+    }
     // Inherit the enclosing class context so super() inside a class
     // method can find its parent expression at compile time.
     if parent != NULL {
@@ -4659,7 +4696,21 @@ fn outer_capture_depth(c: Compiler*, name: char*, name_len: u32) -> u32 {
                 mark.has_outer_refs = true;
                 mark = mark.parent;
             }
-            return env_depth + 1;
+            // #288: per-iter env hop correction. Closures emitted
+            // inside a for-of body capture the per-iter env, NOT the
+            // surrounding function's normal env. extra_env_hops is
+            // the count of per-iter envs the closure must walk past
+            // (via __outer__) to reach the parent's natural chain.
+            //
+            // But a local DECLARED on one of those per-iter envs
+            // lives directly on it — no extra hop needed for that
+            // one. local.per_iter_depth records which per-iter env
+            // the local sits on; we subtract from extra_env_hops
+            // so loop-var lookups stay at depth=1.
+            let extra: u32 = c.extra_env_hops;
+            let lp = anc.locals[(u32)oi].per_iter_depth;
+            if lp > extra { extra = 0; } else { extra = extra - lp; }
+            return env_depth + 1 + extra;
         }
         // Skipping anc — only counts toward env depth if it has its
         // own env. has_outer_refs alone (passthrough) doesn't add.
@@ -6356,6 +6407,53 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     reset_temps(c);
 }
 
+// Walks a for-of binding pattern and patches each contained local's
+// per_iter_depth = `depth`. Called once per for-of iteration setup so
+// closures emitted inside the body can tell loop-vars (stored ON the
+// per-iter env) apart from outer-scope vars (above the per-iter env)
+// when computing capture depth. See outer_capture_depth + #288.
+fn mark_pattern_per_iter(c: Compiler*, pat: AstNode*, depth: u32) -> void {
+    if pat == NULL { return; }
+    let p = pat;
+    while p.kind == NodeKind::Paren { p = p.left; }
+    if p.kind == NodeKind::VarDecl {
+        let i: u32 = 0;
+        while i < p.children_count {
+            mark_pattern_per_iter(c, p.children[i], depth);
+            i = i + 1;
+        }
+        return;
+    }
+    if p.kind == NodeKind::Declarator {
+        // Simple binding: name lives directly on the Declarator (see
+        // parser.zc parse_var_decl). Pattern binding: name_length is 0
+        // and the pattern AST lives on p.third.
+        if p.name_length > 0 {
+            let idx = find_local_index(c, c.source + p.name_start, p.name_length);
+            if idx >= 0 { c.locals[(u32)idx].per_iter_depth = depth; }
+        } else if p.third != NULL {
+            mark_pattern_per_iter(c, p.third, depth);
+        }
+        return;
+    }
+    if p.kind == NodeKind::IdentExpr {
+        if p.name_length > 0 {
+            let idx = find_local_index(c, c.source + p.name_start, p.name_length);
+            if idx >= 0 { c.locals[(u32)idx].per_iter_depth = depth; }
+        }
+        return;
+    }
+    // Destructuring patterns — walk children, picking up identifiers.
+    let i: u32 = 0;
+    while i < p.children_count {
+        mark_pattern_per_iter(c, p.children[i], depth);
+        i = i + 1;
+    }
+    if p.left  != NULL { mark_pattern_per_iter(c, p.left,  depth); }
+    if p.right != NULL { mark_pattern_per_iter(c, p.right, depth); }
+    if p.third != NULL { mark_pattern_per_iter(c, p.third, depth); }
+}
+
 // Helper for ForStmt's init slot, which can be either a VarDecl
 // (statement-shaped) or an expression. compile_stmt handles both.
 // for-of with live iterator semantics (2026-05-16). Uses IterGet +
@@ -6411,6 +6509,16 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
         saved_env_r = alloc_reg(c);
         emit(c, make_inst_ab(Op::Mov, saved_env_r, c.env_reg));
         if saved_env_r + 1 > c.fixed_regs { c.fixed_regs = saved_env_r + 1; }
+        // Track the per-iter env so nested closures know to walk one
+        // extra __outer__ hop (#288).
+        c.per_iter_envs_open = c.per_iter_envs_open + 1;
+        // Patch the loop binding(s) so their per_iter_depth reflects
+        // that they live ON this per-iter env, not above it. collect_locals
+        // ran in a separate pre-pass that didn't know about the bump.
+        // Without this, closures inside the body would over-correct and
+        // walk past the per-iter env to find the loop var on the parent's
+        // normal env (and find undefined there).
+        mark_pattern_per_iter(c, node.left, c.per_iter_envs_open);
     }
 
     let loop_top = (u32)c.code_count;
@@ -6557,6 +6665,11 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
     // per-iter env).
     if need_per_iter_env {
         emit(c, make_inst_ab(Op::Mov, c.env_reg, saved_env_r));
+        // Pop the per-iter env tracking so closures emitted after this
+        // loop don't get a spurious extra hop (#288).
+        if c.per_iter_envs_open > 0 {
+            c.per_iter_envs_open = c.per_iter_envs_open - 1;
+        }
     }
 
     loop_pop(c);

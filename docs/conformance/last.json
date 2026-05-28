@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-05-28 00:10 UTC",
+    "when": "2026-05-28 00:49 UTC",
     "total": 14524,
     "passed": 12076,
     "failed": 1802,
@@ -914,7 +914,7 @@
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-shrink-to-zero-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a Test262Error\nzjs: throw: (unknown): Expected a TypeError but got a"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1] should have the same contents. false\nzjs: throw: (unknown): Actual "
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer.js",
@@ -4358,7 +4358,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-grow.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'resize')\nzjs: throw: TypeError: Cannot read propert"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-shrink.js",
