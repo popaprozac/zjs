@@ -333,6 +333,15 @@ enum Op {
                       // strings (JS source between the slashes and the
                       // raw flag letters). Each evaluation creates a new
                       // instance so .lastIndex is independent.
+                      // Const-pool indices fit in u8 — if either grows
+                      // past 255, the compiler emits NewRegexR instead
+                      // (LoadConst-into-temp + register-indexed build).
+    NewRegexR,        // a=dst, b=pat_reg, c=flag_reg.
+                      // Same as NewRegex but the source / flag strings
+                      // are read from registers. Used when the const-
+                      // pool index exceeds the u8 range — moment.js
+                      // and lodash both pile up enough literals to
+                      // need this path.
     NewObject,        // a=dst. Creates an empty {} object.
     NewArray,         // a=dst, b=base, c=count.
                       // Builds an array containing regs[base..base+count).

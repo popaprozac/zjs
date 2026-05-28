@@ -2512,19 +2512,23 @@ fn compile_regex_literal(c: Compiler*, node: AstNode*) -> u8 {
     let pat_idx   = add_const(c, pat_str);
     let flag_idx  = add_const(c, flag_str);
 
-    // NewRegex needs both indices, but our 8-bit operand fields only
-    // hold u8. For now, require const_count < 256 reachable via this
-    // path — overflow will be caught and bumped once we wire 16-bit
-    // operands for it. Real programs stay well under that limit.
+    // NewRegex packs both const indices into the b/c u8 operands.
+    // When either grows past 255 (moment ships ~30 regex literals
+    // plus hundreds of string constants and tips the pool over the
+    // edge) fall back to LoadConst-into-temp + NewRegexR. The fast
+    // path emits a single op; the slow path emits three.
     let dst = alloc_reg(c);
-    if pat_idx > 255 || flag_idx > 255 {
-        // Bail to runtime undefined — emit a LoadUndefined so codegen
-        // stays consistent. A future commit can switch NewRegex to a
-        // wider operand encoding if real programs hit this.
-        emit(c, make_inst_a(Op::LoadUndefined, dst));
+    if pat_idx <= 255 && flag_idx <= 255 {
+        emit(c, make_inst_abc(Op::NewRegex, dst, (u8)pat_idx, (u8)flag_idx));
         return dst;
     }
-    emit(c, make_inst_abc(Op::NewRegex, dst, (u8)pat_idx, (u8)flag_idx));
+    let pat_reg = alloc_reg(c);
+    emit(c, make_inst_a_u16(Op::LoadConst, pat_reg, (u16)pat_idx));
+    let flag_reg = alloc_reg(c);
+    emit(c, make_inst_a_u16(Op::LoadConst, flag_reg, (u16)flag_idx));
+    emit(c, make_inst_abc(Op::NewRegexR, dst, pat_reg, flag_reg));
+    release_reg(c, flag_reg);
+    release_reg(c, pat_reg);
     return dst;
 }
 

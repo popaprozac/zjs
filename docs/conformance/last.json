@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-28 21:54 UTC",
+    "when": "2026-05-28 22:39 UTC",
     "total": 14524,
-    "passed": 12077,
-    "failed": 1801,
+    "passed": 12091,
+    "failed": 1787,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -6465,54 +6465,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.isPrototypeOf(x12) must return true\nzjs: throw: (unknown): Date.prototype.isProtot"
     },
     {
-      "path": "test/built-ins/Date/S15.9.3.1_A3_T1.1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(new Date(1899, 11)) must return \"[object Date]\" Expected SameValue"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.1_A3_T1.2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): x1.toString() must return \"[object Date]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Date]"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.1_A3_T2.1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(new Date(1899, 11, 31)) must return \"[object Date]\" Expected SameV"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.1_A3_T2.2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): x1.toString() must return \"[object Date]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Date]"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.1_A3_T3.1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(new Date(1899, 11, 31, 23)) must return \"[object Date]\" Expected S"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.1_A3_T3.2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): x1.toString() must return \"[object Date]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Date]"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.1_A3_T4.1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(new Date(1899, 11, 31, 23, 59)) must return \"[object Date]\" Expect"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.1_A3_T4.2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): x1.toString() must return \"[object Date]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Date]"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.1_A3_T5.1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(new Date(1899, 11, 31, 23, 59, 59)) must return \"[object Date]\" Ex"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.1_A3_T5.2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): x1.toString() must return \"[object Date]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Date]"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.1_A3_T6.1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(new Date(1899, 11, 31, 23, 59, 59, 999)) must return \"[object Date"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.1_A3_T6.2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): x1.toString() must return \"[object Date]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Date]"
-    },
-    {
       "path": "test/built-ins/Date/S15.9.3.1_A4_T0.js",
       "reason": "[sloppy] zjs: throw: (unknown): `new Date(new PoisonedValueOf(1))` throws a Test262Error exception Expected a Test262Error to be "
     },
@@ -6567,14 +6519,6 @@
     {
       "path": "test/built-ins/Date/S15.9.3.2_A2_T1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.isPrototypeOf(x12) must return true\nzjs: throw: (unknown): Date.prototype.isProtot"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.2_A3_T1.1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(new Date(date_1899_end)) must return \"[object Date]\" Expected Same"
-    },
-    {
-      "path": "test/built-ins/Date/S15.9.3.2_A3_T1.2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): x1.toString() must return \"[object Date]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Date]"
     },
     {
       "path": "test/built-ins/Date/S15.9.4_A1.js",

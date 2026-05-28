@@ -4705,6 +4705,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let pat_v   = f.constants[(u32)inst.b];
             let flags_v = f.constants[(u32)inst.c];
             regs[inst.a] = ctx_new_regexp(ctx, pat_v, flags_v);
+        } else if op == Op::NewRegexR {
+            // a=dst, b=pat_reg, c=flag_reg. Slow path used when the
+            // function's const pool grew past 255 entries and a u8
+            // const-idx no longer fits — compiler stages the strings
+            // into regs via LoadConst first.
+            regs[inst.a] = ctx_new_regexp(ctx, regs[inst.b], regs[inst.c]);
         } else if op == Op::NewArray {
             let dst = inst.a;
             let base = inst.b;
