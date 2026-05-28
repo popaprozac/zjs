@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-28 14:48 UTC",
+    "when": "2026-05-28 18:32 UTC",
     "total": 14524,
-    "passed": 12076,
-    "failed": 1802,
+    "passed": 12077,
+    "failed": 1801,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -4879,10 +4879,6 @@
     {
       "path": "test/built-ins/String/prototype/split/cstm-split-on-bigint-primitive.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: n is not defined\nzjs: throw: ReferenceError: n is not defined"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/separator-regexp.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [x] and expected [, ] should have the same contents. false\nzjs: throw: (unknown): Actual ["
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-tostring-error.js",

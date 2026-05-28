@@ -215,17 +215,27 @@ $(BUILD_DIR)/%.o: src/platform/%.m | $(BUILD_DIR)
 $(BUILD_DIR)/%.o: src/platform/%.c | $(BUILD_DIR)
 	$(CLANG) -O3 -fPIC -Isrc $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
 
-# Bundle tre into the static archive — the .so build pulls tre_full.c
-# through zc's @link plumbing, but lib-static does its own clang+ar dance
-# and needs the regex symbols (tre_regcomp/exec/free) baked into the .a
-# so embedders linking only `-lzjs` see no undefined references.
-TRE_FULL_SRC := $(ZC_ROOT)/std/third-party/tre/tre_full.c
-TRE_FULL_OBJ := $(BUILD_DIR)/tre_full.o
+# QuickJS-NG libregexp (#294) — vendored ECMA-262 regex engine, replaces TRE.
+# Three .c files: the regex engine itself, the Unicode tables /
+# property tests it depends on, and a tiny shim that supplies the
+# three realloc/timeout/stack-check callbacks the library expects from
+# the host. CONFIG_ALL_UNICODE turns on the \p{...} property tables.
+QJSRE_DIR := src/third-party/qjs-regex
+QJSRE_OBJS := $(BUILD_DIR)/qjs_libregexp.o $(BUILD_DIR)/qjs_libunicode.o $(BUILD_DIR)/qjs_regex_shim.o
+QJSRE_CFLAGS := -O3 -fPIC -I$(QJSRE_DIR) -DCONFIG_ALL_UNICODE \
+                -Wno-parentheses -Wno-unused-value -Wno-unused-variable \
+                -Wno-unused-parameter -Wno-unused-function $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS)
 
-$(TRE_FULL_OBJ): $(TRE_FULL_SRC) | $(BUILD_DIR)
-	$(CLANG) -O3 -fPIC -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
+$(BUILD_DIR)/qjs_libregexp.o: $(QJSRE_DIR)/libregexp.c $(QJSRE_DIR)/libregexp.h $(QJSRE_DIR)/libregexp-opcode.h | $(BUILD_DIR)
+	$(CLANG) $(QJSRE_CFLAGS) -c $< -o $@
 
-$(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(TRE_FULL_OBJ)
+$(BUILD_DIR)/qjs_libunicode.o: $(QJSRE_DIR)/libunicode.c $(QJSRE_DIR)/libunicode.h $(QJSRE_DIR)/libunicode-table.h | $(BUILD_DIR)
+	$(CLANG) $(QJSRE_CFLAGS) -c $< -o $@
+
+$(BUILD_DIR)/qjs_regex_shim.o: src/platform/qjs_regex_shim.c | $(BUILD_DIR)
+	$(CLANG) -O3 -fPIC $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
+
+$(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(QJSRE_OBJS)
 	@rm -f $@
 	ar rcs $@ $^
 
@@ -421,8 +431,9 @@ IOS_SIM_SDK := $(shell xcrun --sdk iphonesimulator --show-sdk-path 2>/dev/null)
 
 # Build a libzjs.a for one (arch, sdk, version-min-flag, output dir) tuple.
 # Compiles libzjs.c (transpiled) + the Apple platform .m + socket_posix.c
-# + tre_full.c, then `ar rcs` packs them. Each iOS arch gets its own
-# transpile output (cheap; deterministic) so concurrent runs don't race.
+# + libregexp + libunicode + the regex-shim callbacks, then `ar rcs`
+# packs them. Each iOS arch gets its own transpile output (cheap;
+# deterministic) so concurrent runs don't race.
 #
 # Args: $(1)=arch  $(2)=sdk path  $(3)=version-min flag  $(4)=output dir
 define ios_build_arch
@@ -437,12 +448,16 @@ define ios_build_arch
 	  $(ZC_C_WARNS) -c src/platform/ws_apple.m -o $(4)/ws_apple.o
 	$(CLANG) -O3 -arch $(1) -isysroot $(2) $(3) -Isrc $(ZC_C_WARNS) \
 	  -c src/platform/socket_posix.c -o $(4)/socket_posix.o
-	$(CLANG) -O3 -arch $(1) -isysroot $(2) $(3) -Isrc $(ZC_STDLIB_INCS) \
-	  $(ZC_C_WARNS) -c $(TRE_FULL_SRC) -o $(4)/tre_full.o
+	$(CLANG) -O3 -arch $(1) -isysroot $(2) $(3) -I$(QJSRE_DIR) \
+	  -DCONFIG_ALL_UNICODE $(ZC_C_WARNS) -c $(QJSRE_DIR)/libregexp.c -o $(4)/qjs_libregexp.o
+	$(CLANG) -O3 -arch $(1) -isysroot $(2) $(3) -I$(QJSRE_DIR) \
+	  -DCONFIG_ALL_UNICODE $(ZC_C_WARNS) -c $(QJSRE_DIR)/libunicode.c -o $(4)/qjs_libunicode.o
+	$(CLANG) -O3 -arch $(1) -isysroot $(2) $(3) -Isrc \
+	  -c src/platform/qjs_regex_shim.c -o $(4)/qjs_regex_shim.o
 	@rm -f $(4)/libzjs.a
 	ar rcs $(4)/libzjs.a \
 	  $(4)/libzjs.o $(4)/http_apple.o $(4)/ws_apple.o \
-	  $(4)/socket_posix.o $(4)/tre_full.o
+	  $(4)/socket_posix.o $(4)/qjs_libregexp.o $(4)/qjs_libunicode.o $(4)/qjs_regex_shim.o
 	@file $(4)/libzjs.a
 endef
 

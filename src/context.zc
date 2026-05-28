@@ -71,7 +71,29 @@ raw {
 import "./value.zc";
 import "std/mem.zc"
 import "std/math.zc"
-import "std/regex.zc"
+
+raw {
+    /* QuickJS libregexp — vendored from QuickJS-NG v0.15.0 (#294).
+     * Replaced TRE/POSIX as the regex backend; gives us lookahead,
+     * lookbehind, non-greedy, named captures, \p{...}, sticky, etc.
+     * The 3 host callbacks (lre_realloc, lre_check_stack_overflow,
+     * lre_check_timeout) live in src/platform/qjs_regex_shim.c.
+     *
+     * API summary:
+     *   lre_compile      → returns bytecode buffer (free with lre_realloc ptr=ptr, size=0)
+     *   lre_exec         → runs the bytecode against an input buffer
+     *   lre_get_capture_count  → number of (...) groups including group 0
+     *   The capture[] array passed to lre_exec is uint8_t*[2*N] —
+     *   pairs of (start, end) byte pointers into the input.
+     */
+    #include "../src/third-party/qjs-regex/libregexp.h"
+    /* Hand-rolled ZRegMatch since we removed `import "std/regex.zc"`;
+     * legacy callers reference ZRegMatch[N] for capture arrays. With
+     * libregexp the canonical capture type is uint8_t** (pointer pairs),
+     * but the in-context capture lookups walk byte offsets, so keep
+     * the offset-pair shape and translate at the lre_exec boundary. */
+    typedef struct { int rm_so; int rm_eo; } ZRegMatch;
+}
 
 raw {
     #include <stdio.h>
@@ -6326,13 +6348,13 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         let scan: u32 = 0;
         while scan <= hay_n {
             let rc: int = -1;
-            let scan_off = scan;
             raw {
-                rc = tre_regexec((regex_t*)preg, hay_d + scan_off, 1, (regmatch_t*)pmatch_buf, 0);
+                rc = lre_run(preg, hay_d, hay_n, scan, pmatch_buf, 1);
             }
             if rc != 0 { break; }
-            let mstart = scan + (u32)pmatch_buf[0].rm_so;
-            let mend   = scan + (u32)pmatch_buf[0].rm_eo;
+            // lre_run returns absolute byte offsets into hay_d.
+            let mstart = (u32)pmatch_buf[0].rm_so;
+            let mend   = (u32)pmatch_buf[0].rm_eo;
             // Append [cursor..mstart) verbatim.
             let pre_len = mstart - cursor;
             while out_len + pre_len + 64 > out_cap {
@@ -6581,13 +6603,12 @@ fn host_string_match(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let scan: u32 = 0;
     while scan <= hay_n {
         let rc: int = -1;
-        let scan_off = scan;
         raw {
-            rc = tre_regexec((regex_t*)preg, hay_d + scan_off, 1, (regmatch_t*)pmatch_buf, 0);
+            rc = lre_run(preg, hay_d, hay_n, scan, pmatch_buf, 1);
         }
         if rc != 0 { break; }
-        let mstart = scan + (u32)pmatch_buf[0].rm_so;
-        let mend   = scan + (u32)pmatch_buf[0].rm_eo;
+        let mstart = (u32)pmatch_buf[0].rm_so;
+        let mend   = (u32)pmatch_buf[0].rm_eo;
         let mlen = mend - mstart;
         let mbuf = alloc_n<char>((usize)(mlen + 1));
         if mlen > 0 {
@@ -6667,13 +6688,12 @@ fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         let last_was_empty_advance: bool = false;
         while scan <= hay_n && arr.length < limit_u32 {
             let rc: int = -1;
-            let scan_off = scan;
             raw {
-                rc = tre_regexec((regex_t*)preg, hay_d + scan_off, 1, (regmatch_t*)pmatch_buf, 0);
+                rc = lre_run(preg, hay_d, hay_n, scan, pmatch_buf, 1);
             }
             if rc != 0 { break; }
-            let mstart = scan + (u32)pmatch_buf[0].rm_so;
-            let mend   = scan + (u32)pmatch_buf[0].rm_eo;
+            let mstart = (u32)pmatch_buf[0].rm_so;
+            let mend   = (u32)pmatch_buf[0].rm_eo;
             if mstart >= hay_n { break; }
             // Empty match at `cursor` is special: ECMA-262 advances one
             // input char and emits a single-char piece. This is what
@@ -8947,12 +8967,13 @@ fn host_json_parse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 // =====================================================================
 // RegExp runtime (Phase 3.11)
 //
-// Compilation is delegated to TRE (Zen-c std/regex pulls it in via
-// static link). We hold pattern + flags + a lazily-compiled regex_t
-// pointer. The JS regex syntax is translated to POSIX ERE before
-// handing to tre_regcomp — common escapes (\d \w \s and negations,
-// \b) are expanded; lookahead / named groups / non-greedy quantifiers
-// are not supported and would error at compile time.
+// Compilation is delegated to libregexp (QuickJS-NG), vendored under
+// src/third-party/qjs-regex/. We hold pattern + flags + a lazily-
+// compiled bytecode buffer (`r.preg`). JS regex syntax is parsed
+// natively by lre_compile — lookahead, lookbehind, non-greedy
+// quantifiers, named groups, \p{...} all work. Three host callbacks
+// (lre_realloc, lre_check_stack_overflow, lre_check_timeout) live in
+// src/platform/qjs_regex_shim.c.
 // =====================================================================
 
 fn regexp_free_void(p: void*) -> void {
@@ -8960,239 +8981,97 @@ fn regexp_free_void(p: void*) -> void {
     raw { r = (ZjsRegExp*)p; }
     if r == NULL { return; }
     if r.preg != NULL {
-        raw {
-            tre_regfree((regex_t*)(r->preg));
-            free(r->preg);
-        }
+        /* libregexp's bytecode buffer was allocated through lre_realloc;
+         * free via the same callback with size=0. */
+        raw { lre_realloc(NULL, r->preg, 0); }
         r.preg = NULL;
     }
     dealloc(r);
 }
 
-// JS char classes accept `\]` (escaped close-bracket) as a literal
-// `]`. POSIX/TRE does NOT — it requires literal `]` to be the FIRST
-// character of the class. Without translation, `/[\]]/` compiles as
-// the regex literal `\` followed by `]` (class-close) followed by
-// stray text, which never matches anything sensible (#293).
-//
-// rewrite_class_body finds the matching `]` for a class opened at
-// data[start] (data[start]=='['), rewrites the class body to drop
-// any `\]` escapes and prepends a literal `]` at the start of the
-// class when one is present. Returns the number of source bytes
-// consumed (including the opening `[` and closing `]`). The output
-// is appended to buf at out_p[0]; out_p[0] is advanced past the
-// rewritten class. Returns 0 if the class is unterminated — caller
-// passes the `[` through literally as a fallback.
-fn rewrite_class_body(data: char*, n: u32, start: u32,
-                      buf: char*, out_p: u32*) -> u32 {
-    let out = out_p[0];
-    let i = start + 1;
-    if i > n { return 0; }
-    let is_negation: bool = false;
-    if i < n && data[i] == (char)'^' { is_negation = true; i = i + 1; }
-    let body_start = i;
-    let has_lit_close: bool = false;
-    // First pass: scan to find the matching ']'. POSIX treats a literal
-    // ']' as first-class-member ONLY when it's right after `[` or `[^`.
-    // JS allows `\]` anywhere — track those and emit the literal once
-    // at the start of the rewritten class.
-    while i < n {
-        let c = data[i];
-        if c == (char)'\\' && i + 1 < n {
-            let nx = data[i + 1];
-            if nx == (char)']' { has_lit_close = true; i = i + 2; continue; }
-            // Pass through other escapes — they'll be handled below.
-            i = i + 2; continue;
+// Run libregexp against a buffer slice; convert byte-pointer pairs
+// back into rm_so/rm_eo offsets so call sites (replace, match, search)
+// don't need to know the underlying engine. `pmatch` must be at least
+// `total_groups` entries. Returns 0 on match, non-zero (typically 1)
+// on no-match — matches the regexec-style convention the rest of
+// context.zc was written against.
+fn lre_run(preg: void*, hay: char*, hay_len: u32, scan_off: u32,
+           pmatch: ZRegMatch*, total_groups: u32) -> int {
+    let rc: int = -1;
+    raw {
+        /* libregexp's capture array is uint8_t* pairs — start/end pointers
+         * INTO cbuf. CAPTURE_COUNT_MAX is 255 in libregexp.h, plenty for
+         * the regex sizes we ever compile. Allocate inline up to a small
+         * static cap (32 groups = 64 ptrs); fall back to malloc if a
+         * pattern exceeds that. (Practical npm regexes top out around
+         * 8-10 groups.) */
+        const int kStaticCap = 32;
+        uint8_t* small_caps[64];
+        uint8_t** caps = small_caps;
+        uint8_t** heap_caps = NULL;
+        int n_caps = (int)total_groups;
+        if (n_caps > kStaticCap) {
+            heap_caps = (uint8_t**)malloc(sizeof(uint8_t*) * 2 * n_caps);
+            if (!heap_caps) { rc = LRE_RET_MEMORY_ERROR; goto done; }
+            caps = heap_caps;
         }
-        if c == (char)']' { break; }
-        i = i + 1;
-    }
-    if i >= n { return 0; }
-    let body_end = i;
-    // Emit: '[' + maybe '^' + maybe ']' (literal) + body + ']'
-    buf[out] = (char)'['; out = out + 1;
-    if is_negation { buf[out] = (char)'^'; out = out + 1; }
-    if has_lit_close { buf[out] = (char)']'; out = out + 1; }
-    let j = body_start;
-    while j < body_end {
-        let c = data[j];
-        if c == (char)'\\' && j + 1 < body_end {
-            let nx = data[j + 1];
-            if nx == (char)']' { j = j + 2; continue; }  // already emitted
-            // Pass the escape through verbatim — TRE handles `\\`, `\^`,
-            // `\.`, etc. as escaped chars inside a class.
-            buf[out]     = c;
-            buf[out + 1] = nx;
-            out = out + 2;
-            j = j + 2;
-            continue;
+        int ret = lre_exec(caps, (const uint8_t*)preg,
+                           (const uint8_t*)hay, (int)scan_off, (int)hay_len,
+                           0 /* cbuf_type = 8-bit */, NULL);
+        if (ret == 1) {
+            /* Match — fill pmatch with byte offsets. */
+            for (int gi = 0; gi < n_caps; gi++) {
+                uint8_t* gs = caps[2 * gi];
+                uint8_t* ge = caps[2 * gi + 1];
+                if (gs == NULL || ge == NULL) {
+                    pmatch[gi].rm_so = -1;
+                    pmatch[gi].rm_eo = -1;
+                } else {
+                    pmatch[gi].rm_so = (int)(gs - (const uint8_t*)hay);
+                    pmatch[gi].rm_eo = (int)(ge - (const uint8_t*)hay);
+                }
+            }
+            rc = 0;
+        } else {
+            /* No match (ret == 0) or error (ret < 0). Treat both as
+             * "not found" for the caller — failure cases at this level
+             * mean the engine ran out of memory/time, which we can't
+             * meaningfully recover. */
+            rc = 1;
         }
-        buf[out] = c;
-        out = out + 1;
-        j = j + 1;
+        if (heap_caps) free(heap_caps);
+done:
+        (void)0;
     }
-    buf[out] = (char)']'; out = out + 1;
-    out_p[0] = out;
-    return (body_end + 1) - start;
+    return rc;
 }
 
-// Translate one ZjsString of JS regex source into a heap-allocated
-// NUL-terminated POSIX ERE pattern. Caller owns the returned buffer
-// (dealloc<char>). Only the common escapes get rewritten; unsupported
-// constructs are passed through and let TRE error on them.
-fn regex_translate_to_posix(src: ZjsString*) -> char* {
-    let n = src.length;
-    let data = src.data;
-    // Worst case: every char of \w expands to [A-Za-z0-9_] (11 chars
-    // from 2). Allocate 8x as a safe upper bound; we won't exceed it.
-    let cap: u32 = if n < 8 { 64 } else { n * 8 + 16 };
-    let buf = alloc_n<char>((usize)cap);
-    let out: u32 = 0;
-    let i: u32 = 0;
-    while i < n {
-        let c = data[i];
-        // Unescaped `[` opens a character class. Hand off to the
-        // class-aware rewriter so `\]` → literal `]` (and lands at
-        // the front of the class where POSIX expects it).
-        if c == (char)'[' {
-            let consumed = rewrite_class_body(data, n, i, buf, &out);
-            if consumed > 0 { i = i + consumed; continue; }
-            // Unterminated class — fall through and pass `[` as-is.
-        }
-        if c == (char)'\\' && i + 1 < n {
-            let nx = data[i + 1];
-            // Character-class shortcuts. Replace with POSIX ranges.
-            if nx == (char)'d' {
-                raw { memcpy(buf + out, "[0-9]", 5); }
-                out = out + 5; i = i + 2; continue;
-            }
-            if nx == (char)'D' {
-                raw { memcpy(buf + out, "[^0-9]", 6); }
-                out = out + 6; i = i + 2; continue;
-            }
-            if nx == (char)'w' {
-                raw { memcpy(buf + out, "[A-Za-z0-9_]", 12); }
-                out = out + 12; i = i + 2; continue;
-            }
-            if nx == (char)'W' {
-                raw { memcpy(buf + out, "[^A-Za-z0-9_]", 13); }
-                out = out + 13; i = i + 2; continue;
-            }
-            if nx == (char)'s' {
-                // ECMA-262 WhiteSpace + LineTerminator. POSIX char
-                // classes don't interpret \t/\n/\r/\f/\v inside [...] —
-                // we must emit the actual control bytes here.
-                raw { memcpy(buf + out, "[ \t\n\r\f\v]", 8); }
-                out = out + 8; i = i + 2; continue;
-            }
-            if nx == (char)'S' {
-                raw { memcpy(buf + out, "[^ \t\n\r\f\v]", 9); }
-                out = out + 9; i = i + 2; continue;
-            }
-            // \uXXXX — four-hex Unicode escape. ECMA-262 regex grammar
-            // allows it both inside and outside character classes. POSIX
-            // / TRE doesn't understand `\u`, so emit the actual byte
-            // when the code point fits in 7 bits; otherwise pass
-            // through (best effort — the regex engine will likely
-            // mismatch but at least won't segfault).
-            if nx == (char)'u' && i + 5 < n {
-                let v0: int = 0; let v1: int = 0; let v2: int = 0; let v3: int = 0;
-                let ok: int = 0;
-                let h0 = data[i + 2]; let h1 = data[i + 3];
-                let h2 = data[i + 4]; let h3 = data[i + 5];
-                raw {
-                    #define ZJS_HEX(out, c) do { \
-                        if (c >= '0' && c <= '9') out = c - '0'; \
-                        else if (c >= 'a' && c <= 'f') out = c - 'a' + 10; \
-                        else if (c >= 'A' && c <= 'F') out = c - 'A' + 10; \
-                        else out = -1; \
-                    } while (0)
-                    ZJS_HEX(v0, h0); ZJS_HEX(v1, h1);
-                    ZJS_HEX(v2, h2); ZJS_HEX(v3, h3);
-                    #undef ZJS_HEX
-                    ok = (v0 >= 0 && v1 >= 0 && v2 >= 0 && v3 >= 0) ? 1 : 0;
-                }
-                if ok != 0 {
-                    let cp: int = v0 * 4096 + v1 * 256 + v2 * 16 + v3;
-                    if cp < 128 {
-                        buf[out] = (char)cp;
-                        out = out + 1; i = i + 6; continue;
-                    }
-                    buf[out] = (char)'?';
-                    out = out + 1; i = i + 6; continue;
-                }
-            }
-            // \xHH — two-hex escape. Same handling.
-            if nx == (char)'x' && i + 3 < n {
-                let v0: int = 0; let v1: int = 0;
-                let ok: int = 0;
-                let h0 = data[i + 2]; let h1 = data[i + 3];
-                raw {
-                    #define ZJS_HEX(out, c) do { \
-                        if (c >= '0' && c <= '9') out = c - '0'; \
-                        else if (c >= 'a' && c <= 'f') out = c - 'a' + 10; \
-                        else if (c >= 'A' && c <= 'F') out = c - 'A' + 10; \
-                        else out = -1; \
-                    } while (0)
-                    ZJS_HEX(v0, h0); ZJS_HEX(v1, h1);
-                    #undef ZJS_HEX
-                    ok = (v0 >= 0 && v1 >= 0) ? 1 : 0;
-                }
-                if ok != 0 {
-                    let cp: int = v0 * 16 + v1;
-                    if cp < 128 {
-                        buf[out] = (char)cp;
-                        out = out + 1; i = i + 4; continue;
-                    }
-                    buf[out] = (char)'?';
-                    out = out + 1; i = i + 4; continue;
-                }
-            }
-            // `\b` (word boundary) is `[[:<:]]|[[:>:]]` in TRE — but the
-            // alternation only makes sense inside a group. Cheaper +
-            // correct enough for most tests: emit `\b` and rely on TRE
-            // accepting it as a literal-backslash-b pattern, which
-            // matches the same in POSIX-mode strings. (Real word-boundary
-            // semantics deferred.)
-            // Default: pass the escape through unchanged.
-            buf[out] = c;
-            buf[out + 1] = nx;
-            out = out + 2;
-            i = i + 2;
-            continue;
-        }
-        buf[out] = c;
-        out = out + 1;
-        i = i + 1;
-    }
-    buf[out] = (char)0;
-    return buf;
-}
-
-// Compile-on-demand. Returns true if the regex_t is ready to use;
+// Compile-on-demand. Returns true if the bytecode is ready to use;
 // false if compilation failed (caller falls back to "no match").
+// Translates our REGEX_FLAG_* bits (which align with LRE_FLAG_* by
+// design) and hands the JS regex source to libregexp's native parser
+// — no POSIX rewrite step. The bytecode buffer was allocated through
+// lre_realloc; regexp_free_void frees it the same way.
 fn regex_ensure_compiled(r: ZjsRegExp*) -> bool {
     if r.compiled { return r.preg != NULL; }
     r.compiled = true;
     if r.source == NULL { return false; }
-    let posix_pat = regex_translate_to_posix(r.source);
-    let cflags: int = 1;     // REG_EXTENDED — JS regex is always extended-style
-    if (r.flags & REGEX_FLAG_IGNORE_CASE) != 0 { cflags = cflags | 2; }       // REG_ICASE
-    if (r.flags & REGEX_FLAG_MULTILINE)   != 0 { cflags = cflags | 4; }       // REG_NEWLINE
-    let preg: void* = NULL;
-    let status: int = 0;
+    let bc: void* = NULL;
     raw {
-        preg = malloc(1024);
-        if (preg) status = tre_regcomp((regex_t*)preg, posix_pat, cflags);
-        else status = -1;
+        char err_msg[64];
+        int bc_len = 0;
+        /* REGEX_FLAG_* bits 0-6 mirror LRE_FLAG_* (verified in #294).
+         * Mask off any internal flags that don't have an lre equivalent. */
+        int lre_flags = (int)(r->flags & 0x7f);
+        bc = lre_compile(&bc_len, err_msg, (int)sizeof(err_msg),
+                         (const char*)r->source->data, r->source->length,
+                         lre_flags, NULL);
     }
-    dealloc(posix_pat);
-    if status != 0 {
-        raw { if (preg) free(preg); }
+    if bc == NULL {
         r.preg = NULL;
         return false;
     }
-    r.preg = preg;
+    r.preg = bc;
     return true;
 }
 
@@ -9251,30 +9130,31 @@ fn host_regexp_exec(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     }
     let preg = r.preg;
     let sdata = s.data;
-    // Read re_nsub off the compiled preg so we know how big the
-    // pmatch buffer needs to be (full match + N captures).
-    let nsub: u32 = 0;
-    raw { nsub = (uint32_t)((regex_t*)preg)->re_nsub; }
-    let total_groups = nsub + 1;
+    let hay_n = s.length;
+    // libregexp's bytecode header carries the capture count (group 0 +
+    // each (...) group). Sized so pmatch_buf is full-match + N captures.
+    let total_groups: u32 = 0;
+    raw { total_groups = (uint32_t)lre_get_capture_count((const uint8_t*)preg); }
     let pmatch_buf = alloc_n<ZRegMatch>((usize)total_groups);
     let rc: int = -1;
     raw {
-        rc = tre_regexec((regex_t*)preg, sdata + start_idx, total_groups, (regmatch_t*)pmatch_buf, 0);
+        rc = lre_run(preg, sdata, hay_n, start_idx, pmatch_buf, total_groups);
     }
     if rc != 0 {
         dealloc(pmatch_buf);
         if stateful { r.last_index = 0; }
         return zjs_null();
     }
-    let mstart_off = pmatch_buf[0].rm_so;
-    let mend_off   = pmatch_buf[0].rm_eo;
-    if (r.flags & REGEX_FLAG_STICKY) != 0 && mstart_off != 0 {
+    // lre_run returns absolute byte offsets into sdata.
+    let abs_mstart_i32 = pmatch_buf[0].rm_so;
+    let abs_mend_i32   = pmatch_buf[0].rm_eo;
+    if (r.flags & REGEX_FLAG_STICKY) != 0 && (u32)abs_mstart_i32 != start_idx {
         dealloc(pmatch_buf);
         r.last_index = 0;
         return zjs_null();
     }
-    let abs_mstart = start_idx + (u32)mstart_off;
-    let abs_mend   = start_idx + (u32)mend_off;
+    let abs_mstart: u32 = (u32)abs_mstart_i32;
+    let abs_mend:   u32 = (u32)abs_mend_i32;
     if stateful { r.last_index = abs_mend; }
 
     // Build the result array: [fullMatch, group1, group2, ...].
@@ -9290,8 +9170,9 @@ fn host_regexp_exec(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             // Group didn't participate in the match.
             result.elements[i] = zjs_undefined();
         } else {
-            let gabs_s = start_idx + (u32)gs;
-            let gabs_e = start_idx + (u32)ge;
+            // lre_run returns absolute offsets into sdata.
+            let gabs_s = (u32)gs;
+            let gabs_e = (u32)ge;
             let glen = gabs_e - gabs_s;
             let slice = ctx_intern_string(ctx, sdata + gabs_s, glen);
             result.elements[i] = slice;
@@ -9335,29 +9216,30 @@ fn host_regexp_test(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         if stateful { r.last_index = 0; }
         return zjs_bool(0);
     }
-    // tre_regexec on the offset slice. Single capture-group buffer
-    // tells us where the match lands; we ignore the captures here
-    // (.exec / .match handle them).
+    // Single capture-group buffer tells us where the match lands; we
+    // ignore the captures here (.exec / .match handle them).
     let preg = r.preg;
     let sdata = s.data;
+    let hay_n = s.length;
     let pmatch: ZRegMatch[1];
     let rc: int = -1;
     raw {
-        rc = tre_regexec((regex_t*)preg, sdata + start_idx, 1, (regmatch_t*)pmatch, 0);
+        rc = lre_run(preg, sdata, hay_n, start_idx, pmatch, 1);
     }
     if rc != 0 {
         if stateful { r.last_index = 0; }
         return zjs_bool(0);
     }
-    let mstart = pmatch[0].rm_so;
-    let mend   = pmatch[0].rm_eo;
-    if (r.flags & REGEX_FLAG_STICKY) != 0 && mstart != 0 {
+    // lre_run returns absolute byte offsets into sdata.
+    let mstart_abs = (u32)pmatch[0].rm_so;
+    let mend_abs   = (u32)pmatch[0].rm_eo;
+    if (r.flags & REGEX_FLAG_STICKY) != 0 && mstart_abs != start_idx {
         // sticky requires the match begin exactly at lastIndex.
         r.last_index = 0;
         return zjs_bool(0);
     }
     if stateful {
-        r.last_index = start_idx + (u32)mend;
+        r.last_index = mend_abs;
     }
     return zjs_bool(1);
 }

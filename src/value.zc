@@ -1558,16 +1558,16 @@ def REGEX_FLAG_STICKY:      u8 = 0x20;     // y
 def REGEX_FLAG_HAS_INDICES: u8 = 0x40;     // d (parsed only)
 
 // Runtime RegExp object. Compilation is lazy — `preg` stays NULL
-// until the first match call, then std/regex's Regex::compile
-// allocates a regex_t (1024 bytes) and we cache the pointer.
-// `source` and `flags_str` are JS-visible via .source / .flags;
-// they're interned strings owned by the atom table.
+// until the first match call, then regex_ensure_compiled calls
+// lre_compile (libregexp / QuickJS-NG) and caches the bytecode
+// buffer. `source` and `flags_str` are JS-visible via .source /
+// .flags; they're interned strings owned by the atom table.
 struct ZjsRegExp {
     header:     CellHeader;     // { type_tag = TAG_REGEXP }
     source:     ZjsString*;     // pattern between the slashes (JS syntax)
     flags_str:  ZjsString*;     // raw flag letters in source order
     flags:      u8;             // bitset of REGEX_FLAG_*
-    preg:       void*;          // compiled TRE regex_t* (NULL = not yet compiled, or compile failed)
+    preg:       void*;          // libregexp bytecode buffer (NULL = not yet compiled, or compile failed)
     compiled:   bool;           // true once we've attempted compile (regardless of success)
     last_index: u32;            // lastIndex — used by g and y flags
     // Expando bag — JS allows arbitrary properties on a RegExp
