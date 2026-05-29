@@ -1,0 +1,659 @@
+{
+  "when": "2026-05-29 19:16 UTC",
+  "zjs_bin": "/Users/zach/code/zjs/build/zjs",
+  "totals": {
+    "pass": 93,
+    "fail": 10,
+    "timeout": 0,
+    "error": 0
+  },
+  "areas": [
+    {
+      "area": "abort",
+      "totals": {
+        "pass": 9,
+        "fail": 0,
+        "timeout": 0,
+        "error": 0
+      },
+      "results": [
+        {
+          "name": "AbortController initial state",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "AbortController.abort flips signal",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "abort fires signal event",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "abort(reason) sets .reason",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "throwIfAborted when aborted",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "throwIfAborted no-op when fresh",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "AbortSignal.abort() static",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "AbortSignal.any with pre-aborted member",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "AbortSignal.timeout fires",
+          "status": "pass",
+          "message": ""
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "area": "blob",
+      "totals": {
+        "pass": 11,
+        "fail": 0,
+        "timeout": 0,
+        "error": 0
+      },
+      "results": [
+        {
+          "name": "Blob concatenates string parts",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Blob type option",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Blob.slice",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "File extends Blob",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "FormData append + get",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "FormData getAll",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "FormData set replaces",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "FormData delete",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "FormData iteration",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Blob.text()",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Blob.arrayBuffer()",
+          "status": "pass",
+          "message": ""
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "area": "crypto",
+      "totals": {
+        "pass": 6,
+        "fail": 2,
+        "timeout": 0,
+        "error": 0
+      },
+      "results": [
+        {
+          "name": "crypto.randomUUID format",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "crypto.getRandomValues",
+          "status": "fail",
+          "message": "assert_false: expected false, got true \u2014 should be filled with randomness"
+        },
+        {
+          "name": "crypto.subtle.digest SHA-256",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "crypto.subtle.digest SHA-1",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "crypto.subtle.importKey + HMAC sign/verify",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "crypto.subtle.generateKey AES-GCM",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "crypto.subtle.exportKey raw",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "crypto.subtle AES-GCM encrypt/decrypt round-trip",
+          "status": "fail",
+          "message": "AES-GCM backend not wired on this platform"
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "area": "encoding",
+      "totals": {
+        "pass": 11,
+        "fail": 0,
+        "timeout": 0,
+        "error": 0
+      },
+      "results": [
+        {
+          "name": "btoa basic",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "atob basic",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "atob/btoa round-trip",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "atob throws on bad input",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "TextEncoder shape + ASCII",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "TextEncoder UTF-8 multi-byte",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "TextDecoder basic",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "TextDecoder UTF-8 multi-byte",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Encoding streams classes present",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "TextEncoderStream round-trip",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "TextDecoderStream round-trip",
+          "status": "pass",
+          "message": ""
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "area": "events",
+      "totals": {
+        "pass": 10,
+        "fail": 0,
+        "timeout": 0,
+        "error": 0
+      },
+      "results": [
+        {
+          "name": "Event basic shape",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Event init options",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Event.preventDefault",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "CustomEvent.detail",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "addEventListener fires multiple times",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "removeEventListener stops dispatch",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "{once:true} auto-removes",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "CustomEvent flows through dispatchEvent",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "DOMException shape",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "dispatchEvent returns false on preventDefault",
+          "status": "pass",
+          "message": ""
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "area": "fetch",
+      "totals": {
+        "pass": 6,
+        "fail": 6,
+        "timeout": 0,
+        "error": 0
+      },
+      "results": [
+        {
+          "name": "fetch globals present",
+          "status": "fail",
+          "message": "assert_equals: expected \"function\" but got \"undefined\""
+        },
+        {
+          "name": "Headers case-insensitive",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Headers init from object",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Headers append combines",
+          "status": "fail",
+          "message": "assert_equals: expected \"1, 2\" but got \"2\""
+        },
+        {
+          "name": "Headers delete",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Request shape",
+          "status": "fail",
+          "message": "Request is not defined"
+        },
+        {
+          "name": "Response shape",
+          "status": "fail",
+          "message": "hi is not defined"
+        },
+        {
+          "name": "Response .ok=false on 5xx",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Response.text()",
+          "status": "fail",
+          "message": "hello is not defined"
+        },
+        {
+          "name": "Response.json()",
+          "status": "fail",
+          "message": "parse error"
+        },
+        {
+          "name": "fetch data: URL",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "fetch data: JSON",
+          "status": "pass",
+          "message": ""
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "area": "performance",
+      "totals": {
+        "pass": 8,
+        "fail": 0,
+        "timeout": 0,
+        "error": 0
+      },
+      "results": [
+        {
+          "name": "performance.now monotonic",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "performance.timeOrigin",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "performance.mark",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "performance.measure between marks",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "measure with options form",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "getEntriesByType",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "clearMarks() empties all",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "measure throws on unknown mark",
+          "status": "pass",
+          "message": ""
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "area": "streams",
+      "totals": {
+        "pass": 7,
+        "fail": 0,
+        "timeout": 0,
+        "error": 0
+      },
+      "results": [
+        {
+          "name": "Stream constructors present",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "BYOB rejected on default stream",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "ReadableStream basic read",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "ReadableStream BYOB reader",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "TransformStream basic",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "ReadableStream async iteration",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "ReadableStream.tee",
+          "status": "pass",
+          "message": ""
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "area": "structuredclone",
+      "totals": {
+        "pass": 11,
+        "fail": 0,
+        "timeout": 0,
+        "error": 0
+      },
+      "results": [
+        {
+          "name": "structuredClone present",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "primitives + plain object",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "deep clone \u2014 mutation independence",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Map",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Set",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Date",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "RegExp",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "Uint8Array",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "cyclic graph",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "function throws DataCloneError",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "symbol throws DataCloneError",
+          "status": "pass",
+          "message": ""
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "area": "timers",
+      "totals": {
+        "pass": 4,
+        "fail": 1,
+        "timeout": 0,
+        "error": 0
+      },
+      "results": [
+        {
+          "name": "queueMicrotask runs after sync code",
+          "status": "fail",
+          "message": "assert_array_equals: length 1 !== 2"
+        },
+        {
+          "name": "setTimeout fires after delay",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "queueMicrotask before setTimeout(0)",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "clearTimeout cancels",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "setInterval + clearInterval",
+          "status": "pass",
+          "message": ""
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "area": "url",
+      "totals": {
+        "pass": 10,
+        "fail": 1,
+        "timeout": 0,
+        "error": 0
+      },
+      "results": [
+        {
+          "name": "URL basic parts",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "URL relative resolve",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "URL credentials/port/hash",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "URL invalid throws TypeError",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "URL setter updates href",
+          "status": "fail",
+          "message": "assert_equals: expected \"/changed\" but got \"/\""
+        },
+        {
+          "name": "URLSearchParams parse + get",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "URLSearchParams append + getAll",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "URLSearchParams delete",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "URLSearchParams set replaces",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "URLSearchParams toString",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "URLSearchParams percent-decode",
+          "status": "pass",
+          "message": ""
+        }
+      ],
+      "stderr": ""
+    }
+  ]
+}

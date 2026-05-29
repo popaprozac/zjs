@@ -300,6 +300,18 @@ test262-runner: $(T262_RUNNER)
 $(T262_RUNNER): $(T262_RUNNER_SRC) include/zjs.h $(LIB) | $(BUILD_DIR)
 	$(CLANG) -O2 -Wall -Iinclude $(T262_RUNNER_SRC) -L$(BUILD_DIR) -lzjs $(RPATH_FLAG) -o $@
 
+# WinterTC Minimum Common API conformance. Probes ship in
+# tests/wintercg/ — each is a WPT-shaped .js using the harness at
+# scripts/wintercg/zjs_harness.js. The runner concatenates harness +
+# probe and runs each under ./build/zjs run.
+#
+# There's no upstream `wintercg/api-test` repo (verified — none of the
+# 18 repos in the WinterTC55 org is a test suite). These probes are
+# zjs-owned and ratchet over time.
+.PHONY: wintercg
+wintercg: cli
+	@python3 scripts/wintercg/run.py
+
 # Run the canonical test262 conformance subset via the Python harness
 # (frontmatter-aware, feature-filtered, records history + HTML report).
 # Requires test262 at vendor/test262 (clone with --depth=1 from
