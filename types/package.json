@@ -1,0 +1,26 @@
+{
+  "name": "zjs-types",
+  "version": "0.1.0",
+  "description": "TypeScript types for the zjs JavaScript engine: ambient globals (WinterTC + zjs deltas) and node: module shims.",
+  "types": "./index.d.ts",
+  "files": [
+    "*.d.ts",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/popaprozac/zjs.git",
+    "directory": "types"
+  },
+  "license": "MIT",
+  "keywords": [
+    "zjs",
+    "javascript-engine",
+    "types",
+    "wintertc",
+    "winterCG"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

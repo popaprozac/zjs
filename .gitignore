@@ -13,3 +13,6 @@ vendor/
 # Python bytecode from the runners in scripts/.
 __pycache__/
 *.pyc
+# Node + TypeScript noise from the types/ package.
+node_modules/
+types/node_modules/

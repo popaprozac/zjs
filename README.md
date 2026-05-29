@@ -322,6 +322,10 @@ zjs/
 │       ├── node_path.zc, node_fs.zc, node_process.zc, node_os.zc
 │       └── web_events.zc, web_abort.zc, web_clone.zc, web_blob.zc,
 │           web_polyfills.zc
+├── types/                  # zjs-types — TypeScript declarations
+│   ├── index.d.ts          #   barrel reference file
+│   ├── globals.d.ts        #   ambient globals (process, performance, …)
+│   └── node-*.d.ts         #   one per `node:` module
 ├── tools/zjs.zc            # CLI
 ├── tests/
 │   ├── embed_smoke.c       # Pure-C consumer test (NaN-box + eval)
