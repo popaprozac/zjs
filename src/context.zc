@@ -11578,6 +11578,106 @@ fn host_uint8_array_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     return a_v;
 }
 
+// Uint8Array.of(...items) — ECMA-262 §23.2.2.2. Constructs a typed
+// array of length argc, with each arg coerced to a byte. Used by uuid
+// v3/v5 to build the namespace+name byte buffer.
+fn host_uint8_array_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let a = zjs_uint8_array_new(argc);
+    ctx_register_cell(ctx, (void*)a);
+    let i: u32 = 0;
+    while i < argc {
+        let v = args[i];
+        let b: u32 = 0;
+        if zjs_is_int32(v) != 0 { b = (u32)((i32)zjs_as_int32(v) & 0xff); }
+        else if zjs_is_double(v) != 0 {
+            let d = zjs_as_double(v);
+            let finite: int = 0;
+            raw { finite = (isfinite(d) && !isnan(d)) ? 1 : 0; }
+            if finite != 0 {
+                let t: i64 = 0;
+                raw { t = (int64_t)d; }
+                b = (u32)((u8)((t % 256 + 256) % 256));
+            }
+        }
+        a.bytes[i] = (u8)b;
+        i = i + 1;
+    }
+    return zjs_cell_from_ptr((void*)a);
+}
+
+// Uint8Array.from(source, mapFn?) — copies + optional element mapping.
+// Spec §23.2.2.1. uuid doesn't reach this path but adding it alongside
+// .of keeps the static-method shape coherent.
+fn host_uint8_array_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_cell_from_ptr((void*)zjs_uint8_array_new(0)); }
+    let src = args[0];
+    let has_map: bool = argc >= 2 && (zjs_is_function(args[1]) != 0
+                                   || zjs_is_closure(args[1]) != 0
+                                   || zjs_is_host_function(args[1]) != 0);
+    let map_v: ZjsValue = if has_map { args[1] } else { zjs_undefined() };
+    // Reuse ctor's array-like path when possible.
+    if zjs_is_uint8_array(src) != 0 {
+        let other = zjs_as_uint8_array(src);
+        let r = zjs_uint8_array_new(other.length);
+        ctx_register_cell(ctx, (void*)r);
+        let i: u32 = 0;
+        while i < other.length {
+            let b: u8 = other.bytes[i];
+            if has_map {
+                let cb_args: ZjsValue[2];
+                cb_args[0] = zjs_int32((i32)b);
+                cb_args[1] = zjs_int32((i32)i);
+                let cb_argp: ZjsValue* = NULL;
+                raw { cb_argp = cb_args; }
+                let cb_r: ZjsValue = zjs_undefined();
+                raw { cb_r = zjs_call_value_with_this(ctx, map_v, zjs_undefined(), cb_argp, 2); }
+                if zjs_is_int32(cb_r) != 0 { b = (u8)((i32)zjs_as_int32(cb_r) & 0xff); }
+            }
+            r.bytes[i] = b;
+            i = i + 1;
+        }
+        return zjs_cell_from_ptr((void*)r);
+    }
+    if zjs_is_array(src) != 0 {
+        let arr = zjs_as_array(src);
+        let r = zjs_uint8_array_new(arr.length);
+        ctx_register_cell(ctx, (void*)r);
+        let i: u32 = 0;
+        while i < arr.length {
+            let v = arr.elements[i];
+            if has_map {
+                let cb_args: ZjsValue[2];
+                cb_args[0] = v;
+                cb_args[1] = zjs_int32((i32)i);
+                let cb_argp: ZjsValue* = NULL;
+                raw { cb_argp = cb_args; }
+                raw { v = zjs_call_value_with_this(ctx, map_v, zjs_undefined(), cb_argp, 2); }
+            }
+            let b: u32 = 0;
+            if zjs_is_int32(v) != 0 { b = (u32)((i32)zjs_as_int32(v) & 0xff); }
+            else if zjs_is_double(v) != 0 {
+                let d = zjs_as_double(v);
+                let finite: int = 0;
+                raw { finite = (isfinite(d) && !isnan(d)) ? 1 : 0; }
+                if finite != 0 {
+                    let t: i64 = 0;
+                    raw { t = (int64_t)d; }
+                    b = (u32)((u8)((t % 256 + 256) % 256));
+                }
+            }
+            r.bytes[i] = (u8)b;
+            i = i + 1;
+        }
+        return zjs_cell_from_ptr((void*)r);
+    }
+    // Fall through: delegate to ctor with the source as a single arg.
+    let ctor_args: ZjsValue[1];
+    ctor_args[0] = src;
+    let ctor_argp: ZjsValue* = NULL;
+    raw { ctor_argp = ctor_args; }
+    return host_uint8_array_ctor(ctx, ctor_argp, 1);
+}
+
 fn host_uint8_array_fill(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_v = ctx.host_this;
     if zjs_is_uint8_array(this_v) == 0 { return this_v; }
@@ -16392,6 +16492,219 @@ fn host_report_error(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_undefined();
 }
 
+// encodeURI / encodeURIComponent / decodeURI / decodeURIComponent —
+// ECMA-262 §19.2.6. The "Component" variants percent-encode every
+// non-unreserved char; the plain variants additionally leave URI
+// punctuation (`;/?:@&=+$,#`) and the unescaped-set chars unencoded.
+// uuid v5 uses encodeURIComponent + unescape to make a stable byte
+// string from the name input. Both must walk UTF-8 codepoints
+// correctly so multi-byte sequences round-trip.
+fn encode_uri_impl(ctx: ZjsContext*, s_v: ZjsValue, keep_uri_punct: bool) -> ZjsValue {
+    if zjs_is_string(s_v) == 0 { s_v = zjs_to_string(ctx, s_v); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let s = zjs_as_string(s_v);
+    let cap = s.length * 4 + 1;
+    let buf = alloc_n<char>((usize)cap);
+    let out: u32 = 0;
+    raw {
+        const char* lut = (const char*)"0123456789ABCDEF";
+        for (uint32_t i = 0; i < s->length; i++) {
+            unsigned char c = (unsigned char)s->data[i];
+            int unreserved =
+                   (c >= 'A' && c <= 'Z')
+                || (c >= 'a' && c <= 'z')
+                || (c >= '0' && c <= '9')
+                || c == '-' || c == '_' || c == '.'
+                || c == '!' || c == '~' || c == '*'
+                || c == '\'' || c == '(' || c == ')';
+            int uri_punct = (c == ';' || c == '/' || c == '?' || c == ':'
+                          || c == '@' || c == '&' || c == '=' || c == '+'
+                          || c == '$' || c == ',' || c == '#');
+            if (unreserved || (keep_uri_punct && uri_punct)) {
+                buf[out++] = (char)c;
+            } else {
+                buf[out++] = '%';
+                buf[out++] = lut[(c >> 4) & 0xf];
+                buf[out++] = lut[c & 0xf];
+            }
+        }
+    }
+    buf[out] = (char)0;
+    return ctx_intern_string_take(ctx, buf, out);
+}
+
+fn host_encode_uri(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s_v = if argc >= 1 { args[0] } else { ctx_intern_string(ctx, (char*)"undefined", 9) };
+    return encode_uri_impl(ctx, s_v, true);
+}
+
+fn host_encode_uri_component(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s_v = if argc >= 1 { args[0] } else { ctx_intern_string(ctx, (char*)"undefined", 9) };
+    return encode_uri_impl(ctx, s_v, false);
+}
+
+fn decode_uri_impl(ctx: ZjsContext*, s_v: ZjsValue) -> ZjsValue {
+    if zjs_is_string(s_v) == 0 { s_v = zjs_to_string(ctx, s_v); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let s = zjs_as_string(s_v);
+    let buf = alloc_n<char>((usize)(s.length + 1));
+    let out: u32 = 0;
+    raw {
+        for (uint32_t i = 0; i < s->length; ) {
+            char c = s->data[i];
+            if (c == '%' && i + 2 < s->length) {
+                char h1 = s->data[i+1];
+                char h2 = s->data[i+2];
+                int d1 = (h1 >= '0' && h1 <= '9') ? h1 - '0'
+                       : (h1 >= 'A' && h1 <= 'F') ? h1 - 'A' + 10
+                       : (h1 >= 'a' && h1 <= 'f') ? h1 - 'a' + 10
+                       : -1;
+                int d2 = (h2 >= '0' && h2 <= '9') ? h2 - '0'
+                       : (h2 >= 'A' && h2 <= 'F') ? h2 - 'A' + 10
+                       : (h2 >= 'a' && h2 <= 'f') ? h2 - 'a' + 10
+                       : -1;
+                if (d1 >= 0 && d2 >= 0) {
+                    buf[out++] = (char)((d1 << 4) | d2);
+                    i += 3;
+                    continue;
+                }
+            }
+            buf[out++] = c;
+            i++;
+        }
+    }
+    buf[out] = (char)0;
+    return ctx_intern_string_take(ctx, buf, out);
+}
+
+fn host_decode_uri(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s_v = if argc >= 1 { args[0] } else { ctx_intern_string(ctx, (char*)"undefined", 9) };
+    return decode_uri_impl(ctx, s_v);
+}
+
+fn host_decode_uri_component(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s_v = if argc >= 1 { args[0] } else { ctx_intern_string(ctx, (char*)"undefined", 9) };
+    return decode_uri_impl(ctx, s_v);
+}
+
+// escape(s) — ECMA-262 Annex B §B.2.1.1. Replaces every char outside
+// [A-Za-z0-9@*_+\-./] with %XX (or %uXXXX for codepoints > 0xFF).
+// Legacy but used by libraries like uuid v5 for byte-encoding a name
+// into a stable byte sequence before hashing. We treat the input
+// codepoint-by-codepoint as if it were UTF-16; codepoints in
+// [0x80, 0xFF] emit %XX, anything else %uXXXX.
+fn host_escape(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s_v = if argc >= 1 { args[0] } else { ctx_intern_string(ctx, (char*)"undefined", 9) };
+    if zjs_is_string(s_v) == 0 { s_v = zjs_to_string(ctx, s_v); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let s = zjs_as_string(s_v);
+    // Each input byte expands to at most 6 chars ("%uXXXX"); start with
+    // a generous estimate and let the call site reuse it.
+    let cap = s.length * 6 + 1;
+    let buf = alloc_n<char>((usize)cap);
+    let out: u32 = 0;
+    let i: u32 = 0;
+    raw {
+        const char* unsafe_lut = (const char*)"0123456789ABCDEF";
+        while (i < s->length) {
+            unsigned char c = (unsigned char)s->data[i];
+            int safe =
+                (c >= 'A' && c <= 'Z')
+                || (c >= 'a' && c <= 'z')
+                || (c >= '0' && c <= '9')
+                || c == '@' || c == '*' || c == '_' || c == '+'
+                || c == '-' || c == '.' || c == '/';
+            if (safe) {
+                buf[out++] = (char)c;
+            } else if (c < 0x80) {
+                buf[out++] = '%';
+                buf[out++] = unsafe_lut[(c >> 4) & 0xf];
+                buf[out++] = unsafe_lut[c & 0xf];
+            } else {
+                /* High-bit byte — escape as %uXXXX so the inverse
+                 * unescape() recovers the original codepoint. uuid
+                 * v5 always feeds escape() ASCII names, so this is
+                 * the lossy-but-safe path. */
+                buf[out++] = '%';
+                buf[out++] = 'u';
+                buf[out++] = '0';
+                buf[out++] = '0';
+                buf[out++] = unsafe_lut[(c >> 4) & 0xf];
+                buf[out++] = unsafe_lut[c & 0xf];
+            }
+            i++;
+        }
+    }
+    buf[out] = (char)0;
+    return ctx_intern_string_take(ctx, buf, out);
+}
+
+// unescape(s) — Annex B inverse of escape. Recognizes %XX (2 hex) and
+// %uXXXX (4 hex); leaves invalid sequences as-is.
+fn host_unescape(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s_v = if argc >= 1 { args[0] } else { ctx_intern_string(ctx, (char*)"undefined", 9) };
+    if zjs_is_string(s_v) == 0 { s_v = zjs_to_string(ctx, s_v); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let s = zjs_as_string(s_v);
+    let buf = alloc_n<char>((usize)(s.length + 1));
+    let out: u32 = 0;
+    let i: u32 = 0;
+    raw {
+        while (i < s->length) {
+            char c = s->data[i];
+            if (c == '%' && i + 2 < s->length && s->data[i+1] == 'u' && i + 5 < s->length) {
+                /* %uXXXX */
+                int ok = 1;
+                int v = 0;
+                for (int k = 0; k < 4; k++) {
+                    char hc = s->data[i + 2 + k];
+                    int dv = (hc >= '0' && hc <= '9') ? hc - '0'
+                           : (hc >= 'A' && hc <= 'F') ? hc - 'A' + 10
+                           : (hc >= 'a' && hc <= 'f') ? hc - 'a' + 10
+                           : -1;
+                    if (dv < 0) { ok = 0; break; }
+                    v = (v << 4) | dv;
+                }
+                if (ok) {
+                    /* Single-byte codepoint range — keep simple. uuid
+                     * roundtrips strings that escape() emitted, so
+                     * we don't need full UTF-8 here. */
+                    if (v < 0x80) {
+                        buf[out++] = (char)v;
+                    } else {
+                        /* Truncate to low byte. v5's hash sees the
+                         * exact same bytes the browser would. */
+                        buf[out++] = (char)(v & 0xff);
+                    }
+                    i += 6;
+                    continue;
+                }
+            }
+            if (c == '%' && i + 2 < s->length) {
+                char h1 = s->data[i+1];
+                char h2 = s->data[i+2];
+                int d1 = (h1 >= '0' && h1 <= '9') ? h1 - '0'
+                       : (h1 >= 'A' && h1 <= 'F') ? h1 - 'A' + 10
+                       : (h1 >= 'a' && h1 <= 'f') ? h1 - 'a' + 10
+                       : -1;
+                int d2 = (h2 >= '0' && h2 <= '9') ? h2 - '0'
+                       : (h2 >= 'A' && h2 <= 'F') ? h2 - 'A' + 10
+                       : (h2 >= 'a' && h2 <= 'f') ? h2 - 'a' + 10
+                       : -1;
+                if (d1 >= 0 && d2 >= 0) {
+                    buf[out++] = (char)((d1 << 4) | d2);
+                    i += 3;
+                    continue;
+                }
+            }
+            buf[out++] = c;
+            i++;
+        }
+    }
+    buf[out] = (char)0;
+    return ctx_intern_string_take(ctx, buf, out);
+}
+
 // btoa(binary_string) — base64 encode each character's low byte.
 // WHATWG semantics: argument is a "binary string" where each code
 // unit must fit in a byte; otherwise throws InvalidCharacterError.
@@ -18751,6 +19064,17 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ctx.uint8_array_proto = zjs_as_object(u8_proto_v);
     zjs_as_host_function(u8_ctor_v).prototype = ctx.uint8_array_proto;
     object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), u8_ctor_v);
+    // Uint8Array.of / Uint8Array.from — used by uuid v5 (and many
+    // other packages) for building byte buffers from variadic args
+    // or iterables.
+    let u8_of_ptr:   void* = NULL; raw { u8_of_ptr   = (void*)host_uint8_array_of; }
+    let u8_from_ptr: void* = NULL; raw { u8_from_ptr = (void*)host_uint8_array_from; }
+    let u8_ctor_hf = zjs_as_host_function(u8_ctor_v);
+    if u8_ctor_hf.props == NULL { u8_ctor_hf.props = zjs_as_object(ctx_new_object(ctx)); }
+    object_set(ctx, u8_ctor_hf.props, ctx_intern_atom(ctx, (char*)"of", 2),
+               ctx_make_host_function(ctx, (char*)"of", u8_of_ptr));
+    object_set(ctx, u8_ctor_hf.props, ctx_intern_atom(ctx, (char*)"from", 4),
+               ctx_make_host_function_arity(ctx, (char*)"from", u8_from_ptr, 1));
     object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"fill", 4),
                ctx_make_host_function_arity(ctx, (char*)"fill", u8_fill_ptr, 1));
     object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"slice", 5),
@@ -19508,6 +19832,23 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let atob_ptr: void* = NULL; raw { atob_ptr = (void*)host_atob; }
     ctx_register_host_function(ctx, (char*)"btoa", btoa_ptr);
     ctx_register_host_function(ctx, (char*)"atob", atob_ptr);
+
+    // escape / unescape — Annex B legacy globals. uuid's v5 path uses
+    // escape() to byte-encode the name input before hashing.
+    let esc_ptr:   void* = NULL; raw { esc_ptr   = (void*)host_escape; }
+    let unesc_ptr: void* = NULL; raw { unesc_ptr = (void*)host_unescape; }
+    ctx_register_host_function(ctx, (char*)"escape",   esc_ptr);
+    ctx_register_host_function(ctx, (char*)"unescape", unesc_ptr);
+
+    // encodeURI / encodeURIComponent / decodeURI / decodeURIComponent.
+    let enu_ptr:  void* = NULL; raw { enu_ptr  = (void*)host_encode_uri; }
+    let enuc_ptr: void* = NULL; raw { enuc_ptr = (void*)host_encode_uri_component; }
+    let deu_ptr:  void* = NULL; raw { deu_ptr  = (void*)host_decode_uri; }
+    let deuc_ptr: void* = NULL; raw { deuc_ptr = (void*)host_decode_uri_component; }
+    ctx_register_host_function(ctx, (char*)"encodeURI",          enu_ptr);
+    ctx_register_host_function(ctx, (char*)"encodeURIComponent", enuc_ptr);
+    ctx_register_host_function(ctx, (char*)"decodeURI",          deu_ptr);
+    ctx_register_host_function(ctx, (char*)"decodeURIComponent", deuc_ptr);
 
     // reportError — WinterTC-required global for surfacing errors
     // that no JS frame caught (typically from microtask queues).

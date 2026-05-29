@@ -402,15 +402,49 @@ fn zjs_arith_neg(a: ZjsValue) -> ZjsValue {
     return zjs_double(-zjs_to_double(a));
 }
 
+// ECMA-262 §7.1.6 ToInt32 / §7.1.7 ToUint32. The naive C cast from
+// double to int32 saturates on values past INT_MAX — uuid's parse()
+// does `parseInt("c8a3ad77d818", 16) >>> 24` and expects mod-2^32
+// truncation, but a cast-based path gave back 0x7FFFFFFF (saturated)
+// instead of 0xad. Implement the spec's "floor toward zero, modulo
+// 2^32, fold into the signed range" steps directly so >>> / | / &
+// against parseInt() results behave per spec.
 fn zjs_to_int32(v: ZjsValue) -> i32 {
     if zjs_is_int32(v) != 0 { return zjs_as_int32(v); }
     let d = zjs_to_double(v);
-    // ECMA-262 ToInt32 is more complex; this is a reasonable MVP.
-    return (i32)d;
+    let r: i32 = 0;
+    raw {
+        if (isnan(d) || isinf(d) || d == 0.0) { r = 0; }
+        else {
+            double sign = d < 0 ? -1.0 : 1.0;
+            double absd = fabs(d);
+            double posInt = sign * floor(absd);
+            double m = fmod(posInt, 4294967296.0);
+            if (m < 0) m += 4294967296.0;
+            /* Fold [0, 2^32) into [-2^31, 2^31). */
+            if (m >= 2147483648.0) m -= 4294967296.0;
+            r = (int32_t)m;
+        }
+    }
+    return r;
 }
 
 fn zjs_to_uint32(v: ZjsValue) -> u32 {
-    return (u32)zjs_to_int32(v);
+    if zjs_is_int32(v) != 0 { return (u32)zjs_as_int32(v); }
+    let d = zjs_to_double(v);
+    let r: u32 = 0;
+    raw {
+        if (isnan(d) || isinf(d) || d == 0.0) { r = 0; }
+        else {
+            double sign = d < 0 ? -1.0 : 1.0;
+            double absd = fabs(d);
+            double posInt = sign * floor(absd);
+            double m = fmod(posInt, 4294967296.0);
+            if (m < 0) m += 4294967296.0;
+            r = (uint32_t)m;
+        }
+    }
+    return r;
 }
 
 fn zjs_bit_and(a: ZjsValue, b: ZjsValue) -> ZjsValue { return zjs_int32(zjs_to_int32(a) & zjs_to_int32(b)); }
@@ -420,7 +454,15 @@ fn zjs_bit_not(a: ZjsValue) -> ZjsValue { return zjs_int32(~zjs_to_int32(a)); }
 
 fn zjs_shl (a: ZjsValue, b: ZjsValue) -> ZjsValue { return zjs_int32(zjs_to_int32(a) << (zjs_to_uint32(b) & 31)); }
 fn zjs_shr (a: ZjsValue, b: ZjsValue) -> ZjsValue { return zjs_int32(zjs_to_int32(a) >> (zjs_to_uint32(b) & 31)); }
-fn zjs_ushr(a: ZjsValue, b: ZjsValue) -> ZjsValue { return zjs_int32((i32)(zjs_to_uint32(a) >> (zjs_to_uint32(b) & 31))); }
+fn zjs_ushr(a: ZjsValue, b: ZjsValue) -> ZjsValue {
+    // Spec: result of `>>>` is a uint32 value, returned as a Number.
+    // When the high bit is set (≥ 2^31) the int32 encoding would
+    // surface as negative on display and on subsequent loose
+    // comparisons, so promote to a double in that case.
+    let u: u32 = zjs_to_uint32(a) >> (zjs_to_uint32(b) & 31);
+    if u >= 0x80000000 { return zjs_double((f64)u); }
+    return zjs_int32((i32)u);
+}
 
 // Strict equality — same type + same value (NaN != NaN).
 fn zjs_strict_eq(a: ZjsValue, b: ZjsValue) -> int {
