@@ -6492,14 +6492,30 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
                 // String replacement — expand $&, $$, $`, $', $N tokens
                 // per spec (ECMA-262 GetSubstitution). lodash's
                 // `.replace(reRegExpChar, "\\$&")` to escape regex
-                // metachars depends on this.
+                // metachars depends on this. semver's range parser
+                // depends on $1/$2/$3 capture-group substitution.
                 let tmpl_data = zjs_as_string(repl_str_v).data;
                 let tmpl_len  = zjs_as_string(repl_str_v).length;
+                // Build cap_starts/cap_ends from pmatch_buf so $N tokens
+                // see real capture positions. pmatch_buf[0] is the full
+                // match; captures are slots 1..total_groups-1, but
+                // expand_replacement uses 1-based group indexing, so we
+                // size n_caps = total_groups - 1 (excluding slot 0).
+                let n_caps_x: u32 = if total_groups > 0 { total_groups - 1 } else { 0 };
+                let cap_st = alloc_n<i32>((usize)(n_caps_x + 1));
+                defer dealloc(cap_st);
+                let cap_en = alloc_n<i32>((usize)(n_caps_x + 1));
+                defer dealloc(cap_en);
+                let ci: u32 = 1;
+                while ci <= n_caps_x {
+                    cap_st[ci] = (i32)pmatch_buf[ci].rm_so;
+                    cap_en[ci] = (i32)pmatch_buf[ci].rm_eo;
+                    ci = ci + 1;
+                }
                 let exp_len: u32 = 0;
-                let nullp_i32: i32* = NULL;
                 let exp_buf = expand_replacement(tmpl_data, tmpl_len,
                                                   hay_d, hay_n, mstart, mend,
-                                                  nullp_i32, nullp_i32, 0,
+                                                  cap_st, cap_en, n_caps_x,
                                                   &exp_len);
                 rep_data = exp_buf;
                 rep_len  = exp_len;
