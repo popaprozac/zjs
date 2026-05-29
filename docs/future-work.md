@@ -39,10 +39,23 @@ Striking through items elsewhere in this doc that are now done:
   tests from the original microtask round-trip rollout are green
   again under the new `in_async_gen` branch.
 
-**Known follow-up:** ~10% perf regression vs 2026-05-27 baseline across
-most benchmarks (regex_match +138.9%, hash_count +37.9%, quicksort
-+23.7%, others ~10%). Not yet root-caused; next perf pass on the
-todo. Snapshot in `docs/perf/last.json` (2026-05-29 run).
+**Perf pass result (2026-05-29, commit e0daa87):** apparent ~10%
+regression was mostly measurement-environment delta — the 5/27
+baseline machine was quieter. On-machine bisect against `3567bc7`
+showed HEAD is actually faster on several benches. Two real
+regressions:
+- `hash_count` (+20%) — closed via ToInt32/ToUint32 fast path for
+  finite doubles in int64 range (e0daa87). The spec walk added in
+  1165cc3 was hitting `fmod` per `seed & MASK`. Also recovered
+  2–5% on `int_loop` / `richards` / `fib_recursive`.
+- `regex_match` (+115%) — **intrinsic** to the TRE → libregexp
+  swap (672e28c). Hoisting regex literals out of the bench loop
+  didn't help — matching time dominates, not compile. The DFA →
+  backtracking-NFA trade was the cost of getting lookahead,
+  non-greedy `.*?`, and named captures for npm compat. Future
+  options: vendor a third engine (RE2-style DFA, large) or build a
+  DFA fast-path for simple patterns. Won't move on it until the
+  libregexp ceiling actually blocks something.
 
 
 ## GC trigger in the allocator (deferred — direct-threading prerequisite)
