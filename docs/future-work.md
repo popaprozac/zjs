@@ -4,6 +4,47 @@ A running list of architectural items that are spec'd and ready but
 deferred. Each entry includes the trigger that should pull it forward
 and the work that's already been laid in.
 
+## Recently landed (2026-05-29 sweep)
+
+Striking through items elsewhere in this doc that are now done:
+
+- ✅ **`AsyncGeneratorAwait`** — async generators now suspend cleanly on
+  `await pendingPromise` (commit 11ea98d). Pair with the async-function
+  spec-correct microtask round-trip (66788ac) closes both halves of
+  §27.6 Await semantics. See `[[project_await_microtask_roundtrip.md]]`.
+- ✅ **WinterTC MCA: 100%.** Last six gaps closed (URL setters, real
+  `Headers.append`, real `Request`/`Response` ctors, User Timing L3,
+  TextEncoderStream / TextDecoderStream, AES-GCM `encrypt`/`decrypt` +
+  `generateKey` + `exportKey`). AES-GCM is a vendored ~330-LOC pure-C
+  impl in `src/third-party/aes-gcm/` for Apple; Linux uses OpenSSL,
+  Windows uses BCrypt.
+- ✅ **Streams 3.B follow-ups.** BYOB read path + `.tee()` shipped on
+  `ReadableStream`. Pipe and async-iter were already live.
+- ✅ **JS extraction.** Seven stdlib JS sources (web_streams, web_blob,
+  web_events, web_abort, web_clone, node_path, perf_user_timing) now
+  live as real `.js` files under `src/stdlib/` and embed via a
+  generated `.gen.h` blob (`tools/embed_js.py`). All carry `// @ts-check`
+  and check against `src/stdlib/_ambient.d.ts` via
+  `tsconfig.stdlib.json`.
+- ✅ **`zjs-types` package.** TypeScript declarations for embedders
+  shipped under `types/`. `@zjs/types` style import surface.
+- ✅ **WinterTC probe suite.** Eleven WPT-style probes under
+  `tests/wintercg/` driven by `scripts/wintercg/run.py`; emits
+  `docs/wintercg/{last.json,history.jsonl,index.html}`. `make wintercg`.
+- ✅ **Encoding streams + User Timing L3** (native, not JS).
+  TextEncoderStream / TextDecoderStream backed by host ops;
+  `performance.mark` / `.measure` / `.clearMarks` / `.clearMeasures` /
+  `.getEntries*` with a real entry buffer.
+- ✅ **Async-generator test262 regressions resolved** — the 32 broken
+  tests from the original microtask round-trip rollout are green
+  again under the new `in_async_gen` branch.
+
+**Known follow-up:** ~10% perf regression vs 2026-05-27 baseline across
+most benchmarks (regex_match +138.9%, hash_count +37.9%, quicksort
++23.7%, others ~10%). Not yet root-caused; next perf pass on the
+todo. Snapshot in `docs/perf/last.json` (2026-05-29 run).
+
+
 ## GC trigger in the allocator (deferred — direct-threading prerequisite)
 
 **Origin:** design-review pass (May 2026, AI-conversation feedback in
@@ -173,8 +214,9 @@ so we don't lose them.
 
 ### async/await
 
-- **`for await ... of`** async iteration. Skipped feature.
-- **Async generators.** Skipped feature.
+- ✅ **`for await ... of`** async iteration — shipped (Phase 4.5).
+- ✅ **Async generators** — shipped; `AsyncGeneratorAwait` added
+  2026-05-29 (commit 11ea98d).
 - **Top-level await** (see modules above — same suspend/resume infra
   needs to extend to module bodies).
 
@@ -185,35 +227,28 @@ so we don't lose them.
   one; fine for base classes but a derived class also needs a
   synthesized `super(...args)` before the field inits run. The
   rest-binding AST synthesis is what's missing.
-- **Private fields / methods** (`#name`). Skipped feature
-  (`class-fields-private`, `class-methods-private`, plus the static
-  forms — together ~3000 tests).
+- ✅ **Private fields / methods** (`#name`) — shipped (Phase 4.4,
+  task #215).
 - **Computed-name accessors** (`class { get [k]() {} set [k](v) {} }`).
   Today's computed-method path uses `StoreElem`, which doesn't
   install an accessor pair. Needs a runtime-keyed
   `DefineGetter/Setter` analogue.
 - **Class static blocks** (`class { static { /* code */ } }`).
-- **`new.target`** in class methods. Skipped feature.
+- ✅ **`new.target`** in class methods — shipped (task #236).
 
 ### Iteration protocol / Symbols / generators
 
-- **Real `Symbol`** values with the spec's well-known symbols
-  (`Symbol.iterator`, `Symbol.asyncIterator`, `Symbol.hasInstance`,
-  ...). Today our string keys coerce a Symbol value to
-  `[object Function]`; tests depending on Symbol-keyed dispatch all
-  fail.
-- **`Symbol.iterator` protocol** is wired everywhere it matters:
+- ✅ **Real `Symbol`** values with well-known symbols — shipped
+  (Phase 4.3, task #214).
+- ✅ **`Symbol.iterator` protocol** is wired everywhere it matters:
   live for-of (2026-05-16), array destructure, Map/Set constructors,
   and the four Promise combinators (2026-05-18, commit cefb846).
   Generators feed any of those uniformly.
-- **`IteratorClose` abrupt-completion semantics.** Current
-  `iter_close` is "normal-completion" only: a throwing return() from
-  the iterator overrides the original completion. Spec says: when
-  closing for an *abrupt* completion, the return()-throw is
-  swallowed and the original completion re-raised. ~12 test262
-  tests in `Array.prototype/map`-style "abrupt-completion-from-cb"
-  exercise this.
-- **Generators** (`function* () { yield ... }`) — shipped 2026-05-16.
+- ✅ **`IteratorClose` abrupt-completion semantics** — shipped
+  (Phase 4.8, task #222).
+- ✅ **Generators** (`function* () { yield ... }`) — shipped 2026-05-16.
+- ✅ **Async generators with `await`** — shipped 2026-05-29
+  (commit 11ea98d).
 
 ### Destructuring
 
@@ -280,17 +315,11 @@ so we don't lose them.
 
 ## Major arcs queued
 
-- **Real `Symbol` values + `Symbol.iterator` protocol made first-class.**
-  We currently shim the iteration protocol with string atoms
-  (`"@@iterator"`). Real `Symbol` is the largest single conformance
-  unlock left in the included subset (~3000 tests across
-  class-fields-private, well-known-symbol-keyed property access,
-  spec-correct `IteratorClose`). Prerequisite for private class
-  fields/methods (`#name`). Phase 4.3 — taken on as the next arc.
+- ✅ **Real `Symbol` values + `Symbol.iterator` protocol made first-class.**
+  Shipped (Phase 4.3).
 
-- **Private class fields / methods (`#name`)** — follows Symbol
-  naturally; same family of test262 unlocks. Skipped today by the
-  harness.
+- ✅ **Private class fields / methods (`#name`)** — shipped
+  (Phase 4.4).
 
 - **Property descriptors + accessors as first-class.**
   `Object.defineProperty`, real getters/setters in object literals,

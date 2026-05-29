@@ -46,15 +46,20 @@ Pinned compiler version: `zc v0.4.4-217-g10cf66d` (or compatible).
 | 4.7    | Subclassing parity — `class Sub extends Promise/Array/Map/Set/Date/RegExp {}` carries a per-instance `[[Prototype]]`; `super()` propagates outer `new.target`; `NewPromiseCapability` protocol lifted out of Promise.all/race/any/allSettled |
 | 4.8    | Conformance polish — Symbol.toPrimitive, IteratorClose on abrupt completion, captured-FunctionDecl exports, captured rest parameter, contextual keywords (`from`/`as`), named function expression self-binding, per-iteration env for `for (let\|const x of/in iter)` |
 | **5.0** | **Standard library (task #190, `docs/stdlib-design.md`) — node-flavored modules under `node:` prefix + WinterTC web globals. See "Standard library" below.** |
+| **5.1** | **WinterTC MCA conformance push — own probe suite at `tests/wintercg/` + runner; closed `getRandomValues` / URL setters / `Headers.append` / `Request` / `Response` / AES-GCM / async-generator-await / `String.prototype.replace` `$N` / Date copy ctor / arrow lexical `this` / method-shorthand self-bind. WinterTC suite at 100% (103/103).** |
+| **5.2** | **Stdlib DX — pure-JS bootstraps extracted to real `.js` files (`tools/embed_js.py` embeds at build time); `// @ts-check` + `tsc -p tsconfig.stdlib.json` validation. `zjs-types` package at `types/` ships TypeScript declarations for embedders.** |
 
-**Conformance (two framings, intentionally):**
+**Conformance (three framings, intentionally):**
 
-- **Curated subset — 86.5%** (12,010 of 13,878). The Phase 4.3 → 4.8 arc unmasked private class fields, Proxy/Reflect, async iteration, subclass-built-ins (Promise/Array/Map/Set/Date/RegExp), plus stale-skipped features that were actually shipping. This number answers **"of the parts we claim to support, how spec-correct are we?"**.
-- **Full suite — 54.1%** (25,084 of 46,364) against `test/language/` + `test/built-ins/` with no feature-skip list, matching the methodology of dashboards like [test262.fyi](https://test262.fyi). Missing-feature failures count as real failures here. Run via `make test262-full`. This number answers **"across the entire spec surface, how complete is the engine?"** — the ~30pt gap to QuickJS NG (~82%) is mostly BigInt, WeakRef, full async-generator semantics, and Temporal.
+- **test262 curated subset — 87.2%** (12,097 of 13,878). The Phase 4.3 → 4.8 arc unmasked private class fields, Proxy/Reflect, async iteration, subclass-built-ins (Promise/Array/Map/Set/Date/RegExp), plus stale-skipped features that were actually shipping. This number answers **"of the parts we claim to support, how spec-correct are we?"**.
+- **test262 full suite — 54.1%** (25,084 of 46,364) against `test/language/` + `test/built-ins/` with no feature-skip list, matching the methodology of dashboards like [test262.fyi](https://test262.fyi). Missing-feature failures count as real failures here. Run via `make test262-full`. This number answers **"across the entire spec surface, how complete is the engine?"** — the ~30pt gap to QuickJS NG (~82%) is mostly BigInt, WeakRef, and Temporal.
+- **WinterTC Minimum Common API — 100%** (103/103, `make wintercg`). zjs-owned probe suite at `tests/wintercg/` since there's no upstream WinterTC test repo. Covers encoding (TextEncoder/Decoder + streams), URL, EventTarget, AbortController, crypto + crypto.subtle (digest / importKey / generateKey / exportKey / sign / verify / encrypt / decrypt), Blob/File/FormData, streams (default + BYOB + tee), timers + queueMicrotask, performance User Timing, structuredClone, fetch + Headers/Request/Response.
 
-Both numbers are useful; quoting only one out of context is misleading. Live dashboard for the curated subset at `docs/conformance/index.html` (macOS) — Windows results at `docs/conformance/index-windows.html`, Linux at `docs/conformance/index-linux.html`.
+Live dashboards: `docs/conformance/index.html` (test262 macOS), `docs/conformance/index-{windows,linux}.html`, `docs/wintercg/index.html`.
 
-**Perf:** vs qjs (our closest peer — both jitless interpreters), zjs ahead on 17 / tied on 1 / behind on 3 of 21 microbenches. vs hermes (Meta's jitless engine, the design-space ceiling), zjs ahead on 5 / behind on 14 of 19 measurable — richards within 1.40×, splay 1.65×, with widest gaps on numeric / alloc-heavy benches (mandelbrot, nbody, object_alloc) where Hermes's generational GC and specialized arithmetic opcodes are the structural lead. Live charts at `docs/perf/index.html` (macOS) — Windows results at `docs/perf/index-windows.html`, Linux at `docs/perf/index-linux.html`, cross-engine at `docs/perf/compare.html`.
+**Perf:** vs qjs (our closest peer — both jitless interpreters), zjs ahead on 14 / behind on 7 of 21 microbenches in the current snapshot (`make bench-compare`). vs hermes (Meta's jitless engine, the design-space ceiling), zjs ahead on a couple / behind on most — richards within ~1.6×, splay ~1.9×; widest gaps on numeric / alloc-heavy benches (mandelbrot, nbody) where Hermes's generational GC and specialized arithmetic opcodes are the structural lead. Live charts at `docs/perf/index.html` (macOS) — Windows / Linux / cross-engine siblings as above.
+
+**Perf regression note (2026-05-29):** the Phase 5.x feature push (stdlib JS extraction, WinterTC suite, AES-GCM impl, async-gen await) cost ~10% on the average microbench versus the pre-session baseline (regex_match worst at ~+138%). Most of it is constant-per-process cost from new globals being registered at startup; some is i-cache pressure from the larger interpreter. Reclaiming that headroom is the next perf pass.
 
 ## Standard library
 
@@ -76,7 +81,7 @@ globals. Design notes in `docs/stdlib-design.md`.
 
 **WinterTC web globals** ([Minimum Common API](https://min-common-api.proposal.wintertc.org/)):
 
-`fetch` / `Request` / `Response` / `Headers` · `URL` / `URLSearchParams` · `TextEncoder` / `TextDecoder` · `WebSocket` · `setTimeout` / `setInterval` / `clearTimeout` / `clearInterval` · `queueMicrotask` · `console` · `globalThis` · `performance.now` / `performance.timeOrigin` · `crypto.getRandomValues` / `crypto.randomUUID` / `crypto.subtle.digest` / `crypto.subtle.importKey` / `crypto.subtle.sign` / `crypto.subtle.verify` (SHA-1/256/384/512, HMAC) · `btoa` / `atob` · `reportError` · `Event` / `CustomEvent` / `EventTarget` · `AbortController` / `AbortSignal` (+ `.timeout`, `.any`, `.abort`, `.throwIfAborted`) · `DOMException` · `structuredClone` · `Blob` / `File` / `FormData` · `ReadableStream` / `WritableStream` / `TransformStream` / `CountQueuingStrategy` / `ByteLengthQueuingStrategy`
+`fetch` / `Request` / `Response` / `Headers` · `URL` / `URLSearchParams` (full setter set: `pathname` / `search` / `hash` / `hostname` / `port` / `protocol`) · `TextEncoder` / `TextDecoder` / `TextEncoderStream` / `TextDecoderStream` · `WebSocket` · `setTimeout` / `setInterval` / `clearTimeout` / `clearInterval` · `queueMicrotask` · `console` · `globalThis` · `performance.now` / `performance.timeOrigin` / `performance.mark` / `performance.measure` / `performance.clearMarks` / `performance.clearMeasures` / `performance.getEntries{,ByName,ByType}` · `crypto.getRandomValues` / `crypto.randomUUID` / `crypto.subtle.digest` / `crypto.subtle.importKey` / `crypto.subtle.generateKey` / `crypto.subtle.exportKey` / `crypto.subtle.sign` / `crypto.subtle.verify` / `crypto.subtle.encrypt` / `crypto.subtle.decrypt` (SHA-1/256/384/512, HMAC, AES-GCM 128/192/256) · `btoa` / `atob` · `reportError` · `Event` / `CustomEvent` / `EventTarget` · `AbortController` / `AbortSignal` (+ `.timeout`, `.any`, `.abort`, `.throwIfAborted`) · `DOMException` · `structuredClone` · `Blob` / `File` / `FormData` · `ReadableStream` (+ `.tee()` + BYOB reader for `type: 'bytes'` streams) / `WritableStream` / `TransformStream` / `CountQueuingStrategy` / `ByteLengthQueuingStrategy`
 
 ```js
 import path from 'node:path';
@@ -225,6 +230,28 @@ support (Object / Array / String / JSON / Math). Expand the
 
 For a fast harness-light sanity pass against a single subdir, the
 older C-based runner is still available as `make test262-quick`.
+
+## WinterTC MCA conformance
+
+```bash
+make wintercg
+```
+
+Runs the zjs-owned WinterTC Minimum Common API probe suite at
+`tests/wintercg/` — eleven WPT-shaped `.js` files (one per API area)
+through the harness at `scripts/wintercg/zjs_harness.js`. Each probe
+calls `test()` / `promise_test()` / `assert_equals` / etc.; the
+runner aggregates per-area pass/fail and writes
+`docs/wintercg/{last.json, history.jsonl, index.html}`.
+
+There's no upstream `wintercg/api-test` repo (verified against all
+18 repos in the WinterTC55 GitHub org), so the probes ship with zjs
+and ratchet over time. Suite is at **100%** as of the current commit.
+
+The TypeScript declarations consumers can use to type-check their
+own code against zjs's surface live in `types/` (also published as
+the `zjs-types` package — see `types/README.md`). Type-check the
+stdlib internals with `make stdlib-check`.
 
 ## Benchmarks
 

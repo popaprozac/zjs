@@ -104,9 +104,20 @@ Mapping WinterTC Minimum Common API to current state:
 | `Blob` / `File` / `FormData` | ✅ shipped | — |
 | WHATWG Streams | ✅ shipped | — |
 
-Closing Tiers 2 and 3 = WinterTC-compliant. Conformance suite at
-<https://github.com/wintercg/api-test> gives a measurable number to
-sit alongside the test262 dashboard.
+Closing Tiers 2 and 3 = WinterTC-compliant. There's **no upstream
+WinterTC test suite** (verified 2026-05-29: all 18 repos in the
+WinterTC55 GitHub org checked; none is a conformance suite). zjs
+ships its own probes under `tests/wintercg/` driven by
+`scripts/wintercg/run.py` — current pass rate **100% (103/103)**,
+covering: encoding (incl. Encoding streams), URL (incl. setters),
+EventTarget, AbortController (incl. `.any`/`.timeout`/`.throwIfAborted`),
+crypto + crypto.subtle (digest / HMAC sign+verify / generateKey /
+exportKey / encrypt+decrypt AES-GCM), Blob/File/FormData, streams
+(default + BYOB + tee), timers + queueMicrotask, performance User
+Timing, structuredClone, fetch + Headers/Request/Response.
+
+This number sits alongside the test262 dashboard; the runner writes
+`docs/wintercg/{last.json,history.jsonl,index.html}`.
 
 ## Tier 1 — bootstrap minimum ✅ shipped
 
@@ -131,21 +142,34 @@ module loader; per-module status:
    Apple via sysctlbyname + mach `host_statistics64`; Linux via
    `<sys/sysinfo.h>` + `/proc/cpuinfo`.
 
-## Tier 2 — WinterTC web globals ✅ shipped (except HMAC)
+## Tier 2 — WinterTC web globals ✅ shipped
 
 - ✅ `AbortController` / `AbortSignal` (+ `.timeout`, `.any`, `.abort`,
   `.throwIfAborted`); pre-aborted-signal fast-path in `fetch`
 - ✅ `crypto.subtle.digest` (SHA-1/256/384/512 via Apple CommonCrypto /
   Linux OpenSSL / Windows BCrypt); `crypto.randomUUID`
-- ✅ `crypto.subtle.importKey` + HMAC `sign` / `verify` (same backends;
-  constant-time verify)
+- ✅ `crypto.subtle.importKey` + HMAC `sign` / `verify` (constant-time
+  verify)
+- ✅ `crypto.subtle.generateKey` / `exportKey` (raw format) for AES-GCM
+  and HMAC
+- ✅ `crypto.subtle.encrypt` / `decrypt` — AES-GCM 128/192/256, 12-byte
+  IV. Linux uses OpenSSL EVP, Windows uses BCrypt, **Apple uses a
+  vendored pure-C impl at `src/third-party/aes-gcm/`** (table-based,
+  NOT constant-time; BearSSL aes_ct swap-in is the future polish for
+  security-sensitive embedders)
 - ✅ `structuredClone` (deep-copy with cycle preservation; throws
   `DataCloneError` on functions/symbols)
 - ✅ `EventTarget` / `Event` / `CustomEvent`
 - ✅ `DOMException` (with legacy `.code` map)
-- ✅ `performance.now` / `performance.timeOrigin`
+- ✅ `performance.now` / `performance.timeOrigin` / `mark` / `measure`
+  / `clearMarks` / `clearMeasures` / `getEntries*` (User Timing L3)
 - ✅ `btoa` / `atob`
 - ✅ `reportError`
+- ✅ URL setters — `u.pathname = '/x'` etc. correctly propagate to
+  `.href` (re-composed via `host_url_to_string` over the slots)
+- ✅ `Headers.append` combines values with `", "` (was last-wins)
+- ✅ Real `Request` / `Response` constructors — `new Response('hi',
+  { status: 201, statusText: 'Created' })` etc.
 
 ## Tier 3 — networking, streams, real-app features
 

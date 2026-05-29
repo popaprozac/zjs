@@ -1,4 +1,50 @@
-# Binary-size audit — 2026-05-27
+# Binary-size audit — 2026-05-29
+
+## 2026-05-29 snapshot — post WinterTC sweep
+
+The default tier libzjs has grown noticeably during the WinterTC MCA
+push (90.3% → 100%): real `Request`/`Response`/`Headers` constructors,
+URL setters, User Timing L3, vendored AES-GCM (~330 LOC), Encoding
+streams, BYOB stream paths, JS extraction wiring, `AsyncGeneratorAwait`,
+and the zjs-types ambient declarations. Source LOC also stepped up
+(~55 KLOC → ~65.9 KLOC).
+
+| Artifact                | Size         | vs 2026-05-27 default-full (824.6 KB) |
+| ----------------------- | -----------: | ------------------------------------: |
+| `build/zjs` (CLI)       | **1,008,800 B** (985 KB) | +160 KB |
+| `build/libzjs.dylib`    | **990,352 B** (967 KB)   | +142 KB |
+| `build/libzjs.a` (archive) | **1,695,008 B** (1,655 KB) | archive contains all symbols incl. tier-gated |
+
+The CLI and dylib both crossed the 1 MB mark; this is unstripped /
+non-LTO Makefile output (the smoke-binary numbers below from 2026-05-27
+applied `-Wl,-dead_strip` + `strip -S`, which an embedder would also
+do). Where the growth came from, rough split:
+
+| Bucket                                              | Approx. delta |
+| --------------------------------------------------- | ------------: |
+| Vendored AES-GCM + URL setters + Headers.append + R/R ctors | ~30 KB |
+| Encoding streams (TextEncoder/Decoder Stream) + BYOB paths | ~25 KB |
+| User Timing L3 (perf entry buffer + mark/measure) | ~12 KB |
+| `AsyncGeneratorAwait` (state + resume host fns + GC mark) | ~6 KB |
+| JS extraction (.gen.h C string blobs for 7 modules) | ~40-50 KB |
+| Misc parser/conformance fixes (destructuring, strict early errors) | ~10-15 KB |
+
+The JS-blob growth (~40-50 KB) is the unsurprising headline — we now
+inline `web_streams.js`, `web_blob.js`, `web_events.js`, `web_abort.js`,
+`web_clone.js`, `node_path.js`, and `perf_user_timing.js` as
+`static const char[]` rather than living in `.js` files alongside the
+binary. This is the explicit trade for single-binary embedding.
+
+**Next-pass goal:** measure stripped + LTO numbers and re-tier. Suspect
+default-full stripped+LTO is in the 950 KB range and `minimal+LTO` is
+back near the prior 700 KB territory if AOT/JSON gates still hold. Also
+worth investigating: lazy-loading the JS blobs (only decompress on first
+import) to keep cold-import-only modules off the page-resident path.
+
+## 2026-05-27 snapshot — tier system + LTO
+
+(historical)
+
 
 Measured after the tier system landed (Phases 1 + 2). All numbers are for
 a representative embedder shape: a tiny C consumer linked statically
