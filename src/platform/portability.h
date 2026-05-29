@@ -268,6 +268,129 @@ static inline int zjs_hmac_oneshot(int algo,
 #endif
 }
 
+// ---------------------------------------------------------------------
+// AES-GCM one-shot. Backend-specific implementation gated by whichever
+// crypto library is actually reachable from the C compile environment:
+//
+//   - Linux:   OpenSSL EVP_aes_*_gcm (libcrypto)
+//   - Windows: BCrypt with BCRYPT_CHAIN_MODE_GCM
+//   - Apple:   NOT YET WIRED. Apple's public SDK does NOT expose
+//              `kCCModeGCM` or `kCCParameterAuthTag` through
+//              <CommonCrypto/CommonCryptor.h>; CryptoKit is Swift-only.
+//              The path forward is a vendored constant-time pure-C
+//              AES-GCM impl (BearSSL aes_ct + ghash_ctmul64 shape) that
+//              works on iOS without a system-framework dependency.
+//              Tracked as a follow-up. Until then this returns -1 on
+//              Apple and the JS layer surfaces it as OperationError.
+// ---------------------------------------------------------------------
+static inline int zjs_aes_gcm_oneshot(int encrypt,
+                                      const void* key, size_t key_len,
+                                      const void* iv,  size_t iv_len,
+                                      const void* aad, size_t aad_len,
+                                      const void* in,  size_t in_len,
+                                      void* out,
+                                      unsigned char tag[16]) {
+    if (iv_len != 12) return -1;
+    if (key_len != 16 && key_len != 24 && key_len != 32) return -1;
+
+#if defined(_WIN32)
+    BCRYPT_ALG_HANDLE alg = NULL;
+    if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_AES_ALGORITHM, NULL, 0) != 0)
+        return -1;
+    if (BCryptSetProperty(alg, BCRYPT_CHAINING_MODE,
+                          (PUCHAR)BCRYPT_CHAIN_MODE_GCM,
+                          sizeof(BCRYPT_CHAIN_MODE_GCM), 0) != 0) {
+        BCryptCloseAlgorithmProvider(alg, 0); return -1;
+    }
+    BCRYPT_KEY_HANDLE bk = NULL;
+    if (BCryptGenerateSymmetricKey(alg, &bk, NULL, 0,
+                                   (PUCHAR)key, (ULONG)key_len, 0) != 0) {
+        BCryptCloseAlgorithmProvider(alg, 0); return -1;
+    }
+    BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO info;
+    BCRYPT_INIT_AUTH_MODE_INFO(info);
+    info.pbNonce = (PUCHAR)iv; info.cbNonce = (ULONG)iv_len;
+    info.pbAuthData = (PUCHAR)aad; info.cbAuthData = (ULONG)aad_len;
+    info.pbTag = (PUCHAR)tag; info.cbTag = 16;
+    ULONG written = 0;
+    NTSTATUS rc;
+    if (encrypt) {
+        rc = BCryptEncrypt(bk, (PUCHAR)in, (ULONG)in_len, &info,
+                           NULL, 0, (PUCHAR)out, (ULONG)in_len, &written, 0);
+    } else {
+        rc = BCryptDecrypt(bk, (PUCHAR)in, (ULONG)in_len, &info,
+                           NULL, 0, (PUCHAR)out, (ULONG)in_len, &written, 0);
+    }
+    BCryptDestroyKey(bk);
+    BCryptCloseAlgorithmProvider(alg, 0);
+    return rc == 0 ? 0 : -1;
+
+#elif !defined(__APPLE__) && defined(__has_include) && __has_include(<openssl/evp.h>)
+#  include <openssl/evp.h>
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) return -1;
+    const EVP_CIPHER* cip = (key_len == 16) ? EVP_aes_128_gcm()
+                          : (key_len == 24) ? EVP_aes_192_gcm()
+                                            : EVP_aes_256_gcm();
+    int rc = -1, ilen = 0, flen = 0;
+    if (EVP_CipherInit_ex(ctx, cip, NULL, NULL, NULL, encrypt) != 1) goto done;
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, (int)iv_len, NULL) != 1) goto done;
+    if (EVP_CipherInit_ex(ctx, NULL, NULL, (const unsigned char*)key,
+                          (const unsigned char*)iv, encrypt) != 1) goto done;
+    if (aad_len > 0) {
+        if (EVP_CipherUpdate(ctx, NULL, &ilen,
+                             (const unsigned char*)aad, (int)aad_len) != 1) goto done;
+    }
+    if (in_len > 0) {
+        if (EVP_CipherUpdate(ctx, (unsigned char*)out, &ilen,
+                             (const unsigned char*)in, (int)in_len) != 1) goto done;
+    }
+    if (!encrypt) {
+        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, 16, tag) != 1) goto done;
+    }
+    if (EVP_CipherFinal_ex(ctx, (unsigned char*)out + ilen, &flen) != 1) goto done;
+    if (encrypt) {
+        if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, 16, tag) != 1) goto done;
+    }
+    rc = 0;
+done:
+    EVP_CIPHER_CTX_free(ctx);
+    return rc;
+
+#else
+    (void)encrypt; (void)key; (void)key_len; (void)iv; (void)iv_len;
+    (void)aad; (void)aad_len; (void)in; (void)in_len; (void)out; (void)tag;
+    return -1;
+#endif
+}
+
+// Random bytes. Backend for generateKey (and the digest path's IV
+// generation in future). Returns 0 on success, -1 if the platform
+// RNG isn't reachable.
+//
+// Apple: forward-declare SecRandomCopyBytes so we skip pulling in
+// <Security/SecRandom.h> — that header transitively drags MacTypes
+// which collides with our zen-c emitted struct names. The symbol
+// lives in Security.framework which is already linked.
+#if defined(__APPLE__)
+extern int SecRandomCopyBytes(void* rnd, size_t count, void* bytes);
+#endif
+
+static inline int zjs_random_bytes_oneshot(void* out, size_t len) {
+#if defined(__APPLE__)
+    return SecRandomCopyBytes((void*)0, len, out) == 0 ? 0 : -1;
+#elif defined(_WIN32)
+    return BCryptGenRandom(NULL, (PUCHAR)out, (ULONG)len,
+                           BCRYPT_USE_SYSTEM_PREFERRED_RNG) == 0 ? 0 : -1;
+#else
+    FILE* f = fopen("/dev/urandom", "rb");
+    if (!f) return -1;
+    size_t got = fread(out, 1, len, f);
+    fclose(f);
+    return got == len ? 0 : -1;
+#endif
+}
+
 // Peak resident set size in bytes since process start. Used by
 // `--gc-stats` to report a memory-usage upper bound. Returns 0 if
 // the platform query fails.

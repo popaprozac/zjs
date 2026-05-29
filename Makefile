@@ -18,7 +18,7 @@ SHLIB_EXT := dylib
 RPATH_FLAG := -Wl,-rpath,@loader_path
 PLATFORM_SRC     := src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c
 PLATFORM_OBJS    := $(BUILD_DIR)/http_apple.o $(BUILD_DIR)/ws_apple.o $(BUILD_DIR)/socket_posix.o
-PLATFORM_LDFLAGS := -framework Foundation -fobjc-arc
+PLATFORM_LDFLAGS := -framework Foundation -framework Security -fobjc-arc
 PLATFORM_CFLAGS  := -fobjc-arc
 else
 SHLIB_EXT := so

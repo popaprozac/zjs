@@ -13174,20 +13174,27 @@ fn host_crypto_subtle_import_key(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
         return pv;
     }
     let an = zjs_as_string(alg_name_v);
-    let is_hmac: bool = false;
-    raw { if (an->length == 4 && memcmp(an->data, "HMAC", 4) == 0) is_hmac = true; }
-    if !is_hmac {
+    let is_hmac:    bool = false;
+    let is_aes_gcm: bool = false;
+    raw {
+        if (an->length == 4 && memcmp(an->data, "HMAC", 4) == 0) is_hmac = true;
+        else if (an->length == 7 && memcmp(an->data, "AES-GCM", 7) == 0) is_aes_gcm = true;
+    }
+    if !is_hmac && !is_aes_gcm {
         let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
-                                    (char*)"Only HMAC importKey supported", 29);
+                                    (char*)"Only HMAC / AES-GCM importKey supported", 39);
         promise_settle(ctx, pv, err, false);
         return pv;
     }
-    let hash_algo = crypto_resolve_hash_algo(ctx, alg);
-    if hash_algo < 0 {
-        let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
-                                    (char*)"Unrecognized HMAC hash", 22);
-        promise_settle(ctx, pv, err, false);
-        return pv;
+    let hash_algo: int = -1;
+    if is_hmac {
+        hash_algo = crypto_resolve_hash_algo(ctx, alg);
+        if hash_algo < 0 {
+            let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
+                                        (char*)"Unrecognized HMAC hash", 22);
+            promise_settle(ctx, pv, err, false);
+            return pv;
+        }
     }
     // keyData → copy bytes into a fresh Uint8Array so mutation
     // through the caller's reference doesn't affect future sign/verify.
@@ -13197,6 +13204,13 @@ fn host_crypto_subtle_import_key(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
     if !crypto_extract_bytes(kd, &kp, &klen) {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                     (char*)"keyData must be Uint8Array or string", 36);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    // AES key length must be 128/192/256 bits (16/24/32 bytes).
+    if is_aes_gcm && klen != 16 && klen != 24 && klen != 32 {
+        let err = build_typed_error(ctx, (char*)"DataError", 9,
+                                    (char*)"AES-GCM key must be 16/24/32 bytes", 34);
         promise_settle(ctx, pv, err, false);
         return pv;
     }
@@ -13216,11 +13230,375 @@ fn host_crypto_subtle_import_key(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
     let usages_v = if argc >= 5 { args[4] } else { ctx_new_array(ctx, 0) };
     object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"usages", 6), usages_v);
     // Internal slots — hidden from Object.keys via the __ prefix.
+    // __zjs_key_kind discriminates between HMAC and AES-* keys so
+    // sign/verify and encrypt/decrypt know what to do with it.
+    // __zjs_key_algo means the HMAC hash code (1/256/384/512) for HMAC
+    // keys; for AES it's the key length in bytes (16/24/32).
     object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_bytes", 15),
                zjs_cell_from_ptr((void*)key_bytes));
-    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_algo", 14),
-               zjs_int32((i32)hash_algo));
+    if is_hmac {
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_kind", 14),
+                   ctx_intern_string(ctx, (char*)"HMAC", 4));
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_algo", 14),
+                   zjs_int32((i32)hash_algo));
+    } else {
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_kind", 14),
+                   ctx_intern_string(ctx, (char*)"AES-GCM", 7));
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_algo", 14),
+                   zjs_int32((i32)klen));
+    }
     promise_settle(ctx, pv, key_obj_v, true);
+    return pv;
+}
+
+// Read the CryptoKey's __zjs_key_kind string slot. Returns "HMAC" /
+// "AES-GCM" / NULL (caller treats NULL as TypeError-worthy).
+fn crypto_key_kind(ctx: ZjsContext*, key_v: ZjsValue) -> ZjsString* {
+    if zjs_is_object(key_v) == 0 { return NULL; }
+    let k = property_get(ctx, key_v, ctx_intern_string(ctx, (char*)"__zjs_key_kind", 14));
+    if zjs_is_string(k) == 0 { return NULL; }
+    return zjs_as_string(k);
+}
+
+fn crypto_key_is_hmac(ctx: ZjsContext*, key_v: ZjsValue) -> bool {
+    let k = crypto_key_kind(ctx, key_v);
+    if k == NULL { return false; }
+    let r: bool = false;
+    raw { if (k->length == 4 && memcmp(k->data, "HMAC", 4) == 0) r = true; }
+    return r;
+}
+
+fn crypto_key_is_aes_gcm(ctx: ZjsContext*, key_v: ZjsValue) -> bool {
+    let k = crypto_key_kind(ctx, key_v);
+    if k == NULL { return false; }
+    let r: bool = false;
+    raw { if (k->length == 7 && memcmp(k->data, "AES-GCM", 7) == 0) r = true; }
+    return r;
+}
+
+// Shared body for crypto.subtle.encrypt / .decrypt. AES-GCM only for
+// the first cut — CBC/CTR/RSA-OAEP land later.
+//
+//   args[0] = algorithm: { name: 'AES-GCM', iv: Uint8Array(12),
+//                          additionalData?: Uint8Array, tagLength?: 128 }
+//   args[1] = CryptoKey
+//   args[2] = data: Uint8Array (plaintext on encrypt;
+//                                  ciphertext||tag on decrypt)
+fn crypto_encrypt_or_decrypt(ctx: ZjsContext*, args: ZjsValue*, argc: u32, is_decrypt: bool) -> ZjsValue {
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    if argc < 3 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"encrypt/decrypt: bad arity", 26);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let alg_v = args[0];
+    let key_v = args[1];
+    let data_v = args[2];
+
+    // Resolve algorithm name. Accept a bare string or {name:...}.
+    let alg_name_v: ZjsValue = alg_v;
+    if zjs_is_object(alg_v) != 0 && zjs_is_string(alg_v) == 0 {
+        alg_name_v = property_get(ctx, alg_v, ctx_intern_string(ctx, (char*)"name", 4));
+    }
+    if zjs_is_string(alg_name_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"algorithm.name required", 23);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let an = zjs_as_string(alg_name_v);
+    let is_aes_gcm: bool = false;
+    raw { if (an->length == 7 && memcmp(an->data, "AES-GCM", 7) == 0) is_aes_gcm = true; }
+    if !is_aes_gcm {
+        let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
+                                    (char*)"Only AES-GCM encrypt/decrypt supported", 38);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    if !crypto_key_is_aes_gcm(ctx, key_v) {
+        let err = build_typed_error(ctx, (char*)"InvalidAccessError", 18,
+                                    (char*)"key is not an AES-GCM CryptoKey", 31);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+
+    // IV: required, must be Uint8Array of length 12. (The spec allows
+    // 1..2^61-1 bits but in practice 96 bits is the only safe choice
+    // and what every consumer uses — we enforce it.)
+    let iv_v = property_get(ctx, alg_v, ctx_intern_string(ctx, (char*)"iv", 2));
+    let iv_p: u8* = NULL;
+    let iv_n: u32 = 0;
+    if !crypto_extract_bytes(iv_v, &iv_p, &iv_n) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"AES-GCM requires algorithm.iv (Uint8Array)", 42);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    if iv_n != 12 {
+        let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
+                                    (char*)"AES-GCM iv must be 12 bytes", 27);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+
+    // AAD: optional. NULL/0 is fine.
+    let aad_v = property_get(ctx, alg_v, ctx_intern_string(ctx, (char*)"additionalData", 14));
+    let aad_p: u8* = NULL;
+    let aad_n: u32 = 0;
+    if zjs_is_undefined(aad_v) == 0 {
+        if !crypto_extract_bytes(aad_v, &aad_p, &aad_n) {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"algorithm.additionalData must be Uint8Array", 43);
+            promise_settle(ctx, pv, err, false);
+            return pv;
+        }
+    }
+
+    // tagLength: optional. We only support 128.
+    let tl_v = property_get(ctx, alg_v, ctx_intern_string(ctx, (char*)"tagLength", 9));
+    if zjs_is_undefined(tl_v) == 0 {
+        let tl: f64 = zjs_to_double(tl_v);
+        if tl != 128.0 {
+            let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
+                                        (char*)"AES-GCM tagLength must be 128", 29);
+            promise_settle(ctx, pv, err, false);
+            return pv;
+        }
+    }
+
+    // Key bytes.
+    let kb_v = property_get(ctx, key_v, ctx_intern_string(ctx, (char*)"__zjs_key_bytes", 15));
+    if zjs_is_uint8_array(kb_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"InvalidAccessError", 18,
+                                    (char*)"key is not a CryptoKey from this engine", 39);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let kb = zjs_as_uint8_array(kb_v);
+
+    // Input bytes.
+    let in_p: u8* = NULL;
+    let in_n: u32 = 0;
+    if !crypto_extract_bytes(data_v, &in_p, &in_n) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"data must be Uint8Array or string", 33);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+
+    if is_decrypt {
+        // Decrypt: input = ciphertext || 16-byte tag.
+        if in_n < 16 {
+            let err = build_typed_error(ctx, (char*)"OperationError", 14,
+                                        (char*)"AES-GCM ciphertext shorter than tag", 35);
+            promise_settle(ctx, pv, err, false);
+            return pv;
+        }
+        let ct_n = in_n - 16;
+        let result = zjs_uint8_array_new(ct_n);
+        ctx_register_cell(ctx, (void*)result);
+        let tag: u8[16];
+        raw { memcpy(&tag[0], in_p + ct_n, 16); }
+        let rc: int = 0;
+        raw {
+            rc = zjs_aes_gcm_oneshot(0,
+                                     kb->bytes, (size_t)kb->length,
+                                     iv_p, (size_t)iv_n,
+                                     aad_p, (size_t)aad_n,
+                                     in_p, (size_t)ct_n,
+                                     result->bytes,
+                                     &tag[0]);
+        }
+        if rc != 0 {
+            let err = build_typed_error(ctx, (char*)"OperationError", 14,
+                                        (char*)"AES-GCM decrypt failed (auth or backend)", 40);
+            promise_settle(ctx, pv, err, false);
+            return pv;
+        }
+        promise_settle(ctx, pv, zjs_cell_from_ptr((void*)result), true);
+        return pv;
+    }
+
+    // Encrypt: output = ciphertext (in_n bytes) || 16-byte tag.
+    let result = zjs_uint8_array_new(in_n + 16);
+    ctx_register_cell(ctx, (void*)result);
+    let tag: u8[16];
+    let rc: int = 0;
+    raw {
+        rc = zjs_aes_gcm_oneshot(1,
+                                 kb->bytes, (size_t)kb->length,
+                                 iv_p, (size_t)iv_n,
+                                 aad_p, (size_t)aad_n,
+                                 in_p, (size_t)in_n,
+                                 result->bytes,
+                                 &tag[0]);
+    }
+    if rc != 0 {
+        let err = build_typed_error(ctx, (char*)"OperationError", 14,
+                                    (char*)"AES-GCM encrypt failed", 22);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    raw { memcpy(result->bytes + in_n, &tag[0], 16); }
+    promise_settle(ctx, pv, zjs_cell_from_ptr((void*)result), true);
+    return pv;
+}
+
+fn host_crypto_subtle_encrypt(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return crypto_encrypt_or_decrypt(ctx, args, argc, false);
+}
+fn host_crypto_subtle_decrypt(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return crypto_encrypt_or_decrypt(ctx, args, argc, true);
+}
+
+// crypto.subtle.generateKey(algorithm, extractable, keyUsages).
+// AES-GCM uses algorithm.length (bits); HMAC uses algorithm.hash to
+// pick a hash and emits a key sized to that hash's block size.
+fn host_crypto_subtle_generate_key(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    if argc < 1 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"generateKey requires algorithm", 30);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let alg = args[0];
+    let alg_name_v: ZjsValue = alg;
+    if zjs_is_object(alg) != 0 && zjs_is_string(alg) == 0 {
+        alg_name_v = property_get(ctx, alg, ctx_intern_string(ctx, (char*)"name", 4));
+    }
+    if zjs_is_string(alg_name_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"algorithm.name required", 23);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let an = zjs_as_string(alg_name_v);
+    let is_hmac:    bool = false;
+    let is_aes_gcm: bool = false;
+    raw {
+        if (an->length == 4 && memcmp(an->data, "HMAC", 4) == 0) is_hmac = true;
+        else if (an->length == 7 && memcmp(an->data, "AES-GCM", 7) == 0) is_aes_gcm = true;
+    }
+    if !is_hmac && !is_aes_gcm {
+        let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
+                                    (char*)"generateKey: HMAC / AES-GCM only", 32);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+
+    let key_len: u32 = 0;
+    let hash_algo: int = -1;
+    if is_aes_gcm {
+        let len_v = property_get(ctx, alg, ctx_intern_string(ctx, (char*)"length", 6));
+        let bits: f64 = zjs_to_double(len_v);
+        if bits != 128.0 && bits != 192.0 && bits != 256.0 {
+            let err = build_typed_error(ctx, (char*)"OperationError", 14,
+                                        (char*)"AES-GCM length must be 128/192/256", 34);
+            promise_settle(ctx, pv, err, false);
+            return pv;
+        }
+        key_len = ((u32)bits) / 8;
+    } else {
+        hash_algo = crypto_resolve_hash_algo(ctx, alg);
+        if hash_algo < 0 {
+            let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
+                                        (char*)"Unrecognized HMAC hash", 22);
+            promise_settle(ctx, pv, err, false);
+            return pv;
+        }
+        // Block size in bytes per the spec: 64 for SHA-1/256, 128 for SHA-384/512.
+        if hash_algo == 1 || hash_algo == 256 { key_len = 64; }
+        else { key_len = 128; }
+    }
+
+    let key_bytes = zjs_uint8_array_new(key_len);
+    ctx_register_cell(ctx, (void*)key_bytes);
+    let rc: int = 0;
+    raw { rc = zjs_random_bytes_oneshot(key_bytes->bytes, (size_t)key_len); }
+    if rc != 0 {
+        let err = build_typed_error(ctx, (char*)"OperationError", 14,
+                                    (char*)"random source unavailable", 25);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+
+    let key_obj_v = ctx_new_object(ctx);
+    let key_obj = zjs_as_object(key_obj_v);
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"type", 4),
+               ctx_intern_string(ctx, (char*)"secret", 6));
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"extractable", 11),
+               zjs_bool(if argc >= 2 { (if zjs_to_bool_coerce(args[1]) { 1 } else { 0 }) } else { 1 }));
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"algorithm", 9), alg);
+    let usages_v = if argc >= 3 { args[2] } else { ctx_new_array(ctx, 0) };
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"usages", 6), usages_v);
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_bytes", 15),
+               zjs_cell_from_ptr((void*)key_bytes));
+    if is_hmac {
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_kind", 14),
+                   ctx_intern_string(ctx, (char*)"HMAC", 4));
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_algo", 14),
+                   zjs_int32((i32)hash_algo));
+    } else {
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_kind", 14),
+                   ctx_intern_string(ctx, (char*)"AES-GCM", 7));
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_algo", 14),
+                   zjs_int32((i32)key_len));
+    }
+    promise_settle(ctx, pv, key_obj_v, true);
+    return pv;
+}
+
+// crypto.subtle.exportKey(format, key) — raw format only for now.
+// Returns a copy of the key bytes so caller mutation can't poison the
+// internal slot.
+fn host_crypto_subtle_export_key(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    if argc < 2 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"exportKey requires (format, key)", 32);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let fmt_v = args[0];
+    let key_v = args[1];
+    let fmt_ok: bool = false;
+    if zjs_is_string(fmt_v) != 0 {
+        let fs = zjs_as_string(fmt_v);
+        raw { if (fs->length == 3 && memcmp(fs->data, "raw", 3) == 0) fmt_ok = true; }
+    }
+    if !fmt_ok {
+        let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
+                                    (char*)"Only 'raw' exportKey format supported", 37);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let ext_v = property_get(ctx, key_v, ctx_intern_string(ctx, (char*)"extractable", 11));
+    if zjs_to_bool_coerce(ext_v) == false {
+        let err = build_typed_error(ctx, (char*)"InvalidAccessError", 18,
+                                    (char*)"key is not extractable", 22);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let kb_v = property_get(ctx, key_v, ctx_intern_string(ctx, (char*)"__zjs_key_bytes", 15));
+    if zjs_is_uint8_array(kb_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"InvalidAccessError", 18,
+                                    (char*)"key is not a CryptoKey from this engine", 39);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let kb = zjs_as_uint8_array(kb_v);
+    let result = zjs_uint8_array_new(kb.length);
+    ctx_register_cell(ctx, (void*)result);
+    if kb.length > 0 { raw { memcpy(result->bytes, kb->bytes, kb->length); } }
+    promise_settle(ctx, pv, zjs_cell_from_ptr((void*)result), true);
     return pv;
 }
 
@@ -13240,6 +13618,14 @@ fn crypto_sign_or_verify(ctx: ZjsContext*, args: ZjsValue*, argc: u32, is_verify
     if zjs_is_object(key_v) == 0 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                     (char*)"key must be a CryptoKey", 23);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    // Reject non-HMAC CryptoKeys (e.g. AES-GCM keys would otherwise
+    // pass the int32/Uint8Array check and run HMAC on AES key bytes).
+    if !crypto_key_is_hmac(ctx, key_v) {
+        let err = build_typed_error(ctx, (char*)"InvalidAccessError", 18,
+                                    (char*)"key is not an HMAC CryptoKey", 28);
         promise_settle(ctx, pv, err, false);
         return pv;
     }
@@ -20043,6 +20429,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let cik_ptr: void* = NULL; raw { cik_ptr = (void*)host_crypto_subtle_import_key; }
     let csi_ptr: void* = NULL; raw { csi_ptr = (void*)host_crypto_subtle_sign; }
     let csv_ptr: void* = NULL; raw { csv_ptr = (void*)host_crypto_subtle_verify; }
+    let cse_ptr: void* = NULL; raw { cse_ptr = (void*)host_crypto_subtle_encrypt; }
+    let csx_ptr: void* = NULL; raw { csx_ptr = (void*)host_crypto_subtle_decrypt; }
+    let csg_ptr: void* = NULL; raw { csg_ptr = (void*)host_crypto_subtle_generate_key; }
+    let csp_ptr: void* = NULL; raw { csp_ptr = (void*)host_crypto_subtle_export_key; }
     object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"digest", 6),
                ctx_make_host_function_arity(ctx, (char*)"digest", csd_ptr, 2));
     object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"importKey", 9),
@@ -20051,6 +20441,14 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"sign", csi_ptr, 3));
     object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"verify", 6),
                ctx_make_host_function_arity(ctx, (char*)"verify", csv_ptr, 4));
+    object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"encrypt", 7),
+               ctx_make_host_function_arity(ctx, (char*)"encrypt", cse_ptr, 3));
+    object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"decrypt", 7),
+               ctx_make_host_function_arity(ctx, (char*)"decrypt", csx_ptr, 3));
+    object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"generateKey", 11),
+               ctx_make_host_function_arity(ctx, (char*)"generateKey", csg_ptr, 3));
+    object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"exportKey", 9),
+               ctx_make_host_function_arity(ctx, (char*)"exportKey", csp_ptr, 2));
     object_set(ctx, crypto_o, ctx_intern_atom(ctx, (char*)"subtle", 6), subtle_v);
     let crypto_slot = ctx_intern_global(ctx, (char*)"crypto", 6);
     ctx.globals[crypto_slot].value = crypto_v;
