@@ -16,3 +16,5 @@ __pycache__/
 # Node + TypeScript noise from the types/ package.
 node_modules/
 types/node_modules/
+# Generated stdlib JS embed headers (tools/embed_js.py).
+src/stdlib/*.gen.h

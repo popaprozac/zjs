@@ -320,8 +320,11 @@ zjs/
 │   ├── platform/           # Per-OS native shims (http, ws, portability)
 │   └── stdlib/             # node:* modules + WinterTC web globals
 │       ├── node_path.zc, node_fs.zc, node_process.zc, node_os.zc
-│       └── web_events.zc, web_abort.zc, web_clone.zc, web_blob.zc,
-│           web_polyfills.zc
+│       ├── web_events.zc, web_abort.zc, web_clone.zc, web_blob.zc,
+│       │   web_streams.zc
+│       └── *.js             # pure-JS source for stdlib bootstraps —
+│                            # embedded as C strings via tools/embed_js.py
+│                            # at build time (writes *.gen.h alongside)
 ├── types/                  # zjs-types — TypeScript declarations
 │   ├── index.d.ts          #   barrel reference file
 │   ├── globals.d.ts        #   ambient globals (process, performance, …)

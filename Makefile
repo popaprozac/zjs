@@ -132,12 +132,30 @@ stdlib-link: std
 std:
 	@ln -sfn $(ZC_ROOT)/std $@
 
+# Embed .js stdlib sources as C string literals in matching .gen.h
+# headers. The .zc files just `#include` the generated header instead
+# of carrying inline "..."\n fragments — this gets us syntax
+# highlighting, format, lint, and `tsc --check` against zjs-types on
+# the JS layer.
+#
+# Add the .gen.h to the include search path (-Isrc already covers it
+# since it lives next to the .js).
+STDLIB_JS  := $(wildcard src/stdlib/*.js)
+STDLIB_GEN := $(STDLIB_JS:.js=.gen.h)
+
+# Derive the C symbol from the filename: foo_bar.js → FOO_BAR_SOURCE.
+src/stdlib/%.gen.h: src/stdlib/%.js tools/embed_js.py
+	@python3 tools/embed_js.py $< $@ "$(shell echo $* | tr a-z A-Z)_SOURCE"
+
+.PHONY: stdlib-embed
+stdlib-embed: $(STDLIB_GEN)
+
 lib: $(LIB)
 # Depend on PLATFORM_SRC too — zc reads the //> directives in src/lib.zc
 # and compiles those .c files in alongside the transpiled engine, but
 # Make on its own wouldn't notice a platform-source edit and so wouldn't
 # re-run zc. Listing them here forces the rebuild.
-$(LIB): $(ENGINE_SRC) $(PLATFORM_SRC) include/zjs.h | $(BUILD_DIR) stdlib-link
+$(LIB): $(ENGINE_SRC) $(PLATFORM_SRC) $(STDLIB_GEN) include/zjs.h | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) -shared $(LIB_SRC) -o $@
 
 # Static archive for embedding (iOS App Store mandates static linking;
@@ -240,7 +258,7 @@ $(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(QJSRE_OBJS)
 	ar rcs $@ $^
 
 cli: $(CLI)
-$(CLI): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
+$(CLI): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) $(STDLIB_GEN) | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(CLI_SRC) -o $@
 
 smoke: $(SMOKE)
