@@ -3917,8 +3917,21 @@ fn parse_object(p: Parser*) -> AstNode* {
             if value == NULL { break; }
             prop_end = value.end;
         } else if peek_kind(p) == TokenKind::LParen {
-            // Method shorthand: { foo() {} } desugars to { foo: function foo() {} }.
-            // ECMA-262 §13.2.5 MethodDefinition.
+            // Method shorthand: { foo() {} }.
+            //
+            // ECMA-262 §13.2.5: the function value is ANONYMOUS — the
+            // `foo` identifier is the property key only, NOT a binding
+            // visible inside the method body. SetFunctionName later
+            // sets `.name = "foo"` via NamedEvaluation on the property
+            // assignment (see maybe_infer_anon_name in compiler.zc).
+            //
+            // Previously we set name_start/name_length to the key here,
+            // which caused compile_function's bind_callee_local path to
+            // treat it as a NamedFunctionExpression and add `foo` as a
+            // local visible inside the body. That made `{ foo() { foo() } }`
+            // recurse infinitely instead of resolving `foo` lexically —
+            // a leak that hit ~7GB RSS in 2.5s and silently consumed all
+            // free memory until OOM. See zjs-mem-probe trace.
             if !expect_kind(p, TokenKind::LParen) { break; }
             let params = parse_param_list(p);
             if !expect_kind(p, TokenKind::RParen) { break; }
@@ -3928,8 +3941,10 @@ fn parse_object(p: Parser*) -> AstNode* {
             p.function_depth = p.function_depth - 1;
             if body == NULL { break; }
             let method_fn = new_node(&p.tracker, NodeKind::FunctionExpr, key_tok.start, body.end);
+            // name_start retained for diagnostics / source-range queries;
+            // name_length=0 keeps it anonymous from the binding perspective.
             method_fn.name_start  = key_tok.start;
-            method_fn.name_length = key_tok.length;
+            method_fn.name_length = 0;
             method_fn.left = body;
             method_fn.children = params.arr;
             method_fn.children_count = params.count;
