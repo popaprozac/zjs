@@ -1,9 +1,9 @@
 {
-  "when": "2026-05-29 19:55 UTC",
+  "when": "2026-05-29 20:11 UTC",
   "zjs_bin": "/Users/zach/code/zjs/build/zjs",
   "totals": {
-    "pass": 102,
-    "fail": 1,
+    "pass": 103,
+    "fail": 0,
     "timeout": 0,
     "error": 0
   },
@@ -135,8 +135,8 @@
     {
       "area": "crypto",
       "totals": {
-        "pass": 7,
-        "fail": 1,
+        "pass": 8,
+        "fail": 0,
         "timeout": 0,
         "error": 0
       },
@@ -178,8 +178,8 @@
         },
         {
           "name": "crypto.subtle AES-GCM encrypt/decrypt round-trip",
-          "status": "fail",
-          "message": "AES-GCM backend not wired on this platform"
+          "status": "pass",
+          "message": ""
         }
       ],
       "stderr": ""

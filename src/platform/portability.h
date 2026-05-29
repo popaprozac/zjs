@@ -269,20 +269,34 @@ static inline int zjs_hmac_oneshot(int algo,
 }
 
 // ---------------------------------------------------------------------
-// AES-GCM one-shot. Backend-specific implementation gated by whichever
-// crypto library is actually reachable from the C compile environment:
+// AES-GCM one-shot. Backend-specific implementation:
 //
 //   - Linux:   OpenSSL EVP_aes_*_gcm (libcrypto)
 //   - Windows: BCrypt with BCRYPT_CHAIN_MODE_GCM
-//   - Apple:   NOT YET WIRED. Apple's public SDK does NOT expose
-//              `kCCModeGCM` or `kCCParameterAuthTag` through
-//              <CommonCrypto/CommonCryptor.h>; CryptoKit is Swift-only.
-//              The path forward is a vendored constant-time pure-C
-//              AES-GCM impl (BearSSL aes_ct + ghash_ctmul64 shape) that
-//              works on iOS without a system-framework dependency.
-//              Tracked as a follow-up. Until then this returns -1 on
-//              Apple and the JS layer surfaces it as OperationError.
+//   - Apple:   Vendored pure-C AES-GCM (src/third-party/aes-gcm/).
+//              Apple's public SDK doesn't expose kCCModeGCM and
+//              CryptoKit is Swift-only — so we ship our own. Table-
+//              based AES, not constant-time. Security-sensitive
+//              embedders should swap in BearSSL aes_ct + ghash_ctmul64
+//              when packaging.
 // ---------------------------------------------------------------------
+
+#if defined(__APPLE__)
+   // Forward-declare the vendored entry points so we don't pull the
+   // header (which would drag stdint into a header-only inline path).
+   extern int zjs_pc_aes_gcm_encrypt(const unsigned char* key, size_t key_len,
+                                     const unsigned char* iv,  size_t iv_len,
+                                     const unsigned char* aad, size_t aad_len,
+                                     const unsigned char* in,  size_t in_len,
+                                     unsigned char* out,
+                                     unsigned char tag[16]);
+   extern int zjs_pc_aes_gcm_decrypt(const unsigned char* key, size_t key_len,
+                                     const unsigned char* iv,  size_t iv_len,
+                                     const unsigned char* aad, size_t aad_len,
+                                     const unsigned char* in,  size_t in_len,
+                                     unsigned char* out,
+                                     const unsigned char tag[16]);
+#endif
 static inline int zjs_aes_gcm_oneshot(int encrypt,
                                       const void* key, size_t key_len,
                                       const void* iv,  size_t iv_len,
@@ -293,7 +307,20 @@ static inline int zjs_aes_gcm_oneshot(int encrypt,
     if (iv_len != 12) return -1;
     if (key_len != 16 && key_len != 24 && key_len != 32) return -1;
 
-#if defined(_WIN32)
+#if defined(__APPLE__)
+    if (encrypt) {
+        return zjs_pc_aes_gcm_encrypt((const unsigned char*)key, key_len,
+                                      (const unsigned char*)iv,  iv_len,
+                                      (const unsigned char*)aad, aad_len,
+                                      (const unsigned char*)in,  in_len,
+                                      (unsigned char*)out, tag);
+    }
+    return zjs_pc_aes_gcm_decrypt((const unsigned char*)key, key_len,
+                                  (const unsigned char*)iv,  iv_len,
+                                  (const unsigned char*)aad, aad_len,
+                                  (const unsigned char*)in,  in_len,
+                                  (unsigned char*)out, tag);
+#elif defined(_WIN32)
     BCRYPT_ALG_HANDLE alg = NULL;
     if (BCryptOpenAlgorithmProvider(&alg, BCRYPT_AES_ALGORITHM, NULL, 0) != 0)
         return -1;
