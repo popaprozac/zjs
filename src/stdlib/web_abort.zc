@@ -1,90 +1,20 @@
 // AbortController + AbortSignal — pure-JS bootstrap.
 //
+// The JS source lives in `src/stdlib/web_abort.js` (real file, full
+// editor support). Embedded as a C string literal at build time via
+// tools/embed_js.py — see Makefile's stdlib-embed rule.
+//
 // Standalone API surface today. fetch() and the timer APIs don't yet
 // honor signals — those integrations are tracked as a follow-up. The
 // shape is in place so consumer code can pass `{ signal }` and not
 // crash, and signals fire 'abort' events for code that observes them.
+//
+// The JS uses `var Name = class extends ...` for the same reason as
+// web_events.zc: script-scope class declarations are block-scoped,
+// so they wouldn't hoist onto the global env. `var X = class ...` does.
 
 raw {
-    // Uses `var Name = class extends ...` for the same reason as
-    // web_events.zc: script-scope class declarations are block-scoped,
-    // so they wouldn't hoist onto the global env. `var X = class ...`
-    // does.
-    static const char WEB_ABORT_SOURCE[] =
-        "var AbortSignal = class extends EventTarget {\n"
-        "  constructor() {\n"
-        "    super();\n"
-        "    this.aborted = false;\n"
-        "    this.reason = undefined;\n"
-        "    this.onabort = null;\n"
-        "  }\n"
-        "  throwIfAborted() {\n"
-        "    if (this.aborted) throw this.reason;\n"
-        "  }\n"
-        "  static abort(reason) {\n"
-        "    var s = new AbortSignal();\n"
-        "    s.aborted = true;\n"
-        "    s.reason = reason === undefined\n"
-        "      ? new DOMException('signal is aborted without reason', 'AbortError')\n"
-        "      : reason;\n"
-        "    return s;\n"
-        "  }\n"
-        "  static timeout(ms) {\n"
-        "    var s = new AbortSignal();\n"
-        "    setTimeout(function() {\n"
-        "      if (s.aborted) return;\n"
-        "      s.aborted = true;\n"
-        "      s.reason = new DOMException('signal timed out', 'TimeoutError');\n"
-        "      try { s.dispatchEvent(new Event('abort')); }\n"
-        "      catch (e) { reportError(e); }\n"
-        "      if (typeof s.onabort === 'function') {\n"
-        "        try { s.onabort.call(s, new Event('abort')); }\n"
-        "        catch (e) { reportError(e); }\n"
-        "      }\n"
-        "    }, ms);\n"
-        "    return s;\n"
-        "  }\n"
-        "  static any(signals) {\n"
-        "    var composite = new AbortSignal();\n"
-        "    var settle = function(reason) {\n"
-        "      if (composite.aborted) return;\n"
-        "      composite.aborted = true;\n"
-        "      composite.reason = reason;\n"
-        "      try { composite.dispatchEvent(new Event('abort')); }\n"
-        "      catch (e) { reportError(e); }\n"
-        "      if (typeof composite.onabort === 'function') {\n"
-        "        try { composite.onabort.call(composite, new Event('abort')); }\n"
-        "        catch (e) { reportError(e); }\n"
-        "      }\n"
-        "    };\n"
-        "    for (var i = 0; i < signals.length; ++i) {\n"
-        "      var sig = signals[i];\n"
-        "      if (sig.aborted) { settle(sig.reason); return composite; }\n"
-        "      sig.addEventListener('abort', function() { settle(sig.reason); }, { once: true });\n"
-        "    }\n"
-        "    return composite;\n"
-        "  }\n"
-        "};\n"
-        "\n"
-        "var AbortController = class {\n"
-        "  constructor() {\n"
-        "    this.signal = new AbortSignal();\n"
-        "  }\n"
-        "  abort(reason) {\n"
-        "    var s = this.signal;\n"
-        "    if (s.aborted) return;\n"
-        "    s.aborted = true;\n"
-        "    s.reason = reason === undefined\n"
-        "      ? new DOMException('The operation was aborted', 'AbortError')\n"
-        "      : reason;\n"
-        "    try { s.dispatchEvent(new Event('abort')); }\n"
-        "    catch (e) { reportError(e); }\n"
-        "    if (typeof s.onabort === 'function') {\n"
-        "      try { s.onabort.call(s, new Event('abort')); }\n"
-        "      catch (e) { reportError(e); }\n"
-        "    }\n"
-        "  }\n"
-        "};\n";
+    #include "stdlib/web_abort.gen.h"
 }
 
 fn zjs_install_web_abort(ctx: ZjsContext*) -> void {
