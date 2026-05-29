@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-05-29 18:05 UTC",
+    "when": "2026-05-29 18:20 UTC",
     "total": 14524,
     "passed": 12097,
     "failed": 1781,
@@ -2090,11 +2090,11 @@
     },
     {
       "path": "test/language/statements/class/elements/privategetter-on-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [method, __zjs_priv_23_f] and expected [method] should have the same contents. \nzjs: throw"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [method, __zjs_priv_24_f] and expected [method] should have the same contents. \nzjs: throw"
     },
     {
       "path": "test/language/statements/class/elements/privatemethods-on-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [method, __zjs_priv_23_f] and expected [method] should have the same contents. \nzjs: throw"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [method, __zjs_priv_24_f] and expected [method] should have the same contents. \nzjs: throw"
     },
     {
       "path": "test/language/statements/class/elements/privatename-valid-no-earlyerr.js",
