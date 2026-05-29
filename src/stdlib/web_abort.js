@@ -1,3 +1,4 @@
+// @ts-check
 var AbortSignal = class extends EventTarget {
   constructor() {
     super();

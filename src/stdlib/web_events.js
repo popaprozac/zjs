@@ -1,3 +1,4 @@
+// @ts-check
 var __DOM_CODES = {
   IndexSizeError: 1, HierarchyRequestError: 3, WrongDocumentError: 4,
   InvalidCharacterError: 5, NoModificationAllowedError: 7,

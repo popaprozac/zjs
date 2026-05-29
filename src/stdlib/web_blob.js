@@ -1,3 +1,4 @@
+// @ts-check
 (function() {
   function bytesFromPart(p) {
     if (p instanceof Uint8Array) return p;

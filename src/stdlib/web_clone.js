@@ -1,3 +1,4 @@
+// @ts-check
 var __structuredCloneImpl = (function() {
   var TA_CLASSES;
   function getTAClasses() {
@@ -50,7 +51,7 @@ var __structuredCloneImpl = (function() {
       return s;
     }
     if (v instanceof Error) {
-      var Ctor = v.constructor || Error;
+      var Ctor = /** @type {ErrorConstructor} */ (v.constructor || Error);
       var e = new Ctor(v.message); seen.set(v, e);
       if (v.name !== undefined) e.name = v.name;
       if (v.stack !== undefined) e.stack = v.stack;

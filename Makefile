@@ -150,6 +150,19 @@ src/stdlib/%.gen.h: src/stdlib/%.js tools/embed_js.py
 .PHONY: stdlib-embed
 stdlib-embed: $(STDLIB_GEN)
 
+# Type-check the pure-JS stdlib bootstraps via `tsc --checkJs`. Each
+# .js has `// @ts-check` and resolves globals via src/stdlib/_ambient.d.ts.
+# Loose typing — the goal is catching typos and undefined-variable
+# references, not strict spec compliance against lib.webworker.d.ts
+# (we re-implement many of those globals; pulling lib in conflicts).
+#
+# Run manually:  make stdlib-check
+# Requires `npx` / Node + TypeScript.
+.PHONY: stdlib-check
+stdlib-check: $(STDLIB_JS) src/stdlib/_ambient.d.ts tsconfig.stdlib.json
+	@echo "Type-checking stdlib JS via tsc…"
+	@npx -y -p typescript@latest tsc -p tsconfig.stdlib.json
+
 lib: $(LIB)
 # Depend on PLATFORM_SRC too — zc reads the //> directives in src/lib.zc
 # and compiles those .c files in alongside the transpiled engine, but

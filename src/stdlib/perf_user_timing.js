@@ -1,3 +1,4 @@
+// @ts-check
 (function(){
   var marks = new Map();
   var measures = [];
@@ -20,8 +21,16 @@
     if (typeof t === 'string') {
       var list = marks.get(t);
       if (!list || list.length === 0) {
-        var Err = (typeof DOMException !== 'undefined') ? DOMException : SyntaxError;
-        throw new Err("Mark '" + t + "' does not exist", 'SyntaxError');
+        // Spec wants DOMException("…", "SyntaxError"). When DOMException
+        // hasn't been installed (minimal-context builds), fall back to a
+        // plain SyntaxError. The 2-arg form is only valid on DOMException,
+        // so apply .name as a separate step in the fallback path.
+        if (typeof DOMException !== 'undefined') {
+          throw new DOMException("Mark '" + t + "' does not exist", 'SyntaxError');
+        }
+        var err = new SyntaxError("Mark '" + t + "' does not exist");
+        err.name = 'SyntaxError';
+        throw err;
       }
       return list[list.length - 1].startTime;
     }

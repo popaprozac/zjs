@@ -1,8 +1,23 @@
+// @ts-check
 // --- Shared helpers -----------------------------------------
+
+/**
+ * Returns a Promise plus its resolve/reject as a single record so
+ * async code can settle the promise from outside. Inside the executor
+ * `r` and `j` are synchronously captured before it returns, so the
+ * returned record's resolve/reject are always non-null at use time.
+ * The JSDoc cast hand-asserts that shape (TS infers them as
+ * `T | undefined` from the closed-over assignment, which would force
+ * a non-null check on every caller).
+ *
+ * @returns {{ promise: Promise<any>,
+ *             resolve: (value?: any) => void,
+ *             reject:  (reason?: any) => void }}
+ */
 function deferred() {
   var r, j;
   var p = new Promise(function(res, rej) { r = res; j = rej; });
-  return { promise: p, resolve: r, reject: j };
+  return /** @type {any} */ ({ promise: p, resolve: r, reject: j });
 }
 function isCallable(x) { return typeof x === 'function'; }
 function defaultSize(_chunk) { return 1; }

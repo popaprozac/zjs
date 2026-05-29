@@ -1,0 +1,42 @@
+// TypeScript validation for the pure-JS stdlib bootstraps under
+// src/stdlib/*.js. Loose typing — the goal is catching typos and
+// references to missing globals, not strict typing of internal
+// classes. Each .js file opts in via `// @ts-check`.
+//
+// Run with:  npx tsc -p tsconfig.stdlib.json
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    // Deliberately NOT including the WebWorker lib here. Our stdlib
+    // .js files re-implement many of those globals (Blob, File,
+    // EventTarget, AbortController, structuredClone, …) — pulling
+    // webworker in causes:
+    //   1. A TS internal crash on `class X extends EventTarget { ... }`
+    //      patterns with dynamic this-assignments.
+    //   2. Spurious shape conflicts where our impl differs from the
+    //      strict spec interface.
+    // The goal of @ts-check here is catching typos and undefined-
+    // variable references inside our own .js files, not validating
+    // against the spec types. ESNext gives us Promise / Map / Set /
+    // Uint8Array / Symbol / etc. — enough.
+    "lib": ["ESNext"],
+    "skipLibCheck": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "noImplicitThis": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "esModuleInterop": true,
+    "isolatedModules": false,
+    "types": []
+  },
+  "include": [
+    "src/stdlib/*.js",
+    "src/stdlib/_ambient.d.ts"
+  ]
+}

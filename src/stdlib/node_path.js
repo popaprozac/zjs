@@ -1,3 +1,4 @@
+// @ts-check
 const sep = '/';
 const delimiter = ':';
 
