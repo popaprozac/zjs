@@ -2006,7 +2006,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
         // On resumption from a `yield`, .next(arg) feeds arg into the
         // dst register of the suspended Op::Yield. Initial .next has
         // nothing meaningful to feed (state == GEN_INITIAL on entry).
-        if gen.state == GEN_YIELDED && !resume_is_throw {
+        // For GEN_AWAITING (async gen), resume_dst is the await's
+        // dst — write the settled Promise value there.
+        if (gen.state == GEN_YIELDED || gen.state == GEN_AWAITING) && !resume_is_throw {
             ctx.reg_stack[r_base + (u32)gen.resume_dst] = resume_value;
         }
         gen.state = GEN_RUNNING;
@@ -3167,24 +3169,75 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
 
                 if in_async_gen {
-                    // Synchronous-unwrap path (matches pre-microtask-
-                    // roundtrip behavior; see comment above).
+                    // Async-generator await:
+                    //   fulfilled / rejected — synchronous unwrap as
+                    //   before. The pre-existing async-gen tests depend
+                    //   on this (yield-promise-reject patterns trace
+                    //   through it).
+                    //   pending — snapshot generator state, attach
+                    //   reactions on the awaited promise, suspend the
+                    //   generator frame. host_async_gen_resume_* will
+                    //   re-resume when the promise settles.
+                    let g = ctx.frames[cur_idx].generator;
                     if p.state == PROMISE_FULFILLED {
                         regs[inst.a] = p.value;
                     } else if p.state == PROMISE_REJECTED {
                         throwing = true; thrown = p.value;
                         exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                     } else {
-                        // Pending in an async generator. Rare. Fall
-                        // through to the async-fn suspension path
-                        // ONLY if outer_promise also happens to be
-                        // a Promise (won't be for naked async-gen
-                        // frames). Otherwise we can't suspend cleanly
-                        // — surface as a "not yet supported" throw.
-                        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                                    (char*)"await of pending Promise in async generator not yet supported", 62);
-                        throwing = true; thrown = err; exit_reason = 3;
-                        ctx.frames[cur_idx].ip = ip; break;
+                        // Snapshot regs onto the generator (same shape
+                        // as Op::Yield).
+                        let n = ctx.frames[cur_idx].reg_count;
+                        if g.saved_regs == NULL || g.reg_count != n {
+                            if g.saved_regs != NULL { dealloc(g.saved_regs); }
+                            g.saved_regs = alloc_n<ZjsValue>((usize)n);
+                            g.reg_count = n;
+                        }
+                        let si: u32 = 0;
+                        while si < n {
+                            g.saved_regs[si] = regs[si];
+                            si = si + 1;
+                        }
+                        g.saved_ip = ip + 1;
+                        // resume_dst doubles as await_dst — they're
+                        // never both active (generator either yielded
+                        // or awaiting).
+                        g.resume_dst = inst.a;
+                        g.saved_host_this = ctx.host_this;
+                        g.saved_current_closure = ctx.current_closure;
+                        g.state = GEN_AWAITING;
+
+                        // Build resume host-fns carrying the generator.
+                        let on_f_ptr: void* = NULL;
+                        let on_r_ptr: void* = NULL;
+                        raw {
+                            on_f_ptr = (void*)host_async_gen_resume_fulfilled;
+                            on_r_ptr = (void*)host_async_gen_resume_rejected;
+                        }
+                        let on_f = ctx_make_host_function_arity(ctx, (char*)"async_gen_resume_fulfilled", on_f_ptr, 1);
+                        let on_r = ctx_make_host_function_arity(ctx, (char*)"async_gen_resume_rejected",  on_r_ptr, 1);
+                        let g_v = zjs_cell_from_ptr((void*)g);
+                        zjs_as_host_function(on_f).bound = g_v;
+                        zjs_as_host_function(on_r).bound = g_v;
+                        promise_attach_reaction(ctx, p, on_f, on_r, zjs_undefined());
+
+                        // Pop the frame. host_generator_next is sitting
+                        // upstack waiting for our inner-loop result; the
+                        // signal "generator is now awaiting" is the
+                        // GEN_AWAITING state on g. final_result stays
+                        // undefined; host_generator_next sees the state
+                        // and returns g.pending_next_promise (still
+                        // pending).
+                        let ret_dst2 = pop_call_frame(ctx);
+                        if ctx.frame_count <= entry_frame {
+                            final_result = zjs_undefined();
+                        } else {
+                            let cidx = ctx.frame_count - 1;
+                            let cb = ctx.frames[cidx].regs_base;
+                            ctx.reg_stack[cb + (u32)ret_dst2] = zjs_undefined();
+                        }
+                        exit_reason = 1;
+                        break;
                     }
                 } else {
                     // Async function: suspend + microtask round-trip.

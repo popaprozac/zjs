@@ -1368,6 +1368,11 @@ fn gc_mark_cell_children(p: void*) -> void {
         if g.self_iter_obj != NULL {
             gc_mark_value(zjs_cell_from_ptr((void*)g.self_iter_obj));
         }
+        // Pending .next()'s outer Promise for async generators awaiting
+        // a suspended Promise. Without this, the GC can collect the
+        // result-promise between the .next() return and the await
+        // resume — and then the resume tries to settle a dead pointer.
+        gc_mark_value(g.pending_next_promise);
         return;
     }
 
@@ -9594,6 +9599,17 @@ fn host_generator_next(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         return zjs_undefined();
     }
     let arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    // For async generators: allocate the result promise up front, so
+    // when the body suspends on an await (state -> GEN_AWAITING) the
+    // resume host-fns have something to settle later. Stash on the
+    // generator for the resume path to find.
+    let result_promise_v: ZjsValue = zjs_undefined();
+    if g.is_async {
+        let rp = zjs_promise_new();
+        ctx_register_cell(ctx, (void*)rp);
+        result_promise_v = zjs_cell_from_ptr((void*)rp);
+        g.pending_next_promise = result_promise_v;
+    }
     let r: ZjsValue = zjs_undefined();
     let threw: bool = false;
     raw {
@@ -9602,35 +9618,78 @@ fn host_generator_next(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         r = ir.value;
         threw = ir.is_throw;
     }
+    // Body suspended on a pending await — host returns the stashed
+    // promise; the resume callbacks will eventually settle it (either
+    // with a yielded iter-result or after another await).
+    if g.is_async && g.state == GEN_AWAITING {
+        return result_promise_v;
+    }
     if threw {
-        // Body bubbled an uncaught exception. Mark completed and
-        // re-throw to the JS caller.
         g.state = GEN_COMPLETED;
         if g.is_async {
-            // Async generator: an unhandled throw becomes a rejected
-            // Promise on the .next() return rather than a JS-level
-            // throw. Per ECMA-262 §27.6.3.6 AsyncGeneratorResume.
-            let p = zjs_promise_new();
-            ctx_register_cell(ctx, (void*)p);
-            let pv = zjs_cell_from_ptr((void*)p);
-            promise_settle(ctx, pv, r, false);
-            return pv;
+            promise_settle(ctx, result_promise_v, r, false);
+            g.pending_next_promise = zjs_undefined();
+            return result_promise_v;
         }
         ctx.pending_throw_active = true;
         ctx.pending_throw_value  = r;
         return zjs_undefined();
     }
-    // Async generator: wrap the iter-result `{value, done}` in a
-    // resolved Promise so each `.next()` call returns Promise<iter-result>
-    // (ECMA-262 §27.6 AsyncFromSyncIteratorContinuation).
     if g.is_async {
-        let p = zjs_promise_new();
-        ctx_register_cell(ctx, (void*)p);
-        let pv = zjs_cell_from_ptr((void*)p);
-        promise_resolve_with(ctx, pv, r);
-        return pv;
+        promise_resolve_with(ctx, result_promise_v, r);
+        g.pending_next_promise = zjs_undefined();
+        return result_promise_v;
     }
     return r;
+}
+
+// Resume an async generator that suspended on `await pendingPromise`.
+// The bound .bound on the host fn is the generator cell; arg[0] is the
+// settled value (or rejection reason). Run more body; either yield/
+// return (settle pending_next_promise) or await again (leave pending).
+fn host_async_gen_resume_common(ctx: ZjsContext*, args: ZjsValue*, argc: u32, is_throw: bool) -> ZjsValue {
+    // ctx.current_host_fn points at the currently-invoked host
+    // function; we stashed the generator on its .bound slot when
+    // Op::Await suspended.
+    let gen_v: ZjsValue = zjs_undefined();
+    if ctx.current_host_fn != NULL {
+        let hf: ZjsHostFunction* = NULL;
+        raw { hf = (ZjsHostFunction*)ctx->current_host_fn; }
+        gen_v = hf.bound;
+    }
+    if zjs_is_generator(gen_v) == 0 { return zjs_undefined(); }
+    let g = zjs_as_generator(gen_v);
+    if g.state != GEN_AWAITING { return zjs_undefined(); }
+    let value = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let r: ZjsValue = zjs_undefined();
+    let threw: bool = false;
+    raw {
+        extern InterpretResult interpret_resume_generator(ZjsContext* ctx, ZjsGenerator* gen, ZjsValue resume_value, bool is_throw);
+        InterpretResult ir = interpret_resume_generator(ctx, g, value, is_throw ? 1 : 0);
+        r = ir.value;
+        threw = ir.is_throw;
+    }
+    // Generator suspended again on another await — leave the stashed
+    // pending promise unresolved; the next reaction will settle it.
+    if g.state == GEN_AWAITING { return zjs_undefined(); }
+    let pv = g.pending_next_promise;
+    if zjs_is_promise(pv) == 0 { return zjs_undefined(); }
+    g.pending_next_promise = zjs_undefined();
+    if threw {
+        g.state = GEN_COMPLETED;
+        promise_settle(ctx, pv, r, false);
+        return zjs_undefined();
+    }
+    // r is the iter-result {value, done}; resolve the next() promise.
+    promise_resolve_with(ctx, pv, r);
+    return zjs_undefined();
+}
+
+fn host_async_gen_resume_fulfilled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return host_async_gen_resume_common(ctx, args, argc, false);
+}
+fn host_async_gen_resume_rejected(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return host_async_gen_resume_common(ctx, args, argc, true);
 }
 
 // `iter[Symbol.iterator]()` returns the iterator itself. Spec sugar

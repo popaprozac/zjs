@@ -1027,6 +1027,10 @@ def GEN_INITIAL:   u8 = 0;
 def GEN_YIELDED:   u8 = 1;
 def GEN_RUNNING:   u8 = 2;
 def GEN_COMPLETED: u8 = 3;
+// Async generator awaiting a pending Promise. State entered when
+// Op::Await suspends in an async-gen frame; resume happens when the
+// awaited Promise settles (via host_async_gen_resume_*).
+def GEN_AWAITING:  u8 = 4;
 // Transient state used during the initial bytecode-Invoke of a
 // generator function: the prologue is running, Op::GeneratorStart will
 // fire at its end to capture state + unwind. Distinguished from
@@ -1053,6 +1057,11 @@ struct ZjsGenerator {
     // matching async-iterator semantics. Set by the Op::Invoke is-gen
     // branch when target.is_async is true.
     is_async:               bool;
+    // Async-gen await suspension: the Promise that the current .next()
+    // call returned. When the awaited Promise settles, the resume path
+    // either runs more body and settles this with the next iter-result,
+    // or the body awaits again and leaves this pending.
+    pending_next_promise:   ZjsValue;
 }
 
 fn zjs_is_generator(v: ZjsValue) -> int {
@@ -1079,6 +1088,7 @@ fn zjs_generator_new() -> ZjsGenerator* {
     g.saved_current_closure = NULL;
     g.state = GEN_INITIAL;
     g.self_iter_obj = NULL;
+    g.pending_next_promise = zjs_undefined();
     return g;
 }
 
