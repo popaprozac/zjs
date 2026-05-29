@@ -1,5 +1,5 @@
 {
-  "when": "2026-05-29 20:11 UTC",
+  "when": "2026-05-29 20:54 UTC",
   "zjs_bin": "/Users/zach/code/zjs/build/zjs",
   "totals": {
     "pass": 103,
@@ -162,17 +162,17 @@
           "message": ""
         },
         {
-          "name": "crypto.subtle.importKey + HMAC sign/verify",
-          "status": "pass",
-          "message": ""
-        },
-        {
           "name": "crypto.subtle.generateKey AES-GCM",
           "status": "pass",
           "message": ""
         },
         {
           "name": "crypto.subtle.exportKey raw",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "crypto.subtle.importKey + HMAC sign/verify",
           "status": "pass",
           "message": ""
         },
@@ -457,7 +457,7 @@
           "message": ""
         },
         {
-          "name": "ReadableStream basic read",
+          "name": "TransformStream basic",
           "status": "pass",
           "message": ""
         },
@@ -467,7 +467,7 @@
           "message": ""
         },
         {
-          "name": "TransformStream basic",
+          "name": "ReadableStream basic read",
           "status": "pass",
           "message": ""
         },
@@ -561,7 +561,7 @@
       },
       "results": [
         {
-          "name": "queueMicrotask FIFO vs Promise.then",
+          "name": "queueMicrotask runs after sync code",
           "status": "pass",
           "message": ""
         },
