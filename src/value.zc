@@ -1659,6 +1659,14 @@ struct ZjsClosure {
     // chalk's `(...) => ...; Object.setPrototypeOf(it, Chalk.prototype)`
     // pattern resolve `.red`, `.bold`, etc. from Chalk.prototype.
     proto_override: ZjsObject*;
+    // Arrow-function lexical-this capture. Arrows don't have their own
+    // `this` — they inherit from the enclosing scope. We snapshot
+    // ctx.host_this at MakeClosure time when the wrapped Function is
+    // is_arrow=true, and Op::LoadThis inside the arrow body returns
+    // this snapshot instead of the current frame's host_this. Critical
+    // for `class Foo { constructor() { arr.map(x => this.bar(x)) } }`
+    // and any callback-style code (test262 §10.2.1.3).
+    captured_this:  ZjsValue;
 }
 
 fn zjs_cell_from_ptr(p: void*) -> ZjsValue {
@@ -2024,6 +2032,7 @@ fn zjs_closure_new(function: void*, env: ZjsObject*) -> ZjsClosure* {
     cl.env = env;
     cl.props = NULL;
     cl.proto_override = NULL;
+    cl.captured_this = zjs_undefined();
     return cl;
 }
 

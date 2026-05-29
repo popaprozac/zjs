@@ -1297,6 +1297,9 @@ fn gc_mark_cell_children(p: void*) -> void {
             let pov = zjs_cell_from_ptr((void*)cl.proto_override);
             gc_mark_value(pov);
         }
+        // Arrow function's lexical-this snapshot — anchors the
+        // enclosing instance/object for the lifetime of the arrow.
+        gc_mark_value(cl.captured_this);
         return;
     }
 

@@ -2139,8 +2139,18 @@ fn interpret_inner_full(ctx: ZjsContext*,
         // host_this set by the call site. Replaces the Op::LoadThis the
         // compiler used to emit at function entry — saves one dispatch
         // per call into any `this`-using function.
+        //
+        // Arrow functions ignore the call-site host_this and read the
+        // creation-time `this` snapshot captured at MakeClosure (see
+        // ZjsClosure.captured_this). Without this branch, every
+        // `arr.map(x => this.foo)` would see map's callback host_this
+        // (the array) instead of the enclosing scope's instance.
         if ip == 0 && f.this_reg >= 0 {
-            regs[(u32)f.this_reg] = ctx.host_this;
+            if f.is_arrow && ctx.current_closure != NULL {
+                regs[(u32)f.this_reg] = ctx.current_closure.captured_this;
+            } else {
+                regs[(u32)f.this_reg] = ctx.host_this;
+            }
         }
 
         // Inner-loop exit reason:
@@ -4405,6 +4415,29 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 env_o = zjs_as_object(env_val);
             }
             let cl = zjs_closure_new(fp, env_o);
+            // Snapshot the creation-time `this` so arrow bodies see
+            // the enclosing scope's this instead of whatever callback
+            // dispatcher set ctx.host_this to (Array.map, Promise.then
+            // etc.). For arrows defined inside another arrow, the
+            // chain unwinds via the parent closure's captured_this.
+            let mc_f: Function* = NULL;
+            raw { mc_f = (Function*)fp; }
+            if mc_f.is_arrow {
+                // If we're inside another arrow already, inherit its
+                // captured_this; otherwise take the current frame's
+                // host_this.
+                if ctx.current_closure != NULL {
+                    let outer_f: Function* = NULL;
+                    raw { outer_f = (Function*)ctx->current_closure->function; }
+                    if outer_f.is_arrow {
+                        cl.captured_this = ctx.current_closure.captured_this;
+                    } else {
+                        cl.captured_this = ctx.host_this;
+                    }
+                } else {
+                    cl.captured_this = ctx.host_this;
+                }
+            }
             ctx_register_cell(ctx, (void*)cl);
             regs[inst.a] = zjs_cell_from_ptr((void*)cl);
         } else if op == Op::LoadEnv {
@@ -4840,7 +4873,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 throwing = true; thrown = err; exit_reason = 3;
                 ctx.frames[cur_idx].ip = ip; break;
             }
-            regs[inst.a] = ctx.host_this;
+            // Arrow functions inherit `this` lexically — read the
+            // creation-time snapshot stashed in the closure. Without
+            // this branch, every `arr.map(x => this.foo)` sees
+            // map's host_this (typically the array) instead of the
+            // enclosing scope.
+            if f.is_arrow && ctx.current_closure != NULL {
+                regs[inst.a] = ctx.current_closure.captured_this;
+            } else {
+                regs[inst.a] = ctx.host_this;
+            }
         } else if op == Op::LoadNewTarget {
             if ctx.new_target_active {
                 regs[inst.a] = ctx.new_target_value;

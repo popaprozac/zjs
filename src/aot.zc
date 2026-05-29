@@ -21,7 +21,7 @@ def ZJS_AOT_MAGIC0: u8 = 'Z' as u8;
 def ZJS_AOT_MAGIC1: u8 = 'J' as u8;
 def ZJS_AOT_MAGIC2: u8 = 'S' as u8;
 def ZJS_AOT_MAGIC3: u8 = 'b' as u8;
-def ZJS_AOT_VERSION: u32 = 5;
+def ZJS_AOT_VERSION: u32 = 6;
 
 def ZJS_AOT_TAG_INT32:    u8 = 0;
 def ZJS_AOT_TAG_DOUBLE:   u8 = 1;
@@ -31,14 +31,18 @@ def ZJS_AOT_TAG_UNDEF:    u8 = 4;
 def ZJS_AOT_TAG_STRING:   u8 = 5;
 def ZJS_AOT_TAG_FUNCTION: u8 = 6;
 
-def ZJS_AOT_FLAG_NEEDS_ENV:               u8 = 0x01;
-def ZJS_AOT_FLAG_IS_CLASS_CONSTRUCTOR:    u8 = 0x02;
-def ZJS_AOT_FLAG_IS_METHOD:               u8 = 0x04;
-def ZJS_AOT_FLAG_IS_DEFAULT_DERIVED_CTOR: u8 = 0x08;
-def ZJS_AOT_FLAG_USES_ARGUMENTS:          u8 = 0x10;
-def ZJS_AOT_FLAG_HAS_REST_PARAM:          u8 = 0x20;
-def ZJS_AOT_FLAG_IS_ASYNC:                u8 = 0x40;
-def ZJS_AOT_FLAG_IS_GENERATOR:            u8 = 0x80;
+// Function flags. v6 widened from u8 to u16 to make room for is_arrow
+// (and leave headroom for future flags). Older v5 readers no longer
+// load — the version bump above gates the wire format change.
+def ZJS_AOT_FLAG_NEEDS_ENV:               u16 = 0x0001;
+def ZJS_AOT_FLAG_IS_CLASS_CONSTRUCTOR:    u16 = 0x0002;
+def ZJS_AOT_FLAG_IS_METHOD:               u16 = 0x0004;
+def ZJS_AOT_FLAG_IS_DEFAULT_DERIVED_CTOR: u16 = 0x0008;
+def ZJS_AOT_FLAG_USES_ARGUMENTS:          u16 = 0x0010;
+def ZJS_AOT_FLAG_HAS_REST_PARAM:          u16 = 0x0020;
+def ZJS_AOT_FLAG_IS_ASYNC:                u16 = 0x0040;
+def ZJS_AOT_FLAG_IS_GENERATOR:            u16 = 0x0080;
+def ZJS_AOT_FLAG_IS_ARROW:                u16 = 0x0100;
 
 // =====================================================================
 // Writer — growing byte buffer.
@@ -77,6 +81,17 @@ fn aot_w_u8(w: AotWriter*, v: u8) -> void {
     aot_writer_ensure(w, 1);
     w.buf[w.len] = v;
     w.len = w.len + 1;
+}
+
+fn aot_w_u16(w: AotWriter*, v: u16) -> void {
+    aot_writer_ensure(w, 2);
+    let p: u8* = NULL;
+    raw { p = &(w->buf[w->len]); }
+    raw {
+        p[0] = (uint8_t)(v & 0xff);
+        p[1] = (uint8_t)((v >> 8) & 0xff);
+    }
+    w.len = w.len + 2;
 }
 
 fn aot_w_u32(w: AotWriter*, v: u32) -> void {
@@ -157,6 +172,14 @@ fn aot_r_u8(r: AotReader*) -> u8 {
     let v = r.buf[r.pos];
     r.pos = r.pos + 1;
     return v;
+}
+
+fn aot_r_u16(r: AotReader*) -> u16 {
+    if !aot_r_ensure(r, 2) { return 0; }
+    let b0: u16 = (u16)r.buf[r.pos];
+    let b1: u16 = (u16)r.buf[r.pos + 1];
+    r.pos = r.pos + 2;
+    return b0 | (b1 << 8);
 }
 
 fn aot_r_u32(r: AotReader*) -> u32 {
@@ -383,8 +406,8 @@ fn aot_max_global_slot(f: Function*) -> i32 {
     return m;
 }
 
-fn aot_pack_flags(f: Function*) -> u8 {
-    let v: u8 = 0;
+fn aot_pack_flags(f: Function*) -> u16 {
+    let v: u16 = 0;
     if f.needs_env               { v = v | ZJS_AOT_FLAG_NEEDS_ENV; }
     if f.is_class_constructor    { v = v | ZJS_AOT_FLAG_IS_CLASS_CONSTRUCTOR; }
     if f.is_method               { v = v | ZJS_AOT_FLAG_IS_METHOD; }
@@ -393,10 +416,11 @@ fn aot_pack_flags(f: Function*) -> u8 {
     if f.has_rest_param          { v = v | ZJS_AOT_FLAG_HAS_REST_PARAM; }
     if f.is_async                { v = v | ZJS_AOT_FLAG_IS_ASYNC; }
     if f.is_generator            { v = v | ZJS_AOT_FLAG_IS_GENERATOR; }
+    if f.is_arrow                { v = v | ZJS_AOT_FLAG_IS_ARROW; }
     return v;
 }
 
-fn aot_unpack_flags(f: Function*, v: u8) -> void {
+fn aot_unpack_flags(f: Function*, v: u16) -> void {
     f.needs_env               = (v & ZJS_AOT_FLAG_NEEDS_ENV)               != 0;
     f.is_class_constructor    = (v & ZJS_AOT_FLAG_IS_CLASS_CONSTRUCTOR)    != 0;
     f.is_method               = (v & ZJS_AOT_FLAG_IS_METHOD)               != 0;
@@ -405,6 +429,7 @@ fn aot_unpack_flags(f: Function*, v: u8) -> void {
     f.has_rest_param          = (v & ZJS_AOT_FLAG_HAS_REST_PARAM)          != 0;
     f.is_async                = (v & ZJS_AOT_FLAG_IS_ASYNC)                != 0;
     f.is_generator            = (v & ZJS_AOT_FLAG_IS_GENERATOR)            != 0;
+    f.is_arrow                = (v & ZJS_AOT_FLAG_IS_ARROW)                != 0;
 }
 
 fn aot_write_function(w: AotWriter*, ctx: ZjsContext*, f: Function*) -> bool {
@@ -484,7 +509,7 @@ fn aot_write_function(w: AotWriter*, ctx: ZjsContext*, f: Function*) -> bool {
     aot_w_u32(w, f.param_count);
     aot_w_u32(w, f.expected_arg_count);
 
-    aot_w_u8(w, aot_pack_flags(f));
+    aot_w_u16(w, aot_pack_flags(f));
     aot_w_u8(w, f.env_reg);
     // this_reg is the slot the interpreter seeds with ctx.host_this on
     // first entry to the frame (cheaper than emitting Op::LoadThis per
@@ -663,7 +688,7 @@ fn aot_read_function(r: AotReader*, ctx: ZjsContext*) -> Function* {
     f.param_count        = aot_r_u32(r);
     f.expected_arg_count = aot_r_u32(r);
 
-    aot_unpack_flags(f, aot_r_u8(r));
+    aot_unpack_flags(f, aot_r_u16(r));
     f.env_reg = aot_r_u8(r);
     f.this_reg = (i32)(u32)aot_r_u32(r);
 

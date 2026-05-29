@@ -3411,6 +3411,11 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     // That broke property writes on the over-wrapped function (TAG_
     // CLOSURE non-class writes silently drop). See #265.
     f.needs_env = c.has_outer_refs;
+    // Mark arrow functions so MakeClosure can capture the creation-
+    // time `this` (and Op::LoadThis can route through it). Without
+    // this, every `class C { constructor() { arr.map(x => this.f(x)) } }`
+    // mis-binds `this` to the map callback's host_this (globalThis).
+    f.is_arrow = node.kind == NodeKind::ArrowFunc;
     // For ordinary functions / arrow funcs the parser stashes the
     // async flag in bool_value. For MethodDef, bool_value already
     // carries is_static — so we keep the async flag in `num` instead
@@ -3482,7 +3487,13 @@ fn compile_function_value(c: Compiler*, node: AstNode*) -> u8 {
     // in a closure with the current env. f.needs_env carries the
     // inner's has_outer_refs flag (set in compile_function). Precise
     // — wrap exactly when the inner reads outer scope.
-    if f.needs_env {
+    //
+    // Arrows always wrap, even when they don't capture an env binding:
+    // MakeClosure is also where the creation-time `this` snapshot lands
+    // (cl.captured_this). A bare `() => this.x` reads `this` lexically
+    // but doesn't pull anything from the env chain, so without this
+    // override it would skip MakeClosure and lose the snapshot.
+    if f.needs_env || f.is_arrow {
         let cls_reg = alloc_reg(c);
         let env = closure_env_reg(c);
         emit(c, make_inst_abc(Op::MakeClosure, cls_reg, dst, env.reg));

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-29 03:11 UTC",
+    "when": "2026-05-29 14:45 UTC",
     "total": 14524,
-    "passed": 12087,
-    "failed": 1791,
+    "passed": 12096,
+    "failed": 1782,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -1714,7 +1714,7 @@
     },
     {
       "path": "test/language/statements/class/elements/private-field-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_20_f')\nzjs: throw: TypeError: Cannot rea"
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private field from an ordinary object Expected a TypeError to be thrown but no exception"
     },
     {
       "path": "test/language/statements/class/elements/private-field-access-on-inner-function.js",
@@ -1758,7 +1758,7 @@
     },
     {
       "path": "test/language/statements/class/elements/private-getter-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_20_m')\nzjs: throw: TypeError: Cannot rea"
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private accessor from an ordinary object Expected a TypeError to be thrown but no except"
     },
     {
       "path": "test/language/statements/class/elements/private-getter-access-on-inner-function.js",
@@ -1814,7 +1814,7 @@
     },
     {
       "path": "test/language/statements/class/elements/private-method-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_20_m')\nzjs: throw: TypeError: Cannot rea"
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private method from an ordinary object Expected a TypeError to be thrown but no exceptio"
     },
     {
       "path": "test/language/statements/class/elements/private-method-access-on-inner-function.js",
@@ -1889,28 +1889,8 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/elements/private-methods/prod-private-async-generator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-methods/prod-private-async-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-methods/prod-private-generator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-methods/prod-private-method-initialize-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-methods/prod-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
-    },
-    {
       "path": "test/language/statements/class/elements/private-setter-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private setter from an ordinary object Expected a TypeError to be thrown but no exceptio"
     },
     {
       "path": "test/language/statements/class/elements/private-setter-access-on-inner-function.js",
@@ -2226,11 +2206,15 @@
     },
     {
       "path": "test/language/statements/class/elements/static-field-anonymous-function-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#field\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue("
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"#field\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab"
     },
     {
       "path": "test/language/statements/class/elements/static-field-declaration.js",
       "reason": "[sloppy] zjs: throw: (unknown): f descriptor should be enumerable\nzjs: throw: (unknown): f descriptor should be enumerable"
+    },
+    {
+      "path": "test/language/statements/class/elements/static-field-init-this-inside-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abfunction C() { [user code] }\u00bb) to be true\nzjs: throw: (unk"
     },
     {
       "path": "test/language/statements/class/elements/static-field-init-with-this.js",
@@ -2246,7 +2230,7 @@
     },
     {
       "path": "test/language/statements/class/elements/static-private-getter-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_20_f')\nzjs: throw: TypeError: Cannot rea"
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed static private getter from an object which did not contain it Expected a TypeError to be"
     },
     {
       "path": "test/language/statements/class/elements/static-private-getter-access-on-inner-class.js",
@@ -2262,7 +2246,7 @@
     },
     {
       "path": "test/language/statements/class/elements/static-private-method-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_20_f')\nzjs: throw: TypeError: Cannot rea"
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed static private method from an object which did not contain it Expected a TypeError to be"
     },
     {
       "path": "test/language/statements/class/elements/static-private-method-access-on-inner-function.js",
@@ -2278,7 +2262,7 @@
     },
     {
       "path": "test/language/statements/class/elements/static-private-setter-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed static private setter from an object which did not contain it Expected a TypeError to be"
     },
     {
       "path": "test/language/statements/class/elements/static-private-setter-access-on-inner-class.js",
@@ -3434,7 +3418,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/private-field-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_20_f')\nzjs: throw: TypeError: Cannot rea"
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private field from an ordinary object Expected a TypeError to be thrown but no exception"
     },
     {
       "path": "test/language/expressions/class/elements/private-field-access-on-inner-function.js",
@@ -3462,7 +3446,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/private-getter-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_20_m')\nzjs: throw: TypeError: Cannot rea"
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private accessor from an ordinary object Expected a TypeError to be thrown but no except"
     },
     {
       "path": "test/language/expressions/class/elements/private-getter-access-on-inner-function.js",
@@ -3498,7 +3482,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/private-method-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_20_m')\nzjs: throw: TypeError: Cannot rea"
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private method from an ordinary object Expected a TypeError to be thrown but no exceptio"
     },
     {
       "path": "test/language/expressions/class/elements/private-method-access-on-inner-function.js",
@@ -3525,28 +3509,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): [[Get]] operation of an accessor without getter Expected a TypeError to be thrown but no exceptio"
     },
     {
-      "path": "test/language/expressions/class/elements/private-methods/prod-private-async-generator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
-    },
-    {
-      "path": "test/language/expressions/class/elements/private-methods/prod-private-async-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
-    },
-    {
-      "path": "test/language/expressions/class/elements/private-methods/prod-private-generator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
-    },
-    {
-      "path": "test/language/expressions/class/elements/private-methods/prod-private-method-initialize-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
-    },
-    {
-      "path": "test/language/expressions/class/elements/private-methods/prod-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): memberexpression and call expression forms Expected SameValue(\u00abfunction #m() { [user code] }\u00bb, \u00abu"
-    },
-    {
       "path": "test/language/expressions/class/elements/private-setter-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
+      "reason": "[sloppy] zjs: throw: (unknown): accessed private setter from an ordinary object Expected a TypeError to be thrown but no exceptio"
     },
     {
       "path": "test/language/expressions/class/elements/private-setter-access-on-inner-function.js",
@@ -3694,11 +3658,15 @@
     },
     {
       "path": "test/language/expressions/class/elements/static-field-anonymous-function-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"#field\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue("
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"#field\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab"
     },
     {
       "path": "test/language/expressions/class/elements/static-field-declaration.js",
       "reason": "[sloppy] zjs: throw: (unknown): f descriptor should be enumerable\nzjs: throw: (unknown): f descriptor should be enumerable"
+    },
+    {
+      "path": "test/language/expressions/class/elements/static-field-init-this-inside-arrow-function.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abfunction C() { [user code] }\u00bb) to be true\nzjs: throw: (unk"
     },
     {
       "path": "test/language/expressions/class/elements/static-field-init-with-this.js",
@@ -3714,7 +3682,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/static-private-getter-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_20_f')\nzjs: throw: TypeError: Cannot rea"
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed static private getter from an object which did not contain it Expected a TypeError to be"
     },
     {
       "path": "test/language/expressions/class/elements/static-private-getter-access-on-inner-class.js",
@@ -3730,7 +3698,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/static-private-method-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading '__zjs_priv_20_f')\nzjs: throw: TypeError: Cannot rea"
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed static private method from an object which did not contain it Expected a TypeError to be"
     },
     {
       "path": "test/language/expressions/class/elements/static-private-method-access-on-inner-function.js",
@@ -3750,7 +3718,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/static-private-setter-access-on-inner-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
+      "reason": "[sloppy] zjs: throw: (unknown): Accessed static private setter from an object which did not contain it Expected a TypeError to be"
     },
     {
       "path": "test/language/expressions/class/elements/static-private-setter-access-on-inner-class.js",
@@ -6111,10 +6079,6 @@
     {
       "path": "test/built-ins/Set/prototype/forEach/forEach.js",
       "reason": "[sloppy] zjs: throw: (unknown): forEach descriptor should not be enumerable\nzjs: throw: (unknown): forEach descriptor should not "
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/this-arg-explicit-cannot-override-lexical-this-arrow.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `this` is not `usurper` Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object Object]\u00bb) to be false\nzjs:"
     },
     {
       "path": "test/built-ins/Set/prototype/forEach/this-strict.js",

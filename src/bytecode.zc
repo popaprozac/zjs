@@ -606,6 +606,13 @@ struct Function {
     // it has no .prototype property and is not constructible. Read
     // by `is_proto` and the constructibility checks.
     is_method: bool;
+    // Arrow function — `() => ...`. Arrows don't have their own
+    // `this` / `new.target` / `arguments`; they inherit from the
+    // enclosing scope. Op::MakeClosure captures the creation-time
+    // ctx.host_this into the resulting ZjsClosure's captured_this
+    // slot, and Op::LoadThis routes through it when the current
+    // closure's function is an arrow.
+    is_arrow: bool;
     // For `class Child extends Parent { ... }`: holds the parent
     // constructor so Object.getPrototypeOf(Child) === Parent. Plain
     // (non-extended) classes leave this undefined. Marked at class-
