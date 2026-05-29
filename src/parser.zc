@@ -172,9 +172,22 @@ fn parse_program_with(source: char*, source_len: usize, is_module: bool) -> Pars
     p.in_generator = false;
     p.is_module = is_module;
 
-    // Lex everything into a buffer.
-    p.tokens = alloc_n<Token>(MAX_TOKENS);
-    p.token_count = tokenize_into(source, source_len, p.tokens, MAX_TOKENS);
+    // Lex everything into a buffer. Start at a size proportional to
+    // the source (~1 token per 4 chars covers densely-tokenized JS like
+    // minified bundles); grow 2x while tokenize_into fills the buffer
+    // without reaching Eof. zod 4.x ships ~286K tokens in one file —
+    // the old fixed 65536 cap silently truncated at line ~10260 and
+    // broke parsing past it.
+    let tok_cap: usize = if source_len < 1024 { 1024 } else { source_len / 4 };
+    if tok_cap < MAX_TOKENS { tok_cap = MAX_TOKENS; }
+    p.tokens = alloc_n<Token>(tok_cap);
+    p.token_count = tokenize_into(source, source_len, p.tokens, tok_cap);
+    while p.token_count == tok_cap && p.tokens[tok_cap - 1].kind != TokenKind::Eof {
+        let new_cap: usize = tok_cap * 2;
+        p.tokens = realloc_n<Token>(p.tokens, tok_cap, new_cap);
+        p.token_count = tokenize_into(source, source_len, p.tokens, new_cap);
+        tok_cap = new_cap;
+    }
     p.pos = 0;
 
     // Parse a sequence of expression statements terminated by `;` or EOF.

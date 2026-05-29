@@ -18705,6 +18705,25 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     }
     zjs_install_methods(ctx, ctx.set_proto, set_table_p, set_table_n);
 
+    // WeakMap / WeakSet — point at the Map / Set ctors and protos for
+    // npm-compat. zod's $constructor uses `new WeakMap` to memoize
+    // installed lazy-method groups by prototype; nothing in the
+    // ecosystem relies on the *weak* GC semantics for correctness, only
+    // for memory hygiene. Real weak refs (entries freed when the key
+    // becomes unreachable) are a follow-up; until then we silently
+    // hold strong refs. Re-install the global to overwrite the earlier
+    // eval_ptr stub bindings.
+    let wm_v = ctx_make_host_function_arity(ctx, (char*)"WeakMap", map_ctor_ptr, 0);
+    zjs_as_host_function(wm_v).prototype = ctx.map_proto;
+    let wm_slot = ctx_intern_global(ctx, (char*)"WeakMap", 7);
+    ctx.globals[wm_slot].value = wm_v;
+    ctx.globals[wm_slot].defined = true;
+    let ws_v = ctx_make_host_function_arity(ctx, (char*)"WeakSet", set_ctor_ptr, 0);
+    zjs_as_host_function(ws_v).prototype = ctx.set_proto;
+    let ws_slot = ctx_intern_global(ctx, (char*)"WeakSet", 7);
+    ctx.globals[ws_slot].value = ws_v;
+    ctx.globals[ws_slot].defined = true;
+
     // (Proxy is now a real ctor — see Phase 4.6 registration above.)
 
     // === ArrayBuffer + DataView + full TypedArray family ===
