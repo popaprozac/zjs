@@ -3993,18 +3993,21 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
         return f.props;
     }
     // Closure-wrapped function (class ctor with outer captures, or
-    // any captured-scope function). Route to the underlying
-    // Function's .props expando — same model as TAG_FUNCTION.
+    // any captured-scope function). Route to the closure's OWN .props
+    // bag — every closure value gets its own. The previous code aimed
+    // at the underlying Function*.props, which is shared across every
+    // closure that points at the same Function — so two separate
+    // closures (e.g. zod's $constructor returning a fresh `_` per
+    // call) would scribble over each other's `.name` / `.init` etc.
+    // Falling back to Function*.props would also defeat per-instance
+    // semantics; we just allocate on demand here.
     if zjs_is_closure(obj_v) != 0 {
         let cl = zjs_as_closure(obj_v);
-        let fp2 = cl.function;
-        let ff: Function* = NULL;
-        raw { ff = (Function*)fp2; }
-        if ff.props == NULL {
+        if cl.props == NULL {
             let pv = ctx_new_object(ctx);
-            ff.props = zjs_as_object(pv);
+            cl.props = zjs_as_object(pv);
         }
-        return ff.props;
+        return cl.props;
     }
     if zjs_is_host_function(obj_v) != 0 {
         let hf = zjs_as_host_function(obj_v);

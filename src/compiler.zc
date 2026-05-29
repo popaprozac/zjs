@@ -5624,10 +5624,17 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         let r = alloc_reg(c);
         emit(c, make_inst_a_u16(Op::LoadConst, r, idx));
 
-        // Closure wrap if the inner captures outer scope (f.needs_env
-        // is c.has_outer_refs on the inner, set in compile_function).
-        let needs_wrap = f.needs_env;
-        if needs_wrap {
+        // Always wrap nested function-decls in MakeClosure so each
+        // outer-function invocation yields a distinct function value
+        // (spec). zod's $constructor relies on per-call identity to
+        // attach .init / .name uniquely; without the wrap two calls
+        // would share TAG_FUNCTION expando state. For the no-captures
+        // case we emit MakeClosure in-place — dst doubles as fn-src
+        // AND env-src (non-object env → NULL), so zero extra
+        // register pressure vs. the old LoadConst-only path.
+        if !f.needs_env {
+            emit(c, make_inst_abc(Op::MakeClosure, r, r, r));
+        } else {
             let cls_reg = alloc_reg(c);
             let env = closure_env_reg(c);
             emit(c, make_inst_abc(Op::MakeClosure, cls_reg, r, env.reg));

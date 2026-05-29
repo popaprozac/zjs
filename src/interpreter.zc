@@ -993,6 +993,19 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
             if is_name != 0 {
                 let cl_n = zjs_as_closure(obj);
+                // Per-closure .name wins — zod's $constructor does
+                // `Object.defineProperty(_, "name", { value: name })`
+                // on each returned closure, and each call should yield
+                // its own name. Reading through Function*.props would
+                // serve back the LAST closure's name instead.
+                if cl_n.props != NULL {
+                    let nm_atom = ctx_intern_atom(ctx, (char*)"name", 4);
+                    let s_nm = class_find_slot(cl_n.props.cls, nm_atom);
+                    if s_nm >= 0 {
+                        let nv = cl_n.props.slots[(u32)s_nm];
+                        if zjs_is_deleted(nv) == 0 { return nv; }
+                    }
+                }
                 let fp_n = cl_n.function;
                 let f_n: Function* = NULL;
                 raw { f_n = (Function*)fp_n; }

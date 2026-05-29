@@ -1,13 +1,17 @@
 {
   "summary": {
-    "when": "2026-05-29 00:05 UTC",
+    "when": "2026-05-29 02:19 UTC",
     "total": 14524,
-    "passed": 12091,
-    "failed": 1787,
+    "passed": 12087,
+    "failed": 1791,
     "skipped": 646,
     "platform": "macOS"
   },
   "failures": [
+    {
+      "path": "test/language/expressions/addition/S11.6.1_A2.2_T3.js",
+      "reason": "[sloppy] zjs: throw: (unknown): #2: f1unction f2() {return 0;} f2.valueOf = function() {return 1;}; 1 + f2 === 1 + 1. Actual: 1fu"
+    },
     {
       "path": "test/language/expressions/subtraction/order-of-evaluation.js",
       "reason": "[sloppy] zjs: throw: (unknown): ?ToNumeric(lhs) throws. Expected a TypeError but got a Test262Error\nzjs: throw: (unknown): ?ToNum"
@@ -95,6 +99,10 @@
     {
       "path": "test/language/expressions/in/S11.8.7_A1.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: in\u00a0Number is not defined\nzjs: throw: ReferenceError: in\u00a0Number is not defined"
+    },
+    {
+      "path": "test/language/expressions/in/S8.12.6_A2_T2.js",
+      "reason": "[sloppy] zjs: throw: (unknown): #2: var __proto={phylum:\"avis\"}; function Robin(){this.name=\"robin\"}; Robin.prototype=__proto; va"
     },
     {
       "path": "test/language/expressions/in/private-field-rhs-yield-absent.js",
@@ -283,6 +291,14 @@
     {
       "path": "test/language/statements/for/scope-head-lex-open.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: x is not defined\nzjs: throw: ReferenceError: x is not defined"
+    },
+    {
+      "path": "test/language/statements/for-in/S12.6.4_A6.1.js",
+      "reason": "[sloppy] zjs: throw: (unknown): #1: (__accum.indexOf(\"prop1\")!==-1)&&(__accum.indexOf(\"feat2\")!==-1)&&(__accum.indexOf(\"hinthinte"
+    },
+    {
+      "path": "test/language/statements/for-in/S12.6.4_A6.js",
+      "reason": "[sloppy] zjs: throw: (unknown): #1: (__accum.indexOf(\"prop1\")!==-1)&&(__accum.indexOf(\"feat2\")!==-1)&&(__accum.indexOf(\"hinthinte"
     },
     {
       "path": "test/language/statements/for-in/S12.6.4_A7_T2.js",
