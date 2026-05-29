@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-29 14:54 UTC",
+    "when": "2026-05-29 15:03 UTC",
     "total": 14524,
-    "passed": 12096,
-    "failed": 1782,
+    "passed": 12097,
+    "failed": 1781,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -6551,10 +6551,6 @@
     {
       "path": "test/built-ins/Date/coercion-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"yearmonthdatehoursminutessecondsms\"\u00bb) to be true\nzjs: throw: (unknown)"
-    },
-    {
-      "path": "test/built-ins/Date/construct_with_date.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Same date value Expected SameValue(\u00abNaN\u00bb, \u00ab1438560000000\u00bb) to be true\nzjs: throw: (unknown): Same"
     },
     {
       "path": "test/built-ins/Date/is-a-constructor.js",

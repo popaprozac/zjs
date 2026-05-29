@@ -14538,7 +14538,15 @@ fn host_date_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         }
     } else if argc == 1 {
         let v = args[0];
-        if zjs_is_string(v) != 0 {
+        // ECMA-262 §21.4.2.1 step 3a: when the sole argument is a Date
+        // instance, copy its internal [[DateValue]] directly. Skipping
+        // this falls through to ToNumber(date), which goes through
+        // ToPrimitive → string → fails to parse → NaN. dayjs's clone()
+        // does `new Date(this.$d)` and broke without this.
+        if zjs_is_date(v) != 0 {
+            let src_d = zjs_as_date(v);
+            ms = src_d.time_ms;
+        } else if zjs_is_string(v) != 0 {
             // Spec Date.parse — only handle the canonical ISO subset.
             let s = zjs_as_string(v);
             let parsed: f64 = 0.0;
