@@ -411,6 +411,7 @@ struct ZjsContext {
     websocket_proto:          ZjsObject*;
     headers_proto:            ZjsObject*;
     response_proto:           ZjsObject*;
+    request_proto:            ZjsObject*;
 
     // Live WebSocket cells — polled on each event-loop tick. Owned
     // by ZjsContext (GC marks them so handlers stay reachable across
@@ -1858,6 +1859,9 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     }
     if ctx.response_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.response_proto));
+    }
+    if ctx.request_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.request_proto));
     }
     // In-flight fetch promises + URLs must stay alive even if user
     // code dropped the only reference — completion still needs to
@@ -10863,6 +10867,44 @@ fn host_headers_set(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_undefined();
 }
 
+// Spec: append combines values for the same name with ", " separator.
+// (Previously aliased to host_headers_set, which is "set last wins" —
+// this surfaced as a real bug in the WinterTC MCA suite.)
+fn host_headers_append(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 2 { return zjs_undefined(); }
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    let bag = headers_bag(ctx, zjs_as_object(this_v));
+    if bag == NULL { return zjs_undefined(); }
+    let name_lo = headers_lower(ctx, args[0]);
+    let name_s = zjs_as_string(name_lo);
+    let val_s   = if zjs_is_string(args[1]) != 0 { args[1] } else { zjs_to_string(ctx, args[1]) };
+    let new_part = zjs_as_string(val_s);
+
+    let slot = class_find_slot(bag.cls, name_s);
+    if slot < 0 || zjs_is_deleted(bag.slots[(u32)slot]) != 0
+       || zjs_is_string(bag.slots[(u32)slot]) == 0 {
+        // First entry — set as-is.
+        object_set(ctx, bag, name_s, val_s);
+        return zjs_undefined();
+    }
+    // Existing value: combine as "<old>, <new>" per spec.
+    let prev = zjs_as_string(bag.slots[(u32)slot]);
+    let total = prev.length + 2 + new_part.length;
+    let buf = alloc_n<char>((usize)(total + 1));
+    let i: u32 = 0;
+    while i < prev.length { buf[i] = prev.data[i]; i = i + 1; }
+    buf[prev.length]     = (char)',';
+    buf[prev.length + 1] = (char)' ';
+    let j: u32 = 0;
+    while j < new_part.length { buf[prev.length + 2 + j] = new_part.data[j]; j = j + 1; }
+    buf[total] = (char)0;
+    let combined = ctx_intern_string(ctx, buf, total);
+    dealloc(buf);
+    object_set(ctx, bag, name_s, combined);
+    return zjs_undefined();
+}
+
 fn host_headers_has(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 { return zjs_bool(0); }
     let this_v = ctx.host_this;
@@ -11027,10 +11069,11 @@ fn host_headers_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
 // on Response.prototype.
 // =====================================================================
 
-def RESP_STATUS_KEY: char* = (char*)"__zjs_resp_status__";
-def RESP_BODY_KEY:   char* = (char*)"__zjs_resp_body__";
-def RESP_HEADERS_KEY: char* = (char*)"__zjs_resp_headers__";
-def RESP_URL_KEY:    char* = (char*)"__zjs_resp_url__";
+def RESP_STATUS_KEY:      char* = (char*)"__zjs_resp_status__";
+def RESP_BODY_KEY:        char* = (char*)"__zjs_resp_body__";
+def RESP_HEADERS_KEY:     char* = (char*)"__zjs_resp_headers__";
+def RESP_URL_KEY:         char* = (char*)"__zjs_resp_url__";
+def RESP_STATUS_TEXT_KEY: char* = (char*)"__zjs_resp_status_text__";
 
 fn build_response_object(ctx: ZjsContext*, status: i32, body_v: ZjsValue, headers_v: ZjsValue, url_v: ZjsValue) -> ZjsValue {
     let obj_v = ctx_new_object(ctx);
@@ -11041,6 +11084,136 @@ fn build_response_object(ctx: ZjsContext*, status: i32, body_v: ZjsValue, header
     object_set(ctx, o, ctx_intern_atom(ctx, RESP_HEADERS_KEY, 20), headers_v);
     object_set(ctx, o, ctx_intern_atom(ctx, RESP_URL_KEY,     16), url_v);
     return obj_v;
+}
+
+// new Response(body?, init?). Spec §6.5: body is string / Blob /
+// FormData / Uint8Array / ReadableStream / null / undefined; init is
+// { status, statusText, headers }. Defaults: status=200, body=null.
+fn host_response_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let body_v: ZjsValue = if argc >= 1 { args[0] } else { zjs_null() };
+    let init_v: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
+    // Coerce body to a string for the simple case so .text() / .json()
+    // round-trip works on a hand-constructed Response. The real spec
+    // lets body be many types — those still flow through verbatim.
+    if zjs_is_string(body_v) == 0
+       && zjs_is_uint8_array(body_v) == 0
+       && zjs_is_null(body_v) == 0
+       && zjs_is_undefined(body_v) == 0 {
+        body_v = zjs_to_string(ctx, body_v);
+    }
+    let status: i32 = 200;
+    let stext_v: ZjsValue = zjs_undefined();
+    let hdrs_v:  ZjsValue = zjs_undefined();
+    if zjs_is_object(init_v) != 0 {
+        let init_o = zjs_as_object(init_v);
+        let st = property_get(ctx, init_v, ctx_intern_string(ctx, (char*)"status", 6));
+        if zjs_is_int32(st) != 0 { status = zjs_as_int32(st); }
+        else if zjs_is_double(st) != 0 { status = (i32)zjs_as_double(st); }
+        stext_v = property_get(ctx, init_v, ctx_intern_string(ctx, (char*)"statusText", 10));
+        hdrs_v  = property_get(ctx, init_v, ctx_intern_string(ctx, (char*)"headers", 7));
+    }
+    if zjs_is_object(hdrs_v) == 0 {
+        // Build an empty Headers — host_headers_ctor handles new/this.
+        let saved_this = ctx.host_this;
+        ctx.host_this = ctx_new_object(ctx);
+        hdrs_v = host_headers_ctor(ctx, NULL, 0);
+        ctx.host_this = saved_this;
+    }
+    let obj_v = build_response_object(ctx, status, body_v, hdrs_v,
+                                       ctx_intern_string(ctx, (char*)"", 0));
+    if zjs_is_string(stext_v) != 0 {
+        object_set(ctx, zjs_as_object(obj_v),
+                   ctx_intern_atom(ctx, RESP_STATUS_TEXT_KEY, 24), stext_v);
+    }
+    return obj_v;
+}
+
+// Request — opaque, just stores url/method/headers/body. Spec is
+// largely shape-only at this layer; fetch() doesn't yet accept a
+// Request, but `new Request(url, init)` shouldn't throw, and the
+// fields should be readable.
+def REQ_URL_KEY:     char* = (char*)"__zjs_req_url__";
+def REQ_METHOD_KEY:  char* = (char*)"__zjs_req_method__";
+def REQ_HEADERS_KEY: char* = (char*)"__zjs_req_headers__";
+def REQ_BODY_KEY:    char* = (char*)"__zjs_req_body__";
+
+fn host_request_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 1 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Request requires an input arg", 29);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return zjs_undefined();
+    }
+    let url_v = args[0];
+    if zjs_is_string(url_v) == 0 {
+        // If it's a Request, copy its url field; otherwise coerce.
+        if zjs_is_object(url_v) != 0 {
+            let maybe = property_get(ctx, url_v, ctx_intern_string(ctx, REQ_URL_KEY, 16));
+            if zjs_is_string(maybe) != 0 { url_v = maybe; }
+            else { url_v = zjs_to_string(ctx, url_v); }
+        } else {
+            url_v = zjs_to_string(ctx, url_v);
+        }
+    }
+    let init_v: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let method_v: ZjsValue = ctx_intern_string(ctx, (char*)"GET", 3);
+    let hdrs_v:   ZjsValue = zjs_undefined();
+    let body_v:   ZjsValue = zjs_null();
+    if zjs_is_object(init_v) != 0 {
+        let m = property_get(ctx, init_v, ctx_intern_string(ctx, (char*)"method", 6));
+        if zjs_is_string(m) != 0 { method_v = m; }
+        hdrs_v = property_get(ctx, init_v, ctx_intern_string(ctx, (char*)"headers", 7));
+        let b  = property_get(ctx, init_v, ctx_intern_string(ctx, (char*)"body", 4));
+        if zjs_is_undefined(b) == 0 { body_v = b; }
+    }
+    if zjs_is_object(hdrs_v) == 0 {
+        let saved_this = ctx.host_this;
+        ctx.host_this = ctx_new_object(ctx);
+        hdrs_v = host_headers_ctor(ctx, NULL, 0);
+        ctx.host_this = saved_this;
+    }
+    let obj_v = ctx_new_object(ctx);
+    if ctx.request_proto != NULL { zjs_as_object(obj_v).proto = ctx.request_proto; }
+    let o = zjs_as_object(obj_v);
+    object_set(ctx, o, ctx_intern_atom(ctx, REQ_URL_KEY,     15), url_v);
+    object_set(ctx, o, ctx_intern_atom(ctx, REQ_METHOD_KEY,  18), method_v);
+    object_set(ctx, o, ctx_intern_atom(ctx, REQ_HEADERS_KEY, 19), hdrs_v);
+    object_set(ctx, o, ctx_intern_atom(ctx, REQ_BODY_KEY,    16), body_v);
+    return obj_v;
+}
+
+fn host_request_url(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let atom = ctx_intern_atom(ctx, REQ_URL_KEY, 15);
+    let slot = class_find_slot(zjs_as_object(this_v).cls, atom);
+    if slot < 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    return zjs_as_object(this_v).slots[(u32)slot];
+}
+fn host_request_method(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return ctx_intern_string(ctx, (char*)"GET", 3); }
+    let atom = ctx_intern_atom(ctx, REQ_METHOD_KEY, 18);
+    let slot = class_find_slot(zjs_as_object(this_v).cls, atom);
+    if slot < 0 { return ctx_intern_string(ctx, (char*)"GET", 3); }
+    return zjs_as_object(this_v).slots[(u32)slot];
+}
+fn host_request_headers(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    let atom = ctx_intern_atom(ctx, REQ_HEADERS_KEY, 19);
+    let slot = class_find_slot(zjs_as_object(this_v).cls, atom);
+    if slot < 0 { return zjs_undefined(); }
+    return zjs_as_object(this_v).slots[(u32)slot];
+}
+fn host_request_body(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_null(); }
+    let atom = ctx_intern_atom(ctx, REQ_BODY_KEY, 16);
+    let slot = class_find_slot(zjs_as_object(this_v).cls, atom);
+    if slot < 0 { return zjs_null(); }
+    return zjs_as_object(this_v).slots[(u32)slot];
 }
 
 fn host_response_status(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -11060,6 +11233,18 @@ fn host_response_ok(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 }
 
 fn host_response_status_text(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // If the consumer set statusText explicitly via `new Response(body,
+    // { statusText: 'Created' })`, prefer that. Otherwise synthesize
+    // from status for the common codes.
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) != 0 {
+        let atom = ctx_intern_atom(ctx, RESP_STATUS_TEXT_KEY, 24);
+        let slot = class_find_slot(zjs_as_object(this_v).cls, atom);
+        if slot >= 0 {
+            let v = zjs_as_object(this_v).slots[(u32)slot];
+            if zjs_is_string(v) != 0 { return v; }
+        }
+    }
     let s = host_response_status(ctx, args, argc);
     if zjs_is_int32(s) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
     let v = zjs_as_int32(s);
@@ -12993,6 +13178,15 @@ fn host_crypto_random_uuid(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsV
 fn host_crypto_get_random_values(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 { return zjs_undefined(); }
     let arr_v = args[0];
+    // Uint8Array fast path — write directly into the backing bytes.
+    // Without this branch, callers passing the canonical spec'd type
+    // (Uint8Array) silently get back an unmodified buffer because the
+    // generic-array fallback below requires `.elements[]`.
+    if zjs_is_uint8_array(arr_v) != 0 {
+        let u = zjs_as_uint8_array(arr_v);
+        if u.length > 0 { raw { zjs_random_bytes(u->bytes, u->length); } }
+        return arr_v;
+    }
     if zjs_is_array(arr_v) == 0 { return arr_v; }
     let a = zjs_as_array(arr_v);
     if a.length == 0 { return arr_v; }
@@ -14364,6 +14558,79 @@ fn host_url_port(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { ret
 fn host_url_pathname(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return url_proto_get(ctx, URL_PATHNAME_KEY, 20); }
 fn host_url_search(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return url_proto_get(ctx, URL_SEARCH_KEY, 18); }
 fn host_url_hash(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return url_proto_get(ctx, URL_HASH_KEY, 16); }
+
+// Shared setter body. The URL parser stores search and hash WITH their
+// '?'/'#' prefix in the slot (host_url_to_string concatenates the slots
+// verbatim), so this setter normalizes the incoming value to match:
+//
+//   prefix == '?' or '#':  ensure the slot value starts with that char
+//                          (prepend if missing, leave alone otherwise).
+//                          An empty input clears the slot.
+//   prefix == 0:           store as-given (used for pathname/hostname/
+//                          port — no marker char to manage).
+fn url_proto_set(ctx: ZjsContext*, args: ZjsValue*, argc: u32,
+                 key: char*, key_len: u32, prefix: char) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    if argc == 0 { return zjs_undefined(); }
+    let v = args[0];
+    let s_v = if zjs_is_string(v) != 0 { v } else { zjs_to_string(ctx, v) };
+    if zjs_is_string(s_v) == 0 { return zjs_undefined(); }
+    let s = zjs_as_string(s_v);
+    let data: char* = s.data;
+    let len:  u32   = s.length;
+    if prefix != (char)0 && len > 0 && data[0] != prefix {
+        // Prepend the marker so the slot looks the way the parser
+        // would have written it.
+        let buf = alloc_n<char>((usize)(len + 2));
+        buf[0] = prefix;
+        let i: u32 = 0; while i < len { buf[i + 1] = data[i]; i = i + 1; }
+        buf[len + 1] = (char)0;
+        url_set_str(ctx, zjs_as_object(this_v), key, key_len, buf, len + 1);
+        dealloc(buf);
+        return zjs_undefined();
+    }
+    url_set_str(ctx, zjs_as_object(this_v), key, key_len, data, len);
+    return zjs_undefined();
+}
+
+fn host_url_set_pathname(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return url_proto_set(ctx, args, argc, URL_PATHNAME_KEY, 20, (char)0);
+}
+fn host_url_set_search(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return url_proto_set(ctx, args, argc, URL_SEARCH_KEY, 18, (char)'?');
+}
+fn host_url_set_hash(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return url_proto_set(ctx, args, argc, URL_HASH_KEY, 16, (char)'#');
+}
+fn host_url_set_hostname(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return url_proto_set(ctx, args, argc, URL_HOSTNAME_KEY, 20, (char)0);
+}
+fn host_url_set_port(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return url_proto_set(ctx, args, argc, URL_PORT_KEY, 16, (char)0);
+}
+fn host_url_set_protocol(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // Spec normalizes a trailing ':'; our slot stores it WITH the colon.
+    let this_v = ctx.host_this;
+    if zjs_is_object(this_v) == 0 || argc == 0 { return zjs_undefined(); }
+    let v = args[0];
+    let s_v = if zjs_is_string(v) != 0 { v } else { zjs_to_string(ctx, v) };
+    if zjs_is_string(s_v) == 0 { return zjs_undefined(); }
+    let s = zjs_as_string(s_v);
+    let data: char* = s.data;
+    let len:  u32   = s.length;
+    // Ensure trailing ':' — caller may pass "https" or "https:".
+    if len > 0 && data[len - 1] != (char)':' {
+        let buf = alloc_n<char>((usize)(len + 2));
+        let i: u32 = 0; while i < len { buf[i] = data[i]; i = i + 1; }
+        buf[len] = (char)':'; buf[len + 1] = (char)0;
+        url_set_str(ctx, zjs_as_object(this_v), URL_PROTOCOL_KEY, 20, buf, len + 1);
+        dealloc(buf);
+    } else {
+        url_set_str(ctx, zjs_as_object(this_v), URL_PROTOCOL_KEY, 20, data, len);
+    }
+    return zjs_undefined();
+}
 
 fn host_url_host(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_v = ctx.host_this;
@@ -19140,22 +19407,38 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Each getter is wrapped as an accessor-shape pair via
     // object_define_accessor — that's the cleanest path to "property
     // access fires this fn".
+    // Setter host-function pointers. Each writes back into the same
+    // __zjs_url_<part>__ slot the getter reads, so .href (which
+    // recomposes from the slots in host_url_to_string) reflects the
+    // change automatically.
+    let u_set_proto_ptr: void* = NULL; raw { u_set_proto_ptr = (void*)host_url_set_protocol; }
+    let u_set_hname_ptr: void* = NULL; raw { u_set_hname_ptr = (void*)host_url_set_hostname; }
+    let u_set_port_ptr:  void* = NULL; raw { u_set_port_ptr  = (void*)host_url_set_port; }
+    let u_set_path_ptr:  void* = NULL; raw { u_set_path_ptr  = (void*)host_url_set_pathname; }
+    let u_set_srch_ptr:  void* = NULL; raw { u_set_srch_ptr  = (void*)host_url_set_search; }
+    let u_set_hash_ptr:  void* = NULL; raw { u_set_hash_ptr  = (void*)host_url_set_hash; }
     object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"protocol", 8),
-                           ctx_make_host_function(ctx, (char*)"get protocol", u_proto_ptr), zjs_undefined());
+                           ctx_make_host_function(ctx, (char*)"get protocol", u_proto_ptr),
+                           ctx_make_host_function(ctx, (char*)"set protocol", u_set_proto_ptr));
     object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"username", 8),
                            ctx_make_host_function(ctx, (char*)"get username", u_user_ptr), zjs_undefined());
     object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"password", 8),
                            ctx_make_host_function(ctx, (char*)"get password", u_pass_ptr), zjs_undefined());
     object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"hostname", 8),
-                           ctx_make_host_function(ctx, (char*)"get hostname", u_hname_ptr), zjs_undefined());
+                           ctx_make_host_function(ctx, (char*)"get hostname", u_hname_ptr),
+                           ctx_make_host_function(ctx, (char*)"set hostname", u_set_hname_ptr));
     object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"port", 4),
-                           ctx_make_host_function(ctx, (char*)"get port", u_port_ptr), zjs_undefined());
+                           ctx_make_host_function(ctx, (char*)"get port", u_port_ptr),
+                           ctx_make_host_function(ctx, (char*)"set port", u_set_port_ptr));
     object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"pathname", 8),
-                           ctx_make_host_function(ctx, (char*)"get pathname", u_path_ptr), zjs_undefined());
+                           ctx_make_host_function(ctx, (char*)"get pathname", u_path_ptr),
+                           ctx_make_host_function(ctx, (char*)"set pathname", u_set_path_ptr));
     object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"search", 6),
-                           ctx_make_host_function(ctx, (char*)"get search", u_search_ptr), zjs_undefined());
+                           ctx_make_host_function(ctx, (char*)"get search", u_search_ptr),
+                           ctx_make_host_function(ctx, (char*)"set search", u_set_srch_ptr));
     object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"hash", 4),
-                           ctx_make_host_function(ctx, (char*)"get hash", u_hash_ptr), zjs_undefined());
+                           ctx_make_host_function(ctx, (char*)"get hash", u_hash_ptr),
+                           ctx_make_host_function(ctx, (char*)"set hash", u_set_hash_ptr));
     object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"host", 4),
                            ctx_make_host_function(ctx, (char*)"get host", u_host_ptr), zjs_undefined());
     object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"origin", 6),
@@ -19648,8 +19931,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     zjs_as_host_function(h_ctor_v).prototype = ctx.headers_proto;
     object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), h_ctor_v);
     // Iteration default is entries (Headers walks name/value pairs).
-    // `append` and `set` share the host_headers_set impl (spec says
-    // append concatenates; v0.1 collapses both to "set last wins").
+    // `append` combines values with ", "; `set` replaces (spec
+    // distinction — the WinterTC suite caught us aliasing them earlier).
     let h_table_p: void* = NULL;
     let h_table_n: usize = 0;
     raw {
@@ -19657,7 +19940,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
             {"get",         3, (void*)host_headers_get,       1},
             {"set",         3, (void*)host_headers_set,       2},
             {"has",         3, (void*)host_headers_has,       1},
-            {"append",      6, (void*)host_headers_set,       2},
+            {"append",      6, (void*)host_headers_append,    2},
             {"delete",      6, (void*)host_headers_delete,    1},
             {"forEach",     7, (void*)host_headers_for_each,  1},
             {"keys",        4, (void*)host_headers_keys,     -1},
@@ -19678,10 +19961,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let r_text_ptr:     void* = NULL; raw { r_text_ptr     = (void*)host_response_text; }
     let r_ab_ptr:       void* = NULL; raw { r_ab_ptr       = (void*)host_response_array_buffer; }
     let r_json_ptr:     void* = NULL; raw { r_json_ptr     = (void*)host_response_json; }
-    // Response has no useful ctor at v0.1 — fetch() is the only
-    // factory. Expose it as a global anyway so `instanceof Response`
-    // and `Response.prototype` work.
-    let r_ctor_v   = ctx_register_host_function(ctx, (char*)"Response", eval_ptr);
+    // Response — real constructor lands `new Response(body, init)`
+    // patterns (server-side: synthesizing canned responses, test
+    // doubles, etc.). The init object honors { status, statusText,
+    // headers }; body is stored verbatim.
+    let r_ctor_ptr: void* = NULL; raw { r_ctor_ptr = (void*)host_response_ctor; }
+    let r_ctor_v   = ctx_register_host_function(ctx, (char*)"Response", r_ctor_ptr);
     let r_proto_v  = ctx_new_object(ctx);
     ctx.response_proto = zjs_as_object(r_proto_v);
     zjs_as_host_function(r_ctor_v).prototype = ctx.response_proto;
@@ -19702,6 +19987,29 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"arrayBuffer", r_ab_ptr));
     object_set(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"json", 4),
                ctx_make_host_function(ctx, (char*)"json", r_json_ptr));
+
+    // Request — opaque carrier of (url, method, headers, body). Used
+    // by fetch(input, init) shape; doesn't fully wire body interop
+    // yet, but the constructor + readable getters make `new Request(
+    // url, { method, headers })` and `r.url` / `r.method` work.
+    let req_ctor_ptr: void* = NULL; raw { req_ctor_ptr = (void*)host_request_ctor; }
+    let req_url_ptr:  void* = NULL; raw { req_url_ptr  = (void*)host_request_url; }
+    let req_meth_ptr: void* = NULL; raw { req_meth_ptr = (void*)host_request_method; }
+    let req_hdrs_ptr: void* = NULL; raw { req_hdrs_ptr = (void*)host_request_headers; }
+    let req_body_ptr: void* = NULL; raw { req_body_ptr = (void*)host_request_body; }
+    let req_ctor_v  = ctx_register_host_function(ctx, (char*)"Request", req_ctor_ptr);
+    let req_proto_v = ctx_new_object(ctx);
+    ctx.request_proto = zjs_as_object(req_proto_v);
+    zjs_as_host_function(req_ctor_v).prototype = ctx.request_proto;
+    object_set(ctx, ctx.request_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), req_ctor_v);
+    object_define_accessor(ctx, ctx.request_proto, ctx_intern_atom(ctx, (char*)"url", 3),
+                           ctx_make_host_function(ctx, (char*)"get url", req_url_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.request_proto, ctx_intern_atom(ctx, (char*)"method", 6),
+                           ctx_make_host_function(ctx, (char*)"get method", req_meth_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.request_proto, ctx_intern_atom(ctx, (char*)"headers", 7),
+                           ctx_make_host_function(ctx, (char*)"get headers", req_hdrs_ptr), zjs_undefined());
+    object_define_accessor(ctx, ctx.request_proto, ctx_intern_atom(ctx, (char*)"body", 4),
+                           ctx_make_host_function(ctx, (char*)"get body", req_body_ptr), zjs_undefined());
 
     let fetch_ptr: void* = NULL; raw { fetch_ptr = (void*)host_fetch; }
     ctx_register_host_function(ctx, (char*)"fetch", fetch_ptr);

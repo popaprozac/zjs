@@ -1,9 +1,9 @@
 {
-  "when": "2026-05-29 19:16 UTC",
+  "when": "2026-05-29 19:36 UTC",
   "zjs_bin": "/Users/zach/code/zjs/build/zjs",
   "totals": {
-    "pass": 93,
-    "fail": 10,
+    "pass": 101,
+    "fail": 2,
     "timeout": 0,
     "error": 0
   },
@@ -135,8 +135,8 @@
     {
       "area": "crypto",
       "totals": {
-        "pass": 6,
-        "fail": 2,
+        "pass": 7,
+        "fail": 1,
         "timeout": 0,
         "error": 0
       },
@@ -148,8 +148,8 @@
         },
         {
           "name": "crypto.getRandomValues",
-          "status": "fail",
-          "message": "assert_false: expected false, got true \u2014 should be filled with randomness"
+          "status": "pass",
+          "message": ""
         },
         {
           "name": "crypto.subtle.digest SHA-256",
@@ -316,16 +316,16 @@
     {
       "area": "fetch",
       "totals": {
-        "pass": 6,
-        "fail": 6,
+        "pass": 12,
+        "fail": 0,
         "timeout": 0,
         "error": 0
       },
       "results": [
         {
           "name": "fetch globals present",
-          "status": "fail",
-          "message": "assert_equals: expected \"function\" but got \"undefined\""
+          "status": "pass",
+          "message": ""
         },
         {
           "name": "Headers case-insensitive",
@@ -339,8 +339,8 @@
         },
         {
           "name": "Headers append combines",
-          "status": "fail",
-          "message": "assert_equals: expected \"1, 2\" but got \"2\""
+          "status": "pass",
+          "message": ""
         },
         {
           "name": "Headers delete",
@@ -349,13 +349,13 @@
         },
         {
           "name": "Request shape",
-          "status": "fail",
-          "message": "Request is not defined"
+          "status": "pass",
+          "message": ""
         },
         {
           "name": "Response shape",
-          "status": "fail",
-          "message": "hi is not defined"
+          "status": "pass",
+          "message": ""
         },
         {
           "name": "Response .ok=false on 5xx",
@@ -364,13 +364,13 @@
         },
         {
           "name": "Response.text()",
-          "status": "fail",
-          "message": "hello is not defined"
+          "status": "pass",
+          "message": ""
         },
         {
           "name": "Response.json()",
-          "status": "fail",
-          "message": "parse error"
+          "status": "pass",
+          "message": ""
         },
         {
           "name": "fetch data: URL",
@@ -591,8 +591,8 @@
     {
       "area": "url",
       "totals": {
-        "pass": 10,
-        "fail": 1,
+        "pass": 11,
+        "fail": 0,
         "timeout": 0,
         "error": 0
       },
@@ -619,8 +619,8 @@
         },
         {
           "name": "URL setter updates href",
-          "status": "fail",
-          "message": "assert_equals: expected \"/changed\" but got \"/\""
+          "status": "pass",
+          "message": ""
         },
         {
           "name": "URLSearchParams parse + get",
