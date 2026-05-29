@@ -414,8 +414,18 @@ fn zjs_to_int32(v: ZjsValue) -> i32 {
     let d = zjs_to_double(v);
     let r: i32 = 0;
     raw {
-        if (isnan(d) || isinf(d) || d == 0.0) { r = 0; }
-        else {
+        /* Fast path: for finite d in (-2^63, 2^63), double→int64
+         * truncates toward zero (matches spec's floor-toward-zero) and
+         * casting that to int32_t takes the low 32 bits (matches the
+         * spec's mod-2^32 + signed-fold). NaN compares false against
+         * the bound so it falls through to the slow path; same for
+         * ±Inf. Eliminates fabs/floor/fmod from the inner loop of any
+         * workload doing `seed & MASK` or `x | 0`. */
+        if (d > -9.2233720368547758e18 && d < 9.2233720368547758e18) {
+            r = (int32_t)(int64_t)d;
+        } else if (isnan(d) || isinf(d) || d == 0.0) {
+            r = 0;
+        } else {
             double sign = d < 0 ? -1.0 : 1.0;
             double absd = fabs(d);
             double posInt = sign * floor(absd);
@@ -434,8 +444,13 @@ fn zjs_to_uint32(v: ZjsValue) -> u32 {
     let d = zjs_to_double(v);
     let r: u32 = 0;
     raw {
-        if (isnan(d) || isinf(d) || d == 0.0) { r = 0; }
-        else {
+        /* Same fast path as zjs_to_int32 — the low-32 bits of the
+         * int64 truncation are what spec ToUint32 demands. */
+        if (d > -9.2233720368547758e18 && d < 9.2233720368547758e18) {
+            r = (uint32_t)(int64_t)d;
+        } else if (isnan(d) || isinf(d) || d == 0.0) {
+            r = 0;
+        } else {
             double sign = d < 0 ? -1.0 : 1.0;
             double absd = fabs(d);
             double posInt = sign * floor(absd);
