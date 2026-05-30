@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-30 00:21 UTC",
+    "when": "2026-05-30 00:47 UTC",
     "total": 14524,
-    "passed": 12152,
-    "failed": 1726,
+    "passed": 12168,
+    "failed": 1710,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -2169,14 +2169,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-private-field-super-access.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatename-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatename-identifier-invalid-zwj-error.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -2189,35 +2181,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-private-async-gen-meth-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-private-async-meth-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-private-gen-meth-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-private-meth-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-static-privatename-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/syntax/early-errors/private-call-exp-cannot-escape-token.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/elements/syntax/early-errors/private-member-exp-cannot-escape-token.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/super-private-access-invalid.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -3553,14 +3521,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-private-field-super-access.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-identifier-invalid-zwj-error.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -3573,35 +3533,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-private-async-gen-meth-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-private-async-meth-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-private-gen-meth-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-private-meth-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-static-privatename-constructor.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/syntax/early-errors/private-call-exp-cannot-escape-token.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/elements/syntax/early-errors/private-member-exp-cannot-escape-token.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/super-private-access-invalid.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
