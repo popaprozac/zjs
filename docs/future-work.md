@@ -23,9 +23,37 @@ surface to flip green (one failing sub-check fails the whole file):
 - Exact large-value mixed comparison already correct via
   `bigint_cmp_f64` (builds floor(x) as an exact BigInt).
 
-**Temporal: the chosen next arc, PAUSED before it started** (user
-paused 2026-05-30 after BigInt completed — pick up in a fresh
-session). Decided shape (see [[project_bigint_temporal_arc]]):
+**Temporal: native build IN PROGRESS** (2026-05-30). Single
+`TAG_TEMPORAL` cell with a `kind` discriminator; gated behind
+`ZJS_NO_TEMPORAL` (default ON). Landed (commits 3cd7e77→dbc45a3):
+- T1: scaffolding, Duration (full), Now, minimal Instant.
+- T2: PlainDate / PlainTime / PlainDateTime — ctor, from, getters,
+  with (overflow:'constrain'), add/subtract, equals, compare,
+  toString, projections; ISO civil-calendar helpers (iso_* in
+  context.zc).
+- T3: PlainYearMonth / PlainMonthDay.
+- T4a: Instant full — ctor(BigInt)/fromEpoch*, add/subtract (time
+  units only), until/since (→Duration, largestUnit 'second'),
+  compare, equals, ns-precision toString.
+All verified against Node; test262 quick held at 87.8% throughout.
+
+**Remaining Temporal work (the two hardest phases):**
+- **T4b — rounding matrix.** `round()` on Instant/PlainTime/
+  PlainDateTime + `until`/`since` honoring `smallestUnit` /
+  `largestUnit` / `roundingIncrement` / `roundingMode` (the full
+  RoundDuration / RoundNumberToIncrement machinery). until/since
+  today ignore options and use the default largestUnit. This is the
+  single most intricate Temporal piece.
+- **T5 — TimeZone + ZonedDateTime.** IANA tz database access
+  (platform-native: macOS/Linux have /var/db/timezone + tzset;
+  Windows needs ICU or a bundled tzdata), offset/DST resolution,
+  ZonedDateTime (epochNs + tz + calendar). The biggest piece;
+  Temporal.Now.timeZoneId() currently hard-returns "UTC".
+- Minor: Duration.add/subtract balancing (currently field-wise);
+  ISO-string parsing in the various from() methods (today they take
+  objects / same-type clones only); monthCode-keyed from().
+
+Original decided shape (see [[project_bigint_temporal_arc]]):
 - **Default ON, removable with `-DZJS_NO_TEMPORAL`** (opt-out, matches
   the existing `ZJS_NO_*` convention).
 - Implementation approach still open — the leading candidate is a
