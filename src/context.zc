@@ -21355,6 +21355,199 @@ fn host_temporal_zdt_equals(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
     return zjs_bool(if zjs_string_equals(a.timezone, b.timezone) != 0 { 1 } else { 0 });
 }
 
+// Resolve a wall-clock (in tz) to epoch nanoseconds (i64), DST-
+// 'compatible' via the platform mktime helper.
+fn zdt_epoch_ns_from_wall(tz: ZjsString*, y: i64, mo: i64, d: i64, h: i64, mi: i64, s: i64, sub_ns: i64) -> i64 {
+    let tzdata: char* = NULL;
+    if tz != NULL { tzdata = tz.data; }
+    let secs: i64 = 0;
+    raw { secs = (int64_t)zjs_tz_epoch_from_local(tzdata, (int)y, (int)mo, (int)d, (int)h, (int)mi, (int)s); }
+    return secs * 1000000000 + sub_ns;
+}
+
+// Build a ZonedDateTime from an epoch-ns i64 + tz id.
+fn zdt_make(ctx: ZjsContext*, epoch_ns: i64, tz: ZjsString*) -> ZjsValue {
+    let bi = zjs_bigint_from_i64(epoch_ns);
+    ctx_register_cell(ctx, (void*)bi);
+    let t = zjs_temporal_new(TMP_ZONED_DATETIME);
+    t.epoch_ns = zjs_cell_from_ptr((void*)bi);
+    t.timezone = tz;
+    t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// ZonedDateTime add/subtract: date part applied to the wall clock (re-
+// anchored through the zone, DST-aware), then the time part as exact ns.
+fn zdt_add_impl(ctx: ZjsContext*, sign: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_ZONED_DATETIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.ZonedDateTime", 28);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let f: i64[10];
+    let fp: i64* = NULL; raw { fp = &f[0]; }
+    let ok: int = 1;
+    temporal_read_duration(ctx, if argc >= 1 { args[0] } else { zjs_undefined() }, fp, &ok);
+    if ok == 0 { let e = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"invalid duration", 16);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined(); }
+    if sign < 0 { temporal_negate_dur(fp); }
+    let w: i64[7];
+    let wp: i64* = NULL; raw { wp = &w[0]; }
+    let off: i64 = 0;
+    zdt_decompose(s, wp, &off);
+    // date part → new wall date (calendar add with clamp)
+    let outd: i64[3];
+    let odp: i64* = NULL; raw { odp = &outd[0]; }
+    temporal_add_to_date(w[0], w[1], w[2], f[0], f[1], f[2], f[3], odp);
+    // re-anchor the wall clock to an instant in the zone
+    let inter = zdt_epoch_ns_from_wall(s.timezone, outd[0], outd[1], outd[2], w[3], w[4], w[5], w[6]);
+    // exact time part
+    let result = inter + temporal_duration_time_ns(fp);
+    return zdt_make(ctx, result, s.timezone);
+}
+fn host_temporal_zdt_add(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return zdt_add_impl(ctx, 1, args, argc);
+}
+fn host_temporal_zdt_subtract(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return zdt_add_impl(ctx, -1, args, argc);
+}
+
+// ZonedDateTime.with({ year?, month?, ... }) — override wall-clock
+// fields, re-anchor through the zone.
+fn host_temporal_zdt_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_ZONED_DATETIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.ZonedDateTime", 28);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_object(arg) == 0 { return temporal_range_error(ctx, (char*)"with() expects an object", 24); }
+    let w: i64[7];
+    let wp: i64* = NULL; raw { wp = &w[0]; }
+    let off: i64 = 0;
+    zdt_decompose(s, wp, &off);
+    let fields = (char*)"year"; let _u = fields;
+    let yv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"year", 4));
+    let mv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"month", 5));
+    let dv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"day", 3));
+    let hv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"hour", 4));
+    let miv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"minute", 6));
+    let sv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"second", 6));
+    let y  = if zjs_is_undefined(yv)  != 0 { w[0] } else { (i64)zjs_to_double(yv) };
+    let mo = if zjs_is_undefined(mv)  != 0 { w[1] } else { (i64)zjs_to_double(mv) };
+    let d  = if zjs_is_undefined(dv)  != 0 { w[2] } else { (i64)zjs_to_double(dv) };
+    let h  = if zjs_is_undefined(hv)  != 0 { w[3] } else { (i64)zjs_to_double(hv) };
+    let mi = if zjs_is_undefined(miv) != 0 { w[4] } else { (i64)zjs_to_double(miv) };
+    let sc = if zjs_is_undefined(sv)  != 0 { w[5] } else { (i64)zjs_to_double(sv) };
+    let cc: i64[3];
+    let cp: i64* = NULL; raw { cp = &cc[0]; }
+    temporal_constrain_date(y, mo, d, cp);
+    let ep = zdt_epoch_ns_from_wall(s.timezone, cc[0], cc[1], cc[2], h, mi, sc, w[6]);
+    return zdt_make(ctx, ep, s.timezone);
+}
+
+// ZonedDateTime.round(options) — rounds the local wall clock (day..ns)
+// then re-anchors.
+fn host_temporal_zdt_round(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_ZONED_DATETIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.ZonedDateTime", 28);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let unit_ns: i64 = 0; let inc: i64 = 1; let mode: int = ROUND_HALF_EXPAND; let ok: int = 1;
+    temporal_rounding_opts(ctx, if argc >= 1 { args[0] } else { zjs_undefined() },
+                           ROUND_HALF_EXPAND, &unit_ns, &inc, &mode, &ok);
+    if ok == 0 || unit_ns == 0 { return temporal_range_error(ctx, (char*)"invalid smallestUnit", 20); }
+    let s = zjs_as_temporal(this_v);
+    let w: i64[7];
+    let wp: i64* = NULL; raw { wp = &w[0]; }
+    let off: i64 = 0;
+    zdt_decompose(s, wp, &off);
+    let days = iso_days_from_civil(w[0], w[1], w[2]);
+    let tod = ((w[3] * 60 + w[4]) * 60 + w[5]) * 1000000000 + w[6];
+    let total = days * 86400000000000 + tod;
+    let rounded = temporal_round_i64(total, inc * unit_ns, mode);
+    let out_days = i64_floordiv(rounded, 86400000000000);
+    let rtod = i64_floormod(rounded, 86400000000000);
+    let od: i64[3];
+    let odp: i64* = NULL; raw { odp = &od[0]; }
+    iso_civil_from_days(out_days, odp);
+    let hh = rtod / 3600000000000;
+    let mm = (rtod / 60000000000) % 60;
+    let ss = (rtod / 1000000000) % 60;
+    let subns = rtod % 1000000000;
+    let ep = zdt_epoch_ns_from_wall(s.timezone, od[0], od[1], od[2], hh, mm, ss, subns);
+    return zdt_make(ctx, ep, s.timezone);
+}
+
+// ZonedDateTime.until/since → Duration (time units; rounding honored).
+// dir +1 until, -1 since. Calendar-unit largestUnit deferred.
+fn zdt_diff_impl(ctx: ZjsContext*, dir: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    let other = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_temporal_kind(this_v, TMP_ZONED_DATETIME) == 0 || zjs_is_temporal_kind(other, TMP_ZONED_DATETIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"expects two ZonedDateTimes", 26);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let a = zjs_as_temporal(this_v); let b = zjs_as_temporal(other);
+    let na = bigint_to_i64(zjs_as_bigint(a.epoch_ns));
+    let nb = bigint_to_i64(zjs_as_bigint(b.epoch_ns));
+    let diff = (nb - na) * dir;
+    let optarg = if argc >= 2 { args[1] } else { zjs_undefined() };
+    if zjs_is_undefined(optarg) == 0 {
+        let unit_ns: i64 = 0; let inc: i64 = 1; let mode: int = ROUND_TRUNC; let ok: int = 1;
+        temporal_rounding_opts(ctx, optarg, ROUND_TRUNC, &unit_ns, &inc, &mode, &ok);
+        if ok == 0 || unit_ns == 0 { return temporal_range_error(ctx, (char*)"invalid smallestUnit", 20); }
+        if unit_ns == 86400000000000 { return temporal_range_error(ctx, (char*)"ZonedDateTime diff days needs calendar units (T5b follow-up)", 60); }
+        diff = temporal_round_i64(diff, inc * unit_ns, mode);
+    }
+    return temporal_duration_from_ns(ctx, diff);
+}
+fn host_temporal_zdt_until(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return zdt_diff_impl(ctx, 1, args, argc);
+}
+fn host_temporal_zdt_since(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return zdt_diff_impl(ctx, -1, args, argc);
+}
+
+// ZonedDateTime.from({ timeZone, year, month, day, hour?, ... }).
+fn host_temporal_zdt_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_temporal_kind(v, TMP_ZONED_DATETIME) != 0 {
+        let s = zjs_as_temporal(v);
+        let t = zjs_temporal_new(TMP_ZONED_DATETIME);
+        t.epoch_ns = s.epoch_ns; t.timezone = s.timezone;
+        t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+        ctx_register_cell(ctx, (void*)t);
+        return zjs_cell_from_ptr((void*)t);
+    }
+    if zjs_is_object(v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"ZonedDateTime.from expects an object", 36);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let tzv = property_get(ctx, v, ctx_intern_string(ctx, (char*)"timeZone", 8));
+    if zjs_is_string(tzv) == 0 { return temporal_range_error(ctx, (char*)"ZonedDateTime.from needs a timeZone", 35); }
+    let yv = property_get(ctx, v, ctx_intern_string(ctx, (char*)"year", 4));
+    let mv = property_get(ctx, v, ctx_intern_string(ctx, (char*)"month", 5));
+    let dv = property_get(ctx, v, ctx_intern_string(ctx, (char*)"day", 3));
+    if zjs_is_undefined(yv) != 0 || zjs_is_undefined(mv) != 0 || zjs_is_undefined(dv) != 0 {
+        return temporal_range_error(ctx, (char*)"ZonedDateTime.from needs year, month, day", 41);
+    }
+    let hv = property_get(ctx, v, ctx_intern_string(ctx, (char*)"hour", 4));
+    let miv = property_get(ctx, v, ctx_intern_string(ctx, (char*)"minute", 6));
+    let sv = property_get(ctx, v, ctx_intern_string(ctx, (char*)"second", 6));
+    let y = (i64)zjs_to_double(yv); let mo = (i64)zjs_to_double(mv); let d = (i64)zjs_to_double(dv);
+    let h  = if zjs_is_undefined(hv)  != 0 { 0 } else { (i64)zjs_to_double(hv) };
+    let mi = if zjs_is_undefined(miv) != 0 { 0 } else { (i64)zjs_to_double(miv) };
+    let sc = if zjs_is_undefined(sv)  != 0 { 0 } else { (i64)zjs_to_double(sv) };
+    if !temporal_date_valid(y, mo, d) { return temporal_range_error(ctx, (char*)"invalid ISO date", 16); }
+    let ep = zdt_epoch_ns_from_wall(zjs_as_string(tzv), y, mo, d, h, mi, sc, 0);
+    return zdt_make(ctx, ep, zjs_as_string(tzv));
+}
+
 // Name-match helper for the Temporal computed-getter switch.
 fn tmp_name_is(name: ZjsString*, lit: char*, len: u32) -> bool {
     if name.length != len { return false; }
@@ -21738,10 +21931,31 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"toPlainDateTime", ztd_ptr));
     object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
                ctx_make_host_function(ctx, (char*)"equals", zeq_ptr));
+    let zadd_ptr: void* = NULL; raw { zadd_ptr = (void*)host_temporal_zdt_add; }
+    let zsub_ptr: void* = NULL; raw { zsub_ptr = (void*)host_temporal_zdt_subtract; }
+    let zwith_ptr: void* = NULL; raw { zwith_ptr = (void*)host_temporal_zdt_with; }
+    let zrnd_ptr: void* = NULL; raw { zrnd_ptr = (void*)host_temporal_zdt_round; }
+    let zunt_ptr: void* = NULL; raw { zunt_ptr = (void*)host_temporal_zdt_until; }
+    let zsin_ptr: void* = NULL; raw { zsin_ptr = (void*)host_temporal_zdt_since; }
+    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"add", 3),
+               ctx_make_host_function(ctx, (char*)"add", zadd_ptr));
+    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
+               ctx_make_host_function(ctx, (char*)"subtract", zsub_ptr));
+    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"with", 4),
+               ctx_make_host_function(ctx, (char*)"with", zwith_ptr));
+    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"round", 5),
+               ctx_make_host_function(ctx, (char*)"round", zrnd_ptr));
+    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"until", 5),
+               ctx_make_host_function(ctx, (char*)"until", zunt_ptr));
+    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"since", 5),
+               ctx_make_host_function(ctx, (char*)"since", zsin_ptr));
     object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), zdt_ctor);
     let zcmp_ptr: void* = NULL; raw { zcmp_ptr = (void*)host_temporal_zdt_compare; }
+    let zfrom_ptr: void* = NULL; raw { zfrom_ptr = (void*)host_temporal_zdt_from; }
     property_set(ctx, zdt_ctor, ctx_intern_string(ctx, (char*)"compare", 7),
                  ctx_make_host_function(ctx, (char*)"compare", zcmp_ptr));
+    property_set(ctx, zdt_ctor, ctx_intern_string(ctx, (char*)"from", 4),
+                 ctx_make_host_function(ctx, (char*)"from", zfrom_ptr));
     object_set(ctx, temporal_o, ctx_intern_atom(ctx, (char*)"ZonedDateTime", 13), zdt_ctor);
 
     // --- Temporal.Now ---

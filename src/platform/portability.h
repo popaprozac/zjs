@@ -134,6 +134,36 @@ static inline long zjs_tz_offset_seconds(const char* zone, time_t when, int* ok_
 #endif
 }
 
+// Inverse of zjs_tz_offset_seconds: epoch seconds for a wall-clock
+// date-time interpreted in `zone`. DST disambiguation follows the
+// system's mktime rules (≈ Temporal's 'compatible'): skipped times
+// push forward, repeated times take the earlier offset. "UTC" uses
+// timegm. Windows falls back to UTC (no IANA $TZ).
+static inline time_t zjs_tz_epoch_from_local(const char* zone,
+        int y, int mo, int d, int h, int mi, int s) {
+    struct tm tm0;
+    memset(&tm0, 0, sizeof(tm0));
+    tm0.tm_year = y - 1900; tm0.tm_mon = mo - 1; tm0.tm_mday = d;
+    tm0.tm_hour = h; tm0.tm_min = mi; tm0.tm_sec = s;
+    tm0.tm_isdst = -1;   /* let libc resolve DST */
+    if (!zone || (zone[0]=='U'&&zone[1]=='T'&&zone[2]=='C'&&zone[3]==0)) {
+        return zjs_timegm(&tm0);
+    }
+#ifdef _WIN32
+    return zjs_timegm(&tm0);
+#else
+    const char* prev = getenv("TZ");
+    char saved[256]; int had_prev = 0;
+    if (prev) { strncpy(saved, prev, sizeof(saved)-1); saved[sizeof(saved)-1]=0; had_prev = 1; }
+    setenv("TZ", zone, 1);
+    tzset();
+    time_t e = mktime(&tm0);
+    if (had_prev) setenv("TZ", saved, 1); else unsetenv("TZ");
+    tzset();
+    return e;
+#endif
+}
+
 // The host's current IANA time zone identifier (e.g. "America/New_York")
 // into buf. Returns 1 on success, 0 if undetermined (caller uses "UTC").
 // Apple/Linux: resolve the /etc/localtime symlink to its zoneinfo path.
