@@ -870,6 +870,21 @@ def TAG_BIGINT:        u8 = 24;  // 2026-05-30: ECMA-262 BigInt. Arbitrary-
                                  //   precision integer, sign-magnitude with a
                                  //   little-endian base-2^32 limb array. See
                                  //   ZjsBigInt + the bigint_* helpers below.
+def TAG_TEMPORAL:      u8 = 25;  // 2026-05-30: Temporal types. One cell type
+                                 //   with a `kind` discriminator (TMP_*) for
+                                 //   Duration / PlainDate / PlainTime /
+                                 //   PlainDateTime / PlainYearMonth /
+                                 //   PlainMonthDay / Instant / ZonedDateTime.
+
+// Temporal cell kinds (ZjsTemporal.kind).
+def TMP_DURATION:       u8 = 0;
+def TMP_PLAIN_DATE:     u8 = 1;
+def TMP_PLAIN_TIME:     u8 = 2;
+def TMP_PLAIN_DATETIME: u8 = 3;
+def TMP_PLAIN_YEARMONTH:u8 = 4;
+def TMP_PLAIN_MONTHDAY: u8 = 5;
+def TMP_INSTANT:        u8 = 6;
+def TMP_ZONED_DATETIME: u8 = 7;
 
 // Promise states.
 def PROMISE_PENDING:   u8 = 0;
@@ -1339,6 +1354,110 @@ fn zjs_date_new(time_ms: f64) -> ZjsDate* {
     d.props = NULL;
     d.proto = NULL;
     return d;
+}
+
+// =====================================================================
+// Temporal (ECMA-262 Temporal proposal). One cell type, discriminated
+// by `kind` (TMP_*). A value type — all fields are plain integers plus
+// optional BigInt epochNanoseconds (Instant / ZonedDateTime) and
+// calendar / timezone identifier strings. Built behind ZJS_NO_TEMPORAL
+// (default on). See the temporal_* helpers + host_temporal_* in
+// context.zc.
+//
+// Field meaning depends on kind:
+//   PlainDate      : year, month, day (+ calendar)
+//   PlainTime      : hour..nanosecond
+//   PlainDateTime  : year..nanosecond (+ calendar)
+//   PlainYearMonth : year, month (+ calendar; day = reference day)
+//   PlainMonthDay  : month, day (+ calendar; year = reference year)
+//   Duration       : the ten d_* fields (signed, can be large)
+//   Instant        : epoch_ns (BigInt)
+//   ZonedDateTime  : epoch_ns (BigInt) + timezone (+ calendar)
+// =====================================================================
+struct ZjsTemporal {
+    header:      CellHeader;     // type_tag = TAG_TEMPORAL
+    kind:        u8;             // TMP_*
+
+    // Wall-clock / calendar components (PlainDate/Time/DateTime/YM/MD).
+    year:        i32;
+    month:       i32;
+    day:         i32;
+    hour:        i32;
+    minute:      i32;
+    second:      i32;
+    millisecond: i32;
+    microsecond: i32;
+    nanosecond:  i32;
+
+    // Duration components (signed; ToIntegerIfIntegral, fit i64 for any
+    // realistic range). All zero for non-Duration kinds.
+    d_years:   i64;
+    d_months:  i64;
+    d_weeks:   i64;
+    d_days:    i64;
+    d_hours:   i64;
+    d_minutes: i64;
+    d_seconds: i64;
+    d_ms:      i64;
+    d_us:      i64;
+    d_ns:      i64;
+
+    // Instant / ZonedDateTime epoch nanoseconds (a TAG_BIGINT value),
+    // or undefined for the wall-clock kinds.
+    epoch_ns:  ZjsValue;
+    // Calendar identifier ("iso8601") — interned string or NULL.
+    calendar:  ZjsString*;
+    // IANA timezone identifier (ZonedDateTime) — interned string or NULL.
+    timezone:  ZjsString*;
+
+    props:     ZjsObject*;       // lazy expando bag
+    proto:     ZjsObject*;       // per-instance [[Prototype]]
+}
+
+fn zjs_is_temporal(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_TEMPORAL { return 1; }
+    return 0;
+}
+
+fn zjs_as_temporal(v: ZjsValue) -> ZjsTemporal* {
+    let p = zjs_cell_as_ptr(v);
+    let t: ZjsTemporal* = NULL;
+    raw { t = (ZjsTemporal*)p; }
+    return t;
+}
+
+// True if v is a Temporal cell of the given kind.
+fn zjs_is_temporal_kind(v: ZjsValue, kind: u8) -> int {
+    if zjs_cell_tag(v) != TAG_TEMPORAL { return 0; }
+    if zjs_as_temporal(v).kind != kind { return 0; }
+    return 1;
+}
+
+// Allocate a zero-initialized Temporal cell of the given kind. Caller
+// fills the relevant fields + ctx_register_cell's it.
+fn zjs_temporal_new(kind: u8) -> ZjsTemporal* {
+    let t = alloc<ZjsTemporal>();
+    t.header.type_tag = TAG_TEMPORAL;
+    t.kind = kind;
+    t.year = 0; t.month = 0; t.day = 0;
+    t.hour = 0; t.minute = 0; t.second = 0;
+    t.millisecond = 0; t.microsecond = 0; t.nanosecond = 0;
+    t.d_years = 0; t.d_months = 0; t.d_weeks = 0; t.d_days = 0;
+    t.d_hours = 0; t.d_minutes = 0; t.d_seconds = 0;
+    t.d_ms = 0; t.d_us = 0; t.d_ns = 0;
+    t.epoch_ns = zjs_undefined();
+    t.calendar = NULL;
+    t.timezone = NULL;
+    t.props = NULL;
+    t.proto = NULL;
+    return t;
+}
+
+fn temporal_free_void(p: void*) -> void {
+    let t: ZjsTemporal* = NULL;
+    raw { t = (ZjsTemporal*)p; }
+    if t == NULL { return; }
+    dealloc(t);
 }
 
 // Fast-path iterator for arrays / strings. Bypasses the

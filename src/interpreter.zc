@@ -561,6 +561,35 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         return zjs_undefined();
     }
 
+    if tag == TAG_TEMPORAL {
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        let name = zjs_as_string(key);
+        let tm = zjs_as_temporal(obj);
+        if tm.props != NULL {
+            let pv = read_from_props_bag(ctx, tm.props, key);
+            if zjs_is_deleted(pv) == 0 { return pv; }
+        }
+        // Computed (accessor-style) getters: .years / .sign /
+        // .epochNanoseconds / etc., dispatched by kind.
+        let cv = temporal_get_computed(ctx, tm, name);
+        if zjs_is_deleted(cv) == 0 { return cv; }
+        // Methods live on the kind's prototype.
+        let proto: ZjsObject* = NULL;
+        if tm.proto != NULL { proto = tm.proto; }
+        else if tm.kind == TMP_DURATION { proto = ctx.temporal_duration_proto; }
+        else if tm.kind == TMP_INSTANT  { proto = ctx.temporal_instant_proto; }
+        let cur = proto;
+        while cur != NULL {
+            let slot = class_find_slot(cur.cls, name);
+            if slot >= 0 {
+                let mv = cur.slots[(u32)slot];
+                if zjs_is_deleted(mv) == 0 { return mv; }
+            }
+            cur = cur.proto;
+        }
+        return zjs_undefined();
+    }
+
     if tag == TAG_DATE {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
@@ -5656,6 +5685,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 || rt == TAG_ARRAY_BUFFER
                 || rt == TAG_DATA_VIEW
                 || rt == TAG_WEBSOCKET
+                || rt == TAG_TEMPORAL
                 || rt == TAG_PROXY;
             if result_is_object {
                 regs[dst2] = call_result;
@@ -5870,6 +5900,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 || rt2 == TAG_ARRAY_BUFFER
                 || rt2 == TAG_DATA_VIEW
                 || rt2 == TAG_WEBSOCKET
+                || rt2 == TAG_TEMPORAL
                 || rt2 == TAG_PROXY;
             // Derived-class ctor: a non-undefined non-Object return is
             // a TypeError. Base ctors silently coerce to `this`.
@@ -6603,7 +6634,7 @@ fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc
         || rt == TAG_FUNCTION || rt == TAG_CLOSURE || rt == TAG_HOST_FUNCTION
         || rt == TAG_MAP || rt == TAG_SET || rt == TAG_DATE || rt == TAG_UINT8_ARRAY
         || rt == TAG_TYPED_ARRAY || rt == TAG_ARRAY_BUFFER || rt == TAG_DATA_VIEW
-        || rt == TAG_WEBSOCKET || rt == TAG_PROXY;
+        || rt == TAG_WEBSOCKET || rt == TAG_TEMPORAL || rt == TAG_PROXY;
     if result_is_object { return r; }
     return final_this;
 }

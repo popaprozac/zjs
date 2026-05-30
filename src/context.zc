@@ -412,6 +412,10 @@ struct ZjsContext {
     headers_proto:            ZjsObject*;
     response_proto:           ZjsObject*;
     request_proto:            ZjsObject*;
+    // Temporal per-kind method prototypes (TAG_TEMPORAL receivers route
+    // here by kind in property_get). NULL when ZJS_NO_TEMPORAL.
+    temporal_duration_proto:  ZjsObject*;
+    temporal_instant_proto:   ZjsObject*;
 
     // Live WebSocket cells — polled on each event-loop tick. Owned
     // by ZjsContext (GC marks them so handlers stay reachable across
@@ -1453,6 +1457,17 @@ fn gc_mark_cell_children(p: void*) -> void {
         return;
     }
 
+    if tag == TAG_TEMPORAL {
+        let tm: ZjsTemporal* = NULL;
+        raw { tm = (ZjsTemporal*)p; }
+        if zjs_is_cell(tm.epoch_ns) != 0 { gc_mark_value(tm.epoch_ns); }
+        if tm.calendar != NULL { tm.calendar.header.mark = 1; }
+        if tm.timezone != NULL { tm.timezone.header.mark = 1; }
+        if tm.props != NULL { gc_mark_value(zjs_cell_from_ptr((void*)tm.props)); }
+        if tm.proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)tm.proto)); }
+        return;
+    }
+
     if tag == TAG_REGEXP {
         let r: ZjsRegExp* = NULL;
         raw { r = (ZjsRegExp*)p; }
@@ -1874,6 +1889,12 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     if ctx.request_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.request_proto));
     }
+    if ctx.temporal_duration_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.temporal_duration_proto));
+    }
+    if ctx.temporal_instant_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.temporal_instant_proto));
+    }
     // In-flight fetch promises + URLs must stay alive even if user
     // code dropped the only reference — completion still needs to
     // fire .then handlers.
@@ -1994,6 +2015,7 @@ fn gc_free_one(p: void*) -> void {
           dealloc(sm);
       }
       else if tag == TAG_BIGINT        { bigint_free_void(p); }
+      else if tag == TAG_TEMPORAL      { temporal_free_void(p); }
       else if tag == TAG_ARRAY_ITER    {
           let aa: ZjsArrayIter* = NULL;
           raw { aa = (ZjsArrayIter*)p; }
@@ -19512,6 +19534,403 @@ fn host_parse_int(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_double((f64)parsed);
 }
 
+// =====================================================================
+// Temporal (ECMA-262 Temporal proposal) — native, behind
+// ZJS_NO_TEMPORAL. T1: Temporal.Duration (complete), Temporal.Now,
+// minimal Temporal.Instant. Later phases add the Plain* / ZonedDateTime
+// types + the rounding matrix. See ZjsTemporal in value.zc.
+// =====================================================================
+
+// Overall sign of a Duration cell: -1 / 0 / +1. By construction all
+// nonzero components share one sign, so the first nonzero decides.
+fn temporal_duration_sign(t: ZjsTemporal*) -> int {
+    if t.d_years   != 0 { return if t.d_years   < 0 { -1 } else { 1 }; }
+    if t.d_months  != 0 { return if t.d_months  < 0 { -1 } else { 1 }; }
+    if t.d_weeks   != 0 { return if t.d_weeks   < 0 { -1 } else { 1 }; }
+    if t.d_days    != 0 { return if t.d_days    < 0 { -1 } else { 1 }; }
+    if t.d_hours   != 0 { return if t.d_hours   < 0 { -1 } else { 1 }; }
+    if t.d_minutes != 0 { return if t.d_minutes < 0 { -1 } else { 1 }; }
+    if t.d_seconds != 0 { return if t.d_seconds < 0 { -1 } else { 1 }; }
+    if t.d_ms      != 0 { return if t.d_ms      < 0 { -1 } else { 1 }; }
+    if t.d_us      != 0 { return if t.d_us      < 0 { -1 } else { 1 }; }
+    if t.d_ns      != 0 { return if t.d_ns      < 0 { -1 } else { 1 }; }
+    return 0;
+}
+
+fn i64_abs(v: i64) -> i64 { if v < 0 { return -v; } return v; }
+
+// Render a Duration as an ISO-8601 duration string into `buf`.
+// Format: [-]P[nY][nM][nW][nD][T[nH][nM][n[.fff]S]]; empty → "PT0S".
+// Sub-second components (ms/us/ns) combine into the fractional seconds
+// with carry into the whole-seconds field (matches Node, incl. the
+// unbalanced case like {milliseconds:1500} → "PT1.5S").
+fn temporal_duration_to_iso(t: ZjsTemporal*, buf: char*, cap: usize) -> void {
+    let sign = temporal_duration_sign(t);
+    let yr = i64_abs(t.d_years);
+    let mo = i64_abs(t.d_months);
+    let wk = i64_abs(t.d_weeks);
+    let dy = i64_abs(t.d_days);
+    let hh = i64_abs(t.d_hours);
+    let mm = i64_abs(t.d_minutes);
+    let ss = i64_abs(t.d_seconds);
+    // Combine sub-second units into total nanoseconds, carry into ss.
+    let frac_ns: i64 = i64_abs(t.d_ms) * 1000000 + i64_abs(t.d_us) * 1000 + i64_abs(t.d_ns);
+    let carry: i64 = frac_ns / 1000000000;
+    let sub: i64 = frac_ns % 1000000000;
+    let sec_total: i64 = ss + carry;
+    raw {
+        char* p = buf;
+        char* end = buf + cap;
+        if (sign < 0) p += snprintf(p, end - p, "-");
+        p += snprintf(p, end - p, "P");
+        if (yr) p += snprintf(p, end - p, "%lldY", (long long)yr);
+        if (mo) p += snprintf(p, end - p, "%lldM", (long long)mo);
+        if (wk) p += snprintf(p, end - p, "%lldW", (long long)wk);
+        if (dy) p += snprintf(p, end - p, "%lldD", (long long)dy);
+        int have_time = (hh || mm || sec_total || sub);
+        // PT0S when the whole duration is empty.
+        int empty = !(yr || mo || wk || dy || have_time);
+        if (have_time || empty) {
+            p += snprintf(p, end - p, "T");
+            if (hh) p += snprintf(p, end - p, "%lldH", (long long)hh);
+            if (mm) p += snprintf(p, end - p, "%lldM", (long long)mm);
+            // Seconds: emitted when there's a seconds value/fraction, or
+            // when seconds is the only time content (incl. the empty
+            // PT0S case).
+            if (sec_total || sub || (!hh && !mm)) {
+                if (sub) {
+                    char fbuf[10];
+                    snprintf(fbuf, sizeof(fbuf), "%09lld", (long long)sub);
+                    int flen = 9;
+                    while (flen > 1 && fbuf[flen-1] == '0') flen--;
+                    p += snprintf(p, end - p, "%lld.%.*sS", (long long)sec_total, flen, fbuf);
+                } else {
+                    p += snprintf(p, end - p, "%lldS", (long long)sec_total);
+                }
+            }
+        }
+    }
+}
+
+// Read arg[idx] as an integer Duration component. Missing/undefined → 0.
+// Sets ok[0]=0 (RangeError) on a non-integral / non-finite value.
+fn temporal_dur_arg(args: ZjsValue*, argc: u32, idx: u32, ok: int*) -> i64 {
+    if idx >= argc { return 0; }
+    let v = args[idx];
+    if zjs_is_undefined(v) != 0 { return 0; }
+    let d = zjs_to_double(v);
+    let bad: int = 0;
+    raw { bad = (!isfinite(d) || d != trunc(d)) ? 1 : 0; }
+    if bad != 0 { ok[0] = 0; return 0; }
+    return (i64)d;
+}
+
+// `new Temporal.Duration(y, mo, w, d, h, m, s, ms, us, ns)`.
+fn host_temporal_duration_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let ok: int = 1;
+    let yr = temporal_dur_arg(args, argc, 0, &ok);
+    let mo = temporal_dur_arg(args, argc, 1, &ok);
+    let wk = temporal_dur_arg(args, argc, 2, &ok);
+    let dy = temporal_dur_arg(args, argc, 3, &ok);
+    let hh = temporal_dur_arg(args, argc, 4, &ok);
+    let mm = temporal_dur_arg(args, argc, 5, &ok);
+    let ss = temporal_dur_arg(args, argc, 6, &ok);
+    let ms = temporal_dur_arg(args, argc, 7, &ok);
+    let us = temporal_dur_arg(args, argc, 8, &ok);
+    let ns = temporal_dur_arg(args, argc, 9, &ok);
+    if ok == 0 {
+        let err = build_typed_error(ctx, (char*)"RangeError", 10,
+            (char*)"Duration components must be integers", 35);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    // All nonzero components must share one sign (ECMA-262 §7.5.x).
+    let seen: int = 0;
+    let bad_sign: int = 0;
+    raw {
+        long long comps[10] = {(long long)yr,(long long)mo,(long long)wk,(long long)dy,
+                               (long long)hh,(long long)mm,(long long)ss,
+                               (long long)ms,(long long)us,(long long)ns};
+        for (int i = 0; i < 10; i++) {
+            if (comps[i] != 0) {
+                int s = comps[i] < 0 ? -1 : 1;
+                if (seen == 0) seen = s;
+                else if (seen != s) { bad_sign = 1; break; }
+            }
+        }
+    }
+    if bad_sign != 0 {
+        let err = build_typed_error(ctx, (char*)"RangeError", 10,
+            (char*)"Duration components must all have the same sign", 47);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let t = zjs_temporal_new(TMP_DURATION);
+    t.d_years = yr; t.d_months = mo; t.d_weeks = wk; t.d_days = dy;
+    t.d_hours = hh; t.d_minutes = mm; t.d_seconds = ss;
+    t.d_ms = ms; t.d_us = us; t.d_ns = ns;
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// Temporal.Duration.from(durationLike). T1: accepts a Duration (clone)
+// or a plain object with numeric component properties. (ISO-string
+// parsing is a T2 follow-up.)
+fn host_temporal_duration_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_temporal_kind(v, TMP_DURATION) != 0 {
+        let src = zjs_as_temporal(v);
+        let t = zjs_temporal_new(TMP_DURATION);
+        t.d_years = src.d_years; t.d_months = src.d_months; t.d_weeks = src.d_weeks;
+        t.d_days = src.d_days; t.d_hours = src.d_hours; t.d_minutes = src.d_minutes;
+        t.d_seconds = src.d_seconds; t.d_ms = src.d_ms; t.d_us = src.d_us; t.d_ns = src.d_ns;
+        ctx_register_cell(ctx, (void*)t);
+        return zjs_cell_from_ptr((void*)t);
+    }
+    if zjs_is_object(v) != 0 {
+        // Pull named numeric fields off the object, build a 10-arg call.
+        let argbuf: ZjsValue[10];
+        let names0 = (char*)"years"; let _u0 = names0;
+        argbuf[0] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"years", 5));
+        argbuf[1] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"months", 6));
+        argbuf[2] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"weeks", 5));
+        argbuf[3] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"days", 4));
+        argbuf[4] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"hours", 5));
+        argbuf[5] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"minutes", 7));
+        argbuf[6] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"seconds", 7));
+        argbuf[7] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"milliseconds", 12));
+        argbuf[8] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"microseconds", 12));
+        argbuf[9] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"nanoseconds", 11));
+        let ap: ZjsValue* = NULL; raw { ap = &argbuf[0]; }
+        return host_temporal_duration_ctor(ctx, ap, 10);
+    }
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+        (char*)"Temporal.Duration.from expects a Duration or object", 51);
+    ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+    return zjs_undefined();
+}
+
+fn host_temporal_duration_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let _u = args; let _u2 = argc;
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_DURATION) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"not a Temporal.Duration", 23);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let buf: char[512];
+    let bp: char* = NULL; raw { bp = &buf[0]; }
+    temporal_duration_to_iso(zjs_as_temporal(this_v), bp, 512);
+    let n: u32 = 0; raw { n = (uint32_t)strlen(bp); }
+    return ctx_intern_string(ctx, bp, n);
+}
+
+// Temporal.Duration.prototype.negated() — flip every component's sign.
+fn host_temporal_duration_negated(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let _u = args; let _u2 = argc;
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_DURATION) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.Duration", 23);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let t = zjs_temporal_new(TMP_DURATION);
+    t.d_years = -s.d_years; t.d_months = -s.d_months; t.d_weeks = -s.d_weeks;
+    t.d_days = -s.d_days; t.d_hours = -s.d_hours; t.d_minutes = -s.d_minutes;
+    t.d_seconds = -s.d_seconds; t.d_ms = -s.d_ms; t.d_us = -s.d_us; t.d_ns = -s.d_ns;
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// Temporal.Duration.prototype.abs() — every component non-negative.
+fn host_temporal_duration_abs(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let _u = args; let _u2 = argc;
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_DURATION) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.Duration", 23);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let t = zjs_temporal_new(TMP_DURATION);
+    t.d_years = i64_abs(s.d_years); t.d_months = i64_abs(s.d_months); t.d_weeks = i64_abs(s.d_weeks);
+    t.d_days = i64_abs(s.d_days); t.d_hours = i64_abs(s.d_hours); t.d_minutes = i64_abs(s.d_minutes);
+    t.d_seconds = i64_abs(s.d_seconds); t.d_ms = i64_abs(s.d_ms); t.d_us = i64_abs(s.d_us); t.d_ns = i64_abs(s.d_ns);
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// Temporal.Now.instant() — current instant as a Temporal.Instant.
+fn host_temporal_now_instant(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let _u = args; let _u2 = argc;
+    let ms: f64 = (f64)Time::now();
+    // epochNanoseconds = ms * 1e6 (sub-ms resolution unavailable).
+    let ns_i64: i64 = 0;
+    raw { ns_i64 = (int64_t)ms * 1000000LL; }
+    let bi = zjs_bigint_from_i64(ns_i64);
+    ctx_register_cell(ctx, (void*)bi);
+    let t = zjs_temporal_new(TMP_INSTANT);
+    t.epoch_ns = zjs_cell_from_ptr((void*)bi);
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// Temporal.Now.timeZoneId() — the host time zone identifier. T1 returns
+// "UTC" (real IANA tz detection lands with ZonedDateTime in T5).
+fn host_temporal_now_timezone_id(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let _u = args; let _u2 = argc;
+    return ctx_intern_string(ctx, (char*)"UTC", 3);
+}
+
+// Temporal.Instant.fromEpochMilliseconds(ms).
+fn host_temporal_instant_from_epoch_ms(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let ms_v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let ms = zjs_to_double(ms_v);
+    let bad: int = 0;
+    raw { bad = (!isfinite(ms) || ms != trunc(ms)) ? 1 : 0; }
+    if bad != 0 {
+        let err = build_typed_error(ctx, (char*)"RangeError", 10,
+            (char*)"epoch milliseconds must be an integer", 37);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let ns_i64: i64 = 0;
+    raw { ns_i64 = (int64_t)ms * 1000000LL; }
+    let bi = zjs_bigint_from_i64(ns_i64);
+    ctx_register_cell(ctx, (void*)bi);
+    let t = zjs_temporal_new(TMP_INSTANT);
+    t.epoch_ns = zjs_cell_from_ptr((void*)bi);
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+fn host_temporal_instant_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let _u = args; let _u2 = argc;
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_INSTANT) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.Instant", 22);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let t = zjs_as_temporal(this_v);
+    // epochMs = floor(epochNs / 1e6) via the BigInt → double bridge
+    // (T1 renders at ms precision; ns precision lands in T4).
+    let ms: f64 = 0.0;
+    if zjs_is_bigint(t.epoch_ns) != 0 {
+        ms = bigint_to_f64(zjs_as_bigint(t.epoch_ns)) / 1000000.0;
+        raw { ms = floor(ms); }
+    }
+    return format_iso_string(ctx, ms);
+}
+
+// Name-match helper for the Temporal computed-getter switch.
+fn tmp_name_is(name: ZjsString*, lit: char*, len: u32) -> bool {
+    if name.length != len { return false; }
+    let m: int = 1;
+    let nd = name.data;
+    raw { m = memcmp(nd, lit, len); }
+    return m == 0;
+}
+
+// Computed (accessor-style) own properties of a Temporal value. Returns
+// the value, or zjs_deleted() as a sentinel meaning "not a computed
+// property of this kind — fall through to the prototype methods".
+fn temporal_get_computed(ctx: ZjsContext*, t: ZjsTemporal*, name: ZjsString*) -> ZjsValue {
+    let k = t.kind;
+    if k == TMP_DURATION {
+        if tmp_name_is(name, (char*)"years", 5)        { return zjs_double((f64)t.d_years); }
+        if tmp_name_is(name, (char*)"months", 6)       { return zjs_double((f64)t.d_months); }
+        if tmp_name_is(name, (char*)"weeks", 5)        { return zjs_double((f64)t.d_weeks); }
+        if tmp_name_is(name, (char*)"days", 4)         { return zjs_double((f64)t.d_days); }
+        if tmp_name_is(name, (char*)"hours", 5)        { return zjs_double((f64)t.d_hours); }
+        if tmp_name_is(name, (char*)"minutes", 7)      { return zjs_double((f64)t.d_minutes); }
+        if tmp_name_is(name, (char*)"seconds", 7)      { return zjs_double((f64)t.d_seconds); }
+        if tmp_name_is(name, (char*)"milliseconds", 12){ return zjs_double((f64)t.d_ms); }
+        if tmp_name_is(name, (char*)"microseconds", 12){ return zjs_double((f64)t.d_us); }
+        if tmp_name_is(name, (char*)"nanoseconds", 11) { return zjs_double((f64)t.d_ns); }
+        if tmp_name_is(name, (char*)"sign", 4)         { return zjs_int32(temporal_duration_sign(t)); }
+        if tmp_name_is(name, (char*)"blank", 5)        { return zjs_bool(if temporal_duration_sign(t) == 0 { 1 } else { 0 }); }
+    } else if k == TMP_INSTANT {
+        if tmp_name_is(name, (char*)"epochNanoseconds", 16) { return t.epoch_ns; }
+        if tmp_name_is(name, (char*)"epochMilliseconds", 17) {
+            let ms: f64 = 0.0;
+            if zjs_is_bigint(t.epoch_ns) != 0 {
+                ms = bigint_to_f64(zjs_as_bigint(t.epoch_ns)) / 1000000.0;
+                raw { ms = floor(ms); }
+            }
+            return zjs_double(ms);
+        }
+    }
+    return zjs_deleted();
+}
+
+// Build the Temporal namespace + Duration / Instant / Now. Called from
+// ctx_init_builtins under #ifndef ZJS_NO_TEMPORAL.
+fn ctx_init_temporal(ctx: ZjsContext*) -> void {
+    let temporal_v = ctx_new_object(ctx);
+    let temporal_o = zjs_as_object(temporal_v);
+    object_set(ctx, temporal_o, ctx_intern_atom(ctx, TAG_NAME_KEY, TAG_NAME_KEY_LEN),
+               ctx_intern_string(ctx, (char*)"Temporal", 8));
+
+    // --- Temporal.Duration ---
+    let dur_ctor_ptr: void* = NULL; raw { dur_ctor_ptr = (void*)host_temporal_duration_ctor; }
+    let dur_ctor = ctx_make_host_function(ctx, (char*)"Duration", dur_ctor_ptr);
+    let dur_proto_v = ctx_new_object(ctx);
+    ctx.temporal_duration_proto = zjs_as_object(dur_proto_v);
+    zjs_as_host_function(dur_ctor).prototype = ctx.temporal_duration_proto;
+    let dts_ptr: void* = NULL; raw { dts_ptr = (void*)host_temporal_duration_to_string; }
+    let dneg_ptr: void* = NULL; raw { dneg_ptr = (void*)host_temporal_duration_negated; }
+    let dabs_ptr: void* = NULL; raw { dabs_ptr = (void*)host_temporal_duration_abs; }
+    let dts_fn = ctx_make_host_function(ctx, (char*)"toString", dts_ptr);
+    object_set(ctx, ctx.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"toString", 8), dts_fn);
+    object_set(ctx, ctx.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), dts_fn);
+    object_set(ctx, ctx.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"negated", 7),
+               ctx_make_host_function(ctx, (char*)"negated", dneg_ptr));
+    object_set(ctx, ctx.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"abs", 3),
+               ctx_make_host_function(ctx, (char*)"abs", dabs_ptr));
+    object_set(ctx, ctx.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), dur_ctor);
+    let dfrom_ptr: void* = NULL; raw { dfrom_ptr = (void*)host_temporal_duration_from; }
+    property_set(ctx, dur_ctor, ctx_intern_string(ctx, (char*)"from", 4),
+                 ctx_make_host_function(ctx, (char*)"from", dfrom_ptr));
+    object_set(ctx, temporal_o, ctx_intern_atom(ctx, (char*)"Duration", 8), dur_ctor);
+
+    // --- Temporal.Instant (minimal) ---
+    let inst_ctor_ptr: void* = NULL; raw { inst_ctor_ptr = (void*)host_temporal_instant_from_epoch_ms; }
+    // No public Instant() ctor in T1 (takes a BigInt — wire in T4); expose
+    // the namespace object as a plain holder for statics + prototype.
+    let inst_ctor = ctx_make_host_function(ctx, (char*)"Instant", inst_ctor_ptr);
+    let inst_proto_v = ctx_new_object(ctx);
+    ctx.temporal_instant_proto = zjs_as_object(inst_proto_v);
+    zjs_as_host_function(inst_ctor).prototype = ctx.temporal_instant_proto;
+    let its_ptr: void* = NULL; raw { its_ptr = (void*)host_temporal_instant_to_string; }
+    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
+               ctx_make_host_function(ctx, (char*)"toString", its_ptr));
+    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), inst_ctor);
+    let ifem_ptr: void* = NULL; raw { ifem_ptr = (void*)host_temporal_instant_from_epoch_ms; }
+    property_set(ctx, inst_ctor, ctx_intern_string(ctx, (char*)"fromEpochMilliseconds", 21),
+                 ctx_make_host_function(ctx, (char*)"fromEpochMilliseconds", ifem_ptr));
+    object_set(ctx, temporal_o, ctx_intern_atom(ctx, (char*)"Instant", 7), inst_ctor);
+
+    // --- Temporal.Now ---
+    let now_v = ctx_new_object(ctx);
+    let now_o = zjs_as_object(now_v);
+    object_set(ctx, now_o, ctx_intern_atom(ctx, TAG_NAME_KEY, TAG_NAME_KEY_LEN),
+               ctx_intern_string(ctx, (char*)"Now", 3));
+    let now_inst_ptr: void* = NULL; raw { now_inst_ptr = (void*)host_temporal_now_instant; }
+    let now_tz_ptr: void* = NULL; raw { now_tz_ptr = (void*)host_temporal_now_timezone_id; }
+    object_set(ctx, now_o, ctx_intern_atom(ctx, (char*)"instant", 7),
+               ctx_make_host_function(ctx, (char*)"instant", now_inst_ptr));
+    object_set(ctx, now_o, ctx_intern_atom(ctx, (char*)"timeZoneId", 10),
+               ctx_make_host_function(ctx, (char*)"timeZoneId", now_tz_ptr));
+    object_set(ctx, temporal_o, ctx_intern_atom(ctx, (char*)"Now", 3), now_v);
+
+    let temporal_slot = ctx_intern_global(ctx, (char*)"Temporal", 8);
+    ctx.globals[temporal_slot].value = temporal_v;
+    ctx.globals[temporal_slot].defined = true;
+}
+
 fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // --- Function.prototype.{call, apply} cached helpers (Phase 3.8d)
     let fcall_ptr:  void* = NULL; raw { fcall_ptr  = (void*)host_function_call; }
@@ -21025,6 +21444,13 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let json_slot = ctx_intern_global(ctx, (char*)"JSON", 4);
     ctx.globals[json_slot].value = json_v;
     ctx.globals[json_slot].defined = true;
+
+    // --- Temporal namespace (behind ZJS_NO_TEMPORAL) ---
+    raw {
+        #ifndef ZJS_NO_TEMPORAL
+        ctx_init_temporal(ctx);
+        #endif
+    }
 
     // --- console (Phase 3.8a + web-API quick wins 2026-05-18) ---
     let console_v = ctx_new_object(ctx);
