@@ -576,8 +576,9 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         // Methods live on the kind's prototype.
         let proto: ZjsObject* = NULL;
         if tm.proto != NULL { proto = tm.proto; }
-        else if tm.kind == TMP_DURATION { proto = ctx.temporal_duration_proto; }
-        else if tm.kind == TMP_INSTANT  { proto = ctx.temporal_instant_proto; }
+        else if tm.kind == TMP_DURATION   { proto = ctx.temporal_duration_proto; }
+        else if tm.kind == TMP_INSTANT    { proto = ctx.temporal_instant_proto; }
+        else if tm.kind == TMP_PLAIN_DATE { proto = ctx.temporal_plaindate_proto; }
         let cur = proto;
         while cur != NULL {
             let slot = class_find_slot(cur.cls, name);
