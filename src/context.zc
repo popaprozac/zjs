@@ -8345,6 +8345,14 @@ fn json_stringify_value(ctx: ZjsContext*, jc: JsonCtx*, b: JsonBuf*, v: ZjsValue
         else                   { json_buf_puts(b, (char*)"false", 5); }
         return;
     }
+    // JSON.stringify on a BigInt throws TypeError (ECMA-262 §25.5.2).
+    if zjs_is_bigint(v) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Do not know how to serialize a BigInt", 37);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value  = err;
+        return;
+    }
     if zjs_is_int32(v) != 0 {
         let n = zjs_as_int32(v);
         let tmp: char[32];

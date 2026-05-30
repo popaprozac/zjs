@@ -499,6 +499,12 @@ fn zjs_strict_eq(a: ZjsValue, b: ZjsValue) -> int {
     if zjs_is_string(a) != 0 && zjs_is_string(b) != 0 {
         return zjs_string_equals(zjs_as_string(a), zjs_as_string(b));
     }
+    // BigInt === BigInt: value compare (distinct cells, so the bit
+    // fallback below would wrongly say unequal). BigInt === non-BigInt
+    // is always false (different type) — handled by the bits fallback.
+    if zjs_is_bigint(a) != 0 && zjs_is_bigint(b) != 0 {
+        return if bigint_cmp(zjs_as_bigint(a), zjs_as_bigint(b)) == 0 { 1 } else { 0 };
+    }
     // Different categories — equal only if bit-equal AND not a NaN double.
     if a.bits == b.bits { return 1; }
     return 0;
@@ -554,6 +560,40 @@ fn zjs_loose_eq(a: ZjsValue, b: ZjsValue) -> int {
     let b_str = zjs_is_string(b) != 0;
     let a_bool = zjs_is_bool(a) != 0;
     let b_bool = zjs_is_bool(b) != 0;
+
+    // BigInt loose-equality (ECMA-262 §7.2.13). BigInt==BigInt value
+    // compare; BigInt==Number exact math compare; BigInt==String parses
+    // the string (invalid → not equal). BigInt==Boolean falls through to
+    // the bool→number recursion below, then re-enters as BigInt==Number.
+    let a_big = zjs_is_bigint(a) != 0;
+    let b_big = zjs_is_bigint(b) != 0;
+    if a_big && b_big {
+        return if bigint_cmp(zjs_as_bigint(a), zjs_as_bigint(b)) == 0 { 1 } else { 0 };
+    }
+    if a_big && b_num {
+        let c = bigint_cmp_f64(zjs_as_bigint(a), zjs_to_double(b));
+        return if c == 0 { 1 } else { 0 };
+    }
+    if b_big && a_num {
+        let c = bigint_cmp_f64(zjs_as_bigint(b), zjs_to_double(a));
+        return if c == 0 { 1 } else { 0 };
+    }
+    if a_big && b_str {
+        let sb = zjs_as_string(b);
+        let ok: int = 1;
+        let tmp = zjs_bigint_from_string(sb.data, sb.length, &ok);
+        let res: int = if ok != 0 { if bigint_cmp(zjs_as_bigint(a), tmp) == 0 { 1 } else { 0 } } else { 0 };
+        bigint_free_void((void*)tmp);
+        return res;
+    }
+    if b_big && a_str {
+        let sa = zjs_as_string(a);
+        let ok: int = 1;
+        let tmp = zjs_bigint_from_string(sa.data, sa.length, &ok);
+        let res: int = if ok != 0 { if bigint_cmp(zjs_as_bigint(b), tmp) == 0 { 1 } else { 0 } } else { 0 };
+        bigint_free_void((void*)tmp);
+        return res;
+    }
 
     if a_num && b_num { return zjs_strict_eq(a, b); }
     if a_str && b_str { return zjs_strict_eq(a, b); }
@@ -639,7 +679,43 @@ fn zjs_to_primitive_for_eq(v: ZjsValue) -> ZjsValue {
 // are strings, lexicographic UTF-16 (we use byte order — close enough
 // for ASCII tests; full Unicode collation is deferred). Otherwise
 // numeric comparison via ToNumber.
+// Relational compare for operands where at least one is a BigInt.
+// Returns -1/0/1 for a<,=,>b, or -2 when incomparable (NaN / unparseable
+// string). Used by both zjs_cmp_lt and zjs_cmp_le.
+fn bigint_relational(a: ZjsValue, b: ZjsValue) -> int {
+    let ab = zjs_is_bigint(a) != 0;
+    let bb = zjs_is_bigint(b) != 0;
+    if ab && bb { return bigint_cmp(zjs_as_bigint(a), zjs_as_bigint(b)); }
+    if ab {
+        if zjs_is_string(b) != 0 {
+            let sb = zjs_as_string(b);
+            let ok: int = 1;
+            let tmp = zjs_bigint_from_string(sb.data, sb.length, &ok);
+            let r: int = if ok != 0 { bigint_cmp(zjs_as_bigint(a), tmp) } else { -2 };
+            bigint_free_void((void*)tmp);
+            return r;
+        }
+        return bigint_cmp_f64(zjs_as_bigint(a), zjs_to_double(b));
+    }
+    // b is BigInt, a is not — flip the comparison.
+    if zjs_is_string(a) != 0 {
+        let sa = zjs_as_string(a);
+        let ok: int = 1;
+        let tmp = zjs_bigint_from_string(sa.data, sa.length, &ok);
+        let r: int = if ok != 0 { -bigint_cmp(zjs_as_bigint(b), tmp) } else { -2 };
+        bigint_free_void((void*)tmp);
+        return r;
+    }
+    let c = bigint_cmp_f64(zjs_as_bigint(b), zjs_to_double(a));
+    if c == -2 { return -2; }
+    return -c;
+}
+
 fn zjs_cmp_lt(a: ZjsValue, b: ZjsValue) -> int {
+    if zjs_is_bigint(a) != 0 || zjs_is_bigint(b) != 0 {
+        let c = bigint_relational(a, b);
+        return if c == -1 { 1 } else { 0 };
+    }
     if zjs_is_string(a) != 0 && zjs_is_string(b) != 0 {
         let sa = zjs_as_string(a);
         let sb = zjs_as_string(b);
@@ -664,6 +740,10 @@ fn zjs_cmp_lt(a: ZjsValue, b: ZjsValue) -> int {
 }
 
 fn zjs_cmp_le(a: ZjsValue, b: ZjsValue) -> int {
+    if zjs_is_bigint(a) != 0 || zjs_is_bigint(b) != 0 {
+        let c = bigint_relational(a, b);
+        return if c == -1 || c == 0 { 1 } else { 0 };
+    }
     if zjs_is_string(a) != 0 && zjs_is_string(b) != 0 {
         let sa = zjs_as_string(a);
         let sb = zjs_as_string(b);
@@ -1948,6 +2028,44 @@ fn bigint_to_u64(a: ZjsBigInt*) -> u64 {
     let lo: u64 = if a.len > 0 { (u64)a.limbs[0] } else { 0 };
     let hi: u64 = if a.len > 1 { (u64)a.limbs[1] } else { 0 };
     return (hi << 32) | lo;
+}
+
+// Full signed compare of two BigInts: -1 if a<b, 0 if a==b, 1 if a>b.
+fn bigint_cmp(a: ZjsBigInt*, b: ZjsBigInt*) -> int {
+    if a.sign != b.sign {
+        if a.sign < b.sign { return -1; }
+        return 1;
+    }
+    // Same sign (incl. both zero → both sign 0 → equal mags).
+    let m = bigint_cmp_mag(a, b);
+    if a.sign < 0 { return -m; }   // both negative: larger magnitude is smaller
+    return m;
+}
+
+// Compare a BigInt to a double exactly. Returns -1/0/1 for a <,=,> x,
+// or -2 when incomparable (x is NaN). Builds the floor of x as an exact
+// BigInt (integral doubles are exactly representable) and tiebreaks on
+// the fractional part — so 2n**60n vs the same value as a double
+// compares correctly even past 2^53.
+fn bigint_cmp_f64(a: ZjsBigInt*, x: f64) -> int {
+    let nan: int = 0;
+    let inf: int = 0;   // 1 = +inf, -1 = -inf
+    raw {
+        if (isnan(x)) nan = 1;
+        else if (isinf(x)) inf = (x > 0) ? 1 : -1;
+    }
+    if nan != 0 { return -2; }
+    if inf == 1 { return -1; }    // a < +Infinity
+    if inf == -1 { return 1; }    // a > -Infinity
+    let xf: f64 = 0.0;
+    raw { xf = floor(x); }
+    let xb = zjs_bigint_from_f64(xf);
+    let c = bigint_cmp(a, xb);
+    bigint_free_void((void*)xb);
+    if c != 0 { return c; }
+    // a == floor(x). If x had a positive fractional part, a < x.
+    if x > xf { return -1; }
+    return 0;
 }
 
 // hex digit → value, or 99 for non-hex (used to skip separators etc).
