@@ -19988,6 +19988,118 @@ fn temporal_range_error(ctx: ZjsContext*, msg: char*, mlen: u32) -> ZjsValue {
     return zjs_undefined();
 }
 
+// Clamp a (possibly out-of-range) y/m/d to a valid ISO date
+// (overflow:'constrain' — month into 1..12, day into 1..daysInMonth).
+// Writes year/month/day into out[0..2].
+fn temporal_constrain_date(y: i64, m: i64, d: i64, out: i64*) -> void {
+    let cm = m;
+    if cm < 1 { cm = 1; }
+    if cm > 12 { cm = 12; }
+    let dim = iso_days_in_month(y, cm);
+    let cd = d;
+    if cd < 1 { cd = 1; }
+    if cd > dim { cd = dim; }
+    out[0] = y; out[1] = cm; out[2] = cd;
+}
+
+// Add a calendar duration (years, months, weeks, days) to an ISO date,
+// per CalendarDateAdd (overflow:'constrain'): apply years+months with
+// day clamping, then weeks*7 + days. Writes y/m/d into out[0..2].
+fn temporal_add_to_date(y: i64, m: i64, d: i64, dy: i64, dmo: i64, dw: i64, dd: i64, out: i64*) -> void {
+    let fy: i64 = 0;
+    let fm: i64 = 0;
+    raw {
+        int64_t ny = (int64_t)y + (int64_t)dy;
+        int64_t total = ny * 12 + ((int64_t)m + (int64_t)dmo - 1);   // 0-based month index
+        int64_t q = total >= 0 ? total / 12 : -(((-total) + 11) / 12); // floor div
+        fy = q;
+        fm = total - q * 12 + 1;                                      // 1..12
+    }
+    // Clamp the day to the (possibly shorter) target month, then add the
+    // day-granularity part via epoch-day arithmetic.
+    let dim = iso_days_in_month(fy, fm);
+    let cd = if d > dim { dim } else { d };
+    let days = iso_days_from_civil(fy, fm, cd) + dw * 7 + dd;
+    iso_civil_from_days(days, out);
+}
+
+// One duration component off an object: undefined → 0, else the
+// truncated integer value.
+fn temporal_dur_field(ctx: ZjsContext*, v: ZjsValue, name: char*, len: u32) -> i64 {
+    let pv = property_get(ctx, v, ctx_intern_string(ctx, name, len));
+    if zjs_is_undefined(pv) != 0 { return 0; }
+    let d = zjs_to_double(pv);
+    let r: i64 = 0;
+    raw { r = (isfinite(d)) ? (int64_t)d : 0; }
+    return r;
+}
+
+// Read a Duration / duration-like into out[0..9] = years, months,
+// weeks, days, hours, minutes, seconds, ms, us, ns. ok[0]=0 on a
+// non-object / non-Duration argument (caller throws TypeError).
+fn temporal_read_duration(ctx: ZjsContext*, v: ZjsValue, out: i64*, ok: int*) -> void {
+    let i: u32 = 0;
+    while i < 10 { out[i] = 0; i = i + 1; }
+    if zjs_is_temporal_kind(v, TMP_DURATION) != 0 {
+        let s = zjs_as_temporal(v);
+        out[0] = s.d_years; out[1] = s.d_months; out[2] = s.d_weeks; out[3] = s.d_days;
+        out[4] = s.d_hours; out[5] = s.d_minutes; out[6] = s.d_seconds;
+        out[7] = s.d_ms; out[8] = s.d_us; out[9] = s.d_ns;
+        return;
+    }
+    if zjs_is_object(v) != 0 {
+        out[0] = temporal_dur_field(ctx, v, (char*)"years", 5);
+        out[1] = temporal_dur_field(ctx, v, (char*)"months", 6);
+        out[2] = temporal_dur_field(ctx, v, (char*)"weeks", 5);
+        out[3] = temporal_dur_field(ctx, v, (char*)"days", 4);
+        out[4] = temporal_dur_field(ctx, v, (char*)"hours", 5);
+        out[5] = temporal_dur_field(ctx, v, (char*)"minutes", 7);
+        out[6] = temporal_dur_field(ctx, v, (char*)"seconds", 7);
+        out[7] = temporal_dur_field(ctx, v, (char*)"milliseconds", 12);
+        out[8] = temporal_dur_field(ctx, v, (char*)"microseconds", 12);
+        out[9] = temporal_dur_field(ctx, v, (char*)"nanoseconds", 11);
+        return;
+    }
+    ok[0] = 0;
+}
+
+// total time-of-duration in nanoseconds (hours..ns), as i64.
+fn temporal_duration_time_ns(f: i64*) -> i64 {
+    let secs: i64 = (f[4] * 60 + f[5]) * 60 + f[6];
+    let sub: i64 = f[7] * 1000000 + f[8] * 1000 + f[9];
+    return secs * 1000000000 + sub;
+}
+
+// floor division for i64 (rounds toward -infinity).
+fn i64_floordiv(a: i64, b: i64) -> i64 {
+    let q: i64 = 0;
+    raw { int64_t r = a % b; q = a / b; if ((r != 0) && ((r < 0) != (b < 0))) q -= 1; }
+    return q;
+}
+fn i64_floormod(a: i64, b: i64) -> i64 {
+    let r: i64 = 0;
+    raw { r = a % b; if ((r != 0) && ((r < 0) != (b < 0))) r += b; }
+    return r;
+}
+
+// Decompose a nanoseconds-of-day value in [0, 86400e9) into the time
+// fields of `t`.
+fn temporal_set_time_from_ns(t: ZjsTemporal*, ns_of_day: i64) -> void {
+    let n = ns_of_day;
+    t.nanosecond  = (i32)(n % 1000); n = n / 1000;
+    t.microsecond = (i32)(n % 1000); n = n / 1000;
+    t.millisecond = (i32)(n % 1000); n = n / 1000;   // n now = seconds of day
+    t.second = (i32)(n % 60); n = n / 60;
+    t.minute = (i32)(n % 60); n = n / 60;
+    t.hour   = (i32)(n % 24);
+}
+
+// Negate all ten duration components in place (for subtract).
+fn temporal_negate_dur(f: i64*) -> void {
+    let i: u32 = 0;
+    while i < 10 { f[i] = -f[i]; i = i + 1; }
+}
+
 // new Temporal.PlainDate(year, month, day [, calendar]).
 fn host_temporal_plaindate_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let ok: int = 1;
@@ -20103,9 +20215,13 @@ fn host_temporal_plaindate_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
     let y: i64 = if zjs_is_undefined(yv) != 0 { (i64)s.year }  else { (i64)zjs_to_double(yv) };
     let m: i64 = if zjs_is_undefined(mv) != 0 { (i64)s.month } else { (i64)zjs_to_double(mv) };
     let d: i64 = if zjs_is_undefined(dv) != 0 { (i64)s.day }   else { (i64)zjs_to_double(dv) };
-    if !temporal_date_valid(y, m, d) { return temporal_range_error(ctx, (char*)"invalid ISO date", 16); }
+    // overflow:'constrain' (the default): clamp into a valid date.
+    let cc: i64[3];
+    let cp: i64* = NULL; raw { cp = &cc[0]; }
+    temporal_constrain_date(y, m, d, cp);
+    if !temporal_date_valid(cc[0], cc[1], cc[2]) { return temporal_range_error(ctx, (char*)"invalid ISO date", 16); }
     let t = zjs_temporal_new(TMP_PLAIN_DATE);
-    t.year = (i32)y; t.month = (i32)m; t.day = (i32)d;
+    t.year = (i32)cc[0]; t.month = (i32)cc[1]; t.day = (i32)cc[2];
     t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
     ctx_register_cell(ctx, (void*)t);
     return zjs_cell_from_ptr((void*)t);
@@ -20412,6 +20528,107 @@ fn host_temporal_plaindatetime_to_plain_time(ctx: ZjsContext*, args: ZjsValue*, 
     return zjs_cell_from_ptr((void*)t);
 }
 
+// PlainDate.prototype.add/subtract(durationLike). sign=+1 add, -1 sub.
+fn temporal_plaindate_add_impl(ctx: ZjsContext*, sign: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_DATE) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainDate", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let f: i64[10];
+    let fp: i64* = NULL; raw { fp = &f[0]; }
+    let ok: int = 1;
+    temporal_read_duration(ctx, if argc >= 1 { args[0] } else { zjs_undefined() }, fp, &ok);
+    if ok == 0 { let e = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"invalid duration", 16);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined(); }
+    if sign < 0 { temporal_negate_dur(fp); }
+    // Balance the time part to whole days (truncate toward zero).
+    let extra_days = temporal_duration_time_ns(fp) / 86400000000000;
+    let out: i64[3];
+    let op: i64* = NULL; raw { op = &out[0]; }
+    temporal_add_to_date((i64)s.year, (i64)s.month, (i64)s.day, f[0], f[1], f[2], f[3] + extra_days, op);
+    if !temporal_date_valid(out[0], out[1], out[2]) { return temporal_range_error(ctx, (char*)"result out of range", 19); }
+    let t = zjs_temporal_new(TMP_PLAIN_DATE);
+    t.year = (i32)out[0]; t.month = (i32)out[1]; t.day = (i32)out[2];
+    t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+fn host_temporal_plaindate_add(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_plaindate_add_impl(ctx, 1, args, argc);
+}
+fn host_temporal_plaindate_subtract(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_plaindate_add_impl(ctx, -1, args, argc);
+}
+
+// PlainTime.prototype.add/subtract — wraps within a 24h day; the
+// duration's date components are ignored (per spec).
+fn temporal_plaintime_add_impl(ctx: ZjsContext*, sign: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_TIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainTime", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let f: i64[10];
+    let fp: i64* = NULL; raw { fp = &f[0]; }
+    let ok: int = 1;
+    temporal_read_duration(ctx, if argc >= 1 { args[0] } else { zjs_undefined() }, fp, &ok);
+    if ok == 0 { let e = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"invalid duration", 16);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined(); }
+    let delta = sign * temporal_duration_time_ns(fp);
+    let total = i64_floormod(temporal_time_total_ns(s) + delta, 86400000000000);
+    let t = zjs_temporal_new(TMP_PLAIN_TIME);
+    temporal_set_time_from_ns(t, total);
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+fn host_temporal_plaintime_add(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_plaintime_add_impl(ctx, 1, args, argc);
+}
+fn host_temporal_plaintime_subtract(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_plaintime_add_impl(ctx, -1, args, argc);
+}
+
+// PlainDateTime.prototype.add/subtract — date part (constrain) plus
+// time part with carry into days.
+fn temporal_plaindatetime_add_impl(ctx: ZjsContext*, sign: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_DATETIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainDateTime", 28);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let f: i64[10];
+    let fp: i64* = NULL; raw { fp = &f[0]; }
+    let ok: int = 1;
+    temporal_read_duration(ctx, if argc >= 1 { args[0] } else { zjs_undefined() }, fp, &ok);
+    if ok == 0 { let e = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"invalid duration", 16);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined(); }
+    if sign < 0 { temporal_negate_dur(fp); }
+    // time total + carry into days
+    let time_total = temporal_time_total_ns(s) + temporal_duration_time_ns(fp);
+    let day_carry = i64_floordiv(time_total, 86400000000000);
+    let time_rem = i64_floormod(time_total, 86400000000000);
+    let out: i64[3];
+    let op: i64* = NULL; raw { op = &out[0]; }
+    temporal_add_to_date((i64)s.year, (i64)s.month, (i64)s.day, f[0], f[1], f[2], f[3] + day_carry, op);
+    if !temporal_date_valid(out[0], out[1], out[2]) { return temporal_range_error(ctx, (char*)"result out of range", 19); }
+    let t = zjs_temporal_new(TMP_PLAIN_DATETIME);
+    t.year = (i32)out[0]; t.month = (i32)out[1]; t.day = (i32)out[2];
+    temporal_set_time_from_ns(t, time_rem);
+    t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+fn host_temporal_plaindatetime_add(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_plaindatetime_add_impl(ctx, 1, args, argc);
+}
+fn host_temporal_plaindatetime_subtract(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_plaindatetime_add_impl(ctx, -1, args, argc);
+}
+
 // Name-match helper for the Temporal computed-getter switch.
 fn tmp_name_is(name: ZjsString*, lit: char*, len: u32) -> bool {
     if name.length != len { return false; }
@@ -20545,6 +20762,12 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"equals", pdeq_ptr));
     object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"with", 4),
                ctx_make_host_function(ctx, (char*)"with", pdwith_ptr));
+    let pdadd_ptr: void* = NULL; raw { pdadd_ptr = (void*)host_temporal_plaindate_add; }
+    let pdsub_ptr: void* = NULL; raw { pdsub_ptr = (void*)host_temporal_plaindate_subtract; }
+    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"add", 3),
+               ctx_make_host_function(ctx, (char*)"add", pdadd_ptr));
+    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
+               ctx_make_host_function(ctx, (char*)"subtract", pdsub_ptr));
     object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pd_ctor);
     let pdfrom_ptr: void* = NULL; raw { pdfrom_ptr = (void*)host_temporal_plaindate_from; }
     let pdcmp_ptr: void* = NULL; raw { pdcmp_ptr = (void*)host_temporal_plaindate_compare; }
@@ -20570,6 +20793,12 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"equals", pteq_ptr));
     object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"with", 4),
                ctx_make_host_function(ctx, (char*)"with", ptwith_ptr));
+    let ptadd_ptr: void* = NULL; raw { ptadd_ptr = (void*)host_temporal_plaintime_add; }
+    let ptsub_ptr: void* = NULL; raw { ptsub_ptr = (void*)host_temporal_plaintime_subtract; }
+    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"add", 3),
+               ctx_make_host_function(ctx, (char*)"add", ptadd_ptr));
+    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
+               ctx_make_host_function(ctx, (char*)"subtract", ptsub_ptr));
     object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pt_ctor);
     let ptfrom_ptr: void* = NULL; raw { ptfrom_ptr = (void*)host_temporal_plaintime_from; }
     let ptcmp_ptr: void* = NULL; raw { ptcmp_ptr = (void*)host_temporal_plaintime_compare; }
@@ -20598,6 +20827,12 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"toPlainDate", pdt2d_ptr));
     object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"toPlainTime", 11),
                ctx_make_host_function(ctx, (char*)"toPlainTime", pdt2t_ptr));
+    let pdtadd_ptr: void* = NULL; raw { pdtadd_ptr = (void*)host_temporal_plaindatetime_add; }
+    let pdtsub_ptr: void* = NULL; raw { pdtsub_ptr = (void*)host_temporal_plaindatetime_subtract; }
+    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"add", 3),
+               ctx_make_host_function(ctx, (char*)"add", pdtadd_ptr));
+    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
+               ctx_make_host_function(ctx, (char*)"subtract", pdtsub_ptr));
     object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pdt_ctor);
     let pdtfrom_ptr: void* = NULL; raw { pdtfrom_ptr = (void*)host_temporal_plaindatetime_from; }
     let pdtcmp_ptr: void* = NULL; raw { pdtcmp_ptr = (void*)host_temporal_plaindatetime_compare; }
