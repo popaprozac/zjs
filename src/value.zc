@@ -2149,6 +2149,15 @@ fn bigint_to_u64(a: ZjsBigInt*) -> u64 {
     return (hi << 32) | lo;
 }
 
+// Signed i64 from a BigInt (low 64 bits of the magnitude, signed).
+// Exact when the value fits in i64 (len <= 2); callers that care about
+// overflow should range-check separately.
+fn bigint_to_i64(a: ZjsBigInt*) -> i64 {
+    let mag = (i64)bigint_to_u64(a);
+    if a.sign < 0 { return -mag; }
+    return mag;
+}
+
 // Full signed compare of two BigInts: -1 if a<b, 0 if a==b, 1 if a>b.
 fn bigint_cmp(a: ZjsBigInt*, b: ZjsBigInt*) -> int {
     if a.sign != b.sign {

@@ -19958,14 +19958,141 @@ fn host_temporal_instant_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32)
         return zjs_undefined();
     }
     let t = zjs_as_temporal(this_v);
-    // epochMs = floor(epochNs / 1e6) via the BigInt → double bridge
-    // (T1 renders at ms precision; ns precision lands in T4).
-    let ms: f64 = 0.0;
-    if zjs_is_bigint(t.epoch_ns) != 0 {
-        ms = bigint_to_f64(zjs_as_bigint(t.epoch_ns)) / 1000000.0;
-        raw { ms = floor(ms); }
+    let ns: i64 = 0;
+    if zjs_is_bigint(t.epoch_ns) != 0 { ns = bigint_to_i64(zjs_as_bigint(t.epoch_ns)); }
+    // Split into floor seconds + sub-second nanoseconds (UTC + 'Z').
+    let secs = i64_floordiv(ns, 1000000000);
+    let sub = i64_floormod(ns, 1000000000);
+    let buf: char[48];
+    raw {
+        time_t tt = (time_t)secs;
+        struct tm tm_utc;
+        zjs_gmtime_r(&tt, &tm_utc);
+        int base = snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02d",
+            tm_utc.tm_year + 1900, tm_utc.tm_mon + 1, tm_utc.tm_mday,
+            tm_utc.tm_hour, tm_utc.tm_min, tm_utc.tm_sec);
+        if (sub != 0) {
+            char fbuf[10]; snprintf(fbuf, sizeof(fbuf), "%09lld", (long long)sub);
+            int flen = 9; while (flen > 1 && fbuf[flen-1] == '0') flen--;
+            base += snprintf(buf + base, sizeof(buf) - base, ".%.*s", flen, fbuf);
+        }
+        snprintf(buf + base, sizeof(buf) - base, "Z");
     }
-    return format_iso_string(ctx, ms);
+    let bp: char* = NULL; raw { bp = &buf[0]; }
+    let n: u32 = 0; raw { n = (uint32_t)strlen(bp); }
+    return ctx_intern_string(ctx, bp, n);
+}
+
+// Build an Instant cell from an epoch-nanoseconds BigInt value.
+fn temporal_make_instant(ctx: ZjsContext*, epoch_ns: ZjsValue) -> ZjsValue {
+    let t = zjs_temporal_new(TMP_INSTANT);
+    t.epoch_ns = epoch_ns;
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// new Temporal.Instant(epochNanoseconds) — argument must be a BigInt.
+fn host_temporal_instant_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_bigint(v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Temporal.Instant requires a BigInt epochNanoseconds", 51);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    return temporal_make_instant(ctx, v);
+}
+
+fn host_temporal_instant_from_epoch_ns(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return host_temporal_instant_ctor(ctx, args, argc);
+}
+
+// Instant add/subtract: a time-only Duration; date units (years,
+// months, weeks, days) → RangeError. sign +1 add / -1 subtract.
+fn temporal_instant_add_impl(ctx: ZjsContext*, sign: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_INSTANT) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.Instant", 22);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let f: i64[10];
+    let fp: i64* = NULL; raw { fp = &f[0]; }
+    let ok: int = 1;
+    temporal_read_duration(ctx, if argc >= 1 { args[0] } else { zjs_undefined() }, fp, &ok);
+    if ok == 0 { let e = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"invalid duration", 16);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined(); }
+    if f[0] != 0 || f[1] != 0 || f[2] != 0 || f[3] != 0 {
+        return temporal_range_error(ctx, (char*)"Instant arithmetic allows only time units", 41);
+    }
+    let delta_ns = sign * temporal_duration_time_ns(fp);
+    let cur = if zjs_is_bigint(s.epoch_ns) != 0 { zjs_as_bigint(s.epoch_ns) } else { zjs_bigint_from_i64(0) };
+    let db = zjs_bigint_from_i64(delta_ns);
+    let r = bigint_add(cur, db);
+    bigint_free_void((void*)db);
+    ctx_register_cell(ctx, (void*)r);
+    return temporal_make_instant(ctx, zjs_cell_from_ptr((void*)r));
+}
+fn host_temporal_instant_add(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_instant_add_impl(ctx, 1, args, argc);
+}
+fn host_temporal_instant_subtract(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_instant_add_impl(ctx, -1, args, argc);
+}
+
+// Build a time-only Duration (seconds + ms + us + ns) from a signed
+// nanosecond total. largestUnit 'second' (the Instant.until default).
+fn temporal_duration_from_ns(ctx: ZjsContext*, total_ns: i64) -> ZjsValue {
+    let secs = total_ns / 1000000000;
+    let rem = total_ns % 1000000000;
+    let t = zjs_temporal_new(TMP_DURATION);
+    t.d_seconds = secs;
+    t.d_ms = rem / 1000000;
+    t.d_us = (rem / 1000) % 1000;
+    t.d_ns = rem % 1000;
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// Instant.until(other) / since(other) → Duration. since = -until.
+fn temporal_instant_diff_impl(ctx: ZjsContext*, dir: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    let other = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_temporal_kind(this_v, TMP_INSTANT) == 0 || zjs_is_temporal_kind(other, TMP_INSTANT) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"expects two Temporal.Instants", 29);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let a = zjs_as_temporal(this_v); let b = zjs_as_temporal(other);
+    let na = if zjs_is_bigint(a.epoch_ns) != 0 { bigint_to_i64(zjs_as_bigint(a.epoch_ns)) } else { 0 };
+    let nb = if zjs_is_bigint(b.epoch_ns) != 0 { bigint_to_i64(zjs_as_bigint(b.epoch_ns)) } else { 0 };
+    let diff = (nb - na) * dir;   // until: other - this; since: this - other
+    return temporal_duration_from_ns(ctx, diff);
+}
+fn host_temporal_instant_until(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_instant_diff_impl(ctx, 1, args, argc);
+}
+fn host_temporal_instant_since(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_instant_diff_impl(ctx, -1, args, argc);
+}
+
+fn host_temporal_instant_compare(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let a = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let b = if argc >= 2 { args[1] } else { zjs_undefined() };
+    if zjs_is_temporal_kind(a, TMP_INSTANT) == 0 || zjs_is_temporal_kind(b, TMP_INSTANT) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"compare expects two Instants", 28);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let ta = zjs_as_temporal(a); let tb = zjs_as_temporal(b);
+    let c = bigint_cmp(zjs_as_bigint(ta.epoch_ns), zjs_as_bigint(tb.epoch_ns));
+    return zjs_int32(c);
+}
+
+fn host_temporal_instant_equals(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    let other = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_temporal_kind(this_v, TMP_INSTANT) == 0 { return zjs_bool(0); }
+    if zjs_is_temporal_kind(other, TMP_INSTANT) == 0 { return zjs_bool(0); }
+    let ta = zjs_as_temporal(this_v); let tb = zjs_as_temporal(other);
+    return zjs_bool(if bigint_cmp(zjs_as_bigint(ta.epoch_ns), zjs_as_bigint(tb.epoch_ns)) == 0 { 1 } else { 0 });
 }
 
 // Validate an ISO calendar date. ISO year range per spec: the date
@@ -20990,21 +21117,41 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                  ctx_make_host_function(ctx, (char*)"from", dfrom_ptr));
     object_set(ctx, temporal_o, ctx_intern_atom(ctx, (char*)"Duration", 8), dur_ctor);
 
-    // --- Temporal.Instant (minimal) ---
-    let inst_ctor_ptr: void* = NULL; raw { inst_ctor_ptr = (void*)host_temporal_instant_from_epoch_ms; }
-    // No public Instant() ctor in T1 (takes a BigInt — wire in T4); expose
-    // the namespace object as a plain holder for statics + prototype.
+    // --- Temporal.Instant ---
+    let inst_ctor_ptr: void* = NULL; raw { inst_ctor_ptr = (void*)host_temporal_instant_ctor; }
     let inst_ctor = ctx_make_host_function(ctx, (char*)"Instant", inst_ctor_ptr);
     let inst_proto_v = ctx_new_object(ctx);
     ctx.temporal_instant_proto = zjs_as_object(inst_proto_v);
     zjs_as_host_function(inst_ctor).prototype = ctx.temporal_instant_proto;
     let its_ptr: void* = NULL; raw { its_ptr = (void*)host_temporal_instant_to_string; }
-    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
-               ctx_make_host_function(ctx, (char*)"toString", its_ptr));
+    let its_fn = ctx_make_host_function(ctx, (char*)"toString", its_ptr);
+    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"toString", 8), its_fn);
+    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), its_fn);
+    let iadd_ptr: void* = NULL; raw { iadd_ptr = (void*)host_temporal_instant_add; }
+    let isub_ptr: void* = NULL; raw { isub_ptr = (void*)host_temporal_instant_subtract; }
+    let iunt_ptr: void* = NULL; raw { iunt_ptr = (void*)host_temporal_instant_until; }
+    let isin_ptr: void* = NULL; raw { isin_ptr = (void*)host_temporal_instant_since; }
+    let ieq_ptr:  void* = NULL; raw { ieq_ptr  = (void*)host_temporal_instant_equals; }
+    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"add", 3),
+               ctx_make_host_function(ctx, (char*)"add", iadd_ptr));
+    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
+               ctx_make_host_function(ctx, (char*)"subtract", isub_ptr));
+    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"until", 5),
+               ctx_make_host_function(ctx, (char*)"until", iunt_ptr));
+    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"since", 5),
+               ctx_make_host_function(ctx, (char*)"since", isin_ptr));
+    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
+               ctx_make_host_function(ctx, (char*)"equals", ieq_ptr));
     object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), inst_ctor);
     let ifem_ptr: void* = NULL; raw { ifem_ptr = (void*)host_temporal_instant_from_epoch_ms; }
+    let ifen_ptr: void* = NULL; raw { ifen_ptr = (void*)host_temporal_instant_from_epoch_ns; }
+    let icmp_ptr: void* = NULL; raw { icmp_ptr = (void*)host_temporal_instant_compare; }
     property_set(ctx, inst_ctor, ctx_intern_string(ctx, (char*)"fromEpochMilliseconds", 21),
                  ctx_make_host_function(ctx, (char*)"fromEpochMilliseconds", ifem_ptr));
+    property_set(ctx, inst_ctor, ctx_intern_string(ctx, (char*)"fromEpochNanoseconds", 20),
+                 ctx_make_host_function(ctx, (char*)"fromEpochNanoseconds", ifen_ptr));
+    property_set(ctx, inst_ctor, ctx_intern_string(ctx, (char*)"compare", 7),
+                 ctx_make_host_function(ctx, (char*)"compare", icmp_ptr));
     object_set(ctx, temporal_o, ctx_intern_atom(ctx, (char*)"Instant", 7), inst_ctor);
 
     // --- Temporal.PlainDate ---
