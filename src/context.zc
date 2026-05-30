@@ -2513,7 +2513,11 @@ fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsVal
         return;
     }
 
-    // Property is new. Find or create a transition.
+    // Property is new — adding a new slot. preventExtensions / seal /
+    // freeze all clear `non_extensible`; in that state the add fails
+    // silently. Strict-mode TypeError is wired through Phase C.
+    if obj.non_extensible { return; }
+
     let parent_cls = obj.cls;
     let child = class_find_transition(parent_cls, name);
     if child == NULL {
@@ -17791,16 +17795,82 @@ fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     return zjs_bool(0);
 }
 
-// Object.isExtensible / isFrozen / isSealed — we don't track those
-// flags yet, so report "extensible / not frozen / not sealed" for
-// any object. ES2015+: returns false for non-object arguments.
+// Walk an object's own slots, masking off the given attribute bits.
+// Used by freeze (clears WRITABLE | CONFIGURABLE) and seal (clears
+// just CONFIGURABLE) so getOwnPropertyDescriptor reflects the
+// post-operation attributes. Skips deleted slots and accessor slots'
+// writable bit (accessors have no [[Writable]]; the spec leaves it
+// absent — clearing it on the byte is a harmless no-op since lookups
+// of accessor writable already special-case TAG_ACCESSOR).
+fn object_clear_attr_bits(obj: ZjsObject*, mask: u8) -> void {
+    if obj.attrs == NULL { return; }
+    let c = obj.cls;
+    let n = if c != NULL { c.prop_count } else { 0u32 };
+    let i: u32 = 0;
+    while i < n {
+        let v = obj.slots[i];
+        if zjs_is_deleted(v) == 0 {
+            obj.attrs[i] = obj.attrs[i] & mask;
+        }
+        i = i + 1;
+    }
+}
+
+// Predicate: every non-deleted own slot satisfies the bit pattern
+// `(attrs & required_zero) == 0`. Used by isFrozen / isSealed —
+// freeze requires both WRITABLE + CONFIGURABLE to be zero on all
+// data slots; seal requires just CONFIGURABLE zero. Accessor slots
+// don't have a [[Writable]] field per spec; we treat their byte's
+// W-bit as "absent" so isFrozen returns true regardless.
+fn object_all_slots_have_zero(obj: ZjsObject*, required_zero: u8) -> bool {
+    if obj.attrs == NULL {
+        // No attrs array means every slot is PROP_DEFAULT (W+E+C all
+        // on). A nonzero requirement against an all-on byte fails.
+        let c = obj.cls;
+        let n = if c != NULL { c.prop_count } else { 0u32 };
+        if n == 0 { return true; }
+        return required_zero == 0;
+    }
+    let c = obj.cls;
+    let n = if c != NULL { c.prop_count } else { 0u32 };
+    let mask = required_zero;
+    let i: u32 = 0;
+    while i < n {
+        let v = obj.slots[i];
+        if zjs_is_deleted(v) == 0 {
+            let a = obj.attrs[i];
+            if zjs_is_accessor(v) != 0 {
+                // Spec: accessor descriptors have no [[Writable]];
+                // only CONFIGURABLE matters here. Mask off the W bit
+                // before testing.
+                let acc_mask = mask & ~PROP_WRITABLE;
+                if (a & acc_mask) != 0 { return false; }
+            } else {
+                if (a & mask) != 0 { return false; }
+            }
+        }
+        i = i + 1;
+    }
+    return true;
+}
+
+// Object.isExtensible — ES2015+: returns true for live extensible
+// objects, false for objects with non_extensible set, false for any
+// non-object input. ZjsContext is unused but kept for the host-fn
+// shape.
 fn host_object_is_extensible(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let _u = ctx;
     if argc == 0 { return zjs_bool(0); }
     let v = args[0];
-    if zjs_is_object(v) != 0 || zjs_is_array(v) != 0
-       || zjs_is_function(v) != 0 || zjs_is_closure(v) != 0
-       || zjs_is_host_function(v) != 0 {
+    if zjs_is_object(v) != 0 {
+        return zjs_bool(if zjs_as_object(v).non_extensible { 0 } else { 1 });
+    }
+    if zjs_is_array(v) != 0 {
+        return zjs_bool(if zjs_as_array(v).non_extensible { 0 } else { 1 });
+    }
+    if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 || zjs_is_host_function(v) != 0 {
+        // Function/Closure extensibility isn't tracked yet — see
+        // future-work. Report "extensible" until the bag rewrite.
         return zjs_bool(1);
     }
     return zjs_bool(0);
@@ -17808,47 +17878,136 @@ fn host_object_is_extensible(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zj
 
 fn host_object_is_frozen(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let _u = ctx;
+    // Spec: Object.isFrozen(non-object) returns true (no mutable
+    // state to worry about).
     if argc == 0 { return zjs_bool(1); }
     let v = args[0];
-    if zjs_is_object(v) != 0       { return zjs_bool(if zjs_as_object(v).frozen { 1 } else { 0 }); }
-    if zjs_is_array(v) != 0        { return zjs_bool(if zjs_as_array(v).frozen  { 1 } else { 0 }); }
+    if zjs_is_object(v) != 0 {
+        let o = zjs_as_object(v);
+        if o.frozen { return zjs_bool(1); }
+        if !o.non_extensible { return zjs_bool(0); }
+        // Sealed but not flagged frozen: still frozen-equivalent if
+        // every own data slot is non-writable AND non-configurable.
+        let frozen_ok = object_all_slots_have_zero(o, PROP_WRITABLE | PROP_CONFIGURABLE);
+        return zjs_bool(if frozen_ok { 1 } else { 0 });
+    }
+    if zjs_is_array(v) != 0 {
+        let a = zjs_as_array(v);
+        if a.frozen { return zjs_bool(1); }
+        if !a.non_extensible { return zjs_bool(0); }
+        // Mirror: every named slot non-writable + non-configurable
+        // AND length non-writable (we conflate length-writability
+        // with array non-extensibility — sealing/freezing both lock
+        // length, and `.length =` is rejected when non_extensible).
+        // Element slots have no per-index attrs; freeze sets
+        // a.frozen which the predicate above already matched.
+        if a.props != NULL {
+            let props_ok = object_all_slots_have_zero(a.props,
+                                                      PROP_WRITABLE | PROP_CONFIGURABLE);
+            if !props_ok { return zjs_bool(0); }
+        }
+        // No frozen-flag = element slots are writable, so the array
+        // isn't frozen unless it has zero elements.
+        return zjs_bool(if a.length == 0 { 1 } else { 0 });
+    }
     if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 || zjs_is_host_function(v) != 0 {
-        // Function objects aren't trackable yet; assume not frozen.
         return zjs_bool(0);
     }
-    // Primitives are spec-frozen (no own properties to mutate).
     return zjs_bool(1);
 }
 
 fn host_object_is_sealed(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    return host_object_is_frozen(ctx, args, argc);
+    let _u = ctx;
+    if argc == 0 { return zjs_bool(1); }
+    let v = args[0];
+    if zjs_is_object(v) != 0 {
+        let o = zjs_as_object(v);
+        if o.frozen { return zjs_bool(1); }   // frozen ⇒ sealed
+        if !o.non_extensible { return zjs_bool(0); }
+        // Sealed = non_extensible + every own slot non-configurable
+        // (writable is unconstrained — that's the seal/freeze split).
+        let sealed_ok = object_all_slots_have_zero(o, PROP_CONFIGURABLE);
+        return zjs_bool(if sealed_ok { 1 } else { 0 });
+    }
+    if zjs_is_array(v) != 0 {
+        let a = zjs_as_array(v);
+        if a.frozen { return zjs_bool(1); }
+        if !a.non_extensible { return zjs_bool(0); }
+        if a.props != NULL {
+            let props_sealed = object_all_slots_have_zero(a.props, PROP_CONFIGURABLE);
+            if !props_sealed { return zjs_bool(0); }
+        }
+        return zjs_bool(1);
+    }
+    if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 || zjs_is_host_function(v) != 0 {
+        return zjs_bool(0);
+    }
+    return zjs_bool(1);
 }
 
-// Object.preventExtensions / freeze / seal. Toggles the frozen flag
-// on the input (objects + arrays). Strict-mode TypeError on writes
-// against frozen targets isn't yet wired through the assignment
-// machinery — sloppy mode silently drops writes.
+// Object.preventExtensions — just flip the non_extensible bit. New
+// property additions via property_set (object_set's add path,
+// array_set's grow path) get rejected; existing writable slots
+// remain mutable.
 fn host_object_prevent_extensions(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let _u = ctx;
     if argc == 0 { return zjs_undefined(); }
-    return args[0];
-}
-
-fn host_object_freeze(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let _u = ctx;
-    if argc == 0 { return zjs_undefined(); }
     let v = args[0];
-    if zjs_is_object(v) != 0 { zjs_as_object(v).frozen = true; }
+    if zjs_is_object(v) != 0 { zjs_as_object(v).non_extensible = true; }
     else if zjs_is_array(v) != 0 {
         let a = zjs_as_array(v);
-        a.frozen = true;
-        if a.props != NULL { a.props.frozen = true; }
+        a.non_extensible = true;
+        if a.props != NULL { a.props.non_extensible = true; }
     }
     return v;
 }
 
+// Object.freeze — make every own slot non-writable + non-configurable
+// and flip both `frozen` (fast-path bool for write checks) and
+// `non_extensible` (blocks adds). Idempotent.
+fn host_object_freeze(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let _u = ctx;
+    if argc == 0 { return zjs_undefined(); }
+    let v = args[0];
+    if zjs_is_object(v) != 0 {
+        let o = zjs_as_object(v);
+        object_clear_attr_bits(o, ~(PROP_WRITABLE | PROP_CONFIGURABLE));
+        o.frozen = true;
+        o.non_extensible = true;
+    } else if zjs_is_array(v) != 0 {
+        let a = zjs_as_array(v);
+        a.frozen = true;
+        a.non_extensible = true;
+        if a.props != NULL {
+            object_clear_attr_bits(a.props, ~(PROP_WRITABLE | PROP_CONFIGURABLE));
+            a.props.frozen = true;
+            a.props.non_extensible = true;
+        }
+    }
+    return v;
+}
+
+// Object.seal — like freeze but leaves [[Writable]] alone. Sets
+// every own slot's CONFIGURABLE to false and flips non_extensible.
+// Does NOT set the `frozen` bool — writes against existing writable
+// slots still succeed.
 fn host_object_seal(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    return host_object_freeze(ctx, args, argc);
+    let _u = ctx;
+    if argc == 0 { return zjs_undefined(); }
+    let v = args[0];
+    if zjs_is_object(v) != 0 {
+        let o = zjs_as_object(v);
+        object_clear_attr_bits(o, ~PROP_CONFIGURABLE);
+        o.non_extensible = true;
+    } else if zjs_is_array(v) != 0 {
+        let a = zjs_as_array(v);
+        a.non_extensible = true;
+        if a.props != NULL {
+            object_clear_attr_bits(a.props, ~PROP_CONFIGURABLE);
+            a.props.non_extensible = true;
+        }
+    }
+    return v;
 }
 
 // Object.prototype.valueOf() — returns the boxed receiver per spec.

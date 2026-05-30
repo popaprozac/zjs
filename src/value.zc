@@ -849,6 +849,15 @@ struct ZjsObject {
     // property writes silently no-op in sloppy mode (would throw
     // TypeError in strict — not yet wired through the assignment ops).
     frozen:   bool;
+    // Object.preventExtensions / seal / freeze all clear this.
+    // When false, object_set's add-new-slot path rejects (existing
+    // writable slots can still be mutated unless `frozen` is also set
+    // OR the per-slot PROP_WRITABLE bit is cleared by `freeze`).
+    // Note: default state is "extensible = true". To avoid having to
+    // touch every allocator (ctx_new_object, host paths, etc.), the
+    // field name encodes the FALSE state: `non_extensible: bool` so
+    // zalloc'd zero-init = extensible.
+    non_extensible: bool;
 }
 
 // Property attribute bits — fit in one byte per slot. Default for
@@ -878,6 +887,11 @@ struct ZjsArray {
     // property assignment / indexed write is silently dropped in
     // sloppy mode (would throw TypeError in strict — not yet wired).
     frozen:   bool;
+    // Object.preventExtensions / seal / freeze on an array sets this.
+    // When set, array_set rejects growth beyond the current `length`
+    // and named-prop additions to `arr.props`. Existing in-range
+    // writable slots remain mutable unless `frozen` is also set.
+    non_extensible: bool;
 }
 
 // Host (C) function exposed to JavaScript code. The fn_ptr is opaque
@@ -2175,6 +2189,10 @@ fn array_set(arr: ZjsArray*, idx: u32, value: ZjsValue) -> void {
     // Object.freeze'd arrays are immutable. Silently no-op in sloppy
     // mode (spec throws TypeError in strict — not wired yet).
     if arr.frozen { return; }
+    // Sealed / preventExtensions: in-bounds writes still work (writable
+    // remains true under seal); growth is blocked because both length
+    // and new indices would require extending the slot space.
+    if arr.non_extensible && idx >= arr.length { return; }
     // Reject growths into unreasonable territory (spec says push at
     // length=2^32-1 throws RangeError; we silently drop). The 64 Mi
     // ceiling is chosen so the dense backing never demands a

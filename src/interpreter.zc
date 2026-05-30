@@ -1532,9 +1532,18 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         if zjs_is_string(key) != 0 {
             if arr.frozen { return; }
             if arr.props == NULL {
+                // Adding a NEW named prop. If the array is sealed /
+                // preventExtensions'd, refuse — don't materialize the
+                // bag for a no-op write.
+                if arr.non_extensible { return; }
                 let pv = ctx_new_object(ctx);
                 arr.props = zjs_as_object(pv);
             }
+            // Propagate the array's non_extensible to the bag so its
+            // own add-new path is consistent (object_set blocks new
+            // slots when non_extensible). Existing-slot writes still
+            // honor PROP_WRITABLE per object_set's existing check.
+            if arr.non_extensible { arr.props.non_extensible = true; }
             object_set(ctx, arr.props, zjs_as_string(key), value);
         }
         return;
