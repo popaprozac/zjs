@@ -20872,6 +20872,100 @@ fn host_temporal_plaindatetime_to_plain_time(ctx: ZjsContext*, args: ZjsValue*, 
     return zjs_cell_from_ptr((void*)t);
 }
 
+// largestUnit code: 0=day (default), 1=week, 2=month, 3=year.
+fn temporal_parse_date_largest(ctx: ZjsContext*, optarg: ZjsValue, dflt: int) -> int {
+    if zjs_is_object(optarg) == 0 { return dflt; }
+    let lu = property_get(ctx, optarg, ctx_intern_string(ctx, (char*)"largestUnit", 11));
+    if zjs_is_string(lu) == 0 { return dflt; }
+    let s = zjs_as_string(lu);
+    if tmp_name_is(s, (char*)"day", 3)   { return 0; }
+    if tmp_name_is(s, (char*)"days", 4)  { return 0; }
+    if tmp_name_is(s, (char*)"week", 4)  { return 1; }
+    if tmp_name_is(s, (char*)"weeks", 5) { return 1; }
+    if tmp_name_is(s, (char*)"month", 5) { return 2; }
+    if tmp_name_is(s, (char*)"months", 6){ return 2; }
+    if tmp_name_is(s, (char*)"year", 4)  { return 3; }
+    if tmp_name_is(s, (char*)"years", 5) { return 3; }
+    if tmp_name_is(s, (char*)"auto", 4)  { return dflt; }
+    return dflt;
+}
+
+// ISO calendar date difference → Duration (DifferenceISODate). largest:
+// 0=day 1=week 2=month 3=year. Result carries the correct sign.
+fn temporal_diff_iso_date(ctx: ZjsContext*, y1: i64, m1: i64, d1: i64,
+                          y2: i64, m2: i64, d2: i64, largest: int) -> ZjsValue {
+    let e1 = iso_days_from_civil(y1, m1, d1);
+    let e2 = iso_days_from_civil(y2, m2, d2);
+    let t = zjs_temporal_new(TMP_DURATION);
+    if e1 == e2 { ctx_register_cell(ctx, (void*)t); return zjs_cell_from_ptr((void*)t); }
+    if largest <= 1 {
+        let total = e2 - e1;          // signed days
+        if largest == 1 {
+            t.d_weeks = total / 7;
+            t.d_days  = total % 7;
+        } else {
+            t.d_days = total;
+        }
+        ctx_register_cell(ctx, (void*)t);
+        return zjs_cell_from_ptr((void*)t);
+    }
+    // month / year: walk from the earlier date toward the later.
+    let sign: i64 = if e2 > e1 { 1 } else { -1 };
+    let ay = if sign > 0 { y1 } else { y2 };
+    let am = if sign > 0 { m1 } else { m2 };
+    let ad = if sign > 0 { d1 } else { d2 };
+    let by = if sign > 0 { y2 } else { y1 };
+    let bm = if sign > 0 { m2 } else { m1 };
+    let bd = if sign > 0 { d2 } else { d1 };
+    let M = (by - ay) * 12 + (bm - am);
+    let cand: i64[3];
+    let cp: i64* = NULL; raw { cp = &cand[0]; }
+    temporal_add_to_date(ay, am, ad, 0, M, 0, 0, cp);
+    let eb = iso_days_from_civil(by, bm, bd);
+    if iso_days_from_civil(cand[0], cand[1], cand[2]) > eb {
+        M = M - 1;
+        temporal_add_to_date(ay, am, ad, 0, M, 0, 0, cp);
+    }
+    let days = eb - iso_days_from_civil(cand[0], cand[1], cand[2]);
+    if largest == 3 {
+        t.d_years  = (M / 12) * sign;
+        t.d_months = (M % 12) * sign;
+    } else {
+        t.d_months = M * sign;
+    }
+    t.d_days = days * sign;
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// PlainDate.until(other[,opts]) / since. dir +1 until, -1 since.
+fn temporal_plaindate_diff_impl(ctx: ZjsContext*, dir: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    let other = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_DATE) == 0 || zjs_is_temporal_kind(other, TMP_PLAIN_DATE) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"expects two PlainDates", 22);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let largest = temporal_parse_date_largest(ctx, if argc >= 2 { args[1] } else { zjs_undefined() }, 0);
+    let a = zjs_as_temporal(this_v); let b = zjs_as_temporal(other);
+    // until: this → other; since: other → this (negate by swapping).
+    let r: ZjsValue;
+    if dir > 0 {
+        r = temporal_diff_iso_date(ctx, (i64)a.year, (i64)a.month, (i64)a.day,
+                                        (i64)b.year, (i64)b.month, (i64)b.day, largest);
+    } else {
+        r = temporal_diff_iso_date(ctx, (i64)b.year, (i64)b.month, (i64)b.day,
+                                        (i64)a.year, (i64)a.month, (i64)a.day, largest);
+    }
+    return r;
+}
+fn host_temporal_plaindate_until(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_plaindate_diff_impl(ctx, 1, args, argc);
+}
+fn host_temporal_plaindate_since(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_plaindate_diff_impl(ctx, -1, args, argc);
+}
+
 // PlainDate.prototype.add/subtract(durationLike). sign=+1 add, -1 sub.
 fn temporal_plaindate_add_impl(ctx: ZjsContext*, sign: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_v = ctx.host_this;
@@ -21779,6 +21873,12 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"add", pdadd_ptr));
     object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
                ctx_make_host_function(ctx, (char*)"subtract", pdsub_ptr));
+    let pduntil_ptr: void* = NULL; raw { pduntil_ptr = (void*)host_temporal_plaindate_until; }
+    let pdsince_ptr: void* = NULL; raw { pdsince_ptr = (void*)host_temporal_plaindate_since; }
+    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"until", 5),
+               ctx_make_host_function(ctx, (char*)"until", pduntil_ptr));
+    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"since", 5),
+               ctx_make_host_function(ctx, (char*)"since", pdsince_ptr));
     object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pd_ctor);
     let pdfrom_ptr: void* = NULL; raw { pdfrom_ptr = (void*)host_temporal_plaindate_from; }
     let pdcmp_ptr: void* = NULL; raw { pdcmp_ptr = (void*)host_temporal_plaindate_compare; }
