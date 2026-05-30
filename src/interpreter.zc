@@ -3462,46 +3462,89 @@ fn interpret_inner_full(ctx: ZjsContext*,
         // --- bitwise --------------------------------------------
         } else if op == Op::BitAnd {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
-                raise_symbol_to_number(ctx);
-                throwing = true; thrown = consume_pending_throw(ctx);
-                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            let bh = false;
+            let br = bigint_try_bitop(ctx, 0, av, bv, &bh);
+            if bh {
+                if ctx.pending_throw_active { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; ctx.frames[cur_idx].ip = ip; break; }
+                regs[inst.a] = br;
+            } else {
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = zjs_bit_and(av, bv);
             }
-            regs[inst.a] = zjs_bit_and(av, bv);
         } else if op == Op::BitOr {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
-                raise_symbol_to_number(ctx);
-                throwing = true; thrown = consume_pending_throw(ctx);
-                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            let bh = false;
+            let br = bigint_try_bitop(ctx, 1, av, bv, &bh);
+            if bh {
+                if ctx.pending_throw_active { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; ctx.frames[cur_idx].ip = ip; break; }
+                regs[inst.a] = br;
+            } else {
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = zjs_bit_or(av, bv);
             }
-            regs[inst.a] = zjs_bit_or(av, bv);
         } else if op == Op::BitXor {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
-                raise_symbol_to_number(ctx);
-                throwing = true; thrown = consume_pending_throw(ctx);
-                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            let bh = false;
+            let br = bigint_try_bitop(ctx, 2, av, bv, &bh);
+            if bh {
+                if ctx.pending_throw_active { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; ctx.frames[cur_idx].ip = ip; break; }
+                regs[inst.a] = br;
+            } else {
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = zjs_bit_xor(av, bv);
             }
-            regs[inst.a] = zjs_bit_xor(av, bv);
         } else if op == Op::Shl {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
-                raise_symbol_to_number(ctx);
-                throwing = true; thrown = consume_pending_throw(ctx);
-                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            let bh = false;
+            let br = bigint_try_shift(ctx, true, av, bv, &bh);
+            if bh {
+                if ctx.pending_throw_active { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; ctx.frames[cur_idx].ip = ip; break; }
+                regs[inst.a] = br;
+            } else {
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = zjs_shl(av, bv);
             }
-            regs[inst.a] = zjs_shl(av, bv);
         } else if op == Op::Shr {
             let av = regs[inst.b]; let bv = regs[inst.c];
-            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
-                raise_symbol_to_number(ctx);
+            let bh = false;
+            let br = bigint_try_shift(ctx, false, av, bv, &bh);
+            if bh {
+                if ctx.pending_throw_active { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; ctx.frames[cur_idx].ip = ip; break; }
+                regs[inst.a] = br;
+            } else {
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = zjs_shr(av, bv);
+            }
+        } else if op == Op::UShr {
+            let av = regs[inst.b]; let bv = regs[inst.c];
+            // BigInts have no unsigned right shift — `>>>` throws TypeError.
+            if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"BigInts have no unsigned right shift, use >> instead", 52);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
                 throwing = true; thrown = consume_pending_throw(ctx);
                 exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
             }
-            regs[inst.a] = zjs_shr(av, bv);
-        } else if op == Op::UShr {
-            let av = regs[inst.b]; let bv = regs[inst.c];
             if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
                 raise_symbol_to_number(ctx);
                 throwing = true; thrown = consume_pending_throw(ctx);
@@ -3721,7 +3764,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 throwing = true; thrown = consume_pending_throw(ctx);
                 exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
             }
-            regs[inst.a] = zjs_bit_not(v);
+            if zjs_is_bigint(v) != 0 {
+                regs[inst.a] = bigint_not_ctx(ctx, v);
+            } else {
+                regs[inst.a] = zjs_bit_not(v);
+            }
         } else if op == Op::LogicalNot {
             let b = zjs_to_bool_coerce(regs[inst.b]);
             regs[inst.a] = zjs_bool(if b != 0 { 0 } else { 1 });

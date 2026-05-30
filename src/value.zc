@@ -2068,6 +2068,210 @@ fn bigint_cmp_f64(a: ZjsBigInt*, x: f64) -> int {
     return 0;
 }
 
+// --- BigInt bitwise + shift primitives (B5b) ------------------------
+//
+// Bitwise ops follow ECMA-262's two's-complement-over-infinite-sign-
+// extension model. A non-negative BigInt's bits are its magnitude with
+// infinite leading 0s; a negative -m is the two's complement
+// NOT(m-1) with infinite leading 1s. We materialize a fixed working
+// width W (max operand length + 1 guard limb) and rely on the fill /
+// rebuild helpers to handle the sign extension.
+
+// Fill out[0..W) with the two's-complement limbs of `a` at width W.
+fn bigint_fill_twos(a: ZjsBigInt*, W: u32, out: u32*) -> void {
+    if a.sign >= 0 {
+        let i: u32 = 0;
+        while i < W { out[i] = if i < a.len { a.limbs[i] } else { 0 }; i = i + 1; }
+    } else {
+        // value = -m → two's complement is NOT(m-1).
+        let borrow: i64 = 1;
+        let i: u32 = 0;
+        while i < W {
+            let mi: i64 = if i < a.len { (i64)a.limbs[i] } else { 0 };
+            let d = mi - borrow;
+            if d < 0 { d = d + 4294967296; borrow = 1; } else { borrow = 0; }
+            raw { out[i] = ~((uint32_t)d); }
+            i = i + 1;
+        }
+    }
+}
+
+// Rebuild a BigInt from two's-complement limbs tc[0..W). `negative`
+// says whether the (infinite) value is negative.
+fn bigint_from_twos(tc: u32*, W: u32, negative: bool) -> ZjsBigInt* {
+    let r = zjs_bigint_new_cap(W);
+    if !negative {
+        let i: u32 = 0;
+        while i < W { r.limbs[i] = tc[i]; i = i + 1; }
+        r.len = W; r.sign = 1; bigint_normalize(r); return r;
+    }
+    // negative: magnitude = NOT(tc) + 1 over width W.
+    let carry: u64 = 1;
+    let i: u32 = 0;
+    while i < W {
+        let inv: u64 = 0;
+        raw { inv = (uint64_t)(uint32_t)(~tc[i]); }
+        let s = inv + carry;
+        r.limbs[i] = (u32)(s & 0xffffffff);
+        carry = s >> 32;
+        i = i + 1;
+    }
+    r.len = W; r.sign = -1; bigint_normalize(r); return r;
+}
+
+// a OP b, op: 0=AND 1=OR 2=XOR.
+fn bigint_bitop(a: ZjsBigInt*, b: ZjsBigInt*, op: u32) -> ZjsBigInt* {
+    let W = (if a.len > b.len { a.len } else { b.len }) + 1;
+    let ta = alloc_n<u32>((usize)W);
+    let tb = alloc_n<u32>((usize)W);
+    let tc = alloc_n<u32>((usize)W);
+    bigint_fill_twos(a, W, ta);
+    bigint_fill_twos(b, W, tb);
+    let i: u32 = 0;
+    while i < W {
+        if op == 0 { tc[i] = ta[i] & tb[i]; }
+        else if op == 1 { tc[i] = ta[i] | tb[i]; }
+        else { tc[i] = ta[i] ^ tb[i]; }
+        i = i + 1;
+    }
+    let sa: u32 = if a.sign < 0 { 1 } else { 0 };
+    let sb: u32 = if b.sign < 0 { 1 } else { 0 };
+    let sr: u32 = if op == 0 { sa & sb } else if op == 1 { sa | sb } else { sa ^ sb };
+    let r = bigint_from_twos(tc, W, sr != 0);
+    dealloc(ta); dealloc(tb); dealloc(tc);
+    return r;
+}
+
+// ~a = -(a + 1) (two's-complement identity).
+fn bigint_not(a: ZjsBigInt*) -> ZjsBigInt* {
+    let one = zjs_bigint_from_i64(1);
+    let ap1 = bigint_add(a, one);
+    bigint_free_void((void*)one);
+    let r = bigint_neg(ap1);
+    bigint_free_void((void*)ap1);
+    return r;
+}
+
+// |a| << nbits → fresh positive-magnitude BigInt.
+fn bigint_shl_mag(a: ZjsBigInt*, nbits: u64) -> ZjsBigInt* {
+    if a.len == 0 { return zjs_bigint_new_cap(0); }
+    let limb_shift: u32 = (u32)(nbits / 32);
+    let bit_shift: u32 = (u32)(nbits % 32);
+    let W = a.len + limb_shift + 1;
+    let r = zjs_bigint_new_cap(W);
+    let i: u32 = 0;
+    while i < a.len {
+        let v: u64 = (u64)a.limbs[i] << bit_shift;
+        let dst = i + limb_shift;
+        r.limbs[dst] = r.limbs[dst] | (u32)(v & 0xffffffff);
+        r.limbs[dst + 1] = r.limbs[dst + 1] | (u32)(v >> 32);
+        i = i + 1;
+    }
+    r.len = W; r.sign = 1; bigint_normalize(r); return r;
+}
+
+// |a| >> nbits → fresh positive-magnitude BigInt. Sets lost[0] if any
+// 1-bit was shifted out (needed for floor semantics on negatives).
+fn bigint_shr_mag(a: ZjsBigInt*, nbits: u64, lost: bool*) -> ZjsBigInt* {
+    lost[0] = false;
+    let limb_shift: u32 = (u32)(nbits / 32);
+    let bit_shift: u32 = (u32)(nbits % 32);
+    if limb_shift >= a.len {
+        if a.len > 0 { lost[0] = true; }
+        return zjs_bigint_new_cap(0);
+    }
+    let k: u32 = 0;
+    while k < limb_shift { if a.limbs[k] != 0 { lost[0] = true; } k = k + 1; }
+    if bit_shift > 0 {
+        if (a.limbs[limb_shift] & ((1 << bit_shift) - 1)) != 0 { lost[0] = true; }
+    }
+    let outlen = a.len - limb_shift;
+    let r = zjs_bigint_new_cap(outlen);
+    let i: u32 = 0;
+    while i < outlen {
+        let cur: u64 = (u64)a.limbs[i + limb_shift] >> bit_shift;
+        if bit_shift > 0 && (i + limb_shift + 1) < a.len {
+            cur = cur | ((u64)a.limbs[i + limb_shift + 1] << (32 - bit_shift));
+        }
+        r.limbs[i] = (u32)(cur & 0xffffffff);
+        i = i + 1;
+    }
+    r.len = outlen; r.sign = 1; bigint_normalize(r); return r;
+}
+
+// Signed `a << nbits` (nbits >= 0). Sign is preserved (multiply by 2^n).
+fn bigint_shl(a: ZjsBigInt*, nbits: u64) -> ZjsBigInt* {
+    let r = bigint_shl_mag(a, nbits);
+    if r.len > 0 { r.sign = a.sign; }
+    return r;
+}
+
+// Signed `a >> nbits` (nbits >= 0) = floor(a / 2^nbits). For negatives
+// the floor rounds toward -Infinity (add 1 to the magnitude if any bit
+// was lost).
+fn bigint_shr(a: ZjsBigInt*, nbits: u64) -> ZjsBigInt* {
+    let lost: bool = false;
+    let mag = bigint_shr_mag(a, nbits, &lost);
+    if a.sign < 0 {
+        if lost {
+            let one = zjs_bigint_from_i64(1);
+            let m2 = bigint_add(mag, one);   // both positive magnitudes
+            bigint_free_void((void*)one);
+            bigint_free_void((void*)mag);
+            mag = m2;
+        }
+        if mag.len > 0 { mag.sign = -1; }
+    }
+    return mag;
+}
+
+// 2^bits as a fresh BigInt.
+fn bigint_pow2(bits: u64) -> ZjsBigInt* {
+    let one = zjs_bigint_from_i64(1);
+    let r = bigint_shl_mag(one, bits);
+    bigint_free_void((void*)one);
+    return r;
+}
+
+// asUintN(bits, a): a mod 2^bits as a non-negative BigInt (the low
+// `bits` bits of the two's-complement representation).
+fn bigint_asuintn(bits: u64, a: ZjsBigInt*) -> ZjsBigInt* {
+    if bits == 0 { return zjs_bigint_new_cap(0); }
+    let W: u32 = (u32)((bits + 31) / 32);
+    let tc = alloc_n<u32>((usize)W);
+    bigint_fill_twos(a, W, tc);
+    let top_bits: u32 = (u32)(bits % 32);
+    if top_bits != 0 {
+        tc[W - 1] = tc[W - 1] & ((1 << top_bits) - 1);
+    }
+    let r = zjs_bigint_new_cap(W);
+    let i: u32 = 0;
+    while i < W { r.limbs[i] = tc[i]; i = i + 1; }
+    r.len = W; r.sign = 1; bigint_normalize(r);
+    dealloc(tc);
+    return r;
+}
+
+// asIntN(bits, a): interpret asUintN's result as a two's-complement
+// signed value of `bits` bits.
+fn bigint_asintn(bits: u64, a: ZjsBigInt*) -> ZjsBigInt* {
+    let u = bigint_asuintn(bits, a);
+    if bits == 0 { return u; }
+    // If the top (sign) bit is set, subtract 2^bits to make it negative.
+    let sign_limb: u32 = (u32)((bits - 1) / 32);
+    let sign_bit: u32 = (u32)((bits - 1) % 32);
+    let is_neg: bool = false;
+    if sign_limb < u.len {
+        if (u.limbs[sign_limb] & (1 << sign_bit)) != 0 { is_neg = true; }
+    }
+    if !is_neg { return u; }
+    let p2 = bigint_pow2(bits);
+    let r = bigint_sub(u, p2);   // u - 2^bits  → negative
+    bigint_free_void((void*)u);
+    bigint_free_void((void*)p2);
+    return r;
+}
+
 // hex digit → value, or 99 for non-hex (used to skip separators etc).
 fn bigint_digit_val(c: u8) -> u32 {
     if c >= (u8)'0' && c <= (u8)'9' { return (u32)(c - (u8)'0'); }

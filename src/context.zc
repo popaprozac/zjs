@@ -18463,6 +18463,102 @@ fn bigint_neg_ctx(ctx: ZjsContext*, a: ZjsValue) -> ZjsValue {
     return zjs_cell_from_ptr((void*)r);
 }
 
+// Unary `~` on a BigInt (the Op::BitNot path).
+fn bigint_not_ctx(ctx: ZjsContext*, a: ZjsValue) -> ZjsValue {
+    let r = bigint_not(zjs_as_bigint(a));
+    ctx_register_cell(ctx, (void*)r);
+    return zjs_cell_from_ptr((void*)r);
+}
+
+// BigInt bitwise AND/OR/XOR interception. kind: 0=and 1=or 2=xor.
+// Same handled[]/mixing-TypeError contract as bigint_try_binop.
+fn bigint_try_bitop(ctx: ZjsContext*, kind: u32, a: ZjsValue, b: ZjsValue, handled: bool*) -> ZjsValue {
+    let ab = zjs_is_bigint(a) != 0;
+    let bb = zjs_is_bigint(b) != 0;
+    if !ab && !bb { handled[0] = false; return zjs_undefined(); }
+    handled[0] = true;
+    if !ab || !bb { raise_bigint_mix(ctx); return zjs_undefined(); }
+    let r = bigint_bitop(zjs_as_bigint(a), zjs_as_bigint(b), kind);
+    ctx_register_cell(ctx, (void*)r);
+    return zjs_cell_from_ptr((void*)r);
+}
+
+// BigInt shift interception. is_left = true for `<<`, false for `>>`.
+// A negative shift count flips the direction. Huge left shifts →
+// RangeError; huge right shifts saturate to 0n / -1n.
+fn bigint_try_shift(ctx: ZjsContext*, is_left: bool, a: ZjsValue, b: ZjsValue, handled: bool*) -> ZjsValue {
+    let ab = zjs_is_bigint(a) != 0;
+    let bb = zjs_is_bigint(b) != 0;
+    if !ab && !bb { handled[0] = false; return zjs_undefined(); }
+    handled[0] = true;
+    if !ab || !bb { raise_bigint_mix(ctx); return zjs_undefined(); }
+    let x = zjs_as_bigint(a);
+    let y = zjs_as_bigint(b);
+    let left = is_left;
+    if y.sign < 0 { left = !left; }
+    let r: ZjsBigInt* = NULL;
+    if !bigint_fits_u64(y) {
+        if left {
+            let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                (char*)"Maximum BigInt size exceeded", 28);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        r = if x.sign < 0 { zjs_bigint_from_i64(-1) } else { zjs_bigint_new_cap(0) };
+    } else {
+        let n = bigint_to_u64(y);
+        if n > 134217728 {     // 128M-bit guard — beyond this, OOM territory
+            if left {
+                let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                    (char*)"Maximum BigInt size exceeded", 28);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return zjs_undefined();
+            }
+            r = if x.sign < 0 { zjs_bigint_from_i64(-1) } else { zjs_bigint_new_cap(0) };
+        } else if left {
+            r = bigint_shl(x, n);
+        } else {
+            r = bigint_shr(x, n);
+        }
+    }
+    ctx_register_cell(ctx, (void*)r);
+    return zjs_cell_from_ptr((void*)r);
+}
+
+// BigInt.asIntN(bits, bigint) / asUintN(bits, bigint). `bits` is a
+// regular Number index (ToIndex); the value must be a BigInt.
+fn host_bigint_as_n(ctx: ZjsContext*, args: ZjsValue*, argc: u32, signed_form: bool) -> ZjsValue {
+    let bits_v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let val_v  = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let bd = zjs_to_double(bits_v);
+    let bad: int = 0;
+    raw { bad = (!isfinite(bd) || bd < 0 || bd != trunc(bd)) ? 1 : 0; }
+    if bad != 0 {
+        let err = build_typed_error(ctx, (char*)"RangeError", 10,
+            (char*)"Invalid bits argument", 21);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    if zjs_is_bigint(val_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Cannot convert value to a BigInt", 32);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let bits: u64 = (u64)bd;
+    let x = zjs_as_bigint(val_v);
+    let r = if signed_form { bigint_asintn(bits, x) } else { bigint_asuintn(bits, x) };
+    ctx_register_cell(ctx, (void*)r);
+    return zjs_cell_from_ptr((void*)r);
+}
+
+fn host_bigint_as_int_n(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return host_bigint_as_n(ctx, args, argc, true);
+}
+fn host_bigint_as_uint_n(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return host_bigint_as_n(ctx, args, argc, false);
+}
+
 // BigInt(value) — ECMA-262 §21.2.1.1. NOT a constructor (`new BigInt()`
 // throws, but we don't distinguish call/construct on host fns yet).
 // Implements ToBigInt over primitives: bigint→itself, boolean→0n/1n,
@@ -20264,7 +20360,15 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     zjs_install_methods(ctx, ctx.data_view_proto, dv_table_p, dv_table_n);
 
     let bigint_ctor_ptr: void* = NULL; raw { bigint_ctor_ptr = (void*)host_bigint_ctor; }
-    ctx_register_host_function(ctx, (char*)"BigInt",      bigint_ctor_ptr);
+    let bigint_v = ctx_register_host_function(ctx, (char*)"BigInt", bigint_ctor_ptr);
+    // Static methods BigInt.asIntN / asUintN — attach to the ctor's
+    // expando bag (property_set on a host fn routes there).
+    let asintn_ptr:  void* = NULL; raw { asintn_ptr  = (void*)host_bigint_as_int_n; }
+    let asuintn_ptr: void* = NULL; raw { asuintn_ptr = (void*)host_bigint_as_uint_n; }
+    property_set(ctx, bigint_v, ctx_intern_string(ctx, (char*)"asIntN", 6),
+                 ctx_make_host_function(ctx, (char*)"asIntN", asintn_ptr));
+    property_set(ctx, bigint_v, ctx_intern_string(ctx, (char*)"asUintN", 7),
+                 ctx_make_host_function(ctx, (char*)"asUintN", asuintn_ptr));
     ctx_register_host_function(ctx, (char*)"BigInt64Array",     eval_ptr);
     ctx_register_host_function(ctx, (char*)"BigUint64Array",    eval_ptr);
 
