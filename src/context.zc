@@ -417,6 +417,7 @@ struct ZjsContext {
     temporal_duration_proto:  ZjsObject*;
     temporal_instant_proto:   ZjsObject*;
     temporal_plaindate_proto: ZjsObject*;
+    temporal_plaintime_proto: ZjsObject*;
 
     // Live WebSocket cells — polled on each event-loop tick. Owned
     // by ZjsContext (GC marks them so handlers stay reachable across
@@ -1898,6 +1899,9 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     }
     if ctx.temporal_plaindate_proto != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.temporal_plaindate_proto));
+    }
+    if ctx.temporal_plaintime_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.temporal_plaintime_proto));
     }
     // In-flight fetch promises + URLs must stay alive even if user
     // code dropped the only reference — completion still needs to
@@ -20043,6 +20047,159 @@ fn host_temporal_plaindate_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
     return zjs_cell_from_ptr((void*)t);
 }
 
+// Validate ISO wall-clock time components.
+fn temporal_time_valid(h: i64, mi: i64, s: i64, ms: i64, us: i64, ns: i64) -> bool {
+    if h < 0 || h > 23 { return false; }
+    if mi < 0 || mi > 59 { return false; }
+    if s < 0 || s > 59 { return false; }   // no leap seconds in Temporal
+    if ms < 0 || ms > 999 { return false; }
+    if us < 0 || us > 999 { return false; }
+    if ns < 0 || ns > 999 { return false; }
+    return true;
+}
+
+// Total nanoseconds-of-day for a time (used by compare).
+fn temporal_time_total_ns(t: ZjsTemporal*) -> i64 {
+    let secs: i64 = ((i64)t.hour * 60 + (i64)t.minute) * 60 + (i64)t.second;
+    let sub: i64 = (i64)t.millisecond * 1000000 + (i64)t.microsecond * 1000 + (i64)t.nanosecond;
+    return secs * 1000000000 + sub;
+}
+
+// Append "HH:MM:SS[.fraction]" for a time into buf (caller sized).
+fn temporal_time_to_buf(t: ZjsTemporal*, buf: char*, cap: usize) -> void {
+    raw {
+        int sub = (int)t->millisecond * 1000000 + (int)t->microsecond * 1000 + (int)t->nanosecond;
+        if (sub == 0) {
+            snprintf(buf, cap, "%02d:%02d:%02d", (int)t->hour, (int)t->minute, (int)t->second);
+        } else {
+            char fbuf[10];
+            snprintf(fbuf, sizeof(fbuf), "%09d", sub);
+            // 'auto' precision: trim trailing zeros (no 3/6/9 grouping).
+            int flen = 9;
+            while (flen > 1 && fbuf[flen-1] == '0') flen--;
+            snprintf(buf, cap, "%02d:%02d:%02d.%.*s",
+                     (int)t->hour, (int)t->minute, (int)t->second, flen, fbuf);
+        }
+    }
+}
+
+// new Temporal.PlainTime([hour[, minute[, second[, ms[, us[, ns]]]]]]).
+fn host_temporal_plaintime_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let ok: int = 1;
+    let h  = temporal_int_arg(args, argc, 0, 0, &ok);
+    let mi = temporal_int_arg(args, argc, 1, 0, &ok);
+    let s  = temporal_int_arg(args, argc, 2, 0, &ok);
+    let ms = temporal_int_arg(args, argc, 3, 0, &ok);
+    let us = temporal_int_arg(args, argc, 4, 0, &ok);
+    let ns = temporal_int_arg(args, argc, 5, 0, &ok);
+    if ok == 0 { return temporal_range_error(ctx, (char*)"PlainTime fields must be integers", 32); }
+    if !temporal_time_valid(h, mi, s, ms, us, ns) { return temporal_range_error(ctx, (char*)"invalid time", 12); }
+    let t = zjs_temporal_new(TMP_PLAIN_TIME);
+    t.hour = (i32)h; t.minute = (i32)mi; t.second = (i32)s;
+    t.millisecond = (i32)ms; t.microsecond = (i32)us; t.nanosecond = (i32)ns;
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// Temporal.PlainTime.from(PlainTime | PlainDateTime | {hour,...}).
+fn host_temporal_plaintime_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_temporal(v) != 0 {
+        let s = zjs_as_temporal(v);
+        if s.kind == TMP_PLAIN_TIME || s.kind == TMP_PLAIN_DATETIME {
+            let t = zjs_temporal_new(TMP_PLAIN_TIME);
+            t.hour = s.hour; t.minute = s.minute; t.second = s.second;
+            t.millisecond = s.millisecond; t.microsecond = s.microsecond; t.nanosecond = s.nanosecond;
+            ctx_register_cell(ctx, (void*)t);
+            return zjs_cell_from_ptr((void*)t);
+        }
+    }
+    if zjs_is_object(v) != 0 {
+        let argbuf: ZjsValue[6];
+        argbuf[0] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"hour", 4));
+        argbuf[1] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"minute", 6));
+        argbuf[2] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"second", 6));
+        argbuf[3] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"millisecond", 11));
+        argbuf[4] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"microsecond", 11));
+        argbuf[5] = property_get(ctx, v, ctx_intern_string(ctx, (char*)"nanosecond", 10));
+        let ap: ZjsValue* = NULL; raw { ap = &argbuf[0]; }
+        return host_temporal_plaintime_ctor(ctx, ap, 6);
+    }
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+        (char*)"Temporal.PlainTime.from expects a time or object", 48);
+    ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+    return zjs_undefined();
+}
+
+fn host_temporal_plaintime_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let _u = args; let _u2 = argc;
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_TIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainTime", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let buf: char[24];
+    let bp: char* = NULL; raw { bp = &buf[0]; }
+    temporal_time_to_buf(zjs_as_temporal(this_v), bp, 24);
+    let n: u32 = 0; raw { n = (uint32_t)strlen(bp); }
+    return ctx_intern_string(ctx, bp, n);
+}
+
+fn host_temporal_plaintime_compare(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let a = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let b = if argc >= 2 { args[1] } else { zjs_undefined() };
+    if zjs_is_temporal_kind(a, TMP_PLAIN_TIME) == 0 || zjs_is_temporal_kind(b, TMP_PLAIN_TIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"compare expects two PlainTimes", 30);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let na = temporal_time_total_ns(zjs_as_temporal(a));
+    let nb = temporal_time_total_ns(zjs_as_temporal(b));
+    if na < nb { return zjs_int32(-1); }
+    if na > nb { return zjs_int32(1); }
+    return zjs_int32(0);
+}
+
+fn host_temporal_plaintime_equals(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    let other = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_TIME) == 0 { return zjs_bool(0); }
+    if zjs_is_temporal_kind(other, TMP_PLAIN_TIME) == 0 { return zjs_bool(0); }
+    let eq = temporal_time_total_ns(zjs_as_temporal(this_v)) == temporal_time_total_ns(zjs_as_temporal(other));
+    return zjs_bool(if eq { 1 } else { 0 });
+}
+
+fn host_temporal_plaintime_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_TIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainTime", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_object(arg) == 0 { return temporal_range_error(ctx, (char*)"with() expects an object", 24); }
+    let fh = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"hour", 4));
+    let fm = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"minute", 6));
+    let fs = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"second", 6));
+    let fms = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"millisecond", 11));
+    let fus = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"microsecond", 11));
+    let fns = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"nanosecond", 10));
+    let h  = if zjs_is_undefined(fh)  != 0 { (i64)s.hour }        else { (i64)zjs_to_double(fh) };
+    let mi = if zjs_is_undefined(fm)  != 0 { (i64)s.minute }      else { (i64)zjs_to_double(fm) };
+    let sc = if zjs_is_undefined(fs)  != 0 { (i64)s.second }      else { (i64)zjs_to_double(fs) };
+    let ms = if zjs_is_undefined(fms) != 0 { (i64)s.millisecond } else { (i64)zjs_to_double(fms) };
+    let us = if zjs_is_undefined(fus) != 0 { (i64)s.microsecond } else { (i64)zjs_to_double(fus) };
+    let ns = if zjs_is_undefined(fns) != 0 { (i64)s.nanosecond }  else { (i64)zjs_to_double(fns) };
+    if !temporal_time_valid(h, mi, sc, ms, us, ns) { return temporal_range_error(ctx, (char*)"invalid time", 12); }
+    let t = zjs_temporal_new(TMP_PLAIN_TIME);
+    t.hour = (i32)h; t.minute = (i32)mi; t.second = (i32)sc;
+    t.millisecond = (i32)ms; t.microsecond = (i32)us; t.nanosecond = (i32)ns;
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
 // Name-match helper for the Temporal computed-getter switch.
 fn tmp_name_is(name: ZjsString*, lit: char*, len: u32) -> bool {
     if name.length != len { return false; }
@@ -20088,6 +20245,13 @@ fn temporal_get_computed(ctx: ZjsContext*, t: ZjsTemporal*, name: ZjsString*) ->
         if tmp_name_is(name, (char*)"inLeapYear", 10) { return zjs_bool(if iso_is_leap((i64)t.year) { 1 } else { 0 }); }
         if tmp_name_is(name, (char*)"calendarId", 10) { return ctx_intern_string(ctx, (char*)"iso8601", 7); }
         if tmp_name_is(name, (char*)"dayOfWeek", 9)   { return zjs_int32((i32)iso_day_of_week((i64)t.year, (i64)t.month, (i64)t.day)); }
+    } else if k == TMP_PLAIN_TIME {
+        if tmp_name_is(name, (char*)"hour", 4)        { return zjs_int32(t.hour); }
+        if tmp_name_is(name, (char*)"minute", 6)      { return zjs_int32(t.minute); }
+        if tmp_name_is(name, (char*)"second", 6)      { return zjs_int32(t.second); }
+        if tmp_name_is(name, (char*)"millisecond", 11){ return zjs_int32(t.millisecond); }
+        if tmp_name_is(name, (char*)"microsecond", 11){ return zjs_int32(t.microsecond); }
+        if tmp_name_is(name, (char*)"nanosecond", 10) { return zjs_int32(t.nanosecond); }
     } else if k == TMP_INSTANT {
         if tmp_name_is(name, (char*)"epochNanoseconds", 16) { return t.epoch_ns; }
         if tmp_name_is(name, (char*)"epochMilliseconds", 17) {
@@ -20173,6 +20337,31 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     property_set(ctx, pd_ctor, ctx_intern_string(ctx, (char*)"compare", 7),
                  ctx_make_host_function(ctx, (char*)"compare", pdcmp_ptr));
     object_set(ctx, temporal_o, ctx_intern_atom(ctx, (char*)"PlainDate", 9), pd_ctor);
+
+    // --- Temporal.PlainTime ---
+    let pt_ctor_ptr: void* = NULL; raw { pt_ctor_ptr = (void*)host_temporal_plaintime_ctor; }
+    let pt_ctor = ctx_make_host_function(ctx, (char*)"PlainTime", pt_ctor_ptr);
+    let pt_proto_v = ctx_new_object(ctx);
+    ctx.temporal_plaintime_proto = zjs_as_object(pt_proto_v);
+    zjs_as_host_function(pt_ctor).prototype = ctx.temporal_plaintime_proto;
+    let ptts_ptr: void* = NULL; raw { ptts_ptr = (void*)host_temporal_plaintime_to_string; }
+    let pteq_ptr: void* = NULL; raw { pteq_ptr = (void*)host_temporal_plaintime_equals; }
+    let ptwith_ptr: void* = NULL; raw { ptwith_ptr = (void*)host_temporal_plaintime_with; }
+    let ptts_fn = ctx_make_host_function(ctx, (char*)"toString", ptts_ptr);
+    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"toString", 8), ptts_fn);
+    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), ptts_fn);
+    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
+               ctx_make_host_function(ctx, (char*)"equals", pteq_ptr));
+    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"with", 4),
+               ctx_make_host_function(ctx, (char*)"with", ptwith_ptr));
+    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pt_ctor);
+    let ptfrom_ptr: void* = NULL; raw { ptfrom_ptr = (void*)host_temporal_plaintime_from; }
+    let ptcmp_ptr: void* = NULL; raw { ptcmp_ptr = (void*)host_temporal_plaintime_compare; }
+    property_set(ctx, pt_ctor, ctx_intern_string(ctx, (char*)"from", 4),
+                 ctx_make_host_function(ctx, (char*)"from", ptfrom_ptr));
+    property_set(ctx, pt_ctor, ctx_intern_string(ctx, (char*)"compare", 7),
+                 ctx_make_host_function(ctx, (char*)"compare", ptcmp_ptr));
+    object_set(ctx, temporal_o, ctx_intern_atom(ctx, (char*)"PlainTime", 9), pt_ctor);
 
     // --- Temporal.Now ---
     let now_v = ctx_new_object(ctx);
