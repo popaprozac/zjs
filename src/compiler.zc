@@ -2674,6 +2674,15 @@ fn compile_template_part(c: Compiler*, node: AstNode*) -> u8 {
     let raw_start = node.start;
     let raw_end   = node.end;
     let raw_len   = if raw_end > raw_start { raw_end - raw_start } else { 0 };
+    // Untagged-template escape rules are strict — invalid \x / \u / legacy
+    // octal etc. are a SyntaxError per ECMA-262 §12.8.6.1. Tagged templates
+    // get the looser cooked=undefined treatment via tmpl_intern_cooked;
+    // here we're on the untagged path and any invalid escape kills the
+    // compile.
+    if !template_escapes_are_valid(c.source, raw_start, raw_len) {
+        c.had_error = true;
+        return alloc_reg(c);
+    }
     let buf = alloc_n<char>((usize)(raw_len + 1));
     let out = decode_string_body(c.source, raw_start, raw_len, buf);
     buf[out] = (char)0;
