@@ -1700,6 +1700,256 @@ fn bigint_free_void(p: void*) -> void {
     dealloc(b);
 }
 
+// --- BigInt arithmetic primitives (B4) ------------------------------
+//
+// Magnitude helpers operate on the unsigned limb arrays; the signed
+// wrappers (bigint_add/sub/mul/div/mod/pow/neg) layer sign rules on
+// top and return a fresh, normalized cell the caller must register.
+
+// Deep-copy a BigInt (sign + magnitude).
+fn bigint_clone(a: ZjsBigInt*) -> ZjsBigInt* {
+    let r = zjs_bigint_new_cap(if a.len > 0 { a.len } else { 0 });
+    let i: u32 = 0;
+    while i < a.len { r.limbs[i] = a.limbs[i]; i = i + 1; }
+    r.len = a.len;
+    r.sign = a.sign;
+    return r;
+}
+
+// Compare magnitudes: -1 if |a|<|b|, 0 if equal, 1 if |a|>|b|.
+fn bigint_cmp_mag(a: ZjsBigInt*, b: ZjsBigInt*) -> int {
+    if a.len != b.len { if a.len < b.len { return -1; } return 1; }
+    let i = a.len;
+    while i > 0 {
+        i = i - 1;
+        if a.limbs[i] != b.limbs[i] {
+            if a.limbs[i] < b.limbs[i] { return -1; }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+// |a| + |b| into a fresh cell (len set, sign left 0 — caller sets).
+fn bigint_addmag_new(a: ZjsBigInt*, b: ZjsBigInt*) -> ZjsBigInt* {
+    let n = if a.len > b.len { a.len } else { b.len };
+    let r = zjs_bigint_new_cap(n + 1);
+    let carry: u64 = 0;
+    let i: u32 = 0;
+    while i < n {
+        let av: u64 = if i < a.len { (u64)a.limbs[i] } else { 0 };
+        let bv: u64 = if i < b.len { (u64)b.limbs[i] } else { 0 };
+        let s = av + bv + carry;
+        r.limbs[i] = (u32)(s & 0xffffffff);
+        carry = s >> 32;
+        i = i + 1;
+    }
+    if carry > 0 { r.limbs[n] = (u32)carry; r.len = n + 1; }
+    else { r.len = n; }
+    return r;
+}
+
+// |a| - |b| into a fresh cell, REQUIRES |a| >= |b|. Caller normalizes.
+fn bigint_submag_new(a: ZjsBigInt*, b: ZjsBigInt*) -> ZjsBigInt* {
+    let r = zjs_bigint_new_cap(a.len);
+    let borrow: i64 = 0;
+    let i: u32 = 0;
+    while i < a.len {
+        let av: i64 = (i64)a.limbs[i];
+        let bv: i64 = if i < b.len { (i64)b.limbs[i] } else { 0 };
+        let d = av - bv - borrow;
+        if d < 0 { d = d + 4294967296; borrow = 1; } else { borrow = 0; }
+        r.limbs[i] = (u32)d;
+        i = i + 1;
+    }
+    r.len = a.len;
+    return r;
+}
+
+// In-place |r| -= |b|, REQUIRES |r| >= |b|. Does not normalize.
+fn bigint_submag_inplace(r: ZjsBigInt*, b: ZjsBigInt*) -> void {
+    let borrow: i64 = 0;
+    let i: u32 = 0;
+    while i < r.len {
+        let rv: i64 = (i64)r.limbs[i];
+        let bv: i64 = if i < b.len { (i64)b.limbs[i] } else { 0 };
+        let d = rv - bv - borrow;
+        if d < 0 { d = d + 4294967296; borrow = 1; } else { borrow = 0; }
+        r.limbs[i] = (u32)d;
+        i = i + 1;
+    }
+}
+
+// In-place |r| <<= 1 (one bit), growing len within cap.
+fn bigint_shl1_mag(r: ZjsBigInt*) -> void {
+    let carry: u32 = 0;
+    let i: u32 = 0;
+    while i < r.len {
+        let v = r.limbs[i];
+        r.limbs[i] = (v << 1) | carry;
+        carry = v >> 31;
+        i = i + 1;
+    }
+    if carry != 0 && r.len < r.cap {
+        r.limbs[r.len] = carry;
+        r.len = r.len + 1;
+    }
+}
+
+// Signed add / sub. Both return a fresh normalized cell.
+fn bigint_add(a: ZjsBigInt*, b: ZjsBigInt*) -> ZjsBigInt* {
+    if a.len == 0 { return bigint_clone(b); }
+    if b.len == 0 { return bigint_clone(a); }
+    if a.sign == b.sign {
+        let r = bigint_addmag_new(a, b);
+        r.sign = a.sign;
+        bigint_normalize(r);
+        return r;
+    }
+    let c = bigint_cmp_mag(a, b);
+    if c == 0 { return zjs_bigint_new_cap(0); }
+    if c > 0 {
+        let r = bigint_submag_new(a, b); r.sign = a.sign; bigint_normalize(r); return r;
+    }
+    let r = bigint_submag_new(b, a); r.sign = b.sign; bigint_normalize(r); return r;
+}
+
+fn bigint_sub(a: ZjsBigInt*, b: ZjsBigInt*) -> ZjsBigInt* {
+    if b.len == 0 { return bigint_clone(a); }
+    if a.len == 0 {
+        let r = bigint_clone(b);
+        if r.len > 0 { r.sign = -r.sign; }
+        return r;
+    }
+    let bneg = -b.sign;
+    if a.sign == bneg {
+        let r = bigint_addmag_new(a, b); r.sign = a.sign; bigint_normalize(r); return r;
+    }
+    let c = bigint_cmp_mag(a, b);
+    if c == 0 { return zjs_bigint_new_cap(0); }
+    if c > 0 {
+        let r = bigint_submag_new(a, b); r.sign = a.sign; bigint_normalize(r); return r;
+    }
+    let r = bigint_submag_new(b, a); r.sign = bneg; bigint_normalize(r); return r;
+}
+
+fn bigint_neg(a: ZjsBigInt*) -> ZjsBigInt* {
+    let r = bigint_clone(a);
+    if r.len > 0 { r.sign = -r.sign; }
+    return r;
+}
+
+fn bigint_mul(a: ZjsBigInt*, b: ZjsBigInt*) -> ZjsBigInt* {
+    if a.len == 0 || b.len == 0 { return zjs_bigint_new_cap(0); }
+    let r = zjs_bigint_new_cap(a.len + b.len);
+    let i: u32 = 0;
+    while i < a.len {
+        let carry: u64 = 0;
+        let av: u64 = (u64)a.limbs[i];
+        let j: u32 = 0;
+        while j < b.len {
+            let cur: u64 = (u64)r.limbs[i + j] + av * (u64)b.limbs[j] + carry;
+            r.limbs[i + j] = (u32)(cur & 0xffffffff);
+            carry = cur >> 32;
+            j = j + 1;
+        }
+        // r[i+b.len] is untouched (still 0) at this point — see proof in
+        // the schoolbook-multiply commentary: prior iterations write at
+        // most index i'+b.len-1 < i+b.len.
+        r.limbs[i + b.len] = (u32)carry;
+        i = i + 1;
+    }
+    r.len = a.len + b.len;
+    r.sign = a.sign * b.sign;
+    bigint_normalize(r);
+    return r;
+}
+
+// Magnitude long division (bit-by-bit). Returns quotient if want_quot,
+// else remainder. REQUIRES |b| != 0. Caller sets signs + normalizes.
+fn bigint_divmod_mag(a: ZjsBigInt*, b: ZjsBigInt*, want_quot: bool) -> ZjsBigInt* {
+    if bigint_cmp_mag(a, b) < 0 {
+        // |a| < |b|: quotient 0, remainder a.
+        if want_quot { return zjs_bigint_new_cap(0); }
+        let rr = bigint_clone(a); rr.sign = 1; bigint_normalize(rr); return rr;
+    }
+    let nbits = a.len * 32;
+    let q = zjs_bigint_new_cap(a.len);
+    q.len = a.len;   // zero-filled; normalized at the end
+    let r = zjs_bigint_new_cap(b.len + 1);
+    r.len = 0;
+    let i = nbits;
+    while i > 0 {
+        i = i - 1;
+        bigint_shl1_mag(r);
+        let limb = i / 32;
+        let bit = i % 32;
+        let abit = (a.limbs[limb] >> bit) & 1;
+        if abit != 0 {
+            if r.len == 0 { r.len = 1; }
+            r.limbs[0] = r.limbs[0] | 1;
+        }
+        if bigint_cmp_mag(r, b) >= 0 {
+            bigint_submag_inplace(r, b);
+            // trim r's leading zeros so cmp stays correct
+            while r.len > 0 && r.limbs[r.len - 1] == 0 { r.len = r.len - 1; }
+            q.limbs[limb] = q.limbs[limb] | (1 << bit);
+        }
+    }
+    if want_quot { q.sign = 1; bigint_normalize(q); return q; }
+    r.sign = 1; bigint_normalize(r); return r;
+}
+
+// Signed truncated division (toward zero) and remainder (sign of
+// dividend), per ECMA-262 BigInt::divide / BigInt::remainder. Caller
+// must ensure b != 0.
+fn bigint_div(a: ZjsBigInt*, b: ZjsBigInt*) -> ZjsBigInt* {
+    let q = bigint_divmod_mag(a, b, true);
+    if q.len > 0 { q.sign = a.sign * b.sign; }
+    return q;
+}
+
+fn bigint_mod(a: ZjsBigInt*, b: ZjsBigInt*) -> ZjsBigInt* {
+    let r = bigint_divmod_mag(a, b, false);
+    if r.len > 0 { r.sign = a.sign; }   // remainder takes the dividend's sign
+    return r;
+}
+
+// base ** exp. REQUIRES exp >= 0 (caller checks). Exponentiation by
+// squaring over the exponent's bits. Exponents beyond u64 are
+// astronomically large; caller rejects those as RangeError.
+fn bigint_pow_u64(base: ZjsBigInt*, exp: u64) -> ZjsBigInt* {
+    let result = zjs_bigint_from_i64(1);
+    let b = bigint_clone(base);
+    let e = exp;
+    while e > 0 {
+        if (e & 1) != 0 {
+            let nr = bigint_mul(result, b);
+            bigint_free_void((void*)result);
+            result = nr;
+        }
+        e = e >> 1;
+        if e > 0 {
+            let nb = bigint_mul(b, b);
+            bigint_free_void((void*)b);
+            b = nb;
+        }
+    }
+    bigint_free_void((void*)b);
+    return result;
+}
+
+// Does the BigInt fit in a u64 magnitude? (used to bound `**` exponent)
+fn bigint_fits_u64(a: ZjsBigInt*) -> bool {
+    return a.len <= 2;
+}
+
+fn bigint_to_u64(a: ZjsBigInt*) -> u64 {
+    let lo: u64 = if a.len > 0 { (u64)a.limbs[0] } else { 0 };
+    let hi: u64 = if a.len > 1 { (u64)a.limbs[1] } else { 0 };
+    return (hi << 32) | lo;
+}
+
 // hex digit → value, or 99 for non-hex (used to skip separators etc).
 fn bigint_digit_val(c: u8) -> u32 {
     if c >= (u8)'0' && c <= (u8)'9' { return (u32)(c - (u8)'0'); }

@@ -770,6 +770,7 @@ impl Lexer {
 fn expect_regex_after(kind: TokenKind) -> bool {
     if kind == TokenKind::Identifier
        || kind == TokenKind::NumberLit
+       || kind == TokenKind::BigIntLit
        || kind == TokenKind::StringLit
        || kind == TokenKind::RegexLit
        || kind == TokenKind::RParen

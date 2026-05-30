@@ -2416,13 +2416,24 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
             } else {
-                // Numeric path. ToNumber on Symbol throws TypeError.
-                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
-                    raise_symbol_to_number(ctx);
-                    throwing = true; thrown = consume_pending_throw(ctx);
-                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                // BigInt path (both must be BigInt; mixing → TypeError).
+                let bh = false;
+                let br = bigint_try_binop(ctx, 0, av, bv, &bh);
+                if bh {
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                    regs[inst.a] = br;
+                } else {
+                    // Numeric path. ToNumber on Symbol throws TypeError.
+                    if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                        raise_symbol_to_number(ctx);
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                    regs[inst.a] = zjs_arith_add(av, bv);
                 }
-                regs[inst.a] = zjs_arith_add(av, bv);
             }
         } else if op == Op::Sub {
             let av = regs[inst.b]; let bv = regs[inst.c];
@@ -2444,12 +2455,22 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     }
                 }
             }
-            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
-                raise_symbol_to_number(ctx);
-                throwing = true; thrown = consume_pending_throw(ctx);
-                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            let bh_sub = false;
+            let br_sub = bigint_try_binop(ctx, 1, av, bv, &bh_sub);
+            if bh_sub {
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = br_sub;
+            } else {
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = zjs_arith_sub(av, bv);
             }
-            regs[inst.a] = zjs_arith_sub(av, bv);
         } else if op == Op::AddImm {
             // Fused int32 + i8 fast path; falls back to full Add semantics
             // (object → ToPrimitive, string concat) on cold paths.
@@ -3313,12 +3334,22 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     }
                 }
             }
-            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
-                raise_symbol_to_number(ctx);
-                throwing = true; thrown = consume_pending_throw(ctx);
-                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            let bh_mul = false;
+            let br_mul = bigint_try_binop(ctx, 2, av, bv, &bh_mul);
+            if bh_mul {
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = br_mul;
+            } else {
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = zjs_arith_mul(av, bv);
             }
-            regs[inst.a] = zjs_arith_mul(av, bv);
         } else if op == Op::Div {
             let av = regs[inst.b]; let bv = regs[inst.c];
             let av_obj: int = is_object_like(av);
@@ -3339,12 +3370,22 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     }
                 }
             }
-            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
-                raise_symbol_to_number(ctx);
-                throwing = true; thrown = consume_pending_throw(ctx);
-                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            let bh_div = false;
+            let br_div = bigint_try_binop(ctx, 3, av, bv, &bh_div);
+            if bh_div {
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = br_div;
+            } else {
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = zjs_arith_div(av, bv);
             }
-            regs[inst.a] = zjs_arith_div(av, bv);
         } else if op == Op::Mod {
             let av = regs[inst.b]; let bv = regs[inst.c];
             let av_obj: int = is_object_like(av);
@@ -3365,12 +3406,22 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     }
                 }
             }
-            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
-                raise_symbol_to_number(ctx);
-                throwing = true; thrown = consume_pending_throw(ctx);
-                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            let bh_mod = false;
+            let br_mod = bigint_try_binop(ctx, 4, av, bv, &bh_mod);
+            if bh_mod {
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = br_mod;
+            } else {
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = zjs_arith_mod(av, bv);
             }
-            regs[inst.a] = zjs_arith_mod(av, bv);
         } else if op == Op::Pow {
             let av = regs[inst.b]; let bv = regs[inst.c];
             let av_obj: int = is_object_like(av);
@@ -3391,12 +3442,22 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     }
                 }
             }
-            if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
-                raise_symbol_to_number(ctx);
-                throwing = true; thrown = consume_pending_throw(ctx);
-                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            let bh_pow = false;
+            let br_pow = bigint_try_binop(ctx, 5, av, bv, &bh_pow);
+            if bh_pow {
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = br_pow;
+            } else {
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                regs[inst.a] = zjs_arith_pow(av, bv);
             }
-            regs[inst.a] = zjs_arith_pow(av, bv);
 
         // --- bitwise --------------------------------------------
         } else if op == Op::BitAnd {
@@ -3648,7 +3709,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 throwing = true; thrown = consume_pending_throw(ctx);
                 exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
             }
-            regs[inst.a] = zjs_arith_neg(v);
+            if zjs_is_bigint(v) != 0 {
+                regs[inst.a] = bigint_neg_ctx(ctx, v);
+            } else {
+                regs[inst.a] = zjs_arith_neg(v);
+            }
         } else if op == Op::BitNot {
             let v = regs[inst.b];
             if zjs_is_symbol(v) != 0 {

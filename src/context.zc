@@ -18381,6 +18381,80 @@ fn host_number(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return wrap_primitive_if_new(ctx, n);
 }
 
+// Arm a "Cannot mix BigInt and other types" TypeError on ctx.
+fn raise_bigint_mix(ctx: ZjsContext*) -> void {
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+        (char*)"Cannot mix BigInt and other types, use explicit conversions", 59);
+    ctx.pending_throw_active = true;
+    ctx.pending_throw_value  = err;
+}
+
+// BigInt binary-op interception for the arithmetic opcodes.
+// kind: 0=add 1=sub 2=mul 3=div 4=mod 5=pow.
+// Sets handled[0]=false and returns undefined when neither operand is a
+// BigInt (caller proceeds with the Number path). When at least one is a
+// BigInt, handled[0]=true; if exactly one is a BigInt it arms a mixing
+// TypeError; if both are BigInts it computes the result (arming a
+// RangeError on /0, %0, or a negative `**` exponent). On any armed
+// throw the return value is undefined and the caller surfaces it.
+fn bigint_try_binop(ctx: ZjsContext*, kind: u32, a: ZjsValue, b: ZjsValue, handled: bool*) -> ZjsValue {
+    let ab = zjs_is_bigint(a) != 0;
+    let bb = zjs_is_bigint(b) != 0;
+    if !ab && !bb { handled[0] = false; return zjs_undefined(); }
+    handled[0] = true;
+    if !ab || !bb { raise_bigint_mix(ctx); return zjs_undefined(); }
+    let x = zjs_as_bigint(a);
+    let y = zjs_as_bigint(b);
+    let r: ZjsBigInt* = NULL;
+    if kind == 0 { r = bigint_add(x, y); }
+    else if kind == 1 { r = bigint_sub(x, y); }
+    else if kind == 2 { r = bigint_mul(x, y); }
+    else if kind == 3 {
+        if bigint_is_zero(y) {
+            let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                (char*)"Division by zero", 16);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        r = bigint_div(x, y);
+    }
+    else if kind == 4 {
+        if bigint_is_zero(y) {
+            let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                (char*)"Division by zero", 16);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        r = bigint_mod(x, y);
+    }
+    else if kind == 5 {
+        if y.sign < 0 {
+            let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                (char*)"Exponent must be non-negative", 29);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        if !bigint_fits_u64(y) {
+            let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                (char*)"Maximum BigInt size exceeded", 28);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        r = bigint_pow_u64(x, bigint_to_u64(y));
+    }
+    if r == NULL { r = zjs_bigint_new_cap(0); }
+    ctx_register_cell(ctx, (void*)r);
+    return zjs_cell_from_ptr((void*)r);
+}
+
+// Unary negation of a BigInt (the Op::Neg path). Returns a fresh,
+// registered cell.
+fn bigint_neg_ctx(ctx: ZjsContext*, a: ZjsValue) -> ZjsValue {
+    let r = bigint_neg(zjs_as_bigint(a));
+    ctx_register_cell(ctx, (void*)r);
+    return zjs_cell_from_ptr((void*)r);
+}
+
 // BigInt(value) — ECMA-262 §21.2.1.1. NOT a constructor (`new BigInt()`
 // throws, but we don't distinguish call/construct on host fns yet).
 // Implements ToBigInt over primitives: bigint→itself, boolean→0n/1n,
