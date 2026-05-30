@@ -35,15 +35,13 @@ surface to flip green (one failing sub-check fails the whole file):
 - T4a: Instant full — ctor(BigInt)/fromEpoch*, add/subtract (time
   units only), until/since (→Duration, largestUnit 'second'),
   compare, equals, ns-precision toString.
+- T4b: rounding matrix — temporal_round_i64 (all nine RoundingMode
+  values), round() on Instant/PlainTime/PlainDateTime, and
+  until/since honoring smallestUnit/roundingIncrement/roundingMode
+  (time units; default trunc).
 All verified against Node; test262 quick held at 87.8% throughout.
 
-**Remaining Temporal work (the two hardest phases):**
-- **T4b — rounding matrix.** `round()` on Instant/PlainTime/
-  PlainDateTime + `until`/`since` honoring `smallestUnit` /
-  `largestUnit` / `roundingIncrement` / `roundingMode` (the full
-  RoundDuration / RoundNumberToIncrement machinery). until/since
-  today ignore options and use the default largestUnit. This is the
-  single most intricate Temporal piece.
+**Remaining Temporal work:**
 - **T5 — TimeZone + ZonedDateTime.** IANA tz database access
   (platform-native: macOS/Linux have /var/db/timezone + tzset;
   Windows needs ICU or a bundled tzdata), offset/DST resolution,
@@ -51,7 +49,9 @@ All verified against Node; test262 quick held at 87.8% throughout.
   Temporal.Now.timeZoneId() currently hard-returns "UTC".
 - Minor: Duration.add/subtract balancing (currently field-wise);
   ISO-string parsing in the various from() methods (today they take
-  objects / same-type clones only); monthCode-keyed from().
+  objects / same-type clones only); monthCode-keyed from();
+  calendar-unit rounding (years/months) in PlainDate.until/since via
+  relativeTo — pairs with T5.
 
 Original decided shape (see [[project_bigint_temporal_arc]]):
 - **Default ON, removable with `-DZJS_NO_TEMPORAL`** (opt-out, matches
