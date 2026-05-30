@@ -1328,6 +1328,12 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 let nv = ctx.globals[num_g].value;
                 if zjs_is_host_function(nv) != 0 { proto = zjs_as_host_function(nv).prototype; }
             }
+        } else if zjs_is_bigint(obj) != 0 {
+            let big_g = ctx_find_global(ctx, (char*)"BigInt", 6);
+            if big_g >= 0 {
+                let gv = ctx.globals[big_g].value;
+                if zjs_is_host_function(gv) != 0 { proto = zjs_as_host_function(gv).prototype; }
+            }
         }
         if proto != NULL {
             let ks = zjs_as_string(key);

@@ -18559,6 +18559,46 @@ fn host_bigint_as_uint_n(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     return host_bigint_as_n(ctx, args, argc, false);
 }
 
+// BigInt.prototype.toString([radix]) — radix 2..36, default 10.
+fn host_bigint_proto_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_bigint(this_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"BigInt.prototype.toString requires a BigInt receiver", 52);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let radix: u32 = 10;
+    if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
+        let rd = zjs_to_double(args[0]);
+        let bad: int = 0;
+        raw { bad = (!isfinite(rd) || rd < 2 || rd > 36 || rd != trunc(rd)) ? 1 : 0; }
+        if bad != 0 {
+            let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                (char*)"toString() radix must be between 2 and 36", 41);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        radix = (u32)rd;
+    }
+    let blen: u32 = 0;
+    let bs = bigint_to_radix_cstring(zjs_as_bigint(this_v), radix, &blen);
+    return ctx_intern_string_take(ctx, bs, blen);
+}
+
+// BigInt.prototype.valueOf() — returns the primitive BigInt receiver.
+fn host_bigint_proto_value_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let _u = args; let _u2 = argc;
+    let this_v = ctx.host_this;
+    if zjs_is_bigint(this_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"BigInt.prototype.valueOf requires a BigInt receiver", 51);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return this_v;
+}
+
 // BigInt(value) — ECMA-262 §21.2.1.1. NOT a constructor (`new BigInt()`
 // throws, but we don't distinguish call/construct on host fns yet).
 // Implements ToBigInt over primitives: bigint→itself, boolean→0n/1n,
@@ -20369,6 +20409,22 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                  ctx_make_host_function(ctx, (char*)"asIntN", asintn_ptr));
     property_set(ctx, bigint_v, ctx_intern_string(ctx, (char*)"asUintN", 7),
                  ctx_make_host_function(ctx, (char*)"asUintN", asuintn_ptr));
+    // BigInt.prototype with toString / valueOf / toLocaleString — the
+    // property_get primitive-proto walk routes `(5n).toString(16)` here.
+    if zjs_is_host_function(bigint_v) != 0 {
+        let big_hf = zjs_as_host_function(bigint_v);
+        let bproto_v = ctx_new_object(ctx);
+        let bproto = zjs_as_object(bproto_v);
+        let bts_ptr: void* = NULL; raw { bts_ptr = (void*)host_bigint_proto_to_string; }
+        let bvo_ptr: void* = NULL; raw { bvo_ptr = (void*)host_bigint_proto_value_of; }
+        let bts_fn = ctx_make_host_function(ctx, (char*)"toString", bts_ptr);
+        object_set(ctx, bproto, ctx_intern_atom(ctx, (char*)"toString", 8), bts_fn);
+        object_set(ctx, bproto, ctx_intern_atom(ctx, (char*)"valueOf", 7),
+                   ctx_make_host_function(ctx, (char*)"valueOf", bvo_ptr));
+        // toLocaleString — no Intl yet; alias to toString (decimal).
+        object_set(ctx, bproto, ctx_intern_atom(ctx, (char*)"toLocaleString", 14), bts_fn);
+        big_hf.prototype = bproto;
+    }
     ctx_register_host_function(ctx, (char*)"BigInt64Array",     eval_ptr);
     ctx_register_host_function(ctx, (char*)"BigUint64Array",    eval_ptr);
 

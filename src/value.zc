@@ -2432,6 +2432,55 @@ fn zjs_bigint_from_string(src: char*, len: u32, ok: int*) -> ZjsBigInt* {
     return b;
 }
 
+// Render a BigInt in an arbitrary radix (2..36), lowercase digits, no
+// `n` suffix. radix 10 delegates to the fast decimal path. Returns a
+// freshly malloc'd NUL-terminated buffer; caller owns it.
+fn bigint_to_radix_cstring(b: ZjsBigInt*, radix: u32, out_len: u32*) -> char* {
+    if radix == 10 { return bigint_to_decimal_cstring(b, out_len); }
+    if b.len == 0 {
+        let z = alloc_n<char>((usize)2);
+        z[0] = (char)'0'; z[1] = (char)0;
+        out_len[0] = 1;
+        return z;
+    }
+    let n = b.len;
+    let scratch = alloc_n<u32>((usize)n);
+    let i: u32 = 0;
+    while i < n { scratch[i] = b.limbs[i]; i = i + 1; }
+    let slen = n;
+    let dcap = n * 32 + 4;            // radix 2 worst case: 32 digits/limb
+    let digits = alloc_n<char>((usize)dcap);
+    let dpos: u32 = 0;
+    while slen > 0 {
+        // divmod scratch by radix
+        let rem: u64 = 0;
+        let k = slen;
+        while k > 0 {
+            k = k - 1;
+            let cur: u64 = (rem << 32) | (u64)scratch[k];
+            scratch[k] = (u32)(cur / (u64)radix);
+            rem = cur % (u64)radix;
+        }
+        while slen > 0 && scratch[slen - 1] == 0 { slen = slen - 1; }
+        let dv = (u32)rem;
+        let ch: u8 = if dv < 10 { (u8)'0' + (u8)dv } else { (u8)'a' + (u8)(dv - 10) };
+        digits[dpos] = (char)ch;
+        dpos = dpos + 1;
+    }
+    let neg = b.sign < 0;
+    let total = dpos + (if neg { 1u32 } else { 0u32 });
+    let out = alloc_n<char>((usize)(total + 1));
+    let oi: u32 = 0;
+    if neg { out[0] = (char)'-'; oi = 1; }
+    let p = dpos;
+    while p > 0 { p = p - 1; out[oi] = digits[p]; oi = oi + 1; }
+    out[total] = (char)0;
+    dealloc(scratch);
+    dealloc(digits);
+    out_len[0] = total;
+    return out;
+}
+
 // Render a BigInt as a decimal string (no `n` suffix — matches
 // BigInt.prototype.toString() / String(bigint)). Returns a freshly
 // malloc'd, NUL-terminated buffer; caller owns it (intern + free).
