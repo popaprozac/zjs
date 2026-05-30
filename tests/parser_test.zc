@@ -6,9 +6,11 @@
 
 // Platform-native HTTP backend — link platform impl into the test binary.
 //> macos: framework: Foundation
-//> macos: cflags:    -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c
+//> macos: framework: Security
+//> macos: cflags:    -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c src/third-party/aes-gcm/aes_gcm.c
 //> ios:   framework: Foundation
-//> ios:   cflags:    -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c
+//> ios:   framework: Security
+//> ios:   cflags:    -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c src/third-party/aes-gcm/aes_gcm.c
 //> linux: cflags:    -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE src/platform/http_linux.c src/platform/ws_linux.c src/platform/http_async.c src/platform/socket_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c
 //> linux: link:      -lcurl -lwebsockets
 //> windows: cflags:  -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE src/platform/http_windows.c src/platform/ws_windows.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c

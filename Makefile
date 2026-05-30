@@ -266,7 +266,17 @@ $(BUILD_DIR)/qjs_libunicode.o: $(QJSRE_DIR)/libunicode.c $(QJSRE_DIR)/libunicode
 $(BUILD_DIR)/qjs_regex_shim.o: src/platform/qjs_regex_shim.c | $(BUILD_DIR)
 	$(CLANG) -O3 -fPIC $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
 
-$(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(QJSRE_OBJS)
+# Vendored AES-GCM (crypto.subtle on Apple). The dylib/CLI build pulls
+# this in via the `cflags:` directive in src/lib.zc; the static archive
+# must compile + bundle the object explicitly or anything linking
+# libzjs.a (smoke_static, the test runners) gets undefined
+# _zjs_pc_aes_gcm_{encrypt,decrypt}.
+AESGCM_DIR := src/third-party/aes-gcm
+AESGCM_OBJ := $(BUILD_DIR)/aes_gcm.o
+$(AESGCM_OBJ): $(AESGCM_DIR)/aes_gcm.c $(AESGCM_DIR)/aes_gcm.h | $(BUILD_DIR)
+	$(CLANG) -O3 -fPIC $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
+
+$(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(QJSRE_OBJS) $(AESGCM_OBJ)
 	@rm -f $@
 	ar rcs $@ $^
 
