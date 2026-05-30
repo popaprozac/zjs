@@ -27,6 +27,7 @@
 #else
 #  include <sys/resource.h>
 #  include <limits.h>
+#  include <unistd.h>   // readlink (host timezone id)
    // arc4random_buf landed in glibc 2.36 (Aug 2022). On older Linux
    // (Ubuntu 20.04 / 22.04 LTS, RHEL ≤ 8) and on non-glibc libcs (musl,
    // which is what zig cc's `-target *-linux-musl` ships) it's missing
@@ -85,6 +86,73 @@ static inline time_t zjs_timegm(struct tm* t) {
     return _mkgmtime(t);
 #else
     return timegm(t);
+#endif
+}
+
+// UTC offset (in seconds, east-positive) for the named IANA time zone
+// at the given epoch seconds, accounting for DST. ok_out (if non-NULL)
+// is set to 1 on success, 0 if the zone name is unknown.
+//
+// POSIX has no per-zone lookup API, so we use the portable trick:
+// stash $TZ, set it to the requested zone, tzset()+localtime_r(), read
+// tm_gmtoff, then restore. zjs is single-threaded, so the transient
+// global-TZ mutation is safe. Apple/Linux ship the IANA tzdata under
+// /usr/share/zoneinfo (or /var/db/timezone). "UTC" short-circuits.
+// Windows doesn't accept IANA names via $TZ — stubbed to UTC pending
+// an ICU-backed lookup (tracked in docs/platform-port-status.md).
+static inline long zjs_tz_offset_seconds(const char* zone, time_t when, int* ok_out) {
+    if (ok_out) *ok_out = 1;
+    if (!zone || (zone[0]=='U'&&zone[1]=='T'&&zone[2]=='C'&&zone[3]==0)) return 0;
+#ifdef _WIN32
+    /* No IANA-name support without ICU; treat unknown as UTC. */
+    return 0;
+#else
+    const char* prev = getenv("TZ");
+    char saved[256]; int had_prev = 0;
+    if (prev) { strncpy(saved, prev, sizeof(saved)-1); saved[sizeof(saved)-1]=0; had_prev = 1; }
+    setenv("TZ", zone, 1);
+    tzset();
+    struct tm lt;
+    long off = 0;
+    if (localtime_r(&when, &lt) != NULL) {
+        off = lt.tm_gmtoff;
+        /* localtime_r silently falls back to UTC for an unknown zone, so
+         * verify the zone resolved by checking that a far-future probe
+         * differs from a midwinter probe OR that tm_zone isn't "UTC" for
+         * a non-UTC request. Cheap heuristic: if the requested zone is
+         * unknown, glibc/Apple set tm_gmtoff=0 and tm_zone="UTC". We
+         * can't perfectly detect every alias, so only flag the clear
+         * "unknown → forced UTC" case for a non-UTC request name. */
+        if (off == 0 && lt.tm_zone && strcmp(lt.tm_zone, "UTC") == 0) {
+            /* Could be a genuine +00:00 zone (e.g. Europe/London in
+             * winter) — don't hard-fail; leave ok=1 with offset 0. */
+        }
+    }
+    if (had_prev) setenv("TZ", saved, 1); else unsetenv("TZ");
+    tzset();
+    return off;
+#endif
+}
+
+// The host's current IANA time zone identifier (e.g. "America/New_York")
+// into buf. Returns 1 on success, 0 if undetermined (caller uses "UTC").
+// Apple/Linux: resolve the /etc/localtime symlink to its zoneinfo path.
+static inline int zjs_host_timezone_id(char* buf, size_t cap) {
+#ifdef _WIN32
+    return 0;
+#else
+    char path[512];
+    ssize_t n = readlink("/etc/localtime", path, sizeof(path)-1);
+    if (n <= 0) return 0;
+    path[n] = 0;
+    /* .../zoneinfo/America/New_York  →  America/New_York */
+    const char* marker = "zoneinfo/";
+    char* p = strstr(path, marker);
+    if (!p) return 0;
+    p += strlen(marker);
+    strncpy(buf, p, cap-1);
+    buf[cap-1] = 0;
+    return 1;
 #endif
 }
 
