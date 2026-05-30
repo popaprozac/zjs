@@ -18365,12 +18365,70 @@ fn host_boolean(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 fn host_number(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let n: ZjsValue = zjs_int32(0);
     if argc > 0 {
+        // Number(bigint) is allowed (explicit) and returns the rounded
+        // double — unlike implicit ToNumber(bigint), which throws.
+        if zjs_is_bigint(args[0]) != 0 {
+            let d0 = bigint_to_f64(zjs_as_bigint(args[0]));
+            let as_i = (i32)d0;
+            if (f64)as_i == d0 { n = zjs_int32(as_i); } else { n = zjs_double(d0); }
+            return wrap_primitive_if_new(ctx, n);
+        }
         let d = zjs_to_double(args[0]);
         let as_int = (i32)d;
         if (f64)as_int == d { n = zjs_int32(as_int); }
         else { n = zjs_double(d); }
     }
     return wrap_primitive_if_new(ctx, n);
+}
+
+// BigInt(value) — ECMA-262 §21.2.1.1. NOT a constructor (`new BigInt()`
+// throws, but we don't distinguish call/construct on host fns yet).
+// Implements ToBigInt over primitives: bigint→itself, boolean→0n/1n,
+// number→NumberToBigInt (RangeError if non-integral), string→
+// StringToBigInt (SyntaxError if malformed). undefined/null/symbol
+// throw TypeError. Object args (ToPrimitive) are a TODO.
+fn host_bigint_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_bigint(v) != 0 { return v; }
+    if zjs_is_bool(v) != 0 {
+        let b = zjs_bigint_from_i64(if zjs_as_bool(v) != 0 { 1 } else { 0 });
+        ctx_register_cell(ctx, (void*)b);
+        return zjs_cell_from_ptr((void*)b);
+    }
+    if zjs_is_number(v) != 0 {
+        let d = zjs_to_double(v);
+        let bad: int = 0;
+        raw { bad = (!isfinite(d) || d != trunc(d)) ? 1 : 0; }
+        if bad != 0 {
+            let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                (char*)"The number is not a safe integer", 32);
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = err;
+            return zjs_undefined();
+        }
+        let b = zjs_bigint_from_f64(d);
+        ctx_register_cell(ctx, (void*)b);
+        return zjs_cell_from_ptr((void*)b);
+    }
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        let ok: int = 1;
+        let b = zjs_bigint_from_string(s.data, s.length, &ok);
+        if ok == 0 {
+            let err = build_typed_error(ctx, (char*)"SyntaxError", 11,
+                (char*)"Cannot convert string to a BigInt", 33);
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = err;
+            return zjs_undefined();
+        }
+        ctx_register_cell(ctx, (void*)b);
+        return zjs_cell_from_ptr((void*)b);
+    }
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+        (char*)"Cannot convert value to a BigInt", 32);
+    ctx.pending_throw_active = true;
+    ctx.pending_throw_value  = err;
+    return zjs_undefined();
 }
 
 fn host_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -20123,7 +20181,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     }
     zjs_install_methods(ctx, ctx.data_view_proto, dv_table_p, dv_table_n);
 
-    ctx_register_host_function(ctx, (char*)"BigInt",      eval_ptr);
+    let bigint_ctor_ptr: void* = NULL; raw { bigint_ctor_ptr = (void*)host_bigint_ctor; }
+    ctx_register_host_function(ctx, (char*)"BigInt",      bigint_ctor_ptr);
     ctx_register_host_function(ctx, (char*)"BigInt64Array",     eval_ptr);
     ctx_register_host_function(ctx, (char*)"BigUint64Array",    eval_ptr);
 

@@ -285,6 +285,11 @@ fn zjs_to_bool_coerce(v: ZjsValue) -> int {
         if s.length > 0 { return 1; }
         return 0;
     }
+    // ToBoolean(BigInt): 0n is false, every other BigInt is true.
+    if zjs_is_bigint(v) != 0 {
+        if bigint_is_zero(zjs_as_bigint(v)) { return 0; }
+        return 1;
+    }
     if zjs_is_cell(v) != 0      { return 1; }   // non-string objects are truthy
     return 0;
 }
@@ -1755,6 +1760,103 @@ fn zjs_bigint_from_literal(src: char*, start: u32, length: u32) -> ZjsBigInt* {
     let dptr: char* = NULL;
     raw { dptr = (char*)(src + start + off); }
     bigint_parse_into(b, dptr, dlen, radix);
+    return b;
+}
+
+// Number → BigInt (ECMA-262 §7.1.13 / NumberToBigInt). The caller
+// must have verified d is finite and integral; this builds the exact
+// magnitude limb-by-limb via fmod (exact for integral doubles since
+// every integer ≤ 2^1024 is representable and fmod by 2^32 is lossless
+// for those). Returns the cell (caller registers it).
+fn zjs_bigint_from_f64(d: f64) -> ZjsBigInt* {
+    let b = zjs_bigint_new_cap(40);   // up to ~33 limbs for max double exponent
+    if d == 0.0 { return b; }
+    let neg: int = 0;
+    let m: f64 = d;
+    raw { if (m < 0) { neg = 1; m = -m; } }
+    let i: u32 = 0;
+    raw {
+        double mm = m;
+        while (mm >= 1.0 && i < b->cap) {
+            double limb = fmod(mm, 4294967296.0);
+            b->limbs[i] = (uint32_t)limb;
+            mm = floor(mm / 4294967296.0);
+            i++;
+        }
+    }
+    b.len = i;
+    b.sign = if neg != 0 { -1 } else { 1 };
+    bigint_normalize(b);
+    return b;
+}
+
+// BigInt → f64 (ECMA-262 §7.1.x BigInt::toNumber, used by Number()).
+// Loses precision above 2^53 — that's spec (rounds to nearest double).
+fn bigint_to_f64(b: ZjsBigInt*) -> f64 {
+    let acc: f64 = 0.0;
+    let i = b.len;
+    while i > 0 {
+        i = i - 1;
+        acc = acc * 4294967296.0 + (f64)b.limbs[i];
+    }
+    if b.sign < 0 { acc = -acc; }
+    return acc;
+}
+
+// String → BigInt (ECMA-262 §7.1.14 StringToBigInt). Trims whitespace,
+// accepts an optional +/- sign on a decimal literal or a 0x/0o/0b
+// radix prefix (no sign with a prefix). Empty/whitespace-only → 0n.
+// Sets ok[0]=1 on success, 0 on a malformed string (caller throws
+// SyntaxError). Always returns a valid (possibly zero) cell.
+fn zjs_bigint_from_string(src: char*, len: u32, ok: int*) -> ZjsBigInt* {
+    ok[0] = 1;
+    // Trim ASCII + common JS whitespace.
+    let s: u32 = 0;
+    let e: u32 = len;
+    while s < e {
+        let c = (u8)src[s];
+        if c == (u8)' ' || c == (u8)'\t' || c == (u8)'\n' || c == (u8)'\r'
+           || c == 0x0B || c == 0x0C { s = s + 1; } else { break; }
+    }
+    while e > s {
+        let c = (u8)src[e - 1];
+        if c == (u8)' ' || c == (u8)'\t' || c == (u8)'\n' || c == (u8)'\r'
+           || c == 0x0B || c == 0x0C { e = e - 1; } else { break; }
+    }
+    if s >= e { return zjs_bigint_new_cap(0); }   // empty → 0n
+
+    let neg: int = 0;
+    let radix: u32 = 10;
+    // Radix prefix (no sign permitted alongside).
+    if e - s >= 2 && (u8)src[s] == (u8)'0' {
+        let c1 = (u8)src[s + 1];
+        if c1 == (u8)'x' || c1 == (u8)'X' { radix = 16; s = s + 2; }
+        else if c1 == (u8)'o' || c1 == (u8)'O' { radix = 8; s = s + 2; }
+        else if c1 == (u8)'b' || c1 == (u8)'B' { radix = 2; s = s + 2; }
+    }
+    // Sign only on the decimal form.
+    if radix == 10 && s < e {
+        let c0 = (u8)src[s];
+        if c0 == (u8)'+' { s = s + 1; }
+        else if c0 == (u8)'-' { neg = 1; s = s + 1; }
+    }
+    if s >= e { ok[0] = 0; return zjs_bigint_new_cap(0); }   // sign/prefix only
+
+    // Validate every remaining char is a digit in-radix (no separators
+    // allowed in StringToBigInt, unlike numeric literals).
+    let j: u32 = s;
+    while j < e {
+        let dv = bigint_digit_val((u8)src[j]);
+        if dv >= radix { ok[0] = 0; return zjs_bigint_new_cap(0); }
+        j = j + 1;
+    }
+    let dlen = e - s;
+    let cap = dlen / 8 + 2;
+    let b = zjs_bigint_new_cap(cap);
+    let dptr: char* = NULL;
+    raw { dptr = (char*)(src + s); }
+    bigint_parse_into(b, dptr, dlen, radix);
+    if neg != 0 && b.len > 0 { b.sign = -1; }
     return b;
 }
 
