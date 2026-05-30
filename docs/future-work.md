@@ -39,14 +39,22 @@ surface to flip green (one failing sub-check fails the whole file):
   values), round() on Instant/PlainTime/PlainDateTime, and
   until/since honoring smallestUnit/roundingIncrement/roundingMode
   (time units; default trunc).
-All verified against Node; test262 quick held at 87.8% throughout.
+- T5a: ZonedDateTime read side + real IANA tz/DST. Platform offset
+  via setenv($TZ)+tzset+tm_gmtoff (portability.h::zjs_tz_offset_seconds);
+  host zone via readlink(/etc/localtime). ctor/getters/offset/
+  toString/toInstant/toPlainDateTime/compare/equals; Now.timeZoneId
+  (real) + Now.zonedDateTimeISO. Windows tz stubbed to UTC (needs ICU).
+All verified against Node (incl. EST↔EDT DST); test262 quick held at
+87.8% throughout.
 
-**Remaining Temporal work:**
-- **T5 — TimeZone + ZonedDateTime.** IANA tz database access
-  (platform-native: macOS/Linux have /var/db/timezone + tzset;
-  Windows needs ICU or a bundled tzdata), offset/DST resolution,
-  ZonedDateTime (epochNs + tz + calendar). The biggest piece;
-  Temporal.Now.timeZoneId() currently hard-returns "UTC".
+**Remaining Temporal work — only T5b:**
+- **T5b — ZonedDateTime DST-aware arithmetic.** add/subtract/until/
+  since/round/with on ZonedDateTime (day arithmetic must re-resolve
+  the offset across DST boundaries), and from() with offset +
+  disambiguation ('compatible'/'earlier'/'later'/'reject' for skipped
+  or repeated wall-clock times). The gnarliest arithmetic in Temporal.
+  Also: PlainDate/PlainDateTime.until/since to calendar units
+  (years/months) via relativeTo. Everything else in Temporal is done.
 - Minor: Duration.add/subtract balancing (currently field-wise);
   ISO-string parsing in the various from() methods (today they take
   objects / same-type clones only); monthCode-keyed from();
