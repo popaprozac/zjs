@@ -1447,6 +1447,12 @@ fn gc_mark_cell_children(p: void*) -> void {
         return;
     }
 
+    if tag == TAG_BIGINT {
+        // Leaf: the limb buffer is a raw malloc, not a traceable cell.
+        // Nothing to mark.
+        return;
+    }
+
     if tag == TAG_REGEXP {
         let r: ZjsRegExp* = NULL;
         raw { r = (ZjsRegExp*)p; }
@@ -1987,6 +1993,7 @@ fn gc_free_one(p: void*) -> void {
           raw { sm = (ZjsSymbol*)p; }
           dealloc(sm);
       }
+      else if tag == TAG_BIGINT        { bigint_free_void(p); }
       else if tag == TAG_ARRAY_ITER    {
           let aa: ZjsArrayIter* = NULL;
           raw { aa = (ZjsArrayIter*)p; }

@@ -781,6 +781,10 @@ def TAG_SYMBOL:        u8 = 15;  // 2026-05-16: ECMA-262 Symbol. Each Symbol
                                  //   unique underlying property-key string used
                                  //   internally when the symbol is used to
                                  //   key an object property.
+def TAG_BIGINT:        u8 = 24;  // 2026-05-30: ECMA-262 BigInt. Arbitrary-
+                                 //   precision integer, sign-magnitude with a
+                                 //   little-endian base-2^32 limb array. See
+                                 //   ZjsBigInt + the bigint_* helpers below.
 
 // Promise states.
 def PROMISE_PENDING:   u8 = 0;
@@ -1578,6 +1582,117 @@ fn zjs_symbol_new(description: ZjsString*, key: ZjsString*) -> ZjsSymbol* {
     s.key = key;
     s.props = NULL;
     return s;
+}
+
+// =====================================================================
+// BigInt — arbitrary-precision integer (ECMA-262 §6.1.6.2).
+//
+// Representation: sign-magnitude. `limbs` holds the magnitude as a
+// little-endian array of base-2^32 digits (limb[0] is least
+// significant). Invariants maintained by bigint_normalize:
+//   - No leading zero limbs: limbs[len-1] != 0 when len > 0.
+//   - Zero is the canonical { sign = 0, len = 0, limbs = NULL }.
+//   - sign is -1 or +1 for nonzero values, 0 only for zero.
+//
+// `limbs` is a raw malloc'd buffer (not a GC cell), freed in
+// bigint_free_void. Nothing inside a BigInt is a traceable reference,
+// so the GC mark walk treats it as a leaf.
+// =====================================================================
+
+struct ZjsBigInt {
+    header: CellHeader;   // type_tag = TAG_BIGINT
+    sign:   i32;          // -1, 0, +1
+    len:    u32;          // significant limb count (0 ⟺ value is zero)
+    cap:    u32;          // allocated limb capacity
+    limbs:  u32*;         // little-endian base-2^32 magnitude; NULL when len==0
+}
+
+fn zjs_is_bigint(v: ZjsValue) -> int {
+    if zjs_cell_tag(v) == TAG_BIGINT { return 1; }
+    return 0;
+}
+
+fn zjs_as_bigint(v: ZjsValue) -> ZjsBigInt* {
+    let p = zjs_cell_as_ptr(v);
+    let b: ZjsBigInt* = NULL;
+    raw { b = (ZjsBigInt*)p; }
+    return b;
+}
+
+// Allocate a BigInt cell with room for `cap` limbs (cap may be 0 for a
+// value that will be set to zero). The limb buffer is zero-filled so
+// callers can write only the limbs they need. Caller must
+// ctx_register_cell the result and call bigint_normalize once the
+// magnitude + sign are written.
+fn zjs_bigint_new_cap(cap: u32) -> ZjsBigInt* {
+    let b = alloc<ZjsBigInt>();
+    b.header.type_tag = TAG_BIGINT;
+    b.sign = 0;
+    b.len  = 0;
+    b.cap  = cap;
+    if cap > 0 {
+        b.limbs = alloc_n<u32>((usize)cap);
+        let i: u32 = 0;
+        while i < cap { b.limbs[i] = 0; i = i + 1; }
+    } else {
+        b.limbs = NULL;
+    }
+    return b;
+}
+
+// Trim leading zero limbs and canonicalize the zero value. Call after
+// writing the magnitude into limbs[0..len) and setting sign.
+fn bigint_normalize(b: ZjsBigInt*) -> void {
+    let n = b.len;
+    while n > 0 && b.limbs[n - 1] == 0 { n = n - 1; }
+    b.len = n;
+    if n == 0 { b.sign = 0; }
+    else if b.sign == 0 { b.sign = 1; }   // defensive: nonzero must have a sign
+}
+
+// Construct a BigInt from a signed 64-bit integer. Magnitude fits in
+// at most two 32-bit limbs.
+fn zjs_bigint_from_i64(v: i64) -> ZjsBigInt* {
+    let b = zjs_bigint_new_cap(2);
+    if v == 0 { return b; }
+    let neg: int = 0;
+    let mag: u64 = 0;
+    raw {
+        if (v < 0) { neg = 1; mag = (uint64_t)(-(v + 1)) + 1ULL; }  /* avoid INT64_MIN UB */
+        else       { mag = (uint64_t)v; }
+    }
+    b.limbs[0] = (u32)(mag & 0xffffffff);
+    b.limbs[1] = (u32)((mag >> 32) & 0xffffffff);
+    b.len = 2;
+    b.sign = if neg != 0 { -1 } else { 1 };
+    bigint_normalize(b);
+    return b;
+}
+
+// Construct a BigInt from an unsigned 64-bit integer (always >= 0).
+fn zjs_bigint_from_u64(v: u64) -> ZjsBigInt* {
+    let b = zjs_bigint_new_cap(2);
+    if v == 0 { return b; }
+    b.limbs[0] = (u32)(v & 0xffffffff);
+    b.limbs[1] = (u32)((v >> 32) & 0xffffffff);
+    b.len = 2;
+    b.sign = 1;
+    bigint_normalize(b);
+    return b;
+}
+
+// True if the value is exactly zero.
+fn bigint_is_zero(b: ZjsBigInt*) -> bool {
+    return b.len == 0;
+}
+
+// Free the limb buffer + the cell. Wired into the GC free dispatch.
+fn bigint_free_void(p: void*) -> void {
+    let b: ZjsBigInt* = NULL;
+    raw { b = (ZjsBigInt*)p; }
+    if b == NULL { return; }
+    if b.limbs != NULL { dealloc(b.limbs); b.limbs = NULL; }
+    dealloc(b);
 }
 
 fn zjs_promise_new() -> ZjsPromise* {
