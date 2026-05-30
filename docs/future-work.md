@@ -4,6 +4,43 @@ A running list of architectural items that are spec'd and ready but
 deferred. Each entry includes the trigger that should pull it forward
 and the work that's already been laid in.
 
+## BigInt landed; Temporal arc queued (2026-05-30)
+
+**BigInt is feature-complete** (commits `f7665da`→`d308587`, phases
+B1–B5c). TAG_BIGINT sign-magnitude limb array; literals, `BigInt()`
+ctor + conversions, arbitrary-precision `+ - * / % **` + neg,
+exact cross-type comparison, two's-complement bitwise + shifts +
+`asIntN`/`asUintN`, and `BigInt.prototype.toString(radix)`/`valueOf`/
+`toLocaleString`. All verified against Node. test262 sits at 12185
+(87.8%) — the comprehensive BigInt test files need still-peripheral
+surface to flip green (one failing sub-check fails the whole file):
+
+- **`BigInt64Array` / `BigUint64Array`** — still `eval_ptr` stubs.
+- **`Object(1n)` BigInt wrapper objects** + `Symbol.toStringTag` on
+  `BigInt.prototype` + a `constructor` back-pointer.
+- **Object ToPrimitive in `BigInt(obj)`** and in loose-eq /
+  relational when one side is an object (we handle primitives only).
+- Exact large-value mixed comparison already correct via
+  `bigint_cmp_f64` (builds floor(x) as an exact BigInt).
+
+**Temporal: the chosen next arc, PAUSED before it started** (user
+paused 2026-05-30 after BigInt completed — pick up in a fresh
+session). Decided shape (see [[project_bigint_temporal_arc]]):
+- **Default ON, removable with `-DZJS_NO_TEMPORAL`** (opt-out, matches
+  the existing `ZJS_NO_*` convention).
+- Implementation approach still open — the leading candidate is a
+  **JS bootstrap** (embed via the `.gen.h` pattern like `node:path` /
+  `web_streams`) for the fiddly ISO-calendar / duration-balancing /
+  rounding math, with native host hooks only for the clock
+  (`Temporal.Now` reads system time) and the BigInt `epochNanoseconds`
+  bridge. Alternative: native TAG_* value types (tighter, faster, but
+  large + error-prone to hand-write).
+- Phasing: Duration + Now → Plain{Date,Time,DateTime} (ISO) →
+  Plain{YearMonth,MonthDay} → Instant (uses BigInt) → TimeZone +
+  ZonedDateTime (IANA tz db — the biggest piece).
+- BigInt prerequisite is satisfied: `Temporal.Instant.epochNanoseconds`
+  has the arbitrary-precision integer it needs.
+
 ## Recently landed (2026-05-29 sweep)
 
 Striking through items elsewhere in this doc that are now done:
