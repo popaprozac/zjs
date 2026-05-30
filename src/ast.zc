@@ -23,6 +23,10 @@ enum NodeKind {
     // variants like NumberLit/StringLit/Identifier (Zen-c codegen
     // gets confused if two enums in the same TU share variant names).
     NumberExpr,             // num
+    BigIntExpr,             // BigInt literal — start..end covers the source
+                            //   slice including any radix prefix and the
+                            //   trailing `n`. Compiler parses it into a
+                            //   TAG_BIGINT constant.
     StringExpr,             // (start..end is the slice including quotes)
     TemplateExpr,           // template literal `a${x}b`. children alternate
                             //   between TemplatePartExpr (literal segments —

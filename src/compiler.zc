@@ -1063,6 +1063,18 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         }
         return dst;
     }
+    if k == NodeKind::BigIntExpr {
+        // Parse the literal slice into a TAG_BIGINT cell at compile
+        // time, register it for GC, and stash it in the const pool.
+        let len = node.end - node.start;
+        let b = zjs_bigint_from_literal(c.source, node.start, len);
+        ctx_register_cell(c.ctx, (void*)b);
+        let v = zjs_cell_from_ptr((void*)b);
+        let idx = add_const(c, v);
+        let dst = alloc_reg(c);
+        emit(c, make_inst_a_u16(Op::LoadConst, dst, idx));
+        return dst;
+    }
     if k == NodeKind::BoolExpr {
         let dst = alloc_reg(c);
         if node.bool_value { emit(c, make_inst_a(Op::LoadTrue, dst)); }

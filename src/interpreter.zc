@@ -4179,6 +4179,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 label = (char*)"function";
             } else if zjs_is_symbol(v) != 0 {
                 label = (char*)"symbol";
+            } else if zjs_is_bigint(v) != 0 {
+                label = (char*)"bigint";
             } else {
                 label = (char*)"object";
             }

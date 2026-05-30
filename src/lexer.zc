@@ -331,21 +331,48 @@ impl Lexer {
         if c0 == (u8)'0' && (c1 == (u8)'x' || c1 == (u8)'X') {
             self.advance(); self.advance();
             while !self.at_end() && (is_hex_digit(self.peek()) || self.peek() == (u8)'_') { self.advance(); }
+            // BigInt suffix: 0xFFn. Radix literals can always take `n`.
+            if self.peek() == (u8)'n' {
+                self.advance();
+                return Token{kind: TokenKind::BigIntLit, start: start, length: (u32)self.pos - start};
+            }
             return Token{kind: TokenKind::NumberLit, start: start, length: (u32)self.pos - start};
         }
         if c0 == (u8)'0' && (c1 == (u8)'b' || c1 == (u8)'B') {
             self.advance(); self.advance();
             while !self.at_end() && (self.peek() == (u8)'0' || self.peek() == (u8)'1' || self.peek() == (u8)'_') { self.advance(); }
+            if self.peek() == (u8)'n' {
+                self.advance();
+                return Token{kind: TokenKind::BigIntLit, start: start, length: (u32)self.pos - start};
+            }
             return Token{kind: TokenKind::NumberLit, start: start, length: (u32)self.pos - start};
         }
         if c0 == (u8)'0' && (c1 == (u8)'o' || c1 == (u8)'O') {
             self.advance(); self.advance();
             while !self.at_end() && ((self.peek() >= (u8)'0' && self.peek() <= (u8)'7') || self.peek() == (u8)'_') { self.advance(); }
+            if self.peek() == (u8)'n' {
+                self.advance();
+                return Token{kind: TokenKind::BigIntLit, start: start, length: (u32)self.pos - start};
+            }
             return Token{kind: TokenKind::NumberLit, start: start, length: (u32)self.pos - start};
         }
 
         // Decimal integer part (may be empty if we started on '.').
+        let saw_int_digit = false;
+        if is_digit(c0) { saw_int_digit = true; }
         while !self.at_end() && (is_digit(self.peek()) || self.peek() == (u8)'_') { self.advance(); }
+
+        // BigInt suffix on a plain decimal integer (no '.' / 'e'): 123n.
+        // Per spec, only integer literals can carry `n`; `1.5n` and
+        // `1e3n` are SyntaxErrors. We allow `n` only here, before the
+        // fractional/exponent scans. A leading-`.` literal (.5) has
+        // saw_int_digit=false and is never a BigInt. (DecimalBigInteger
+        // also forbids a leading zero — `00n`/`01n` — which we don't
+        // enforce yet; same lenient stance as the NumberLit path.)
+        if saw_int_digit && self.peek() == (u8)'n' {
+            self.advance();
+            return Token{kind: TokenKind::BigIntLit, start: start, length: (u32)self.pos - start};
+        }
 
         // Optional fractional part.
         if self.peek() == (u8)'.' {
@@ -358,6 +385,16 @@ impl Lexer {
             self.advance();
             if self.peek() == (u8)'+' || self.peek() == (u8)'-' { self.advance(); }
             while !self.at_end() && (is_digit(self.peek()) || self.peek() == (u8)'_') { self.advance(); }
+        }
+
+        // A `n` here means a BigInt suffix on a non-integer literal
+        // (`1.5n`, `1e3n`) — a SyntaxError per spec (only integer
+        // literals can carry `n`). Consume it and flag the token Invalid
+        // so the parser surfaces SyntaxError rather than leaving a stray
+        // `n` identifier (which became a bogus ReferenceError at runtime).
+        if self.peek() == (u8)'n' {
+            self.advance();
+            return Token{kind: TokenKind::Invalid, start: start, length: (u32)self.pos - start};
         }
 
         return Token{kind: TokenKind::NumberLit, start: start, length: (u32)self.pos - start};

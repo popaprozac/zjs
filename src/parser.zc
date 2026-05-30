@@ -3636,6 +3636,14 @@ fn parse_primary(p: Parser*) -> AstNode* {
         node.num = parse_number_literal(p.source, t.start, t.length);
         return node;
     }
+    if k == TokenKind::BigIntLit {
+        advance(p);
+        // The slice (start..end) includes the radix prefix + trailing
+        // `n`. The compiler parses it into a TAG_BIGINT constant via
+        // zjs_bigint_from_literal.
+        let node = new_node(&p.tracker, NodeKind::BigIntExpr, t.start, t.start + t.length);
+        return node;
+    }
     if k == TokenKind::StringLit {
         advance(p);
         return new_node(&p.tracker, NodeKind::StringExpr, t.start, t.start + t.length);

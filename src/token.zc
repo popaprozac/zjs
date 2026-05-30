@@ -14,6 +14,10 @@ enum TokenKind {
     // --- Literals ----------------------------------------------------
     Identifier,
     NumberLit,
+    BigIntLit,              // 123n / 0xFFn / 0o17n / 0b101n — integer
+                            //   literal with the `n` suffix. Slice
+                            //   includes the trailing `n`; the parser
+                            //   strips it when building the BigInt.
     StringLit,
     RegexLit,               // /pattern/flags — contextually lexed
     TemplateLit,            // `...${expr}...` — span covers the entire

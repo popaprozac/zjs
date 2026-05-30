@@ -1695,6 +1695,139 @@ fn bigint_free_void(p: void*) -> void {
     dealloc(b);
 }
 
+// hex digit → value, or 99 for non-hex (used to skip separators etc).
+fn bigint_digit_val(c: u8) -> u32 {
+    if c >= (u8)'0' && c <= (u8)'9' { return (u32)(c - (u8)'0'); }
+    if c >= (u8)'a' && c <= (u8)'f' { return (u32)(c - (u8)'a') + 10; }
+    if c >= (u8)'A' && c <= (u8)'F' { return (u32)(c - (u8)'A') + 10; }
+    return 99;
+}
+
+// Accumulate `digits[0..dlen)` in the given radix into b (which must
+// start at zero and have enough limb capacity). `_` separators are
+// skipped. b = Σ digit * radix^position. Sets sign + normalizes.
+fn bigint_parse_into(b: ZjsBigInt*, digits: char*, dlen: u32, radix: u32) -> void {
+    let i: u32 = 0;
+    while i < dlen {
+        let c = (u8)digits[i];
+        i = i + 1;
+        if c == (u8)'_' { continue; }
+        let dv = bigint_digit_val(c);
+        if dv >= radix { continue; }   // defensive: ignore stray chars
+        // b = b * radix + dv  (schoolbook, in place, carry past len)
+        let carry: u64 = (u64)dv;
+        let j: u32 = 0;
+        while j < b.len {
+            let cur: u64 = (u64)b.limbs[j] * (u64)radix + carry;
+            b.limbs[j] = (u32)(cur & 0xffffffff);
+            carry = cur >> 32;
+            j = j + 1;
+        }
+        while carry > 0 && b.len < b.cap {
+            b.limbs[b.len] = (u32)(carry & 0xffffffff);
+            b.len = b.len + 1;
+            carry = carry >> 32;
+        }
+    }
+    if b.len > 0 { b.sign = 1; }
+    bigint_normalize(b);
+}
+
+// Parse a BigInt literal slice (`123n`, `0xFFn`, `0o17n`, `0b101n`).
+// The trailing `n` and any radix prefix are part of src[start..start+length).
+fn zjs_bigint_from_literal(src: char*, start: u32, length: u32) -> ZjsBigInt* {
+    // Drop the trailing `n`.
+    let len = if length > 0 { length - 1 } else { 0 };
+    let off: u32 = 0;
+    let radix: u32 = 10;
+    if len >= 2 {
+        let c0 = (u8)src[start];
+        let c1 = (u8)src[start + 1];
+        if c0 == (u8)'0' && (c1 == (u8)'x' || c1 == (u8)'X') { radix = 16; off = 2; }
+        else if c0 == (u8)'0' && (c1 == (u8)'o' || c1 == (u8)'O') { radix = 8; off = 2; }
+        else if c0 == (u8)'0' && (c1 == (u8)'b' || c1 == (u8)'B') { radix = 2; off = 2; }
+    }
+    let dlen = if len > off { len - off } else { 0 };
+    // Cap: digit count / 8 + 2 limbs is safe for any radix ≤ 16
+    // (each digit contributes ≤ 4 bits, a limb holds 32).
+    let cap = dlen / 8 + 2;
+    let b = zjs_bigint_new_cap(cap);
+    let dptr: char* = NULL;
+    raw { dptr = (char*)(src + start + off); }
+    bigint_parse_into(b, dptr, dlen, radix);
+    return b;
+}
+
+// Render a BigInt as a decimal string (no `n` suffix — matches
+// BigInt.prototype.toString() / String(bigint)). Returns a freshly
+// malloc'd, NUL-terminated buffer; caller owns it (intern + free).
+// `out_len` receives the string length (excluding the NUL).
+fn bigint_to_decimal_cstring(b: ZjsBigInt*, out_len: u32*) -> char* {
+    if b.len == 0 {
+        let z = alloc_n<char>((usize)2);
+        z[0] = (char)'0'; z[1] = (char)0;
+        out_len[0] = 1;
+        return z;
+    }
+    // Work on a scratch copy of the magnitude — divmod is destructive.
+    let n = b.len;
+    let scratch = alloc_n<u32>((usize)n);
+    let i: u32 = 0;
+    while i < n { scratch[i] = b.limbs[i]; i = i + 1; }
+    let slen = n;
+    // Each base-10^9 chunk emits up to 9 digits; total decimal digits
+    // ≤ ceil(limbs * 32 / log2(10)) ≈ limbs * 10. Plenty: limbs*10 + 2
+    // plus room for a sign.
+    let dcap = n * 10 + 4;
+    let digits = alloc_n<char>((usize)dcap);
+    let dpos: u32 = 0;
+    // Repeatedly divide the scratch magnitude by 1e9, emitting 9 digits
+    // per step (or fewer on the final, most-significant chunk).
+    let any_more: bool = true;
+    while any_more {
+        // divmod by 1_000_000_000
+        let rem: u64 = 0;
+        let k = slen;
+        while k > 0 {
+            k = k - 1;
+            let cur: u64 = (rem << 32) | (u64)scratch[k];
+            scratch[k] = (u32)(cur / 1000000000);
+            rem = cur % 1000000000;
+        }
+        while slen > 0 && scratch[slen - 1] == 0 { slen = slen - 1; }
+        any_more = slen > 0;
+        // Emit the 9-digit chunk (least-significant first, into digits[]
+        // in reverse). On the last chunk drop leading zeros.
+        let chunk: u32 = (u32)rem;
+        let cnt: u32 = 0;
+        while cnt < 9 {
+            digits[dpos] = (char)((u8)'0' + (u8)(chunk % 10));
+            dpos = dpos + 1;
+            chunk = chunk / 10;
+            cnt = cnt + 1;
+            if !any_more && chunk == 0 { break; }
+        }
+    }
+    // Now digits[0..dpos) holds the decimal digits least-significant
+    // first. Reverse into the output, prepending '-' for negatives.
+    let neg = b.sign < 0;
+    let total = dpos + (if neg { 1u32 } else { 0u32 });
+    let out = alloc_n<char>((usize)(total + 1));
+    let oi: u32 = 0;
+    if neg { out[0] = (char)'-'; oi = 1; }
+    let p = dpos;
+    while p > 0 {
+        p = p - 1;
+        out[oi] = digits[p];
+        oi = oi + 1;
+    }
+    out[total] = (char)0;
+    dealloc(scratch);
+    dealloc(digits);
+    out_len[0] = total;
+    return out;
+}
+
 fn zjs_promise_new() -> ZjsPromise* {
     let p = alloc<ZjsPromise>();
     p.header.type_tag = TAG_PROMISE;

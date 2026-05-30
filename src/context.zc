@@ -17105,6 +17105,19 @@ fn console_write_value(ctx: ZjsContext*, v: ZjsValue, stream_is_stderr: bool) ->
         }
         return;
     }
+    // BigInt: console shows the decimal with a trailing `n` (Node parity).
+    if zjs_is_bigint(v) != 0 {
+        let b = zjs_as_bigint(v);
+        let blen: u32 = 0;
+        let bs = bigint_to_decimal_cstring(b, &blen);
+        raw {
+            FILE* out = stream_is_stderr ? stderr : stdout;
+            fwrite(bs, 1, blen, out);
+            fputc('n', out);
+        }
+        dealloc(bs);
+        return;
+    }
     raw {
         FILE* out = stream_is_stderr ? stderr : stdout;
         fputs("[unknown]", out);
@@ -21065,6 +21078,15 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
         ctx.pending_throw_active = true;
         ctx.pending_throw_value  = err;
         return zjs_undefined();
+    }
+    // BigInt → decimal string (no `n` suffix), ECMA-262 §6.1.6.2.23.
+    if zjs_is_bigint(v) != 0 {
+        let b = zjs_as_bigint(v);
+        let blen: u32 = 0;
+        let bs = bigint_to_decimal_cstring(b, &blen);
+        let s = ctx_intern_string(ctx, bs, blen);
+        dealloc(bs);
+        return s;
     }
 
     let buf: char[64];
