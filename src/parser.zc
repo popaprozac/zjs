@@ -2737,6 +2737,36 @@ fn reinterpret_assign_target(p: Parser*, expr: AstNode*) -> AstNode* {
 }
 
 fn parse_assignment(p: Parser*) -> AstNode* {
+    // YieldExpression is at AssignmentExpression precedence per spec
+    // §13.16, NOT at UnaryExpression. Routing it here (rather than
+    // parse_unary, where it used to live) means `void yield;` inside
+    // a generator correctly fails: parse_unary's recursive operand
+    // never reaches yield, so it falls through to is_binding_ident's
+    // strict/generator reject. Per spec, this is exactly the shape
+    // of test262's yield-as-identifier-reference family.
+    if peek_kind(p) == TokenKind::KwYield && p.in_generator {
+        let kw_t = advance(p);
+        let is_delegate: bool = false;
+        if peek_kind(p) == TokenKind::Star {
+            advance(p);
+            is_delegate = true;
+        }
+        let node = new_node(&p.tracker, NodeKind::YieldExpr, kw_t.start, kw_t.start + kw_t.length);
+        node.bool_value = is_delegate;
+        node.left = NULL;
+        let next = peek_kind(p);
+        if next != TokenKind::Comma && next != TokenKind::Semicolon
+           && next != TokenKind::RParen && next != TokenKind::RBracket
+           && next != TokenKind::RBrace && next != TokenKind::Colon
+           && next != TokenKind::Eof {
+            let arg = parse_assignment(p);
+            if arg != NULL {
+                node.left = arg;
+                node.end = arg.end;
+            }
+        }
+        return node;
+    }
     // Arrow detection — must come before falling through to the
     // expression path, because `x => body` and `(a, b) => body` would
     // otherwise be eagerly consumed as Identifier / Paren expressions.
@@ -3573,34 +3603,11 @@ fn parse_primary(p: Parser*) -> AstNode* {
         node.left = inner;
         return node;
     }
-    // `yield expr` / `yield* iterable` / `yield` — only inside a generator
-    // body. Argument is optional and right-associative at
-    // AssignmentExpression precedence per spec. We approximate by
-    // bailing on tokens that obviously end the operand (comma, semi,
-    // close-bracket / paren / brace).
-    if k == TokenKind::KwYield && p.in_generator {
-        let kw_t = advance(p);
-        let is_delegate: bool = false;
-        if peek_kind(p) == TokenKind::Star {
-            advance(p);
-            is_delegate = true;
-        }
-        let node = new_node(&p.tracker, NodeKind::YieldExpr, kw_t.start, kw_t.start + kw_t.length);
-        node.bool_value = is_delegate;
-        node.left = NULL;
-        let next = peek_kind(p);
-        if next != TokenKind::Comma && next != TokenKind::Semicolon
-           && next != TokenKind::RParen && next != TokenKind::RBracket
-           && next != TokenKind::RBrace && next != TokenKind::Colon
-           && next != TokenKind::Eof {
-            let arg = parse_assignment(p);
-            if arg != NULL {
-                node.left = arg;
-                node.end = arg.end;
-            }
-        }
-        return node;
-    }
+    // YieldExpression is handled at AssignmentExpression precedence
+    // (parse_assignment). Hitting `yield` here from a higher-precedence
+    // context (e.g. `void yield`, `+yield`) is a SyntaxError per spec
+    // — fall through to the IdentifierReference path so is_binding_ident
+    // rejects the keyword inside a generator/strict context.
     if k == TokenKind::KwClass    { return parse_class_expr(p); }
 
     if k == TokenKind::NumberLit {
@@ -3652,11 +3659,16 @@ fn parse_primary(p: Parser*) -> AstNode* {
         // when it sees the trailing `(` / `.` / `[`.
         return new_node(&p.tracker, NodeKind::SuperExpr, t.start, t.start + t.length);
     }
-    if is_binding_ident(k) {
+    if is_binding_ident_ctx(p, k) {
         // Identifier OR a contextual keyword being used as a reference
         // (`of`, `let`, `yield`, `await`, `async` in non-keyword
-        // positions). See is_binding_ident.
+        // positions). The _ctx variant rejects `yield` inside a
+        // generator/strict context and `await` inside async — those
+        // become reserved when in the wrong context. The
+        // is_binding_ident_tok pass below catches the escape-decoded
+        // form (e.g. `yield` decoding to `yield`).
         advance(p);
+        if !is_binding_ident_tok(p, t, p.source) { p.had_error = true; return NULL; }
         let id_node = new_node(&p.tracker, NodeKind::IdentExpr, t.start, t.start + t.length);
         id_node.name_start  = t.start;
         id_node.name_length = t.length;
