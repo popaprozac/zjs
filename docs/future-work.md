@@ -47,14 +47,24 @@ surface to flip green (one failing sub-check fails the whole file):
 All verified against Node (incl. EST↔EDT DST); test262 quick held at
 87.8% throughout.
 
-**Remaining Temporal work — only T5b:**
-- **T5b — ZonedDateTime DST-aware arithmetic.** add/subtract/until/
-  since/round/with on ZonedDateTime (day arithmetic must re-resolve
-  the offset across DST boundaries), and from() with offset +
-  disambiguation ('compatible'/'earlier'/'later'/'reject' for skipped
-  or repeated wall-clock times). The gnarliest arithmetic in Temporal.
-  Also: PlainDate/PlainDateTime.until/since to calendar units
-  (years/months) via relativeTo. Everything else in Temporal is done.
+- T5b: ZonedDateTime DST-aware add/subtract/with/round/until/since/
+  from (wall-clock re-anchored across DST via mktime, 'compatible'
+  disambiguation), plus PlainDate.until/since calendar-unit diff
+  (DifferenceISODate). Verified vs Node incl. spring-forward jumps and
+  calendar-day-≠-24h-across-DST.
+
+**Temporal is feature-complete** for all eight types (Duration,
+PlainDate/Time/DateTime, PlainYearMonth, PlainMonthDay, Instant,
+ZonedDateTime) + Now, gated by ZJS_NO_TEMPORAL, all verified vs Node.
+
+**Minor Temporal follow-ups (documented, low-priority):**
+- PlainDateTime.until/since + ZonedDateTime calendar-unit
+  largestUnit (years/months) — extend temporal_diff_iso_date with
+  the time component / relativeTo.
+- ISO-string parsing in from() (today: objects / same-type clones).
+- DST disambiguation option ('earlier'/'later'/'reject'); currently
+  always 'compatible' (mktime default).
+- Windows IANA tz (ICU) — offset lookup stubs to UTC there.
 - Minor: Duration.add/subtract balancing (currently field-wise);
   ISO-string parsing in the various from() methods (today they take
   objects / same-type clones only); monthCode-keyed from();
