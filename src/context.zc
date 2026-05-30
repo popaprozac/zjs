@@ -19949,6 +19949,104 @@ fn host_temporal_instant_from_epoch_ms(ctx: ZjsContext*, args: ZjsValue*, argc: 
     return zjs_cell_from_ptr((void*)t);
 }
 
+// --- Rounding (T4b) --------------------------------------------------
+// Rounding modes (ECMA-262 Temporal RoundingMode).
+def ROUND_TRUNC:       int = 0;
+def ROUND_FLOOR:       int = 1;
+def ROUND_CEIL:        int = 2;
+def ROUND_EXPAND:      int = 3;
+def ROUND_HALF_EXPAND: int = 4;
+def ROUND_HALF_FLOOR:  int = 5;
+def ROUND_HALF_CEIL:   int = 6;
+def ROUND_HALF_TRUNC:  int = 7;
+def ROUND_HALF_EVEN:   int = 8;
+
+fn temporal_parse_rounding_mode(s: ZjsString*, dflt: int) -> int {
+    if s == NULL { return dflt; }
+    if tmp_name_is(s, (char*)"trunc", 5)      { return ROUND_TRUNC; }
+    if tmp_name_is(s, (char*)"floor", 5)      { return ROUND_FLOOR; }
+    if tmp_name_is(s, (char*)"ceil", 4)       { return ROUND_CEIL; }
+    if tmp_name_is(s, (char*)"expand", 6)     { return ROUND_EXPAND; }
+    if tmp_name_is(s, (char*)"halfExpand", 10){ return ROUND_HALF_EXPAND; }
+    if tmp_name_is(s, (char*)"halfFloor", 9)  { return ROUND_HALF_FLOOR; }
+    if tmp_name_is(s, (char*)"halfCeil", 8)   { return ROUND_HALF_CEIL; }
+    if tmp_name_is(s, (char*)"halfTrunc", 9)  { return ROUND_HALF_TRUNC; }
+    if tmp_name_is(s, (char*)"halfEven", 8)   { return ROUND_HALF_EVEN; }
+    return dflt;
+}
+
+// nanoseconds-per-unit, or 0 if `s` is not a time/day unit name.
+fn temporal_unit_to_ns(s: ZjsString*) -> i64 {
+    if s == NULL { return 0; }
+    if tmp_name_is(s, (char*)"nanosecond", 10)  { return 1; }
+    if tmp_name_is(s, (char*)"microsecond", 11) { return 1000; }
+    if tmp_name_is(s, (char*)"millisecond", 11) { return 1000000; }
+    if tmp_name_is(s, (char*)"second", 6)       { return 1000000000; }
+    if tmp_name_is(s, (char*)"minute", 6)       { return 60000000000; }
+    if tmp_name_is(s, (char*)"hour", 4)         { return 3600000000000; }
+    if tmp_name_is(s, (char*)"day", 3)          { return 86400000000000; }
+    return 0;
+}
+
+// Round signed x to a multiple of inc (inc > 0) per `mode`.
+fn temporal_round_i64(x: i64, inc: i64, mode: int) -> i64 {
+    let out: i64 = 0;
+    raw {
+        int64_t r = x % inc;
+        if (r == 0) { out = x; }
+        else {
+            int64_t q = x / inc;
+            int64_t lower, upper;
+            if (x >= 0) { lower = q * inc; upper = lower + inc; }
+            else        { upper = q * inc; lower = upper - inc; }
+            int64_t dl = x - lower;   /* >= 0 */
+            int64_t du = upper - x;   /* >= 0 */
+            int64_t chosen;
+            switch (mode) {
+              case 0: chosen = (x >= 0) ? lower : upper; break;          /* trunc */
+              case 1: chosen = lower; break;                              /* floor */
+              case 2: chosen = upper; break;                              /* ceil */
+              case 3: chosen = (x >= 0) ? upper : lower; break;          /* expand */
+              case 5: chosen = (dl <= du) ? lower : upper; break;        /* halfFloor */
+              case 6: chosen = (du <= dl) ? upper : lower; break;        /* halfCeil */
+              case 7: chosen = (dl < du) ? lower : (du < dl ? upper : ((x >= 0) ? lower : upper)); break; /* halfTrunc */
+              case 8: { if (dl < du) chosen = lower; else if (du < dl) chosen = upper;
+                        else { int64_t ql = lower / inc; chosen = (ql % 2 == 0) ? lower : upper; } } break; /* halfEven */
+              default: chosen = (dl < du) ? lower : (du < dl ? upper : ((x >= 0) ? upper : lower)); break;  /* halfExpand */
+            }
+            out = chosen;
+        }
+    }
+    return out;
+}
+
+// Parse round()/until()/since() options into (unit_ns, increment, mode).
+// `optarg` may be a bare smallestUnit string or an options object.
+// ok[0]=0 on a missing/invalid smallestUnit. inc_out is the rounding
+// increment (default 1); the effective rounding quantum is inc * unit_ns.
+fn temporal_rounding_opts(ctx: ZjsContext*, optarg: ZjsValue, dflt_mode: int,
+                          unit_ns_out: i64*, inc_out: i64*, mode_out: int*, ok: int*) -> void {
+    inc_out[0] = 1;
+    mode_out[0] = dflt_mode;
+    if zjs_is_string(optarg) != 0 {
+        unit_ns_out[0] = temporal_unit_to_ns(zjs_as_string(optarg));
+        if unit_ns_out[0] == 0 { ok[0] = 0; }
+        return;
+    }
+    if zjs_is_object(optarg) == 0 { ok[0] = 0; return; }
+    let su = property_get(ctx, optarg, ctx_intern_string(ctx, (char*)"smallestUnit", 12));
+    if zjs_is_string(su) == 0 { ok[0] = 0; return; }
+    unit_ns_out[0] = temporal_unit_to_ns(zjs_as_string(su));
+    if unit_ns_out[0] == 0 { ok[0] = 0; return; }
+    let ri = property_get(ctx, optarg, ctx_intern_string(ctx, (char*)"roundingIncrement", 17));
+    if zjs_is_undefined(ri) == 0 {
+        let d = zjs_to_double(ri);
+        raw { if (isfinite(d) && d >= 1) inc_out[0] = (int64_t)d; }
+    }
+    let rm = property_get(ctx, optarg, ctx_intern_string(ctx, (char*)"roundingMode", 12));
+    if zjs_is_string(rm) != 0 { mode_out[0] = temporal_parse_rounding_mode(zjs_as_string(rm), dflt_mode); }
+}
+
 fn host_temporal_instant_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let _u = args; let _u2 = argc;
     let this_v = ctx.host_this;
@@ -20065,6 +20163,16 @@ fn temporal_instant_diff_impl(ctx: ZjsContext*, dir: i64, args: ZjsValue*, argc:
     let na = if zjs_is_bigint(a.epoch_ns) != 0 { bigint_to_i64(zjs_as_bigint(a.epoch_ns)) } else { 0 };
     let nb = if zjs_is_bigint(b.epoch_ns) != 0 { bigint_to_i64(zjs_as_bigint(b.epoch_ns)) } else { 0 };
     let diff = (nb - na) * dir;   // until: other - this; since: this - other
+    // Optional rounding (args[1]): smallestUnit hour..ns, default
+    // 'trunc'. (Calendar-unit rounding needs ZonedDateTime — T5.)
+    let optarg = if argc >= 2 { args[1] } else { zjs_undefined() };
+    if zjs_is_undefined(optarg) == 0 {
+        let unit_ns: i64 = 0; let inc: i64 = 1; let mode: int = ROUND_TRUNC; let ok: int = 1;
+        temporal_rounding_opts(ctx, optarg, ROUND_TRUNC, &unit_ns, &inc, &mode, &ok);
+        if ok == 0 || unit_ns == 0 { return temporal_range_error(ctx, (char*)"invalid smallestUnit", 20); }
+        if unit_ns == 86400000000000 { return temporal_range_error(ctx, (char*)"Instant diff cannot use days", 28); }
+        diff = temporal_round_i64(diff, inc * unit_ns, mode);
+    }
     return temporal_duration_from_ns(ctx, diff);
 }
 fn host_temporal_instant_until(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -20093,6 +20201,77 @@ fn host_temporal_instant_equals(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
     if zjs_is_temporal_kind(other, TMP_INSTANT) == 0 { return zjs_bool(0); }
     let ta = zjs_as_temporal(this_v); let tb = zjs_as_temporal(other);
     return zjs_bool(if bigint_cmp(zjs_as_bigint(ta.epoch_ns), zjs_as_bigint(tb.epoch_ns)) == 0 { 1 } else { 0 });
+}
+
+// Instant.prototype.round(options) — smallestUnit in hour..nanosecond
+// (day requires a time zone). Default mode halfExpand.
+fn host_temporal_instant_round(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_INSTANT) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.Instant", 22);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let unit_ns: i64 = 0; let inc: i64 = 1; let mode: int = ROUND_HALF_EXPAND; let ok: int = 1;
+    temporal_rounding_opts(ctx, if argc >= 1 { args[0] } else { zjs_undefined() },
+                           ROUND_HALF_EXPAND, &unit_ns, &inc, &mode, &ok);
+    if ok == 0 || unit_ns == 0 { return temporal_range_error(ctx, (char*)"invalid smallestUnit", 20); }
+    if unit_ns == 86400000000000 { return temporal_range_error(ctx, (char*)"Instant cannot round to days", 28); }
+    let s = zjs_as_temporal(this_v);
+    let ns = if zjs_is_bigint(s.epoch_ns) != 0 { bigint_to_i64(zjs_as_bigint(s.epoch_ns)) } else { 0 };
+    let rounded = temporal_round_i64(ns, inc * unit_ns, mode);
+    let bi = zjs_bigint_from_i64(rounded);
+    ctx_register_cell(ctx, (void*)bi);
+    return temporal_make_instant(ctx, zjs_cell_from_ptr((void*)bi));
+}
+
+// PlainTime.prototype.round(options) — wraps within the day.
+fn host_temporal_plaintime_round(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_TIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainTime", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let unit_ns: i64 = 0; let inc: i64 = 1; let mode: int = ROUND_HALF_EXPAND; let ok: int = 1;
+    temporal_rounding_opts(ctx, if argc >= 1 { args[0] } else { zjs_undefined() },
+                           ROUND_HALF_EXPAND, &unit_ns, &inc, &mode, &ok);
+    if ok == 0 || unit_ns == 0 { return temporal_range_error(ctx, (char*)"invalid smallestUnit", 20); }
+    if unit_ns == 86400000000000 { return temporal_range_error(ctx, (char*)"PlainTime cannot round to days", 30); }
+    let s = zjs_as_temporal(this_v);
+    let rounded = temporal_round_i64(temporal_time_total_ns(s), inc * unit_ns, mode);
+    let wrapped = i64_floormod(rounded, 86400000000000);
+    let t = zjs_temporal_new(TMP_PLAIN_TIME);
+    temporal_set_time_from_ns(t, wrapped);
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// PlainDateTime.prototype.round(options) — day..nanosecond, with day
+// carry. Works on epoch-day*86400e9 + time-of-day nanoseconds.
+fn host_temporal_plaindatetime_round(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_DATETIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainDateTime", 28);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let unit_ns: i64 = 0; let inc: i64 = 1; let mode: int = ROUND_HALF_EXPAND; let ok: int = 1;
+    temporal_rounding_opts(ctx, if argc >= 1 { args[0] } else { zjs_undefined() },
+                           ROUND_HALF_EXPAND, &unit_ns, &inc, &mode, &ok);
+    if ok == 0 || unit_ns == 0 { return temporal_range_error(ctx, (char*)"invalid smallestUnit", 20); }
+    let s = zjs_as_temporal(this_v);
+    let days = iso_days_from_civil((i64)s.year, (i64)s.month, (i64)s.day);
+    let total = days * 86400000000000 + temporal_time_total_ns(s);
+    let rounded = temporal_round_i64(total, inc * unit_ns, mode);
+    let out_days = i64_floordiv(rounded, 86400000000000);
+    let tod = i64_floormod(rounded, 86400000000000);
+    let out: i64[3];
+    let op: i64* = NULL; raw { op = &out[0]; }
+    iso_civil_from_days(out_days, op);
+    let t = zjs_temporal_new(TMP_PLAIN_DATETIME);
+    t.year = (i32)out[0]; t.month = (i32)out[1]; t.day = (i32)out[2];
+    temporal_set_time_from_ns(t, tod);
+    t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
 }
 
 // Validate an ISO calendar date. ISO year range per spec: the date
@@ -21142,6 +21321,9 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"since", isin_ptr));
     object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
                ctx_make_host_function(ctx, (char*)"equals", ieq_ptr));
+    let irnd_ptr: void* = NULL; raw { irnd_ptr = (void*)host_temporal_instant_round; }
+    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"round", 5),
+               ctx_make_host_function(ctx, (char*)"round", irnd_ptr));
     object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), inst_ctor);
     let ifem_ptr: void* = NULL; raw { ifem_ptr = (void*)host_temporal_instant_from_epoch_ms; }
     let ifen_ptr: void* = NULL; raw { ifen_ptr = (void*)host_temporal_instant_from_epoch_ns; }
@@ -21207,6 +21389,9 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"add", ptadd_ptr));
     object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
                ctx_make_host_function(ctx, (char*)"subtract", ptsub_ptr));
+    let ptrnd_ptr: void* = NULL; raw { ptrnd_ptr = (void*)host_temporal_plaintime_round; }
+    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"round", 5),
+               ctx_make_host_function(ctx, (char*)"round", ptrnd_ptr));
     object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pt_ctor);
     let ptfrom_ptr: void* = NULL; raw { ptfrom_ptr = (void*)host_temporal_plaintime_from; }
     let ptcmp_ptr: void* = NULL; raw { ptcmp_ptr = (void*)host_temporal_plaintime_compare; }
@@ -21241,6 +21426,9 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"add", pdtadd_ptr));
     object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
                ctx_make_host_function(ctx, (char*)"subtract", pdtsub_ptr));
+    let pdtrnd_ptr: void* = NULL; raw { pdtrnd_ptr = (void*)host_temporal_plaindatetime_round; }
+    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"round", 5),
+               ctx_make_host_function(ctx, (char*)"round", pdtrnd_ptr));
     object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pdt_ctor);
     let pdtfrom_ptr: void* = NULL; raw { pdtfrom_ptr = (void*)host_temporal_plaindatetime_from; }
     let pdtcmp_ptr: void* = NULL; raw { pdtcmp_ptr = (void*)host_temporal_plaindatetime_compare; }
