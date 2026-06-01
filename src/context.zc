@@ -14789,11 +14789,27 @@ fn url_normalize_path(buf: char*, len: u32) -> u32 {
                 in_ += 2;
                 continue;
             }
+            // Trailing "/." (RFC 3986 §5.2.4) -> "/": e.g. "/a/b/." -> "/a/b/".
+            if (in_ + 2 == end && in_[0] == '/' && in_[1] == '.') {
+                *out++ = '/';
+                in_ += 2;
+                continue;
+            }
             if (in_ + 3 <= end && in_[0] == '/' && in_[1] == '.' && in_[2] == '.'
                 && (in_ + 3 == end || in_[3] == '/')) {
-                if (out > buf) out--;
-                while (out > buf && *(out - 1) != '/') out--;
+                // RFC 3986 §5.2.4: remove the last output segment AND its
+                // preceding '/'. The '/' that follows ".." in the input
+                // (or, for a trailing "/..", the implicit one we add
+                // below) supplies the separator before the next segment,
+                // so dropping the preceding slash here avoids a doubled
+                // slash (e.g. "/a/b/../d" -> "/a/d", not "/a//d").
+                if (out > buf) out--;                          // back over the segment's last char
+                while (out > buf && *(out - 1) != '/') out--;  // ... rest of the segment
+                if (out > buf) out--;                          // ... and its leading '/'
                 in_ += 3;
+                // A trailing "/.." (no following slash) must still leave a
+                // directory slash, e.g. "/a/b/.." -> "/a/". Re-add it.
+                if (in_ == end) { *out++ = '/'; }
                 continue;
             }
             *out++ = *in_++;
@@ -15198,6 +15214,22 @@ fn host_url_origin(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 }
 
 // .href / .toString — reassemble all components into a single string.
+// WHATWG "special scheme" — these always carry a `//` authority
+// delimiter when serialized, even with an empty host (e.g. file:///).
+// `proto` includes the trailing ':'.
+fn url_scheme_is_special(proto: char*, len: u32) -> bool {
+    let m: bool = false;
+    raw {
+        m = (len == 5 && memcmp(proto, "file:", 5) == 0)
+         || (len == 5 && memcmp(proto, "http:", 5) == 0)
+         || (len == 6 && memcmp(proto, "https:", 6) == 0)
+         || (len == 3 && memcmp(proto, "ws:", 3) == 0)
+         || (len == 4 && memcmp(proto, "wss:", 4) == 0)
+         || (len == 4 && memcmp(proto, "ftp:", 4) == 0);
+    }
+    return m;
+}
+
 fn host_url_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_v = ctx.host_this;
     if zjs_is_object(this_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
@@ -15225,7 +15257,11 @@ fn host_url_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     let n: u32 = 0;
     let i: u32 = 0;
     while i < ps.length { buf[n] = ps.data[i]; n = n + 1; i = i + 1; }
-    let has_authority: bool = hs.length > 0;
+    // A special scheme (file/http/https/ws/wss/ftp) always serializes its
+    // `//` authority delimiter, even when the host is empty — e.g.
+    // file:///a/b/c. Non-special schemes (mailto:, data:) only get `//`
+    // when a host is actually present.
+    let has_authority: bool = hs.length > 0 || url_scheme_is_special(ps.data, ps.length);
     if has_authority {
         buf[n] = (char)'/'; n = n + 1;
         buf[n] = (char)'/'; n = n + 1;
