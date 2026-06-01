@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-01 21:17 UTC",
+    "when": "2026-06-01 22:58 UTC",
     "total": 14524,
-    "passed": 12290,
-    "failed": 1588,
+    "passed": 12308,
+    "failed": 1570,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -931,10 +931,6 @@
     {
       "path": "test/language/statements/try/scope-catch-param-lex-open.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"inside\"\u00bb, \u00ab\"outside\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue("
-    },
-    {
-      "path": "test/language/statements/try/static-init-await-binding-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/return/line-terminators.js",
@@ -2054,11 +2050,7 @@
     },
     {
       "path": "test/language/statements/class/elements/static-field-init-with-this.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined262\"\u00bb, \u00ab\"test262\"\u00bb) to be true\nzjs: throw: (unknown): Expected Same"
-    },
-    {
-      "path": "test/language/statements/class/elements/static-field-redeclaration.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefinedtest\"\u00bb, \u00ab\"test262test\"\u00bb) to be true\nzjs: throw: (unknown): Expected"
     },
     {
       "path": "test/language/statements/class/elements/static-private-fields-proxy-default-handler-throws.js",
@@ -2294,67 +2286,15 @@
     },
     {
       "path": "test/language/statements/class/static-init-abrupt.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-arguments-functions.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-arguments-methods.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-await-binding-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-expr-new-target.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-expr-this.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-scope-lex-close.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00abTest262Error: \u00bb) to be true\nzjs: throw: (unknown): Expected Same"
     },
     {
       "path": "test/language/statements/class/static-init-scope-lex-derived.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-scope-lex-open.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00abfunction C() { [user code] }\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/language/statements/class/static-init-scope-private.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-scope-var-close.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-scope-var-derived.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-scope-var-open.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-sequence.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-statement-list-optional.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/static-init-super-property.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"private\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
     },
     {
       "path": "test/language/statements/class/static-method-gen-non-configurable-err.js",
@@ -2929,14 +2869,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"C\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abunde"
     },
     {
-      "path": "test/language/expressions/class/elements/class-name-static-initializer-decl.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"C\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abunde"
-    },
-    {
-      "path": "test/language/expressions/class/elements/class-name-static-initializer-expr.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"C\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abunde"
-    },
-    {
       "path": "test/language/expressions/class/elements/computed-name-toprimitive-symbol.js",
       "reason": "[sloppy] zjs: throw: (unknown): \nzjs: throw: (unknown):"
     },
@@ -3370,11 +3302,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/static-field-init-with-this.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined262\"\u00bb, \u00ab\"test262\"\u00bb) to be true\nzjs: throw: (unknown): Expected Same"
-    },
-    {
-      "path": "test/language/expressions/class/elements/static-field-redeclaration.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefinedtest\"\u00bb, \u00ab\"test262test\"\u00bb) to be true\nzjs: throw: (unknown): Expected"
     },
     {
       "path": "test/language/expressions/class/elements/static-private-fields-proxy-default-handler-throws.js",
@@ -3946,7 +3874,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",

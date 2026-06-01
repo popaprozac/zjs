@@ -165,6 +165,15 @@ enum NodeKind {
     //     - bool_value: true for static fields
     ClassField,
 
+    // Class static initialization block (ECMA-262 §15.7, ES2022).
+    //   `static { StatementList }`
+    //   StaticBlock:
+    //     - left: the block body (NodeKind::Block) of statements
+    //   Evaluated at class-definition time, in source order interleaved
+    //   with static fields, with `this` bound to the constructor and
+    //   `super.x` resolving against the parent constructor.
+    StaticBlock,
+
     // switch statement (2026-05-15).
     //   SwitchStmt:
     //     - left: the discriminant expression

@@ -61,6 +61,15 @@ struct Parser {
     // that has `extends ...`). Gates `super(...)` — anywhere else
     // SuperCall is a parse-time SyntaxError per ECMA-262 §15.7.1.
     in_derived_constructor: bool;
+    // ECMA-262 §15.7 class static initialization block. `in_static_block`
+    // is true while parsing a `static { ... }` body; `static_block_depth`
+    // records the function_depth INSIDE the block. The restriction set
+    // (await reserved, `return` forbidden) applies only when the current
+    // function_depth equals static_block_depth — i.e. directly in the
+    // block, not inside a nested function (which re-establishes its own
+    // rules). `arguments` is checked by a post-parse AST scan.
+    in_static_block: bool;
+    static_block_depth: u32;
 }
 
 // Compare an identifier's source slice against an ASCII target,
@@ -171,6 +180,8 @@ fn parse_program_with(source: char*, source_len: usize, is_module: bool) -> Pars
     p.in_async = false;
     p.in_generator = false;
     p.is_module = is_module;
+    p.in_static_block = false;
+    p.static_block_depth = 0;
 
     // Lex everything into a buffer. Start at a size proportional to
     // the source (~1 token per 4 chars covers densely-tokenized JS like
@@ -478,6 +489,19 @@ fn parse_statement(p: Parser*) -> AstNode* {
         advance(p);              // ':'
         let body = parse_statement(p);
         if body == NULL { return NULL; }
+        // ECMA-262 §14.13.1 Early Error: a LabelIdentifier must not be
+        // the same as a LabelIdentifier of an enclosing LabelledStatement.
+        // Walk the immediately-nested label chain (`x: x: ...`,
+        // `x: y: x: ...`) and reject a repeat.
+        let chain = body;
+        while chain != NULL && chain.kind == NodeKind::LabeledStmt {
+            if chain.name_length == id.length
+               && ident_source_matches(p.source, id.start, id.length,
+                                       p.source + chain.name_start, chain.name_length) {
+                p.had_error = true; return NULL;
+            }
+            chain = chain.left;
+        }
         // Strict-mode: a LabelledStatement's body is a Statement, not
         // a Declaration. `label: function f() {}` and friends are a
         // SyntaxError. (Sloppy-mode Annex B allows function decls, but
@@ -643,6 +667,9 @@ fn is_binding_ident(k: TokenKind) -> bool {
 fn is_binding_ident_ctx(p: Parser*, k: TokenKind) -> bool {
     if k == TokenKind::KwYield && p.in_generator { return false; }
     if k == TokenKind::KwAwait && p.in_async     { return false; }
+    // `await` is reserved directly inside a class static block body.
+    if k == TokenKind::KwAwait && p.in_static_block
+       && p.function_depth == p.static_block_depth { return false; }
     // Strict mode reserves `yield` unconditionally (even outside a
     // generator). Modules + class bodies are implicitly strict.
     if k == TokenKind::KwYield && p.strict_mode  { return false; }
@@ -1007,6 +1034,13 @@ fn parse_if(p: Parser*) -> AstNode* {
 
 fn parse_return(p: Parser*) -> AstNode* {
     if p.function_depth == 0 { p.had_error = true; return NULL; }
+    // ECMA-262 §15.7.1: a `return` directly inside a class static
+    // initialization block is a Syntax Error (the block is not a
+    // returnable context). A nested function inside the block is at a
+    // deeper function_depth, so this only fires for the block body.
+    if p.in_static_block && p.function_depth == p.static_block_depth {
+        p.had_error = true; return NULL;
+    }
     let kw = advance(p);   // 'return'
     let end: u32 = kw.start + kw.length;
     let arg: AstNode* = NULL;
@@ -1692,6 +1726,43 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
         let nd = p.source + first.start;
         let is_kw_static: int = 0;
         raw { is_kw_static = (memcmp(nd, "static", 6) == 0) ? 1 : 0; }
+        // ECMA-262 §15.7 — `static { StatementList }` is a class static
+        // initialization block (ES2022). Detected as `static` followed by
+        // `{`. Parse the block in a fresh function-like context: `await`
+        // is reserved (no async), `yield` is not, `arguments` is banned,
+        // and the body runs with `this` = the constructor.
+        if is_kw_static != 0 && peek_kind2(p) == TokenKind::LBrace {
+            advance(p);   // consume `static`
+            let saved_async_sb = p.in_async;
+            let saved_gen_sb = p.in_generator;
+            let saved_insb = p.in_static_block;
+            let saved_sbdepth = p.static_block_depth;
+            p.in_async = false;
+            p.in_generator = false;
+            p.function_depth = p.function_depth + 1;
+            p.in_static_block = true;
+            p.static_block_depth = p.function_depth;   // depth INSIDE the block
+            let sb_body = parse_block(p);
+            p.function_depth = p.function_depth - 1;
+            p.in_async = saved_async_sb;
+            p.in_generator = saved_gen_sb;
+            p.in_static_block = saved_insb;
+            p.static_block_depth = saved_sbdepth;
+            if sb_body == NULL { return NULL; }
+            // ECMA-262 §15.7.1: It is a Syntax Error if ContainsArguments
+            // of the ClassStaticBlockStatementList is true.
+            if static_block_uses_arguments(p, sb_body) {
+                p.had_error = true; return NULL;
+            }
+            // §15.7.1: duplicate lexical / lexical-var clashing bindings.
+            if static_block_dup_binding(p, sb_body) {
+                p.had_error = true; return NULL;
+            }
+            let sb = new_node(&p.tracker, NodeKind::StaticBlock, mut_start, sb_body.end);
+            sb.left = sb_body;
+            sb.bool_value = true;   // it's a static element
+            return sb;
+        }
         // `static` can be followed by a property-name, `[` (computed),
         // `*` (generator method), or — once we add it — `async` for an
         // async method.
@@ -3620,6 +3691,97 @@ fn expr_contains_arguments(p: Parser*, node: AstNode*) -> bool {
     return false;
 }
 
+// ECMA-262 ContainsArguments, specialized for a class static block body.
+// Returns true if `arguments` is referenced in a position evaluated in
+// the static block's scope. Recurses through statements, nested blocks,
+// arrow functions (which have no own `arguments`), and the COMPUTED KEYS
+// of nested class/object members — but NOT into ordinary function/method
+// BODIES, which establish their own `arguments`.
+fn static_block_uses_arguments(p: Parser*, node: AstNode*) -> bool {
+    if node == NULL { return false; }
+    let k = node.kind;
+    if k == NodeKind::FunctionDecl || k == NodeKind::FunctionExpr {
+        return false;
+    }
+    if k == NodeKind::IdentExpr {
+        // Escape-aware: `arguments` decodes to "arguments".
+        if ident_source_matches(p.source, node.start, node.end - node.start,
+                                (char*)"arguments", 9) { return true; }
+        return false;
+    }
+    // Class/object members: the computed key (`third`) is evaluated in
+    // the enclosing scope; the body is not. Check the key only.
+    if k == NodeKind::MethodDef {
+        if node.third != NULL && static_block_uses_arguments(p, node.third) { return true; }
+        return false;
+    }
+    if node.left  != NULL && static_block_uses_arguments(p, node.left)  { return true; }
+    if node.right != NULL && static_block_uses_arguments(p, node.right) { return true; }
+    if node.third != NULL && static_block_uses_arguments(p, node.third) { return true; }
+    let i: u32 = 0;
+    while i < node.children_count {
+        if static_block_uses_arguments(p, node.children[i]) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+// ECMA-262 §15.7.1 / §14.2.1 early errors for a class static block body
+// (which is a self-contained lexical + var scope): a lexically-declared
+// name (let/const/class) must not be declared twice, and must not clash
+// with a var-declared name in the same scope. Scans the block body's
+// direct statements (the cases test262 exercises). Returns true on a
+// conflict. Bounded scan — overflow past the cap degrades to "not
+// detected" rather than mis-flagging.
+fn static_block_dup_binding(p: Parser*, body: AstNode*) -> bool {
+    if body == NULL || body.children_count == 0 { return false; }
+    let cap: u32 = 128;
+    let starts = alloc_n<u32>((usize)cap);
+    let lens   = alloc_n<u32>((usize)cap);
+    let lex    = alloc_n<bool>((usize)cap);
+    let count: u32 = 0;
+    let ci: u32 = 0;
+    while ci < body.children_count && count < cap {
+        let st = body.children[ci];
+        if st.kind == NodeKind::VarDecl {
+            let is_lex = st.op != TokenKind::KwVar;
+            let di: u32 = 0;
+            while di < st.children_count && count < cap {
+                let decl = st.children[di];
+                if decl.name_length > 0 {
+                    starts[count] = decl.name_start;
+                    lens[count]   = decl.name_length;
+                    lex[count]    = is_lex;
+                    count = count + 1;
+                }
+                di = di + 1;
+            }
+        } else if st.kind == NodeKind::ClassDecl {
+            if st.name_length > 0 {
+                starts[count] = st.name_start;
+                lens[count]   = st.name_length;
+                lex[count]    = true;
+                count = count + 1;
+            }
+        }
+        ci = ci + 1;
+    }
+    let i: u32 = 0;
+    while i < count {
+        let j: u32 = i + 1;
+        while j < count {
+            if lens[i] == lens[j] && (lex[i] || lex[j]) {
+                let same: int = 0;
+                raw { same = (memcmp(p->source + starts[i], p->source + starts[j], lens[i]) == 0) ? 1 : 0; }
+                if same != 0 { return true; }
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return false;
+}
+
 // Level 0 — primary.
 fn parse_primary(p: Parser*) -> AstNode* {
     let t = peek(p);
@@ -3641,6 +3803,12 @@ fn parse_primary(p: Parser*) -> AstNode* {
         let node = new_node(&p.tracker, NodeKind::AwaitExpr, kw_t.start, inner.end);
         node.left = inner;
         return node;
+    }
+    // `await` reserved directly inside a class static block — neither a
+    // valid identifier reference nor an AwaitExpression here.
+    if k == TokenKind::KwAwait && p.in_static_block
+       && p.function_depth == p.static_block_depth {
+        p.had_error = true; return NULL;
     }
     // YieldExpression is handled at AssignmentExpression precedence
     // (parse_assignment). Hitting `yield` here from a higher-precedence

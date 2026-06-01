@@ -212,6 +212,14 @@ struct Compiler {
     // spec, enforced via the c.had_error gate.
     enclosing_class_id: i32;
 
+    // 2026-06-01 — true while compiling a class STATIC element (static
+    // field initializer or static initialization block) inline in
+    // compile_class. In this context `super.x` resolves against the
+    // parent CONSTRUCTOR directly (not parent.prototype), per ECMA-262
+    // §13.3.7 (GetSuperBase uses the [[HomeObject]], which for static
+    // elements is the class constructor whose proto is the superclass).
+    in_static_element: bool;
+
     // ECMA-262 strict mode for the function/program being compiled.
     // Inherited from the parent compiler (lexical nesting), forced on
     // for class elements (MethodDef) and modules, or set by a "use
@@ -312,6 +320,7 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.cached_outer_env_reg = -1;
     c.preferred_dst = -1;
     c.enclosing_class_id = -1;
+    c.in_static_element = false;
     c.strict = false;
     // Scope tracker — start with the function-top scope (id 0) on the
     // stack. New scopes get unique ids from next_scope_id; the field is
@@ -2012,11 +2021,17 @@ fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
             return alloc_reg(c);
         }
         let parent_r = compile_expr(c, c.enclosing_class_parent);
-        let proto_key = emit_load_name_string(c, (char*)"prototype", 9);
-        let holder_r = alloc_reg(c);
-        emit(c, make_inst_abc(Op::LoadElem, holder_r, parent_r, proto_key));
-        if proto_key + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
-        if parent_r != holder_r && parent_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        // Instance context: super.x reads parent.prototype.x. Static
+        // context (static field init / static block): super.x reads
+        // parent.x directly (the home object is the class constructor).
+        let holder_r: u8 = parent_r;
+        if !c.in_static_element {
+            let proto_key = emit_load_name_string(c, (char*)"prototype", 9);
+            holder_r = alloc_reg(c);
+            emit(c, make_inst_abc(Op::LoadElem, holder_r, parent_r, proto_key));
+            if proto_key + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            if parent_r != holder_r && parent_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        }
         let key_r = emit_load_name_string(c, c.source + node.name_start, node.name_length);
         let dst = alloc_dst(c);
         emit(c, make_inst_abc(Op::LoadElem, dst, holder_r, key_r));
@@ -3021,6 +3036,13 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     // ObjectProp/FunctionExpr instead), or a "use strict" prologue.
     if parent != NULL && parent.strict { c.strict = true; }
     if node.kind == NodeKind::MethodDef { c.strict = true; }
+    // A class static initialization block is compiled as its own
+    // function (own scope/locals); class bodies are strict and the body
+    // runs with `this` = constructor and static `super` semantics.
+    if node.kind == NodeKind::StaticBlock {
+        c.strict = true;
+        c.in_static_element = true;
+    }
     if !c.strict && node.left != NULL && body_has_use_strict_directive(node.left, source) {
         c.strict = true;
     }
@@ -4274,16 +4296,40 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         }
     }
 
-    // Public class fields — STATIC half. For each `static name = init;`
-    // emit `Ctor.name = init` at class-definition time. Instance fields
-    // (`name = init;`) would normally be installed by [[Construct]]
-    // before the user body runs; that path needs constructor-prologue
-    // mutation and isn't wired up yet, so instance fields parse cleanly
-    // but silently no-op at runtime for now.
+    // Class STATIC elements — static field initializers and static
+    // initialization blocks, run at class-definition time in SOURCE
+    // ORDER (interleaved). Each evaluates with `this` bound to the
+    // constructor; `super.x` resolves against the parent constructor.
+    // We compile them inline here, temporarily routing `this` to
+    // ctor_reg and flagging the static-super context. (Instance fields
+    // are injected into the constructor body by the parser; here we
+    // only handle the static half.)
+    let saved_this_reg = c.this_reg;
+    let saved_static_el = c.in_static_element;
+    let saved_borrow = c.borrow_local_ok;
+    c.this_reg = (i32)ctor_reg;
+    c.in_static_element = true;
+    c.borrow_local_ok = false;   // never hand out ctor_reg as a scratch dst
     let fi: u32 = 0;
     while fi < cls_node.children_count {
         let f = cls_node.children[fi];
-        if f.kind == NodeKind::ClassField && f.bool_value {
+        if f.kind == NodeKind::StaticBlock {
+            // `static { ... }` — compile the block as its own function
+            // (own var/lexical environment, per ECMA-262 ClassStaticBlock-
+            // Body) and invoke it immediately with `this` = constructor.
+            // compile_function reads f.left as the body, f.children (none)
+            // as params, and flags the child compiler in_static_element so
+            // `super.x` resolves against the parent constructor.
+            let clos_reg = compile_function_value(c, f);
+            let base = alloc_reg(c);    // callee slot
+            let recv = alloc_reg(c);    // base+1 — the `this` receiver
+            emit(c, make_inst_ab(Op::Mov, base, clos_reg));
+            emit(c, make_inst_ab(Op::Mov, recv, ctor_reg));
+            emit(c, make_inst_abc(Op::MethodInvoke, base, base, 0));
+            release_reg(c, recv);
+            release_reg(c, base);
+            release_reg(c, clos_reg);
+        } else if f.kind == NodeKind::ClassField && f.bool_value {
             let val_r: u8 = 0;
             if f.left != NULL {
                 val_r = compile_expr(c, f.left);
@@ -4310,6 +4356,9 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         }
         fi = fi + 1;
     }
+    c.this_reg = saved_this_reg;
+    c.in_static_element = saved_static_el;
+    c.borrow_local_ok = saved_borrow;
 
     release_reg(c, proto_reg);
     c.enclosing_class_parent = saved_class_parent;
@@ -4724,18 +4773,26 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
                 c.had_error = true;
                 return base;
             }
-            // Receiver = current `this`.
-            emit(c, make_inst_a(Op::LoadThis, base + 1));
-            // Method holder = parent.prototype. Load parent, then its
-            // .prototype slot — a regular LoadProp suffices because
-            // the parent is itself either a class or a function whose
-            // `.prototype` is the proto chain root we want.
+            // Receiver = current `this`. In a static element `this` is
+            // the constructor (routed through this_reg); otherwise read
+            // it from the frame's host_this.
+            if c.in_static_element && c.this_reg >= 0 {
+                emit(c, make_inst_ab(Op::Mov, base + 1, (u8)c.this_reg));
+            } else {
+                emit(c, make_inst_a(Op::LoadThis, base + 1));
+            }
+            // Method holder: instance context → parent.prototype; static
+            // context → the parent constructor itself. A regular LoadElem
+            // reads the `.prototype` slot when needed.
             let parent_r = compile_expr(c, c.enclosing_class_parent);
-            let proto_key = emit_load_name_string(c, (char*)"prototype", 9);
-            let holder_r = alloc_reg(c);
-            emit(c, make_inst_abc(Op::LoadElem, holder_r, parent_r, proto_key));
-            if proto_key + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
-            if parent_r != holder_r && parent_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            let holder_r: u8 = parent_r;
+            if !c.in_static_element {
+                let proto_key = emit_load_name_string(c, (char*)"prototype", 9);
+                holder_r = alloc_reg(c);
+                emit(c, make_inst_abc(Op::LoadElem, holder_r, parent_r, proto_key));
+                if proto_key + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                if parent_r != holder_r && parent_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
             if callee.kind == NodeKind::Member {
                 let key2 = emit_load_name_string(c, c.source + callee.name_start, callee.name_length);
                 emit(c, make_inst_abc(Op::LoadElem, base, holder_r, key2));
