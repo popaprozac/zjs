@@ -10710,31 +10710,164 @@ fn set_disjoint_cb(state: void*, v: ZjsValue) -> bool {
     return false;
 }
 
-// Set.prototype.difference(other) — entries in `this` that aren't in
-// `other`. Walks `this`, probes other.has(value).
-fn host_set_difference(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let self_s = set_require_this(ctx);
-    if self_s == NULL { return zjs_undefined(); }
-    if argc == 0 || !value_is_js_object(args[0]) {
+// =====================================================================
+// ECMA-262 Set methods (union/intersection/difference/...). Each follows
+// the spec precisely: GetSetRecord(other) reads size -> has -> keys in
+// that observable order, and the algorithms branch on relative size to
+// decide whether `other.has` or `other.keys()` is invoked. #334.
+// =====================================================================
+
+// A validated Set-like record: { obj, size (intSize), has_fn, keys_fn }.
+struct SetRec {
+    ok:      bool;
+    obj:     ZjsValue;
+    size:    f64;
+    has_fn:  ZjsValue;
+    keys_fn: ZjsValue;
+}
+
+// ECMA-262 GetSetRecord(obj): Object check, then Get "size" -> ToNumber
+// -> NaN throws TypeError -> ToIntegerOrInfinity -> negative throws
+// RangeError; then Get "has"/"keys", each must be callable. Order is
+// observable and tested. Sets ctx.pending_throw + returns rec.ok=false
+// on any failure.
+fn get_set_record(ctx: ZjsContext*, mname: char*, mlen: u32, other: ZjsValue) -> SetRec {
+    let rec: SetRec;
+    rec.ok = false; rec.obj = other; rec.size = 0.0;
+    rec.has_fn = zjs_undefined(); rec.keys_fn = zjs_undefined();
+    if !value_is_js_object(other) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, mname, mlen);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return rec;
+    }
+    // size -> ToNumber -> NaN check -> ToIntegerOrInfinity -> >= 0.
+    let size_v = property_get(ctx, other, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"size", 4)));
+    if ctx.pending_throw_active { return rec; }
+    let num = ta_to_number(ctx, size_v);
+    if ctx.pending_throw_active { return rec; }
+    let bad: bool = false;
+    let intsize: f64 = 0.0;
+    raw {
+        if (isnan(num)) { bad = true; }
+        else { intsize = isinf(num) ? num : trunc(num); }
+    }
+    if bad {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"set-like .size is NaN", 21);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return rec;
+    }
+    if intsize < 0.0 {
+        let err = build_typed_error(ctx, (char*)"RangeError", 10, (char*)"set-like .size is negative", 26);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return rec;
+    }
+    rec.size = intsize;
+    // has — must be callable.
+    let has_v = property_get(ctx, other, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"has", 3)));
+    if ctx.pending_throw_active { return rec; }
+    if zjs_is_callable(has_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"set-like .has is not callable", 29);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return rec;
+    }
+    rec.has_fn = has_v;
+    // keys — must be callable.
+    let keys_v = property_get(ctx, other, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"keys", 4)));
+    if ctx.pending_throw_active { return rec; }
+    if zjs_is_callable(keys_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"set-like .keys is not callable", 30);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return rec;
+    }
+    rec.keys_fn = keys_v;
+    rec.ok = true;
+    return rec;
+}
+
+// Call rec.has(v) with this=rec.obj, coerce to bool.
+fn set_rec_has(ctx: ZjsContext*, rec: SetRec*, v: ZjsValue) -> bool {
+    let arg_buf: ZjsValue[1]; arg_buf[0] = v;
+    let argp: ZjsValue* = NULL; raw { argp = &arg_buf[0]; }
+    let r: ZjsValue = zjs_undefined();
+    raw { r = zjs_call_value_with_this(ctx, rec->has_fn, rec->obj, argp, 1); }
+    if ctx.pending_throw_active { return false; }
+    return zjs_to_bool_coerce(r) != 0;
+}
+
+// Call rec.keys() with this=rec.obj, returning the iterator (validated
+// to be an object). Returns undefined + pending throw on failure.
+fn set_rec_keys_iter(ctx: ZjsContext*, rec: SetRec*) -> ZjsValue {
+    let nullp: ZjsValue* = NULL;
+    let iter: ZjsValue = zjs_undefined();
+    raw { iter = zjs_call_value_with_this(ctx, rec->keys_fn, rec->obj, nullp, 0); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if !value_is_js_object(iter) {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Set.prototype.difference requires an object", 43);
+                                    (char*)"set-like .keys() did not return an object", 41);
         ctx.pending_throw_active = true; ctx.pending_throw_value = err;
         return zjs_undefined();
     }
-    let other = args[0];
+    return iter;
+}
+
+// Shallow-clone a Set's live entries into a fresh Set (preserves order).
+fn set_clone(ctx: ZjsContext*, src: ZjsSet*) -> ZjsSet* {
     let out = make_new_set(ctx);
+    let i: u32 = 0;
+    while i < src.count {
+        let e = src.entries + i;
+        if !e.deleted { set_add_entry(out, e.value); }
+        i = i + 1;
+    }
+    return out;
+}
+
+// Mark a value deleted in a Set (SameValueZero match), if present.
+fn set_delete_value(s: ZjsSet*, v: ZjsValue) -> void {
+    let cv = canonicalize_collection_key(v);
+    let slot = set_find_slot(s, cv);
+    if slot >= 0 {
+        s.entries[(u32)slot].deleted = true;
+        s.entries[(u32)slot].value = zjs_undefined();
+        s.size = s.size - 1;
+    }
+}
+
+// Set.prototype.difference(other) — entries in `this` that aren't in
+// `other`. Spec: clone this, then (size-branch) remove via other.has or
+// other.keys().
+fn host_set_difference(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let self_s = set_require_this(ctx);
+    if self_s == NULL { return zjs_undefined(); }
+    let other = if argc > 0 { args[0] } else { zjs_undefined() };
+    let rec = get_set_record(ctx, (char*)"Set.prototype.difference: argument is not a set-like object", 59, other);
+    if !rec.ok { return zjs_undefined(); }
+    let out = set_clone(ctx, self_s);
     let out_v = zjs_cell_from_ptr((void*)out);
     ctx_push_temp_root(ctx, out_v);
     defer ctx_pop_temp_root(ctx);
-    let i: u32 = 0;
-    while i < self_s.count {
-        let e = self_s.entries + i;
-        if !e.deleted {
-            let in_other = set_like_has(ctx, other, e.value);
-            if ctx.pending_throw_active { return zjs_undefined(); }
-            if !in_other { set_add_entry(out, e.value); }
+    if (f64)self_s.size <= rec.size {
+        // Walk this; remove from result any element other.has().
+        let i: u32 = 0;
+        while i < self_s.count {
+            let e = self_s.entries + i;
+            if !e.deleted {
+                let in_other = set_rec_has(ctx, &rec, e.value);
+                if ctx.pending_throw_active { return zjs_undefined(); }
+                if in_other { set_delete_value(out, e.value); }
+            }
+            i = i + 1;
         }
-        i = i + 1;
+    } else {
+        // Iterate other.keys(); remove each from result.
+        let iter = set_rec_keys_iter(ctx, &rec);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        while true {
+            let step = iter_step(ctx, iter);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if step.done { break; }
+            set_delete_value(out, step.value);
+        }
     }
     return out_v;
 }
@@ -10742,26 +10875,35 @@ fn host_set_difference(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
 fn host_set_intersection(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let self_s = set_require_this(ctx);
     if self_s == NULL { return zjs_undefined(); }
-    if argc == 0 || !value_is_js_object(args[0]) {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Set.prototype.intersection requires an object", 45);
-        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
-        return zjs_undefined();
-    }
-    let other = args[0];
+    let other = if argc > 0 { args[0] } else { zjs_undefined() };
+    let rec = get_set_record(ctx, (char*)"Set.prototype.intersection: argument is not a set-like object", 61, other);
+    if !rec.ok { return zjs_undefined(); }
     let out = make_new_set(ctx);
     let out_v = zjs_cell_from_ptr((void*)out);
     ctx_push_temp_root(ctx, out_v);
     defer ctx_pop_temp_root(ctx);
-    let i: u32 = 0;
-    while i < self_s.count {
-        let e = self_s.entries + i;
-        if !e.deleted {
-            let in_other = set_like_has(ctx, other, e.value);
-            if ctx.pending_throw_active { return zjs_undefined(); }
-            if in_other { set_add_entry(out, e.value); }
+    if (f64)self_s.size <= rec.size {
+        // Walk this; keep elements other.has(). Result in this-order.
+        let i: u32 = 0;
+        while i < self_s.count {
+            let e = self_s.entries + i;
+            if !e.deleted {
+                let in_other = set_rec_has(ctx, &rec, e.value);
+                if ctx.pending_throw_active { return zjs_undefined(); }
+                if in_other { set_add_entry(out, e.value); }
+            }
+            i = i + 1;
         }
-        i = i + 1;
+    } else {
+        // Iterate other.keys(); keep keys this has. Result in key-order.
+        let iter = set_rec_keys_iter(ctx, &rec);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        while true {
+            let step = iter_step(ctx, iter);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if step.done { break; }
+            if set_find_slot(self_s, step.value) >= 0 { set_add_entry(out, step.value); }
+        }
     }
     return out_v;
 }
@@ -10769,62 +10911,48 @@ fn host_set_intersection(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
 fn host_set_union(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let self_s = set_require_this(ctx);
     if self_s == NULL { return zjs_undefined(); }
-    if argc == 0 || !value_is_js_object(args[0]) {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Set.prototype.union requires an object", 38);
-        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
-        return zjs_undefined();
-    }
-    let other = args[0];
-    let out = make_new_set(ctx);
+    let other = if argc > 0 { args[0] } else { zjs_undefined() };
+    let rec = get_set_record(ctx, (char*)"Set.prototype.union: argument is not a set-like object", 54, other);
+    if !rec.ok { return zjs_undefined(); }
+    let out = set_clone(ctx, self_s);
     let out_v = zjs_cell_from_ptr((void*)out);
     ctx_push_temp_root(ctx, out_v);
     defer ctx_pop_temp_root(ctx);
-    let i: u32 = 0;
-    while i < self_s.count {
-        let e = self_s.entries + i;
-        if !e.deleted { set_add_entry(out, e.value); }
-        i = i + 1;
+    // Iterate other.keys(); add each (set_add_entry dedups + canon -0).
+    let iter = set_rec_keys_iter(ctx, &rec);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    while true {
+        let step = iter_step(ctx, iter);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if step.done { break; }
+        set_add_entry(out, step.value);
     }
-    // Add each value from `other`. Captures `out` via state struct.
-    let us: SetUnionState; us.out = out;
-    let state: void* = NULL; raw { state = (void*)&us; }
-    let fp: void* = NULL; raw { fp = (void*)set_union_cb; }
-    if !iterate_set_like(ctx, other, fp, state) { return zjs_undefined(); }
     return out_v;
 }
 
 fn host_set_symmetric_difference(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let self_s = set_require_this(ctx);
     if self_s == NULL { return zjs_undefined(); }
-    if argc == 0 || !value_is_js_object(args[0]) {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Set.prototype.symmetricDifference requires an object", 52);
-        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
-        return zjs_undefined();
-    }
-    let other = args[0];
-    let out = make_new_set(ctx);
+    let other = if argc > 0 { args[0] } else { zjs_undefined() };
+    let rec = get_set_record(ctx, (char*)"Set.prototype.symmetricDifference: argument is not a set-like object", 68, other);
+    if !rec.ok { return zjs_undefined(); }
+    // Clone this, then toggle each key from other.keys() against THIS
+    // (never other.has): in this -> remove from result; else -> add.
+    let out = set_clone(ctx, self_s);
     let out_v = zjs_cell_from_ptr((void*)out);
     ctx_push_temp_root(ctx, out_v);
     defer ctx_pop_temp_root(ctx);
-    // Values from this NOT in other.
-    let i: u32 = 0;
-    while i < self_s.count {
-        let e = self_s.entries + i;
-        if !e.deleted {
-            let in_other = set_like_has(ctx, other, e.value);
-            if ctx.pending_throw_active { return zjs_undefined(); }
-            if !in_other { set_add_entry(out, e.value); }
+    let iter = set_rec_keys_iter(ctx, &rec);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    while true {
+        let step = iter_step(ctx, iter);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if step.done { break; }
+        if set_find_slot(self_s, step.value) >= 0 {
+            set_delete_value(out, step.value);
+        } else {
+            set_add_entry(out, step.value);
         }
-        i = i + 1;
-    }
-    // Values from other NOT in this.
-    let sd: SetSymDiffState; sd.self_s = self_s; sd.out = out;
-    let sp: void* = NULL; raw { sp = (void*)&sd; }
-    let fp: void* = NULL; raw { fp = (void*)set_symdiff_other_cb; }
-    if !iterate_set_like(ctx, other, fp, sp) {
-        return zjs_undefined();
     }
     return out_v;
 }
@@ -10832,18 +10960,16 @@ fn host_set_symmetric_difference(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
 fn host_set_is_subset_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let self_s = set_require_this(ctx);
     if self_s == NULL { return zjs_undefined(); }
-    if argc == 0 || !value_is_js_object(args[0]) {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Set.prototype.isSubsetOf requires an object", 43);
-        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
-        return zjs_undefined();
-    }
-    let other = args[0];
+    let other = if argc > 0 { args[0] } else { zjs_undefined() };
+    let rec = get_set_record(ctx, (char*)"Set.prototype.isSubsetOf: argument is not a set-like object", 59, other);
+    if !rec.ok { return zjs_undefined(); }
+    // A larger set can't be a subset — short-circuit before any has().
+    if (f64)self_s.size > rec.size { return zjs_bool(0); }
     let i: u32 = 0;
     while i < self_s.count {
         let e = self_s.entries + i;
         if !e.deleted {
-            let in_other = set_like_has(ctx, other, e.value);
+            let in_other = set_rec_has(ctx, &rec, e.value);
             if ctx.pending_throw_active { return zjs_undefined(); }
             if !in_other { return zjs_bool(0); }
         }
@@ -10855,39 +10981,52 @@ fn host_set_is_subset_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
 fn host_set_is_superset_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let self_s = set_require_this(ctx);
     if self_s == NULL { return zjs_undefined(); }
-    if argc == 0 || !value_is_js_object(args[0]) {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Set.prototype.isSupersetOf requires an object", 45);
-        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
-        return zjs_undefined();
+    let other = if argc > 0 { args[0] } else { zjs_undefined() };
+    let rec = get_set_record(ctx, (char*)"Set.prototype.isSupersetOf: argument is not a set-like object", 61, other);
+    if !rec.ok { return zjs_undefined(); }
+    // A smaller set can't be a superset — short-circuit before any keys().
+    if (f64)self_s.size < rec.size { return zjs_bool(0); }
+    let iter = set_rec_keys_iter(ctx, &rec);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    while true {
+        let step = iter_step(ctx, iter);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if step.done { break; }
+        if set_find_slot(self_s, step.value) < 0 { return zjs_bool(0); }
     }
-    let other = args[0];
-    let ss: SetSupOrDjState; ss.self_s = self_s; ss.flag = true;
-    let sp: void* = NULL; raw { sp = (void*)&ss; }
-    let fp: void* = NULL; raw { fp = (void*)set_superset_cb; }
-    if !iterate_set_like(ctx, other, fp, sp) {
-        return zjs_undefined();
-    }
-    return zjs_bool(if ss.flag { 1 } else { 0 });
+    return zjs_bool(1);
 }
 
 fn host_set_is_disjoint_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let self_s = set_require_this(ctx);
     if self_s == NULL { return zjs_undefined(); }
-    if argc == 0 || !value_is_js_object(args[0]) {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Set.prototype.isDisjointFrom requires an object", 47);
-        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
-        return zjs_undefined();
+    let other = if argc > 0 { args[0] } else { zjs_undefined() };
+    let rec = get_set_record(ctx, (char*)"Set.prototype.isDisjointFrom: argument is not a set-like object", 63, other);
+    if !rec.ok { return zjs_undefined(); }
+    if (f64)self_s.size <= rec.size {
+        // Walk this; if other.has(e) for any e, not disjoint.
+        let i: u32 = 0;
+        while i < self_s.count {
+            let e = self_s.entries + i;
+            if !e.deleted {
+                let in_other = set_rec_has(ctx, &rec, e.value);
+                if ctx.pending_throw_active { return zjs_undefined(); }
+                if in_other { return zjs_bool(0); }
+            }
+            i = i + 1;
+        }
+    } else {
+        // Iterate other.keys(); if this has any key, not disjoint.
+        let iter = set_rec_keys_iter(ctx, &rec);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        while true {
+            let step = iter_step(ctx, iter);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if step.done { break; }
+            if set_find_slot(self_s, step.value) >= 0 { return zjs_bool(0); }
+        }
     }
-    let other = args[0];
-    let ds: SetSupOrDjState; ds.self_s = self_s; ds.flag = true;
-    let sp: void* = NULL; raw { sp = (void*)&ds; }
-    let fp: void* = NULL; raw { fp = (void*)set_disjoint_cb; }
-    if !iterate_set_like(ctx, other, fp, sp) {
-        return zjs_undefined();
-    }
-    return zjs_bool(if ds.flag { 1 } else { 0 });
+    return zjs_bool(1);
 }
 
 // =====================================================================
