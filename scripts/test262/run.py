@@ -268,17 +268,22 @@ def build_source(test262_root, test_src, meta, *, strict_mode: bool):
 # our normal "uncaught throw → fail" path kicks in.
 LOCAL_ASYNC_HARNESS = r"""
 var __test262_async_done = false;
+// IMPORTANT: the failure path must NOT throw. $DONE is almost always
+// invoked from inside a .then() callback (e.g. `p.then($DONE, $DONE)`),
+// so a throw here becomes an *unhandled promise rejection* — which the
+// engine surfaces silently (exit 0, no stdout). That masked every
+// failing async test as the generic "never signaled completion" and hid
+// its real reason. Instead, record the verdict to stdout and let the
+// runner classify. $DONE is made idempotent so the first verdict wins
+// (matches the spec's "first call decides" intent the throw used to
+// enforce by aborting the chain).
 function print(msg) {
-  if (typeof msg === 'string') {
-    if (msg.indexOf('Test262:AsyncTestFailure:') === 0) {
-      throw new Test262Error(msg);
-    }
-    if (msg === 'Test262:AsyncTestComplete') {
-      __test262_async_done = true;
-      // also echo via console so the runner can see it on stdout
-      try { console.log('Test262:AsyncTestComplete'); } catch (e) {}
-      return;
-    }
+  if (typeof msg === 'string' &&
+      (msg.indexOf('Test262:AsyncTestFailure:') === 0 ||
+       msg === 'Test262:AsyncTestComplete')) {
+    if (msg === 'Test262:AsyncTestComplete') { __test262_async_done = true; }
+    try { console.log(msg); } catch (e) {}
+    return;
   }
   try { console.log(msg); } catch (e) {}
 }
@@ -286,7 +291,9 @@ function print(msg) {
 // many async tests in place of print. $DONE() → success;
 // $DONE(error) → failure carrying the thrown value.
 function $DONE(error) {
+  if (__test262_async_done) { return; }   // first verdict wins; no-op after
   if (error) {
+    __test262_async_done = true;
     var name = (error && typeof error === 'object' && 'name' in error)
                  ? error.name : 'Test262Error';
     var msg  = (error && typeof error === 'object' && 'message' in error)
@@ -396,7 +403,15 @@ def classify(meta, exit_code, stderr, stdout=""):
     if "async" in (meta.get("flags") or []):
         if threw:
             return ("fail", stderr.strip()[:120])
-        if "Test262:AsyncTestComplete" not in (stdout or ""):
+        out = stdout or ""
+        # The harness now records a failure verdict on stdout instead of
+        # throwing it into a swallowed microtask. Surface the real reason.
+        fidx = out.find("Test262:AsyncTestFailure:")
+        if fidx >= 0:
+            line = out[fidx:].splitlines()[0]
+            reason = line[len("Test262:AsyncTestFailure:"):].strip()
+            return ("fail", ("async: " + reason)[:120])
+        if "Test262:AsyncTestComplete" not in out:
             return ("fail", "async test never signaled completion")
         return ("pass", "")
     # Positive test: should not throw.

@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-06-01 17:46 UTC",
+    "when": "2026-06-01 18:16 UTC",
     "total": 14524,
     "passed": 12191,
     "failed": 1687,
@@ -986,7 +986,7 @@
     },
     {
       "path": "test/language/statements/class/async-gen-method/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Promise incorrectly resolved."
     },
     {
       "path": "test/language/statements/class/async-gen-method/yield-star-sync-throw.js",
@@ -1006,7 +1006,7 @@
     },
     {
       "path": "test/language/statements/class/async-gen-method-static/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Promise incorrectly resolved."
     },
     {
       "path": "test/language/statements/class/async-gen-method-static/yield-star-sync-throw.js",
@@ -1018,27 +1018,27 @@
     },
     {
       "path": "test/language/statements/class/async-method/dflt-params-ref-later.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
       "path": "test/language/statements/class/async-method/dflt-params-ref-self.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
       "path": "test/language/statements/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/async-method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
       "path": "test/language/statements/class/async-method-static/dflt-params-ref-self.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
       "path": "test/language/statements/class/async-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/class-name-ident-let-escaped.js",
@@ -1282,7 +1282,7 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-string-literal-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-computed-symbol-names.js",
@@ -1290,7 +1290,7 @@
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-string-literal-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-computed-symbol-names.js",
@@ -1346,7 +1346,7 @@
     },
     {
       "path": "test/language/statements/class/elements/async-gen-private-method/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Promise incorrectly resolved."
     },
     {
       "path": "test/language/statements/class/elements/async-gen-private-method/yield-star-sync-throw.js",
@@ -1358,7 +1358,7 @@
     },
     {
       "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Promise incorrectly resolved."
     },
     {
       "path": "test/language/statements/class/elements/async-gen-private-method-static/yield-star-sync-throw.js",
@@ -1366,11 +1366,11 @@
     },
     {
       "path": "test/language/statements/class/elements/async-private-method/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/async-private-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/elements/class-field-is-observable-by-proxy.js",
@@ -2014,7 +2014,7 @@
     },
     {
       "path": "test/language/statements/class/elements/same-line-async-gen-string-literal-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/same-line-async-method-computed-symbol-names.js",
@@ -2022,7 +2022,7 @@
     },
     {
       "path": "test/language/statements/class/elements/same-line-async-method-string-literal-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/same-line-gen-computed-symbol-names.js",
@@ -2662,7 +2662,7 @@
     },
     {
       "path": "test/language/expressions/class/async-gen-method/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Promise incorrectly resolved."
     },
     {
       "path": "test/language/expressions/class/async-gen-method/yield-star-sync-throw.js",
@@ -2682,7 +2682,7 @@
     },
     {
       "path": "test/language/expressions/class/async-gen-method-static/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Promise incorrectly resolved."
     },
     {
       "path": "test/language/expressions/class/async-gen-method-static/yield-star-sync-throw.js",
@@ -2690,27 +2690,27 @@
     },
     {
       "path": "test/language/expressions/class/async-method/dflt-params-ref-later.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
       "path": "test/language/expressions/class/async-method/dflt-params-ref-self.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
       "path": "test/language/expressions/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/async-method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
       "path": "test/language/expressions/class/async-method-static/dflt-params-ref-self.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
       "path": "test/language/expressions/class/async-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/class-name-ident-await-escaped.js",
@@ -2882,7 +2882,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-string-literal-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-computed-symbol-names.js",
@@ -2890,7 +2890,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-string-literal-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-gen-computed-symbol-names.js",
@@ -2946,7 +2946,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/async-gen-private-method/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Promise incorrectly resolved."
     },
     {
       "path": "test/language/expressions/class/elements/async-gen-private-method/yield-star-sync-throw.js",
@@ -2958,7 +2958,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-promise-reject-next.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Promise incorrectly resolved."
     },
     {
       "path": "test/language/expressions/class/elements/async-gen-private-method-static/yield-star-sync-throw.js",
@@ -2966,11 +2966,11 @@
     },
     {
       "path": "test/language/expressions/class/elements/async-private-method/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/elements/async-private-method-static/returns-async-arrow-returns-arguments-from-parent-function.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/elements/class-name-static-initializer-anonymous.js",
@@ -3370,7 +3370,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/same-line-async-gen-string-literal-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/same-line-async-method-computed-symbol-names.js",
@@ -3378,7 +3378,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/same-line-async-method-string-literal-names.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/same-line-gen-computed-symbol-names.js",
@@ -4766,11 +4766,11 @@
     },
     {
       "path": "test/built-ins/Promise/all/reject-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/all/reject-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/all/resolve-before-loop-exit-from-same.js",
@@ -4810,19 +4810,19 @@
     },
     {
       "path": "test/built-ins/Promise/all/resolve-ignores-late-rejection-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/all/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/all/resolve-poisoned-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/all/resolve-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be resolved with the expected value."
     },
     {
       "path": "test/built-ins/Promise/all/same-reject-function.js",
@@ -4898,7 +4898,7 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab\"fulfilled\"\u00bb, \u00ab\"rejected\"\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-element-function-extensible.js",
@@ -4930,11 +4930,11 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-ignored-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-ignored-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-element-function-extensible.js",
@@ -4962,19 +4962,19 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-ignores-late-rejection-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-poisoned-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/allSettledKeyed/extensible.js",
@@ -5010,7 +5010,7 @@
     },
     {
       "path": "test/built-ins/Promise/any/invoke-resolve-error-close.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-resolve-on-promises-every-iteration-of-custom.js",
@@ -5030,7 +5030,7 @@
     },
     {
       "path": "test/built-ins/Promise/any/invoke-then-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be rejected, but was resolved"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-then-get-error-close.js",
@@ -5038,11 +5038,11 @@
     },
     {
       "path": "test/built-ins/Promise/any/invoke-then-get-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be rejected, but was resolved"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-then-on-promises-every-iteration.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: `then` invoked once for every iterated value Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-then.js",
@@ -5058,7 +5058,7 @@
     },
     {
       "path": "test/built-ins/Promise/any/reject-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be rejected."
     },
     {
       "path": "test/built-ins/Promise/any/reject-element-function-extensible.js",
@@ -5094,7 +5094,7 @@
     },
     {
       "path": "test/built-ins/Promise/any/reject-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/any/resolve-before-loop-exit-from-same.js",
@@ -5106,19 +5106,19 @@
     },
     {
       "path": "test/built-ins/Promise/any/resolve-ignores-late-rejection-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/any/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/exception-after-resolve-in-executor.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: [object Object]"
     },
     {
       "path": "test/built-ins/Promise/exception-after-resolve-in-thenable-job.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: [object Object]"
     },
     {
       "path": "test/built-ins/Promise/exec-args.js",
@@ -5170,7 +5170,7 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/species-constructor.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: 7 new promises were created Expected SameValue(\u00ab1\u00bb, \u00ab7\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/subclass-reject-count.js",
@@ -5210,7 +5210,7 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/then/ctor-access-count.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected constructor access count: 1. Actual: 0"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/ctor-custom.js",
@@ -5234,43 +5234,43 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/then/resolve-pending-fulfilled-poisoned-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/prototype/then/resolve-pending-fulfilled-prms-cstm-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be fulfilled with the resolution value of the provided promise."
     },
     {
       "path": "test/built-ins/Promise/prototype/then/resolve-pending-rejected-poisoned-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/prototype/then/resolve-pending-rejected-prms-cstm-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be fulfilled with the resolution value of the provided promise."
     },
     {
       "path": "test/built-ins/Promise/prototype/then/resolve-settled-fulfilled-poisoned-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/prototype/then/resolve-settled-fulfilled-prms-cstm-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be fulfilled with the resolution value of the provided promise."
     },
     {
       "path": "test/built-ins/Promise/prototype/then/resolve-settled-rejected-poisoned-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/prototype/then/resolve-settled-rejected-prms-cstm-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be fulfilled with the resolution value of the provided promise."
     },
     {
       "path": "test/built-ins/Promise/prototype/then/rxn-handler-fulfilled-invoke-strict.js",
-      "reason": "async test never signaled completion"
+      "reason": "async: Test262Error: 'this' must be undefined, got [object Object]"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/rxn-handler-rejected-invoke-strict.js",
-      "reason": "async test never signaled completion"
+      "reason": "async: Test262Error: 'this' must be undefined, got [object Object]"
     },
     {
       "path": "test/built-ins/Promise/race/invoke-resolve-error-close.js",
@@ -5310,31 +5310,31 @@
     },
     {
       "path": "test/built-ins/Promise/race/reject-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/race/reject-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/race/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/race/resolve-non-obj.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be resolved with the correct value."
     },
     {
       "path": "test/built-ins/Promise/race/resolve-non-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be resolved with the correct value."
     },
     {
       "path": "test/built-ins/Promise/race/resolve-poisoned-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/race/resolve-prms-cstm-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be resolved with the correct value."
     },
     {
       "path": "test/built-ins/Promise/race/resolve-self.js",
@@ -5342,7 +5342,7 @@
     },
     {
       "path": "test/built-ins/Promise/race/resolve-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be resolved with the correct value."
     },
     {
       "path": "test/built-ins/Promise/race/same-reject-function.js",
@@ -5370,11 +5370,11 @@
     },
     {
       "path": "test/built-ins/Promise/resolve/S25.Promise_resolve_foreign_thenable_1.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab\"resolved\"\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/resolve/arg-poisoned-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: Promise should be rejected when retrieving `then` property throws an error"
     },
     {
       "path": "test/built-ins/Promise/resolve/arg-uniq-ctor.js",
@@ -5386,7 +5386,7 @@
     },
     {
       "path": "test/built-ins/Promise/resolve/resolve-poisoned-then.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/resolve/resolve-prms-cstm-then.js",
@@ -5394,7 +5394,7 @@
     },
     {
       "path": "test/built-ins/Promise/resolve/resolve-thenable.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be fulfilled with the provided value."
     },
     {
       "path": "test/built-ins/Promise/resolve-function-length.js",
@@ -5410,19 +5410,19 @@
     },
     {
       "path": "test/built-ins/Promise/resolve-poisoned-then-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/resolve-poisoned-then-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/resolve-prms-cstm-then-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be fulfilled with the provided value."
     },
     {
       "path": "test/built-ins/Promise/resolve-prms-cstm-then-immed.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] async: Test262Error: The promise should be fulfilled with the provided value."
     },
     {
       "path": "test/built-ins/Promise/try/ctx-ctor-throws.js",
