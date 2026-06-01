@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-01 20:42 UTC",
+    "when": "2026-06-01 21:17 UTC",
     "total": 14524,
-    "passed": 12277,
-    "failed": 1601,
+    "passed": 12290,
+    "failed": 1588,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -3946,7 +3946,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -4317,10 +4317,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/JSON/parse/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 2; length value should be 2\nzjs: throw: (unknown): length descr"
-    },
-    {
       "path": "test/built-ins/JSON/parse/revived-proxy-revoked.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
@@ -4387,10 +4383,6 @@
     {
       "path": "test/built-ins/JSON/parse/reviver-wrapper.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"object\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValu"
-    },
-    {
-      "path": "test/built-ins/JSON/stringify/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 3; length value should be 3\nzjs: throw: (unknown): length descr"
     },
     {
       "path": "test/built-ins/JSON/stringify/property-order.js",
@@ -4537,14 +4529,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Math\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abu"
     },
     {
-      "path": "test/built-ins/Math/abs/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1\nzjs: throw: (unknown): length descr"
-    },
-    {
-      "path": "test/built-ins/Math/ceil/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1\nzjs: throw: (unknown): length descr"
-    },
-    {
       "path": "test/built-ins/Math/f16round/length.js",
       "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
     },
@@ -4561,16 +4545,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): f16round should be an own property\nzjs: throw: (unknown): f16round should be an own property"
     },
     {
-      "path": "test/built-ins/Math/floor/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1\nzjs: throw: (unknown): length descr"
-    },
-    {
       "path": "test/built-ins/Math/pow/applying-the-exp-operator_A1.js",
       "reason": "[sloppy] zjs: throw: (unknown): 1 Expected SameValue(\u00ab1\u00bb, \u00abNaN\u00bb) to be true\nzjs: throw: (unknown): 1 Expected SameValue(\u00ab1\u00bb, \u00abNaN"
-    },
-    {
-      "path": "test/built-ins/Math/pow/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 2; length value should be 2\nzjs: throw: (unknown): length descr"
     },
     {
       "path": "test/built-ins/Math/prop-desc.js",
@@ -4579,14 +4555,6 @@
     {
       "path": "test/built-ins/Math/round/S15.8.2.15_A7.js",
       "reason": "[sloppy] zjs: throw: (unknown): The result of evaluating (1 / Math.round(x)) is expected to be 1 / 0 Expected SameValue(\u00ab1\u00bb, \u00abInf"
-    },
-    {
-      "path": "test/built-ins/Math/round/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1\nzjs: throw: (unknown): length descr"
-    },
-    {
-      "path": "test/built-ins/Math/sqrt/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1\nzjs: throw: (unknown): length descr"
     },
     {
       "path": "test/built-ins/Math/sumPrecise/length.js",
@@ -4993,10 +4961,6 @@
       "reason": "[sloppy] async: Error: ignored exception"
     },
     {
-      "path": "test/built-ins/Promise/exec-args.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length of first argument Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): length of"
-    },
-    {
       "path": "test/built-ins/Promise/executor-call-context-strict.js",
       "reason": "zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): Expected Sam"
     },
@@ -5185,14 +5149,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): reject descriptor should not be enumerable\nzjs: throw: (unknown): reject descriptor should not be"
     },
     {
-      "path": "test/built-ins/Promise/reject-function-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1\nzjs: throw: (unknown): length descr"
-    },
-    {
-      "path": "test/built-ins/Promise/reject-function-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor value should be ; name value should be \nzjs: throw: (unknown): name descriptor va"
-    },
-    {
       "path": "test/built-ins/Promise/reject-function-nonconstructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -5207,14 +5163,6 @@
     {
       "path": "test/built-ins/Promise/resolve/resolve-prms-cstm-then.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected Sam"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-function-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1\nzjs: throw: (unknown): length descr"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-function-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name descriptor value should be ; name value should be \nzjs: throw: (unknown): name descriptor va"
     },
     {
       "path": "test/built-ins/Promise/resolve-function-nonconstructor.js",

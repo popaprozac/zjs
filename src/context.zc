@@ -16759,8 +16759,10 @@ fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // Build resolve/reject bound closures.
     let resolve_ptr: void* = NULL; raw { resolve_ptr = (void*)host_promise_resolve_fn; }
     let reject_ptr:  void* = NULL; raw { reject_ptr  = (void*)host_promise_reject_fn; }
-    let resolve_fn = ctx_make_host_function(ctx, (char*)"resolve", resolve_ptr);
-    let reject_fn  = ctx_make_host_function(ctx, (char*)"reject",  reject_ptr);
+    // ECMA-262 27.2.1.3: the resolving functions are anonymous (name "")
+    // with length 1.
+    let resolve_fn = ctx_make_host_function_arity(ctx, (char*)"", resolve_ptr, 1);
+    let reject_fn  = ctx_make_host_function_arity(ctx, (char*)"", reject_ptr, 1);
     zjs_as_host_function(resolve_fn).bound = pv;
     zjs_as_host_function(reject_fn).bound  = pv;
 
@@ -17163,7 +17165,7 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_REM_KEY, 12), state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_IDX_KEY, 12), zjs_int32((i32)i));
 
-        let onf = ctx_make_host_function(ctx, (char*)"all_onf", onf_ptr);
+        let onf = ctx_make_host_function_arity(ctx, (char*)"", onf_ptr, 1);
         zjs_as_host_function(onf).bound = per_state_v;
 
         let item_pv = promise_resolve_call(ctx, resolve_fn, ctor_v, item);
@@ -17395,8 +17397,8 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_REM_KEY, 12), state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_IDX_KEY, 12), zjs_int32((i32)i));
-        let onf = ctx_make_host_function(ctx, (char*)"allSettled_onf", onf_ptr);
-        let onr = ctx_make_host_function(ctx, (char*)"allSettled_onr", onr_ptr);
+        let onf = ctx_make_host_function_arity(ctx, (char*)"", onf_ptr, 1);
+        let onr = ctx_make_host_function_arity(ctx, (char*)"", onr_ptr, 1);
         zjs_as_host_function(onf).bound = per_state_v;
         zjs_as_host_function(onr).bound = per_state_v;
 
@@ -17555,8 +17557,8 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), errs_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_REM_KEY, 12), state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_IDX_KEY, 12), zjs_int32((i32)i));
-        let onf = ctx_make_host_function(ctx, (char*)"any_onf", onf_ptr);
-        let onr = ctx_make_host_function(ctx, (char*)"any_onr", onr_ptr);
+        let onf = ctx_make_host_function_arity(ctx, (char*)"", onf_ptr, 1);
+        let onr = ctx_make_host_function_arity(ctx, (char*)"", onr_ptr, 1);
         zjs_as_host_function(onf).bound = per_state_v;
         zjs_as_host_function(onr).bound = per_state_v;
 
@@ -24384,17 +24386,17 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let min_ptr:   void* = NULL; raw { min_ptr   = (void*)host_math_min; }
 
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"abs", 3),
-               ctx_make_host_function(ctx, (char*)"abs", abs_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"abs", abs_ptr, 1));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"floor", 5),
-               ctx_make_host_function(ctx, (char*)"floor", floor_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"floor", floor_ptr, 1));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"ceil", 4),
-               ctx_make_host_function(ctx, (char*)"ceil", ceil_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"ceil", ceil_ptr, 1));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"round", 5),
-               ctx_make_host_function(ctx, (char*)"round", round_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"round", round_ptr, 1));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"sqrt", 4),
-               ctx_make_host_function(ctx, (char*)"sqrt", sqrt_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"sqrt", sqrt_ptr, 1));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"pow", 3),
-               ctx_make_host_function(ctx, (char*)"pow", pow_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"pow", pow_ptr, 2));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"max", 3),
                ctx_make_host_function_arity(ctx, (char*)"max", max_ptr, 2));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"min", 3),
@@ -24788,9 +24790,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let stringify_ptr: void* = NULL; raw { stringify_ptr = (void*)host_json_stringify; }
     let parse_ptr:     void* = NULL; raw { parse_ptr     = (void*)host_json_parse; }
     object_set(ctx, json_o, ctx_intern_atom(ctx, (char*)"stringify", 9),
-               ctx_make_host_function(ctx, (char*)"stringify", stringify_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"stringify", stringify_ptr, 3));
     object_set(ctx, json_o, ctx_intern_atom(ctx, (char*)"parse", 5),
-               ctx_make_host_function(ctx, (char*)"parse", parse_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"parse", parse_ptr, 2));
     let json_slot = ctx_intern_global(ctx, (char*)"JSON", 4);
     ctx.globals[json_slot].value = json_v;
     ctx.globals[json_slot].defined = true;
