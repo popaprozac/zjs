@@ -460,6 +460,103 @@ static inline int zjs_hkdf_oneshot(int algo,
 }
 
 // ---------------------------------------------------------------------
+// zlib one-shot compress / decompress (node:zlib + CompressionStream).
+// `fmt`: 0 = zlib (deflate), 1 = gzip, 2 = raw deflate. Backed by the
+// platform zlib (Apple SDK libz / Linux -lz). Windows has no system
+// zlib, so these return -1 there (node:zlib reports NotSupported).
+// On success mallocs *out (caller frees) and sets *out_len; returns 0.
+// ---------------------------------------------------------------------
+#if !defined(_WIN32) && defined(__has_include) && __has_include(<zlib.h>)
+#  include <zlib.h>
+#  define ZJS_HAS_ZLIB 1
+#endif
+
+static inline int zjs_zlib_window_bits(int fmt) {
+    if (fmt == 1) return 15 + 16;   // gzip
+    if (fmt == 2) return -15;       // raw deflate
+    return 15;                       // zlib
+}
+
+static inline int zjs_zlib_compress(int fmt, const void* src, size_t src_len,
+                                    int level, unsigned char** out, size_t* out_len) {
+#if defined(ZJS_HAS_ZLIB)
+    z_stream zs;
+    memset(&zs, 0, sizeof(zs));
+    if (level < 0 || level > 9) level = Z_DEFAULT_COMPRESSION;
+    if (deflateInit2(&zs, level, Z_DEFLATED, zjs_zlib_window_bits(fmt),
+                     8, Z_DEFAULT_STRATEGY) != Z_OK) return -1;
+    size_t cap = src_len + (src_len >> 1) + 256;
+    unsigned char* buf = (unsigned char*)malloc(cap);
+    if (!buf) { deflateEnd(&zs); return -1; }
+    zs.next_in = (Bytef*)src;
+    zs.avail_in = (uInt)src_len;
+    zs.next_out = buf;
+    zs.avail_out = (uInt)cap;
+    int rc;
+    for (;;) {
+        rc = deflate(&zs, Z_FINISH);
+        if (rc == Z_STREAM_END) break;
+        if (rc != Z_OK && rc != Z_BUF_ERROR) { free(buf); deflateEnd(&zs); return -1; }
+        // Grow output.
+        size_t used = cap - zs.avail_out;
+        size_t ncap = cap * 2;
+        unsigned char* nb = (unsigned char*)realloc(buf, ncap);
+        if (!nb) { free(buf); deflateEnd(&zs); return -1; }
+        buf = nb; cap = ncap;
+        zs.next_out = buf + used;
+        zs.avail_out = (uInt)(cap - used);
+    }
+    *out_len = cap - zs.avail_out;
+    *out = buf;
+    deflateEnd(&zs);
+    return 0;
+#else
+    (void)fmt; (void)src; (void)src_len; (void)level; (void)out; (void)out_len;
+    return -1;
+#endif
+}
+
+static inline int zjs_zlib_decompress(int fmt, const void* src, size_t src_len,
+                                      unsigned char** out, size_t* out_len) {
+#if defined(ZJS_HAS_ZLIB)
+    z_stream zs;
+    memset(&zs, 0, sizeof(zs));
+    if (inflateInit2(&zs, zjs_zlib_window_bits(fmt)) != Z_OK) return -1;
+    size_t cap = src_len * 4 + 256;
+    unsigned char* buf = (unsigned char*)malloc(cap);
+    if (!buf) { inflateEnd(&zs); return -1; }
+    zs.next_in = (Bytef*)src;
+    zs.avail_in = (uInt)src_len;
+    zs.next_out = buf;
+    zs.avail_out = (uInt)cap;
+    int rc;
+    for (;;) {
+        rc = inflate(&zs, Z_NO_FLUSH);
+        if (rc == Z_STREAM_END) break;
+        if (rc != Z_OK && rc != Z_BUF_ERROR) { free(buf); inflateEnd(&zs); return -1; }
+        if (zs.avail_out == 0 || rc == Z_BUF_ERROR) {
+            size_t used = cap - zs.avail_out;
+            size_t ncap = cap * 2;
+            unsigned char* nb = (unsigned char*)realloc(buf, ncap);
+            if (!nb) { free(buf); inflateEnd(&zs); return -1; }
+            buf = nb; cap = ncap;
+            zs.next_out = buf + used;
+            zs.avail_out = (uInt)(cap - used);
+        } else if (rc == Z_OK && zs.avail_in == 0) {
+            break;  // consumed all input, not Z_STREAM_END (truncated) — return what we have
+        }
+    }
+    *out_len = cap - zs.avail_out;
+    *out = buf;
+    inflateEnd(&zs);
+    return 0;
+#else
+    (void)fmt; (void)src; (void)src_len; (void)out; (void)out_len;
+    return -1;
+#endif
+}
+
+// ---------------------------------------------------------------------
 // AES-GCM one-shot. Backend-specific implementation:
 //
 //   - Linux:   OpenSSL EVP_aes_*_gcm (libcrypto)

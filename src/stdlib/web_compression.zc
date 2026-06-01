@@ -1,0 +1,28 @@
+// CompressionStream / DecompressionStream globals. Installed at init via
+// a JS bootstrap (web_compression.js → WEB_COMPRESSION_SOURCE) that sets
+// globalThis.{Compression,Decompression}Stream over the native codec +
+// WHATWG TransformStream.
+
+raw {
+    #include "stdlib/web_compression.gen.h"
+}
+
+fn zjs_install_web_compression(ctx: ZjsContext*) -> void {
+    let src: char* = NULL; raw { src = (char*)WEB_COMPRESSION_SOURCE; }
+    let r = zjs_eval(ctx, src);
+    let _ = r;
+    if ctx.had_error {
+        let err = ctx.last_error;
+        let msg_s: ZjsString* = NULL;
+        if zjs_is_object(err) != 0 {
+            let m = property_get(ctx, err, ctx_intern_string(ctx, (char*)"message", 7));
+            if zjs_is_string(m) != 0 { msg_s = zjs_as_string(m); }
+        }
+        raw {
+            fprintf(stderr, "[stdlib] web_compression bootstrap failed: %.*s\n",
+                    msg_s ? (int)msg_s->length : 0, msg_s ? msg_s->data : "");
+        }
+        ctx.had_error = false;
+        ctx.last_error = zjs_undefined();
+    }
+}

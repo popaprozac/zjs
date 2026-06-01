@@ -18,15 +18,20 @@ SHLIB_EXT := dylib
 RPATH_FLAG := -Wl,-rpath,@loader_path
 PLATFORM_SRC     := src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c
 PLATFORM_OBJS    := $(BUILD_DIR)/http_apple.o $(BUILD_DIR)/ws_apple.o $(BUILD_DIR)/socket_posix.o
-PLATFORM_LDFLAGS := -framework Foundation -framework Security -fobjc-arc
+PLATFORM_LDFLAGS := -framework Foundation -framework Security -fobjc-arc -lz
 PLATFORM_CFLAGS  := -fobjc-arc
+# Extra libs appended to `zc build` link lines. macOS zc honors neither
+# a `link:` directive nor `-l*` in cflags, so zlib (node:zlib) must be
+# passed on the command line. Linux gets -lz via lib.zc's link: directive.
+ZC_LINK := -lz
 else
 SHLIB_EXT := so
 RPATH_FLAG := -Wl,-rpath,'$$ORIGIN'
 PLATFORM_SRC     := src/platform/http_linux.c src/platform/http_async.c src/platform/ws_linux.c src/platform/socket_posix.c
 PLATFORM_OBJS    := $(BUILD_DIR)/http_linux.o $(BUILD_DIR)/http_async.o $(BUILD_DIR)/ws_linux.o $(BUILD_DIR)/socket_posix.o
-PLATFORM_LDFLAGS := -lpthread -lcurl -lwebsockets
+PLATFORM_LDFLAGS := -lpthread -lcurl -lwebsockets -lz
 PLATFORM_CFLAGS  :=
+ZC_LINK :=
 endif
 
 # Locate zc's stdlib root (the dir containing `std/`). Resolution order:
@@ -102,11 +107,12 @@ ENGINE_SRC := src/lib.zc src/context.zc src/value.zc \
               src/stdlib/node_dx.zc \
               src/stdlib/node_stream.zc \
               src/stdlib/node_url.zc \
+              src/stdlib/node_zlib.zc \
               src/stdlib/node_child_process.zc \
               src/stdlib/node_net.zc src/stdlib/node_http.zc \
               src/stdlib/web_events.zc src/stdlib/web_abort.zc \
               src/stdlib/web_clone.zc src/stdlib/web_blob.zc \
-              src/stdlib/web_streams.zc
+              src/stdlib/web_streams.zc src/stdlib/web_compression.zc
 
 LIB_SRC         := src/lib.zc
 CLI_SRC         := tools/zjs.zc
@@ -172,7 +178,7 @@ lib: $(LIB)
 # Make on its own wouldn't notice a platform-source edit and so wouldn't
 # re-run zc. Listing them here forces the rebuild.
 $(LIB): $(ENGINE_SRC) $(PLATFORM_SRC) $(STDLIB_GEN) include/zjs.h | $(BUILD_DIR) stdlib-link
-	$(ZC) build $(ZC_FLAGS) -shared $(LIB_SRC) -o $@
+	$(ZC) build $(ZC_FLAGS) -shared $(LIB_SRC) $(ZC_LINK) -o $@
 
 # Static archive for embedding (iOS App Store mandates static linking;
 # also the small-size path for other embedders).
@@ -285,7 +291,7 @@ $(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(QJSRE_OBJS) $(AESGCM_OBJ)
 
 cli: $(CLI)
 $(CLI): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) $(STDLIB_GEN) | $(BUILD_DIR) stdlib-link
-	$(ZC) build $(ZC_FLAGS) $(CLI_SRC) -o $@
+	$(ZC) build $(ZC_FLAGS) $(CLI_SRC) $(ZC_LINK) -o $@
 
 smoke: $(SMOKE)
 $(SMOKE): $(SMOKE_SRC) include/zjs.h $(LIB) | $(BUILD_DIR)
@@ -299,15 +305,15 @@ $(SMOKE_STATIC): $(SMOKE_SRC) include/zjs.h $(LIBA) | $(BUILD_DIR)
 
 lexer-test: $(LEXER_TEST)
 $(LEXER_TEST): $(LEXER_TEST_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
-	$(ZC) build $(ZC_FLAGS) $(LEXER_TEST_SRC) -o $@
+	$(ZC) build $(ZC_FLAGS) $(LEXER_TEST_SRC) $(ZC_LINK) -o $@
 
 parser-test: $(PARSER_TEST)
 $(PARSER_TEST): $(PARSER_TEST_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
-	$(ZC) build $(ZC_FLAGS) $(PARSER_TEST_SRC) -o $@
+	$(ZC) build $(ZC_FLAGS) $(PARSER_TEST_SRC) $(ZC_LINK) -o $@
 
 interp-test: $(INTERP_TEST)
 $(INTERP_TEST): $(INTERP_TEST_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) | $(BUILD_DIR) stdlib-link
-	$(ZC) build $(ZC_FLAGS) $(INTERP_TEST_SRC) -o $@
+	$(ZC) build $(ZC_FLAGS) $(INTERP_TEST_SRC) $(ZC_LINK) -o $@
 
 test262-runner: $(T262_RUNNER)
 $(T262_RUNNER): $(T262_RUNNER_SRC) include/zjs.h $(LIB) | $(BUILD_DIR)

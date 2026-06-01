@@ -14374,6 +14374,45 @@ fn host_crypto_subtle_derive_key(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
     return pv;
 }
 
+// zlib one-shot codec backing node:zlib + CompressionStream. Exposed as
+// the global __zjs_zlib(fmt, isCompress, data, level). fmt: 0 zlib /
+// 1 gzip / 2 raw. Returns a Uint8Array; throws on backend failure or
+// when zlib isn't available (Windows).
+fn host_zlib_codec(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc < 3 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"__zjs_zlib(fmt, compress, data[, level])", 41);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let fmt = (int)zjs_to_double(args[0]);
+    let is_compress = zjs_to_bool_coerce(args[1]) != 0;
+    let dp: u8* = NULL;
+    let dn: u32 = 0;
+    if !crypto_extract_bytes(args[2], &dp, &dn) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"data must be a Uint8Array or string", 35);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let level: int = if argc >= 4 { (int)zjs_to_double(args[3]) } else { -1 };
+    let out_p: u8* = NULL;
+    let out_len: usize = 0;
+    let rc: int = -1;
+    raw {
+        if (is_compress) rc = zjs_zlib_compress(fmt, dp, (size_t)dn, level, &out_p, &out_len);
+        else             rc = zjs_zlib_decompress(fmt, dp, (size_t)dn, &out_p, &out_len);
+    }
+    if rc != 0 {
+        let err = build_typed_error(ctx, (char*)"Error", 5,
+                                    (char*)"zlib operation failed (or zlib unavailable on this platform)", 60);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let result = zjs_uint8_array_new((u32)out_len);
+    ctx_register_cell(ctx, (void*)result);
+    if out_len > 0 { raw { memcpy(result->bytes, out_p, out_len); } }
+    raw { if (out_p) free(out_p); }
+    return zjs_cell_from_ptr((void*)result);
+}
+
 // =====================================================================
 // Timers — web-API Phase B (2026-05-18). setTimeout / setInterval /
 // clear* as globals. The engine maintains a queue of pending timers;
@@ -24704,6 +24743,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let crypto_slot = ctx_intern_global(ctx, (char*)"crypto", 6);
     ctx.globals[crypto_slot].value = crypto_v;
     ctx.globals[crypto_slot].defined = true;
+    // Internal zlib codec backing node:zlib + CompressionStream.
+    let zlib_ptr: void* = NULL; raw { zlib_ptr = (void*)host_zlib_codec; }
+    let zlib_slot = ctx_intern_global(ctx, (char*)"__zjs_zlib", 10);
+    ctx.globals[zlib_slot].value = ctx_make_host_function_arity(ctx, (char*)"__zjs_zlib", zlib_ptr, 4);
+    ctx.globals[zlib_slot].defined = true;
 
     // Mark every property on every built-in prototype as
     // non-enumerable. Per spec, ALL methods on Object.prototype,
@@ -24822,6 +24866,11 @@ fn zjs_install_stdlib_extensions(ctx: ZjsContext*) -> void {
         // (~50KB of source). Skip if the embedder doesn't need them.
         #ifndef ZJS_NO_WEB_STREAMS
         zjs_install_web_streams(ctx);
+        #endif
+        // CompressionStream / DecompressionStream — depends on
+        // TransformStream (web_streams) + the native __zjs_zlib codec.
+        #ifndef ZJS_NO_WEB_COMPRESSION
+        zjs_install_web_compression(ctx);
         #endif
         // node:net native host-fn globals (__zjs_net_*).
         #ifndef ZJS_NO_NODE_NET
@@ -25369,6 +25418,7 @@ fn ctx_register_stdlib_modules(ctx: ZjsContext*) -> void {
     zjs_register_node_dx(ctx);
     zjs_register_node_stream(ctx);
     zjs_register_node_url(ctx);
+    zjs_register_node_zlib(ctx);
     zjs_register_node_child_process(ctx);
     zjs_register_node_net(ctx);
     zjs_register_node_http(ctx);

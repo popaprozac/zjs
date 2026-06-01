@@ -1,0 +1,12 @@
+// node:zlib — gzip/deflate/raw over the native __zjs_zlib codec. JS
+// module source (node_zlib.js → NODE_ZLIB_SOURCE) as a builtin module.
+
+raw {
+    #include "stdlib/node_zlib.gen.h"
+}
+
+fn zjs_register_node_zlib(ctx: ZjsContext*) -> void {
+    let src: char* = NULL; raw { src = (char*)NODE_ZLIB_SOURCE; }
+    let len: u32 = 0; raw { len = (uint32_t)(sizeof(NODE_ZLIB_SOURCE) - 1); }
+    ctx_register_builtin_module_source(ctx, (char*)"node:zlib", src, len);
+}
