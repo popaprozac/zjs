@@ -57,19 +57,27 @@ All verified against Node (incl. EST↔EDT DST); test262 quick held at
 PlainDate/Time/DateTime, PlainYearMonth, PlainMonthDay, Instant,
 ZonedDateTime) + Now, gated by ZJS_NO_TEMPORAL, all verified vs Node.
 
+**ISO-8601 string `from()` parsing — DONE.** All eight types accept
+their ISO string form: `PlainDate.from("2026-05-30")`,
+`PlainTime.from("13:45:30.25")`, `PlainDateTime.from("…T…")`,
+`PlainYearMonth.from("2026-05")`, `PlainMonthDay.from("--12-25")`,
+`Duration.from("P1Y2M3DT4H5M6.5S")`, `Instant.from("…Z"|"…±HH:MM")`,
+`ZonedDateTime.from("…±HH:MM[Area/City]")`. Shared `temporal_parse_iso`
+(date / T-time / Z|±HH[:]MM|±HH offset / `[Zone]` annotation, comma or
+dot fraction, expanded ±YYYYYY years) + `temporal_parse_iso_duration`.
+Round-trips `from(x.toString())` verified vs Node.
+
 **Minor Temporal follow-ups (documented, low-priority):**
 - PlainDateTime.until/since + ZonedDateTime calendar-unit
   largestUnit (years/months) — extend temporal_diff_iso_date with
   the time component / relativeTo.
-- ISO-string parsing in from() (today: objects / same-type clones).
 - DST disambiguation option ('earlier'/'later'/'reject'); currently
-  always 'compatible' (mktime default).
+  always 'compatible' (mktime default). ZonedDateTime string `from()`
+  ignores the explicit offset for disambiguation (uses 'compatible').
 - Windows IANA tz (ICU) — offset lookup stubs to UTC there.
 - Minor: Duration.add/subtract balancing (currently field-wise);
-  ISO-string parsing in the various from() methods (today they take
-  objects / same-type clones only); monthCode-keyed from();
-  calendar-unit rounding (years/months) in PlainDate.until/since via
-  relativeTo — pairs with T5.
+  monthCode-keyed from(); calendar-unit rounding (years/months) in
+  PlainDate.until/since via relativeTo — pairs with T5.
 
 Original decided shape (see [[project_bigint_temporal_arc]]):
 - **Default ON, removable with `-DZJS_NO_TEMPORAL`** (opt-out, matches

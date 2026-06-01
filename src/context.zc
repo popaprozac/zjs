@@ -100,6 +100,7 @@ raw {
     #include <stdlib.h>
     #include <string.h>
     #include <time.h>
+    #include <ctype.h>
     // Forward decl — defined in eval.zc; lets host_function_ctor /
     // similar runtime-compile paths reach it without a circular import.
     typedef struct ZjsValue ZjsValue;
@@ -19765,6 +19766,21 @@ fn host_temporal_duration_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
 // parsing is a T2 follow-up.)
 fn host_temporal_duration_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        let f: i64[10];
+        let fp: i64* = NULL; raw { fp = &f[0]; }
+        let pok = temporal_parse_iso_duration(s.data, s.length, fp);
+        if pok == 0 {
+            return temporal_range_error(ctx, (char*)"invalid ISO 8601 duration string", 32);
+        }
+        let t = zjs_temporal_new(TMP_DURATION);
+        t.d_years = f[0]; t.d_months = f[1]; t.d_weeks = f[2]; t.d_days = f[3];
+        t.d_hours = f[4]; t.d_minutes = f[5]; t.d_seconds = f[6];
+        t.d_ms = f[7]; t.d_us = f[8]; t.d_ns = f[9];
+        ctx_register_cell(ctx, (void*)t);
+        return zjs_cell_from_ptr((void*)t);
+    }
     if zjs_is_temporal_kind(v, TMP_DURATION) != 0 {
         let src = zjs_as_temporal(v);
         let t = zjs_temporal_new(TMP_DURATION);
@@ -20134,6 +20150,46 @@ fn host_temporal_instant_from_epoch_ns(ctx: ZjsContext*, args: ZjsValue*, argc: 
     return host_temporal_instant_ctor(ctx, args, argc);
 }
 
+// Temporal.Instant.from(Instant | ISO-string-with-offset).
+fn host_temporal_instant_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_temporal_kind(v, TMP_INSTANT) != 0 {
+        let s = zjs_as_temporal(v);
+        return temporal_make_instant(ctx, s.epoch_ns);
+    }
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        let p: TmpIso; let pp: TmpIso* = NULL; raw { pp = &p; }
+        temporal_parse_iso(s.data, s.length, pp);
+        if p.ok == 0 || p.has_date == 0 || p.has_time == 0 || p.has_offset == 0 {
+            return temporal_range_error(ctx, (char*)"Instant.from needs a date-time with offset (Z or +HH:MM)", 56);
+        }
+        if !temporal_date_valid(p.year, p.month, p.day) {
+            return temporal_range_error(ctx, (char*)"invalid ISO date", 16);
+        }
+        if !temporal_time_valid(p.hour, p.minute, p.second, p.ms, p.us, p.ns) {
+            return temporal_range_error(ctx, (char*)"invalid time", 12);
+        }
+        let days = iso_days_from_civil(p.year, p.month, p.day);
+        let secs = days * 86400 + p.hour * 3600 + p.minute * 60 + p.second - p.offset_secs;
+        let sub_ns = p.ms * 1000000 + p.us * 1000 + p.ns;
+        let secs_b = zjs_bigint_from_i64(secs);
+        let g = zjs_bigint_from_i64(1000000000);
+        let prod = bigint_mul(secs_b, g);
+        let subb = zjs_bigint_from_i64(sub_ns);
+        let total = bigint_add(prod, subb);
+        bigint_free_void((void*)secs_b);
+        bigint_free_void((void*)g);
+        bigint_free_void((void*)prod);
+        bigint_free_void((void*)subb);
+        ctx_register_cell(ctx, (void*)total);
+        return temporal_make_instant(ctx, zjs_cell_from_ptr((void*)total));
+    }
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+        (char*)"Temporal.Instant.from expects an Instant or string", 50);
+    ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+}
+
 // Instant add/subtract: a time-only Duration; date units (years,
 // months, weeks, days) → RangeError. sign +1 add / -1 subtract.
 fn temporal_instant_add_impl(ctx: ZjsContext*, sign: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -20304,6 +20360,201 @@ fn host_temporal_plaindatetime_round(ctx: ZjsContext*, args: ZjsValue*, argc: u3
     return zjs_cell_from_ptr((void*)t);
 }
 
+// --- ISO 8601 string parsing (Temporal from() string forms) --------
+//
+// One parser for the date-time-offset-timezone family; a separate one
+// for ISO durations. Both fill caller structs and return ok via a
+// field. Lenient on the parts a given type ignores (e.g. PlainDate
+// accepts a full datetime and keeps the date).
+struct TmpIso {
+    ok:         int;
+    has_date:   int;
+    has_time:   int;
+    has_offset: int;
+    has_tz:     int;
+    year: i64; month: i64; day: i64;
+    hour: i64; minute: i64; second: i64;
+    ms: i64; us: i64; ns: i64;
+    offset_secs: i64;
+    tz_off: u32; tz_len: u32;   // [Zone] annotation slice into src
+}
+
+// Parse "[+-]YYYY-MM-DD[(T| )HH:MM[:SS[.fff]]][Z|±HH:MM][[Zone]]" or a
+// bare time "[T]HH:MM[:SS[.fff]]". Also "YYYY-MM" (year-month) and
+// "--MM-DD" / "MM-DD" (month-day) shapes — caller picks the fields.
+fn temporal_parse_iso(src: char*, len: u32, p: TmpIso*) -> void {
+    p.ok = 0; p.has_date = 0; p.has_time = 0; p.has_offset = 0; p.has_tz = 0;
+    p.year = 0; p.month = 1; p.day = 1;
+    p.hour = 0; p.minute = 0; p.second = 0; p.ms = 0; p.us = 0; p.ns = 0;
+    p.offset_secs = 0; p.tz_off = 0; p.tz_len = 0;
+    raw {
+        const char* s = src;
+        uint32_t i = 0, n = len;
+        // skip leading whitespace
+        while (i < n && (s[i]==' '||s[i]=='\t')) i++;
+        int64_t Y=0, Mo=1, D=1, H=0, Mi=0, S=0, frac_ns=0;
+        int has_date=0, has_time=0, has_off=0, has_tz=0;
+        int64_t off=0;
+        uint32_t tzo=0, tzl=0;
+
+        // month-day "--MM-DD"
+        if (i+1 < n && s[i]=='-' && s[i+1]=='-') {
+            i += 2;
+            if (i+1 < n && isdigit((unsigned char)s[i]) && isdigit((unsigned char)s[i+1])) {
+                Mo = (s[i]-'0')*10 + (s[i+1]-'0'); i += 2;
+                if (i < n && s[i]=='-') i++;
+                if (i+1 < n && isdigit((unsigned char)s[i]) && isdigit((unsigned char)s[i+1])) {
+                    D = (s[i]-'0')*10 + (s[i+1]-'0'); i += 2;
+                    has_date = 1;
+                }
+            }
+            p->ok = has_date; p->has_date = has_date;
+            p->year=1972; p->month=Mo; p->day=D;
+            goto done;
+        }
+
+        // Leading bare time? "T..." or "HH:MM..."
+        int bare_time = 0;
+        if (i < n && (s[i]=='T'||s[i]=='t')) { bare_time = 1; i++; }
+        else {
+            // peek: digits then ':' within first 3 chars → time
+            if (i+2 < n && isdigit((unsigned char)s[i]) && isdigit((unsigned char)s[i+1]) && s[i+2]==':')
+                bare_time = 1;
+        }
+
+        if (!bare_time) {
+            // DATE: optional sign + year digits
+            int ysign = 1;
+            if (i < n && (s[i]=='+'||s[i]=='-')) { if (s[i]=='-') ysign=-1; i++; }
+            int yd = 0; int64_t yv = 0;
+            while (i < n && isdigit((unsigned char)s[i])) { yv = yv*10 + (s[i]-'0'); i++; yd++; }
+            if (yd < 4) { p->ok = 0; goto done; }
+            Y = ysign * yv;
+            if (i < n && s[i]=='-') i++;
+            // month
+            if (!(i+1 < n && isdigit((unsigned char)s[i]) && isdigit((unsigned char)s[i+1]))) { p->ok=0; goto done; }
+            Mo = (s[i]-'0')*10 + (s[i+1]-'0'); i += 2;
+            has_date = 1;
+            // optional "-DD"
+            if (i < n && s[i]=='-') {
+                i++;
+                if (i+1 < n && isdigit((unsigned char)s[i]) && isdigit((unsigned char)s[i+1])) {
+                    D = (s[i]-'0')*10 + (s[i+1]-'0'); i += 2;
+                }
+            }
+            // date-time separator
+            if (i < n && (s[i]=='T'||s[i]=='t'||s[i]==' ')) { i++; bare_time = 1; }
+        }
+
+        if (bare_time && i+1 < n && isdigit((unsigned char)s[i])) {
+            // TIME HH[:MM[:SS[.fff]]]
+            H = (s[i]-'0')*10 + (s[i+1]-'0'); i += 2; has_time = 1;
+            if (i < n && s[i]==':') {
+                i++;
+                if (i+1<n && isdigit((unsigned char)s[i])) { Mi=(s[i]-'0')*10+(s[i+1]-'0'); i+=2; }
+                if (i < n && s[i]==':') {
+                    i++;
+                    if (i+1<n && isdigit((unsigned char)s[i])) { S=(s[i]-'0')*10+(s[i+1]-'0'); i+=2; }
+                    if (i < n && (s[i]=='.'||s[i]==',')) {
+                        i++;
+                        int fd = 0; int64_t f = 0;
+                        while (i < n && isdigit((unsigned char)s[i]) && fd < 9) { f = f*10 + (s[i]-'0'); i++; fd++; }
+                        while (i < n && isdigit((unsigned char)s[i])) i++;   // drop excess
+                        while (fd < 9) { f *= 10; fd++; }
+                        frac_ns = f;
+                    }
+                }
+            }
+        }
+
+        // OFFSET  Z | ±HH:MM | ±HHMM | ±HH
+        if (i < n && (s[i]=='Z'||s[i]=='z')) { has_off=1; off=0; i++; }
+        else if (i < n && (s[i]=='+'||s[i]=='-')) {
+            int osign = (s[i]=='-') ? -1 : 1; i++;
+            int64_t oh=0, om=0;
+            if (i+1<n && isdigit((unsigned char)s[i])) { oh=(s[i]-'0')*10+(s[i+1]-'0'); i+=2; }
+            if (i < n && s[i]==':') i++;
+            if (i+1<n && isdigit((unsigned char)s[i])) { om=(s[i]-'0')*10+(s[i+1]-'0'); i+=2; }
+            off = osign * (oh*3600 + om*60); has_off = 1;
+        }
+
+        // TIMEZONE annotation [Area/City]
+        if (i < n && s[i]=='[') {
+            i++;
+            // skip a leading '!' (critical flag)
+            if (i < n && s[i]=='!') i++;
+            uint32_t start = i;
+            while (i < n && s[i]!=']') i++;
+            tzo = start; tzl = i - start;
+            if (i < n && s[i]==']') i++;
+            // ignore offset-form annotations like [+05:00] / [u-ca=...]
+            if (tzl > 0 && (src[tzo]=='+'||src[tzo]=='-')) { tzl = 0; tzo = 0; }
+            else if (tzl >= 5) {
+                int eq = 0; for (uint32_t k=tzo; k<tzo+tzl; k++) if (src[k]=='=') { eq=1; break; }
+                if (eq) { tzl = 0; tzo = 0; }
+            }
+            if (tzl > 0) has_tz = 1;
+        }
+
+        p->year=Y; p->month=Mo; p->day=D; p->hour=H; p->minute=Mi; p->second=S;
+        p->ms = frac_ns/1000000; p->us=(frac_ns/1000)%1000; p->ns=frac_ns%1000;
+        p->has_date=has_date; p->has_time=has_time; p->has_offset=has_off; p->has_tz=has_tz;
+        p->offset_secs=off; p->tz_off=tzo; p->tz_len=tzl;
+        p->ok = (has_date || has_time) ? 1 : 0;
+done:;
+    }
+}
+
+// Parse an ISO duration "[+-]P[nY][nM][nW][nD][T[nH][nM][n[.fff]S]]"
+// into f[0..9] = years..nanoseconds. Returns ok (1/0).
+fn temporal_parse_iso_duration(src: char*, len: u32, f: i64*) -> int {
+    let i: u32 = 0;
+    while i < 10 { f[i] = 0; i = i + 1; }
+    let ok: int = 0;
+    raw {
+        const char* s = src; uint32_t n = len, k = 0;
+        int sign = 1;
+        if (k < n && (s[k]=='+'||s[k]=='-')) { if (s[k]=='-') sign=-1; k++; }
+        if (k >= n || (s[k]!='P' && s[k]!='p')) { ok = 0; goto dend; }
+        k++;
+        int in_time = 0;
+        int saw_any = 0;
+        while (k < n) {
+            if (s[k]=='T'||s[k]=='t') { in_time = 1; k++; continue; }
+            if (!isdigit((unsigned char)s[k])) { ok = 0; goto dend; }
+            int64_t val = 0; int fd = 0; int64_t frac = 0;
+            while (k < n && isdigit((unsigned char)s[k])) { val = val*10 + (s[k]-'0'); k++; }
+            if (k < n && (s[k]=='.'||s[k]==',')) {
+                k++;
+                while (k < n && isdigit((unsigned char)s[k]) && fd < 9) { frac = frac*10 + (s[k]-'0'); k++; fd++; }
+                while (k < n && isdigit((unsigned char)s[k])) k++;
+                while (fd < 9) { frac *= 10; fd++; }
+            }
+            if (k >= n) { ok = 0; goto dend; }
+            char u = s[k]; k++;
+            saw_any = 1;
+            if (!in_time) {
+                if (u=='Y'||u=='y') f[0]=val*sign;
+                else if (u=='M'||u=='m') f[1]=val*sign;
+                else if (u=='W'||u=='w') f[2]=val*sign;
+                else if (u=='D'||u=='d') f[3]=val*sign;
+                else { ok=0; goto dend; }
+            } else {
+                if (u=='H'||u=='h') f[4]=val*sign;
+                else if (u=='M'||u=='m') f[5]=val*sign;
+                else if (u=='S'||u=='s') {
+                    f[6]=val*sign;
+                    // fractional seconds → ms/us/ns
+                    f[7]=(frac/1000000)*sign; f[8]=((frac/1000)%1000)*sign; f[9]=(frac%1000)*sign;
+                } else { ok=0; goto dend; }
+            }
+        }
+        ok = saw_any ? 1 : 0;
+dend:;
+    }
+    return ok;
+}
+
 // Validate an ISO calendar date. ISO year range per spec: the date
 // must be within ±(10^8 days) of the epoch, i.e. years -271821..275760.
 fn temporal_date_valid(y: i64, m: i64, d: i64) -> bool {
@@ -20464,6 +20715,22 @@ fn host_temporal_plaindate_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
 // follow-up.)
 fn host_temporal_plaindate_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        let p: TmpIso; let pp: TmpIso* = NULL; raw { pp = &p; }
+        temporal_parse_iso(s.data, s.length, pp);
+        if p.ok == 0 || p.has_date == 0 {
+            return temporal_range_error(ctx, (char*)"invalid ISO 8601 date string", 28);
+        }
+        if !temporal_date_valid(p.year, p.month, p.day) {
+            return temporal_range_error(ctx, (char*)"invalid ISO date", 16);
+        }
+        let t = zjs_temporal_new(TMP_PLAIN_DATE);
+        t.year = (i32)p.year; t.month = (i32)p.month; t.day = (i32)p.day;
+        t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+        ctx_register_cell(ctx, (void*)t);
+        return zjs_cell_from_ptr((void*)t);
+    }
     if zjs_is_temporal(v) != 0 {
         let s = zjs_as_temporal(v);
         if s.kind == TMP_PLAIN_DATE || s.kind == TMP_PLAIN_DATETIME {
@@ -20628,6 +20895,22 @@ fn host_temporal_plaintime_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
 // Temporal.PlainTime.from(PlainTime | PlainDateTime | {hour,...}).
 fn host_temporal_plaintime_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        let p: TmpIso; let pp: TmpIso* = NULL; raw { pp = &p; }
+        temporal_parse_iso(s.data, s.length, pp);
+        if p.ok == 0 || p.has_time == 0 {
+            return temporal_range_error(ctx, (char*)"invalid ISO 8601 time string", 28);
+        }
+        if !temporal_time_valid(p.hour, p.minute, p.second, p.ms, p.us, p.ns) {
+            return temporal_range_error(ctx, (char*)"invalid time", 12);
+        }
+        let t = zjs_temporal_new(TMP_PLAIN_TIME);
+        t.hour = (i32)p.hour; t.minute = (i32)p.minute; t.second = (i32)p.second;
+        t.millisecond = (i32)p.ms; t.microsecond = (i32)p.us; t.nanosecond = (i32)p.ns;
+        ctx_register_cell(ctx, (void*)t);
+        return zjs_cell_from_ptr((void*)t);
+    }
     if zjs_is_temporal(v) != 0 {
         let s = zjs_as_temporal(v);
         if s.kind == TMP_PLAIN_TIME || s.kind == TMP_PLAIN_DATETIME {
@@ -20750,6 +21033,27 @@ fn host_temporal_plaindatetime_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32
 
 fn host_temporal_plaindatetime_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        let p: TmpIso; let pp: TmpIso* = NULL; raw { pp = &p; }
+        temporal_parse_iso(s.data, s.length, pp);
+        if p.ok == 0 || p.has_date == 0 {
+            return temporal_range_error(ctx, (char*)"invalid ISO 8601 date-time string", 33);
+        }
+        if !temporal_date_valid(p.year, p.month, p.day) {
+            return temporal_range_error(ctx, (char*)"invalid ISO date", 16);
+        }
+        if !temporal_time_valid(p.hour, p.minute, p.second, p.ms, p.us, p.ns) {
+            return temporal_range_error(ctx, (char*)"invalid time", 12);
+        }
+        let t = zjs_temporal_new(TMP_PLAIN_DATETIME);
+        t.year = (i32)p.year; t.month = (i32)p.month; t.day = (i32)p.day;
+        t.hour = (i32)p.hour; t.minute = (i32)p.minute; t.second = (i32)p.second;
+        t.millisecond = (i32)p.ms; t.microsecond = (i32)p.us; t.nanosecond = (i32)p.ns;
+        t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+        ctx_register_cell(ctx, (void*)t);
+        return zjs_cell_from_ptr((void*)t);
+    }
     if zjs_is_temporal(v) != 0 {
         let s = zjs_as_temporal(v);
         if s.kind == TMP_PLAIN_DATETIME || s.kind == TMP_PLAIN_DATE {
@@ -21084,6 +21388,22 @@ fn host_temporal_yearmonth_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
 
 fn host_temporal_yearmonth_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        let p: TmpIso; let pp: TmpIso* = NULL; raw { pp = &p; }
+        temporal_parse_iso(s.data, s.length, pp);
+        if p.ok == 0 || p.has_date == 0 {
+            return temporal_range_error(ctx, (char*)"invalid ISO 8601 year-month string", 34);
+        }
+        if !temporal_date_valid(p.year, p.month, 1) {
+            return temporal_range_error(ctx, (char*)"invalid ISO date", 16);
+        }
+        let t = zjs_temporal_new(TMP_PLAIN_YEARMONTH);
+        t.year = (i32)p.year; t.month = (i32)p.month; t.day = 1;
+        t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+        ctx_register_cell(ctx, (void*)t);
+        return zjs_cell_from_ptr((void*)t);
+    }
     if zjs_is_temporal_kind(v, TMP_PLAIN_YEARMONTH) != 0 {
         let s = zjs_as_temporal(v);
         let t = zjs_temporal_new(TMP_PLAIN_YEARMONTH);
@@ -21224,6 +21544,22 @@ fn host_temporal_monthday_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
 
 fn host_temporal_monthday_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        let p: TmpIso; let pp: TmpIso* = NULL; raw { pp = &p; }
+        temporal_parse_iso(s.data, s.length, pp);
+        if p.ok == 0 || p.has_date == 0 {
+            return temporal_range_error(ctx, (char*)"invalid ISO 8601 month-day string", 33);
+        }
+        if !temporal_date_valid(1972, p.month, p.day) {
+            return temporal_range_error(ctx, (char*)"invalid ISO date", 16);
+        }
+        let t = zjs_temporal_new(TMP_PLAIN_MONTHDAY);
+        t.year = 1972; t.month = (i32)p.month; t.day = (i32)p.day;
+        t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+        ctx_register_cell(ctx, (void*)t);
+        return zjs_cell_from_ptr((void*)t);
+    }
     if zjs_is_temporal_kind(v, TMP_PLAIN_MONTHDAY) != 0 {
         let s = zjs_as_temporal(v);
         let t = zjs_temporal_new(TMP_PLAIN_MONTHDAY);
@@ -21618,6 +21954,26 @@ fn host_temporal_zdt_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
         ctx_register_cell(ctx, (void*)t);
         return zjs_cell_from_ptr((void*)t);
     }
+    if zjs_is_string(v) != 0 {
+        let s = zjs_as_string(v);
+        let p: TmpIso; let pp: TmpIso* = NULL; raw { pp = &p; }
+        temporal_parse_iso(s.data, s.length, pp);
+        if p.ok == 0 || p.has_date == 0 || p.has_tz == 0 {
+            return temporal_range_error(ctx, (char*)"ZonedDateTime.from needs a date-time with [TimeZone] annotation", 63);
+        }
+        if !temporal_date_valid(p.year, p.month, p.day) {
+            return temporal_range_error(ctx, (char*)"invalid ISO date", 16);
+        }
+        if !temporal_time_valid(p.hour, p.minute, p.second, p.ms, p.us, p.ns) {
+            return temporal_range_error(ctx, (char*)"invalid time", 12);
+        }
+        let tzptr: char* = NULL; raw { tzptr = s->data + p.tz_off; }
+        let tzname = zjs_as_string(ctx_intern_string(ctx, tzptr, p.tz_len));
+        let subns = p.ms * 1000000 + p.us * 1000 + p.ns;
+        let ep = zdt_epoch_ns_from_wall(tzname, p.year, p.month, p.day,
+                                        p.hour, p.minute, p.second, subns);
+        return zdt_make(ctx, ep, tzname);
+    }
     if zjs_is_object(v) == 0 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"ZonedDateTime.from expects an object", 36);
         ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
@@ -21849,6 +22205,9 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                  ctx_make_host_function(ctx, (char*)"fromEpochNanoseconds", ifen_ptr));
     property_set(ctx, inst_ctor, ctx_intern_string(ctx, (char*)"compare", 7),
                  ctx_make_host_function(ctx, (char*)"compare", icmp_ptr));
+    let ifrom_ptr: void* = NULL; raw { ifrom_ptr = (void*)host_temporal_instant_from; }
+    property_set(ctx, inst_ctor, ctx_intern_string(ctx, (char*)"from", 4),
+                 ctx_make_host_function(ctx, (char*)"from", ifrom_ptr));
     object_set(ctx, temporal_o, ctx_intern_atom(ctx, (char*)"Instant", 7), inst_ctor);
 
     // --- Temporal.PlainDate ---
