@@ -4308,9 +4308,59 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
         else                                   { attrs = attrs & ~PROP_CONFIGURABLE; }
     }
 
-    if has_get || has_set {
-        let g: ZjsValue = if has_get { get_lookup } else { zjs_undefined() };
-        let s: ZjsValue = if has_set { set_lookup } else { zjs_undefined() };
+    // Descriptor kind by field presence (ECMA-262 §6.2.5): an explicit
+    // `get`/`set` field — even `undefined` — makes it an accessor desc.
+    let has_get_field = descriptor_has_own(desc_v, get_key);
+    let has_set_field = descriptor_has_own(desc_v, set_key);
+    let new_is_acc = has_get_field || has_set_field;
+    let cur_is_acc = existing_slot >= 0 && zjs_is_accessor(o.slots[(u32)existing_slot]) != 0;
+
+    // ECMA-262 §10.1.6.3 ValidateAndApplyPropertyDescriptor — reject
+    // illegal redefinition of a NON-configurable existing property.
+    if existing_slot >= 0 {
+        let cur_attrs = object_get_attrs(o, (u32)existing_slot);
+        if (cur_attrs & PROP_CONFIGURABLE) == 0 {
+            let cur_raw = o.slots[(u32)existing_slot];
+            let new_is_data = has_value_field || has_wri_field;
+            let reject = false;
+            if has_cfg_field && zjs_to_bool_coerce(cfg_lookup) != 0 { reject = true; }
+            if has_enu_field {
+                let cur_enum = (cur_attrs & PROP_ENUMERABLE) != 0;
+                let new_enum = zjs_to_bool_coerce(enu_lookup) != 0;
+                if new_enum != cur_enum { reject = true; }
+            }
+            if !reject {
+                if new_is_acc && cur_is_acc == false { reject = true; }
+                else if new_is_data && cur_is_acc { reject = true; }
+                else if cur_is_acc {
+                    let acc0 = zjs_as_accessor(cur_raw);
+                    if has_get_field && zjs_same_value_zero(get_lookup, acc0.get) == 0 { reject = true; }
+                    if has_set_field && zjs_same_value_zero(set_lookup, acc0.set) == 0 { reject = true; }
+                } else if (cur_attrs & PROP_WRITABLE) == 0 {
+                    if has_wri_field && zjs_to_bool_coerce(wri_lookup) != 0 { reject = true; }
+                    if has_value_field && zjs_same_value_zero(value_lookup, cur_raw) == 0 { reject = true; }
+                }
+            }
+            if reject {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"Cannot redefine property", 24);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return zjs_undefined();
+            }
+        }
+    }
+
+    if new_is_acc || (cur_is_acc && has_value_field == false && has_wri_field == false) {
+        // Accessor result. When redefining, fields absent from the new
+        // descriptor inherit from the existing accessor (spec merge).
+        let cur_get: ZjsValue = zjs_undefined();
+        let cur_set: ZjsValue = zjs_undefined();
+        if cur_is_acc {
+            let ca = zjs_as_accessor(o.slots[(u32)existing_slot]);
+            cur_get = ca.get; cur_set = ca.set;
+        }
+        let g: ZjsValue = if has_get_field { get_lookup } else { cur_get };
+        let s: ZjsValue = if has_set_field { set_lookup } else { cur_set };
         let acc = zjs_accessor_new(g, s);
         ctx_register_cell(ctx, (void*)acc);
         let av = zjs_cell_from_ptr((void*)acc);
@@ -4320,12 +4370,12 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     }
 
     // Data descriptor — extract `value`. If the descriptor doesn't
-    // carry a `value` field AND the slot already exists, keep the
-    // existing value (only attrs change).
+    // carry a `value` field AND the slot already exists (as a data
+    // prop), keep the existing value (only attrs change).
     let value: ZjsValue = zjs_undefined();
     if has_value_field {
         value = value_lookup;
-    } else if existing_slot >= 0 {
+    } else if existing_slot >= 0 && cur_is_acc == false {
         value = o.slots[(u32)existing_slot];
     }
     object_define_property_slot(ctx, o, key_atom, value, attrs);
@@ -4656,6 +4706,38 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
                zjs_bool(if (pattrs & PROP_ENUMERABLE) != 0 { 1 } else { 0 }));
     object_set(ctx, result, ctx_intern_atom(ctx, (char*)"configurable", 12),
                zjs_bool(if (pattrs & PROP_CONFIGURABLE) != 0 { 1 } else { 0 }));
+    return result_v;
+}
+
+// Object.getOwnPropertyDescriptors(obj) — returns an object mapping
+// every own string key to its full descriptor. (Symbol keys are a
+// documented follow-up — they need symbol-keyed result-object stores.)
+fn host_object_get_own_property_descriptors(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let result_v = ctx_new_object(ctx);
+    if argc < 1 { return result_v; }
+    let names_v = host_object_get_own_property_names(ctx, args, argc);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    ctx_push_temp_root(ctx, result_v);
+    defer ctx_pop_temp_root(ctx);
+    let result = zjs_as_object(result_v);
+    if zjs_is_array(names_v) == 0 { return result_v; }
+    let names = zjs_as_array(names_v);
+    let n = names.length;
+    let i: u32 = 0;
+    while i < n {
+        let key = names.elements[i];
+        if zjs_is_deleted(key) == 0 && zjs_is_string(key) != 0 {
+            let da: ZjsValue[2]; da[0] = args[0]; da[1] = key;
+            let dap: ZjsValue* = NULL; raw { dap = &da[0]; }
+            let desc = host_object_get_own_property_descriptor(ctx, dap, 2);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if zjs_is_undefined(desc) == 0 {
+                let ks = zjs_as_string(key);
+                object_set(ctx, result, ctx_intern_atom(ctx, ks.data, ks.length), desc);
+            }
+        }
+        i = i + 1;
+    }
     return result_v;
 }
 
@@ -5050,8 +5132,9 @@ fn host_object_get_own_property_names(ctx: ZjsContext*, args: ZjsValue*, argc: u
         out_arr.length = cursor;
         return out_v;
     }
-    // Other receivers — fall through to Object.keys behavior.
-    return host_object_keys(ctx, args, argc);
+    // Other receivers — same collector but WITHOUT the enumerable
+    // filter (getOwnPropertyNames lists non-enumerable own keys too).
+    return object_keys_impl(ctx, args, argc, false);
 }
 
 // Linear sweep of both cell pools (young + old) for a live ZjsSymbol
@@ -5238,6 +5321,13 @@ fn host_object_assign(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
 }
 
 fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return object_keys_impl(ctx, args, argc, true);
+}
+
+// Shared collector for Object.keys (enum_only = true) and
+// Object.getOwnPropertyNames (enum_only = false, which also emits
+// non-enumerable own string keys + an array's "length").
+fn object_keys_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32, enum_only: bool) -> ZjsValue {
     let arg0 = if argc >= 1 { args[0] } else { zjs_undefined() };
     if !require_object_keys_arg(ctx, arg0) { return zjs_undefined(); }
     // Array path: enumerate present indices as string keys. Holes and
@@ -5275,7 +5365,7 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
                 if slot < a.props.cls.prop_count {
                     let raw_v = a.props.slots[slot];
                     let attrs = object_get_attrs(a.props, slot);
-                    if zjs_is_deleted(raw_v) == 0 && (attrs & PROP_ENUMERABLE) != 0 {
+                    if zjs_is_deleted(raw_v) == 0 && (enum_only == false || (attrs & PROP_ENUMERABLE) != 0) {
                         // Skip internal (`__zjs_*`) and Symbol-shim (`@@*`)
                         // hidden keys. Numeric keys past arr.cap AND string
                         // keys (e.g. a defineProperty'd named prop on an
@@ -5289,6 +5379,11 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
                 }
                 cls = cls.parent;
             }
+        }
+        // getOwnPropertyNames includes the non-enumerable "length".
+        if enum_only == false {
+            array_set(out_arr, out_idx, ctx_intern_string(ctx, (char*)"length", 6));
+            out_idx = out_idx + 1;
         }
         out_arr.length = out_idx;
         return out_v;
@@ -5349,7 +5444,7 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         // skip deleted slots AND skip non-enumerable slots.
         if slot < limit && zjs_is_deleted(o.slots[slot]) == 0 {
             let a = object_get_attrs(o, slot);
-            if (a & PROP_ENUMERABLE) != 0 {
+            if enum_only == false || (a & PROP_ENUMERABLE) != 0 {
                 scratch[slot] = cls.transition_name;
             }
         }
@@ -23890,6 +23985,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"defineProperties", dps_ptr));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getOwnPropertyDescriptor", 24),
                ctx_make_host_function(ctx, (char*)"getOwnPropertyDescriptor", gopd_ptr));
+    let gopds_ptr: void* = NULL; raw { gopds_ptr = (void*)host_object_get_own_property_descriptors; }
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getOwnPropertyDescriptors", 25),
+               ctx_make_host_function(ctx, (char*)"getOwnPropertyDescriptors", gopds_ptr));
     let gopn_ptr: void* = NULL; raw { gopn_ptr = (void*)host_object_get_own_property_names; }
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getOwnPropertyNames", 19),
                ctx_make_host_function(ctx, (char*)"getOwnPropertyNames", gopn_ptr));
