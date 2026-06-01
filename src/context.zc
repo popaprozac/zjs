@@ -25367,6 +25367,7 @@ fn ctx_register_stdlib_modules(ctx: ZjsContext*) -> void {
     zjs_register_node_buffer(ctx);
     zjs_register_node_tty(ctx);
     zjs_register_node_dx(ctx);
+    zjs_register_node_stream(ctx);
     zjs_register_node_child_process(ctx);
     zjs_register_node_net(ctx);
     zjs_register_node_http(ctx);
