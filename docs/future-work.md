@@ -67,17 +67,27 @@ their ISO string form: `PlainDate.from("2026-05-30")`,
 dot fraction, expanded ±YYYYYY years) + `temporal_parse_iso_duration`.
 Round-trips `from(x.toString())` verified vs Node.
 
+**Calendar-unit until/since for PlainDateTime + ZonedDateTime — DONE.**
+PlainDateTime.until/since now handle every largestUnit (years…ns) with
+the spec day/time borrow; ZonedDateTime.until/since re-anchor the
+candidate date duration through the zone so `days` reflect real elapsed
+time across DST (verified vs the @js-temporal polyfill: spring-forward
+P1D = 23h, P2D spanning a transition, calendar-month diffs, etc.).
+ZonedDateTime defaults largestUnit to `hour` and requires matching time
+zones for calendar/day units. Also widened `temporal_unit_to_ns` to
+accept plural unit names (`"minutes"`, `"hours"`, …) for smallestUnit.
+
 **Minor Temporal follow-ups (documented, low-priority):**
-- PlainDateTime.until/since + ZonedDateTime calendar-unit
-  largestUnit (years/months) — extend temporal_diff_iso_date with
-  the time component / relativeTo.
 - DST disambiguation option ('earlier'/'later'/'reject'); currently
   always 'compatible' (mktime default). ZonedDateTime string `from()`
   ignores the explicit offset for disambiguation (uses 'compatible').
 - Windows IANA tz (ICU) — offset lookup stubs to UTC there.
+- ZonedDateTime.until/since across-DST day-count correction is the
+  single-step borrow + re-anchor (no NormalizedTimeDurationToDays loop);
+  pathological multi-day-DST overshoots may differ from spec by a day.
 - Minor: Duration.add/subtract balancing (currently field-wise);
   monthCode-keyed from(); calendar-unit rounding (years/months) in
-  PlainDate.until/since via relativeTo — pairs with T5.
+  until/since via relativeTo.
 
 Original decided shape (see [[project_bigint_temporal_arc]]):
 - **Default ON, removable with `-DZJS_NO_TEMPORAL`** (opt-out, matches

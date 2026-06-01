@@ -20025,12 +20025,19 @@ fn temporal_parse_rounding_mode(s: ZjsString*, dflt: int) -> int {
 fn temporal_unit_to_ns(s: ZjsString*) -> i64 {
     if s == NULL { return 0; }
     if tmp_name_is(s, (char*)"nanosecond", 10)  { return 1; }
+    if tmp_name_is(s, (char*)"nanoseconds", 11) { return 1; }
     if tmp_name_is(s, (char*)"microsecond", 11) { return 1000; }
+    if tmp_name_is(s, (char*)"microseconds", 12){ return 1000; }
     if tmp_name_is(s, (char*)"millisecond", 11) { return 1000000; }
+    if tmp_name_is(s, (char*)"milliseconds", 12){ return 1000000; }
     if tmp_name_is(s, (char*)"second", 6)       { return 1000000000; }
+    if tmp_name_is(s, (char*)"seconds", 7)      { return 1000000000; }
     if tmp_name_is(s, (char*)"minute", 6)       { return 60000000000; }
+    if tmp_name_is(s, (char*)"minutes", 7)      { return 60000000000; }
     if tmp_name_is(s, (char*)"hour", 4)         { return 3600000000000; }
+    if tmp_name_is(s, (char*)"hours", 5)        { return 3600000000000; }
     if tmp_name_is(s, (char*)"day", 3)          { return 86400000000000; }
+    if tmp_name_is(s, (char*)"days", 4)         { return 86400000000000; }
     return 0;
 }
 
@@ -21270,6 +21277,124 @@ fn host_temporal_plaindate_since(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
     return temporal_plaindate_diff_impl(ctx, -1, args, argc);
 }
 
+// largestUnit parser including time units. Codes: 3=year, 2=month,
+// 1=week, 0=day, -1=hour, -2=minute, -3=second, -4=ms, -5=us, -6=ns.
+// 'auto' / missing → dflt.
+fn temporal_parse_largest_unit(ctx: ZjsContext*, optarg: ZjsValue, dflt: int) -> int {
+    if zjs_is_object(optarg) == 0 { return dflt; }
+    let lu = property_get(ctx, optarg, ctx_intern_string(ctx, (char*)"largestUnit", 11));
+    if zjs_is_string(lu) == 0 { return dflt; }
+    let s = zjs_as_string(lu);
+    if tmp_name_is(s, (char*)"year", 4)   { return 3; }
+    if tmp_name_is(s, (char*)"years", 5)  { return 3; }
+    if tmp_name_is(s, (char*)"month", 5)  { return 2; }
+    if tmp_name_is(s, (char*)"months", 6) { return 2; }
+    if tmp_name_is(s, (char*)"week", 4)   { return 1; }
+    if tmp_name_is(s, (char*)"weeks", 5)  { return 1; }
+    if tmp_name_is(s, (char*)"day", 3)    { return 0; }
+    if tmp_name_is(s, (char*)"days", 4)   { return 0; }
+    if tmp_name_is(s, (char*)"hour", 4)        { return -1; }
+    if tmp_name_is(s, (char*)"hours", 5)       { return -1; }
+    if tmp_name_is(s, (char*)"minute", 6)      { return -2; }
+    if tmp_name_is(s, (char*)"minutes", 7)     { return -2; }
+    if tmp_name_is(s, (char*)"second", 6)      { return -3; }
+    if tmp_name_is(s, (char*)"seconds", 7)     { return -3; }
+    if tmp_name_is(s, (char*)"millisecond", 11){ return -4; }
+    if tmp_name_is(s, (char*)"milliseconds", 12){ return -4; }
+    if tmp_name_is(s, (char*)"microsecond", 11){ return -5; }
+    if tmp_name_is(s, (char*)"microseconds", 12){ return -5; }
+    if tmp_name_is(s, (char*)"nanosecond", 10) { return -6; }
+    if tmp_name_is(s, (char*)"nanoseconds", 11){ return -6; }
+    if tmp_name_is(s, (char*)"auto", 4)   { return dflt; }
+    return dflt;
+}
+
+// Balance a signed nanosecond total into the time fields (hours..ns) of
+// duration `t`, with `top` the largest time-unit code (-1 hour .. -6 ns).
+// Units above `top` are skipped (so the top unit can exceed its usual
+// modulus, e.g. minutes-only → minutes may be ≥ 60). All components take
+// the sign of `total` (C integer division truncates toward zero).
+fn temporal_balance_time(t: ZjsTemporal*, total: i64, top: int) -> void {
+    let rem = total;
+    if top >= -1 { t.d_hours = rem / 3600000000000; rem = rem - t.d_hours * 3600000000000; }
+    if top >= -2 { t.d_minutes = rem / 60000000000; rem = rem - t.d_minutes * 60000000000; }
+    if top >= -3 { t.d_seconds = rem / 1000000000;  rem = rem - t.d_seconds * 1000000000; }
+    if top >= -4 { t.d_ms = rem / 1000000;          rem = rem - t.d_ms * 1000000; }
+    if top >= -5 { t.d_us = rem / 1000;             rem = rem - t.d_us * 1000; }
+    t.d_ns = rem;
+}
+
+// Difference between two ISO date-times (start → end), returning a
+// Duration. For a time-unit largestUnit the whole span is balanced into
+// time units; otherwise the date portion uses calendar arithmetic and
+// the sub-day remainder is balanced into hours..ns (with a one-day
+// borrow when the time-of-day runs backwards relative to the dates).
+fn temporal_diff_iso_datetime(ctx: ZjsContext*,
+        y1: i64, mo1: i64, d1: i64, tod1: i64,
+        y2: i64, mo2: i64, d2: i64, tod2: i64, largest: int) -> ZjsValue {
+    let days1 = iso_days_from_civil(y1, mo1, d1);
+    let days2 = iso_days_from_civil(y2, mo2, d2);
+    if largest < 0 {
+        let total = (days2 - days1) * 86400000000000 + (tod2 - tod1);
+        let t = zjs_temporal_new(TMP_DURATION);
+        temporal_balance_time(t, total, largest);
+        ctx_register_cell(ctx, (void*)t);
+        return zjs_cell_from_ptr((void*)t);
+    }
+    let time_delta = tod2 - tod1;
+    let ey = y2; let emo = mo2; let ed = d2;
+    let date_sign: i64 = if days2 > days1 { 1 } else { if days2 < days1 { -1 } else { 0 } };
+    if date_sign > 0 && time_delta < 0 {
+        let od: i64[3]; let odp: i64* = NULL; raw { odp = &od[0]; }
+        iso_civil_from_days(days2 - 1, odp);
+        ey = od[0]; emo = od[1]; ed = od[2];
+        time_delta = time_delta + 86400000000000;
+    } else if date_sign < 0 && time_delta > 0 {
+        let od: i64[3]; let odp: i64* = NULL; raw { odp = &od[0]; }
+        iso_civil_from_days(days2 + 1, odp);
+        ey = od[0]; emo = od[1]; ed = od[2];
+        time_delta = time_delta - 86400000000000;
+    }
+    let r = temporal_diff_iso_date(ctx, y1, mo1, d1, ey, emo, ed, largest);
+    temporal_balance_time(zjs_as_temporal(r), time_delta, -1);
+    return r;
+}
+
+// PlainDateTime.until/since(other[,opts]) → Duration. dir +1 until, -1 since.
+fn temporal_pdt_diff_impl(ctx: ZjsContext*, dir: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_DATETIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainDateTime", 28);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let other = if argc >= 1 { args[0] } else { zjs_undefined() };
+    // Coerce a string / property-bag argument via PlainDateTime.from.
+    if zjs_is_temporal_kind(other, TMP_PLAIN_DATETIME) == 0 {
+        let oa: ZjsValue[1]; oa[0] = other; let oap: ZjsValue* = NULL; raw { oap = &oa[0]; }
+        other = host_temporal_plaindatetime_from(ctx, oap, 1);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
+    let largest = temporal_parse_largest_unit(ctx, if argc >= 2 { args[1] } else { zjs_undefined() }, 0);
+    let a = zjs_as_temporal(this_v); let b = zjs_as_temporal(other);
+    // until: a → b; since: b → a.
+    let sy: i64; let smo: i64; let sd: i64; let stod: i64;
+    let ey: i64; let emo: i64; let ed: i64; let etod: i64;
+    if dir > 0 {
+        sy = (i64)a.year; smo = (i64)a.month; sd = (i64)a.day; stod = temporal_time_total_ns(a);
+        ey = (i64)b.year; emo = (i64)b.month; ed = (i64)b.day; etod = temporal_time_total_ns(b);
+    } else {
+        sy = (i64)b.year; smo = (i64)b.month; sd = (i64)b.day; stod = temporal_time_total_ns(b);
+        ey = (i64)a.year; emo = (i64)a.month; ed = (i64)a.day; etod = temporal_time_total_ns(a);
+    }
+    return temporal_diff_iso_datetime(ctx, sy, smo, sd, stod, ey, emo, ed, etod, largest);
+}
+fn host_temporal_plaindatetime_until(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_pdt_diff_impl(ctx, 1, args, argc);
+}
+fn host_temporal_plaindatetime_since(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_pdt_diff_impl(ctx, -1, args, argc);
+}
+
 // PlainDate.prototype.add/subtract(durationLike). sign=+1 add, -1 sub.
 fn temporal_plaindate_add_impl(ctx: ZjsContext*, sign: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_v = ctx.host_this;
@@ -21917,24 +22042,75 @@ fn host_temporal_zdt_round(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsV
 // dir +1 until, -1 since. Calendar-unit largestUnit deferred.
 fn zdt_diff_impl(ctx: ZjsContext*, dir: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_v = ctx.host_this;
-    let other = if argc >= 1 { args[0] } else { zjs_undefined() };
-    if zjs_is_temporal_kind(this_v, TMP_ZONED_DATETIME) == 0 || zjs_is_temporal_kind(other, TMP_ZONED_DATETIME) == 0 {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"expects two ZonedDateTimes", 26);
+    if zjs_is_temporal_kind(this_v, TMP_ZONED_DATETIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.ZonedDateTime", 28);
         ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let other = if argc >= 1 { args[0] } else { zjs_undefined() };
+    // Coerce a string / property-bag argument via ZonedDateTime.from.
+    if zjs_is_temporal_kind(other, TMP_ZONED_DATETIME) == 0 {
+        let oa: ZjsValue[1]; oa[0] = other; let oap: ZjsValue* = NULL; raw { oap = &oa[0]; }
+        other = host_temporal_zdt_from(ctx, oap, 1);
+        if ctx.pending_throw_active { return zjs_undefined(); }
     }
     let a = zjs_as_temporal(this_v); let b = zjs_as_temporal(other);
     let na = bigint_to_i64(zjs_as_bigint(a.epoch_ns));
     let nb = bigint_to_i64(zjs_as_bigint(b.epoch_ns));
-    let diff = (nb - na) * dir;
-    let optarg = if argc >= 2 { args[1] } else { zjs_undefined() };
-    if zjs_is_undefined(optarg) == 0 {
-        let unit_ns: i64 = 0; let inc: i64 = 1; let mode: int = ROUND_TRUNC; let ok: int = 1;
-        temporal_rounding_opts(ctx, optarg, ROUND_TRUNC, &unit_ns, &inc, &mode, &ok);
-        if ok == 0 || unit_ns == 0 { return temporal_range_error(ctx, (char*)"invalid smallestUnit", 20); }
-        if unit_ns == 86400000000000 { return temporal_range_error(ctx, (char*)"ZonedDateTime diff days needs calendar units (T5b follow-up)", 60); }
-        diff = temporal_round_i64(diff, inc * unit_ns, mode);
+    let largest = temporal_parse_largest_unit(ctx, if argc >= 2 { args[1] } else { zjs_undefined() }, -1);
+    if largest < 0 {
+        // time-unit difference: exact epoch delta, balanced into time units.
+        let diff = (nb - na) * dir;
+        let optarg = if argc >= 2 { args[1] } else { zjs_undefined() };
+        // Round only when a smallestUnit is actually supplied.
+        let has_su = if zjs_is_object(optarg) != 0 {
+            zjs_is_string(property_get(ctx, optarg, ctx_intern_string(ctx, (char*)"smallestUnit", 12)))
+        } else { 0 };
+        if has_su != 0 {
+            let unit_ns: i64 = 0; let inc: i64 = 1; let mode: int = ROUND_TRUNC; let ok: int = 1;
+            temporal_rounding_opts(ctx, optarg, ROUND_TRUNC, &unit_ns, &inc, &mode, &ok);
+            if ok == 0 || unit_ns == 0 { return temporal_range_error(ctx, (char*)"invalid smallestUnit", 20); }
+            if unit_ns == 86400000000000 { return temporal_range_error(ctx, (char*)"ZonedDateTime time-diff cannot use days", 39); }
+            diff = temporal_round_i64(diff, inc * unit_ns, mode);
+        }
+        let t = zjs_temporal_new(TMP_DURATION);
+        temporal_balance_time(t, diff, largest);
+        ctx_register_cell(ctx, (void*)t);
+        return zjs_cell_from_ptr((void*)t);
     }
-    return temporal_duration_from_ns(ctx, diff);
+    // calendar / day units: require matching time zones, then re-anchor the
+    // candidate date duration through the zone and read the exact remainder
+    // (so days reflect real elapsed time across DST, not a nominal 24h).
+    if a.timezone == NULL || b.timezone == NULL || zjs_string_equals(a.timezone, b.timezone) == 0 {
+        return temporal_range_error(ctx, (char*)"ZonedDateTime calendar diff needs matching time zones", 53);
+    }
+    let tz = if dir > 0 { a.timezone } else { b.timezone };
+    let end_ep = if dir > 0 { nb } else { na };
+    let ws: i64[7]; let wsp: i64* = NULL; raw { wsp = &ws[0]; } let offs: i64 = 0;
+    let we: i64[7]; let wep: i64* = NULL; raw { wep = &we[0]; } let offe: i64 = 0;
+    zdt_decompose(if dir > 0 { a } else { b }, wsp, &offs);
+    zdt_decompose(if dir > 0 { b } else { a }, wep, &offe);
+    let start_tod = ((ws[3] * 60 + ws[4]) * 60 + ws[5]) * 1000000000 + ws[6];
+    let end_tod   = ((we[3] * 60 + we[4]) * 60 + we[5]) * 1000000000 + we[6];
+    let days1 = iso_days_from_civil(ws[0], ws[1], ws[2]);
+    let days2 = iso_days_from_civil(we[0], we[1], we[2]);
+    let time_delta = end_tod - start_tod;
+    let ey = we[0]; let emo = we[1]; let ed = we[2];
+    let date_sign: i64 = if days2 > days1 { 1 } else { if days2 < days1 { -1 } else { 0 } };
+    if date_sign > 0 && time_delta < 0 {
+        let od: i64[3]; let odp: i64* = NULL; raw { odp = &od[0]; }
+        iso_civil_from_days(days2 - 1, odp); ey = od[0]; emo = od[1]; ed = od[2];
+    } else if date_sign < 0 && time_delta > 0 {
+        let od: i64[3]; let odp: i64* = NULL; raw { odp = &od[0]; }
+        iso_civil_from_days(days2 + 1, odp); ey = od[0]; emo = od[1]; ed = od[2];
+    }
+    let date_dur = temporal_diff_iso_date(ctx, ws[0], ws[1], ws[2], ey, emo, ed, largest);
+    let dd = zjs_as_temporal(date_dur);
+    let outd: i64[3]; let odp2: i64* = NULL; raw { odp2 = &outd[0]; }
+    temporal_add_to_date(ws[0], ws[1], ws[2], dd.d_years, dd.d_months, dd.d_weeks, dd.d_days, odp2);
+    let inter = zdt_epoch_ns_from_wall(tz, outd[0], outd[1], outd[2], ws[3], ws[4], ws[5], ws[6]);
+    let remainder = end_ep - inter;
+    temporal_balance_time(dd, remainder, -1);
+    return date_dur;
 }
 fn host_temporal_zdt_until(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zdt_diff_impl(ctx, 1, args, argc);
@@ -22309,6 +22485,12 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     let pdtrnd_ptr: void* = NULL; raw { pdtrnd_ptr = (void*)host_temporal_plaindatetime_round; }
     object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"round", 5),
                ctx_make_host_function(ctx, (char*)"round", pdtrnd_ptr));
+    let pdtunt_ptr: void* = NULL; raw { pdtunt_ptr = (void*)host_temporal_plaindatetime_until; }
+    let pdtsin_ptr: void* = NULL; raw { pdtsin_ptr = (void*)host_temporal_plaindatetime_since; }
+    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"until", 5),
+               ctx_make_host_function(ctx, (char*)"until", pdtunt_ptr));
+    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"since", 5),
+               ctx_make_host_function(ctx, (char*)"since", pdtsin_ptr));
     object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pdt_ctor);
     let pdtfrom_ptr: void* = NULL; raw { pdtfrom_ptr = (void*)host_temporal_plaindatetime_from; }
     let pdtcmp_ptr: void* = NULL; raw { pdtcmp_ptr = (void*)host_temporal_plaindatetime_compare; }
