@@ -2024,6 +2024,8 @@ fn gc_free_one(p: void*) -> void {
           let ac: ZjsAsyncCont* = NULL;
           raw { ac = (ZjsAsyncCont*)p; }
           if ac.saved_regs != NULL { dealloc(ac.saved_regs); }
+          if ac.saved_try_ip != NULL { dealloc(ac.saved_try_ip); }
+          if ac.saved_try_reg != NULL { dealloc(ac.saved_try_reg); }
           dealloc(ac);
       }
       else if tag == TAG_GENERATOR     {

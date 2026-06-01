@@ -2065,6 +2065,15 @@ fn interpret_inner_full(ctx: ZjsContext*,
         if !resume_is_throw {
             ctx.reg_stack[r_base + (u32)cont.await_dst] = resume_value;
         }
+        // Re-push the catch handlers that were active when the await
+        // suspended, rebound to the freshly-pushed frame. Without this a
+        // rejected resume finds no try-handler and the rejection escapes
+        // the body's try/catch entirely.
+        let tj: u32 = 0;
+        while tj < cont.saved_try_count {
+            let _ = ctx_try_push(ctx, cont.saved_try_ip[tj], cont.saved_try_reg[tj]);
+            tj = tj + 1;
+        }
     }
     // Generator resume mirrors cont-resume but onto a ZjsGenerator.
     if gen != NULL {
@@ -3354,6 +3363,22 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     cont.saved_host_this = ctx.host_this;
                     cont.saved_current_closure = ctx.current_closure;
                     cont.outer_promise = frame_outer;
+                    // Snapshot the catch handlers active in this frame so a
+                    // rejected resume can unwind into the body's try/catch
+                    // (pop_call_frame below truncates the ctx try stack).
+                    let try_at_entry = ctx.frames[cur_idx].try_depth_at_entry;
+                    let try_n = if ctx.ctx_try_depth > try_at_entry { ctx.ctx_try_depth - try_at_entry } else { 0 };
+                    if try_n > 0 {
+                        cont.saved_try_count = try_n;
+                        cont.saved_try_ip = alloc_n<usize>((usize)try_n);
+                        cont.saved_try_reg = alloc_n<u8>((usize)try_n);
+                        let ti: u32 = 0;
+                        while ti < try_n {
+                            cont.saved_try_ip[ti] = ctx.ctx_try_stack[try_at_entry + ti].catch_ip;
+                            cont.saved_try_reg[ti] = ctx.ctx_try_stack[try_at_entry + ti].catch_reg;
+                            ti = ti + 1;
+                        }
+                    }
                     let cont_v = zjs_cell_from_ptr((void*)cont);
 
                     let on_f_ptr: void* = NULL;
