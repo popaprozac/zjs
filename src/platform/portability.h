@@ -366,6 +366,99 @@ static inline int zjs_hmac_oneshot(int algo,
 #endif
 }
 
+// Digest size (bytes) for a hash algo code (1/256/384/512), or 0.
+static inline size_t zjs_hash_len(int algo) {
+    switch (algo) {
+        case 1:   return 20;
+        case 256: return 32;
+        case 384: return 48;
+        case 512: return 64;
+        default:  return 0;
+    }
+}
+
+// PBKDF2 (RFC 2898) over the platform-native HMAC. algo is the PRF hash
+// code (1/256/384/512). Writes dklen bytes to out. Returns 0 on success.
+static inline int zjs_pbkdf2_oneshot(int algo,
+                                     const void* pass, size_t pass_len,
+                                     const void* salt, size_t salt_len,
+                                     uint32_t iterations, size_t dklen,
+                                     unsigned char* out) {
+    size_t hlen = zjs_hash_len(algo);
+    if (hlen == 0 || iterations == 0) return -1;
+    unsigned char U[64];      // max digest (SHA-512)
+    unsigned char T[64];
+    // Per-block salt buffer: salt || INT(i) big-endian.
+    unsigned char* sb = (unsigned char*)malloc(salt_len + 4);
+    if (!sb && salt_len + 4 > 0) return -1;
+    if (salt_len) memcpy(sb, salt, salt_len);
+    size_t done = 0;
+    uint32_t blk = 1;
+    while (done < dklen) {
+        sb[salt_len + 0] = (unsigned char)(blk >> 24);
+        sb[salt_len + 1] = (unsigned char)(blk >> 16);
+        sb[salt_len + 2] = (unsigned char)(blk >> 8);
+        sb[salt_len + 3] = (unsigned char)(blk);
+        size_t ul = 0;
+        if (zjs_hmac_oneshot(algo, pass, pass_len, sb, salt_len + 4, U, &ul) != 0) { free(sb); return -1; }
+        memcpy(T, U, hlen);
+        for (uint32_t it = 1; it < iterations; it++) {
+            if (zjs_hmac_oneshot(algo, pass, pass_len, U, hlen, U, &ul) != 0) { free(sb); return -1; }
+            for (size_t j = 0; j < hlen; j++) T[j] ^= U[j];
+        }
+        size_t take = dklen - done < hlen ? dklen - done : hlen;
+        memcpy(out + done, T, take);
+        done += take;
+        blk++;
+    }
+    free(sb);
+    return 0;
+}
+
+// HKDF (RFC 5869) extract+expand over the platform-native HMAC. algo is
+// the hash code. Writes okmlen bytes to out. Returns 0 on success, -1 on
+// bad args (incl. okmlen > 255*hlen).
+static inline int zjs_hkdf_oneshot(int algo,
+                                   const void* ikm, size_t ikm_len,
+                                   const void* salt, size_t salt_len,
+                                   const void* info, size_t info_len,
+                                   size_t okmlen, unsigned char* out) {
+    size_t hlen = zjs_hash_len(algo);
+    if (hlen == 0) return -1;
+    if (okmlen > 255 * hlen) return -1;
+    // Extract: PRK = HMAC(salt, IKM). An empty salt is treated as hlen
+    // zero bytes per the RFC.
+    unsigned char prk[64];
+    size_t prk_len = 0;
+    unsigned char zsalt[64];
+    const void* use_salt = salt;
+    size_t use_salt_len = salt_len;
+    if (salt_len == 0) { memset(zsalt, 0, hlen); use_salt = zsalt; use_salt_len = hlen; }
+    if (zjs_hmac_oneshot(algo, use_salt, use_salt_len, ikm, ikm_len, prk, &prk_len) != 0) return -1;
+    // Expand.
+    unsigned char* tbuf = (unsigned char*)malloc(hlen + info_len + 1);
+    if (!tbuf) return -1;
+    unsigned char Tprev[64];
+    size_t tprev_len = 0;
+    size_t done = 0;
+    unsigned char counter = 1;
+    while (done < okmlen) {
+        size_t off = 0;
+        if (tprev_len) { memcpy(tbuf, Tprev, tprev_len); off += tprev_len; }
+        if (info_len) { memcpy(tbuf + off, info, info_len); off += info_len; }
+        tbuf[off++] = counter;
+        size_t tl = 0;
+        if (zjs_hmac_oneshot(algo, prk, prk_len, tbuf, off, Tprev, &tl) != 0) { free(tbuf); return -1; }
+        tprev_len = tl;
+        size_t take = okmlen - done < hlen ? okmlen - done : hlen;
+        memcpy(out + done, Tprev, take);
+        done += take;
+        counter++;
+    }
+    free(tbuf);
+    return 0;
+}
+
 // ---------------------------------------------------------------------
 // AES-GCM one-shot. Backend-specific implementation:
 //

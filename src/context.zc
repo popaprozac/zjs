@@ -13631,13 +13631,17 @@ fn host_crypto_subtle_import_key(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
     let an = zjs_as_string(alg_name_v);
     let is_hmac:    bool = false;
     let is_aes_gcm: bool = false;
+    let is_pbkdf2:  bool = false;
+    let is_hkdf:    bool = false;
     raw {
         if (an->length == 4 && memcmp(an->data, "HMAC", 4) == 0) is_hmac = true;
         else if (an->length == 7 && memcmp(an->data, "AES-GCM", 7) == 0) is_aes_gcm = true;
+        else if (an->length == 6 && memcmp(an->data, "PBKDF2", 6) == 0) is_pbkdf2 = true;
+        else if (an->length == 4 && memcmp(an->data, "HKDF", 4) == 0) is_hkdf = true;
     }
-    if !is_hmac && !is_aes_gcm {
+    if !is_hmac && !is_aes_gcm && !is_pbkdf2 && !is_hkdf {
         let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
-                                    (char*)"Only HMAC / AES-GCM importKey supported", 39);
+                                    (char*)"Only HMAC / AES-GCM / PBKDF2 / HKDF importKey supported", 55);
         promise_settle(ctx, pv, err, false);
         return pv;
     }
@@ -13696,11 +13700,23 @@ fn host_crypto_subtle_import_key(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
                    ctx_intern_string(ctx, (char*)"HMAC", 4));
         object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_algo", 14),
                    zjs_int32((i32)hash_algo));
-    } else {
+    } else if is_aes_gcm {
         object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_kind", 14),
                    ctx_intern_string(ctx, (char*)"AES-GCM", 7));
         object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_algo", 14),
                    zjs_int32((i32)klen));
+    } else if is_pbkdf2 {
+        // Derivation base key — material is the password; no fixed hash
+        // (the digest is chosen per-derive in deriveBits's params).
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_kind", 14),
+                   ctx_intern_string(ctx, (char*)"PBKDF2", 6));
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_algo", 14),
+                   zjs_int32(0));
+    } else {
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_kind", 14),
+                   ctx_intern_string(ctx, (char*)"HKDF", 4));
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_algo", 14),
+                   zjs_int32(0));
     }
     promise_settle(ctx, pv, key_obj_v, true);
     return pv;
@@ -14157,6 +14173,203 @@ fn host_crypto_subtle_sign(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsV
 }
 fn host_crypto_subtle_verify(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return crypto_sign_or_verify(ctx, args, argc, true);
+}
+
+// Core key derivation for deriveBits / deriveKey. `alg_v` is the
+// algorithm params ({name:'PBKDF2', hash, salt, iterations} or
+// {name:'HKDF', hash, salt, info}); key_v is a PBKDF2/HKDF base key.
+// Returns a registered Uint8Array of `dklen` bytes on success; sets
+// ok[0]=0 (and returns NULL) on any validation/backend failure.
+fn crypto_derive_raw(ctx: ZjsContext*, alg_v: ZjsValue, key_v: ZjsValue,
+                     dklen: u32, ok: int*) -> ZjsUint8Array* {
+    ok[0] = 1;
+    let kind = crypto_key_kind(ctx, key_v);
+    if kind == NULL { ok[0] = 0; return NULL; }
+    let is_pbkdf2: bool = false;
+    let is_hkdf:   bool = false;
+    raw {
+        if (kind->length == 6 && memcmp(kind->data, "PBKDF2", 6) == 0) is_pbkdf2 = true;
+        else if (kind->length == 4 && memcmp(kind->data, "HKDF", 4) == 0) is_hkdf = true;
+    }
+    if !is_pbkdf2 && !is_hkdf { ok[0] = 0; return NULL; }
+    let hash_algo = crypto_resolve_hash_algo(ctx, alg_v);
+    if hash_algo < 0 { ok[0] = 0; return NULL; }
+    let kb_v = property_get(ctx, key_v, ctx_intern_string(ctx, (char*)"__zjs_key_bytes", 15));
+    if zjs_is_uint8_array(kb_v) == 0 { ok[0] = 0; return NULL; }
+    let kb = zjs_as_uint8_array(kb_v);
+    let key_p: u8* = kb.bytes;
+    let key_n: u32 = kb.length;
+    // salt (PBKDF2 mandatory; HKDF optional → empty).
+    let salt_v = property_get(ctx, alg_v, ctx_intern_string(ctx, (char*)"salt", 4));
+    let salt_p: u8* = NULL;
+    let salt_n: u32 = 0;
+    if zjs_is_undefined(salt_v) == 0 {
+        if !crypto_extract_bytes(salt_v, &salt_p, &salt_n) { ok[0] = 0; return NULL; }
+    } else if is_pbkdf2 {
+        ok[0] = 0; return NULL;   // PBKDF2 requires a salt
+    }
+    let out = zjs_uint8_array_new(dklen);
+    ctx_register_cell(ctx, (void*)out);
+    let out_p: u8* = out.bytes;
+    let rc: int = -1;
+    if is_pbkdf2 {
+        let iter_v = property_get(ctx, alg_v, ctx_intern_string(ctx, (char*)"iterations", 10));
+        let iters: u32 = (u32)zjs_to_double(iter_v);
+        if iters == 0 { ok[0] = 0; return NULL; }
+        raw {
+            rc = zjs_pbkdf2_oneshot(hash_algo, key_p, (size_t)key_n,
+                                    salt_p, (size_t)salt_n, iters,
+                                    (size_t)dklen, out_p);
+        }
+    } else {
+        let info_v = property_get(ctx, alg_v, ctx_intern_string(ctx, (char*)"info", 4));
+        let info_p: u8* = NULL;
+        let info_n: u32 = 0;
+        if zjs_is_undefined(info_v) == 0 {
+            if !crypto_extract_bytes(info_v, &info_p, &info_n) { ok[0] = 0; return NULL; }
+        }
+        raw {
+            rc = zjs_hkdf_oneshot(hash_algo, key_p, (size_t)key_n,
+                                  salt_p, (size_t)salt_n,
+                                  info_p, (size_t)info_n,
+                                  (size_t)dklen, out_p);
+        }
+    }
+    if rc != 0 { ok[0] = 0; return NULL; }
+    return out;
+}
+
+// crypto.subtle.deriveBits(algorithm, baseKey, length) → ArrayBuffer
+// (returned as a Uint8Array, matching digest's convention). length is
+// in BITS and must be a multiple of 8.
+fn host_crypto_subtle_derive_bits(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    if argc < 3 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"deriveBits requires (algorithm, baseKey, length)", 48);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let bits = (i64)zjs_to_double(args[2]);
+    if bits <= 0 || (bits % 8) != 0 {
+        let err = build_typed_error(ctx, (char*)"OperationError", 14,
+                                    (char*)"length must be a positive multiple of 8", 39);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let ok: int = 1;
+    let out = crypto_derive_raw(ctx, args[0], args[1], (u32)(bits / 8), &ok);
+    if ok == 0 || out == NULL {
+        let err = build_typed_error(ctx, (char*)"OperationError", 14,
+                                    (char*)"key derivation failed (unsupported params or backend)", 53);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    promise_settle(ctx, pv, zjs_cell_from_ptr((void*)out), true);
+    return pv;
+}
+
+// crypto.subtle.deriveKey(algorithm, baseKey, derivedKeyType,
+// extractable, keyUsages) → CryptoKey. Derives raw bits then wraps them
+// as an HMAC or AES-GCM key (the two key kinds importKey produces).
+fn host_crypto_subtle_derive_key(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    if argc < 3 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"deriveKey requires (algorithm, baseKey, derivedKeyType, ...)", 60);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let dkt = args[2];
+    let dkt_name_v: ZjsValue = dkt;
+    if zjs_is_object(dkt) != 0 && zjs_is_string(dkt) == 0 {
+        dkt_name_v = property_get(ctx, dkt, ctx_intern_string(ctx, (char*)"name", 4));
+    }
+    if zjs_is_string(dkt_name_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"derivedKeyType.name required", 28);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let dn = zjs_as_string(dkt_name_v);
+    let want_hmac: bool = false;
+    let want_aes:  bool = false;
+    raw {
+        if (dn->length == 4 && memcmp(dn->data, "HMAC", 4) == 0) want_hmac = true;
+        else if (dn->length == 7 && memcmp(dn->data, "AES-GCM", 7) == 0) want_aes = true;
+    }
+    if !want_hmac && !want_aes {
+        let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
+                                    (char*)"derivedKeyType must be HMAC or AES-GCM", 38);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    // Determine derived length in bytes + the key's stored hash/length slot.
+    let dk_hash: int = 256;
+    let dklen: u32 = 32;
+    if want_hmac {
+        dk_hash = crypto_resolve_hash_algo(ctx, dkt);
+        if dk_hash < 0 {
+            let err = build_typed_error(ctx, (char*)"NotSupportedError", 17,
+                                        (char*)"Unrecognized HMAC hash", 22);
+            promise_settle(ctx, pv, err, false);
+            return pv;
+        }
+        // HMAC key length defaults to the hash's block size.
+        if dk_hash == 1 || dk_hash == 256 { dklen = 64; } else { dklen = 128; }
+        let len_v = property_get(ctx, dkt, ctx_intern_string(ctx, (char*)"length", 6));
+        if zjs_is_undefined(len_v) == 0 {
+            let lb = (i64)zjs_to_double(len_v);
+            if lb > 0 && (lb % 8) == 0 { dklen = (u32)(lb / 8); }
+        }
+    } else {
+        let len_v = property_get(ctx, dkt, ctx_intern_string(ctx, (char*)"length", 6));
+        let lb = (i64)zjs_to_double(len_v);
+        if lb != 128 && lb != 192 && lb != 256 {
+            let err = build_typed_error(ctx, (char*)"OperationError", 14,
+                                        (char*)"AES-GCM length must be 128/192/256", 34);
+            promise_settle(ctx, pv, err, false);
+            return pv;
+        }
+        dklen = (u32)(lb / 8);
+    }
+    let ok: int = 1;
+    let derived = crypto_derive_raw(ctx, args[0], args[1], dklen, &ok);
+    if ok == 0 || derived == NULL {
+        let err = build_typed_error(ctx, (char*)"OperationError", 14,
+                                    (char*)"key derivation failed (unsupported params or backend)", 53);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    // Wrap as a CryptoKey mirroring importKey's shape.
+    let key_obj_v = ctx_new_object(ctx);
+    let key_obj = zjs_as_object(key_obj_v);
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"type", 4),
+               ctx_intern_string(ctx, (char*)"secret", 6));
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"extractable", 11),
+               zjs_bool(if argc >= 4 { (if zjs_to_bool_coerce(args[3]) { 1 } else { 0 }) } else { 0 }));
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"algorithm", 9), dkt);
+    let usages_v = if argc >= 5 { args[4] } else { ctx_new_array(ctx, 0) };
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"usages", 6), usages_v);
+    object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_bytes", 15),
+               zjs_cell_from_ptr((void*)derived));
+    if want_hmac {
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_kind", 14),
+                   ctx_intern_string(ctx, (char*)"HMAC", 4));
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_algo", 14),
+                   zjs_int32((i32)dk_hash));
+    } else {
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_kind", 14),
+                   ctx_intern_string(ctx, (char*)"AES-GCM", 7));
+        object_set(ctx, key_obj, ctx_intern_atom(ctx, (char*)"__zjs_key_algo", 14),
+                   zjs_int32((i32)dklen));
+    }
+    promise_settle(ctx, pv, key_obj_v, true);
+    return pv;
 }
 
 // =====================================================================
@@ -24479,6 +24692,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"generateKey", csg_ptr, 3));
     object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"exportKey", 9),
                ctx_make_host_function_arity(ctx, (char*)"exportKey", csp_ptr, 2));
+    let cdb_ptr: void* = NULL; raw { cdb_ptr = (void*)host_crypto_subtle_derive_bits; }
+    let cdk_ptr: void* = NULL; raw { cdk_ptr = (void*)host_crypto_subtle_derive_key; }
+    object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"deriveBits", 10),
+               ctx_make_host_function_arity(ctx, (char*)"deriveBits", cdb_ptr, 3));
+    object_set(ctx, subtle_o, ctx_intern_atom(ctx, (char*)"deriveKey", 9),
+               ctx_make_host_function_arity(ctx, (char*)"deriveKey", cdk_ptr, 5));
     object_set(ctx, crypto_o, ctx_intern_atom(ctx, (char*)"subtle", 6), subtle_v);
     let crypto_slot = ctx_intern_global(ctx, (char*)"crypto", 6);
     ctx.globals[crypto_slot].value = crypto_v;
