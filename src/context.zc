@@ -2557,6 +2557,14 @@ fn ctx_new_object(ctx: ZjsContext*) -> ZjsValue {
 // behavior of `o.x = 1` going through OrdinarySet which creates a
 // data property with full attributes.
 fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsValue) -> void {
+    // The hidden-class layer assumes a property's transition_name is a
+    // pinned atom — gc_mark_hidden_class deliberately does NOT mark it
+    // (it's kept alive by the atom table). A computed-key write
+    // (`o["k"+i] = v`) arrives here with a freshly-flattened, NON-interned
+    // string; storing it as a transition_name (or via class_find_transition's
+    // move-to-front) would let GC sweep it and leave the class pointing at
+    // freed memory. Intern up front so the invariant always holds.
+    if name != NULL { name = ctx_intern_atom_no_decode(ctx, name.data, name.length); }
     if obj.frozen { ctx.write_rejected = true; return; }
     let existing = class_find_slot(obj.cls, name);
     if existing >= 0 {
