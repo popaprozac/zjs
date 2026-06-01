@@ -101,6 +101,7 @@ ENGINE_SRC := src/lib.zc src/context.zc src/value.zc \
               src/stdlib/node_tty.zc \
               src/stdlib/node_dx.zc \
               src/stdlib/node_stream.zc \
+              src/stdlib/node_url.zc \
               src/stdlib/node_child_process.zc \
               src/stdlib/node_net.zc src/stdlib/node_http.zc \
               src/stdlib/web_events.zc src/stdlib/web_abort.zc \

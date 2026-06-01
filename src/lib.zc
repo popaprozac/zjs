@@ -51,6 +51,7 @@ import "./stdlib/node_buffer.zc";
 import "./stdlib/node_tty.zc";
 import "./stdlib/node_dx.zc";
 import "./stdlib/node_stream.zc";
+import "./stdlib/node_url.zc";
 import "./stdlib/node_child_process.zc";
 import "./stdlib/node_net.zc";
 import "./stdlib/node_http.zc";

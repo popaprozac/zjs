@@ -1,0 +1,13 @@
+// node:url — WHATWG URL/URLSearchParams re-export + legacy parse/format
+// and file-URL helpers. JS module source (node_url.js, embedded as
+// NODE_URL_SOURCE) registered as a builtin module.
+
+raw {
+    #include "stdlib/node_url.gen.h"
+}
+
+fn zjs_register_node_url(ctx: ZjsContext*) -> void {
+    let src: char* = NULL; raw { src = (char*)NODE_URL_SOURCE; }
+    let len: u32 = 0; raw { len = (uint32_t)(sizeof(NODE_URL_SOURCE) - 1); }
+    ctx_register_builtin_module_source(ctx, (char*)"node:url", src, len);
+}
