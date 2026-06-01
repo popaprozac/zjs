@@ -6435,14 +6435,24 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
            && c.code_count > 0
            && node.left != NULL && node.left.kind == NodeKind::Call {
             let last_op = c.code[c.code_count - 1].op;
+            // Rewrite the call to its Tail variant, but STILL emit the
+            // trailing Op::Return. For ordinary callees the Tail op
+            // replaces the frame and breaks before the Return executes
+            // (it's dead — one extra instruction). But async functions and
+            // generators can't be frame-replaced (they must yield a
+            // Promise / iterator, not run their body to completion), so the
+            // interpreter's Tail handler falls back to a normal call for
+            // those and lands on this Return to hand back the result.
             if last_op == Op::Invoke {
                 c.code[c.code_count - 1].op = Op::TailInvoke;
+                emit(c, make_inst_a(Op::Return, r));
                 c.last_expr_reg = (i32)r;
                 reset_temps(c);
                 return;
             }
             if last_op == Op::MethodInvoke {
                 c.code[c.code_count - 1].op = Op::TailMethodInvoke;
+                emit(c, make_inst_a(Op::Return, r));
                 c.last_expr_reg = (i32)r;
                 reset_temps(c);
                 return;

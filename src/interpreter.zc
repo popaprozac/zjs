@@ -4327,6 +4327,58 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let arg_offset: u8 = if is_method { (u8)2 } else { (u8)1 };
 
             if zjs_is_function(callee) != 0 || zjs_is_closure(callee) != 0 {
+                // Resolve the target Function* (and closure cell, if any).
+                let target: Function* = NULL;
+                let is_closure_callee: bool = zjs_is_closure(callee) != 0;
+                let cl_callee: ZjsClosure* = NULL;
+                if is_closure_callee {
+                    cl_callee = zjs_as_closure(callee);
+                    let fp2 = cl_callee.function;
+                    raw { target = (Function*)fp2; }
+                } else {
+                    let fp = zjs_cell_as_ptr(callee);
+                    raw { target = (Function*)fp; }
+                }
+
+                // Async functions and generators CANNOT be tail-call
+                // frame-replaced: an async call must produce a Promise
+                // (and suspend on its first await), and a generator call
+                // must return an iterator WITHOUT running its body.
+                // tail_call_frame would instead run the body synchronously
+                // and return its raw completion value. So fall back to a
+                // normal (non-replacing) call here; the compiler keeps a
+                // trailing Op::Return after the Tail op for us to land on,
+                // which returns the produced Promise / generator.
+                if target != NULL && (target.is_async || target.is_generator) {
+                    let dst = inst.a;
+                    let args_at: u32 = regs_base + (u32)base + (u32)arg_offset;
+                    if target.is_generator {
+                        let gen = zjs_generator_new();
+                        ctx_register_cell(ctx, (void*)gen);
+                        gen.function = target;
+                        gen.reg_count = target.register_count;
+                        gen.state = GEN_STARTING;
+                        gen.is_async = target.is_async;
+                        gen.saved_host_this = new_this;
+                        if is_closure_callee { gen.saved_current_closure = cl_callee; }
+                        ctx.frames[cur_idx].ip = ip + 1;
+                        push_call_frame_inplace(ctx, target, args_at, argc, dst);
+                        let new_fi = ctx.frame_count - 1;
+                        ctx.frames[new_fi].generator = gen;
+                        ctx.host_this = new_this;
+                        if is_closure_callee { ctx.current_closure = cl_callee; }
+                        exit_reason = 2;
+                        break;
+                    }
+                    ctx.frames[cur_idx].ip = ip + 1;
+                    push_call_frame_inplace(ctx, target, args_at, argc, dst);
+                    if target.is_async { wire_async_call(ctx, target, regs_base, dst); }
+                    ctx.host_this = new_this;
+                    if is_closure_callee { ctx.current_closure = cl_callee; }
+                    exit_reason = 2;
+                    break;
+                }
+
                 if ctx.invoke_arg_buffer == NULL {
                     ctx.invoke_arg_buffer = alloc_n<ZjsValue>((usize)CTX_INVOKE_ARG_CAP);
                     ctx.invoke_arg_buffer_cap = CTX_INVOKE_ARG_CAP;
@@ -4337,22 +4389,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     argv_buf[ai] = regs[base + arg_offset + (u8)ai];
                     ai = ai + 1;
                 }
-                let target: Function* = NULL;
-                if zjs_is_function(callee) != 0 {
-                    let fp = zjs_cell_as_ptr(callee);
-                    raw { target = (Function*)fp; }
-                    // current_closure stays as the caller's saved value
-                    // (which equals the OUTGOING frame's saved_current_closure
-                    // — which is what should be live during the tail-callee).
-                    // For plain Function calls, set host_this for the duration.
-                    ctx.host_this = new_this;
-                } else {
-                    let cl = zjs_as_closure(callee);
-                    let fp2 = cl.function;
-                    raw { target = (Function*)fp2; }
-                    ctx.host_this = new_this;
-                    ctx.current_closure = cl;
-                }
+                // current_closure stays as the caller's saved value
+                // (which equals the OUTGOING frame's saved_current_closure
+                // — which is what should be live during the tail-callee).
+                ctx.host_this = new_this;
+                if is_closure_callee { ctx.current_closure = cl_callee; }
                 tail_call_frame(ctx, target, argv_buf, argc);
                 exit_reason = 2;
                 break;

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-01 22:58 UTC",
+    "when": "2026-06-01 23:53 UTC",
     "total": 14524,
-    "passed": 12308,
-    "failed": 1570,
+    "passed": 12312,
+    "failed": 1566,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -1577,14 +1577,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
     },
     {
-      "path": "test/language/statements/class/elements/private-field-as-async-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-field-as-async-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/language/statements/class/elements/private-field-is-not-clobbered-by-computed-property.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
@@ -3061,14 +3053,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
     },
     {
-      "path": "test/language/expressions/class/elements/private-field-as-async-arrow-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/elements/private-field-as-async-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/language/expressions/class/elements/private-field-on-nested-class.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
     },
@@ -3874,7 +3858,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
