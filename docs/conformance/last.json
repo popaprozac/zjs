@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-01 20:30 UTC",
+    "when": "2026-06-01 20:42 UTC",
     "total": 14524,
-    "passed": 12244,
-    "failed": 1634,
+    "passed": 12277,
+    "failed": 1601,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -4701,14 +4701,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): all descriptor should not be enumerable\nzjs: throw: (unknown): all descriptor should not be enume"
     },
     {
-      "path": "test/built-ins/Promise/all/reject-deferred.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
-      "path": "test/built-ins/Promise/all/reject-immed.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
       "path": "test/built-ins/Promise/all/resolve-before-loop-exit-from-same.js",
       "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
@@ -4745,20 +4737,8 @@
       "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
-      "path": "test/built-ins/Promise/all/resolve-ignores-late-rejection-deferred.js",
-      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Promise/all/resolve-poisoned-then.js",
       "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-thenable.js",
-      "reason": "[sloppy] async: Test262Error: The promise should be resolved with the expected value."
     },
     {
       "path": "test/built-ins/Promise/all/same-reject-function.js",
@@ -4833,10 +4813,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): allSettled descriptor should not be enumerable\nzjs: throw: (unknown): allSettled descriptor shoul"
     },
     {
-      "path": "test/built-ins/Promise/allSettled/reject-deferred.js",
-      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab\"fulfilled\"\u00bb, \u00ab\"rejected\"\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Promise/allSettled/reject-element-function-extensible.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
@@ -4865,14 +4841,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000\nzjs: throw: TypeError: Cannot convert null or undefin"
     },
     {
-      "path": "test/built-ins/Promise/allSettled/reject-ignored-deferred.js",
-      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/reject-ignored-immed.js",
-      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Promise/allSettled/resolve-element-function-extensible.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
@@ -4897,20 +4865,8 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000\nzjs: throw: TypeError: Cannot convert null or undefin"
     },
     {
-      "path": "test/built-ins/Promise/allSettled/resolve-ignores-late-rejection-deferred.js",
-      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Promise/allSettled/resolve-poisoned-then.js",
       "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/resolve-thenable.js",
-      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/allSettledKeyed/extensible.js",
@@ -4993,10 +4949,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): any descriptor should not be enumerable\nzjs: throw: (unknown): any descriptor should not be enume"
     },
     {
-      "path": "test/built-ins/Promise/any/reject-deferred.js",
-      "reason": "[sloppy] async: Test262Error: The promise should be rejected."
-    },
-    {
       "path": "test/built-ins/Promise/any/reject-element-function-extensible.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
@@ -5025,14 +4977,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
-      "path": "test/built-ins/Promise/any/reject-ignored-deferred.js",
-      "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/any/reject-immed.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
       "path": "test/built-ins/Promise/any/resolve-before-loop-exit-from-same.js",
       "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
@@ -5041,20 +4985,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): callCount after call to any() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): call"
     },
     {
-      "path": "test/built-ins/Promise/any/resolve-ignores-late-rejection-deferred.js",
-      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/any/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
-    },
-    {
       "path": "test/built-ins/Promise/exception-after-resolve-in-executor.js",
-      "reason": "[sloppy] async: Test262Error: [object Object]"
+      "reason": "[sloppy] async: Error: ignored exception"
     },
     {
       "path": "test/built-ins/Promise/exception-after-resolve-in-thenable-job.js",
-      "reason": "[sloppy] async: Test262Error: [object Object]"
+      "reason": "[sloppy] async: Error: ignored exception"
     },
     {
       "path": "test/built-ins/Promise/exec-args.js",
@@ -5169,32 +5105,16 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Promise/prototype/then/resolve-pending-fulfilled-poisoned-then.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
       "path": "test/built-ins/Promise/prototype/then/resolve-pending-fulfilled-prms-cstm-then.js",
       "reason": "[sloppy] async: Test262Error: The promise should be fulfilled with the resolution value of the provided promise."
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-pending-rejected-poisoned-then.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/prototype/then/resolve-pending-rejected-prms-cstm-then.js",
       "reason": "[sloppy] async: Test262Error: The promise should be fulfilled with the resolution value of the provided promise."
     },
     {
-      "path": "test/built-ins/Promise/prototype/then/resolve-settled-fulfilled-poisoned-then.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
       "path": "test/built-ins/Promise/prototype/then/resolve-settled-fulfilled-prms-cstm-then.js",
       "reason": "[sloppy] async: Test262Error: The promise should be fulfilled with the resolution value of the provided promise."
-    },
-    {
-      "path": "test/built-ins/Promise/prototype/then/resolve-settled-rejected-poisoned-then.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/prototype/then/resolve-settled-rejected-prms-cstm-then.js",
@@ -5245,40 +5165,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): race descriptor should not be enumerable\nzjs: throw: (unknown): race descriptor should not be enu"
     },
     {
-      "path": "test/built-ins/Promise/race/reject-deferred.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
-      "path": "test/built-ins/Promise/race/reject-immed.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
-      "path": "test/built-ins/Promise/race/resolve-ignores-late-rejection.js",
-      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab42\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/race/resolve-non-obj.js",
-      "reason": "[sloppy] async: Test262Error: The promise should be resolved with the correct value."
-    },
-    {
-      "path": "test/built-ins/Promise/race/resolve-non-thenable.js",
-      "reason": "[sloppy] async: Test262Error: The promise should be resolved with the correct value."
-    },
-    {
-      "path": "test/built-ins/Promise/race/resolve-poisoned-then.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
       "path": "test/built-ins/Promise/race/resolve-prms-cstm-then.js",
       "reason": "[sloppy] async: Test262Error: The promise should be resolved with the correct value."
     },
     {
       "path": "test/built-ins/Promise/race/resolve-self.js",
       "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
-    },
-    {
-      "path": "test/built-ins/Promise/race/resolve-thenable.js",
-      "reason": "[sloppy] async: Test262Error: The promise should be resolved with the correct value."
     },
     {
       "path": "test/built-ins/Promise/race/same-reject-function.js",
@@ -5305,14 +5197,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/Promise/resolve/S25.Promise_resolve_foreign_thenable_1.js",
-      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab[object Object]\u00bb, \u00ab\"resolved\"\u00bb) to be true"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve/arg-poisoned-then.js",
-      "reason": "[sloppy] async: Test262Error: Promise should be rejected when retrieving `then` property throws an error"
-    },
-    {
       "path": "test/built-ins/Promise/resolve/arg-uniq-ctor.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
     },
@@ -5321,16 +5205,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): resolve descriptor should not be enumerable\nzjs: throw: (unknown): resolve descriptor should not "
     },
     {
-      "path": "test/built-ins/Promise/resolve/resolve-poisoned-then.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
       "path": "test/built-ins/Promise/resolve/resolve-prms-cstm-then.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected Sam"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve/resolve-thenable.js",
-      "reason": "[sloppy] async: Test262Error: The promise should be fulfilled with the provided value."
     },
     {
       "path": "test/built-ins/Promise/resolve-function-length.js",
@@ -5343,14 +5219,6 @@
     {
       "path": "test/built-ins/Promise/resolve-function-nonconstructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-poisoned-then-deferred.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-poisoned-then-immed.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/resolve-prms-cstm-then-deferred.js",

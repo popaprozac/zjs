@@ -9663,6 +9663,46 @@ fn promise_settle(ctx: ZjsContext*, pv: ZjsValue, value: ZjsValue, fulfilled: bo
 // ECMA-262 ResolvePromise semantics: if `value` is itself a promise,
 // adopt its eventual state (attach a then-style hook); otherwise
 // settle directly with the value.
+// ECMA-262 NewPromiseResolveThenableJob (27.2.2.2): a microtask that
+// calls `then.call(thenable, resolve, reject)` where resolve/reject
+// settle the adopting promise. The job's bound state holds the thenable,
+// its `then`, and the two resolving functions (#331). If the `then` call
+// throws, reject with the thrown value (the resolving functions' own
+// already-settled guard makes a late reject a no-op if then already
+// resolved).
+fn host_promise_thenable_job(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let st_v: ZjsValue = zjs_undefined();
+    if ctx.current_host_fn != NULL {
+        let hf: ZjsHostFunction* = NULL; raw { hf = (ZjsHostFunction*)ctx->current_host_fn; }
+        st_v = hf.bound;
+    }
+    if zjs_is_object(st_v) == 0 { return zjs_undefined(); }
+    let st = zjs_as_object(st_v);
+    let thenable = object_get(st, ctx_intern_atom(ctx, (char*)"__tj_obj", 8));
+    let then_fn  = object_get(st, ctx_intern_atom(ctx, (char*)"__tj_then", 9));
+    let res_fn   = object_get(st, ctx_intern_atom(ctx, (char*)"__tj_res", 8));
+    let rej_fn   = object_get(st, ctx_intern_atom(ctx, (char*)"__tj_rej", 8));
+    let argbuf: ZjsValue[2]; argbuf[0] = res_fn; argbuf[1] = rej_fn;
+    let argp: ZjsValue* = NULL; raw { argp = &argbuf[0]; }
+    let saved_pt = ctx.pending_throw_active;
+    let saved_pv = ctx.pending_throw_value;
+    ctx.pending_throw_active = false;
+    ctx.pending_throw_value = zjs_undefined();
+    raw { (void)zjs_call_value_with_this(ctx, then_fn, thenable, argp, 2); }
+    if ctx.pending_throw_active {
+        let thrown = ctx.pending_throw_value;
+        ctx.pending_throw_active = saved_pt;
+        ctx.pending_throw_value = saved_pv;
+        let rb: ZjsValue[1]; rb[0] = thrown;
+        let rp: ZjsValue* = NULL; raw { rp = &rb[0]; }
+        raw { (void)zjs_call_value_with_this(ctx, rej_fn, zjs_undefined(), rp, 1); }
+    } else {
+        ctx.pending_throw_active = saved_pt;
+        ctx.pending_throw_value = saved_pv;
+    }
+    return zjs_undefined();
+}
+
 fn promise_resolve_with(ctx: ZjsContext*, pv: ZjsValue, value: ZjsValue) -> void {
     if zjs_is_promise(value) != 0 {
         // Identity self-reference is a TypeError per spec.
@@ -9685,6 +9725,39 @@ fn promise_resolve_with(ctx: ZjsContext*, pv: ZjsValue, value: ZjsValue) -> void
             promise_attach_reaction(ctx, inner, zjs_undefined(), zjs_undefined(), pv);
         }
         return;
+    }
+    // Thenable adoption (ECMA-262 27.2.1.3.2 step 8+): a non-promise
+    // object with a callable `then` is NOT fulfilled-with directly —
+    // `then` is read (a throw rejects), and if callable a thenable-
+    // resolution job is enqueued. #331. Without this, Promise.resolve(
+    // thenable), new Promise(r => r(thenable)), and every combinator
+    // treated thenables as plain values.
+    if value_is_js_object(value) {
+        let then_v = property_get(ctx, value, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"then", 4)));
+        if ctx.pending_throw_active {
+            let err = consume_pending_throw(ctx);
+            promise_settle(ctx, pv, err, false);
+            return;
+        }
+        if zjs_is_callable(then_v) != 0 {
+            let res_ptr: void* = NULL; raw { res_ptr = (void*)host_promise_resolve_fn; }
+            let rej_ptr: void* = NULL; raw { rej_ptr = (void*)host_promise_reject_fn; }
+            let res_fn = ctx_make_host_function(ctx, (char*)"", res_ptr);
+            zjs_as_host_function(res_fn).bound = pv;
+            let rej_fn = ctx_make_host_function(ctx, (char*)"", rej_ptr);
+            zjs_as_host_function(rej_fn).bound = pv;
+            let st_v = ctx_new_object(ctx);
+            let st = zjs_as_object(st_v);
+            object_set(ctx, st, ctx_intern_atom(ctx, (char*)"__tj_obj", 8), value);
+            object_set(ctx, st, ctx_intern_atom(ctx, (char*)"__tj_then", 9), then_v);
+            object_set(ctx, st, ctx_intern_atom(ctx, (char*)"__tj_res", 8), res_fn);
+            object_set(ctx, st, ctx_intern_atom(ctx, (char*)"__tj_rej", 8), rej_fn);
+            let job_ptr: void* = NULL; raw { job_ptr = (void*)host_promise_thenable_job; }
+            let job = ctx_make_host_function(ctx, (char*)"", job_ptr);
+            zjs_as_host_function(job).bound = st_v;
+            microtask_enqueue(ctx, job, zjs_undefined(), zjs_undefined(), true);
+            return;
+        }
     }
     promise_settle(ctx, pv, value, true);
 }
