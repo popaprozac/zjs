@@ -32,7 +32,7 @@ raw {
     // "Op<N>" so the dump is still readable.
     static const char *zjs_op_names[] = {
         "Halt",
-        "LoadConst", "LoadInt", "LoadUndefined", "LoadHole", "LoadNull",
+        "LoadConst", "LoadInt", "LoadUndefined", "LoadHole", "ThrowIfHole", "LoadNull",
         "LoadTrue", "LoadFalse", "Mov",
         "DefineGlobal", "LoadGlobal", "StoreGlobal", "LoadGlobalOrUndefined",
         "Add", "Sub", "Mul", "Div", "Mod", "Pow",
@@ -2402,6 +2402,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
             // Array-literal elision slot; surface zjs_deleted so
             // NewArray copies it into the elements buffer as a hole.
             regs[inst.a] = zjs_deleted();
+        } else if op == Op::ThrowIfHole {
+            // TDZ check (#330): a lexical binding (let/const/default-param)
+            // is seeded with the hole sentinel and overwritten on init.
+            // Reading it while still a hole is a ReferenceError.
+            if regs[inst.a].bits == zjs_deleted().bits {
+                let err = build_typed_error(ctx, (char*)"ReferenceError", 14,
+                                            (char*)"Cannot access lexical binding before initialization", 52);
+                throwing = true; thrown = err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
         } else if op == Op::LoadNull {
             regs[inst.a] = zjs_null();
         } else if op == Op::LoadTrue {

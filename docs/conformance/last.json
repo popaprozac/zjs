@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-01 18:16 UTC",
+    "when": "2026-06-01 18:59 UTC",
     "total": 14524,
-    "passed": 12191,
-    "failed": 1687,
+    "passed": 12207,
+    "failed": 1671,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -977,10 +977,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/statements/class/async-gen-method/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
       "path": "test/language/statements/class/async-gen-method/yield-promise-reject-next-catch.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -994,10 +990,6 @@
     },
     {
       "path": "test/language/statements/class/async-gen-method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/class/async-gen-method-static/dflt-params-ref-self.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
@@ -1021,19 +1013,11 @@
       "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
-      "path": "test/language/statements/class/async-method/dflt-params-ref-self.js",
-      "reason": "[sloppy] async: Test262Error: function should not be resolved"
-    },
-    {
       "path": "test/language/statements/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
       "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/statements/class/async-method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] async: Test262Error: function should not be resolved"
-    },
-    {
-      "path": "test/language/statements/class/async-method-static/dflt-params-ref-self.js",
       "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
@@ -2197,19 +2181,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/statements/class/gen-method/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
       "path": "test/language/statements/class/gen-method-param-dflt-yield.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/gen-method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/class/gen-method-static/dflt-params-ref-self.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
@@ -2221,15 +2197,7 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/statements/class/method/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
       "path": "test/language/statements/class/method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/class/method-static/dflt-params-ref-self.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
@@ -2653,10 +2621,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/expressions/class/async-gen-method/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
       "path": "test/language/expressions/class/async-gen-method/yield-promise-reject-next-catch.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -2670,10 +2634,6 @@
     },
     {
       "path": "test/language/expressions/class/async-gen-method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/expressions/class/async-gen-method-static/dflt-params-ref-self.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
@@ -2693,19 +2653,11 @@
       "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
-      "path": "test/language/expressions/class/async-method/dflt-params-ref-self.js",
-      "reason": "[sloppy] async: Test262Error: function should not be resolved"
-    },
-    {
       "path": "test/language/expressions/class/async-method/returns-async-arrow-returns-arguments-from-parent-function.js",
       "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/class/async-method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] async: Test262Error: function should not be resolved"
-    },
-    {
-      "path": "test/language/expressions/class/async-method-static/dflt-params-ref-self.js",
       "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
@@ -3549,19 +3501,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/expressions/class/gen-method/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
       "path": "test/language/expressions/class/gen-method-param-dflt-yield.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/gen-method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/expressions/class/gen-method-static/dflt-params-ref-self.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
@@ -3581,15 +3525,7 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/expressions/class/method/dflt-params-ref-self.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
       "path": "test/language/expressions/class/method-static/dflt-params-ref-later.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/expressions/class/method-static/dflt-params-ref-self.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {

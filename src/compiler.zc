@@ -42,6 +42,14 @@ struct Local {
     // OUTSIDE the per-iter env get the full set of hops. 0 = lives on
     // the parent's normal env (default for ordinary locals).
     per_iter_depth: u32;
+    // #330 TDZ. is_tdz: this is a let/const/default-param binding that
+    // must throw ReferenceError if read before its initializer runs.
+    // initialized: set true once the binding's initializer has been
+    // compiled in straight-line order — reads after that point in the
+    // same linear flow skip the ThrowIfHole check (keeps the common
+    // `let x = …; use x` path free of overhead).
+    is_tdz:        bool;
+    initialized:   bool;
 }
 
 struct Compiler {
@@ -1141,6 +1149,13 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
                 let name_atom = ctx_intern_atom(c.ctx, name, name_len);
                 emit_load_prop_atom(c, dst, c.env_reg, name_atom);
                 return dst;
+            }
+            // #330 TDZ: a let/const/default-param read that we can't
+            // prove is post-initialization gets a runtime hole check.
+            // Reads after the binding's initializer (in straight-line
+            // order, `initialized` set) skip it — common path stays free.
+            if c.locals[(u32)local_idx].is_tdz && !c.locals[(u32)local_idx].initialized {
+                emit(c, make_inst_a(Op::ThrowIfHole, c.locals[(u32)local_idx].reg));
             }
             // Non-captured local — hand back the local's reg directly
             // when c.borrow_local_ok is set (the caller has proven the
@@ -3239,6 +3254,21 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
             release_reg(c, undef_r);
             let skip_idx = emit(c, make_inst_a_i16(Op::JmpIfFalse, tmp, 0));
             release_reg(c, tmp);
+            // #330 TDZ ref-self: a parameter is in its own TDZ while its
+            // default initializer runs, so `function f(x = x)` must throw
+            // ReferenceError. The CmpStrictEq above already read the arg
+            // value; now (only on the default-taken branch) seed the reg
+            // with the hole and mark the binding uninitialized so a
+            // self-reference inside the default hits ThrowIfHole. The
+            // arg-provided path skips this via JmpIfFalse and keeps the
+            // argument. (ref-LATER — `(a = b, b)` — needs arg staging and
+            // is a separate follow-up.)
+            let is_simple_param = p.name_length > 0 && !c.locals[local_idx].captured;
+            if is_simple_param {
+                c.locals[local_idx].is_tdz = true;
+                c.locals[local_idx].initialized = false;
+                emit(c, make_inst_a(Op::LoadHole, param_reg));
+            }
             let init_r = compile_expr(c, p.right);
             if init_r != param_reg {
                 emit(c, make_inst_ab(Op::Mov, param_reg, init_r));
@@ -3252,6 +3282,8 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
             if init_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
             reset_temps(c);
             patch_jump(c, skip_idx);
+            // Both paths converge here initialized — body reads skip the check.
+            if is_simple_param { c.locals[local_idx].initialized = true; }
         }
         local_idx = local_idx + 1;
         dp_i = dp_i + 1;
@@ -3360,6 +3392,22 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     // FunctionDecls inside BlockStmts / IfStmts / etc. still go
     // through the regular per-block recursion in compile_stmt and
     // are NOT hoisted — matches ECMA-262 lexical scoping.)
+    // #330 TDZ: the function body's own braces ARE the function scope and
+    // are walked directly (not via the BlockStmt handler), so seed the
+    // hole for function-top `let`/`const` here. Nested blocks/loop bodies
+    // re-hole their own bindings in the BlockStmt handler. Params are
+    // never is_tdz, so this never touches argument registers.
+    // Skip params (locals 0..param_count-1) — their TDZ (default ref-self)
+    // is handled in the default-param prologue above; re-holing them here
+    // would clobber their initialized argument/default values.
+    let tz: u32 = param_count;
+    while tz < c.local_count {
+        if c.locals[tz].is_tdz && !c.locals[tz].captured {
+            emit(c, make_inst_a(Op::LoadHole, c.locals[tz].reg));
+            c.locals[tz].initialized = false;
+        }
+        tz = tz + 1;
+    }
     if node.left != NULL {
         if node.left.kind == NodeKind::BlockStmt {
             let bi: u32 = 0;
@@ -5462,6 +5510,8 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
             let decl = node.children[i];
             if decl.name_length > 0 {
                 alloc_and_add_local_scoped(c, decl.name_start, decl.name_length, scope_id);
+                // #330 — let/const are TDZ bindings; var is not.
+                if !is_var_kind { c.locals[c.local_count - 1].is_tdz = true; }
             } else if decl.third != NULL {
                 collect_pattern_locals(c, decl.third);
             }
@@ -5584,6 +5634,20 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // lockstep so the ids assigned to the block agree, which is
         // what makes find_local_index filter correctly.
         enter_scope(c);
+        // #330 TDZ: seed this block's let/const regs with the hole so a
+        // read BEFORE the declaration throws ReferenceError. Re-holed on
+        // every block entry (correct per-iteration semantics for a block
+        // that is a loop body). `initialized` is reset so reads compiled
+        // before the decl get the check; the decl sets it true again.
+        let hi: u32 = 0;
+        while hi < c.local_count {
+            if c.locals[hi].scope_id == c.cur_scope_id
+               && c.locals[hi].is_tdz && !c.locals[hi].captured {
+                emit(c, make_inst_a(Op::LoadHole, c.locals[hi].reg));
+                c.locals[hi].initialized = false;
+            }
+            hi = hi + 1;
+        }
         let i: u32 = 0;
         while i < node.children_count {
             compile_stmt(c, node.children[i]);
@@ -5623,7 +5687,15 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
                 if lidx < 0 { c.had_error = true; return; }
                 let cap = c.locals[(u32)lidx].captured;
                 let lreg = c.locals[(u32)lidx].reg;
+                let is_tdz = c.locals[(u32)lidx].is_tdz;
                 if decl.left != NULL {
+                    // #330 TDZ: seed the reg with the hole BEFORE the
+                    // initializer so a self-reference (`let x = x`,
+                    // `const c = c`) reads the hole and throws. Only for
+                    // non-captured register locals (captured = stage 3).
+                    if is_tdz && !cap {
+                        emit(c, make_inst_a(Op::LoadHole, lreg));
+                    }
                     let r = compile_expr(c, decl.left);
                     maybe_infer_anon_name(c, decl.left, r, name, name_len);
                     if cap {
@@ -5635,11 +5707,18 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
                         emit(c, make_inst_ab(Op::Mov, lreg, r));
                     }
                     release_reg(c, r);
+                } else if is_tdz && !cap {
+                    // `let x;` — initialized to undefined at the decl, and
+                    // the TDZ ends here. If the reg was holed at scope
+                    // entry, replace the hole with undefined now.
+                    emit(c, make_inst_a(Op::LoadUndefined, lreg));
                 }
-                // No initializer: env stays without the prop / reg stays undefined.
-                // Captured-local first reads before any init are observably
-                // undefined either way (LoadProp on a missing prop returns
-                // undefined, matching `let x;` semantics).
+                // After the declarator, the binding is initialized — later
+                // straight-line reads skip the TDZ check.
+                if is_tdz && !cap { c.locals[(u32)lidx].initialized = true; }
+                // No initializer (var): env stays without the prop / reg
+                // stays undefined. Captured-local first reads before any
+                // init are observably undefined either way.
             } else {
                 let slot = ctx_intern_global(c.ctx, name, name_len);
                 if decl.left != NULL {

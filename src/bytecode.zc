@@ -26,6 +26,7 @@ enum Op {
     LoadInt,          // a=dst, bc=imm (i16) — small-int fast path
     LoadUndefined,    // a=dst
     LoadHole,         // a=dst — zjs_deleted sentinel for array elision slots
+    ThrowIfHole,      // a=reg — TDZ check: ReferenceError if regs[a] is the hole
     LoadNull,         // a=dst
     LoadTrue,         // a=dst
     LoadFalse,        // a=dst
