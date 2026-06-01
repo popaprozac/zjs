@@ -1949,6 +1949,40 @@ fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u
     return r;
 }
 
+// Resolve the real target of a default-derived-constructor's implicit
+// `super(...args)` forward. A synthesized default derived ctor
+// (is_default_derived_ctor) is a pure argument-forwarder with no field
+// initializers — a class with fields but no explicit ctor gets a
+// parser-synthesized ctor instead, which is NOT flagged here. So when the
+// forward target is itself such a ctor, we can skip straight to ITS
+// parent: chaining N empty forwarders is identical to calling the first
+// ancestor with a real body (or the base). Without this, a 3+ level
+// default-ctor chain (C->B->A) invokes B's empty body via a plain call,
+// which trips the spec "must call super before return" gate.
+fn ctor_skip_default_forwarders(parent: ZjsValue) -> ZjsValue {
+    let cur = parent;
+    let hops: u32 = 0;
+    while hops < 64 {
+        let fnp: Function* = NULL;
+        if zjs_is_function(cur) != 0 {
+            raw { fnp = (Function*)zjs_cell_as_ptr(cur); }
+        } else if zjs_is_closure(cur) != 0 {
+            let cl = zjs_as_closure(cur);
+            let p = cl.function;
+            raw { fnp = (Function*)p; }
+        } else {
+            break;
+        }
+        if fnp == NULL { break; }
+        if fnp.is_default_derived_ctor == false { break; }
+        let next = fnp.parent_ctor;
+        if next.bits == zjs_undefined().bits { break; }
+        cur = next;
+        hops = hops + 1;
+    }
+    return cur;
+}
+
 // Variant of interpret() that pre-binds the entry frame's
 // outer_promise. Used when a host caller invokes an async function
 // (e.g. via Function.prototype.bind / call / apply, or
@@ -5685,7 +5719,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let target: Function* = NULL;
                 raw { target = (Function*)fp; }
                 if target.is_default_derived_ctor {
-                    let parent = target.parent_ctor;
+                    let parent = ctor_skip_default_forwarders(target.parent_ctor);
                     let r: ZjsValue = zjs_undefined();
                     raw { r = zjs_call_value_with_this(ctx, parent, ctx->host_this, argv_ptr, argc); }
                     if ctx.pending_throw_active {
@@ -5711,7 +5745,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     // straight to the parent ctor rather than running
                     // the empty synth body (which would fail the
                     // super-called gate at Op::Return).
-                    let parent = target2.parent_ctor;
+                    let parent = ctor_skip_default_forwarders(target2.parent_ctor);
                     let saved_cl = ctx.current_closure;
                     ctx.current_closure = cl;
                     let r: ZjsValue = zjs_undefined();
@@ -5884,7 +5918,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 // arguments straight to the parent ctor instead of
                 // interpreting an empty body.
                 if target.is_default_derived_ctor {
-                    let parent = target.parent_ctor;
+                    let parent = ctor_skip_default_forwarders(target.parent_ctor);
                     let argv_ptr: ZjsValue* = NULL;
                     raw { argv_ptr = &regs[base + 1]; }
                     let r: ZjsValue = zjs_undefined();
@@ -5922,7 +5956,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 // the empty body, which would fail the spec's
                 // super-called gate at Op::Return.
                 if target2.is_default_derived_ctor {
-                    let parent = target2.parent_ctor;
+                    let parent = ctor_skip_default_forwarders(target2.parent_ctor);
                     let saved_cl = ctx.current_closure;
                     ctx.current_closure = cl;
                     let r: ZjsValue = zjs_undefined();

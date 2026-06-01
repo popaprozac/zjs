@@ -2017,6 +2017,24 @@ fn parse_class_body(p: Parser*, is_derived: bool) -> ParamList {
         let body_block = new_node(&p.tracker, NodeKind::BlockStmt, synth_anchor, synth_anchor);
         body_block.children = NULL;
         body_block.children_count = 0;
+        // Derived class with fields but no explicit ctor: the synth ctor
+        // must call super() or the "must call super" gate trips at return.
+        // (No arg-forwarding — spread in super() isn't supported yet; a
+        // class that needs to forward ctor args should declare its own
+        // constructor. The field initializers, prepended below, run before
+        // this super() under the engine's lenient this-before-super.)
+        if is_derived {
+            let super_e = new_node(&p.tracker, NodeKind::SuperExpr, synth_anchor, synth_anchor);
+            let super_call = new_node(&p.tracker, NodeKind::Call, synth_anchor, synth_anchor);
+            super_call.left = super_e;
+            super_call.children = NULL;
+            super_call.children_count = 0;
+            let sc_children = alloc_n<AstNode*>(1);
+            sc_children[0] = super_call;
+            alloc_list_push(&p.tracker, (void*)sc_children);
+            body_block.children = sc_children;
+            body_block.children_count = 1;
+        }
         let synth = new_node(&p.tracker, NodeKind::MethodDef, synth_anchor, synth_anchor);
         synth.name_start  = synth_anchor;
         synth.name_length = 0;          // 0-length name; sentinel ensures recognition
