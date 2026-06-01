@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-01 20:05 UTC",
+    "when": "2026-06-01 20:30 UTC",
     "total": 14524,
-    "passed": 12241,
-    "failed": 1637,
+    "passed": 12244,
+    "failed": 1634,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -5689,10 +5689,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): isDisjointFrom descriptor should not be enumerable\nzjs: throw: (unknown): isDisjointFrom descript"
     },
     {
-      "path": "test/built-ins/Set/prototype/isDisjointFrom/set-like-class-mutation.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Set/prototype/isDisjointFrom/set-like-class-order.js",
       "reason": "[sloppy] zjs: throw: TypeError: set-like .size is NaN\nzjs: throw: TypeError: set-like .size is NaN"
     },
@@ -5709,10 +5705,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): isSubsetOf descriptor should not be enumerable\nzjs: throw: (unknown): isSubsetOf descriptor shoul"
     },
     {
-      "path": "test/built-ins/Set/prototype/isSubsetOf/set-like-class-mutation.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Set/prototype/isSubsetOf/set-like-class-order.js",
       "reason": "[sloppy] zjs: throw: TypeError: set-like .size is NaN\nzjs: throw: TypeError: set-like .size is NaN"
     },
@@ -5727,10 +5719,6 @@
     {
       "path": "test/built-ins/Set/prototype/isSupersetOf/isSupersetOf.js",
       "reason": "[sloppy] zjs: throw: (unknown): isSupersetOf descriptor should not be enumerable\nzjs: throw: (unknown): isSupersetOf descriptor s"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/isSupersetOf/set-like-class-mutation.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Set/prototype/isSupersetOf/set-like-class-order.js",

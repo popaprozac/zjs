@@ -3819,6 +3819,22 @@ fn parse_object(p: Parser*) -> AstNode* {
             if !match_kind(p, TokenKind::Comma) { break; }
             continue;
         }
+        // ECMA-262 MethodDefinition prefixes inside an object literal:
+        // `async m(){}`, `*m(){}`, `async *m(){}` (and computed-key
+        // variants). #335. `async` is only a prefix when followed by a
+        // property-name / `[` / `*`; otherwise it's an ordinary key
+        // (`{ async: 1 }`) or a method literally named `async`
+        // (`{ async(){} }`, where the next token is `(`).
+        let om_async: bool = false;
+        let om_gen: bool = false;
+        if peek_kind(p) == TokenKind::KwAsync
+           && (is_property_name_start(peek_kind2(p))
+               || peek_kind2(p) == TokenKind::LBracket
+               || peek_kind2(p) == TokenKind::Star) {
+            advance(p); om_async = true;
+        }
+        if peek_kind(p) == TokenKind::Star { advance(p); om_gen = true; }
+
         // Computed property name: `{ [expr]: value }` or
         // `{ [expr](args) { body } }`. The key expression is evaluated
         // at object-build time and ToPropertyKey'd.
@@ -3830,22 +3846,33 @@ fn parse_object(p: Parser*) -> AstNode* {
 
             let value: AstNode* = NULL;
             if match_kind(p, TokenKind::Colon) {
+                // `{ [k]: v }` — a data property; an async/* prefix here
+                // is a syntax error (`{ *[k]: 1 }` is invalid).
+                if om_async || om_gen { p.had_error = true; break; }
                 value = parse_assignment(p);
                 if value == NULL { break; }
             } else if peek_kind(p) == TokenKind::LParen {
-                // Method shorthand with computed name.
+                // Method shorthand with computed name (possibly async/gen).
                 advance(p);
+                let saved_a = p.in_async;
+                let saved_g = p.in_generator;
+                p.in_async = om_async;
+                p.in_generator = om_gen;
                 let params = parse_param_list(p);
-                if !expect_kind(p, TokenKind::RParen) { break; }
-                if peek_kind(p) != TokenKind::LBrace { p.had_error = true; break; }
+                if !expect_kind(p, TokenKind::RParen) { p.in_async = saved_a; p.in_generator = saved_g; break; }
+                if peek_kind(p) != TokenKind::LBrace { p.in_async = saved_a; p.in_generator = saved_g; p.had_error = true; break; }
                 p.function_depth = p.function_depth + 1;
                 let body = parse_block(p);
                 p.function_depth = p.function_depth - 1;
+                p.in_async = saved_a;
+                p.in_generator = saved_g;
                 if body == NULL { break; }
                 let mfn = new_node(&p.tracker, NodeKind::FunctionExpr, lb.start, body.end);
                 mfn.left = body;
                 mfn.children = params.arr;
                 mfn.children_count = params.count;
+                if om_async { mfn.bool_value = true; }
+                if om_gen { mfn.num = 3.0; }
                 value = mfn;
             } else {
                 p.had_error = true; break;
@@ -3972,11 +3999,13 @@ fn parse_object(p: Parser*) -> AstNode* {
 
         let value: AstNode* = NULL;
         if match_kind(p, TokenKind::Colon) {
+            // Data property. An async/* prefix is only valid on a method.
+            if om_async || om_gen { p.had_error = true; break; }
             value = parse_assignment(p);
             if value == NULL { break; }
             prop_end = value.end;
         } else if peek_kind(p) == TokenKind::LParen {
-            // Method shorthand: { foo() {} }.
+            // Method shorthand: { foo() {} } (possibly async / generator).
             //
             // ECMA-262 §13.2.5: the function value is ANONYMOUS — the
             // `foo` identifier is the property key only, NOT a binding
@@ -3992,12 +4021,18 @@ fn parse_object(p: Parser*) -> AstNode* {
             // a leak that hit ~7GB RSS in 2.5s and silently consumed all
             // free memory until OOM. See zjs-mem-probe trace.
             if !expect_kind(p, TokenKind::LParen) { break; }
+            let saved_a = p.in_async;
+            let saved_g = p.in_generator;
+            p.in_async = om_async;
+            p.in_generator = om_gen;
             let params = parse_param_list(p);
-            if !expect_kind(p, TokenKind::RParen) { break; }
-            if peek_kind(p) != TokenKind::LBrace { p.had_error = true; break; }
+            if !expect_kind(p, TokenKind::RParen) { p.in_async = saved_a; p.in_generator = saved_g; break; }
+            if peek_kind(p) != TokenKind::LBrace { p.in_async = saved_a; p.in_generator = saved_g; p.had_error = true; break; }
             p.function_depth = p.function_depth + 1;
             let body = parse_block(p);
             p.function_depth = p.function_depth - 1;
+            p.in_async = saved_a;
+            p.in_generator = saved_g;
             if body == NULL { break; }
             let method_fn = new_node(&p.tracker, NodeKind::FunctionExpr, key_tok.start, body.end);
             // name_start retained for diagnostics / source-range queries;
@@ -4007,6 +4042,9 @@ fn parse_object(p: Parser*) -> AstNode* {
             method_fn.left = body;
             method_fn.children = params.arr;
             method_fn.children_count = params.count;
+            // FunctionExpr kind flags (#335): bool_value=async, num=3 gen.
+            if om_async { method_fn.bool_value = true; }
+            if om_gen { method_fn.num = 3.0; }
             value = method_fn;
             prop_end = body.end;
         } else {
