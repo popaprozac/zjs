@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-01 18:59 UTC",
+    "when": "2026-06-01 19:55 UTC",
     "total": 14524,
-    "passed": 12207,
-    "failed": 1671,
+    "passed": 12214,
+    "failed": 1664,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -5645,10 +5645,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord throws an error when size is undefined Expected a TypeError to be thrown but no exce"
     },
     {
-      "path": "test/built-ins/Set/prototype/difference/subclass-receiver-methods.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Set/prototype/entries/entries.js",
       "reason": "[sloppy] zjs: throw: (unknown): entries descriptor should not be enumerable\nzjs: throw: (unknown): entries descriptor should not "
     },
@@ -5729,10 +5725,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord throws an error when size is undefined Expected a TypeError to be thrown but no exce"
     },
     {
-      "path": "test/built-ins/Set/prototype/intersection/subclass-receiver-methods.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Set/prototype/isDisjointFrom/allows-set-like-class.js",
       "reason": "[sloppy] zjs: throw: (unknown): Set.prototype.isDisjointFrom should not call its argument's keys iterator when this.size \u2264 arg.si"
     },
@@ -5773,10 +5765,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord throws an error when size is undefined Expected a TypeError to be thrown but no exce"
     },
     {
-      "path": "test/built-ins/Set/prototype/isDisjointFrom/subclass-receiver-methods.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Set/prototype/isSubsetOf/array-throws.js",
       "reason": "[sloppy] zjs: throw: (unknown): Throws an error when an array is used Expected a TypeError to be thrown but no exception was thro"
     },
@@ -5809,10 +5797,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord throws an error when size is undefined Expected a TypeError to be thrown but no exce"
     },
     {
-      "path": "test/built-ins/Set/prototype/isSubsetOf/subclass-receiver-methods.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Set/prototype/isSupersetOf/converts-negative-zero.js",
       "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
     },
@@ -5843,10 +5827,6 @@
     {
       "path": "test/built-ins/Set/prototype/isSupersetOf/size-is-a-number.js",
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord throws an error when size is undefined Expected a TypeError to be thrown but no exce"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/isSupersetOf/subclass-receiver-methods.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/built-ins/Set/prototype/keys/keys.js",
@@ -5897,10 +5877,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord throws an error when size is undefined Expected a TypeError to be thrown but no exce"
     },
     {
-      "path": "test/built-ins/Set/prototype/symmetricDifference/subclass-receiver-methods.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
-    },
-    {
       "path": "test/built-ins/Set/prototype/symmetricDifference/symmetricDifference.js",
       "reason": "[sloppy] zjs: throw: (unknown): symmetricDifference descriptor should not be enumerable\nzjs: throw: (unknown): symmetricDifferenc"
     },
@@ -5927,10 +5903,6 @@
     {
       "path": "test/built-ins/Set/prototype/union/size-is-a-number.js",
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord throws an error when size is undefined Expected a TypeError to be thrown but no exce"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/union/subclass-receiver-methods.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/built-ins/Set/prototype/union/union.js",

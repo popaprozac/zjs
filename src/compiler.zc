@@ -4535,7 +4535,31 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
         while r < slots_needed { alloc_reg(c); r = r + 1; }
 
         // Place callee + receiver in the standard layout.
-        if is_method {
+        let spread_is_super: bool = is_method && callee.left != NULL
+                                    && callee.left.kind == NodeKind::SuperExpr;
+        if spread_is_super {
+            // `super.m(...args)` with a spread: receiver is the current
+            // `this`, method comes off enclosing-class parent.prototype —
+            // mirrors the non-spread super-member path. (#334 warm-up.)
+            if c.enclosing_class_parent == NULL { c.had_error = true; return base; }
+            emit(c, make_inst_a(Op::LoadThis, base + 1));
+            let parent_r = compile_expr(c, c.enclosing_class_parent);
+            let proto_key = emit_load_name_string(c, (char*)"prototype", 9);
+            let holder_r = alloc_reg(c);
+            emit(c, make_inst_abc(Op::LoadElem, holder_r, parent_r, proto_key));
+            if proto_key + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            if parent_r != holder_r && parent_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            if callee.kind == NodeKind::Member {
+                let k2 = emit_load_name_string(c, c.source + callee.name_start, callee.name_length);
+                emit(c, make_inst_abc(Op::LoadElem, base, holder_r, k2));
+                if k2 + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            } else {
+                let k3 = compile_expr(c, callee.right);
+                emit(c, make_inst_abc(Op::LoadElem, base, holder_r, k3));
+                if k3 + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+            if holder_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+        } else if is_method {
             let recv_r = compile_expr(c, callee.left);
             if recv_r != base + 1 {
                 emit(c, make_inst_ab(Op::Mov, base + 1, recv_r));
