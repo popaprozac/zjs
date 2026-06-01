@@ -6,12 +6,16 @@
 // pipeline() and finished(). Not byte-exact with Node internals, but
 // covers the common on('data')/pipe/write/end/Transform usage.
 //
-// Two engine workarounds shape the structure: every class carries an
-// explicit `constructor(...){ super(...) }` (default derived ctors in a
-// 3+ level chain mis-handle the super-call — task #322), and the
-// writable methods are shared free functions invoked from both Writable
-// and Duplex rather than grafted onto a prototype (assigning to
-// D.prototype[x] then `class T extends D` breaks subclassing — #323).
+// Historical note: this module's structure was shaped by two engine
+// bugs that are now BOTH fixed — #322 (default derived ctors in a 3+
+// level chain mis-handled the super-call, commit 83cd763) and #323
+// (which turned out to be the same root cause: the "prototype graft
+// breaks subclassing" symptom only ever reproduced with default derived
+// ctors; explicit-ctor grafting always worked). The explicit
+// `constructor(...){ super(...) }` on every class and the writable
+// methods applied via a shared `applyWritableMethods(proto)` helper are
+// therefore no longer strictly required, but are kept as-is since they
+// work and read clearly. Both cases are now guarded by test262.
 
 const nextTick = (globalThis.process && globalThis.process.nextTick)
   ? globalThis.process.nextTick
