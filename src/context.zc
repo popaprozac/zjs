@@ -14866,7 +14866,13 @@ fn parse_url_into(ctx: ZjsContext*, obj: ZjsObject*, input: char*, ilen: u32, ba
     }
 
     let has_authority: bool = false;
-    if has_scheme && cur + 2 <= bl && body[cur] == (char)'/' && body[cur + 1] == (char)'/' {
+    // Authority is present when "//" follows the scheme, OR for a
+    // scheme-relative reference ("//host/path" with no scheme of its own
+    // — it inherits only the scheme from base, set above). #327. When
+    // there's no scheme we already required a base, so the second arm of
+    // the guard always holds there; it's kept explicit for clarity.
+    if cur + 2 <= bl && body[cur] == (char)'/' && body[cur + 1] == (char)'/'
+       && (has_scheme || base_obj != NULL) {
         cur = cur + 2;
         has_authority = true;
     }
