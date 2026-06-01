@@ -1477,6 +1477,11 @@ struct ZjsUint8Array {
     bytes:    u8*;          // owned heap buffer (freed in uint8_array_free)
     length:   u32;          // number of bytes
     capacity: u32;          // backing-buffer capacity
+    // Per-instance [[Prototype]] override. NULL = use ctx.uint8_array_proto.
+    // Set by Object.setPrototypeOf so `node:buffer`'s Buffer (whose
+    // prototype chains to Uint8Array.prototype) can give instances its
+    // own methods. property_get walks this chain first; GC marks it.
+    proto:    ZjsObject*;
 }
 
 fn zjs_is_uint8_array(v: ZjsValue) -> int {
@@ -1496,6 +1501,7 @@ fn zjs_uint8_array_new(length: u32) -> ZjsUint8Array* {
     a.header.type_tag = TAG_UINT8_ARRAY;
     a.length = length;
     a.capacity = length;
+    a.proto = NULL;
     if length > 0 {
         a.bytes = alloc_n<u8>((usize)length);
         // alloc_n is calloc-backed on the standard path; bytes are

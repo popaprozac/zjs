@@ -382,7 +382,27 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         if is_len != 0 || is_blen != 0 { return zjs_int32((i32)u.length); }
         if is_boff != 0                { return zjs_int32(0); }
         if is_buf != 0                 { return zjs_undefined(); }
-        // Prototype lookup.
+        // Per-instance prototype chain first (set by Object.setPrototypeOf
+        // — e.g. node:buffer's Buffer.prototype, which itself chains to
+        // Uint8Array.prototype). Accessor hits invoke their getter with
+        // the typed array as the receiver.
+        let pc = u.proto;
+        while pc != NULL {
+            let ps = class_find_slot(pc.cls, name);
+            if ps >= 0 {
+                let pv = pc.slots[(u32)ps];
+                if zjs_is_deleted(pv) == 0 {
+                    if zjs_is_accessor(pv) != 0 {
+                        let acc = zjs_as_accessor(pv);
+                        if zjs_is_undefined(acc.get) != 0 { return zjs_undefined(); }
+                        return zjs_call_value_with_this(ctx, acc.get, obj, NULL, 0);
+                    }
+                    return pv;
+                }
+            }
+            pc = pc.proto;
+        }
+        // Fallback: the shared Uint8Array.prototype methods.
         if ctx.uint8_array_proto != NULL {
             let slot = class_find_slot(ctx.uint8_array_proto.cls, name);
             if slot >= 0 {
@@ -5426,6 +5446,15 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 } else if zjs_is_regexp(val) != 0 {
                     let rv = zjs_as_regexp(val);
                     let cur = if rv.proto != NULL { rv.proto } else { ctx.regexp_proto };
+                    while cur != NULL {
+                        if cur == proto_obj { result = 1; cur = NULL; }
+                        else                { cur = cur.proto; }
+                    }
+                } else if zjs_is_uint8_array(val) != 0 {
+                    // node:buffer's Buffer sets a per-instance proto whose
+                    // chain reaches Uint8Array.prototype.
+                    let uv = zjs_as_uint8_array(val);
+                    let cur = if uv.proto != NULL { uv.proto } else { ctx.uint8_array_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }

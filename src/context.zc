@@ -1573,6 +1573,16 @@ fn gc_mark_cell_children(p: void*) -> void {
         return;
     }
 
+    if tag == TAG_UINT8_ARRAY {
+        // Only the optional per-instance proto is a cell; bytes are raw.
+        let u: ZjsUint8Array* = NULL;
+        raw { u = (ZjsUint8Array*)p; }
+        if u.proto != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)u.proto));
+        }
+        return;
+    }
+
     if tag == TAG_DATA_VIEW {
         let dv: ZjsDataView* = NULL;
         raw { dv = (ZjsDataView*)p; }
@@ -4974,6 +4984,15 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         } else {
             hf.proto_override = proto_v;
         }
+    } else if zjs_is_uint8_array(obj_v) != 0 {
+        // Uint8Array per-instance proto (node:buffer's Buffer.prototype).
+        // property_get's TAG_UINT8_ARRAY path walks this chain.
+        let u = zjs_as_uint8_array(obj_v);
+        if zjs_is_null(proto_v) != 0 {
+            u.proto = NULL;
+        } else {
+            u.proto = zjs_as_object(proto_v);
+        }
     }
     // Other non-object/non-callable receivers: spec returns the original
     // value unchanged.
@@ -4993,6 +5012,12 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         if a.proto != NULL { return zjs_cell_from_ptr((void*)a.proto); }
         if ctx.array_proto == NULL { return zjs_null(); }
         return zjs_cell_from_ptr((void*)ctx.array_proto);
+    }
+    if zjs_is_uint8_array(v) != 0 {
+        let u = zjs_as_uint8_array(v);
+        if u.proto != NULL { return zjs_cell_from_ptr((void*)u.proto); }
+        if ctx.uint8_array_proto == NULL { return zjs_null(); }
+        return zjs_cell_from_ptr((void*)ctx.uint8_array_proto);
     }
     if zjs_is_host_function(v) != 0 {
         // Host fns may carry an explicit override (used for error
@@ -8453,7 +8478,7 @@ fn json_apply_replacer(ctx: ZjsContext*, jc: JsonCtx*, key: ZjsValue, v: ZjsValu
 // invoke it with the current key and use the return value in place
 // of the original. Pure no-op for primitives.
 fn json_apply_to_json(ctx: ZjsContext*, key: ZjsValue, v: ZjsValue) -> ZjsValue {
-    if zjs_is_object(v) == 0 && zjs_is_array(v) == 0 { return v; }
+    if zjs_is_object(v) == 0 && zjs_is_array(v) == 0 && zjs_is_uint8_array(v) == 0 { return v; }
     let to_json_atom = ctx_intern_atom(ctx, (char*)"toJSON", 6);
     let to_json_fn = property_get(ctx, v, zjs_cell_from_ptr((void*)to_json_atom));
     if ctx.pending_throw_active { return zjs_undefined(); }
@@ -23517,6 +23542,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"fill", u8_fill_ptr, 1));
     object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"slice", 5),
                ctx_make_host_function_arity(ctx, (char*)"slice", u8_slice_ptr, 2));
+    // subarray: spec returns a shared-memory view, but TAG_UINT8_ARRAY
+    // owns its bytes (no ArrayBuffer view model), so it aliases slice =
+    // a copy. Adequate for read slicing; documented limitation.
+    object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"subarray", 8),
+               ctx_make_host_function_arity(ctx, (char*)"subarray", u8_slice_ptr, 2));
     object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"set", 3),
                ctx_make_host_function_arity(ctx, (char*)"set", u8_set_ptr, 1));
     object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
@@ -24562,6 +24592,11 @@ fn zjs_install_stdlib_extensions(ctx: ZjsContext*) -> void {
         #ifndef ZJS_NO_WEB_BLOB
         zjs_install_web_blob(ctx);
         #endif
+        // node:buffer global Buffer — depends on TextEncoder / Uint8Array
+        // (per-instance proto) / atob / btoa / DataView, all installed above.
+        #ifndef ZJS_NO_NODE_BUFFER
+        zjs_install_node_buffer(ctx);
+        #endif
         // WHATWG Streams — the largest of the web-globals bootstraps
         // (~50KB of source). Skip if the embedder doesn't need them.
         #ifndef ZJS_NO_WEB_STREAMS
@@ -25108,6 +25143,7 @@ fn ctx_register_stdlib_modules(ctx: ZjsContext*) -> void {
     zjs_register_node_fs(ctx);
     zjs_register_node_process(ctx);
     zjs_register_node_os(ctx);
+    zjs_register_node_buffer(ctx);
     zjs_register_node_tty(ctx);
     zjs_register_node_dx(ctx);
     zjs_register_node_child_process(ctx);

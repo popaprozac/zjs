@@ -1,0 +1,63 @@
+// node:buffer + global Buffer.
+//
+// The JS source lives in src/stdlib/node_buffer.js (embedded at build
+// time as NODE_BUFFER_SOURCE via tools/embed_js.py). The bootstrap
+// installs the global `Buffer` and stashes a module-exports object on
+// `globalThis.__zjs_node_buffer`; populate_node_buffer copies it onto
+// the `node:buffer` exports.
+
+raw {
+    #include "stdlib/node_buffer.gen.h"
+}
+
+fn zjs_install_node_buffer(ctx: ZjsContext*) -> void {
+    let src: char* = NULL;
+    raw { src = (char*)NODE_BUFFER_SOURCE; }
+    let r = zjs_eval(ctx, src);
+    let _ = r;
+    if ctx.had_error {
+        let err = ctx.last_error;
+        let name_s: ZjsString* = NULL;
+        let msg_s:  ZjsString* = NULL;
+        if zjs_is_object(err) != 0 {
+            let n = property_get(ctx, err, ctx_intern_string(ctx, (char*)"name", 4));
+            let m = property_get(ctx, err, ctx_intern_string(ctx, (char*)"message", 7));
+            if zjs_is_string(n) != 0 { name_s = zjs_as_string(n); }
+            if zjs_is_string(m) != 0 { msg_s  = zjs_as_string(m); }
+        }
+        raw {
+            fprintf(stderr, "[stdlib] node_buffer bootstrap failed: %.*s: %.*s\n",
+                    name_s ? (int)name_s->length : 7,
+                    name_s ? name_s->data : "Unknown",
+                    msg_s  ? (int)msg_s->length  : 0,
+                    msg_s  ? msg_s->data  : "");
+        }
+        ctx.had_error = false;
+        ctx.last_error = zjs_undefined();
+    }
+}
+
+// Copy one named property from the stashed module object to exports.
+fn nb_copy(ctx: ZjsContext*, modobj: ZjsValue, exports: ZjsObject*, name: char*, len: u32) -> void {
+    let v = property_get(ctx, modobj, ctx_intern_string(ctx, name, len));
+    object_set(ctx, exports, ctx_intern_atom(ctx, name, len), v);
+}
+
+fn populate_node_buffer(ctx: ZjsContext*, exports: ZjsObject*) -> void {
+    if ctx.global_this_obj == NULL { return; }
+    let g = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+    let modobj = property_get(ctx, g, ctx_intern_string(ctx, (char*)"__zjs_node_buffer", 17));
+    if zjs_is_object(modobj) == 0 { return; }
+    nb_copy(ctx, modobj, exports, (char*)"Buffer", 6);
+    nb_copy(ctx, modobj, exports, (char*)"SlowBuffer", 10);
+    nb_copy(ctx, modobj, exports, (char*)"kMaxLength", 10);
+    nb_copy(ctx, modobj, exports, (char*)"INSPECT_MAX_BYTES", 17);
+    nb_copy(ctx, modobj, exports, (char*)"atob", 4);
+    nb_copy(ctx, modobj, exports, (char*)"btoa", 4);
+    nb_copy(ctx, modobj, exports, (char*)"constants", 9);
+}
+
+fn zjs_register_node_buffer(ctx: ZjsContext*) -> void {
+    let ptr: void* = NULL; raw { ptr = (void*)populate_node_buffer; }
+    ctx_register_builtin_module(ctx, (char*)"node:buffer", ptr);
+}
