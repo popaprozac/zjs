@@ -5270,6 +5270,11 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
         } else {
             emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, val_reg));
         }
+        // #330 TDZ: this pattern binding is now initialized, so later
+        // targets' defaults referencing it (`let [a, b = a]`) read its
+        // value, while earlier ones (`let [a = b, b]`) already threw via
+        // ThrowIfHole because b was still the hole when a's default ran.
+        if c.locals[(u32)lidx].is_tdz { c.locals[(u32)lidx].initialized = true; }
     } else {
         let slot = ctx_intern_global(c.ctx, name, name_len);
         emit(c, make_inst_a_u16(Op::DefineGlobal, val_reg, (u16)slot));
@@ -5513,7 +5518,19 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
                 // #330 — let/const are TDZ bindings; var is not.
                 if !is_var_kind { c.locals[c.local_count - 1].is_tdz = true; }
             } else if decl.third != NULL {
+                // #330 — mark every binding the pattern introduces as TDZ
+                // for let/const (a destructuring `let [a=b, b]` must throw
+                // when a's default reads the not-yet-bound b). Snapshot the
+                // locals range collect_pattern_locals adds.
+                let before = c.local_count;
                 collect_pattern_locals(c, decl.third);
+                if !is_var_kind {
+                    let pli = before;
+                    while pli < c.local_count {
+                        c.locals[pli].is_tdz = true;
+                        pli = pli + 1;
+                    }
+                }
             }
             i = i + 1;
         }
