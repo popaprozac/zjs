@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-05-30 00:47 UTC",
+    "when": "2026-06-01 16:30 UTC",
     "total": 14524,
-    "passed": 12168,
-    "failed": 1710,
+    "passed": 12191,
+    "failed": 1687,
     "skipped": 646,
     "platform": "macOS"
   },
@@ -1142,7 +1142,7 @@
     },
     {
       "path": "test/language/statements/class/definition/fn-length-static-precedence-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [length, name, prototype, method] should have the same contents. \nzjs: thr"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [name, method, length] and expected [length, name, prototype, method] should have the same"
     },
     {
       "path": "test/language/statements/class/definition/fn-length-static-precedence.js",
@@ -1166,7 +1166,7 @@
     },
     {
       "path": "test/language/statements/class/definition/fn-name-static-precedence-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [length, name, prototype, method] should have the same contents. \nzjs: thr"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [name, method] and expected [length, name, prototype, method] should have the same content"
     },
     {
       "path": "test/language/statements/class/definition/getters-non-configurable-err.js",
@@ -1374,11 +1374,7 @@
     },
     {
       "path": "test/language/statements/class/elements/class-field-is-observable-by-proxy.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor\nzjs: throw: ReferenceE"
-    },
-    {
-      "path": "test/language/statements/class/elements/class-field-on-frozen-objects.js",
-      "reason": "zjs: throw: (unknown): Frozen objects can't be changed Expected a TypeError to be thrown but no exception was thrown at "
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [f, 3, [object Object], g, Test262, [object Object]] should have the same "
     },
     {
       "path": "test/language/statements/class/elements/computed-name-toprimitive-symbol.js",
@@ -1798,7 +1794,7 @@
     },
     {
       "path": "test/language/statements/class/elements/private-setter-shadowed-by-getter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invalid [[Set]] of an acessor without setter Expected a TypeError to be thrown but no exception w"
+      "reason": "[sloppy] zjs: throw: (unknown): invalid access of inner class getter from an object of outer class Expected a TypeError to be thr"
     },
     {
       "path": "test/language/statements/class/elements/private-setter-shadowed-by-method-on-nested-class.js",
@@ -1878,7 +1874,7 @@
     },
     {
       "path": "test/language/statements/class/elements/privatefield-on-proxy.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor\nzjs: throw: ReferenceE"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [method] should have the same contents. \nzjs: throw: (unknown): Actual [] "
     },
     {
       "path": "test/language/statements/class/elements/privatefieldadd-typeerror.js",
@@ -1887,14 +1883,6 @@
     {
       "path": "test/language/statements/class/elements/privatefieldget-success-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab42\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundef"
-    },
-    {
-      "path": "test/language/statements/class/elements/privatefieldget-success-2.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor\nzjs: throw: ReferenceE"
-    },
-    {
-      "path": "test/language/statements/class/elements/privatefieldget-success-3.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor\nzjs: throw: ReferenceE"
     },
     {
       "path": "test/language/statements/class/elements/privatefieldget-typeerror-1.js",
@@ -1914,11 +1902,11 @@
     },
     {
       "path": "test/language/statements/class/elements/privatefieldget-typeerror-5.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor\nzjs: throw: ReferenceE"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/language/statements/class/elements/privatefieldset-evaluation-order-3.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor\nzjs: throw: ReferenceE"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"pass\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abu"
     },
     {
       "path": "test/language/statements/class/elements/privatefieldset-typeerror-1.js",
@@ -1946,7 +1934,7 @@
     },
     {
       "path": "test/language/statements/class/elements/privatefieldset-typeerror-5.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor\nzjs: throw: ReferenceE"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/language/statements/class/elements/privatefieldset-typeerror-6.js",
@@ -1966,11 +1954,11 @@
     },
     {
       "path": "test/language/statements/class/elements/privategetter-on-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [method, __zjs_priv_24_f] and expected [method] should have the same contents. \nzjs: throw"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [method, __zjs_priv_26_f] and expected [method] should have the same contents. \nzjs: throw"
     },
     {
       "path": "test/language/statements/class/elements/privatemethods-on-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [method, __zjs_priv_24_f] and expected [method] should have the same contents. \nzjs: throw"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [method, __zjs_priv_26_f] and expected [method] should have the same contents. \nzjs: throw"
     },
     {
       "path": "test/language/statements/class/elements/privatename-valid-no-earlyerr.js",
@@ -2002,7 +1990,7 @@
     },
     {
       "path": "test/language/statements/class/elements/public-class-field-initialization-is-visible-to-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a ReferenceError\nzjs: throw: (unknown): Expected a Test262Error b"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/language/statements/class/elements/public-class-field-initialization-on-super-class-with-setter.js",
@@ -2051,18 +2039,6 @@
     {
       "path": "test/language/statements/class/elements/same-line-method-string-literal-names.js",
       "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
-      "path": "test/language/statements/class/elements/set-access-of-missing-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): set operation on private accessor without setter should throw TypeError Expected a TypeError to b"
-    },
-    {
-      "path": "test/language/statements/class/elements/set-access-of-missing-private-static-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): set operation on private accessor without setter should throw TypeError Expected a TypeError to b"
-    },
-    {
-      "path": "test/language/statements/class/elements/set-access-of-missing-shadowed-private-setter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): subclass private accessor should shadow super class private accessor Expected a TypeError to be t"
     },
     {
       "path": "test/language/statements/class/elements/set-access-of-private-method.js",
@@ -3302,7 +3278,7 @@
     },
     {
       "path": "test/language/expressions/class/elements/private-setter-shadowed-by-getter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invalid [[Set]] of an acessor without setter Expected a TypeError to be thrown but no exception w"
+      "reason": "[sloppy] zjs: throw: (unknown): invalid access of inner class getter from an object of outer class Expected a TypeError to be thr"
     },
     {
       "path": "test/language/expressions/class/elements/private-setter-shadowed-by-method-on-nested-class.js",
@@ -4186,7 +4162,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/map/resizable-buffer.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents. \nzjs: throw: (unknown): Actual"
     },
     {
       "path": "test/built-ins/Array/prototype/map/target-array-non-extensible.js",
@@ -4514,7 +4490,7 @@
     },
     {
       "path": "test/built-ins/JSON/stringify/replacer-function-wrapper.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab4\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab4\u00bb, \u00ab1\u00bb) to be"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab7\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab7\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/built-ins/JSON/stringify/value-array-abrupt.js",
@@ -4575,10 +4551,6 @@
     {
       "path": "test/built-ins/String/prototype/split/cstm-split-invocation.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\u00bb"
-    },
-    {
-      "path": "test/built-ins/String/prototype/split/cstm-split-on-bigint-primitive.js",
-      "reason": "[sloppy] zjs: throw: ReferenceError: n is not defined\nzjs: throw: ReferenceError: n is not defined"
     },
     {
       "path": "test/built-ins/String/prototype/split/separator-tostring-error.js",
@@ -4718,7 +4690,7 @@
     },
     {
       "path": "test/built-ins/Math/sumPrecise/throws-on-non-number.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/built-ins/Promise/Symbol.species/length.js",
@@ -4851,10 +4823,6 @@
     {
       "path": "test/built-ins/Promise/all/resolve-thenable.js",
       "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/all/resolve-throws-iterator-return-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Promise/all/same-reject-function.js",
@@ -5009,10 +4977,6 @@
       "reason": "[sloppy] async test never signaled completion"
     },
     {
-      "path": "test/built-ins/Promise/allSettled/resolve-throws-iterator-return-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Promise/allSettledKeyed/extensible.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
@@ -5147,10 +5111,6 @@
     {
       "path": "test/built-ins/Promise/any/resolve-ignores-late-rejection.js",
       "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/any/resolve-throws-iterator-return-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Promise/exception-after-resolve-in-executor.js",
@@ -5383,10 +5343,6 @@
     {
       "path": "test/built-ins/Promise/race/resolve-thenable.js",
       "reason": "[sloppy] async test never signaled completion"
-    },
-    {
-      "path": "test/built-ins/Promise/race/resolve-throws-iterator-return-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Promise/race/same-reject-function.js",
@@ -5625,10 +5581,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be"
     },
     {
-      "path": "test/built-ins/Map/prototype/getOrInsertComputed/this-not-object-throw.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Map/prototype/has/has.js",
       "reason": "[sloppy] zjs: throw: (unknown): has descriptor should not be enumerable\nzjs: throw: (unknown): has descriptor should not be enume"
     },
@@ -5726,7 +5678,7 @@
     },
     {
       "path": "test/built-ins/Set/prototype/difference/called-with-object.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): bigint Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown)"
     },
     {
       "path": "test/built-ins/Set/prototype/difference/converts-negative-zero.js",
@@ -5743,10 +5695,6 @@
     {
       "path": "test/built-ins/Set/prototype/difference/keys-is-callable.js",
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord throws an error when keys is undefined Expected a TypeError to be thrown but no exce"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/difference/require-internal-slot.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Set/prototype/difference/set-like-class-mutation.js",
@@ -5810,7 +5758,7 @@
     },
     {
       "path": "test/built-ins/Set/prototype/intersection/called-with-object.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): bigint Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown)"
     },
     {
       "path": "test/built-ins/Set/prototype/intersection/converts-negative-zero.js",
@@ -5827,10 +5775,6 @@
     {
       "path": "test/built-ins/Set/prototype/intersection/keys-is-callable.js",
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord throws an error when keys is undefined Expected a TypeError to be thrown but no exce"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/intersection/require-internal-slot.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Set/prototype/intersection/result-order.js",
@@ -5861,10 +5805,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Set.prototype.isDisjointFrom should not call its argument's keys iterator when this.size \u2264 arg.si"
     },
     {
-      "path": "test/built-ins/Set/prototype/isDisjointFrom/called-with-object.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Set/prototype/isDisjointFrom/converts-negative-zero.js",
       "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
     },
@@ -5875,10 +5815,6 @@
     {
       "path": "test/built-ins/Set/prototype/isDisjointFrom/isDisjointFrom.js",
       "reason": "[sloppy] zjs: throw: (unknown): isDisjointFrom descriptor should not be enumerable\nzjs: throw: (unknown): isDisjointFrom descript"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/isDisjointFrom/require-internal-slot.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Set/prototype/isDisjointFrom/set-like-array.js",
@@ -5910,7 +5846,7 @@
     },
     {
       "path": "test/built-ins/Set/prototype/isSubsetOf/called-with-object.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): bigint Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown)"
     },
     {
       "path": "test/built-ins/Set/prototype/isSubsetOf/has-is-callable.js",
@@ -5923,10 +5859,6 @@
     {
       "path": "test/built-ins/Set/prototype/isSubsetOf/keys-is-callable.js",
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord throws an error when keys is undefined Expected a TypeError to be thrown but no exce"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/isSubsetOf/require-internal-slot.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Set/prototype/isSubsetOf/set-like-class-mutation.js",
@@ -5945,10 +5877,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/built-ins/Set/prototype/isSupersetOf/called-with-object.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Set/prototype/isSupersetOf/converts-negative-zero.js",
       "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
     },
@@ -5959,10 +5887,6 @@
     {
       "path": "test/built-ins/Set/prototype/isSupersetOf/isSupersetOf.js",
       "reason": "[sloppy] zjs: throw: (unknown): isSupersetOf descriptor should not be enumerable\nzjs: throw: (unknown): isSupersetOf descriptor s"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/isSupersetOf/require-internal-slot.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Set/prototype/isSupersetOf/set-like-array.js",
@@ -6013,20 +5937,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Set.prototype.symmetricDifference should not invoke .has on its argument\nzjs: throw: (unknown): S"
     },
     {
-      "path": "test/built-ins/Set/prototype/symmetricDifference/called-with-object.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Set/prototype/symmetricDifference/converts-negative-zero.js",
       "reason": "[sloppy] zjs: throw: (unknown): Set.prototype.symmetricDifference should not invoke .has on its argument\nzjs: throw: (unknown): S"
     },
     {
       "path": "test/built-ins/Set/prototype/symmetricDifference/has-is-callable.js",
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord throws an error when has is undefined Expected a TypeError to be thrown but no excep"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/symmetricDifference/require-internal-slot.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Set/prototype/symmetricDifference/set-like-array.js",
@@ -6053,20 +5969,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): symmetricDifference descriptor should not be enumerable\nzjs: throw: (unknown): symmetricDifferenc"
     },
     {
-      "path": "test/built-ins/Set/prototype/union/called-with-object.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/built-ins/Set/prototype/union/converts-negative-zero.js",
       "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
     },
     {
       "path": "test/built-ins/Set/prototype/union/has-is-callable.js",
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord throws an error when has is undefined Expected a TypeError to be thrown but no excep"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/union/require-internal-slot.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Set/prototype/union/set-like-array.js",

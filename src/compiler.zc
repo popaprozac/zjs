@@ -175,6 +175,15 @@ struct Compiler {
     active_finally_count:    u32;
     active_finally_cap:      u32;
 
+    // #326 — depth of enclosing try blocks whose *body* we're currently
+    // compiling AND which have a catch handler that would catch a local
+    // throw. A `return f()` inside such a body is NOT in tail position
+    // (the catch must stay active while f() runs), so the tail-call
+    // rewrite must be suppressed. Bumped only around the try-body; the
+    // catch body itself runs at the outer level. (finally-bearing trys
+    // are already covered by active_finally_count.)
+    active_try_count:        u32;
+
     // Phase 3.8e — implicit `arguments` binding. -1 if the function
     // doesn't reference `arguments` (or it's shadowed by a real
     // local of the same name). Otherwise: the reg holding the
@@ -289,6 +298,7 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.ctx = ctx;
     c.source = source;
     c.last_expr_reg = -1;
+    c.active_try_count = 0;
     c.arguments_reg = -1;
     c.this_reg = -1;
     c.cached_outer_env_reg = -1;
@@ -6244,7 +6254,8 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // incorrectly rewrite it; (b) the last emitted op matching, so
         // we don't rewrite an Invoke that's no longer the tail (e.g.
         // some peephole emitted a Mov after it).
-        if c.is_function && c.active_finally_count == 0 && c.code_count > 0
+        if c.is_function && c.active_finally_count == 0 && c.active_try_count == 0
+           && c.code_count > 0
            && node.left != NULL && node.left.kind == NodeKind::Call {
             let last_op = c.code[c.code_count - 1].op;
             if last_op == Op::Invoke {
@@ -6426,7 +6437,12 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         if !has_finally {
             // Phase 3.1c shape: try { ... } catch (e) { ... } — no finally.
             let enter_idx = emit(c, make_inst_a_i16(Op::EnterTry, catch_reg, 0));
+            // #326 — a throw from the try body is caught here, so a
+            // `return f()` inside it is not in tail position; suppress
+            // the tail-call rewrite while compiling the body.
+            c.active_try_count = c.active_try_count + 1;
             compile_stmt(c, node.left);
+            c.active_try_count = c.active_try_count - 1;
             emit(c, make_inst_a(Op::LeaveTry, 0));
             let skip_idx = emit(c, make_inst_i16(Op::Jmp, 0));
             patch_jump(c, enter_idx);
