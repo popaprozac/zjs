@@ -594,7 +594,8 @@ fn params_have_duplicate(params: ParamList, source: char*) -> bool {
 // non-string statements (per spec, directives are a prologue that ends
 // at the first non-string-literal statement).
 fn body_has_use_strict_directive(body: AstNode*, source: char*) -> bool {
-    if body == NULL || body.kind != NodeKind::BlockStmt { return false; }
+    if body == NULL { return false; }
+    if body.kind != NodeKind::BlockStmt && body.kind != NodeKind::Program { return false; }
     let i: u32 = 0;
     while i < body.children_count {
         let stmt = body.children[i];

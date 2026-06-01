@@ -195,6 +195,12 @@ struct Compiler {
     // spec, enforced via the c.had_error gate.
     enclosing_class_id: i32;
 
+    // ECMA-262 strict mode for the function/program being compiled.
+    // Inherited from the parent compiler (lexical nesting), forced on
+    // for class elements (MethodDef) and modules, or set by a "use
+    // strict" prologue. Copied to Function.strict for runtime use.
+    strict: bool;
+
     // Previous head of ctx.active_compiler when this Compiler was
     // pushed via compiler_new — restored on compiler_free. Forms a
     // singly-linked stack that GC walks during mark so mid-compile
@@ -288,6 +294,7 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.cached_outer_env_reg = -1;
     c.preferred_dst = -1;
     c.enclosing_class_id = -1;
+    c.strict = false;
     // Scope tracker — start with the function-top scope (id 0) on the
     // stack. New scopes get unique ids from next_scope_id; the field is
     // reset between the collect_locals and compile_stmt passes so both
@@ -2982,6 +2989,17 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
         c.enclosing_class_id = -1;
     }
 
+    // ECMA-262 strict-mode determination. Computed BEFORE the body
+    // compiles so nested functions inherit it through `parent.strict`.
+    // Strict when: lexically nested in strict code, a class element
+    // (MethodDef — class bodies are always strict; object methods use
+    // ObjectProp/FunctionExpr instead), or a "use strict" prologue.
+    if parent != NULL && parent.strict { c.strict = true; }
+    if node.kind == NodeKind::MethodDef { c.strict = true; }
+    if !c.strict && node.left != NULL && body_has_use_strict_directive(node.left, source) {
+        c.strict = true;
+    }
+
     // 1. Allocate registers for parameters. They sit at the bottom of
     //    the register file so callers can place args contiguously.
     //    Rest param (always last if present) gets a register too but
@@ -3437,6 +3455,7 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     // this, every `class C { constructor() { arr.map(x => this.f(x)) } }`
     // mis-binds `this` to the map callback's host_this (globalThis).
     f.is_arrow = node.kind == NodeKind::ArrowFunc;
+    f.strict = c.strict;
     // For ordinary functions / arrow funcs the parser stashes the
     // async flag in bool_value. For MethodDef, bool_value already
     // carries is_static — so we keep the async flag in `num` instead
@@ -6915,6 +6934,10 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     // compiler's is_function flag — the existing VarDecl / FunctionDecl
     // / ClassDecl paths already do the right thing in that mode.
     let is_module: bool = root != NULL && root.bool_value;
+    // Modules are always strict; scripts are strict only with a
+    // top-level "use strict" prologue.
+    if is_module { c.strict = true; }
+    else if root != NULL && body_has_use_strict_directive(root, source) { c.strict = true; }
     if is_module {
         c.is_function = true;
         collect_locals(c, root);
@@ -7012,6 +7035,7 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     f.fixed_regs = (u32)c.fixed_regs;
     if f.fixed_regs > f.register_count { f.fixed_regs = f.register_count; }
     f.param_count = 0;
+    f.strict = c.strict;
     f.ics = c.ics;
     f.ic_count = c.ic_count;
     if c.tmpl_site_count > 0 {

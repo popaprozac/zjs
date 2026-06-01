@@ -641,6 +641,13 @@ struct Function {
     // iter.next() drives execution and Op::Yield suspends back to it.
     is_generator: bool;
 
+    // ECMA-262 strict mode. True when the function (or the program for
+    // the top-level Function) runs in strict mode: a "use strict"
+    // prologue, lexically nested inside strict code, a class body, or a
+    // module. Drives strict-only runtime semantics — currently the
+    // throw-on-failed-Set in StoreProp / StoreElem (Phase C).
+    strict: bool;
+
     // Tagged-template site cache (ECMA-262 §13.2.8.4 GetTemplateObject).
     // Each tagged-template call site in this function gets a stable
     // index; the strings array built on first reach is cached so every

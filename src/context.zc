@@ -364,6 +364,11 @@ struct ZjsContext {
     // throw (`throwing = true; thrown = pending_throw_value`).
     pending_throw_active: bool;
     pending_throw_value:  ZjsValue;
+    // Phase C: set by object_set / array_set when a write is silently
+    // dropped (frozen / non-writable slot / non-extensible add). The
+    // StoreProp / StoreElem opcodes clear this before the write and, in
+    // strict-mode code, throw a TypeError when it comes back true.
+    write_rejected: bool;
     // Seed for the next interpreter entry frame's outer_promise.
     // Set by interpret_with_outer_promise before calling
     // interpret_inner; consumed by the inner loop's frame-setup. Lets
@@ -2552,25 +2557,27 @@ fn ctx_new_object(ctx: ZjsContext*) -> ZjsValue {
 // behavior of `o.x = 1` going through OrdinarySet which creates a
 // data property with full attributes.
 fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsValue) -> void {
-    if obj.frozen { return; }
+    if obj.frozen { ctx.write_rejected = true; return; }
     let existing = class_find_slot(obj.cls, name);
     if existing >= 0 {
         // Existing slot — check writable.
         let attrs = if obj.attrs != NULL { obj.attrs[(u32)existing] } else { PROP_DEFAULT };
         if (attrs & PROP_WRITABLE) == 0 {
-            // Strict-mode would throw; non-strict silently drops. MVP
-            // takes the non-strict path everywhere.
+            // Non-writable: silently drops in sloppy mode; the StoreProp
+            // opcode turns this into a TypeError in strict-mode code.
+            ctx.write_rejected = true;
             return;
         }
         obj.slots[(u32)existing] = value;
         gc_write_barrier(ctx, (void*)obj, value);
+        ctx.write_rejected = false;
         return;
     }
 
     // Property is new — adding a new slot. preventExtensions / seal /
     // freeze all clear `non_extensible`; in that state the add fails
-    // silently. Strict-mode TypeError is wired through Phase C.
-    if obj.non_extensible { return; }
+    // silently (strict-mode TypeError wired at the StoreProp opcode).
+    if obj.non_extensible { ctx.write_rejected = true; return; }
 
     let parent_cls = obj.cls;
     let child = class_find_transition(parent_cls, name);
@@ -2612,6 +2619,7 @@ fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsVal
     // reaches it through obj.cls, which is exactly the kind of
     // old→young edge the rem set tracks.
     gc_write_barrier(ctx, (void*)obj, zjs_cell_from_ptr((void*)child));
+    ctx.write_rejected = false;
 }
 
 // Read the attribute byte for slot `idx` on `obj`. Returns

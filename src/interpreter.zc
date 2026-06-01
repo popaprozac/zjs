@@ -1614,6 +1614,13 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
                             let argp: ZjsValue* = NULL;
                             raw { argp = &arr[0]; }
                             let _ = zjs_call_value_with_this(ctx, s, obj, argp, 1);
+                            // The setter ran (a successful [[Set]]); clear any
+                            // rejection the setter's own writes may have left
+                            // so the caller's strict-mode check isn't fooled.
+                            ctx.write_rejected = false;
+                        } else {
+                            // Accessor with no setter — strict mode throws.
+                            ctx.write_rejected = true;
                         }
                         return;
                     }
@@ -4926,15 +4933,29 @@ fn interpret_inner_full(ctx: ZjsContext*,
             if !took_fast {
                 let ic_name: ZjsString* = f.ics[ic_slot].name;
                 let key_val = zjs_cell_from_ptr((void*)ic_name);
+                ctx.write_rejected = false;
                 property_set(ctx, obj_val, key_val, value);
                 if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                // Strict mode: a write that the object silently rejected
+                // (frozen / non-writable / non-extensible) is a TypeError.
+                if f.strict && ctx.write_rejected {
+                    let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                                              (char*)"Cannot assign to read only property", 35);
+                    ctx.pending_throw_active = true; ctx.pending_throw_value = e;
                     throwing = true; thrown = consume_pending_throw(ctx);
                     exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
                 if zjs_is_object(obj_val) != 0 && !f.ics[ic_slot].megamorphic {
                     let o = zjs_as_object(obj_val);
                     let s = class_find_slot(o.cls, ic_name);
-                    if s >= 0 {
+                    // Only cache writable data slots: the fast path writes
+                    // the slot directly without re-checking PROP_WRITABLE,
+                    // so caching a non-writable slot would let later writes
+                    // bypass the read-only guard.
+                    if s >= 0 && (object_get_attrs(o, (u32)s) & PROP_WRITABLE) != 0 {
                         let already: bool = false;
                         let n2 = (u32)f.ics[ic_slot].entry_count;
                         let k2: u32 = 0;
@@ -5088,13 +5109,15 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let key_val = regs[inst.b];
             let value   = regs[inst.c];
             let took_fast: bool = false;
+            ctx.write_rejected = false;
             if zjs_is_array(obj_val) != 0 && zjs_is_int32(key_val) != 0 {
                 let i = zjs_as_int32(key_val);
                 if i >= 0 {
                     let arr = zjs_as_array(obj_val);
                     if arr.frozen {
-                        // Frozen array — sloppy-mode silent no-op (would
-                        // throw TypeError in strict-mode source).
+                        // Frozen array — sloppy-mode silent no-op; strict
+                        // mode turns it into a TypeError (checked below).
+                        ctx.write_rejected = true;
                         took_fast = true;
                     } else {
                         let u = (u32)i;
@@ -5115,6 +5138,13 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     throwing = true; thrown = consume_pending_throw(ctx);
                     exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
+            }
+            if f.strict && ctx.write_rejected {
+                let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                                          (char*)"Cannot assign to read only property", 35);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                throwing = true; thrown = consume_pending_throw(ctx);
+                exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
             }
         } else if op == Op::LoadThis {
             // Spec: in a derived-class constructor `this` is in the

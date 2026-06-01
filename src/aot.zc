@@ -43,6 +43,7 @@ def ZJS_AOT_FLAG_HAS_REST_PARAM:          u16 = 0x0020;
 def ZJS_AOT_FLAG_IS_ASYNC:                u16 = 0x0040;
 def ZJS_AOT_FLAG_IS_GENERATOR:            u16 = 0x0080;
 def ZJS_AOT_FLAG_IS_ARROW:                u16 = 0x0100;
+def ZJS_AOT_FLAG_STRICT:                  u16 = 0x0200;
 
 // =====================================================================
 // Writer — growing byte buffer.
@@ -417,6 +418,7 @@ fn aot_pack_flags(f: Function*) -> u16 {
     if f.is_async                { v = v | ZJS_AOT_FLAG_IS_ASYNC; }
     if f.is_generator            { v = v | ZJS_AOT_FLAG_IS_GENERATOR; }
     if f.is_arrow                { v = v | ZJS_AOT_FLAG_IS_ARROW; }
+    if f.strict                  { v = v | ZJS_AOT_FLAG_STRICT; }
     return v;
 }
 
@@ -430,6 +432,7 @@ fn aot_unpack_flags(f: Function*, v: u16) -> void {
     f.is_async                = (v & ZJS_AOT_FLAG_IS_ASYNC)                != 0;
     f.is_generator            = (v & ZJS_AOT_FLAG_IS_GENERATOR)            != 0;
     f.is_arrow                = (v & ZJS_AOT_FLAG_IS_ARROW)                != 0;
+    f.strict                  = (v & ZJS_AOT_FLAG_STRICT)                  != 0;
 }
 
 fn aot_write_function(w: AotWriter*, ctx: ZjsContext*, f: Function*) -> bool {
