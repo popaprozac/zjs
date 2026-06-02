@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 19:27 UTC",
+    "when": "2026-06-02 19:35 UTC",
     "total": 27491,
-    "passed": 21733,
-    "failed": 5038,
+    "passed": 21771,
+    "failed": 5000,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -1270,7 +1270,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -7393,10 +7393,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-70.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-8.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
@@ -10777,148 +10773,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
     },
     {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1.1_T1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A10.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A11.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T10.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T11.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: Exception === \"intostr\". Actual: TypeError: property is not a function\nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T12.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: Exception === \"intostr\". Actual: TypeError: property is not a function\nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T13.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T14.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T2.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T4.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T5.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T6.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T7.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A1_T9.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A2_T1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A2_T2.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A2_T3.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A2_T4.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A2_T5.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A2_T6.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A2_T7.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A3_T1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A3_T2.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A6.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: __FACTORY = String.prototype.search; \"__instance = new __FACTORY\" throw a TypeError. Actual"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/S15.5.4.12_A9.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
       "path": "test/built-ins/String/prototype/search/cstm-search-get-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/String/prototype/search/cstm-search-invocation.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/cstm-search-is-null.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/cstm-search-on-bigint-primitive.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/cstm-search-on-boolean-primitive.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/cstm-search-on-number-primitive.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/cstm-search-on-string-primitive.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab"
     },
     {
       "path": "test/built-ins/String/prototype/search/invoke-builtin-search-searcher-undef.js",
@@ -10929,24 +10789,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00abundefined\u00bb) to be false\nzjs: throw: (unknown): Expected SameValu"
     },
     {
-      "path": "test/built-ins/String/prototype/search/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
       "path": "test/built-ins/String/prototype/search/regexp-prototype-search-v-flag.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
     },
     {
       "path": "test/built-ins/String/prototype/search/regexp-prototype-search-v-u-flag.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
-    },
-    {
-      "path": "test/built-ins/String/prototype/search/this-value-not-obj-coercible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
     },
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",

@@ -7557,6 +7557,42 @@ fn host_string_match(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return result_v;
 }
 
+// String.prototype.search(regexp) — ECMA-262 §22.1.3.13. Coerces the
+// argument to a RegExp, runs it from position 0, and returns the match
+// start index (-1 if none). lastIndex is untouched (spec saves/restores
+// it; running from 0 directly leaves it unchanged).
+fn host_string_search(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = coerce_string_this(ctx);
+    if ctx.pending_throw_active { return zjs_int32(-1); }
+    if zjs_is_string(this_val) == 0 { return zjs_int32(-1); }
+    let pat_v: ZjsValue = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let re_v: ZjsValue = zjs_undefined();
+    if zjs_is_regexp(pat_v) != 0 {
+        re_v = pat_v;
+    } else {
+        let pat_str = if zjs_is_undefined(pat_v) != 0 {
+            ctx_intern_string(ctx, (char*)"", 0)
+        } else if zjs_is_string(pat_v) != 0 {
+            pat_v
+        } else {
+            zjs_to_string(ctx, pat_v)
+        };
+        if ctx.pending_throw_active { return zjs_int32(-1); }
+        re_v = ctx_new_regexp(ctx, pat_str, ctx_intern_string(ctx, (char*)"", 0));
+    }
+    let re = zjs_as_regexp(re_v);
+    if !regex_ensure_compiled(re) { return zjs_int32(-1); }
+    let s = zjs_as_string(this_val);
+    let preg = re.preg;
+    let hay_d = s.data;
+    let hay_n = s.length;
+    let pmatch_buf: ZRegMatch[1];
+    let rc: int = -1;
+    raw { rc = lre_run(preg, hay_d, hay_n, 0, pmatch_buf, 1); }
+    if rc != 0 { return zjs_int32(-1); }
+    return zjs_int32((i32)pmatch_buf[0].rm_so);
+}
+
 fn host_string_split(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = coerce_string_this(ctx);
     if zjs_is_string(this_val) == 0 { return ctx_new_array(ctx, 0); }
@@ -26423,6 +26459,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let smatch_ptr: void* = NULL; raw { smatch_ptr = (void*)host_string_match; }
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"match", 5),
                ctx_make_host_function_arity(ctx, (char*)"match", smatch_ptr, 1));
+    let ssearch_ptr: void* = NULL; raw { ssearch_ptr = (void*)host_string_search; }
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"search", 6),
+               ctx_make_host_function_arity(ctx, (char*)"search", ssearch_ptr, 1));
     let srepl_ptr: void* = NULL; raw { srepl_ptr = (void*)host_string_replace; }
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"replace", 7),
                ctx_make_host_function_arity(ctx, (char*)"replace", srepl_ptr, 2));
