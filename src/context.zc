@@ -9260,6 +9260,90 @@ fn jp_parse_value(ctx: ZjsContext*, p: JsonParser*) -> ZjsValue {
     return zjs_double(parsed);
 }
 
+// Delete holder[key] for a JSON reviver. The holder is always a value
+// produced by JSON.parse, so it's a plain object or an array — handle
+// both (array slot → hole, object slot → deleted sentinel). JSON-parsed
+// properties are all configurable, so no attr check is needed.
+fn json_reviver_delete(ctx: ZjsContext*, holder: ZjsValue, key: ZjsValue) -> void {
+    if zjs_is_array(holder) != 0 {
+        let a = zjs_as_array(holder);
+        let idx = zjs_to_array_index(key);
+        if idx >= 0 && (u32)idx < a.length { a.elements[(u32)idx] = zjs_deleted(); }
+        return;
+    }
+    if zjs_is_object(holder) != 0 {
+        let o = zjs_as_object(holder);
+        let key_str = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+        let name = zjs_as_string(key_str);
+        let slot = class_find_slot(o.cls, name);
+        // [[Delete]] returns false (no-op, no throw) for a non-configurable
+        // property — InternalizeJSONProperty's `Perform ? Delete` discards
+        // that false, so the property survives.
+        if slot >= 0 {
+            let attrs = object_get_attrs(o, (u32)slot);
+            if (attrs & PROP_CONFIGURABLE) != 0 { o.slots[(u32)slot] = zjs_deleted(); }
+        }
+    }
+}
+
+// CreateDataProperty(holder, key, *) would fail (return false, no throw)
+// when an existing own property is non-configurable — the full data
+// descriptor it defines (configurable: true) can't redefine it. Detect
+// that so the reviver leaves such a property untouched. Array elements
+// carry no per-element attrs in zjs, so they're always configurable.
+fn json_prop_non_configurable(ctx: ZjsContext*, holder: ZjsValue, key: ZjsValue) -> bool {
+    if zjs_is_object(holder) == 0 { return false; }
+    let o = zjs_as_object(holder);
+    let key_str = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+    let name = zjs_as_string(key_str);
+    let slot = class_find_slot(o.cls, name);
+    if slot < 0 { return false; }
+    let attrs = object_get_attrs(o, (u32)slot);
+    return (attrs & PROP_CONFIGURABLE) == 0;
+}
+
+// ECMA-262 25.5.1.1 InternalizeJSONProperty. Recursive post-order walk:
+// recurse into each child (arrays by index, objects by own enumerable
+// key, snapshotted), replacing the child with the reviver's result (or
+// deleting it when the result is undefined), then call
+// reviver(key, value) with `this` = holder and return its result.
+fn json_internalize(ctx: ZjsContext*, holder: ZjsValue, key: ZjsValue, reviver: ZjsValue) -> ZjsValue {
+    let val = property_get(ctx, holder, key);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    ctx_push_temp_root(ctx, val);
+    defer ctx_pop_temp_root(ctx);
+
+    if value_is_js_object(val) {
+        // Own enumerable keys (arrays → present index strings, objects →
+        // own enumerable string keys), snapshotted before the walk.
+        let one: ZjsValue[1]; one[0] = val;
+        let onep: ZjsValue* = NULL; raw { onep = &one[0]; }
+        let keys_v = object_keys_impl(ctx, onep, 1, true);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        ctx_push_temp_root(ctx, keys_v);
+        defer ctx_pop_temp_root(ctx);
+        let ka = zjs_as_array(keys_v);
+        let n = ka.length;
+        let i: u32 = 0;
+        while i < n {
+            let k = ka.elements[i];
+            let elem = json_internalize(ctx, val, k, reviver);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if zjs_is_undefined(elem) != 0 {
+                json_reviver_delete(ctx, val, k);
+            } else if !json_prop_non_configurable(ctx, val, k) {
+                property_set(ctx, val, k, elem);
+                if ctx.pending_throw_active { return zjs_undefined(); }
+            }
+            i = i + 1;
+        }
+    }
+
+    let cargs: ZjsValue[2]; cargs[0] = key; cargs[1] = val;
+    let cp: ZjsValue* = NULL; raw { cp = &cargs[0]; }
+    return zjs_call_value_with_this(ctx, reviver, holder, cp, 2);
+}
+
 fn host_json_parse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // `JSON.parse()` with no args parses the literal string "undefined"
     // which is invalid JSON and throws — covered by the fail path below.
@@ -9282,6 +9366,20 @@ fn host_json_parse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         let err = build_syntax_error(ctx, (char*)"Invalid JSON");
         ctx.pending_throw_active = true; ctx.pending_throw_value = err;
         return zjs_undefined();
+    }
+    // ECMA-262 25.5.1 JSON.parse step 7+: if reviver is callable, wrap the
+    // result in a holder { "": result } and InternalizeJSONProperty it.
+    if argc >= 2 && zjs_is_callable(args[1]) != 0 {
+        ctx_push_temp_root(ctx, result);
+        let holder = ctx_new_object(ctx);
+        ctx_push_temp_root(ctx, holder);
+        let empty_key = ctx_intern_string(ctx, (char*)"", 0);
+        property_set(ctx, holder, empty_key, result);
+        let revived = json_internalize(ctx, holder, empty_key, args[1]);
+        ctx_pop_temp_root(ctx);
+        ctx_pop_temp_root(ctx);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        return revived;
     }
     return result;
 }

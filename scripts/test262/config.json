@@ -78,7 +78,8 @@
     "u180e",
     "string-matchAll",
     "string-replaceAll",
-    "import.meta"
+    "import.meta",
+    "json-parse-with-source"
   ],
   "_skip_flags_comment": "Tests whose flags include any of these are skipped. We don't support modules or async test stubs.",
   "skip_flags": [

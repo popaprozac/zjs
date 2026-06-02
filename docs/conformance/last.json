@@ -1,10 +1,10 @@
 {
   "summary": {
-    "when": "2026-06-02 02:37 UTC",
+    "when": "2026-06-02 03:03 UTC",
     "total": 14524,
-    "passed": 12465,
-    "failed": 1612,
-    "skipped": 447,
+    "passed": 12463,
+    "failed": 1609,
+    "skipped": 452,
     "platform": "macOS"
   },
   "failures": [
@@ -4326,7 +4326,7 @@
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-array-get-prop-from-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab3\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab3\u00bb) to be"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-array-length-coerce-err.js",
@@ -4337,20 +4337,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
-      "path": "test/built-ins/JSON/parse/reviver-call-args-after-forward-modification.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [key: |0| value: 1 source: |1|, key: |0| value: \"barf\" source: |undefined|"
+      "path": "test/built-ins/JSON/parse/reviver-array-non-configurable-prop-create.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
     },
     {
-      "path": "test/built-ins/JSON/parse/reviver-call-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/reviver-call-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [1, 2, p1, p2, ] should have the same contents. \nzjs: throw: (unknown): Ac"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/reviver-forward-modifies-object.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab3\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab3\u00bb, \u00ab0\u00bb) to be"
+      "path": "test/built-ins/JSON/parse/reviver-array-non-configurable-prop-delete.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-get-name-err.js",
@@ -4365,16 +4357,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
-      "path": "test/built-ins/JSON/parse/reviver-object-get-prop-from-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab3\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab3\u00bb) to be"
-    },
-    {
       "path": "test/built-ins/JSON/parse/reviver-object-own-keys-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-wrapper.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"object\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValu"
+      "reason": "[sloppy] zjs: throw: (unknown): [[Set]] should not be called.\nzjs: throw: (unknown): [[Set]] should not be called."
     },
     {
       "path": "test/built-ins/JSON/stringify/property-order.js",
@@ -6466,6 +6454,7 @@
     "feature:decorators": 24,
     "feature:SharedArrayBuffer": 2,
     "feature:WeakRef": 4,
-    "include:proxyTrapsHelper.js": 1
+    "include:proxyTrapsHelper.js": 1,
+    "feature:json-parse-with-source": 5
   }
 }
