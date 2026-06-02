@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 07:38 UTC",
+    "when": "2026-06-02 15:01 UTC",
     "total": 27491,
-    "passed": 21297,
-    "failed": 5474,
+    "passed": 21354,
+    "failed": 5417,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -229,10 +229,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError but got a TypeError\nzjs: throw: (unknown): Expected a RangeError but got a "
     },
     {
-      "path": "test/built-ins/Array/length/define-own-prop-length-no-value-order.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/Array/length/define-own-prop-length-overflow-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Object.defineProperty([], \"length\", {value: -1, configurable: true}) throws a RangeError exceptio"
     },
@@ -385,12 +381,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): return [].concat(args, args) throws a Test262Error exception Expected a Test262Error to be thrown"
     },
     {
-      "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_sloppy-arguments-with-dupes.js",
-      "reason": ""
-    },
-    {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_sloppy-arguments.js",
-      "reason": "[sloppy] "
+      "reason": "[strict] zjs: throw: (unknown): Actual [1, 2, 3, , 4.263411951294254e+180, 1.9551582626742875e+243] and expected [1, 2, 3, undefi"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_small-typed-array.js",
@@ -426,7 +418,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_strict-arguments.js",
-      "reason": "[sloppy] "
+      "reason": "[strict] zjs: throw: (unknown): Actual [1, 2, 3, , isEncoding, undefined] and expected [1, 2, 3, undefined, undefined, undefined]"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/S15.4.4.4_A2_T1.js",
@@ -1322,7 +1314,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -7818,7 +7810,7 @@
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptors/order-after-define-property.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [Symbol(a), Symbol(b)] should have the same contents. \nzjs: throw: (unknow"
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptors/primitive-strings.js",
@@ -8153,22 +8145,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Object/internals/DefineOwnProperty/consistent-value-function-arguments.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/internals/DefineOwnProperty/consistent-value-function-caller.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/internals/DefineOwnProperty/consistent-value-regexp-dollar1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/internals/DefineOwnProperty/consistent-writable-regexp-dollar1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/Object/is/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -8458,7 +8434,7 @@
     },
     {
       "path": "test/built-ins/Object/prototype/setPrototypeOf-with-different-values.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: cyclic __proto__ value\nzjs: throw: TypeError: cyclic __proto__ value"
     },
     {
       "path": "test/built-ins/Object/prototype/setPrototypeOf-with-non-circular-values-__proto__.js",
@@ -8466,11 +8442,7 @@
     },
     {
       "path": "test/built-ins/Object/prototype/setPrototypeOf-with-non-circular-values.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/prototype/setPrototypeOf-with-same-value.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: cyclic __proto__ value\nzjs: throw: TypeError: cyclic __proto__ value"
     },
     {
       "path": "test/built-ins/Object/prototype/toLocaleString/primitive_this_value_getter.js",
@@ -8671,10 +8643,6 @@
     {
       "path": "test/built-ins/Object/setPrototypeOf/property-descriptor.js",
       "reason": "[sloppy] zjs: throw: (unknown): setPrototypeOf descriptor should not be enumerable\nzjs: throw: (unknown): setPrototypeOf descript"
-    },
-    {
-      "path": "test/built-ins/Object/setPrototypeOf/set-error.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Object/setPrototypeOf/set-failure-non-extensible.js",
@@ -9574,7 +9542,7 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/return-boolean-and-define-target.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/return-is-abrupt.js",
@@ -9626,15 +9594,11 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-return-is-false.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/boolean-trap-result-boolean-false.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/deleteProperty/boolean-trap-result-boolean-true.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/call-parameters.js",
@@ -9650,7 +9614,7 @@
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/return-false-strict.js",
-      "reason": "zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/return-is-abrupt.js",
@@ -9658,7 +9622,7 @@
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/targetdesc-is-configurable-target-is-not-extensible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/targetdesc-is-not-configurable.js",
@@ -10146,7 +10110,7 @@
     },
     {
       "path": "test/built-ins/Proxy/preventExtensions/return-false.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
     },
     {
       "path": "test/built-ins/Proxy/preventExtensions/return-is-abrupt.js",
@@ -10155,10 +10119,6 @@
     {
       "path": "test/built-ins/Proxy/preventExtensions/return-true-target-is-extensible.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/preventExtensions/return-true-target-is-not-extensible.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
       "path": "test/built-ins/Proxy/preventExtensions/trap-is-missing-target-is-proxy.js",
@@ -10175,10 +10135,6 @@
     {
       "path": "test/built-ins/Proxy/preventExtensions/trap-is-null-target-is-proxy.js",
       "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
-    },
-    {
-      "path": "test/built-ins/Proxy/preventExtensions/trap-is-undefined.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
       "path": "test/built-ins/Proxy/proxy-undefined-newtarget.js",
@@ -10321,24 +10277,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
     },
     {
-      "path": "test/built-ins/Proxy/setPrototypeOf/call-parameters.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected Sam"
-    },
-    {
       "path": "test/built-ins/Proxy/setPrototypeOf/internals-call-order.js",
       "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
     },
     {
-      "path": "test/built-ins/Proxy/setPrototypeOf/not-extensible-target-same-target-prototype.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/Proxy/setPrototypeOf/null-handler.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/setPrototypeOf/return-abrupt-from-get-trap.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/return-abrupt-from-isextensible-target.js",
@@ -10347,10 +10291,6 @@
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/return-abrupt-from-target-getprototypeof.js",
       "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
-    },
-    {
-      "path": "test/built-ins/Proxy/setPrototypeOf/return-abrupt-from-trap.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/toboolean-trap-result-false.js",
@@ -10386,35 +10326,19 @@
     },
     {
       "path": "test/built-ins/Reflect/apply/apply.js",
-      "reason": "[sloppy] zjs: throw: (unknown): apply should be an own property\nzjs: throw: (unknown): apply should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): apply descriptor should not be enumerable\nzjs: throw: (unknown): apply descriptor should not be e"
     },
     {
       "path": "test/built-ins/Reflect/apply/arguments-list-is-not-array-like-but-still-valid.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [undefined] should have the same contents. \nzjs: throw: (unknown): Actual "
     },
     {
       "path": "test/built-ins/Reflect/apply/arguments-list-is-not-array-like.js",
       "reason": "[sloppy] zjs: throw: (unknown): `Reflect.apply(fn, null, {get length() {throw new Test262Error();}})` throws a Test262Error excep"
     },
     {
-      "path": "test/built-ins/Reflect/apply/call-target.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/apply/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/apply/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
       "path": "test/built-ins/Reflect/apply/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/Reflect/apply/return-target-call-result.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Reflect/construct/arguments-list-is-not-array-like.js",
@@ -10449,32 +10373,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Reflect/defineProperty/define-properties.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/Reflect/defineProperty/define-symbol-properties.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Reflect/defineProperty/defineProperty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): defineProperty should be an own property\nzjs: throw: (unknown): defineProperty should be an own p"
-    },
-    {
-      "path": "test/built-ins/Reflect/defineProperty/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/defineProperty/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/defineProperty/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/Reflect/defineProperty/return-abrupt-from-attributes.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): defineProperty descriptor should not be enumerable\nzjs: throw: (unknown): defineProperty descript"
     },
     {
       "path": "test/built-ins/Reflect/defineProperty/return-abrupt-from-property-key.js",
@@ -10486,51 +10390,31 @@
     },
     {
       "path": "test/built-ins/Reflect/defineProperty/return-boolean.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/deleteProperty/delete-properties.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
     },
     {
       "path": "test/built-ins/Reflect/deleteProperty/delete-symbol-properties.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Reflect/deleteProperty/deleteProperty.js",
-      "reason": "[sloppy] zjs: throw: (unknown): deleteProperty should be an own property\nzjs: throw: (unknown): deleteProperty should be an own p"
-    },
-    {
-      "path": "test/built-ins/Reflect/deleteProperty/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/deleteProperty/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): deleteProperty descriptor should not be enumerable\nzjs: throw: (unknown): deleteProperty descript"
     },
     {
       "path": "test/built-ins/Reflect/deleteProperty/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Reflect/deleteProperty/return-abrupt-from-property-key.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Reflect/deleteProperty/return-abrupt-from-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Reflect/deleteProperty/return-boolean.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Reflect/get/get.js",
       "reason": "[sloppy] zjs: throw: (unknown): get descriptor should not be enumerable\nzjs: throw: (unknown): get descriptor should not be enume"
-    },
-    {
-      "path": "test/built-ins/Reflect/get/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 2; length value should be 2\nzjs: throw: (unknown): length descr"
     },
     {
       "path": "test/built-ins/Reflect/get/not-a-constructor.js",
@@ -10550,87 +10434,43 @@
     },
     {
       "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/getOwnPropertyDescriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): getOwnPropertyDescriptor should be an own property\nzjs: throw: (unknown): getOwnPropertyDescripto"
-    },
-    {
-      "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): getOwnPropertyDescriptor descriptor should not be enumerable\nzjs: throw: (unknown): getOwnPropert"
     },
     {
       "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/return-abrupt-from-property-key.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/return-abrupt-from-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/return-from-accessor-descriptor.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/return-from-data-descriptor.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/symbol-property.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/undefined-own-property.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/undefined-property.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Reflect/getPrototypeOf/getPrototypeOf.js",
-      "reason": "[sloppy] zjs: throw: (unknown): getPrototypeOf should be an own property\nzjs: throw: (unknown): getPrototypeOf should be an own p"
-    },
-    {
-      "path": "test/built-ins/Reflect/getPrototypeOf/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/getPrototypeOf/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): getPrototypeOf descriptor should not be enumerable\nzjs: throw: (unknown): getPrototypeOf descript"
     },
     {
       "path": "test/built-ins/Reflect/getPrototypeOf/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Reflect/getPrototypeOf/null-prototype.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abnull\u00bb) to be true\nzjs: throw: (unknown): Expected SameValu"
     },
     {
       "path": "test/built-ins/Reflect/getPrototypeOf/return-abrupt-from-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Reflect/getPrototypeOf/return-prototype.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/getPrototypeOf/skip-own-properties.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Reflect/has/has.js",
       "reason": "[sloppy] zjs: throw: (unknown): has descriptor should not be enumerable\nzjs: throw: (unknown): has descriptor should not be enume"
-    },
-    {
-      "path": "test/built-ins/Reflect/has/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 2; length value should be 2\nzjs: throw: (unknown): length descr"
     },
     {
       "path": "test/built-ins/Reflect/has/not-a-constructor.js",
@@ -10646,103 +10486,59 @@
     },
     {
       "path": "test/built-ins/Reflect/isExtensible/isExtensible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isExtensible should be an own property\nzjs: throw: (unknown): isExtensible should be an own prope"
-    },
-    {
-      "path": "test/built-ins/Reflect/isExtensible/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/isExtensible/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): isExtensible descriptor should not be enumerable\nzjs: throw: (unknown): isExtensible descriptor s"
     },
     {
       "path": "test/built-ins/Reflect/isExtensible/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Reflect/isExtensible/return-abrupt-from-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Reflect/isExtensible/return-boolean.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/ownKeys/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/ownKeys/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Reflect/ownKeys/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Reflect/ownKeys/order-after-define-property.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [Symbol(a), Symbol(b)] should have the same contents. \nzjs: throw: (unknow"
     },
     {
       "path": "test/built-ins/Reflect/ownKeys/ownKeys.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ownKeys should be an own property\nzjs: throw: (unknown): ownKeys should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): ownKeys descriptor should not be enumerable\nzjs: throw: (unknown): ownKeys descriptor should not "
     },
     {
       "path": "test/built-ins/Reflect/ownKeys/return-abrupt-from-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Reflect/ownKeys/return-array-with-own-keys-only.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/ownKeys/return-empty-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/ownKeys/return-non-enumerable-keys.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Reflect/ownKeys/return-on-corresponding-order-large-index.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"4294967295\"\u00bb, \u00ab\"12345678900\"\u00bb) to be true\nzjs: throw: (unknown): Expected Sa"
     },
     {
       "path": "test/built-ins/Reflect/ownKeys/return-on-corresponding-order.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/preventExtensions/always-return-true-from-ordinary-object.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/preventExtensions/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/preventExtensions/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab5\u00bb, \u00ab7\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab5\u00bb, \u00ab7\u00bb) to be"
     },
     {
       "path": "test/built-ins/Reflect/preventExtensions/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Reflect/preventExtensions/prevent-extensions.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Reflect/preventExtensions/preventExtensions.js",
-      "reason": "[sloppy] zjs: throw: (unknown): preventExtensions should be an own property\nzjs: throw: (unknown): preventExtensions should be an"
+      "reason": "[sloppy] zjs: throw: (unknown): preventExtensions descriptor should not be enumerable\nzjs: throw: (unknown): preventExtensions de"
     },
     {
       "path": "test/built-ins/Reflect/preventExtensions/return-abrupt-from-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Reflect/preventExtensions/return-boolean-from-proxy-object.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): returns false from Proxy handler Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unkn"
     },
     {
       "path": "test/built-ins/Reflect/prop-desc.js",
@@ -10755,10 +10551,6 @@
     {
       "path": "test/built-ins/Reflect/set/different-property-descriptors.js",
       "reason": "[sloppy] zjs: throw: (unknown): target has no own `p` and receiver.p has an accessor descriptor Expected SameValue(\u00abtrue\u00bb, \u00abfalse"
-    },
-    {
-      "path": "test/built-ins/Reflect/set/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 3; length value should be 3\nzjs: throw: (unknown): length descr"
     },
     {
       "path": "test/built-ins/Reflect/set/not-a-constructor.js",
@@ -10805,44 +10597,24 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/Reflect/setPrototypeOf/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/setPrototypeOf/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
       "path": "test/built-ins/Reflect/setPrototypeOf/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/Reflect/setPrototypeOf/return-abrupt-from-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Reflect/setPrototypeOf/return-false-if-target-and-proto-are-the-same.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: cyclic __proto__ value\nzjs: throw: TypeError: cyclic __proto__ value"
     },
     {
       "path": "test/built-ins/Reflect/setPrototypeOf/return-false-if-target-is-not-extensible.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
     },
     {
       "path": "test/built-ins/Reflect/setPrototypeOf/return-false-if-target-is-prototype-of-proto.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/setPrototypeOf/return-true-if-new-prototype-is-set.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/setPrototypeOf/return-true-if-proto-is-current.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: cyclic __proto__ value\nzjs: throw: TypeError: cyclic __proto__ value"
     },
     {
       "path": "test/built-ins/Reflect/setPrototypeOf/setPrototypeOf.js",
-      "reason": "[sloppy] zjs: throw: (unknown): setPrototypeOf should be an own property\nzjs: throw: (unknown): setPrototypeOf should be an own p"
+      "reason": "[sloppy] zjs: throw: (unknown): setPrototypeOf descriptor should not be enumerable\nzjs: throw: (unknown): setPrototypeOf descript"
     },
     {
       "path": "test/built-ins/Set/Symbol.species/length.js",

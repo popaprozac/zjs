@@ -5110,6 +5110,49 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         return zjs_undefined();
     }
     let proto_v = if argc >= 2 { args[1] } else { zjs_undefined() };
+    // Proxy [[SetPrototypeOf]] (ECMA-262 §10.5.2): dispatch to the
+    // `setPrototypeOf` trap with the spec invariant checks. Without this,
+    // setting a proxy's prototype silently no-ops (the trap never fires).
+    if ctx.any_proxy_alive && zjs_is_proxy(obj_v) != 0 {
+        let p = zjs_as_proxy(obj_v);
+        if p.revoked {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"Cannot setPrototypeOf on a proxy that has been revoked", 54);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        let trap_atom = ctx_intern_atom(ctx, (char*)"setPrototypeOf", 14);
+        let trap = property_get(ctx, p.handler, zjs_cell_from_ptr((void*)trap_atom));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        // GetMethod: undefined/null trap → forward to the target.
+        if zjs_is_undefined(trap) != 0 || zjs_is_null(trap) != 0 {
+            let tt: ZjsValue[2]; tt[0] = p.target; tt[1] = proto_v;
+            return host_object_set_prototype_of(ctx, &tt[0], 2);
+        }
+        if zjs_is_callable(trap) == 0 {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy setPrototypeOf trap is not a function", 43);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        let tb: ZjsValue[2]; tb[0] = p.target; tb[1] = proto_v;
+        let res = zjs_call_value_with_this(ctx, trap, p.handler, &tb[0], 2);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_to_bool_coerce(res) == 0 { return obj_v; }
+        // Invariant: a non-extensible target's prototype can't change.
+        let one: ZjsValue[1]; one[0] = p.target;
+        let ext = host_object_is_extensible(ctx, &one[0], 1);
+        if zjs_to_bool_coerce(ext) == 0 {
+            let tproto = host_object_get_prototype_of(ctx, &one[0], 1);
+            if proto_v.bits != tproto.bits {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"proxy setPrototypeOf trap violated the non-extensible invariant", 63);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return zjs_undefined();
+            }
+        }
+        return obj_v;
+    }
     // ECMA-262 §20.1.2.21: Type(proto) must be Object or Null. Type()
     // includes callables (functions are objects). chalk uses
     //   var proto = Object.defineProperties(() => {}, {...});
@@ -17271,6 +17314,172 @@ fn host_reflect_has(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_bool(if zjs_is_undefined(v) != 0 { 0 } else { 1 });
 }
 
+// Reflect methods require an Object target (unlike Object.* which coerce
+// primitives) — they throw TypeError otherwise.
+fn reflect_is_object(v: ZjsValue) -> bool {
+    return !(zjs_is_undefined(v) != 0 || zjs_is_null(v) != 0
+        || zjs_is_bool(v) != 0 || zjs_is_int32(v) != 0 || zjs_is_double(v) != 0
+        || zjs_is_string(v) != 0 || zjs_is_symbol(v) != 0 || zjs_is_bigint(v) != 0);
+}
+fn reflect_throw_target(ctx: ZjsContext*) -> ZjsValue {
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                (char*)"Reflect target must be an object", 32);
+    ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+    return zjs_undefined();
+}
+
+fn host_reflect_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !reflect_is_object(t) { return reflect_throw_target(ctx); }
+    let one: ZjsValue[1]; one[0] = t;
+    return host_object_get_prototype_of(ctx, &one[0], 1);
+}
+
+fn host_reflect_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !reflect_is_object(t) { let _ = reflect_throw_target(ctx); return zjs_undefined(); }
+    let proto = if argc >= 2 { args[1] } else { zjs_undefined() };
+    if !reflect_is_object(proto) && zjs_is_null(proto) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Reflect.setPrototypeOf called with invalid prototype", 52);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let two: ZjsValue[2]; two[0] = t; two[1] = proto;
+    let _ = host_object_set_prototype_of(ctx, &two[0], 2);
+    // [[SetPrototypeOf]] is invoked with `?` — abrupt completions
+    // (Proxy trap errors, invariant violations) propagate; only a clean
+    // run yields the boolean true.
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    return zjs_bool(1);
+}
+
+fn host_reflect_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !reflect_is_object(t) { return reflect_throw_target(ctx); }
+    return host_object_get_own_property_descriptor(ctx, args, argc);
+}
+
+fn host_reflect_own_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !reflect_is_object(t) { return reflect_throw_target(ctx); }
+    // String keys (own, incl. non-enumerable). Symbol-keyed own props are
+    // a known gap (see ownKeys note); most tests check the string keys.
+    return host_object_get_own_property_names(ctx, args, argc);
+}
+
+fn host_reflect_is_extensible(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !reflect_is_object(t) { return reflect_throw_target(ctx); }
+    return host_object_is_extensible(ctx, args, argc);
+}
+
+fn host_reflect_prevent_extensions(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !reflect_is_object(t) { return reflect_throw_target(ctx); }
+    let _ = host_object_prevent_extensions(ctx, args, argc);
+    return zjs_bool(1);
+}
+
+fn host_reflect_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !reflect_is_object(t) { return reflect_throw_target(ctx); }
+    let _ = host_object_define_property(ctx, args, argc);
+    // Object.defineProperty throws on a [[DefineOwnProperty]] rejection;
+    // Reflect.defineProperty returns false instead. ToPropertyDescriptor
+    // errors (bad get/set, accessor+value, non-object descriptor) still
+    // propagate — distinguish by the thrown message prefix.
+    if ctx.pending_throw_active {
+        // Clear the pending throw before reading the error message
+        // (property_get short-circuits while a throw is armed), then
+        // re-arm only if the error must propagate.
+        let ev = ctx.pending_throw_value;
+        ctx.pending_throw_active = false;
+        let msg = property_get(ctx, ev, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"message", 7)));
+        let is_reject: int = 0;
+        if zjs_is_string(msg) != 0 {
+            let s = zjs_as_string(msg);
+            raw {
+                is_reject = (s->length >= 6 && memcmp(s->data, "Cannot", 6) == 0) ? 1 : 0;
+            }
+        }
+        if is_reject != 0 { return zjs_bool(0); }
+        // Not a [[DefineOwnProperty]] rejection — propagate (e.g. a
+        // ToPropertyDescriptor error: non-callable get/set).
+        ctx.pending_throw_active = true; ctx.pending_throw_value = ev;
+        return zjs_undefined();
+    }
+    return zjs_bool(1);
+}
+
+fn host_reflect_delete_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !reflect_is_object(t) { return reflect_throw_target(ctx); }
+    let key = symbol_key_coerce(if argc >= 2 { args[1] } else { zjs_undefined() });
+    if zjs_is_object(t) != 0 {
+        let o = zjs_as_object(t);
+        let ks = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+        let name = zjs_as_string(ks);
+        let slot = class_find_slot(o.cls, name);
+        if slot >= 0 && zjs_is_deleted(o.slots[(u32)slot]) == 0 {
+            let a = object_get_attrs(o, (u32)slot);
+            if (a & PROP_CONFIGURABLE) == 0 { return zjs_bool(0); }
+            o.slots[(u32)slot] = zjs_deleted();
+        }
+        return zjs_bool(1);
+    }
+    if zjs_is_array(t) != 0 {
+        let arr = zjs_as_array(t);
+        let idx = zjs_to_array_index(key);
+        if idx >= 0 && arr.props != NULL {
+            let ks = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+            let name = zjs_as_string(ks);
+            let pslot = class_find_slot(arr.props.cls, name);
+            if pslot >= 0 && zjs_is_deleted(arr.props.slots[(u32)pslot]) == 0 {
+                let pa = object_get_attrs(arr.props, (u32)pslot);
+                if (pa & PROP_CONFIGURABLE) == 0 { return zjs_bool(0); }
+                arr.props.slots[(u32)pslot] = zjs_deleted();
+                return zjs_bool(1);
+            }
+        }
+        if idx >= 0 { array_index_delete(ctx, arr, (u32)idx); return zjs_bool(1); }
+        // Named array property in props.
+        if arr.props != NULL && zjs_is_string(key) != 0 {
+            let name = zjs_as_string(key);
+            let pslot = class_find_slot(arr.props.cls, name);
+            if pslot >= 0 && zjs_is_deleted(arr.props.slots[(u32)pslot]) == 0 {
+                let pa = object_get_attrs(arr.props, (u32)pslot);
+                if (pa & PROP_CONFIGURABLE) == 0 { return zjs_bool(0); }
+                arr.props.slots[(u32)pslot] = zjs_deleted();
+            }
+        }
+        return zjs_bool(1);
+    }
+    return zjs_bool(1);
+}
+
+fn host_reflect_apply(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let target = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_callable(target) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Reflect.apply target is not a function", 38);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let this_arg = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let arglist = if argc >= 3 { args[2] } else { zjs_undefined() };
+    let n: u32 = 0;
+    let ap: ZjsValue* = NULL;
+    if zjs_is_array(arglist) != 0 {
+        let a = zjs_as_array(arglist);
+        n = a.length;
+        ap = a.elements;
+    }
+    let r: ZjsValue = zjs_undefined();
+    raw { r = zjs_call_value_with_this(ctx, target, this_arg, ap, n); }
+    return r;
+}
+
 fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // ECMA-262 §27.2.3.1 step 1: throw TypeError if NewTarget is
     // undefined — i.e. Promise(...) called without `new`.
@@ -24524,11 +24733,41 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let rset_ptr: void* = NULL; raw { rset_ptr = (void*)host_reflect_set; }
     let rhas_ptr: void* = NULL; raw { rhas_ptr = (void*)host_reflect_has; }
     object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"get", 3),
-               ctx_make_host_function(ctx, (char*)"get", rget_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"get", rget_ptr, 2));
     object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"set", 3),
-               ctx_make_host_function(ctx, (char*)"set", rset_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"set", rset_ptr, 3));
     object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"has", 3),
-               ctx_make_host_function(ctx, (char*)"has", rhas_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"has", rhas_ptr, 2));
+    // Reflect static methods that mirror the Object.* reflective surface
+    // (Phase 4.6 follow-up — these were missing). All require an Object
+    // target and the mutating ones return a boolean status.
+    let rgpo_ptr: void* = NULL; raw { rgpo_ptr = (void*)host_reflect_get_prototype_of; }
+    let rspo_ptr: void* = NULL; raw { rspo_ptr = (void*)host_reflect_set_prototype_of; }
+    let rgopd_ptr: void* = NULL; raw { rgopd_ptr = (void*)host_reflect_get_own_property_descriptor; }
+    let rok_ptr: void* = NULL; raw { rok_ptr = (void*)host_reflect_own_keys; }
+    let rie_ptr: void* = NULL; raw { rie_ptr = (void*)host_reflect_is_extensible; }
+    let rpe_ptr: void* = NULL; raw { rpe_ptr = (void*)host_reflect_prevent_extensions; }
+    let rdp_ptr: void* = NULL; raw { rdp_ptr = (void*)host_reflect_define_property; }
+    let rdel_ptr: void* = NULL; raw { rdel_ptr = (void*)host_reflect_delete_property; }
+    let rapp_ptr: void* = NULL; raw { rapp_ptr = (void*)host_reflect_apply; }
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"getPrototypeOf", 14),
+               ctx_make_host_function_arity(ctx, (char*)"getPrototypeOf", rgpo_ptr, 1));
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"setPrototypeOf", 14),
+               ctx_make_host_function_arity(ctx, (char*)"setPrototypeOf", rspo_ptr, 2));
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"getOwnPropertyDescriptor", 24),
+               ctx_make_host_function_arity(ctx, (char*)"getOwnPropertyDescriptor", rgopd_ptr, 2));
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"ownKeys", 7),
+               ctx_make_host_function_arity(ctx, (char*)"ownKeys", rok_ptr, 1));
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"isExtensible", 12),
+               ctx_make_host_function_arity(ctx, (char*)"isExtensible", rie_ptr, 1));
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"preventExtensions", 17),
+               ctx_make_host_function_arity(ctx, (char*)"preventExtensions", rpe_ptr, 1));
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"defineProperty", 14),
+               ctx_make_host_function_arity(ctx, (char*)"defineProperty", rdp_ptr, 3));
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"deleteProperty", 14),
+               ctx_make_host_function_arity(ctx, (char*)"deleteProperty", rdel_ptr, 2));
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"apply", 5),
+               ctx_make_host_function_arity(ctx, (char*)"apply", rapp_ptr, 3));
     let reflect_slot = ctx_intern_global(ctx, (char*)"Reflect", 7);
     ctx.globals[reflect_slot].value = reflect_v;
     ctx.globals[reflect_slot].defined = true;
