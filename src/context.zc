@@ -4224,11 +4224,28 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     // names a numeric index, bump array.length to max(length, idx+1).
     // Tests rely on this so a for-of over an array that only had
     // defineProperty install a key visits it.
+    //
+    // Per-element attrs (#343): array elements with non-default
+    // descriptors / accessors live in arr.props keyed by the stringified
+    // index (`o` above already resolves to arr.props). Before applying
+    // the descriptor, migrate any LIVE dense element at this index into
+    // props as a default-attr data property — so the redefine merge sees
+    // its real value/attrs — and clear the dense slot so the index lives
+    // in exactly one place.
     if zjs_is_array(obj_v) != 0 {
         let idx = zjs_to_array_index(key_v);
         if idx >= 0 {
             let arr = zjs_as_array(obj_v);
-            let need = (u32)idx + 1;
+            let ui = (u32)idx;
+            if ui < arr.cap && zjs_is_deleted(arr.elements[ui]) == 0 {
+                let cur_slot = class_find_slot(o.cls, key_atom);
+                if cur_slot < 0 {
+                    object_define_property_slot(ctx, o, key_atom,
+                                                arr.elements[ui], PROP_DEFAULT);
+                }
+                arr.elements[ui] = zjs_deleted();
+            }
+            let need = ui + 1;
             if need > arr.length { arr.length = need; }
         }
     }
@@ -4608,28 +4625,17 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
                 return r_v;
             }
         }
-        let idx = zjs_to_array_index(key_v);
-        if idx >= 0 && (u32)idx < arr.length {
-            // Spec: getOwnPropertyDescriptor on a hole returns undefined.
-            if zjs_is_deleted(arr.elements[(u32)idx]) != 0 {
-                return zjs_undefined();
-            }
-            let r_v = ctx_new_object(ctx);
-            let r = zjs_as_object(r_v);
-            object_set(ctx, r, ctx_intern_atom(ctx, (char*)"value", 5), arr.elements[(u32)idx]);
-            object_set(ctx, r, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(1));
-            object_set(ctx, r, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(1));
-            object_set(ctx, r, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(1));
-            return r_v;
-        }
-        // Named (non-index) own property — arrays store these in arr.props,
-        // same as plain objects. defineProperty / getOwnPropertyNames already
-        // route through it; mirror that here so the descriptor is visible.
+        // An exotic / named own property stored in arr.props takes
+        // precedence over the dense element — defineProperty'd indices
+        // (with non-default attrs or accessors) and named expandos both
+        // live there. Checking it FIRST is what lets
+        // getOwnPropertyDescriptor(arr, "0") see a defineProperty'd index
+        // whose dense slot is a hole (#343).
         if arr.props != NULL {
             let o2 = arr.props;
             let katom = ctx_intern_atom(ctx, key_str_a.data, key_str_a.length);
             let slot2 = class_find_slot(o2.cls, katom);
-            if slot2 >= 0 {
+            if slot2 >= 0 && zjs_is_deleted(o2.slots[(u32)slot2]) == 0 {
                 let raw2 = o2.slots[(u32)slot2];
                 let dv = ctx_new_object(ctx);
                 ctx_push_temp_root(ctx, dv);
@@ -4651,6 +4657,22 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
                            zjs_bool(if (at2 & PROP_CONFIGURABLE) != 0 { 1 } else { 0 }));
                 return dv;
             }
+        }
+        let idx = zjs_to_array_index(key_v);
+        if idx >= 0 && (u32)idx < arr.length {
+            // Dense element with the default array-element attrs
+            // (writable+enumerable+configurable). Spec: a hole returns
+            // undefined.
+            if (u32)idx >= arr.cap || zjs_is_deleted(arr.elements[(u32)idx]) != 0 {
+                return zjs_undefined();
+            }
+            let r_v = ctx_new_object(ctx);
+            let r = zjs_as_object(r_v);
+            object_set(ctx, r, ctx_intern_atom(ctx, (char*)"value", 5), arr.elements[(u32)idx]);
+            object_set(ctx, r, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(1));
+            object_set(ctx, r, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(1));
+            object_set(ctx, r, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(1));
+            return r_v;
         }
         return zjs_undefined();
     }

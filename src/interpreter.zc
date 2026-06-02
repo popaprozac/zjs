@@ -1407,6 +1407,29 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     return zjs_undefined();
 }
 
+// Store to an array integer index, honoring per-element attrs (#343).
+// An index defined with non-default attrs / an accessor lives in
+// arr.props keyed by its stringified index; route the [[Set]] through
+// the ordinary object path there so writable:false / accessor setters
+// are respected (and ctx.write_rejected is armed for strict throws).
+// Otherwise take the fast dense path.
+fn array_index_store(ctx: ZjsContext*, arr: ZjsArray*, i: u32, value: ZjsValue) -> void {
+    if arr.props != NULL {
+        let buf: char[16];
+        let blen: int = 0;
+        raw { blen = snprintf(&buf[0], 16, "%u", (unsigned)i); }
+        let bp: char* = NULL; raw { bp = &buf[0]; }
+        let katom = ctx_intern_atom(ctx, bp, (u32)blen);
+        let slot = class_find_slot(arr.props.cls, katom);
+        if slot >= 0 && zjs_is_deleted(arr.props.slots[(u32)slot]) == 0 {
+            property_set(ctx, zjs_cell_from_ptr((void*)arr.props),
+                         zjs_cell_from_ptr((void*)katom), value);
+            return;
+        }
+    }
+    array_set(arr, i, value);
+}
+
 fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue) -> void {
     key = symbol_key_coerce(key);
     // Same single-tag-load pattern as property_get — see comments there.
@@ -1545,11 +1568,11 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         let arr = zjs_as_array(obj);
         if zjs_is_int32(key) != 0 {
             let i = zjs_as_int32(key);
-            if i >= 0 { array_set(arr, (u32)i, value); }
+            if i >= 0 { array_index_store(ctx, arr, (u32)i, value); }
             return;
         }
         let idx = zjs_to_array_index(key);
-        if idx >= 0 { array_set(arr, (u32)idx, value); return; }
+        if idx >= 0 { array_index_store(ctx, arr, (u32)idx, value); return; }
         // `arr.length = n` truncates / extends the array. ECMA-262
         // §22.1.4.1: assigning a non-integer or non-finite value throws
         // RangeError; we coerce-to-int and silently accept for MVP. The
@@ -5262,7 +5285,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let value   = regs[inst.c];
             let took_fast: bool = false;
             ctx.write_rejected = false;
-            if zjs_is_array(obj_val) != 0 && zjs_is_int32(key_val) != 0 {
+            if zjs_is_array(obj_val) != 0 && zjs_is_int32(key_val) != 0
+               && zjs_as_array(obj_val).props == NULL {
+                // props == NULL guard: when the array carries any named /
+                // defineProperty'd entries (incl. per-element-attr indices,
+                // #343), fall through to property_set, which routes the
+                // index through arr.props and honors writable / accessors.
                 let i = zjs_as_int32(key_val);
                 if i >= 0 {
                     let arr = zjs_as_array(obj_val);
@@ -6225,11 +6253,26 @@ fn interpret_inner_full(ctx: ZjsContext*,
             } else if zjs_is_array(obj_v) != 0 {
                 let a = zjs_as_array(obj_v);
                 let idx = zjs_to_array_index(key);
-                if idx >= 0 && (u32)idx < a.length {
-                    // `delete arr[i]` leaves a hole — the slot is no
-                    // longer "in" the array for HasProperty purposes.
-                    // Array elements aren't tracked with attrs yet, so
-                    // they're always configurable per spec.
+                // A defineProperty'd index lives in a.props with attrs —
+                // honor its configurable flag (#343); a plain dense
+                // element has no attrs and is always configurable.
+                let handled_via_props: bool = false;
+                if a.props != NULL && idx >= 0 {
+                    let buf: char[16];
+                    let blen: int = 0;
+                    raw { blen = snprintf(&buf[0], 16, "%u", (unsigned)(uint32_t)idx); }
+                    let bp: char* = NULL; raw { bp = &buf[0]; }
+                    let katom = ctx_intern_atom(ctx, bp, (u32)blen);
+                    let pslot = class_find_slot(a.props.cls, katom);
+                    if pslot >= 0 && zjs_is_deleted(a.props.slots[(u32)pslot]) == 0 {
+                        let pa = object_get_attrs(a.props, (u32)pslot);
+                        if (pa & PROP_CONFIGURABLE) == 0 { ok = false; }
+                        else { a.props.slots[(u32)pslot] = zjs_deleted(); }
+                        handled_via_props = true;
+                    }
+                }
+                if !handled_via_props && idx >= 0 && (u32)idx < a.length {
+                    // `delete arr[i]` on a dense element leaves a hole.
                     a.elements[(u32)idx] = zjs_deleted();
                 }
             } else if obj_tag == TAG_HOST_FUNCTION {
