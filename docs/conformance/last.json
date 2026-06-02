@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 02:13 UTC",
+    "when": "2026-06-02 02:30 UTC",
     "total": 14524,
-    "passed": 12450,
-    "failed": 1627,
+    "passed": 12457,
+    "failed": 1620,
     "skipped": 447,
     "platform": "macOS"
   },
@@ -5385,10 +5385,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/Map/prototype/forEach/first-argument-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Map/prototype/forEach/forEach.js",
       "reason": "[sloppy] zjs: throw: (unknown): forEach descriptor should not be enumerable\nzjs: throw: (unknown): forEach descriptor should not "
     },
@@ -5579,30 +5575,6 @@
     {
       "path": "test/built-ins/Set/prototype/entries/entries.js",
       "reason": "[sloppy] zjs: throw: (unknown): entries descriptor should not be enumerable\nzjs: throw: (unknown): entries descriptor should not "
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-boolean.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-string.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/callback-not-callable-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Set/prototype/forEach/does-not-have-setdata-internal-slot-weakset.js",

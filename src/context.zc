@@ -10238,14 +10238,17 @@ fn host_map_size_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
 fn host_map_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let m = map_require_this(ctx);
     if m == NULL { return zjs_undefined(); }
-    if argc == 0 {
+    // ECMA-262 24.1.3.5: IsCallable(callbackfn) is checked BEFORE any
+    // iteration (and regardless of map size). A non-callable (incl. a
+    // missing) argument is a TypeError.
+    let cb = if argc > 0 { args[0] } else { zjs_undefined() };
+    if zjs_is_callable(cb) == 0 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Map.prototype.forEach requires a callback", 41);
+                                    (char*)"callback is not a function", 26);
         ctx.pending_throw_active = true;
         ctx.pending_throw_value = err;
         return zjs_undefined();
     }
-    let cb = args[0];
     let this_arg = if argc > 1 { args[1] } else { zjs_undefined() };
     let nullp: ZjsValue* = NULL;
     let map_v = ctx.host_this;
@@ -10449,14 +10452,15 @@ fn host_set_size_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
 fn host_set_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let s = set_require_this(ctx);
     if s == NULL { return zjs_undefined(); }
-    if argc == 0 {
+    // ECMA-262 24.2.3.6: IsCallable(callbackfn) checked before iteration.
+    let cb = if argc > 0 { args[0] } else { zjs_undefined() };
+    if zjs_is_callable(cb) == 0 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Set.prototype.forEach requires a callback", 41);
+                                    (char*)"callback is not a function", 26);
         ctx.pending_throw_active = true;
         ctx.pending_throw_value = err;
         return zjs_undefined();
     }
-    let cb = args[0];
     let this_arg = if argc > 1 { args[1] } else { zjs_undefined() };
     let set_v = ctx.host_this;
     let i: u32 = 0;
