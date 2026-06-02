@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 21:29 UTC",
+    "when": "2026-06-02 21:40 UTC",
     "total": 27491,
-    "passed": 21945,
-    "failed": 4826,
+    "passed": 21980,
+    "failed": 4791,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -11201,55 +11201,7 @@
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-break-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-case-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-catch-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-class-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-const-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-continue-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-debugger-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-default-escaped-ext.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-default-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-default.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-delete-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-do-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-else-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -11257,52 +11209,8 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-export-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-extends-escaped-ext.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-extends-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-extends.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-finally-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-for-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-function-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-if-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-implements-escaped.js",
       "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-import-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-in-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-instanceof-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-interface-escaped.js",
@@ -11311,10 +11219,6 @@
     {
       "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-let-escaped.js",
       "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-new-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-package-escaped.js",
@@ -11333,48 +11237,8 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-return-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-static-escaped.js",
       "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-super-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-switch-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-this-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-throw-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-try-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-typeof-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-var-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-void-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-while-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-with-escaped.js",
@@ -19255,10 +19119,6 @@
     {
       "path": "test/language/statements/variable/dstr/ary-init-iter-get-err-array-prototype.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/statements/variable/dstr/obj-ptrn-elem-id-static-init-await-invalid.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/variable/eval-strict-list-final-init.js",

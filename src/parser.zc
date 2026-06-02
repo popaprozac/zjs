@@ -802,6 +802,7 @@ fn parse_object_pattern(p: Parser*) -> AstNode* {
         let computed_key: AstNode* = NULL;
         let key_start: u32 = 0;
         let key_len: u32 = 0;
+        let key_tok_saved: Token = token_eof(0);
         if peek_kind(p) == TokenKind::LBracket {
             advance(p);
             computed_key = parse_assignment(p);
@@ -813,6 +814,7 @@ fn parse_object_pattern(p: Parser*) -> AstNode* {
             advance(p);
             key_start = key_tok.start;
             key_len   = key_tok.length;
+            key_tok_saved = key_tok;
         }
         // Optional `: target` (rename or nested pattern); otherwise
         // shorthand — the key doubles as the local binding name.
@@ -824,7 +826,14 @@ fn parse_object_pattern(p: Parser*) -> AstNode* {
             // Computed key without a target — spec error.
             p.had_error = true; break;
         } else {
-            // Shorthand: target = IdentExpr matching the key.
+            // Shorthand: target = IdentExpr matching the key. The key
+            // doubles as a BindingIdentifier / IdentifierReference, so it
+            // must NOT be a reserved word — `({ break }) => {}` and
+            // `({ break }) => {}` are SyntaxErrors (the colon form
+            // `{ break: x }` stays valid, handled above).
+            if !is_binding_ident_tok(p, key_tok_saved, p.source) {
+                p.had_error = true; break;
+            }
             target = new_node(&p.tracker, NodeKind::IdentExpr, key_start, key_start + key_len);
             target.name_start  = key_start;
             target.name_length = key_len;
