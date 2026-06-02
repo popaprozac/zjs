@@ -21121,6 +21121,154 @@ fn host_number_to_fixed(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     return ctx_intern_string(ctx, bp, n);
 }
 
+// Number.prototype.toExponential(fractionDigits) — ECMA-262 §21.1.3.2.
+// Exactly one digit before the point, `fractionDigits` after (or the
+// shortest round-tripping count when omitted), and a JS-shaped exponent
+// (sign + no leading zeros).
+fn host_number_to_exponential(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = host_wrapper_value_of(ctx, args, argc);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    // thisNumberValue: receiver must be a Number / Number wrapper.
+    if zjs_is_number(v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Number.prototype.toExponential called on non-number", 51);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let d = zjs_to_double(v);
+    let f_undef: int = 1;
+    let f: i32 = 0;
+    if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
+        let fd = to_number_or_throw(ctx, args[0]);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        raw { if (isnan(fd)) fd = 0; }
+        f = (i32)fd;
+        f_undef = 0;
+    }
+    let is_nan: int = 0; let is_inf: int = 0;
+    raw { is_nan = isnan(d) ? 1 : 0; is_inf = isinf(d) ? 1 : 0; }
+    if is_nan != 0 { return ctx_intern_string(ctx, (char*)"NaN", 3); }
+    if is_inf != 0 {
+        if d > 0.0 { return ctx_intern_string(ctx, (char*)"Infinity", 8); }
+        return ctx_intern_string(ctx, (char*)"-Infinity", 9);
+    }
+    if f_undef == 0 && (f < 0 || f > 100) {
+        let err = build_typed_error(ctx, (char*)"RangeError", 10,
+            (char*)"toExponential() argument must be between 0 and 100", 50);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let outbuf: char[176];
+    let n: u32 = 0;
+    raw {
+        double x = d;
+        if (x == 0.0) x = 0.0;          // normalize -0 → +0
+        int fd_use = f;
+        if (f_undef) {
+            fd_use = 17;
+            for (int t = 0; t <= 17; t++) {
+                char tmp[176];
+                snprintf(tmp, sizeof(tmp), "%.*e", t, x);
+                if (strtod(tmp, NULL) == x) { fd_use = t; break; }
+            }
+        }
+        char buf[176];
+        snprintf(buf, sizeof(buf), "%.*e", fd_use, x);
+        char* e = strchr(buf, 'e');
+        size_t mlen = e ? (size_t)(e - buf) : strlen(buf);
+        memcpy(outbuf, buf, mlen);
+        size_t o = mlen;
+        if (e) {
+            outbuf[o++] = 'e';
+            char* ep = e + 1;
+            char sign = '+';
+            if (*ep == '+' || *ep == '-') { sign = *ep; ep++; }
+            outbuf[o++] = sign;
+            while (*ep == '0' && *(ep + 1) != '\0') ep++;
+            while (*ep) { outbuf[o++] = *ep++; }
+        }
+        outbuf[o] = '\0';
+        n = (uint32_t)o;
+    }
+    let bp: char* = NULL; raw { bp = &outbuf[0]; }
+    return ctx_intern_string(ctx, bp, n);
+}
+
+// Number.prototype.toPrecision(precision) — ECMA-262 §21.1.3.5. Undefined
+// precision → ToString. Otherwise `precision` significant digits, in
+// fixed notation when the decimal exponent e satisfies -6 <= e < p, else
+// exponential (matching the spec thresholds, which differ from C's %g).
+fn host_number_to_precision(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let v = host_wrapper_value_of(ctx, args, argc);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    // thisNumberValue: receiver must be a Number / Number wrapper (checked
+    // before the undefined-precision early return, per spec step 1).
+    if zjs_is_number(v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Number.prototype.toPrecision called on non-number", 49);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let d = zjs_to_double(v);
+    if argc == 0 || zjs_is_undefined(args[0]) != 0 {
+        return zjs_to_string(ctx, v);
+    }
+    let pd = to_number_or_throw(ctx, args[0]);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    raw { if (isnan(pd)) pd = 0; }
+    let p: i32 = (i32)pd;
+    let is_nan: int = 0; let is_inf: int = 0;
+    raw { is_nan = isnan(d) ? 1 : 0; is_inf = isinf(d) ? 1 : 0; }
+    if is_nan != 0 { return ctx_intern_string(ctx, (char*)"NaN", 3); }
+    if is_inf != 0 {
+        if d > 0.0 { return ctx_intern_string(ctx, (char*)"Infinity", 8); }
+        return ctx_intern_string(ctx, (char*)"-Infinity", 9);
+    }
+    if p < 1 || p > 100 {
+        let err = build_typed_error(ctx, (char*)"RangeError", 10,
+            (char*)"toPrecision() argument must be between 1 and 100", 48);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let outbuf: char[176];
+    let n: u32 = 0;
+    raw {
+        double x = d;
+        if (x == 0.0) x = 0.0;
+        // p significant digits in exponential form to read the exponent.
+        char ebuf[176];
+        snprintf(ebuf, sizeof(ebuf), "%.*e", p - 1, x);
+        int ee = 0;
+        char* ep0 = strchr(ebuf, 'e');
+        if (ep0) ee = atoi(ep0 + 1);
+        if (ee >= -6 && ee < p) {
+            int fix = p - 1 - ee;
+            if (fix < 0) fix = 0;
+            snprintf(outbuf, sizeof(outbuf), "%.*f", fix, x);
+            n = (uint32_t)strlen(outbuf);
+        } else {
+            // exponential, normalize exponent like toExponential.
+            char* e = strchr(ebuf, 'e');
+            size_t mlen = e ? (size_t)(e - ebuf) : strlen(ebuf);
+            memcpy(outbuf, ebuf, mlen);
+            size_t o = mlen;
+            if (e) {
+                outbuf[o++] = 'e';
+                char* epp = e + 1;
+                char sign = '+';
+                if (*epp == '+' || *epp == '-') { sign = *epp; epp++; }
+                outbuf[o++] = sign;
+                while (*epp == '0' && *(epp + 1) != '\0') epp++;
+                while (*epp) { outbuf[o++] = *epp++; }
+            }
+            outbuf[o] = '\0';
+            n = (uint32_t)o;
+        }
+    }
+    let bp: char* = NULL; raw { bp = &outbuf[0]; }
+    return ctx_intern_string(ctx, bp, n);
+}
+
 // Array.prototype.fill(value, start?, end?) — overwrite [start, end)
 // with `value` in place. Negative indices count from length; out-of-
 // range get clamped. Returns the array.
@@ -25132,6 +25280,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let ntf_ptr: void* = NULL; raw { ntf_ptr = (void*)host_number_to_fixed; }
     object_set(ctx, num_hf.prototype, ctx_intern_atom(ctx, (char*)"toFixed", 7),
                ctx_make_host_function_arity(ctx, (char*)"toFixed", ntf_ptr, 1));
+    let nte_ptr: void* = NULL; raw { nte_ptr = (void*)host_number_to_exponential; }
+    object_set(ctx, num_hf.prototype, ctx_intern_atom(ctx, (char*)"toExponential", 13),
+               ctx_make_host_function_arity(ctx, (char*)"toExponential", nte_ptr, 1));
+    let ntp_ptr: void* = NULL; raw { ntp_ptr = (void*)host_number_to_precision; }
+    object_set(ctx, num_hf.prototype, ctx_intern_atom(ctx, (char*)"toPrecision", 11),
+               ctx_make_host_function_arity(ctx, (char*)"toPrecision", ntp_ptr, 1));
     // Number.* static constants (ECMA-262 §21.1.2).
     if num_hf.props == NULL {
         let pv = ctx_new_object(ctx);
