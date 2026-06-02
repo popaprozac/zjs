@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 17:21 UTC",
+    "when": "2026-06-02 17:34 UTC",
     "total": 27491,
-    "passed": 21390,
-    "failed": 5381,
+    "passed": 21392,
+    "failed": 5379,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -9221,10 +9221,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): reject descriptor should not be enumerable\nzjs: throw: (unknown): reject descriptor should not be"
     },
     {
-      "path": "test/built-ins/Promise/reject-function-nonconstructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Promise/resolve/arg-uniq-ctor.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
     },
@@ -9235,10 +9231,6 @@
     {
       "path": "test/built-ins/Promise/resolve/resolve-prms-cstm-then.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected Sam"
-    },
-    {
-      "path": "test/built-ins/Promise/resolve-function-nonconstructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Promise/resolve-prms-cstm-then-deferred.js",

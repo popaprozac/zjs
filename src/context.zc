@@ -17692,11 +17692,14 @@ fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let resolve_ptr: void* = NULL; raw { resolve_ptr = (void*)host_promise_resolve_fn; }
     let reject_ptr:  void* = NULL; raw { reject_ptr  = (void*)host_promise_reject_fn; }
     // ECMA-262 27.2.1.3: the resolving functions are anonymous (name "")
-    // with length 1.
+    // with length 1, and are NOT constructors (no [[Construct]] / no
+    // .prototype).
     let resolve_fn = ctx_make_host_function_arity(ctx, (char*)"", resolve_ptr, 1);
     let reject_fn  = ctx_make_host_function_arity(ctx, (char*)"", reject_ptr, 1);
     zjs_as_host_function(resolve_fn).bound = pv;
     zjs_as_host_function(reject_fn).bound  = pv;
+    zjs_as_host_function(resolve_fn).is_constructor = false;
+    zjs_as_host_function(reject_fn).is_constructor = false;
 
     let callable = zjs_is_function(executor) != 0
         || zjs_is_closure(executor) != 0
