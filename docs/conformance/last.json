@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 21:40 UTC",
+    "when": "2026-06-02 21:49 UTC",
     "total": 27491,
-    "passed": 21980,
-    "failed": 4791,
+    "passed": 22001,
+    "failed": 4770,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -15021,14 +15021,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/object/method-definition/async-gen-meth-array-destructuring-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/async-gen-meth-dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/object/method-definition/async-gen-meth-dflt-params-ref-later.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
@@ -15039,14 +15031,6 @@
     {
       "path": "test/language/expressions/object/method-definition/async-gen-meth-eval-var-scope-syntax-err.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/async-gen-meth-object-destructuring-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/async-gen-meth-rest-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/object/method-definition/async-gen-yield-identifier-spread-non-strict.js",
@@ -15073,14 +15057,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/object/method-definition/async-meth-array-destructuring-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/async-meth-dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/object/method-definition/async-meth-dflt-params-ref-later.js",
       "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
@@ -15091,14 +15067,6 @@
     {
       "path": "test/language/expressions/object/method-definition/async-meth-eval-var-scope-syntax-err.js",
       "reason": "async: Test262Error: function should not be resolved"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/async-meth-object-destructuring-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/async-meth-rest-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/object/method-definition/async-returns-async-arrow-returns-arguments-from-parent-function.js",
@@ -15113,23 +15081,11 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/object/method-definition/early-errors-object-async-method-duplicate-parameters.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/early-errors-object-method-NSPL-with-USD.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/object/method-definition/early-errors-object-method-arguments-in-formal-parameters.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/object/method-definition/early-errors-object-method-async-lineterminator.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/early-errors-object-method-duplicate-parameters.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -15145,28 +15101,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
-      "path": "test/language/expressions/object/method-definition/gen-meth-array-destructuring-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/gen-meth-dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/object/method-definition/gen-meth-dflt-params-ref-later.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
       "path": "test/language/expressions/object/method-definition/gen-meth-eval-var-scope-syntax-err.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/gen-meth-object-destructuring-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/gen-meth-rest-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/object/method-definition/gen-yield-identifier-spread-non-strict.js",
@@ -15217,32 +15157,12 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/object/method-definition/generator-use-strict-with-non-simple-param.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/meth-array-destructuring-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/meth-dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/object/method-definition/meth-dflt-params-ref-later.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
       "path": "test/language/expressions/object/method-definition/meth-eval-var-scope-syntax-err.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/meth-object-destructuring-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/meth-rest-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/object/method-definition/name-invoke-ctor.js",
@@ -15307,10 +15227,6 @@
     {
       "path": "test/language/expressions/object/method-definition/static-init-await-reference-normal.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/use-strict-with-non-simple-param.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/object/method-definition/yield-as-function-expression-binding-identifier.js",

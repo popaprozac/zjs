@@ -4217,6 +4217,16 @@ fn parse_object(p: Parser*) -> AstNode* {
             p.in_async = saved_a;
             p.in_generator = saved_g;
             if body == NULL { break; }
+            // Early errors (ECMA-262 method definitions): a non-simple
+            // parameter list cannot coexist with a "use strict" body
+            // directive; and a method has UniqueFormalParameters, so
+            // duplicate parameter names are illegal even when simple.
+            if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
+                p.had_error = true; break;
+            }
+            if params_have_duplicate(params, p.source) {
+                p.had_error = true; break;
+            }
             let method_fn = new_node(&p.tracker, NodeKind::FunctionExpr, key_tok.start, body.end);
             // name_start retained for diagnostics / source-range queries;
             // name_length=0 keeps it anonymous from the binding perspective.
