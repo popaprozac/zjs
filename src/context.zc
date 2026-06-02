@@ -2967,6 +2967,109 @@ fn host_math_floor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_double(Math::floor(zjs_to_double(args[0])));
 }
 
+// Math.sumPrecise(items) — TC39 proposal. Iterates `items`; every value
+// must be a Number (else TypeError, iterator closed). Returns the
+// correctly-rounded sum using Shewchuk's partials algorithm (ported from
+// CPython math.fsum). Special values: any NaN → NaN; +∞ with −∞ → NaN;
+// otherwise the present infinity; empty → -0.
+fn host_math_sum_precise(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let nanv: f64 = 0.0; raw { nanv = NAN; }
+    let items = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_undefined(items) != 0 || zjs_is_null(items) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Math.sumPrecise argument is not iterable", 40);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let iter = iter_get(ctx, items);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let cap: usize = 16;
+    let buf = alloc_n<f64>(cap);
+    let n: usize = 0;
+    let has_nan:  int = 0;
+    let has_pinf: int = 0;
+    let has_ninf: int = 0;
+    let safety: u32 = 0;
+    while safety < 1000000000 {
+        let step = iter_step(ctx, iter);
+        if ctx.pending_throw_active { dealloc(buf); return zjs_undefined(); }
+        if step.done { break; }
+        if zjs_is_number(step.value) == 0 {
+            iter_close(ctx, iter);
+            dealloc(buf);
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"Math.sumPrecise: value is not a number", 38);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        let d = zjs_to_double(step.value);
+        let cls: int = 0;
+        raw { if (isnan(d)) cls = 1; else if (isinf(d)) cls = (d > 0) ? 2 : 3; else cls = 0; }
+        if cls == 1 { has_nan = 1; }
+        else if cls == 2 { has_pinf = 1; }
+        else if cls == 3 { has_ninf = 1; }
+        else {
+            if n == cap { let nc = cap * 2; buf = realloc_n<f64>(buf, cap, nc); cap = nc; }
+            buf[n] = d;
+            n = n + 1;
+        }
+        safety = safety + 1;
+    }
+    if has_nan != 0 { dealloc(buf); return zjs_double(nanv); }
+    if has_pinf != 0 && has_ninf != 0 { dealloc(buf); return zjs_double(nanv); }
+    if has_pinf != 0 { dealloc(buf); let pinf: f64 = 0.0; raw { pinf = (double)INFINITY; } return zjs_double(pinf); }
+    if has_ninf != 0 { dealloc(buf); let ninf: f64 = 0.0; raw { ninf = -(double)INFINITY; } return zjs_double(ninf); }
+    if n == 0 { dealloc(buf); let neg0: f64 = 0.0; raw { neg0 = -0.0; } return zjs_double(neg0); }
+    // Shewchuk correctly-rounded summation.
+    let result: f64 = 0.0;
+    raw {
+        double* p = (double*)malloc(sizeof(double) * (n + 1));
+        if (!p) { result = 0.0; }
+        else {
+            int np = 0;
+            for (size_t k = 0; k < n; k++) {
+                double x = buf[k];
+                int i = 0;
+                for (int j = 0; j < np; j++) {
+                    double y = p[j];
+                    if (fabs(x) < fabs(y)) { double t = x; x = y; y = t; }
+                    double hi = x + y;
+                    double lo = y - (hi - x);
+                    if (lo != 0.0) { p[i++] = lo; }
+                    x = hi;
+                }
+                np = i;
+                p[np++] = x;
+            }
+            double hi = 0.0;
+            double lo = 0.0;
+            if (np > 0) {
+                int nn = np - 1;
+                hi = p[nn];
+                while (nn > 0) {
+                    double x = hi;
+                    nn--;
+                    double y = p[nn];
+                    hi = x + y;
+                    double yr = hi - x;
+                    lo = y - yr;
+                    if (lo != 0.0) break;
+                }
+                if (nn > 0 && ((lo < 0.0 && p[nn-1] < 0.0) || (lo > 0.0 && p[nn-1] > 0.0))) {
+                    double y = lo * 2.0;
+                    double x = hi + y;
+                    double yr = x - hi;
+                    if (y == yr) hi = x;
+                }
+            }
+            result = hi;
+            free(p);
+        }
+    }
+    dealloc(buf);
+    return zjs_double(result);
+}
+
 fn host_math_ceil(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let nan: f64 = 0.0; raw { nan = NAN; }
     if argc == 0 { return zjs_double(nan); }
@@ -26698,6 +26801,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"clz32",  5),  ctx_make_host_function_arity(ctx, (char*)"clz32",  clz32_ptr,  1));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"imul",   4),  ctx_make_host_function_arity(ctx, (char*)"imul",   imul_ptr,   2));
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"random", 6),  ctx_make_host_function_arity(ctx, (char*)"random", random_ptr, 0));
+    let sumprec_ptr: void* = NULL; raw { sumprec_ptr = (void*)host_math_sum_precise; }
+    object_set(ctx, math, ctx_intern_atom(ctx, (char*)"sumPrecise", 10), ctx_make_host_function_arity(ctx, (char*)"sumPrecise", sumprec_ptr, 1));
 
     // Math constants — ECMA-262 §21.3. Read-only data properties.
     // PI/E come from std/math; the others aren't exposed there yet, so

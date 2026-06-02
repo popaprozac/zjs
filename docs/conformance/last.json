@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 20:56 UTC",
+    "when": "2026-06-02 21:06 UTC",
     "total": 27491,
-    "passed": 21894,
-    "failed": 4877,
+    "passed": 21903,
+    "failed": 4868,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -4429,44 +4429,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): The result of evaluating (1 / Math.round(x)) is expected to be 1 / 0 Expected SameValue(\u00ab1\u00bb, \u00abInf"
     },
     {
-      "path": "test/built-ins/Math/sumPrecise/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Math/sumPrecise/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Math/sumPrecise/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/Math/sumPrecise/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): sumPrecise should be an own property\nzjs: throw: (unknown): sumPrecise should be an own property"
-    },
-    {
-      "path": "test/built-ins/Math/sumPrecise/sum-is-NaN.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Math/sumPrecise/sum-is-infinite.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Math/sumPrecise/sum-is-minus-zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/Math/sumPrecise/sum.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Math/sumPrecise/takes-iterable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Math/sumPrecise/throws-on-non-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abNaN\u00bb, \u00ab0.30000000000000004\u00bb) to be true\nzjs: throw: (unknown): Expected SameV"
     },
     {
       "path": "test/built-ins/Number/15.7.3-1.js",
