@@ -10820,6 +10820,15 @@ fn get_set_record(ctx: ZjsContext*, mname: char*, mlen: u32, other: ZjsValue) ->
     // size -> ToNumber -> NaN check -> ToIntegerOrInfinity -> >= 0.
     let size_v = property_get(ctx, other, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"size", 4)));
     if ctx.pending_throw_active { return rec; }
+    // ECMA-262 GetSetRecord step 4: numSize = ToNumber(size). ToNumber of
+    // an object runs ToPrimitive(number) first (its valueOf / Symbol.to-
+    // Primitive), which is observable — set-like `size` getters returning
+    // a coercible object must be honored. ta_to_number alone treats
+    // objects as NaN, so prime it with ToPrimitive here.
+    if value_is_js_object(size_v) {
+        size_v = zjs_to_primitive(ctx, size_v, false);
+        if ctx.pending_throw_active { return rec; }
+    }
     let num = ta_to_number(ctx, size_v);
     if ctx.pending_throw_active { return rec; }
     let bad: bool = false;
