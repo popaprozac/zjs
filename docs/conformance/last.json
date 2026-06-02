@@ -1,10 +1,10 @@
 {
   "summary": {
-    "when": "2026-06-01 23:53 UTC",
+    "when": "2026-06-02 02:13 UTC",
     "total": 14524,
-    "passed": 12312,
-    "failed": 1566,
-    "skipped": 646,
+    "passed": 12450,
+    "failed": 1627,
+    "skipped": 447,
     "platform": "macOS"
   },
   "failures": [
@@ -13,16 +13,44 @@
       "reason": "[sloppy] zjs: throw: (unknown): #2: f1unction f2() {return 0;} f2.valueOf = function() {return 1;}; 1 + f2 === 1 + 1. Actual: 1fu"
     },
     {
+      "path": "test/language/expressions/addition/bigint-and-number.js",
+      "reason": "[sloppy] zjs: throw: (unknown): 1n + 1 throws TypeError Expected a TypeError to be thrown but no exception was thrown at all\nzjs:"
+    },
+    {
+      "path": "test/language/expressions/addition/bigint-wrapped-values.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
+    },
+    {
+      "path": "test/language/expressions/subtraction/bigint-and-number.js",
+      "reason": "[sloppy] zjs: throw: (unknown): 1n - 1 throws TypeError Expected a TypeError to be thrown but no exception was thrown at all\nzjs:"
+    },
+    {
+      "path": "test/language/expressions/subtraction/bigint-wrapped-values.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
+    },
+    {
       "path": "test/language/expressions/subtraction/order-of-evaluation.js",
       "reason": "[sloppy] zjs: throw: (unknown): ?ToNumeric(lhs) throws. Expected a TypeError but got a Test262Error\nzjs: throw: (unknown): ?ToNum"
+    },
+    {
+      "path": "test/language/expressions/multiplication/bigint-wrapped-values.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
     },
     {
       "path": "test/language/expressions/multiplication/order-of-evaluation.js",
       "reason": "[sloppy] zjs: throw: (unknown): ?ToNumeric(lhs) throws. Expected a TypeError but got a Test262Error\nzjs: throw: (unknown): ?ToNum"
     },
     {
+      "path": "test/language/expressions/division/bigint-wrapped-values.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
+    },
+    {
       "path": "test/language/expressions/division/order-of-evaluation.js",
       "reason": "[sloppy] zjs: throw: (unknown): ?ToNumeric(lhs) throws. Expected a TypeError but got a Test262Error\nzjs: throw: (unknown): ?ToNum"
+    },
+    {
+      "path": "test/language/expressions/modulus/bigint-wrapped-values.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
     },
     {
       "path": "test/language/expressions/modulus/order-of-evaluation.js",
@@ -33,8 +61,16 @@
       "reason": "[sloppy] zjs: throw: ReferenceError: true\u00a0 is not defined\nzjs: throw: ReferenceError: true\u00a0 is not defined"
     },
     {
+      "path": "test/language/expressions/equals/bigint-and-object.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
+    },
+    {
       "path": "test/language/expressions/does-not-equals/S11.9.2_A1.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: true\u00a0 is not defined\nzjs: throw: ReferenceError: true\u00a0 is not defined"
+    },
+    {
+      "path": "test/language/expressions/does-not-equals/bigint-and-object.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
     },
     {
       "path": "test/language/expressions/less-than/S11.8.1_A4.12_T1.js",
@@ -59,6 +95,14 @@
     {
       "path": "test/language/expressions/logical-or/S11.11.2_A1.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: false\u00a0 is not defined\nzjs: throw: ReferenceError: false\u00a0 is not defined"
+    },
+    {
+      "path": "test/language/expressions/unary-minus/bigint-non-primitive.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
+    },
+    {
+      "path": "test/language/expressions/unary-plus/bigint-throws.js",
+      "reason": "[sloppy] zjs: throw: (unknown): +0n throws TypeError Expected a TypeError to be thrown but no exception was thrown at all\nzjs: th"
     },
     {
       "path": "test/language/expressions/typeof/proxy.js",
@@ -1853,6 +1897,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
+      "path": "test/language/statements/class/elements/privatefieldget-primitive-receiver.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
+    },
+    {
       "path": "test/language/statements/class/elements/privatefieldget-success-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab42\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundef"
     },
@@ -1875,6 +1923,10 @@
     {
       "path": "test/language/statements/class/elements/privatefieldget-typeerror-5.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+    },
+    {
+      "path": "test/language/statements/class/elements/privatefieldput-primitive-receiver.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/language/statements/class/elements/privatefieldset-evaluation-order-3.js",
@@ -2447,6 +2499,14 @@
     {
       "path": "test/language/statements/class/subclass-builtins/subclass-ArrayBuffer.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
+    },
+    {
+      "path": "test/language/statements/class/subclass-builtins/subclass-BigInt64Array.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor\nzjs: throw: TypeError: Class extends value is not a cons"
+    },
+    {
+      "path": "test/language/statements/class/subclass-builtins/subclass-BigUint64Array.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor\nzjs: throw: TypeError: Class extends value is not a cons"
     },
     {
       "path": "test/language/statements/class/subclass-builtins/subclass-DataView.js",
@@ -3665,6 +3725,14 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
+      "path": "test/language/expressions/class/subclass-builtins/subclass-BigInt64Array.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor\nzjs: throw: TypeError: Class extends value is not a cons"
+    },
+    {
+      "path": "test/language/expressions/class/subclass-builtins/subclass-BigUint64Array.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Class extends value is not a constructor\nzjs: throw: TypeError: Class extends value is not a cons"
+    },
+    {
       "path": "test/language/expressions/class/subclass-builtins/subclass-DataView.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
@@ -3858,7 +3926,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -3955,6 +4023,10 @@
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-9-3.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/map/callbackfn-resize-arraybuffer.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-ctor-non-object.js",
@@ -4109,6 +4181,10 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
+      "path": "test/built-ins/Array/prototype/forEach/callbackfn-resize-arraybuffer.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
+    },
+    {
       "path": "test/built-ins/Array/prototype/forEach/resizable-buffer-grow-mid-iteration.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents. \nzjs: throw: (unknown): Actual"
     },
@@ -4199,6 +4275,10 @@
     {
       "path": "test/built-ins/Object/create/not-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+    },
+    {
+      "path": "test/built-ins/Object/create/properties-arg-to-object-bigint.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Object.create properties must be an Object\nzjs: throw: TypeError: Object.create properties must b"
     },
     {
       "path": "test/built-ins/Object/create/properties-arg-to-object.js",
@@ -4345,6 +4425,22 @@
       "reason": "[sloppy] zjs: throw: (unknown): proxy for an array Expected SameValue(\u00ab\"null\"\u00bb, \u00ab\"[0,1]\"\u00bb) to be true\nzjs: throw: (unknown): prox"
     },
     {
+      "path": "test/built-ins/JSON/stringify/value-bigint-cross-realm.js",
+      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-bigint-order.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a Test262Error\nzjs: throw: (unknown): Expected a TypeError but got a"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-bigint-tojson-receiver.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Do not know how to serialize a BigInt\nzjs: throw: TypeError: Do not know how to serialize a BigIn"
+    },
+    {
+      "path": "test/built-ins/JSON/stringify/value-bigint-tojson.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Do not know how to serialize a BigInt\nzjs: throw: TypeError: Do not know how to serialize a BigIn"
+    },
+    {
       "path": "test/built-ins/JSON/stringify/value-object-proxy-revoked.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
@@ -4361,8 +4457,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): JSON.stringify(\"\\uD834\") Expected SameValue(\u00ab\"\\\"\ufffd\ufffd\ufffd\\\"\"\u00bb, \u00ab\"\\\"\\\\ud834\\\"\"\u00bb) to be true\nzjs: throw: "
     },
     {
+      "path": "test/built-ins/String/prototype/indexOf/position-tointeger-bigint.js",
+      "reason": "[sloppy] zjs: throw: (unknown): ToInteger: BigInt => TypeError Expected a TypeError to be thrown but no exception was thrown at a"
+    },
+    {
       "path": "test/built-ins/String/prototype/indexOf/position-tointeger-errors.js",
       "reason": "[sloppy] zjs: throw: (unknown): ToInteger: Symbol => TypeError Expected a TypeError to be thrown but no exception was thrown at a"
+    },
+    {
+      "path": "test/built-ins/String/prototype/indexOf/searchstring-tostring-bigint.js",
+      "reason": "[sloppy] zjs: throw: (unknown): ToString: unbox object with internal slot => BigInt to String Expected SameValue(\u00ab-1\u00bb, \u00ab2\u00bb) to be"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/searchstring-tostring-errors.js",
@@ -4455,6 +4559,10 @@
     {
       "path": "test/built-ins/Math/f16round/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): f16round should be an own property\nzjs: throw: (unknown): f16round should be an own property"
+    },
+    {
+      "path": "test/built-ins/Math/f16round/value-conversion.js",
+      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
       "path": "test/built-ins/Math/pow/applying-the-exp-operator_A1.js",
@@ -4649,6 +4757,18 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000\nzjs: throw: TypeError: Cannot convert null or undefin"
     },
     {
+      "path": "test/built-ins/Promise/allSettled/call-resolve-element-after-return.js",
+      "reason": "[sloppy] zjs: throw: (unknown): callCount after call to all() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): call"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/call-resolve-element-items.js",
+      "reason": "[sloppy] zjs: throw: (unknown): callCount after call to all() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): call"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/call-resolve-element.js",
+      "reason": "[sloppy] zjs: throw: (unknown): callCount after call to all() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): call"
+    },
+    {
       "path": "test/built-ins/Promise/allSettled/invoke-resolve-error-close.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
     },
@@ -4721,6 +4841,14 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000\nzjs: throw: TypeError: Cannot convert null or undefin"
     },
     {
+      "path": "test/built-ins/Promise/allSettled/resolve-before-loop-exit-from-same.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/resolve-before-loop-exit.js",
+      "reason": "[sloppy] zjs: throw: (unknown): callCount after call to all() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): call"
+    },
+    {
       "path": "test/built-ins/Promise/allSettled/resolve-element-function-extensible.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
@@ -4745,8 +4873,16 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000\nzjs: throw: TypeError: Cannot convert null or undefin"
     },
     {
+      "path": "test/built-ins/Promise/allSettled/resolve-from-same-thenable.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
+    },
+    {
       "path": "test/built-ins/Promise/allSettled/resolve-poisoned-then.js",
       "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
+    },
+    {
+      "path": "test/built-ins/Promise/allSettled/resolved-then-catch-finally.js",
+      "reason": "[sloppy] async: Test262Error: settled: Reason value for item 7 Expected SameValue(\u00ab\"nope\"\u00bb, \u00ab\"finally after rejected\"\u00bb) to be tru"
     },
     {
       "path": "test/built-ins/Promise/allSettledKeyed/extensible.js",
@@ -4865,6 +5001,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): callCount after call to any() Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): call"
     },
     {
+      "path": "test/built-ins/Promise/any/resolve-from-same-thenable.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
+    },
+    {
       "path": "test/built-ins/Promise/exception-after-resolve-in-executor.js",
       "reason": "[sloppy] async: Error: ignored exception"
     },
@@ -4913,8 +5053,20 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
+      "path": "test/built-ins/Promise/prototype/finally/rejected-observable-then-calls.js",
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab3\u00bb, \u00ab5\u00bb) to be true"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/finally/rejection-reason-override-with-throw.js",
+      "reason": "[sloppy] async: Test262Error: onFinally can override the rejection reason by throwing Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[obj"
+    },
+    {
       "path": "test/built-ins/Promise/prototype/finally/resolved-observable-then-calls-PromiseResolve.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+    },
+    {
+      "path": "test/built-ins/Promise/prototype/finally/resolved-observable-then-calls.js",
+      "reason": "[sloppy] async: Test262Error: Expected SameValue(\u00ab2\u00bb, \u00ab5\u00bb) to be true"
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/species-constructor.js",
@@ -5039,6 +5191,14 @@
     {
       "path": "test/built-ins/Promise/race/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): race descriptor should not be enumerable\nzjs: throw: (unknown): race descriptor should not be enu"
+    },
+    {
+      "path": "test/built-ins/Promise/race/reject-from-same-thenable.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
+    },
+    {
+      "path": "test/built-ins/Promise/race/resolve-from-same-thenable.js",
+      "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
       "path": "test/built-ins/Promise/race/resolve-prms-cstm-then.js",
@@ -5189,8 +5349,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): clear descriptor should not be enumerable\nzjs: throw: (unknown): clear descriptor should not be e"
     },
     {
+      "path": "test/built-ins/Map/prototype/clear/context-is-weakmap-object-throws.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+    },
+    {
       "path": "test/built-ins/Map/prototype/constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): constructor descriptor should not be enumerable\nzjs: throw: (unknown): constructor descriptor sho"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/delete/context-is-weakmap-object-throws.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Map/prototype/delete/delete.js",
@@ -5201,12 +5369,20 @@
       "reason": "[sloppy] zjs: throw: (unknown): prototype should be an own property\nzjs: throw: (unknown): prototype should be an own property"
     },
     {
+      "path": "test/built-ins/Map/prototype/entries/does-not-have-mapdata-internal-slot-weakmap.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+    },
+    {
       "path": "test/built-ins/Map/prototype/entries/entries.js",
       "reason": "[sloppy] zjs: throw: (unknown): entries descriptor should not be enumerable\nzjs: throw: (unknown): entries descriptor should not "
     },
     {
       "path": "test/built-ins/Map/prototype/forEach/callback-this-strict.js",
       "reason": "zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): Expected Sam"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/forEach/does-not-have-mapdata-internal-slot-weakmap.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Map/prototype/forEach/first-argument-is-not-callable.js",
@@ -5217,8 +5393,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): forEach descriptor should not be enumerable\nzjs: throw: (unknown): forEach descriptor should not "
     },
     {
+      "path": "test/built-ins/Map/prototype/get/does-not-have-mapdata-internal-slot-weakmap.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+    },
+    {
       "path": "test/built-ins/Map/prototype/get/get.js",
       "reason": "[sloppy] zjs: throw: (unknown): get descriptor should not be enumerable\nzjs: throw: (unknown): get descriptor should not be enume"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/getOrInsert/does-not-have-mapdata-internal-slot-weakmap.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Map/prototype/getOrInsert/getOrInsert.js",
@@ -5237,6 +5421,10 @@
       "reason": "[sloppy] "
     },
     {
+      "path": "test/built-ins/Map/prototype/getOrInsertComputed/does-not-have-mapdata-internal-slot-weakmap.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+    },
+    {
       "path": "test/built-ins/Map/prototype/getOrInsertComputed/getOrInsertComputed.js",
       "reason": "[sloppy] zjs: throw: (unknown): getOrInsertComputed descriptor should not be enumerable\nzjs: throw: (unknown): getOrInsertCompute"
     },
@@ -5245,12 +5433,24 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be"
     },
     {
+      "path": "test/built-ins/Map/prototype/has/does-not-have-mapdata-internal-slot-weakmap.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+    },
+    {
       "path": "test/built-ins/Map/prototype/has/has.js",
       "reason": "[sloppy] zjs: throw: (unknown): has descriptor should not be enumerable\nzjs: throw: (unknown): has descriptor should not be enume"
     },
     {
+      "path": "test/built-ins/Map/prototype/keys/does-not-have-mapdata-internal-slot-weakmap.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+    },
+    {
       "path": "test/built-ins/Map/prototype/keys/keys.js",
       "reason": "[sloppy] zjs: throw: (unknown): keys descriptor should not be enumerable\nzjs: throw: (unknown): keys descriptor should not be enu"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/set/does-not-have-mapdata-internal-slot-weakmap.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Map/prototype/set/set.js",
@@ -5258,6 +5458,10 @@
     },
     {
       "path": "test/built-ins/Map/prototype/size/does-not-have-mapdata-internal-slot-set.js",
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/size/does-not-have-mapdata-internal-slot-weakmap.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
@@ -5275,6 +5479,10 @@
     {
       "path": "test/built-ins/Map/prototype/size/size.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
+    },
+    {
+      "path": "test/built-ins/Map/prototype/values/does-not-have-mapdata-internal-slot-weakmap.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Map/prototype/values/values.js",
@@ -5325,8 +5533,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): add descriptor should not be enumerable\nzjs: throw: (unknown): add descriptor should not be enume"
     },
     {
+      "path": "test/built-ins/Set/prototype/add/does-not-have-setdata-internal-slot-weakset.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+    },
+    {
       "path": "test/built-ins/Set/prototype/clear/clear.js",
       "reason": "[sloppy] zjs: throw: (unknown): clear descriptor should not be enumerable\nzjs: throw: (unknown): clear descriptor should not be e"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/clear/does-not-have-setdata-internal-slot-weakset.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Set/prototype/constructor/set-prototype-constructor.js",
@@ -5335,6 +5551,10 @@
     {
       "path": "test/built-ins/Set/prototype/delete/delete.js",
       "reason": "[sloppy] zjs: throw: (unknown): delete descriptor should not be enumerable\nzjs: throw: (unknown): delete descriptor should not be"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/delete/does-not-have-setdata-internal-slot-weakset.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Set/prototype/difference/converts-negative-zero.js",
@@ -5351,6 +5571,10 @@
     {
       "path": "test/built-ins/Set/prototype/difference/size-is-a-number.js",
       "reason": "[sloppy] zjs: throw: (unknown): GetSetRecord coerces size Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): GetSetRe"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/entries/does-not-have-setdata-internal-slot-weakset.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Set/prototype/entries/entries.js",
@@ -5381,12 +5605,20 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
+      "path": "test/built-ins/Set/prototype/forEach/does-not-have-setdata-internal-slot-weakset.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+    },
+    {
       "path": "test/built-ins/Set/prototype/forEach/forEach.js",
       "reason": "[sloppy] zjs: throw: (unknown): forEach descriptor should not be enumerable\nzjs: throw: (unknown): forEach descriptor should not "
     },
     {
       "path": "test/built-ins/Set/prototype/forEach/this-strict.js",
       "reason": "zjs: throw: (unknown): `this` is `undefined` in strict mode code Expected SameValue(\u00ab[object Object]\u00bb, \u00abundefined\u00bb) to b"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/has/does-not-have-setdata-internal-slot-weakset.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Set/prototype/has/has.js",
@@ -5515,6 +5747,10 @@
     {
       "path": "test/built-ins/Set/prototype/union/union.js",
       "reason": "[sloppy] zjs: throw: (unknown): union descriptor should not be enumerable\nzjs: throw: (unknown): union descriptor should not be e"
+    },
+    {
+      "path": "test/built-ins/Set/prototype/values/does-not-have-setdata-internal-slot-weakset.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Set/prototype/values/values-iteration-mutable.js",
@@ -6181,6 +6417,14 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
     },
     {
+      "path": "test/built-ins/Date/prototype/toTemporalInstant/this-value-non-object.js",
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
+    },
+    {
+      "path": "test/built-ins/Date/prototype/toTemporalInstant/this-value-valid-date.js",
+      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+    },
+    {
       "path": "test/built-ins/Date/prototype/toTimeString/format.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00abnull\u00bb) to be false\nzjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, "
     },
@@ -6274,20 +6518,14 @@
     }
   ],
   "skip_counts": {
-    "feature:BigInt": 117,
     "feature:tail-call-optimization": 20,
     "feature:u180e": 2,
-    "include:asyncHelpers.js": 25,
+    "include:asyncHelpers.js": 27,
     "flag:module": 15,
     "feature:Symbol.asyncIterator": 352,
     "feature:decorators": 24,
-    "include:testTypedArray.js": 4,
-    "feature:WeakMap": 17,
-    "feature:WeakSet": 11,
     "feature:SharedArrayBuffer": 2,
-    "feature:WeakRef": 2,
-    "include:proxyTrapsHelper.js": 1,
-    "include:byteConversionValues.js": 1,
-    "include:promiseHelper.js": 53
+    "feature:WeakRef": 4,
+    "include:proxyTrapsHelper.js": 1
   }
 }

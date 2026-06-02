@@ -1,6 +1,5 @@
 {
   "_comment": "Configuration for the test262 conformance runner. Paths are relative to the test262 checkout (vendor/test262 by default).",
-
   "include": [
     "test/language/expressions/addition",
     "test/language/expressions/subtraction",
@@ -60,16 +59,11 @@
     "test/built-ins/Set",
     "test/built-ins/Date"
   ],
-
   "_skip_features_comment": "Tests whose `features` frontmatter intersects this list are skipped (counted as 'skipped'). Update as the engine grows.",
-
   "skip_features": [
     "Atomics",
-    "BigInt",
     "SharedArrayBuffer",
     "Symbol.asyncIterator",
-    "WeakMap",
-    "WeakSet",
     "WeakRef",
     "FinalizationRegistry",
     "decorators",
@@ -84,35 +78,23 @@
     "u180e",
     "string-matchAll",
     "string-replaceAll",
-    "import.meta",
-    "super"
+    "import.meta"
   ],
-
   "_skip_flags_comment": "Tests whose flags include any of these are skipped. We don't support modules or async test stubs.",
-
   "skip_flags": [
     "module"
   ],
-
   "_skip_includes_comment": "Harness includes we don't support. Tests requiring these are skipped.",
-
   "skip_includes": [
-    "doneprintHandle.js",
-    "promiseHelper.js",
-    "asyncHelpers.js",
     "fnGlobalObject.js",
-    "regExpUtils.js",
     "wellKnownIntrinsicObjects.js",
-    "testTypedArray.js",
     "testBigIntTypedArray.js",
-    "byteConversionValues.js",
     "detachArrayBuffer.js",
-    "nans.js",
-    "decimalToHexString.js",
-    "deepEqual.js",
     "tcoHelper.js",
     "proxyTrapsHelper.js",
     "nativeFunctionMatcher.js",
-    "Compiler.js"
+    "Compiler.js",
+    "asyncHelpers.js",
+    "doneprintHandle.js"
   ]
 }
