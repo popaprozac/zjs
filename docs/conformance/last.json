@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 19:35 UTC",
+    "when": "2026-06-02 19:45 UTC",
     "total": 27491,
-    "passed": 21771,
-    "failed": 5000,
+    "passed": 21790,
+    "failed": 4981,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -139,10 +139,6 @@
     {
       "path": "test/built-ins/Array/fromAsync/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): Array.fromAsync is callable Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw"
-    },
-    {
-      "path": "test/built-ins/Array/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Array) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: "
     },
     {
       "path": "test/built-ins/Array/isArray/15.4.3.2-0-2.js",
@@ -1270,7 +1266,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -2741,10 +2737,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): The value of Boolean.length is expected to be 1 Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: thro"
     },
     {
-      "path": "test/built-ins/Boolean/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Boolean) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw"
-    },
-    {
       "path": "test/built-ins/Boolean/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): Boolean should be an own property\nzjs: throw: (unknown): Boolean should be an own property"
     },
@@ -2959,10 +2951,6 @@
     {
       "path": "test/built-ins/Date/coercion-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"yearmonthdatehoursminutessecondsms\"\u00bb) to be true\nzjs: throw: (unknown)"
-    },
-    {
-      "path": "test/built-ins/Date/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Date) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: ("
     },
     {
       "path": "test/built-ins/Date/parse/prop-desc.js",
@@ -3490,7 +3478,7 @@
     },
     {
       "path": "test/built-ins/Date/subclassing.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): constructor defines an object `prototype` property Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object"
     },
     {
       "path": "test/built-ins/Date/value-get-symbol-to-prim-err.js",
@@ -3563,10 +3551,6 @@
     {
       "path": "test/built-ins/Error/internal-prototype.js",
       "reason": "[sloppy] zjs: throw: (unknown): Function.prototype.isPrototypeOf(err1.constructor) returns true Expected SameValue(\u00abfalse\u00bb, \u00abtrue"
-    },
-    {
-      "path": "test/built-ins/Error/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Error) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: "
     },
     {
       "path": "test/built-ins/Error/isError/bigints.js",
@@ -3889,10 +3873,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Function/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Function) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: thro"
-    },
-    {
       "path": "test/built-ins/Function/length/15.3.3.2-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): desc.value Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): desc.value Expected Sam"
     },
@@ -4102,11 +4082,11 @@
     },
     {
       "path": "test/built-ins/Function/prototype/bind/instance-construct-newtarget-boundtarget-bound.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction bound() { [native code] }\u00bb, \u00abfunction A() { [user code] }\u00bb) to be tr"
     },
     {
       "path": "test/built-ins/Function/prototype/bind/instance-construct-newtarget-boundtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction bound() { [native code] }\u00bb, \u00abfunction A() { [user code] }\u00bb) to be tr"
     },
     {
       "path": "test/built-ins/Function/prototype/bind/instance-construct-newtarget-self-new.js",
@@ -4114,7 +4094,7 @@
     },
     {
       "path": "test/built-ins/Function/prototype/bind/instance-construct-newtarget-self-reflect.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction bound() { [native code] }\u00bb, \u00abfunction A() { [user code] }\u00bb) to be tr"
     },
     {
       "path": "test/built-ins/Function/prototype/bind/instance-length-default-value.js",
@@ -4363,10 +4343,6 @@
     {
       "path": "test/built-ins/Map/groupBy/string.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [before] and expected [after, before] should have the same contents. \nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/Map/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Map) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (u"
     },
     {
       "path": "test/built-ins/Map/iterator-close-after-set-failure.js",
@@ -4719,10 +4695,6 @@
     {
       "path": "test/built-ins/Number/S9.3_A5_T1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Number(new Number()) must return 0 Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/Number/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Number) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw:"
     },
     {
       "path": "test/built-ins/Number/isFinite/prop-desc.js",
@@ -7541,10 +7513,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): is descriptor should not be enumerable\nzjs: throw: (unknown): is descriptor should not be enumera"
     },
     {
-      "path": "test/built-ins/Object/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Object) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw:"
-    },
-    {
       "path": "test/built-ins/Object/isExtensible/15.2.3.13-0-2.js",
       "reason": "[sloppy] zjs: throw: (unknown): Object.isExtensible.length Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Object."
     },
@@ -7998,7 +7966,7 @@
     },
     {
       "path": "test/built-ins/Object/subclass-object-arg.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00abu"
     },
     {
       "path": "test/built-ins/Object/symbol_object-returns-fresh-symbol.js",
@@ -8426,11 +8394,7 @@
     },
     {
       "path": "test/built-ins/Promise/get-prototype-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Promise/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Promise) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Promise/promise.js",
@@ -8722,7 +8686,7 @@
     },
     {
       "path": "test/built-ins/Proxy/construct/call-parameters-new-target.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct target is not a constructor\nzjs: throw: TypeError: Reflect.construct target is "
     },
     {
       "path": "test/built-ins/Proxy/construct/call-parameters.js",
@@ -9661,36 +9625,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): `Reflect.apply(fn, null, {get length() {throw new Test262Error();}})` throws a Test262Error excep"
     },
     {
-      "path": "test/built-ins/Reflect/construct/arguments-list-is-not-array-like.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
       "path": "test/built-ins/Reflect/construct/construct.js",
-      "reason": "[sloppy] zjs: throw: (unknown): construct should be an own property\nzjs: throw: (unknown): construct should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/construct/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/construct/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Reflect/construct/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
+      "reason": "[sloppy] zjs: throw: (unknown): construct descriptor should not be enumerable\nzjs: throw: (unknown): construct descriptor should "
     },
     {
       "path": "test/built-ins/Reflect/construct/return-with-newtarget-argument.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/construct/return-without-newtarget-argument.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Reflect/construct/use-arguments-list.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00ab\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab["
     },
     {
       "path": "test/built-ins/Reflect/defineProperty/defineProperty.js",
@@ -9887,10 +9827,6 @@
     {
       "path": "test/built-ins/Set/Symbol.species/symbol-species.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Set/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Set) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (u"
     },
     {
       "path": "test/built-ins/Set/proto-from-ctor-realm.js",
@@ -10163,10 +10099,6 @@
     {
       "path": "test/built-ins/String/fromCodePoint/return-string-value.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\\u0004\"\u00bb, \u00ab\"\u0404\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\"\\u00"
-    },
-    {
-      "path": "test/built-ins/String/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(String) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw:"
     },
     {
       "path": "test/built-ins/String/length.js",
@@ -11493,10 +11425,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
     },
     {
-      "path": "test/built-ins/WeakMap/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(WeakMap) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw"
-    },
-    {
       "path": "test/built-ins/WeakMap/iterator-close-after-set-failure.js",
       "reason": "[sloppy] zjs: throw: (unknown): The iterator is closed when `WeakMap.prototype.set` throws an error. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb)"
     },
@@ -11611,10 +11539,6 @@
     {
       "path": "test/built-ins/WeakSet/get-add-method-failure.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/WeakSet/is-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor(WeakSet) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw"
     },
     {
       "path": "test/built-ins/WeakSet/iterator-close-after-add-failure.js",

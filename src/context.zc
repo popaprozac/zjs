@@ -17959,6 +17959,81 @@ fn host_reflect_apply(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     return r;
 }
 
+// Is `v` a constructor (has [[Construct]])? Mirrors the gate in
+// zjs_construct_value: user functions/closures always, host functions
+// only when host_fn_constructable.
+fn value_is_constructor(v: ZjsValue) -> bool {
+    if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 { return true; }
+    if zjs_is_host_function(v) != 0 {
+        return host_fn_constructable(zjs_as_host_function(v));
+    }
+    return false;
+}
+
+// Reflect.construct(target, argumentsList [, newTarget]) — ECMA-262
+// §28.1.2. target and newTarget (default target) must be constructors;
+// argumentsList must be an object (CreateListFromArrayLike). NOTE: the
+// newTarget's .prototype is not yet threaded through (the construct path
+// uses target's) — basic + validation cases pass, exotic newTarget proto
+// cases remain a gap rather than a regression.
+fn host_reflect_construct(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let target = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !value_is_constructor(target) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Reflect.construct target is not a constructor", 45);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    if argc >= 3 {
+        if !value_is_constructor(args[2]) {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"Reflect.construct newTarget is not a constructor", 48);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+    }
+    let arglist = if argc >= 2 { args[1] } else { zjs_undefined() };
+    // CreateListFromArrayLike: argumentsList must be an Object.
+    let al_ok = zjs_is_array(arglist) != 0 || zjs_is_object(arglist) != 0
+             || zjs_is_function(arglist) != 0 || zjs_is_closure(arglist) != 0
+             || zjs_is_host_function(arglist) != 0;
+    if !al_ok {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"CreateListFromArrayLike called on non-object", 44);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let n: u32 = 0;
+    let ap: ZjsValue* = NULL;
+    let scratch_v: ZjsValue = zjs_undefined();
+    if zjs_is_array(arglist) != 0 {
+        let a = zjs_as_array(arglist);
+        n = a.length;
+        ap = a.elements;
+    } else {
+        // Array-like object: read length, then indices 0..length-1.
+        let len = read_length_u32(ctx, arglist);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if len > 0 {
+            scratch_v = ctx_new_array(ctx, len);
+            ctx_push_temp_root(ctx, scratch_v);
+            let sa = zjs_as_array(scratch_v);
+            let i: u32 = 0;
+            while i < len {
+                let ev = property_get(ctx, arglist, zjs_int32((i32)i));
+                if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+                array_set(sa, i, ev);
+                i = i + 1;
+            }
+            n = sa.length;
+            ap = sa.elements;
+        }
+    }
+    let r: ZjsValue = zjs_construct_value(ctx, target, ap, n);
+    if zjs_is_array(arglist) == 0 && n > 0 { ctx_pop_temp_root(ctx); }
+    return r;
+}
+
 // `get [Symbol.species]() { return this; }` — the default species accessor
 // shared by Promise (and applicable to other constructors). Returns the
 // receiver so subclasses inherit it.
@@ -25423,6 +25498,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"deleteProperty", rdel_ptr, 2));
     object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"apply", 5),
                ctx_make_host_function_arity(ctx, (char*)"apply", rapp_ptr, 3));
+    let rcon_ptr: void* = NULL; raw { rcon_ptr = (void*)host_reflect_construct; }
+    object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"construct", 9),
+               ctx_make_host_function_arity(ctx, (char*)"construct", rcon_ptr, 2));
     let reflect_slot = ctx_intern_global(ctx, (char*)"Reflect", 7);
     ctx.globals[reflect_slot].value = reflect_v;
     ctx.globals[reflect_slot].defined = true;
