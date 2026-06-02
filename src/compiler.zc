@@ -5744,6 +5744,126 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
 // Forward decl for the live-iter for-of emitter.
 fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void;
 
+// --- Lexical-redeclaration early errors (ECMA-262 §14.2.1 / §14.12.1) --
+// A block / switch CaseBlock StatementList must have no duplicate
+// LexicallyDeclaredNames, and no LexicallyDeclaredName may also appear in
+// VarDeclaredNames. We conservatively scan only the TOP-LEVEL statements
+// of the StatementList: LEX = let/const/class names, VAR = var +
+// function-declaration names. Flagging requires a LEX name to collide
+// (with another LEX name or a VAR name), which is unconditionally illegal
+// in every mode — so this never false-positives on valid code (var+var,
+// function+function, and hoisted-from-nested var are intentionally not
+// flagged; those are either legal or a safe miss).
+fn redecl_name_eq(c: Compiler*, a_s: u32, a_l: u32, b_s: u32, b_l: u32) -> bool {
+    if a_l != b_l { return false; }
+    let eq: int = 0;
+    raw { eq = (memcmp(c->source + a_s, c->source + b_s, a_l) == 0) ? 1 : 0; }
+    return eq != 0;
+}
+
+fn redecl_add_lex(c: Compiler*, starts: u32*, lens: u32*, count: u32, cap: u32, s: u32, l: u32) -> u32 {
+    let i: u32 = 0;
+    while i < count {
+        if redecl_name_eq(c, starts[i], lens[i], s, l) { c.had_error = true; return count; }
+        i = i + 1;
+    }
+    if count < cap { starts[count] = s; lens[count] = l; return count + 1; }
+    return count;
+}
+
+fn redecl_name_in_lex(c: Compiler*, starts: u32*, lens: u32*, count: u32, s: u32, l: u32) -> bool {
+    let i: u32 = 0;
+    while i < count {
+        if redecl_name_eq(c, starts[i], lens[i], s, l) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+// Pass 1: record a statement's top-level lexically-declared names.
+fn redecl_scan_lex(c: Compiler*, stmt: AstNode*, starts: u32*, lens: u32*, count: u32, cap: u32) -> u32 {
+    if stmt == NULL { return count; }
+    let k = stmt.kind;
+    if k == NodeKind::VarDecl && (stmt.op == TokenKind::KwLet || stmt.op == TokenKind::KwConst) {
+        let i: u32 = 0;
+        while i < stmt.children_count {
+            let d = stmt.children[i];
+            if d.name_length > 0 {
+                count = redecl_add_lex(c, starts, lens, count, cap, d.name_start, d.name_length);
+            }
+            i = i + 1;
+        }
+    } else if k == NodeKind::ClassDecl && stmt.name_length > 0 {
+        count = redecl_add_lex(c, starts, lens, count, cap, stmt.name_start, stmt.name_length);
+    }
+    return count;
+}
+
+// Pass 2: flag a top-level var / function-declaration name that collides
+// with a lexically-declared name in the same StatementList.
+fn redecl_check_var(c: Compiler*, stmt: AstNode*, starts: u32*, lens: u32*, count: u32) -> void {
+    if stmt == NULL { return; }
+    let k = stmt.kind;
+    if k == NodeKind::VarDecl && stmt.op == TokenKind::KwVar {
+        let i: u32 = 0;
+        while i < stmt.children_count {
+            let d = stmt.children[i];
+            if d.name_length > 0 && redecl_name_in_lex(c, starts, lens, count, d.name_start, d.name_length) {
+                c.had_error = true;
+            }
+            i = i + 1;
+        }
+    } else if k == NodeKind::FunctionDecl && stmt.name_length > 0 {
+        if redecl_name_in_lex(c, starts, lens, count, stmt.name_start, stmt.name_length) {
+            c.had_error = true;
+        }
+    }
+}
+
+fn check_scope_redeclaration(c: Compiler*, node: AstNode*) -> void {
+    if c.had_error { return; }
+    let cap: u32 = 128;
+    let starts = alloc_n<u32>((usize)cap);
+    let lens = alloc_n<u32>((usize)cap);
+    let count: u32 = 0;
+    if node.kind == NodeKind::SwitchStmt {
+        // The whole CaseBlock (all clauses) is one lexical scope.
+        let ci: u32 = 0;
+        while ci < node.children_count {
+            let cl = node.children[ci];
+            let si: u32 = 0;
+            while si < cl.children_count {
+                count = redecl_scan_lex(c, cl.children[si], starts, lens, count, cap);
+                si = si + 1;
+            }
+            ci = ci + 1;
+        }
+        let ci2: u32 = 0;
+        while ci2 < node.children_count {
+            let cl = node.children[ci2];
+            let si: u32 = 0;
+            while si < cl.children_count {
+                redecl_check_var(c, cl.children[si], starts, lens, count);
+                si = si + 1;
+            }
+            ci2 = ci2 + 1;
+        }
+    } else {
+        let si: u32 = 0;
+        while si < node.children_count {
+            count = redecl_scan_lex(c, node.children[si], starts, lens, count, cap);
+            si = si + 1;
+        }
+        let si2: u32 = 0;
+        while si2 < node.children_count {
+            redecl_check_var(c, node.children[si2], starts, lens, count);
+            si2 = si2 + 1;
+        }
+    }
+    dealloc(starts);
+    dealloc(lens);
+}
+
 fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     if node == NULL { return; }
     let k = node.kind;
@@ -5758,6 +5878,8 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     }
 
     if k == NodeKind::BlockStmt {
+        // Early error: no duplicate lexically-declared names in this block.
+        check_scope_redeclaration(c, node);
         // Mirrors collect_locals — both passes enter+exit a scope in
         // lockstep so the ids assigned to the block agree, which is
         // what makes find_local_index filter correctly.
@@ -5970,6 +6092,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::SwitchStmt {
+        // Early error: the CaseBlock is one lexical scope — no duplicate
+        // lexically-declared names across all its clauses.
+        check_scope_redeclaration(c, node);
         // switch (disc) { ... }
         //   tmp = disc
         //   for each non-default case i: if (tmp === case_i_test) goto Li

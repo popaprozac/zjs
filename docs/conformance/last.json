@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 21:06 UTC",
+    "when": "2026-06-02 21:29 UTC",
     "total": 27491,
-    "passed": 21903,
-    "failed": 4868,
+    "passed": 21945,
+    "failed": 4826,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -17533,10 +17533,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/statements/class/syntax/early-errors/class-definition-evaluation-block-duplicate-binding.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/syntax/early-errors/class-definition-evaluation-scriptbody-duplicate-binding.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -17563,10 +17559,6 @@
     {
       "path": "test/language/statements/const/global-use-before-initialization-in-prior-statement.js",
       "reason": "[sloppy] expected runtime-phase throw of ReferenceError, no throw"
-    },
-    {
-      "path": "test/language/statements/const/redeclaration-error-from-within-strict-mode-function-const.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/const/syntax/block-scope-syntax-const-declarations-mixed-with-without-initialiser.js",
@@ -18901,10 +18893,6 @@
       "reason": "[sloppy] expected runtime-phase throw of ReferenceError, no throw"
     },
     {
-      "path": "test/language/statements/let/redeclaration-error-from-within-strict-mode-function.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/let/syntax/let-closure-inside-condition.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: i is not defined\nzjs: throw: ReferenceError: i is not defined"
     },
@@ -18993,23 +18981,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/switch/syntax/redeclaration/async-function-name-redeclaration-attempt-with-class.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/async-function-name-redeclaration-attempt-with-const.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/switch/syntax/redeclaration/async-function-name-redeclaration-attempt-with-function.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/switch/syntax/redeclaration/async-function-name-redeclaration-attempt-with-generator.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/async-function-name-redeclaration-attempt-with-let.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -19025,14 +19001,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/switch/syntax/redeclaration/async-generator-name-redeclaration-attempt-with-class.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/async-generator-name-redeclaration-attempt-with-const.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/switch/syntax/redeclaration/async-generator-name-redeclaration-attempt-with-function.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -19041,75 +19009,7 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/switch/syntax/redeclaration/async-generator-name-redeclaration-attempt-with-let.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/switch/syntax/redeclaration/async-generator-name-redeclaration-attempt-with-var.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/class-name-redeclaration-attempt-with-async-function.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/class-name-redeclaration-attempt-with-async-generator.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/class-name-redeclaration-attempt-with-class.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/class-name-redeclaration-attempt-with-const.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/class-name-redeclaration-attempt-with-function.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/class-name-redeclaration-attempt-with-generator.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/class-name-redeclaration-attempt-with-let.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/class-name-redeclaration-attempt-with-var.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/const-name-redeclaration-attempt-with-async-function.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/const-name-redeclaration-attempt-with-async-generator.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/const-name-redeclaration-attempt-with-class.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/const-name-redeclaration-attempt-with-const.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/const-name-redeclaration-attempt-with-function.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/const-name-redeclaration-attempt-with-generator.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/const-name-redeclaration-attempt-with-let.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/const-name-redeclaration-attempt-with-var.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -19121,23 +19021,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/switch/syntax/redeclaration/function-name-redeclaration-attempt-with-class.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/function-name-redeclaration-attempt-with-const.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/switch/syntax/redeclaration/function-name-redeclaration-attempt-with-function.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/switch/syntax/redeclaration/function-name-redeclaration-attempt-with-generator.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/function-name-redeclaration-attempt-with-let.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -19153,14 +19041,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/switch/syntax/redeclaration/generator-name-redeclaration-attempt-with-class.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/generator-name-redeclaration-attempt-with-const.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/switch/syntax/redeclaration/generator-name-redeclaration-attempt-with-function.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -19169,43 +19049,7 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/switch/syntax/redeclaration/generator-name-redeclaration-attempt-with-let.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/switch/syntax/redeclaration/generator-name-redeclaration-attempt-with-var.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/let-name-redeclaration-attempt-with-async-function.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/let-name-redeclaration-attempt-with-async-generator.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/let-name-redeclaration-attempt-with-class.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/let-name-redeclaration-attempt-with-const.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/let-name-redeclaration-attempt-with-function.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/let-name-redeclaration-attempt-with-generator.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/let-name-redeclaration-attempt-with-let.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/let-name-redeclaration-attempt-with-var.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -19217,23 +19061,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/switch/syntax/redeclaration/var-name-redeclaration-attempt-with-class.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/var-name-redeclaration-attempt-with-const.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/switch/syntax/redeclaration/var-name-redeclaration-attempt-with-function.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/switch/syntax/redeclaration/var-name-redeclaration-attempt-with-generator.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/switch/syntax/redeclaration/var-name-redeclaration-attempt-with-let.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
