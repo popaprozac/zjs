@@ -182,6 +182,7 @@ fn parse_program_with(source: char*, source_len: usize, is_module: bool) -> Pars
     p.is_module = is_module;
     p.in_static_block = false;
     p.static_block_depth = 0;
+    p.strict_mode = false;
 
     // Lex everything into a buffer. Start at a size proportional to
     // the source (~1 token per 4 chars covers densely-tokenized JS like
@@ -200,6 +201,17 @@ fn parse_program_with(source: char*, source_len: usize, is_module: bool) -> Pars
         tok_cap = new_cap;
     }
     p.pos = 0;
+
+    // A top-level `"use strict"` directive prologue makes the whole
+    // script strict (§11.2.2). Detect it from the token stream before
+    // parsing the body so parser-level strict early errors (reserved
+    // words as bindings / references / assignment targets) fire while the
+    // body is parsed. (Modules are implicitly strict too, but that's a
+    // separate change — handled independently to keep the blast radius
+    // measurable.)
+    if tokens_have_use_strict_prologue(p, 0) {
+        p.strict_mode = true;
+    }
 
     // Parse a sequence of expression statements terminated by `;` or EOF.
     let program = new_node(&p.tracker, NodeKind::Program, 0, (u32)source_len);
@@ -637,6 +649,47 @@ fn body_has_use_strict_directive(body: AstNode*, source: char*) -> bool {
             if matches != 0 { return true; }
         }
         i = i + 1;
+    }
+    return false;
+}
+
+// Token-level "use strict" prologue detector. Runs over the leading
+// tokens starting at `from`, BEFORE those statements are parsed, so the
+// strict flag can be set early enough to govern reserved-word / binding
+// checks while the body is parsed (the AST-level body_has_use_strict_
+// directive only helps the compiler, which runs after parsing).
+//
+// A Directive is an ExpressionStatement whose sole expression is a
+// StringLiteral. We walk the maximal leading run of such statements:
+// a StringLit terminated by `;`, or immediately followed by another
+// leading StringLit. We stop at the first token that would make the
+// string part of a larger expression — that ends the prologue. The
+// `== 12` raw match also rejects escaped forms (`"use strict"` with an
+// escape), which per spec are NOT directives.
+fn tokens_have_use_strict_prologue(p: Parser*, from: u32) -> bool {
+    let j: u32 = from;
+    while j < p.token_count {
+        let t = p.tokens[j];
+        if t.kind != TokenKind::StringLit { return false; }
+        if t.length == 12 {
+            let s = p.source + t.start;
+            let matches: int = 0;
+            raw {
+                matches = ((s[0] == '"' || s[0] == '\'')
+                           && memcmp(s + 1, "use strict", 10) == 0
+                           && s[11] == s[0]) ? 1 : 0;
+            }
+            if matches != 0 { return true; }
+        }
+        // Advance past the directive string. Only continue scanning the
+        // prologue when the string was a complete statement: a `;`
+        // terminator or immediately another string literal. Anything else
+        // (`.`, `(`, operators, templates, …) means the string is part of
+        // a bigger expression — not a directive — so the prologue ends.
+        let nxt = p.tokens[j + 1];
+        if nxt.kind == TokenKind::Semicolon { j = j + 2; continue; }
+        if nxt.kind == TokenKind::StringLit { j = j + 1; continue; }
+        return false;
     }
     return false;
 }

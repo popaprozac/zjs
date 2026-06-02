@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 21:57 UTC",
+    "when": "2026-06-02 23:39 UTC",
     "total": 27491,
-    "passed": 22009,
-    "failed": 4762,
+    "passed": 22092,
+    "failed": 4679,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -1154,7 +1154,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -11201,31 +11201,7 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-implements-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-interface-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-let-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-package-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-private-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-protected-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-public-escaped.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
@@ -11269,10 +11245,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/arrow-function/param-dflt-yield-id-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/arrow-function/scope-body-lex-distinct.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
@@ -11313,10 +11285,6 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-cover-no-arguments.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-cover-no-duplicates-binding-array-1.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -11351,14 +11319,6 @@
     {
       "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-cover-no-duplicates-binding-object-6.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-cover-no-eval.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-cover-no-yield.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/arrow-function/syntax/early-errors/asi-restriction-invalid-parenless-parameters-expression-body.js",
@@ -11481,10 +11441,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/expressions/assignment/dstr/array-elem-init-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/array-elem-iter-nrml-close-null.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -11509,14 +11465,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be"
     },
     {
-      "path": "test/language/expressions/assignment/dstr/array-elem-nested-array-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-elem-nested-obj-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/array-elem-put-const.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -11530,10 +11478,6 @@
     },
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-target-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-elem-target-yield-invalid.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
@@ -11625,14 +11569,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be"
     },
     {
-      "path": "test/language/expressions/assignment/dstr/array-rest-nested-array-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-rest-nested-obj-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/array-rest-put-const.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -11645,10 +11581,6 @@
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/expressions/assignment/dstr/array-rest-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/obj-id-identifier-yield-ident-valid.js",
       "reason": "zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
@@ -11658,10 +11590,6 @@
     },
     {
       "path": "test/language/expressions/assignment/dstr/obj-id-init-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/obj-id-init-yield-ident-invalid.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
@@ -11683,22 +11611,6 @@
     {
       "path": "test/language/expressions/assignment/dstr/obj-prop-elem-init-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/obj-prop-elem-init-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/obj-prop-elem-target-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/obj-prop-nested-array-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/obj-prop-nested-obj-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/assignment/dstr/obj-prop-put-const.js",
@@ -14437,18 +14349,6 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/function/param-duplicated-strict-1.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/function/param-duplicated-strict-2.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/function/param-duplicated-strict-3.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/function/param-duplicated-strict-body-1.js",
       "reason": "expected SyntaxError, got Test262"
     },
@@ -14463,10 +14363,6 @@
     {
       "path": "test/language/expressions/function/param-eval-strict-body.js",
       "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/function/param-eval-stricteval.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
       "path": "test/language/expressions/function/params-dflt-ref-arguments.js",
@@ -14527,10 +14423,6 @@
     {
       "path": "test/language/expressions/in/S8.12.6_A2_T2.js",
       "reason": "[sloppy] zjs: throw: (unknown): #2: var __proto={phylum:\"avis\"}; function Robin(){this.name=\"robin\"}; Robin.prototype=__proto; va"
-    },
-    {
-      "path": "test/language/expressions/in/rhs-yield-absent-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/instanceof/S11.8.6_A1.js",
@@ -14829,10 +14721,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
     },
     {
-      "path": "test/language/expressions/object/11.1.5-1gs.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/object/__proto__-duplicate.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -15005,14 +14893,6 @@
       "reason": "async: Test262Error: Expected SameValue(\u00abundefined\u00bb, \u00ab42\u00bb) to be true"
     },
     {
-      "path": "test/language/expressions/object/method-definition/async-gen-yield-identifier-spread-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/async-gen-yield-identifier-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/object/method-definition/async-gen-yield-promise-reject-next-catch.js",
       "reason": "[sloppy] async test never signaled completion"
     },
@@ -15049,16 +14929,8 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
     },
     {
-      "path": "test/language/expressions/object/method-definition/early-errors-object-method-arguments-in-formal-parameters.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/object/method-definition/early-errors-object-method-async-lineterminator.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/early-errors-object-method-eval-in-formal-parameters.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/object/method-definition/fn-name-fn.js",
@@ -15079,14 +14951,6 @@
     {
       "path": "test/language/expressions/object/method-definition/gen-yield-identifier-spread-non-strict.js",
       "reason": "zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab42\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundef"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/gen-yield-identifier-spread-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/method-definition/gen-yield-identifier-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/object/method-definition/generator-invoke-ctor.js",
@@ -15297,15 +15161,7 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/object/setter-param-arguments-strict-outside.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/object/setter-param-eval-strict-inside.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/setter-param-eval-strict-outside.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
@@ -15645,10 +15501,6 @@
       "reason": "[sloppy] async: Test262Error: function should not be resolved"
     },
     {
-      "path": "test/language/statements/async-function/early-errors-declaration-arguments-in-formal-parameters.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/async-function/early-errors-declaration-await-in-formals-default.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -15662,14 +15514,6 @@
     },
     {
       "path": "test/language/statements/async-function/early-errors-declaration-binding-identifier-eval.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/async-function/early-errors-declaration-duplicate-parameters.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/async-function/early-errors-declaration-eval-in-formal-parameters.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
@@ -17413,23 +17257,7 @@
       "reason": "[sloppy] zjs: throw: (unknown): Unexpected value: 'aa1baundefinedca3'\nzjs: throw: (unknown): Unexpected value: 'aa1baundefinedca3"
     },
     {
-      "path": "test/language/statements/for-in/dstr/array-elem-init-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/array-elem-nested-array-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/array-elem-nested-obj-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-in/dstr/array-elem-target-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/array-elem-target-yield-invalid.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
@@ -17441,43 +17269,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/for-in/dstr/array-rest-nested-array-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/array-rest-nested-obj-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/array-rest-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-in/dstr/obj-id-init-simple-strict.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/for-in/dstr/obj-id-init-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-in/dstr/obj-id-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/obj-prop-elem-init-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/obj-prop-elem-target-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/obj-prop-nested-array-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/obj-prop-nested-obj-yield-ident-invalid.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
@@ -17593,10 +17389,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/statements/for-of/dstr/array-elem-init-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/array-elem-iter-nrml-close-null.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -17621,14 +17413,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be"
     },
     {
-      "path": "test/language/statements/for-of/dstr/array-elem-nested-array-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-nested-obj-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/array-elem-put-const.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -17642,10 +17426,6 @@
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-target-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-target-yield-invalid.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
@@ -17737,14 +17517,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be"
     },
     {
-      "path": "test/language/statements/for-of/dstr/array-rest-nested-array-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-rest-nested-obj-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/array-rest-put-const.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -17755,10 +17527,6 @@
     {
       "path": "test/language/statements/for-of/dstr/array-rest-put-unresolvable-strict.js",
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-rest-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/for-of/dstr/const-ary-init-iter-get-err-array-prototype.js",
@@ -17785,10 +17553,6 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/obj-id-put-const.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -17811,22 +17575,6 @@
     {
       "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-elem-target-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-nested-array-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-nested-obj-yield-ident-invalid.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-prop-put-const.js",
@@ -18085,47 +17833,11 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/function/13.1-19-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/function/13.1-1gs.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/function/13.1-2-s.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
-      "path": "test/language/statements/function/13.1-21-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
       "path": "test/language/statements/function/13.1-22-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/function/13.1-23-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/function/13.1-25-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/function/13.1-27-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/function/13.1-29-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/function/13.1-31-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/function/13.1-33-s.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
@@ -18139,18 +17851,6 @@
     {
       "path": "test/language/statements/function/13.1-41-s.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/function/13.1-4gs.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/function/13.1-5gs.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/function/13.1-8gs.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/function/13.2-10-s.js",
@@ -18369,27 +18069,11 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/function/param-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/function/param-dflt-yield-non-strict.js",
       "reason": "zjs: throw: SyntaxError: yield outside generator body\nzjs: throw: SyntaxError: yield outside generator body"
     },
     {
       "path": "test/language/statements/function/param-dflt-yield-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/function/param-duplicated-strict-1.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/function/param-duplicated-strict-2.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/function/param-duplicated-strict-3.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {
@@ -18407,14 +18091,6 @@
     {
       "path": "test/language/statements/function/param-eval-strict-body.js",
       "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/function/param-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/function/param-eval-stricteval.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
       "path": "test/language/statements/function/params-dflt-ref-arguments.js",
@@ -18555,14 +18231,6 @@
     {
       "path": "test/language/statements/generators/yield-identifier-spread-non-strict.js",
       "reason": "zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab42\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundef"
-    },
-    {
-      "path": "test/language/statements/generators/yield-identifier-spread-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/generators/yield-identifier-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/generators/yield-newline.js",
