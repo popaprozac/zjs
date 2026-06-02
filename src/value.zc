@@ -1269,6 +1269,11 @@ struct ZjsMap {
     // Per-instance [[Prototype]] — non-NULL when constructed via
     // `class Sub extends Map {}`. NULL falls back to ctx.map_proto.
     proto:   ZjsObject*;
+    // WeakMap instances reuse the ZjsMap cell but carry [[WeakMapData]],
+    // not [[MapData]] — so the strong Map.prototype iteration methods
+    // (forEach/keys/values/entries/clear/size) must reject them. (Weak GC
+    // semantics are still a follow-up; entries are held strongly.)
+    is_weak: bool;
 }
 
 fn zjs_is_map(v: ZjsValue) -> int {
@@ -1311,6 +1316,9 @@ struct ZjsSet {
     // Per-instance [[Prototype]] — non-NULL when constructed via
     // `class Sub extends Set {}`. NULL falls back to ctx.set_proto.
     proto:   ZjsObject*;
+    // WeakSet instances carry [[WeakSetData]] — strong Set.prototype
+    // iteration methods reject them. See ZjsMap.is_weak.
+    is_weak: bool;
 }
 
 fn zjs_is_set(v: ZjsValue) -> int {

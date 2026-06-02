@@ -293,7 +293,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let kn = name.length;
         let is_size: int = 0;
         raw { is_size = (kn == 4 && memcmp(kd, "size", 4) == 0) ? 1 : 0; }
-        if is_size != 0 { return zjs_int32((i32)mm.size); }
+        if is_size != 0 && mm.is_weak == false { return zjs_int32((i32)mm.size); }
         let cur: ZjsObject* = ctx.map_proto;
         if mm.proto != NULL { cur = mm.proto; }
         while cur != NULL {
@@ -318,7 +318,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let kn = name.length;
         let is_size: int = 0;
         raw { is_size = (kn == 4 && memcmp(kd, "size", 4) == 0) ? 1 : 0; }
-        if is_size != 0 { return zjs_int32((i32)ss.size); }
+        if is_size != 0 && ss.is_weak == false { return zjs_int32((i32)ss.size); }
         let cur: ZjsObject* = ctx.set_proto;
         if ss.proto != NULL { cur = ss.proto; }
         while cur != NULL {

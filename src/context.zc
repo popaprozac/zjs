@@ -399,6 +399,8 @@ struct ZjsContext {
     // TAG_SET walks these chains.
     map_proto:          ZjsObject*;
     set_proto:          ZjsObject*;
+    weakmap_proto:      ZjsObject*;
+    weakset_proto:      ZjsObject*;
     date_proto:         ZjsObject*;
     symbol_proto:       ZjsObject*;
     url_proto:          ZjsObject*;
@@ -10680,6 +10682,21 @@ fn map_require_this(ctx: ZjsContext*) -> ZjsMap* {
     return zjs_as_map(this_v);
 }
 
+// Strong-Map brand check: the iteration surface (forEach/keys/values/
+// entries/clear/size) requires [[MapData]] — a WeakMap (is_weak) carries
+// [[WeakMapData]] and must be rejected with a TypeError.
+fn map_require_strong_this(ctx: ZjsContext*) -> ZjsMap* {
+    let m = map_require_this(ctx);
+    if m == NULL { return NULL; }
+    if m.is_weak {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Map.prototype method called on a WeakMap", 41);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return NULL;
+    }
+    return m;
+}
+
 fn host_map_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let m = zjs_map_new();
     ctx_register_cell(ctx, (void*)m);
@@ -10745,6 +10762,14 @@ fn host_map_set(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if m == NULL { return zjs_undefined(); }
     let k = if argc > 0 { args[0] } else { zjs_undefined() };
     let v = if argc > 1 { args[1] } else { zjs_undefined() };
+    // WeakMap keys must be able to be held weakly: an Object or a Symbol
+    // (ECMA-262 CanBeHeldWeakly).
+    if m.is_weak && !reflect_is_object(k) && zjs_is_symbol(k) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Invalid value used as weak map key", 34);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
     map_set_entry(m, k, v);
     return ctx.host_this;
 }
@@ -10822,7 +10847,7 @@ fn host_map_get_or_insert_computed(ctx: ZjsContext*, args: ZjsValue*, argc: u32)
 }
 
 fn host_map_clear(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let m = map_require_this(ctx);
+    let m = map_require_strong_this(ctx);
     if m == NULL { return zjs_undefined(); }
     m.count = 0;
     m.size = 0;
@@ -10830,13 +10855,13 @@ fn host_map_clear(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 }
 
 fn host_map_size_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let m = map_require_this(ctx);
+    let m = map_require_strong_this(ctx);
     if m == NULL { return zjs_undefined(); }
     return zjs_int32((i32)m.size);
 }
 
 fn host_map_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let m = map_require_this(ctx);
+    let m = map_require_strong_this(ctx);
     if m == NULL { return zjs_undefined(); }
     // ECMA-262 24.1.3.5: IsCallable(callbackfn) is checked BEFORE any
     // iteration (and regardless of map size). A non-callable (incl. a
@@ -10922,17 +10947,17 @@ fn host_map_iter_next(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
 }
 
 fn host_map_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if map_require_this(ctx) == NULL { return zjs_undefined(); }
+    if map_require_strong_this(ctx) == NULL { return zjs_undefined(); }
     return build_map_iterator(ctx, ctx.host_this, 0);
 }
 
 fn host_map_values(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if map_require_this(ctx) == NULL { return zjs_undefined(); }
+    if map_require_strong_this(ctx) == NULL { return zjs_undefined(); }
     return build_map_iterator(ctx, ctx.host_this, 1);
 }
 
 fn host_map_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if map_require_this(ctx) == NULL { return zjs_undefined(); }
+    if map_require_strong_this(ctx) == NULL { return zjs_undefined(); }
     return build_map_iterator(ctx, ctx.host_this, 2);
 }
 
@@ -10983,6 +11008,20 @@ fn set_require_this(ctx: ZjsContext*) -> ZjsSet* {
     return zjs_as_set(this_v);
 }
 
+// Strong-Set brand check — rejects WeakSet (is_weak) instances from the
+// iteration surface (forEach/values/entries/keys/clear/size).
+fn set_require_strong_this(ctx: ZjsContext*) -> ZjsSet* {
+    let s = set_require_this(ctx);
+    if s == NULL { return NULL; }
+    if s.is_weak {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Set.prototype method called on a WeakSet", 41);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return NULL;
+    }
+    return s;
+}
+
 fn host_set_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let s = zjs_set_new();
     ctx_register_cell(ctx, (void*)s);
@@ -11023,8 +11062,97 @@ fn host_set_add(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let s = set_require_this(ctx);
     if s == NULL { return zjs_undefined(); }
     let v = if argc > 0 { args[0] } else { zjs_undefined() };
+    // WeakSet values must be able to be held weakly: Object or Symbol.
+    if s.is_weak && !reflect_is_object(v) && zjs_is_symbol(v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Invalid value used in weak set", 30);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
     set_add_entry(s, v);
     return ctx.host_this;
+}
+
+// WeakMap(iterable?) — a ZjsMap branded is_weak with the WeakMap proto.
+// Reuses Map's get/set/has/delete (set rejects non-object keys via the
+// is_weak guard); the strong iteration methods aren't on weakmap_proto.
+fn host_weakmap_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let m = zjs_map_new();
+    ctx_register_cell(ctx, (void*)m);
+    m.is_weak = true;
+    let nt = subclass_proto_for(ctx, ctx.weakmap_proto);
+    m.proto = if nt != NULL { nt } else { ctx.weakmap_proto };
+    let m_v = zjs_cell_from_ptr((void*)m);
+    if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
+        let adder = property_get(ctx, m_v, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"set", 3)));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_callable(adder) == 0 {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"WeakMap: 'set' is not callable", 30);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        let iter = iter_get(ctx, args[0]);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        ctx_push_temp_root(ctx, m_v);
+        let safety: u32 = 0;
+        while safety < 100000000 {
+            let step = iter_step(ctx, iter);
+            if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if step.done { break; }
+            if !reflect_is_object(step.value) {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"WeakMap iterator value is not an object", 39);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined();
+            }
+            let k = property_get(ctx, step.value, zjs_int32(0));
+            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            let v = property_get(ctx, step.value, zjs_int32(1));
+            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            let ab: ZjsValue[2]; ab[0] = k; ab[1] = v;
+            let _ = zjs_call_value_with_this(ctx, adder, m_v, &ab[0], 2);
+            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            safety = safety + 1;
+        }
+        ctx_pop_temp_root(ctx);
+    }
+    return m_v;
+}
+
+// WeakSet(iterable?) — a ZjsSet branded is_weak with the WeakSet proto.
+fn host_weakset_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let s = zjs_set_new();
+    ctx_register_cell(ctx, (void*)s);
+    s.is_weak = true;
+    let nt = subclass_proto_for(ctx, ctx.weakset_proto);
+    s.proto = if nt != NULL { nt } else { ctx.weakset_proto };
+    let s_v = zjs_cell_from_ptr((void*)s);
+    if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
+        let adder = property_get(ctx, s_v, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"add", 3)));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_callable(adder) == 0 {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"WeakSet: 'add' is not callable", 30);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        let iter = iter_get(ctx, args[0]);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        ctx_push_temp_root(ctx, s_v);
+        let safety: u32 = 0;
+        while safety < 100000000 {
+            let step = iter_step(ctx, iter);
+            if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if step.done { break; }
+            let ab: ZjsValue[1]; ab[0] = step.value;
+            let _ = zjs_call_value_with_this(ctx, adder, s_v, &ab[0], 1);
+            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            safety = safety + 1;
+        }
+        ctx_pop_temp_root(ctx);
+    }
+    return s_v;
 }
 
 fn host_set_has(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -11049,7 +11177,7 @@ fn host_set_delete(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 }
 
 fn host_set_clear(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let s = set_require_this(ctx);
+    let s = set_require_strong_this(ctx);
     if s == NULL { return zjs_undefined(); }
     s.count = 0;
     s.size = 0;
@@ -11057,13 +11185,13 @@ fn host_set_clear(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 }
 
 fn host_set_size_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let s = set_require_this(ctx);
+    let s = set_require_strong_this(ctx);
     if s == NULL { return zjs_undefined(); }
     return zjs_int32((i32)s.size);
 }
 
 fn host_set_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let s = set_require_this(ctx);
+    let s = set_require_strong_this(ctx);
     if s == NULL { return zjs_undefined(); }
     // ECMA-262 24.2.3.6: IsCallable(callbackfn) checked before iteration.
     let cb = if argc > 0 { args[0] } else { zjs_undefined() };
@@ -11151,12 +11279,12 @@ fn host_set_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 }
 
 fn host_set_values(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if set_require_this(ctx) == NULL { return zjs_undefined(); }
+    if set_require_strong_this(ctx) == NULL { return zjs_undefined(); }
     return build_set_iterator(ctx, ctx.host_this, 1);
 }
 
 fn host_set_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if set_require_this(ctx) == NULL { return zjs_undefined(); }
+    if set_require_strong_this(ctx) == NULL { return zjs_undefined(); }
     return build_set_iterator(ctx, ctx.host_this, 2);
 }
 
@@ -25030,13 +25158,58 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // becomes unreachable) are a follow-up; until then we silently
     // hold strong refs. Re-install the global to overwrite the earlier
     // eval_ptr stub bindings.
-    let wm_v = ctx_make_host_function_arity(ctx, (char*)"WeakMap", map_ctor_ptr, 0);
-    zjs_as_host_function(wm_v).prototype = ctx.map_proto;
+    // WeakMap / WeakSet now have a distinct brand (is_weak ZjsMap/ZjsSet)
+    // and their own prototypes carrying only get/set/has/delete (WeakMap)
+    // / add/has/delete (WeakSet) + Symbol.toStringTag. The strong Map/Set
+    // iteration methods reject weak instances. (Entries are still held
+    // strongly — real weak GC is a follow-up.)
+    let wmap_ctor_ptr: void* = NULL; raw { wmap_ctor_ptr = (void*)host_weakmap_ctor; }
+    let wset_ctor_ptr: void* = NULL; raw { wset_ctor_ptr = (void*)host_weakset_ctor; }
+    let tag_atom = ctx_intern_atom(ctx, (char*)"@@toStringTag", 13);
+
+    let wm_v = ctx_make_host_function_arity(ctx, (char*)"WeakMap", wmap_ctor_ptr, 0);
+    let wmap_proto_v = ctx_new_object(ctx);
+    ctx.weakmap_proto = zjs_as_object(wmap_proto_v);
+    zjs_as_host_function(wm_v).prototype = ctx.weakmap_proto;
+    object_set(ctx, ctx.weakmap_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), wm_v);
+    let wmap_table_p: void* = NULL; let wmap_table_n: usize = 0;
+    raw {
+        static const ZjsBuiltinSpec wmap_proto_specs[] = {
+            {"get",                 3, (void*)host_map_get,                    1},
+            {"set",                 3, (void*)host_map_set,                    2},
+            {"has",                 3, (void*)host_map_has,                    1},
+            {"delete",              6, (void*)host_map_delete,                 1},
+            {"getOrInsert",        11, (void*)host_map_get_or_insert,          2},
+            {"getOrInsertComputed",19, (void*)host_map_get_or_insert_computed, 2},
+        };
+        wmap_table_p = (void*)wmap_proto_specs;
+        wmap_table_n = sizeof(wmap_proto_specs) / sizeof(wmap_proto_specs[0]);
+    }
+    zjs_install_methods(ctx, ctx.weakmap_proto, wmap_table_p, wmap_table_n);
+    object_define_property_slot(ctx, ctx.weakmap_proto, tag_atom,
+                                ctx_intern_string(ctx, (char*)"WeakMap", 7), PROP_CONFIGURABLE);
     let wm_slot = ctx_intern_global(ctx, (char*)"WeakMap", 7);
     ctx.globals[wm_slot].value = wm_v;
     ctx.globals[wm_slot].defined = true;
-    let ws_v = ctx_make_host_function_arity(ctx, (char*)"WeakSet", set_ctor_ptr, 0);
-    zjs_as_host_function(ws_v).prototype = ctx.set_proto;
+
+    let ws_v = ctx_make_host_function_arity(ctx, (char*)"WeakSet", wset_ctor_ptr, 0);
+    let wset_proto_v = ctx_new_object(ctx);
+    ctx.weakset_proto = zjs_as_object(wset_proto_v);
+    zjs_as_host_function(ws_v).prototype = ctx.weakset_proto;
+    object_set(ctx, ctx.weakset_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), ws_v);
+    let wset_table_p: void* = NULL; let wset_table_n: usize = 0;
+    raw {
+        static const ZjsBuiltinSpec wset_proto_specs[] = {
+            {"add",    3, (void*)host_set_add,    1},
+            {"has",    3, (void*)host_set_has,    1},
+            {"delete", 6, (void*)host_set_delete, 1},
+        };
+        wset_table_p = (void*)wset_proto_specs;
+        wset_table_n = sizeof(wset_proto_specs) / sizeof(wset_proto_specs[0]);
+    }
+    zjs_install_methods(ctx, ctx.weakset_proto, wset_table_p, wset_table_n);
+    object_define_property_slot(ctx, ctx.weakset_proto, tag_atom,
+                                ctx_intern_string(ctx, (char*)"WeakSet", 7), PROP_CONFIGURABLE);
     let ws_slot = ctx_intern_global(ctx, (char*)"WeakSet", 7);
     ctx.globals[ws_slot].value = ws_v;
     ctx.globals[ws_slot].defined = true;

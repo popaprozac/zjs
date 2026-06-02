@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 15:38 UTC",
+    "when": "2026-06-02 16:42 UTC",
     "total": 27491,
-    "passed": 21369,
-    "failed": 5402,
+    "passed": 21381,
+    "failed": 5390,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -4525,10 +4525,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): clear descriptor should not be enumerable\nzjs: throw: (unknown): clear descriptor should not be e"
     },
     {
-      "path": "test/built-ins/Map/prototype/clear/context-is-weakmap-object-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Map/prototype/constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): constructor descriptor should not be enumerable\nzjs: throw: (unknown): constructor descriptor sho"
     },
@@ -4545,20 +4541,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): prototype should be an own property\nzjs: throw: (unknown): prototype should be an own property"
     },
     {
-      "path": "test/built-ins/Map/prototype/entries/does-not-have-mapdata-internal-slot-weakmap.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Map/prototype/entries/entries.js",
       "reason": "[sloppy] zjs: throw: (unknown): entries descriptor should not be enumerable\nzjs: throw: (unknown): entries descriptor should not "
     },
     {
       "path": "test/built-ins/Map/prototype/forEach/callback-this-strict.js",
       "reason": "zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): Expected Sam"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/forEach/does-not-have-mapdata-internal-slot-weakmap.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Map/prototype/forEach/forEach.js",
@@ -4613,16 +4601,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): has descriptor should not be enumerable\nzjs: throw: (unknown): has descriptor should not be enume"
     },
     {
-      "path": "test/built-ins/Map/prototype/keys/does-not-have-mapdata-internal-slot-weakmap.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Map/prototype/keys/keys.js",
       "reason": "[sloppy] zjs: throw: (unknown): keys descriptor should not be enumerable\nzjs: throw: (unknown): keys descriptor should not be enu"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/set/does-not-have-mapdata-internal-slot-weakmap.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Map/prototype/set/set.js",
@@ -4651,10 +4631,6 @@
     {
       "path": "test/built-ins/Map/prototype/size/size.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
-    },
-    {
-      "path": "test/built-ins/Map/prototype/values/does-not-have-mapdata-internal-slot-weakmap.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Map/prototype/values/values.js",
@@ -10633,16 +10609,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): add descriptor should not be enumerable\nzjs: throw: (unknown): add descriptor should not be enume"
     },
     {
-      "path": "test/built-ins/Set/prototype/add/does-not-have-setdata-internal-slot-weakset.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Set/prototype/clear/clear.js",
       "reason": "[sloppy] zjs: throw: (unknown): clear descriptor should not be enumerable\nzjs: throw: (unknown): clear descriptor should not be e"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/clear/does-not-have-setdata-internal-slot-weakset.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Set/prototype/constructor/set-prototype-constructor.js",
@@ -10669,16 +10637,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Actual [getting size, ToNumber(size), getting has, getting keys, calling keys, getting next, call"
     },
     {
-      "path": "test/built-ins/Set/prototype/entries/does-not-have-setdata-internal-slot-weakset.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Set/prototype/entries/entries.js",
       "reason": "[sloppy] zjs: throw: (unknown): entries descriptor should not be enumerable\nzjs: throw: (unknown): entries descriptor should not "
-    },
-    {
-      "path": "test/built-ins/Set/prototype/forEach/does-not-have-setdata-internal-slot-weakset.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Set/prototype/forEach/forEach.js",
@@ -10791,10 +10751,6 @@
     {
       "path": "test/built-ins/Set/prototype/union/union.js",
       "reason": "[sloppy] zjs: throw: (unknown): union descriptor should not be enumerable\nzjs: throw: (unknown): union descriptor should not be e"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/values/does-not-have-setdata-internal-slot-weakset.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Set/prototype/values/values-iteration-mutable.js",
@@ -13106,11 +13062,11 @@
     },
     {
       "path": "test/built-ins/WeakMap/prototype/Symbol.toStringTag.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"WeakMap\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/WeakMap/prototype/constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction Map() { [native code] }\u00bb, \u00abfunction WeakMap() { [native code] }\u00bb) to"
+      "reason": "[sloppy] zjs: throw: (unknown): constructor descriptor should not be enumerable\nzjs: throw: (unknown): constructor descriptor sho"
     },
     {
       "path": "test/built-ins/WeakMap/prototype/delete/delete.js",
@@ -13186,7 +13142,7 @@
     },
     {
       "path": "test/built-ins/WeakMap/prototype/set/throw-if-key-cannot-be-held-weakly.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+      "reason": "[sloppy] zjs: throw: (unknown): Registered symbol not allowed as WeakMap key Expected a TypeError to be thrown but no exception w"
     },
     {
       "path": "test/built-ins/WeakMap/undefined-newtarget.js",
@@ -13214,7 +13170,7 @@
     },
     {
       "path": "test/built-ins/WeakSet/prototype/Symbol.toStringTag.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"WeakSet\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/WeakSet/prototype/add/add.js",
@@ -13226,11 +13182,7 @@
     },
     {
       "path": "test/built-ins/WeakSet/prototype/add/throw-when-value-cannot-be-held-weakly.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/WeakSet/prototype/constructor/weakset-prototype-constructor-intrinsic.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of WeakSet.prototype.constructor is \"WeakSet\" Expected SameValue(\u00abfunction Set() { [nat"
+      "reason": "[sloppy] zjs: throw: (unknown): Registered symbol not allowed as WeakSet value Expected a TypeError to be thrown but no exception"
     },
     {
       "path": "test/built-ins/WeakSet/prototype/constructor/weakset-prototype-constructor.js",
