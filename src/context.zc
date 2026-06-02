@@ -21476,6 +21476,112 @@ fn host_array_fill(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return this_val;
 }
 
+// ToIntegerOrInfinity(v) then a relative-index clamp into [0, len].
+// Negative results count from the end; ±Infinity saturate. Used by
+// copyWithin for target/start/end.
+fn copywithin_clamp(ctx: ZjsContext*, v: ZjsValue, len: i64) -> i64 {
+    let d = to_number_or_throw(ctx, v);
+    if ctx.pending_throw_active { return 0; }
+    let n: i64 = 0;
+    raw {
+        double dd = d;
+        if (isnan(dd)) dd = 0;
+        if (dd == (double)INFINITY) { n = len; }
+        else if (dd == -(double)INFINITY) { n = 0; }
+        else {
+            double t = trunc(dd);
+            if (t < 0) { t = (double)len + t; if (t < 0) t = 0; }
+            else { if (t > (double)len) t = (double)len; }
+            n = (int64_t)t;
+        }
+    }
+    return n;
+}
+
+// HasProperty (own; sufficient for array-likes) on a generic receiver,
+// reusing hasOwnProperty via a host_this swap.
+fn array_like_has_own(ctx: ZjsContext*, obj: ZjsValue, key_v: ZjsValue) -> bool {
+    let saved = ctx.host_this;
+    ctx.host_this = obj;
+    let ka: ZjsValue[1]; ka[0] = key_v;
+    let kap: ZjsValue* = NULL; raw { kap = &ka[0]; }
+    let r = host_has_own_property(ctx, kap, 1);
+    ctx.host_this = saved;
+    return zjs_to_bool_coerce(r) != 0;
+}
+
+// Array.prototype.copyWithin(target, start, end) — ECMA-262 §23.1.3.4.
+// Copies the [start, end) slice to `target` in place, handling
+// overlapping ranges (copies backwards when needed) and hole→delete.
+fn host_array_copy_within(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !require_array_coercible_this(ctx) { return zjs_undefined(); }
+    let this_val = ctx.host_this;
+    if zjs_is_object(this_val) == 0 && zjs_is_array(this_val) == 0 {
+        this_val = ctx_to_object(ctx, this_val);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
+    let len: i64 = (i64)read_length_u32(ctx, this_val);
+    let to:   i64 = if argc >= 1 { copywithin_clamp(ctx, args[0], len) } else { 0 };
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let from: i64 = if argc >= 2 { copywithin_clamp(ctx, args[1], len) } else { 0 };
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let final_i: i64 = if argc >= 3 && zjs_is_undefined(args[2]) == 0 {
+        copywithin_clamp(ctx, args[2], len)
+    } else { len };
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let count: i64 = if (final_i - from) < (len - to) { final_i - from } else { len - to };
+    if count <= 0 { return this_val; }
+    let dir: i64 = 1;
+    if from < to && to < from + count {
+        dir = -1;
+        from = from + count - 1;
+        to = to + count - 1;
+    }
+    if zjs_is_array(this_val) != 0 {
+        let arr = zjs_as_array(this_val);
+        while count > 0 {
+            let fu = (u32)from;
+            let tu = (u32)to;
+            if array_has_index(arr, fu) != 0 {
+                array_set(arr, tu, array_get(arr, fu));
+            } else {
+                array_index_delete(ctx, arr, tu);
+            }
+            from = from + dir;
+            to = to + dir;
+            count = count - 1;
+        }
+        return this_val;
+    }
+    // Generic array-like: HasProperty(from) → copy, else
+    // DeletePropertyOrThrow(to) (throws on a non-configurable target).
+    while count > 0 {
+        let fk = zjs_int32((i32)from);
+        let tk = zjs_int32((i32)to);
+        if array_like_has_own(ctx, this_val, fk) {
+            let v = property_get(ctx, this_val, fk);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            property_set(ctx, this_val, tk, v);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        } else {
+            let del_args: ZjsValue[2]; del_args[0] = this_val; del_args[1] = tk;
+            let dap: ZjsValue* = NULL; raw { dap = &del_args[0]; }
+            let ok = host_reflect_delete_property(ctx, dap, 2);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if zjs_to_bool_coerce(ok) == 0 {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"copyWithin: cannot delete target property", 41);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return zjs_undefined();
+            }
+        }
+        from = from + dir;
+        to = to + dir;
+        count = count - 1;
+    }
+    return this_val;
+}
+
 // String.raw(strings, ...subs) — tagged-template helper that joins
 // strings.raw entries with the substitutions verbatim. Spec §22.1.2.4.
 fn host_string_raw(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -26739,6 +26845,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let fill_ptr: void* = NULL; raw { fill_ptr = (void*)host_array_fill; }
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"fill", 4),
                ctx_make_host_function_arity(ctx, (char*)"fill", fill_ptr, 1));
+    let cwithin_ptr: void* = NULL; raw { cwithin_ptr = (void*)host_array_copy_within; }
+    object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"copyWithin", 10),
+               ctx_make_host_function_arity(ctx, (char*)"copyWithin", cwithin_ptr, 2));
     let join_ptr:   void* = NULL; raw { join_ptr   = (void*)host_array_join; }
     // Array.prototype.toString delegates to .join() with comma separator
     // (or Object.prototype.toString if join isn't callable, but our

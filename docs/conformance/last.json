@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 20:20 UTC",
+    "when": "2026-06-02 20:56 UTC",
     "total": 27491,
-    "passed": 21866,
-    "failed": 4905,
+    "passed": 21894,
+    "failed": 4877,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -505,136 +505,24 @@
       "reason": "[sloppy] zjs: throw: (unknown): The value of result.length is expected to be 0 Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw"
     },
     {
-      "path": "test/built-ins/Array/prototype/copyWithin/call-with-boolean.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/coerced-values-end.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/Array/prototype/copyWithin/coerced-values-start-change-start.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/coerced-values-start-change-target.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/coerced-values-start.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/coerced-values-target.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/fill-holes.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [, , , , , , , , , , , , , , , , , , , ] and expected [, , , , , , , , , , , , , , , , , ,"
     },
     {
       "path": "test/built-ins/Array/prototype/copyWithin/length-near-integer-limit.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/negative-end.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/negative-out-of-bounds-end.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/negative-out-of-bounds-start.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/negative-out-of-bounds-target.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/negative-start.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/negative-target.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/non-negative-out-of-bounds-end.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/non-negative-out-of-bounds-target-and-start.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/non-negative-target-and-start.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/non-negative-target-start-and-end.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `typeof Array.prototype.copyWithin` is `function` Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb)"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab-3\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab-3\u00bb) to "
     },
     {
       "path": "test/built-ins/Array/prototype/copyWithin/resizable-buffer.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [2, 3, 2, 3] should have the same contents. \nzjs: throw: (unknown): Actual"
     },
     {
       "path": "test/built-ins/Array/prototype/copyWithin/return-abrupt-from-delete-proxy-target.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/return-abrupt-from-end.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/return-abrupt-from-get-start-value.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Array/prototype/copyWithin/return-abrupt-from-has-start.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/return-abrupt-from-set-target-value.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/return-abrupt-from-start.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/return-abrupt-from-target.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/return-abrupt-from-this-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/return-this.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/copyWithin/undefined-end.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Array/prototype/entries/iteration-mutable.js",
