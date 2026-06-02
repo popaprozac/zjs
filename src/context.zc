@@ -2811,6 +2811,24 @@ fn mark_proto_methods_non_constructor(ctx: ZjsContext*, proto: ZjsObject*) -> vo
     }
 }
 
+// Is this host function a constructor (has [[Construct]])? zjs leaves
+// is_constructor=true by default on every host fn, which wrongly makes
+// `new parseInt()`, `new Math.max()`, static methods, and internal
+// Promise resolving functions succeed. A real built-in constructor always
+// carries a `.prototype` object — EXCEPT Proxy (spec: no .prototype) and
+// bound functions (delegate [[Construct]] to their target). So gate on
+// prototype-presence with those two exceptions, on top of is_constructor
+// (which already excludes Symbol/BigInt, marked false explicitly).
+fn host_fn_constructable(hf: ZjsHostFunction*) -> bool {
+    if !hf.is_constructor { return false; }
+    if hf.prototype != NULL { return true; }
+    let proxy_ptr: void* = NULL; raw { proxy_ptr = (void*)host_proxy_ctor; }
+    let bound_ptr: void* = NULL; raw { bound_ptr = (void*)host_function_bound_trampoline; }
+    if hf.fn_ptr == proxy_ptr { return true; }
+    if hf.fn_ptr == bound_ptr { return true; }
+    return false;
+}
+
 // Variant that lets the caller set the spec-mandated arity for the
 // host function's `.length` property. Used when registering built-ins
 // whose formal-parameter counts matter to test262 ("the length
@@ -25449,8 +25467,14 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         object_set(ctx, bproto, ctx_intern_atom(ctx, (char*)"toLocaleString", 14), bts_fn);
         big_hf.prototype = bproto;
     }
-    ctx_register_host_function(ctx, (char*)"BigInt64Array",     eval_ptr);
-    ctx_register_host_function(ctx, (char*)"BigUint64Array",    eval_ptr);
+    // BigInt64Array / BigUint64Array are placeholder stubs (not a real
+    // TypedArray impl yet) — give each a .prototype so they stay
+    // constructable under the host-fn constructability gate (which keys
+    // off .prototype presence).
+    let bi64_v = ctx_register_host_function(ctx, (char*)"BigInt64Array",  eval_ptr);
+    zjs_as_host_function(bi64_v).prototype = zjs_as_object(ctx_new_object(ctx));
+    let bu64_v = ctx_register_host_function(ctx, (char*)"BigUint64Array", eval_ptr);
+    zjs_as_host_function(bu64_v).prototype = zjs_as_object(ctx_new_object(ctx));
 
     // === WebSocket — web-API Phase E (2026-05-18). ===
     let ws_ctor_ptr:  void* = NULL; raw { ws_ctor_ptr  = (void*)host_websocket_ctor; }

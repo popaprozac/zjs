@@ -5980,7 +5980,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             if zjs_is_host_function(callee) != 0 {
                 let hf_chk = zjs_as_host_function(callee);
-                if !hf_chk.is_constructor {
+                if !host_fn_constructable(hf_chk) {
                     let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                                 (char*)"function is not a constructor", 29);
                     throwing = true; thrown = err; exit_reason = 3; break;
@@ -6830,7 +6830,7 @@ fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc
     if zjs_is_function(callee) != 0 || zjs_is_closure(callee) != 0 { constructable = true; }
     else if zjs_is_host_function(callee) != 0 {
         let hf_c = zjs_as_host_function(callee);
-        constructable = hf_c.is_constructor;
+        constructable = host_fn_constructable(hf_c);
     }
     if !constructable {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
