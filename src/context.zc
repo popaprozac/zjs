@@ -4189,6 +4189,14 @@ fn descriptor_has_own(desc: ZjsValue, name: ZjsString*) -> bool {
         bag = zjs_as_host_function(desc).props;
     } else if zjs_is_regexp(desc) != 0 {
         bag = zjs_as_regexp(desc).props;
+    } else if zjs_is_closure(desc) != 0 {
+        bag = zjs_as_closure(desc).props;
+    } else if zjs_is_date(desc) != 0 {
+        bag = zjs_as_date(desc).props;
+    } else if zjs_is_map(desc) != 0 {
+        bag = zjs_as_map(desc).props;
+    } else if zjs_is_set(desc) != 0 {
+        bag = zjs_as_set(desc).props;
     } else {
         return false;
     }
@@ -4291,12 +4299,17 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     // mutation (the array migration below) so a bad descriptor has no
     // observable side effect.
     let desc_v = if argc >= 3 { args[2] } else { zjs_undefined() };
-    let desc_objlike: bool =
-           zjs_is_object(desc_v) != 0
-        || zjs_is_array(desc_v) != 0
-        || zjs_is_function(desc_v) != 0
-        || zjs_is_host_function(desc_v) != 0
-        || zjs_is_regexp(desc_v) != 0;
+    // ToPropertyDescriptor accepts ANY Object as the descriptor — Date,
+    // Map, Set, a closure, etc., not just plain objects. Reject only the
+    // primitives (undefined/null/bool/number/string/symbol/bigint).
+    let desc_objlike: bool = !(zjs_is_undefined(desc_v) != 0
+        || zjs_is_null(desc_v) != 0
+        || zjs_is_bool(desc_v) != 0
+        || zjs_is_int32(desc_v) != 0
+        || zjs_is_double(desc_v) != 0
+        || zjs_is_string(desc_v) != 0
+        || zjs_is_symbol(desc_v) != 0
+        || zjs_is_bigint(desc_v) != 0);
     if !desc_objlike {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                     (char*)"Property description must be an object", 38);

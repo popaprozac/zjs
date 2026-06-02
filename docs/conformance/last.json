@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 07:25 UTC",
+    "when": "2026-06-02 07:38 UTC",
     "total": 27491,
-    "passed": 21291,
-    "failed": 5480,
+    "passed": 21297,
+    "failed": 5474,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -426,7 +426,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_strict-arguments.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [1, 2, 3, , true, undefined] and expected [1, 2, 3, undefined, undefined, undefined] shoul"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/concat/S15.4.4.4_A2_T1.js",
@@ -1322,7 +1322,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -6130,11 +6130,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-145-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-145.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
+      "reason": "[sloppy] zjs: throw: (unknown): obj.property Expected SameValue(\u00abundefined\u00bb, \u00ab\"Date\"\u00bb) to be true\nzjs: throw: (unknown): obj.prop"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-146-1.js",
@@ -6154,11 +6150,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-171-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-171.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
+      "reason": "[sloppy] zjs: throw: (unknown): property descriptor should be writable\nzjs: throw: (unknown): property descriptor should be writa"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-172-1.js",
@@ -6182,11 +6174,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-224-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-224.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
+      "reason": "[sloppy] zjs: throw: (unknown): obj.property Expected SameValue(\u00abundefined\u00bb, \u00ab\"dateGetProperty\"\u00bb) to be true\nzjs: throw: (unknown"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-225-1.js",
@@ -6206,11 +6194,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-254-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-254.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
+      "reason": "[sloppy] zjs: throw: (unknown): data Expected SameValue(\u00ab\"data\"\u00bb, \u00ab\"overrideData\"\u00bb) to be true\nzjs: throw: (unknown): data Expect"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-255-1.js",
@@ -6230,11 +6214,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-39-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-39.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
+      "reason": "[sloppy] zjs: throw: (unknown): accessed !== true\nzjs: throw: (unknown): accessed !== true"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-4.js",
@@ -6258,11 +6238,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-92-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-92.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
+      "reason": "[sloppy] zjs: throw: (unknown): afterDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): afterDeleted E"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-93-1.js",
