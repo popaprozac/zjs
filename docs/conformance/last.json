@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 18:54 UTC",
+    "when": "2026-06-02 19:09 UTC",
     "total": 27491,
-    "passed": 21485,
-    "failed": 5286,
+    "passed": 21571,
+    "failed": 5200,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -4725,156 +4725,28 @@
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Number) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw:"
     },
     {
-      "path": "test/built-ins/Number/isFinite/arg-is-not-number.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isFinite/finite-numbers.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isFinite/infinity.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isFinite/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Number/isFinite/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Number/isFinite/nan.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isFinite/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
       "path": "test/built-ins/Number/isFinite/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isFinite should be an own property\nzjs: throw: (unknown): isFinite should be an own property"
-    },
-    {
-      "path": "test/built-ins/Number/isInteger/arg-is-not-number.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isInteger/infinity.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isInteger/integers.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isInteger/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Number/isInteger/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Number/isInteger/nan.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isInteger/non-integers.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isInteger/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
+      "reason": "[sloppy] zjs: throw: (unknown): isFinite descriptor should not be enumerable\nzjs: throw: (unknown): isFinite descriptor should no"
     },
     {
       "path": "test/built-ins/Number/isInteger/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isInteger should be an own property\nzjs: throw: (unknown): isInteger should be an own property"
-    },
-    {
-      "path": "test/built-ins/Number/isNaN/arg-is-not-number.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isNaN/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Number/isNaN/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Number/isNaN/nan.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isNaN/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/Number/isNaN/not-nan.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): isInteger descriptor should not be enumerable\nzjs: throw: (unknown): isInteger descriptor should "
     },
     {
       "path": "test/built-ins/Number/isNaN/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isNaN should be an own property\nzjs: throw: (unknown): isNaN should be an own property"
-    },
-    {
-      "path": "test/built-ins/Number/isSafeInteger/arg-is-not-number.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isSafeInteger/infinity.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isSafeInteger/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Number/isSafeInteger/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Number/isSafeInteger/nan.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isSafeInteger/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/Number/isSafeInteger/not-integer.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/isSafeInteger/not-safe-integer.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): isNaN descriptor should not be enumerable\nzjs: throw: (unknown): isNaN descriptor should not be e"
     },
     {
       "path": "test/built-ins/Number/isSafeInteger/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isSafeInteger should be an own property\nzjs: throw: (unknown): isSafeInteger should be an own pro"
-    },
-    {
-      "path": "test/built-ins/Number/isSafeInteger/safe-integers.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Number/parseFloat/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
+      "reason": "[sloppy] zjs: throw: (unknown): isSafeInteger descriptor should not be enumerable\nzjs: throw: (unknown): isSafeInteger descriptor"
     },
     {
       "path": "test/built-ins/Number/parseFloat.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00abfunction parseFloat() { [native code] }\u00bb) to be true\nzjs: throw:"
-    },
-    {
-      "path": "test/built-ins/Number/parseInt/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
+      "reason": "[sloppy] zjs: throw: (unknown): parseFloat descriptor should not be enumerable\nzjs: throw: (unknown): parseFloat descriptor shoul"
     },
     {
       "path": "test/built-ins/Number/parseInt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00abfunction parseInt() { [native code] }\u00bb) to be true\nzjs: throw: ("
+      "reason": "[sloppy] zjs: throw: (unknown): parseInt descriptor should not be enumerable\nzjs: throw: (unknown): parseInt descriptor should no"
     },
     {
       "path": "test/built-ins/Number/prop-desc.js",
@@ -7666,239 +7538,23 @@
     },
     {
       "path": "test/built-ins/Object/hasOwn/descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): hasOwn should be an own property\nzjs: throw: (unknown): hasOwn should be an own property"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_exists.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_getter.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_getter_and_setter.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_getter_and_setter_configurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_getter_and_setter_configurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_getter_and_setter_nonconfigurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_getter_and_setter_nonconfigurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_getter_configurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_getter_configurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_getter_nonconfigurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_getter_nonconfigurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_nonwritable_configurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_nonwritable_configurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_nonwritable_nonconfigurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_nonwritable_nonconfigurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_setter.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_setter_configurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_setter_configurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_setter_nonconfigurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_setter_nonconfigurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_writable_configurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_writable_configurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_writable_nonconfigurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_inherited_writable_nonconfigurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_nonexistent.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_getter.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_getter_and_setter.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_getter_and_setter_configurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_getter_and_setter_configurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_getter_and_setter_nonconfigurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_getter_and_setter_nonconfigurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_getter_configurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_getter_configurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_getter_nonconfigurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_getter_nonconfigurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_nonwritable_configurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_nonwritable_nonconfigurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_nonwriteable_configurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_nonwriteable_nonconfigurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_property_exists.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_setter.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_setter_configurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_setter_configurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_setter_nonconfigurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_setter_nonconfigurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_writable_configurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_writable_configurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_writable_nonconfigurable_enumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/hasown_own_writable_nonconfigurable_nonenumerable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/Object/hasOwn/prototype.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
+      "reason": "[sloppy] zjs: throw: (unknown): hasOwn descriptor should not be enumerable\nzjs: throw: (unknown): hasOwn descriptor should not be"
     },
     {
       "path": "test/built-ins/Object/hasOwn/symbol_own_property.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Object/hasOwn/symbol_property_toPrimitive.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Returns true if symbol own property found Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: thr"
     },
     {
       "path": "test/built-ins/Object/hasOwn/symbol_property_toString.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Object/hasOwn/symbol_property_valueOf.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Object/is/object-is.js",

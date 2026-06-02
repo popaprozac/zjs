@@ -21298,6 +21298,74 @@ fn host_is_finite(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_bool(is_fin);
 }
 
+// Number.isNaN / isFinite / isInteger / isSafeInteger — predicate
+// statics on the Number constructor. Unlike the global isNaN/isFinite,
+// these do NOT coerce: a non-Number argument always returns false
+// (ECMA-262 §21.1.2.2-.5).
+fn host_number_is_nan(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_bool(0); }
+    let v = args[0];
+    if zjs_is_number(v) == 0 { return zjs_bool(0); }
+    let d = zjs_to_double(v);
+    let r: int = 0;
+    raw { r = isnan(d) ? 1 : 0; }
+    return zjs_bool(r);
+}
+
+fn host_number_is_finite(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_bool(0); }
+    let v = args[0];
+    if zjs_is_number(v) == 0 { return zjs_bool(0); }
+    if zjs_is_int32(v) != 0 { return zjs_bool(1); }
+    let d = zjs_to_double(v);
+    let r: int = 0;
+    raw { r = isfinite(d) ? 1 : 0; }
+    return zjs_bool(r);
+}
+
+fn host_number_is_integer(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_bool(0); }
+    let v = args[0];
+    if zjs_is_number(v) == 0 { return zjs_bool(0); }
+    if zjs_is_int32(v) != 0 { return zjs_bool(1); }
+    let d = zjs_to_double(v);
+    let r: int = 0;
+    raw { r = (isfinite(d) && floor(d) == d) ? 1 : 0; }
+    return zjs_bool(r);
+}
+
+fn host_number_is_safe_integer(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return zjs_bool(0); }
+    let v = args[0];
+    if zjs_is_number(v) == 0 { return zjs_bool(0); }
+    if zjs_is_int32(v) != 0 { return zjs_bool(1); }
+    let d = zjs_to_double(v);
+    let r: int = 0;
+    raw { r = (isfinite(d) && floor(d) == d && fabs(d) <= 9007199254740991.0) ? 1 : 0; }
+    return zjs_bool(r);
+}
+
+// Object.hasOwn(O, P) — static form of Object.prototype.hasOwnProperty
+// (ECMA-262 §20.1.2.13). ToObject(O), then HasOwnProperty(obj,
+// ToPropertyKey(P)). Delegates to the existing hasOwnProperty impl by
+// swapping ctx.host_this so the property-shape handling stays in one place.
+fn host_object_has_own(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let o = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_undefined(o) != 0 || zjs_is_null(o) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Cannot convert undefined or null to object", 42);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let key: ZjsValue[1];
+    key[0] = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let saved = ctx.host_this;
+    ctx.host_this = o;
+    let r = host_has_own_property(ctx, &key[0], 1);
+    ctx.host_this = saved;
+    return r;
+}
+
 fn host_parse_float(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 {
         let nan: f64 = 0.0;
@@ -24570,8 +24638,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let pint_ptr:    void* = NULL; raw { pint_ptr    = (void*)host_parse_int; }
     ctx_register_host_function(ctx, (char*)"isNaN",      isnan_ptr);
     ctx_register_host_function(ctx, (char*)"isFinite",   isfin_ptr);
-    ctx_register_host_function(ctx, (char*)"parseFloat", pflt_ptr);
-    ctx_register_host_function(ctx, (char*)"parseInt",   pint_ptr);
+    let g_pflt_v = ctx_register_host_function(ctx, (char*)"parseFloat", pflt_ptr);
+    let g_pint_v = ctx_register_host_function(ctx, (char*)"parseInt",   pint_ptr);
+    // ctx_register_host_function defaults arity to 0; spec mandates
+    // parseInt.length === 2 and parseFloat.length === 1.
+    zjs_as_host_function(g_pflt_v).arity = 1;
+    zjs_as_host_function(g_pint_v).arity = 2;
 
     // --- Array constructor + Array.isArray (Phase 3.8c) ---
     let arr_ctor_ptr: void* = NULL; raw { arr_ctor_ptr = (void*)host_array_ctor; }
@@ -24668,6 +24740,32 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                zjs_double(9007199254740991.0));
     object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"MIN_SAFE_INTEGER",  16),
                zjs_double(-9007199254740991.0));
+    // Number.isNaN / isFinite / isInteger / isSafeInteger (non-coercing
+    // predicates) + Number.parseInt / parseFloat (aliases of the globals).
+    let nisnan_ptr:  void* = NULL; raw { nisnan_ptr  = (void*)host_number_is_nan; }
+    let nisfin_ptr:  void* = NULL; raw { nisfin_ptr  = (void*)host_number_is_finite; }
+    let nisint_ptr:  void* = NULL; raw { nisint_ptr  = (void*)host_number_is_integer; }
+    let nissafe_ptr: void* = NULL; raw { nissafe_ptr = (void*)host_number_is_safe_integer; }
+    object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"isNaN", 5),
+               ctx_make_host_function_arity(ctx, (char*)"isNaN", nisnan_ptr, 1));
+    object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"isFinite", 8),
+               ctx_make_host_function_arity(ctx, (char*)"isFinite", nisfin_ptr, 1));
+    object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"isInteger", 9),
+               ctx_make_host_function_arity(ctx, (char*)"isInteger", nisint_ptr, 1));
+    object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"isSafeInteger", 13),
+               ctx_make_host_function_arity(ctx, (char*)"isSafeInteger", nissafe_ptr, 1));
+    // Number.parseFloat / parseInt are the SAME function objects as the
+    // globals (ECMA-262 §21.1.2.12-.13) — reuse, don't re-create.
+    let gpf_slot = ctx_find_global(ctx, (char*)"parseFloat", 10);
+    if gpf_slot >= 0 {
+        object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"parseFloat", 10),
+                   ctx.globals[gpf_slot].value);
+    }
+    let gpi_slot = ctx_find_global(ctx, (char*)"parseInt", 8);
+    if gpi_slot >= 0 {
+        object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"parseInt", 8),
+                   ctx.globals[gpi_slot].value);
+    }
     // String.prototype (existing one — keep its methods, add valueOf/toString)
     if strv_hf.prototype == NULL {
         let sp = ctx_new_object(ctx);
@@ -25845,6 +25943,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"entries", oents_ptr, 1));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"fromEntries", 11),
                ctx_make_host_function_arity(ctx, (char*)"fromEntries", ofe_ptr, 1));
+    // Object.hasOwn(O, P) — ES2022 static form of hasOwnProperty.
+    let ohasown_ptr: void* = NULL; raw { ohasown_ptr = (void*)host_object_has_own; }
+    object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"hasOwn", 6),
+               ctx_make_host_function_arity(ctx, (char*)"hasOwn", ohasown_ptr, 2));
     // Phase 3.9a — Object.defineProperty / defineProperties /
     // getOwnPropertyDescriptor.
     let dp_ptr:   void* = NULL; raw { dp_ptr   = (void*)host_object_define_property; }
