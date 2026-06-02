@@ -4204,6 +4204,77 @@ fn descriptor_has_own(desc: ZjsValue, name: ZjsString*) -> bool {
     return false;
 }
 
+// ToNumber for an array-length value. Objects (e.g. `new Number(6)`)
+// route through ToPrimitive(number) so valueOf fires; primitives coerce
+// directly. May arm a pending throw (Symbol → TypeError) — callers check.
+fn array_len_to_f64(ctx: ZjsContext*, v: ZjsValue) -> f64 {
+    let is_obj = zjs_is_object(v) != 0 || zjs_is_array(v) != 0
+              || zjs_is_function(v) != 0 || zjs_is_closure(v) != 0
+              || zjs_is_host_function(v) != 0 || zjs_is_date(v) != 0
+              || zjs_is_regexp(v) != 0;
+    let p = if is_obj { zjs_to_primitive(ctx, v, false) } else { v };
+    return zjs_to_double(p);
+}
+
+// Delete an array integer index, honoring per-element attrs (#343): a
+// props-backed index is cleared in the bag; a dense element becomes a
+// hole. Used by Array.prototype methods that must [[Delete]] a slot.
+fn array_index_delete(ctx: ZjsContext*, arr: ZjsArray*, i: u32) -> void {
+    if arr.props != NULL {
+        let buf: char[16];
+        let blen: int = 0;
+        raw { blen = snprintf(&buf[0], 16, "%u", (unsigned)i); }
+        let bp: char* = NULL; raw { bp = &buf[0]; }
+        let katom = ctx_intern_atom(ctx, bp, (u32)blen);
+        let slot = class_find_slot(arr.props.cls, katom);
+        if slot >= 0 && zjs_is_deleted(arr.props.slots[(u32)slot]) == 0 {
+            arr.props.slots[(u32)slot] = zjs_deleted();
+            return;
+        }
+    }
+    if i < arr.cap { arr.elements[i] = zjs_deleted(); }
+}
+
+// ECMA-262 §10.4.2.4 ArraySetLength core: set arr.length to new_len,
+// truncating when shrinking. Dense slots in [new_len, old) become holes
+// (cap-guarded — length may exceed cap for sparse arrays). A
+// defineProperty'd index >= new_len in arr.props is deleted if
+// configurable; a non-configurable one blocks the shrink — length is set
+// to just past the highest such index and the function returns false
+// (the caller turns that into a TypeError for defineProperty, or a
+// write-rejection for `arr.length = n`). Returns true on full success.
+fn array_set_length(ctx: ZjsContext*, arr: ZjsArray*, new_len: u32) -> bool {
+    let old_len = arr.length;
+    if new_len >= old_len { arr.length = new_len; return true; }
+    let block: i64 = -1;
+    if arr.props != NULL {
+        let cls = arr.props.cls;
+        let pc = arr.props.cls.prop_count;
+        while cls != NULL && cls.parent != NULL {
+            let nm = cls.transition_name;
+            let slot = cls.transition_slot;
+            if slot < pc && zjs_is_deleted(arr.props.slots[slot]) == 0 {
+                let pidx = zjs_to_array_index(zjs_cell_from_ptr((void*)nm));
+                if pidx >= 0 && (u32)pidx >= new_len {
+                    let pa = object_get_attrs(arr.props, slot);
+                    if (pa & PROP_CONFIGURABLE) == 0 {
+                        if (i64)pidx > block { block = (i64)pidx; }
+                    } else {
+                        arr.props.slots[slot] = zjs_deleted();
+                    }
+                }
+            }
+            cls = cls.parent;
+        }
+    }
+    let eff_new = if block >= 0 { (u32)block + 1 } else { new_len };
+    let j = eff_new;
+    let hole = zjs_deleted();
+    while j < old_len && j < arr.cap { arr.elements[j] = hole; j = j + 1; }
+    arr.length = eff_new;
+    return block < 0;
+}
+
 fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let obj_v = if argc >= 1 { args[0] } else { zjs_undefined() };
     let o = resolve_define_receiver(ctx, obj_v);
@@ -4270,6 +4341,85 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
             }
             let need = ui + 1;
             if need > arr.length { arr.length = need; }
+        }
+    }
+
+    // ECMA-262 §10.4.2.4 ArraySetLength — `length` is a special data
+    // property on Array exotic objects. defineProperty(arr, "length", D)
+    // must adjust the array's length (and validate), NOT store a named
+    // "length" slot in arr.props. (#343)
+    if zjs_is_array(obj_v) != 0 {
+        let is_len: int = 0;
+        raw { is_len = (key_str->length == 6 && memcmp(key_str->data, "length", 6) == 0) ? 1 : 0; }
+        if is_len != 0 {
+            let arr = zjs_as_array(obj_v);
+            let cfg_a = ctx_intern_atom(ctx, (char*)"configurable", 12);
+            let enu_a = ctx_intern_atom(ctx, (char*)"enumerable", 10);
+            let val_a = ctx_intern_atom(ctx, (char*)"value", 5);
+            let get_a = ctx_intern_atom(ctx, (char*)"get", 3);
+            let set_a = ctx_intern_atom(ctx, (char*)"set", 3);
+            let wri_a = ctx_intern_atom(ctx, (char*)"writable", 8);
+            // length is non-configurable + non-enumerable + a data prop.
+            // A descriptor that turns any of those the wrong way, or makes
+            // it an accessor, is a redefine rejection.
+            let bad: int = 0;
+            if descriptor_has_own(desc_v, cfg_a)
+               && zjs_to_bool_coerce(property_get(ctx, desc_v, zjs_cell_from_ptr((void*)cfg_a))) != 0 { bad = 1; }
+            if descriptor_has_own(desc_v, enu_a)
+               && zjs_to_bool_coerce(property_get(ctx, desc_v, zjs_cell_from_ptr((void*)enu_a))) != 0 { bad = 1; }
+            if descriptor_has_own(desc_v, get_a) || descriptor_has_own(desc_v, set_a) { bad = 1; }
+            // Once length is non-writable, it can't be made writable again.
+            let has_wri = descriptor_has_own(desc_v, wri_a);
+            let wri_true = has_wri
+                && zjs_to_bool_coerce(property_get(ctx, desc_v, zjs_cell_from_ptr((void*)wri_a))) != 0;
+            if arr.length_non_writable && has_wri && wri_true { bad = 1; }
+            if bad != 0 {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"Cannot redefine property: length", 32);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return zjs_undefined();
+            }
+            let has_val = descriptor_has_own(desc_v, val_a);
+            // A value change is rejected when length is already
+            // non-writable (unless it leaves the value unchanged).
+            if has_val {
+                let value = property_get(ctx, desc_v, zjs_cell_from_ptr((void*)val_a));
+                let num = array_len_to_f64(ctx, value);
+                if ctx.pending_throw_active { return zjs_undefined(); }
+                let new_len: u32 = 0;
+                let valid: int = 0;
+                raw {
+                    double n = num;
+                    if (isfinite(n) && n >= 0.0 && floor(n) == n && n <= 4294967295.0) {
+                        new_len = (uint32_t)n; valid = 1;
+                    }
+                }
+                if valid == 0 {
+                    let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                                                (char*)"Invalid array length", 20);
+                    ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                    return zjs_undefined();
+                }
+                if arr.length_non_writable && new_len != arr.length {
+                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                (char*)"Cannot assign to read only property 'length'", 44);
+                    ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                    return zjs_undefined();
+                }
+                let okk = array_set_length(ctx, arr, new_len);
+                // Apply a writable:false request after the resize.
+                if has_wri && !wri_true { arr.length_non_writable = true; }
+                if !okk {
+                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                (char*)"Cannot delete non-configurable array element", 44);
+                    ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                    return zjs_undefined();
+                }
+                return obj_v;
+            }
+            // Attribute-only change: honor writable:false.
+            if has_wri && !wri_true { arr.length_non_writable = true; }
+            return obj_v;
         }
     }
 
@@ -4644,7 +4794,8 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
                 let r_v = ctx_new_object(ctx);
                 let r = zjs_as_object(r_v);
                 object_set(ctx, r, ctx_intern_atom(ctx, (char*)"value", 5), zjs_int32((i32)arr.length));
-                object_set(ctx, r, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(1));
+                object_set(ctx, r, ctx_intern_atom(ctx, (char*)"writable", 8),
+                           zjs_bool(if arr.length_non_writable { 0 } else { 1 }));
                 object_set(ctx, r, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(0));
                 object_set(ctx, r, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(0));
                 return r_v;
@@ -8052,13 +8203,16 @@ fn host_array_reverse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
         } else if has_a {
             property_set(ctx, this_val, zjs_int32((i32)hi), a);
             if ctx.pending_throw_active { return zjs_undefined(); }
-            // Drop lo by setting it deleted via Reflect.deleteProperty
-            // semantics — approximate with undefined for now.
-            property_set(ctx, this_val, zjs_int32((i32)lo), zjs_undefined());
+            // Spec: DeletePropertyOrThrow(O, lowerP) when the upper slot
+            // is absent — a real delete, not a write of undefined (which
+            // would leave the index present).
+            if zjs_is_array(this_val) != 0 { array_index_delete(ctx, zjs_as_array(this_val), lo); }
+            else { property_set(ctx, this_val, zjs_int32((i32)lo), zjs_undefined()); }
         } else if has_b {
             property_set(ctx, this_val, zjs_int32((i32)lo), b);
             if ctx.pending_throw_active { return zjs_undefined(); }
-            property_set(ctx, this_val, zjs_int32((i32)hi), zjs_undefined());
+            if zjs_is_array(this_val) != 0 { array_index_delete(ctx, zjs_as_array(this_val), hi); }
+            else { property_set(ctx, this_val, zjs_int32((i32)hi), zjs_undefined()); }
         }
         i = i + 1;
     }
@@ -19239,6 +19393,7 @@ fn host_object_freeze(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
         let a = zjs_as_array(v);
         a.frozen = true;
         a.non_extensible = true;
+        a.length_non_writable = true;
         if a.props != NULL {
             object_clear_attr_bits(a.props, ~(PROP_WRITABLE | PROP_CONFIGURABLE));
             a.props.frozen = true;

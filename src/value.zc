@@ -996,6 +996,13 @@ struct ZjsArray {
     // and named-prop additions to `arr.props`. Existing in-range
     // writable slots remain mutable unless `frozen` is also set.
     non_extensible: bool;
+    // `length` property's [[Writable]] flag. ECMA-262 makes Array
+    // `length` writable by default; defineProperty(arr,"length",
+    // {writable:false}) and Object.freeze clear it. When set, `arr.length
+    // = n` is rejected and ArraySetLength via defineProperty throws when
+    // it would change the value. Tracked here since `length` is not a
+    // real slot. (#343)
+    length_non_writable: bool;
 }
 
 // Host (C) function exposed to JavaScript code. The fn_ptr is opaque

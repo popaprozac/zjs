@@ -1574,10 +1574,9 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         let idx = zjs_to_array_index(key);
         if idx >= 0 { array_index_store(ctx, arr, (u32)idx, value); return; }
         // `arr.length = n` truncates / extends the array. ECMA-262
-        // §22.1.4.1: assigning a non-integer or non-finite value throws
-        // RangeError; we coerce-to-int and silently accept for MVP. The
-        // important behavioral piece is that subsequent reads of length
-        // and indexed slots reflect the new length.
+        // §10.4.2.4 ArraySetLength: a value whose ToUint32 differs from
+        // its ToNumber throws RangeError; a non-writable length is a
+        // [[Set]] rejection (write_rejected → strict TypeError).
         if zjs_is_string(key) != 0 {
             let ks = zjs_as_string(key);
             let is_length: int = 0;
@@ -1585,29 +1584,33 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
             let klen  = ks.length;
             raw { is_length = (klen == 6 && memcmp(kdata, "length", 6) == 0) ? 1 : 0; }
             if is_length != 0 {
+                let num = array_len_to_f64(ctx, value);
+                if ctx.pending_throw_active { return; }
                 let new_len: u32 = 0;
-                if zjs_is_int32(value) != 0 {
-                    let n = zjs_as_int32(value);
-                    if n >= 0 { new_len = (u32)n; }
-                } else if zjs_is_double(value) != 0 {
-                    let d = zjs_as_double(value);
-                    let ok: int = 0;
-                    raw { ok = (isfinite(d) && d >= 0.0) ? 1 : 0; }
-                    if ok != 0 { new_len = (u32)d; }
-                }
-                // Truncation: mark the dropped slots as holes so a
-                // later length extension reveals them as absent, not
-                // as undefined values.
-                let old_len = arr.length;
-                if new_len < old_len {
-                    let i: u32 = new_len;
-                    let hole = zjs_deleted();
-                    while i < old_len {
-                        arr.elements[i] = hole;
-                        i = i + 1;
+                let valid: int = 0;
+                raw {
+                    double n = num;
+                    if (isfinite(n) && n >= 0.0 && floor(n) == n && n <= 4294967295.0) {
+                        new_len = (uint32_t)n; valid = 1;
                     }
                 }
-                arr.length = new_len;
+                if valid == 0 {
+                    let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                                                (char*)"Invalid array length", 20);
+                    ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                    return;
+                }
+                // Non-writable length (defineProperty / Object.freeze) —
+                // reject the assignment.
+                if arr.length_non_writable || arr.frozen {
+                    ctx.write_rejected = true;
+                    return;
+                }
+                // ArraySetLength: cap-guarded truncation + prune exotic
+                // props indices. A non-configurable index blocks the
+                // shrink (partial apply + rejection).
+                let okk = array_set_length(ctx, arr, new_len);
+                if !okk { ctx.write_rejected = true; }
                 return;
             }
         }
