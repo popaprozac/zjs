@@ -3306,6 +3306,27 @@ fn interpret_inner_full(ctx: ZjsContext*,
             //
             //   Non-Promise value: pass through (nothing to unwrap).
             let v = regs[inst.b];
+            // Spec §27.6.3 Await is `PromiseResolve(%Promise%, v)` for
+            // EVERY value: even `await <primitive>` must suspend and resume
+            // in a microtask (so code after it runs after already-queued
+            // microtasks, not synchronously). In an async FUNCTION, wrap a
+            // non-promise operand in a freshly-resolved promise — which also
+            // adopts thenables — so the promise-suspend path below handles
+            // it uniformly. Async GENERATORS keep the legacy synchronous
+            // passthrough (a spec-exact AsyncGeneratorAwait is its own
+            // workstream — see project_await_microtask_roundtrip).
+            if zjs_is_promise(v) == 0 {
+                let fo_a = ctx.frames[cur_idx].outer_promise;
+                let is_afn_a: bool = zjs_is_promise(fo_a) != 0;
+                let is_agen_a: bool = ctx.frames[cur_idx].generator != NULL && f.is_async;
+                if is_afn_a && !is_agen_a {
+                    let np = zjs_promise_new();
+                    ctx_register_cell(ctx, (void*)np);
+                    let np_v = zjs_cell_from_ptr((void*)np);
+                    promise_resolve_with(ctx, np_v, v);
+                    v = np_v;
+                }
+            }
             if zjs_is_promise(v) != 0 {
                 let p = zjs_as_promise(v);
                 let frame_outer = ctx.frames[cur_idx].outer_promise;
