@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 15:01 UTC",
+    "when": "2026-06-02 15:38 UTC",
     "total": 27491,
-    "passed": 21354,
-    "failed": 5417,
+    "passed": 21369,
+    "failed": 5402,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -381,10 +381,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): return [].concat(args, args) throws a Test262Error exception Expected a Test262Error to be thrown"
     },
     {
-      "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_sloppy-arguments.js",
-      "reason": "[strict] zjs: throw: (unknown): Actual [1, 2, 3, , 4.263411951294254e+180, 1.9551582626742875e+243] and expected [1, 2, 3, undefi"
-    },
-    {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_small-typed-array.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [1] and expected [1] should have the same contents. \nzjs: throw: (unknown): Actual [1] and"
     },
@@ -415,10 +411,6 @@
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-string-wrapper.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [y, u, c, k, \ufffd\ufffd\ufffd, \ufffd\ufffd\ufffd] and expected [yuck\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd] should have the same contents. [\"y\", \"u\","
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_strict-arguments.js",
-      "reason": "[strict] zjs: throw: (unknown): Actual [1, 2, 3, , isEncoding, undefined] and expected [1, 2, 3, undefined, undefined, undefined]"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/S15.4.4.4_A2_T1.js",
@@ -1314,7 +1306,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -4486,7 +4478,7 @@
     },
     {
       "path": "test/built-ins/Map/get-set-method-failure.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
     },
     {
       "path": "test/built-ins/Map/groupBy/string.js",
@@ -4497,16 +4489,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(Map) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (u"
     },
     {
-      "path": "test/built-ins/Map/iterable-calls-set.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `Map.prototype.set` called twice. Expected SameValue(\u00ab0\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): "
-    },
-    {
       "path": "test/built-ins/Map/iterator-close-after-set-failure.js",
-      "reason": "[sloppy] timeout"
-    },
-    {
-      "path": "test/built-ins/Map/iterator-close-failure-after-set-failure.js",
-      "reason": "[sloppy] timeout"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/built-ins/Map/iterator-item-first-entry-returns-abrupt.js",
@@ -4518,15 +4502,7 @@
     },
     {
       "path": "test/built-ins/Map/iterator-items-are-not-object-close-iterator.js",
-      "reason": "[sloppy] timeout"
-    },
-    {
-      "path": "test/built-ins/Map/iterator-items-are-not-object.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Map/map-iterable-throws-when-set-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/built-ins/Map/map.js",
@@ -10830,19 +10806,11 @@
     },
     {
       "path": "test/built-ins/Set/set-get-add-method-failure.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a MyError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expecte"
-    },
-    {
-      "path": "test/built-ins/Set/set-iterable-calls-add.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `Set.prototype.add` called twice. Expected SameValue(\u00ab0\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/built-ins/Set/set-iterable-throws-when-add-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a MyError but got a TypeError\nzjs: throw: (unknown): Expected a MyError but got a TypeEr"
     },
     {
       "path": "test/built-ins/Set/set-iterator-close-after-add-failure.js",
-      "reason": "[sloppy] timeout"
+      "reason": "[sloppy] zjs: throw: (unknown): The iterator is closed when `Set.prototype.add` throws an error. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to "
     },
     {
       "path": "test/built-ins/Set/set-undefined-newtarget.js",
@@ -13110,23 +13078,15 @@
     },
     {
       "path": "test/built-ins/WeakMap/get-set-method-failure.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
     },
     {
       "path": "test/built-ins/WeakMap/is-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(WeakMap) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw"
     },
     {
-      "path": "test/built-ins/WeakMap/iterable-with-object-keys.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Called WeakMap#set for each object Expected SameValue(\u00ab0\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown):"
-    },
-    {
-      "path": "test/built-ins/WeakMap/iterable-with-symbol-keys.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Called set() for each entry Expected SameValue(\u00ab0\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Called"
-    },
-    {
       "path": "test/built-ins/WeakMap/iterator-close-after-set-failure.js",
-      "reason": "[sloppy] timeout"
+      "reason": "[sloppy] zjs: throw: (unknown): The iterator is closed when `WeakMap.prototype.set` throws an error. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb)"
     },
     {
       "path": "test/built-ins/WeakMap/iterator-item-first-entry-returns-abrupt.js",
@@ -13138,11 +13098,7 @@
     },
     {
       "path": "test/built-ins/WeakMap/iterator-items-are-not-object-close-iterator.js",
-      "reason": "[sloppy] timeout"
-    },
-    {
-      "path": "test/built-ins/WeakMap/iterator-items-keys-cannot-be-held-weakly.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/built-ins/WeakMap/proto-from-ctor-realm.js",
@@ -13233,10 +13189,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/WeakMap/set-not-callable-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/WeakMap/undefined-newtarget.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -13245,28 +13197,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): WeakMap should be an own property\nzjs: throw: (unknown): WeakMap should be an own property"
     },
     {
-      "path": "test/built-ins/WeakSet/add-not-callable-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/WeakSet/get-add-method-failure.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
     },
     {
       "path": "test/built-ins/WeakSet/is-a-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): isConstructor(WeakSet) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw"
     },
     {
-      "path": "test/built-ins/WeakSet/iterable-with-object-values.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Called WeakSet#add for each object Expected SameValue(\u00ab0\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown):"
-    },
-    {
-      "path": "test/built-ins/WeakSet/iterable-with-symbol-values.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [Symbol(a description), Symbol(a description), Symbol(Symbol.hasInstance)]"
-    },
-    {
       "path": "test/built-ins/WeakSet/iterator-close-after-add-failure.js",
-      "reason": "[sloppy] timeout"
+      "reason": "[sloppy] zjs: throw: (unknown): The iterator is closed when `WeakSet.prototype.add` throws an error. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb)"
     },
     {
       "path": "test/built-ins/WeakSet/proto-from-ctor-realm.js",

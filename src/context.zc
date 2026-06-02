@@ -4253,7 +4253,18 @@ fn array_index_delete(ctx: ZjsContext*, arr: ZjsArray*, i: u32) -> void {
 // write-rejection for `arr.length = n`). Returns true on full success.
 fn array_set_length(ctx: ZjsContext*, arr: ZjsArray*, new_len: u32) -> bool {
     let old_len = arr.length;
-    if new_len >= old_len { arr.length = new_len; return true; }
+    if new_len >= old_len {
+        // Slots revealed by growing length must read as holes, not stale
+        // data — otherwise an array whose backing buffer holds leftover
+        // values in [old_len, cap) (e.g. an arguments object) would
+        // expose them. array_get guards idx >= cap, so only [old_len,
+        // min(new_len, cap)) needs clearing.
+        let i = old_len;
+        let hole = zjs_deleted();
+        while i < new_len && i < arr.cap { arr.elements[i] = hole; i = i + 1; }
+        arr.length = new_len;
+        return true;
+    }
     let block: i64 = -1;
     if arr.props != NULL {
         let cls = arr.props.cls;
@@ -7688,7 +7699,10 @@ fn host_array_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if zjs_is_array(this_val) != 0 {
         let arr = zjs_as_array(this_val);
         let k: u32 = 0;
-        while k < arr.length { out.elements[cursor + k] = arr.elements[k]; k = k + 1; }
+        // array_get bounds by cap and converts holes → undefined; a raw
+        // arr.elements[k] read goes OOB when length > cap (sparse array,
+        // e.g. an arguments object whose length was extended).
+        while k < arr.length { out.elements[cursor + k] = array_get(arr, k); k = k + 1; }
         cursor = cursor + arr.length;
     } else if zjs_is_object(this_val) != 0 {
         let len = read_length_u32(ctx, this_val);
@@ -7706,7 +7720,7 @@ fn host_array_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         if zjs_is_array(a) != 0 {
             let arr = zjs_as_array(a);
             let k: u32 = 0;
-            while k < arr.length { out.elements[cursor + k] = arr.elements[k]; k = k + 1; }
+            while k < arr.length { out.elements[cursor + k] = array_get(arr, k); k = k + 1; }
             cursor = cursor + arr.length;
         } else {
             out.elements[cursor] = a;
@@ -10675,6 +10689,17 @@ fn host_map_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // Optional iterable arg — each entry must itself be an iterable of
     // [key, value].
     if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
+        // ECMA-262 §24.1.1.1: adder = Get(map, "set"); if not callable,
+        // throw TypeError BEFORE iterating. Each iterated item must be an
+        // Object, and the adder is invoked (honoring a subclass override).
+        let adder = property_get(ctx, m_v, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"set", 3)));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_callable(adder) == 0 {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"Map: 'set' is not callable", 26);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
         let iter = iter_get(ctx, args[0]);
         if ctx.pending_throw_active { return zjs_undefined(); }
         ctx_push_temp_root(ctx, m_v);
@@ -10683,14 +10708,22 @@ fn host_map_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             let step = iter_step(ctx, iter);
             if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
             if step.done { break; }
-            // Pull [key, value] off step.value via property indexing.
-            // Spec requires Object coercion; we use property_get which
-            // handles arrays directly.
+            // Each entry must be an Object (spec throws + closes iterator
+            // otherwise). reflect_is_object excludes the primitives.
+            if !reflect_is_object(step.value) {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                            (char*)"Map iterator value is not an object", 35);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                iter_close(ctx, iter);
+                ctx_pop_temp_root(ctx); return zjs_undefined();
+            }
             let k = property_get(ctx, step.value, zjs_int32(0));
-            if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
             let v = property_get(ctx, step.value, zjs_int32(1));
-            if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
-            map_set_entry(m, k, v);
+            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            let ab: ZjsValue[2]; ab[0] = k; ab[1] = v;
+            let _ = zjs_call_value_with_this(ctx, adder, m_v, &ab[0], 2);
+            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
             safety = safety + 1;
         }
         ctx_pop_temp_root(ctx);
@@ -10957,6 +10990,17 @@ fn host_set_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if nt_proto_s != NULL { s.proto = nt_proto_s; }
     let s_v = zjs_cell_from_ptr((void*)s);
     if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
+        // ECMA-262 §24.2.1.1: adder = Get(set, "add"); throw TypeError if
+        // not callable BEFORE iterating; invoke the adder per element
+        // (honoring a subclass override).
+        let adder = property_get(ctx, s_v, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"add", 3)));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_callable(adder) == 0 {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"Set: 'add' is not callable", 26);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
         let iter = iter_get(ctx, args[0]);
         if ctx.pending_throw_active { return zjs_undefined(); }
         ctx_push_temp_root(ctx, s_v);
@@ -10965,7 +11009,9 @@ fn host_set_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             let step = iter_step(ctx, iter);
             if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
             if step.done { break; }
-            set_add_entry(s, step.value);
+            let ab: ZjsValue[1]; ab[0] = step.value;
+            let _ = zjs_call_value_with_this(ctx, adder, s_v, &ab[0], 1);
+            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
             safety = safety + 1;
         }
         ctx_pop_temp_root(ctx);
