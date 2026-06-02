@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 17:00 UTC",
+    "when": "2026-06-02 17:21 UTC",
     "total": 27491,
-    "passed": 21387,
-    "failed": 5384,
+    "passed": 21390,
+    "failed": 5381,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -8425,10 +8425,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(Object(\"\")) returns [object String] Expected SameValue(\u00ab\"[object O"
     },
     {
-      "path": "test/built-ins/Object/prototype/toString/get-symbol-tag-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
       "path": "test/built-ins/Object/prototype/toString/proxy-array.js",
       "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
     },
@@ -8477,24 +8473,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object test262]\"\u00bb) to be true\nzjs: throw: (unknown): E"
     },
     {
-      "path": "test/built-ins/Object/prototype/toString/symbol-tag-override-instances.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Array]\"\u00bb, \u00ab\"[object test262]\"\u00bb) to be true\nzjs: throw: (unknown): Ex"
-    },
-    {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-override-primitives.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object test262]\"\u00bb) to be true\nzjs: throw: (unknown): E"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Boolean]\"\u00bb, \u00ab\"[object test262]\"\u00bb) to be true\nzjs: throw: (unknown): "
     },
     {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-promise-builtin.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Promise]\"\u00bb) to be true\nzjs: throw: (unknown): E"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-set-builtin.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Object/prototype/toString/symbol-tag-str.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object test262]\"\u00bb) to be true\nzjs: throw: (unknown): E"
     },
     {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-string-builtin.js",

@@ -19895,6 +19895,33 @@ fn host_object_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
             }
         }
     }
+    // ECMA-262 §20.1.3.6 steps 14-16: a String-valued Symbol.toStringTag
+    // (inherited via Get) overrides the builtin tag. Applies to every
+    // Object receiver — gives `[object Promise]`, `[object WeakMap]`,
+    // `[object Generator]`, and honors a user `{ [Symbol.toStringTag]: x }`.
+    // Skipped for primitive receivers (they keep their builtin label).
+    let is_prim = zjs_is_int32(this_val) != 0 || zjs_is_double(this_val) != 0
+               || zjs_is_string(this_val) != 0 || zjs_is_bool(this_val) != 0
+               || zjs_is_symbol(this_val) != 0 || zjs_is_bigint(this_val) != 0;
+    if !is_prim {
+        let tt_atom = ctx_intern_atom(ctx, (char*)"@@toStringTag", 13);
+        let tag_v = property_get(ctx, this_val, zjs_cell_from_ptr((void*)tt_atom));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_string(tag_v) != 0 {
+            let tag_str = zjs_as_string(tag_v);
+            let prefix = (char*)"[object ";
+            let prefix_len: u32 = 8;
+            let total = prefix_len + tag_str.length + 1;
+            let buf = alloc_n<char>((usize)(total + 1));
+            mem_copy<char>(buf, prefix, (usize)prefix_len);
+            let tail: char* = NULL;
+            raw { tail = &buf[prefix_len]; }
+            mem_copy<char>(tail, tag_str.data, (usize)tag_str.length);
+            buf[prefix_len + tag_str.length] = ']';
+            buf[total] = (char)0;
+            return ctx_intern_string_take(ctx, buf, total);
+        }
+    }
     return ctx_intern_string(ctx, label, label_len);
 }
 
