@@ -4805,7 +4805,12 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
     if argc < 2 { return zjs_undefined(); }
     let obj_v = args[0];
     let key_v = args[1];
+    // ToPropertyKey: a Symbol key coerces to its canonical atom
+    // ("@@iterator" / "@@sym:N") — NOT via zjs_to_string, which throws on
+    // Symbols and then left key_v undefined → zjs_as_string crash (#segv).
+    key_v = symbol_key_coerce(key_v);
     if zjs_is_string(key_v) == 0 { key_v = zjs_to_string(ctx, key_v); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
 
     // Array fast path: numeric indices and "length".
     if zjs_is_array(obj_v) != 0 {
@@ -17654,6 +17659,13 @@ fn host_reflect_apply(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     return r;
 }
 
+// `get [Symbol.species]() { return this; }` — the default species accessor
+// shared by Promise (and applicable to other constructors). Returns the
+// receiver so subclasses inherit it.
+fn host_symbol_species_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return ctx.host_this;
+}
+
 fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // ECMA-262 §27.2.3.1 step 1: throw TypeError if NewTarget is
     // undefined — i.e. Promise(...) called without `new`.
@@ -24994,6 +25006,19 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let ptry_ptr: void* = NULL; raw { ptry_ptr = (void*)host_promise_try; }
     object_set(ctx, promise_hf.props, ctx_intern_atom(ctx, (char*)"try", 3),
                ctx_make_host_function_arity(ctx, (char*)"try", ptry_ptr, 1));
+    // Promise.prototype[Symbol.toStringTag] = "Promise" (non-enumerable,
+    // configurable) and the Promise[Symbol.species] accessor (returns
+    // `this`). @@-prefixed atoms are zjs's Symbol-key shim.
+    object_define_property_slot(ctx, promise_hf.prototype,
+        ctx_intern_atom(ctx, (char*)"@@toStringTag", 13),
+        ctx_intern_string(ctx, (char*)"Promise", 7), PROP_CONFIGURABLE);
+    let pspec_ptr: void* = NULL; raw { pspec_ptr = (void*)host_symbol_species_getter; }
+    let pspec_getter = ctx_make_host_function_arity(ctx, (char*)"get [Symbol.species]", pspec_ptr, 0);
+    let pspec_acc = zjs_accessor_new(pspec_getter, zjs_undefined());
+    ctx_register_cell(ctx, (void*)pspec_acc);
+    object_define_property_slot(ctx, promise_hf.props,
+        ctx_intern_atom(ctx, (char*)"@@species", 9),
+        zjs_cell_from_ptr((void*)pspec_acc), PROP_CONFIGURABLE);
 
     // Generator iterator prototype (2026-05-15). property_get on a
     // TAG_GENERATOR cell looks methods up here. Symbol.iterator is

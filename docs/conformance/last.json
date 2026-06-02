@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 16:42 UTC",
+    "when": "2026-06-02 17:00 UTC",
     "total": 27491,
-    "passed": 21381,
-    "failed": 5390,
+    "passed": 21387,
+    "failed": 5384,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -58,19 +58,19 @@
     },
     {
       "path": "test/built-ins/Array/Symbol.species/length.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Array/Symbol.species/return-value.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Array/Symbol.species/symbol-species-name.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Array/Symbol.species/symbol-species.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'set')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Array/from/Array.from-descriptor.js",
@@ -1306,7 +1306,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -4462,19 +4462,19 @@
     },
     {
       "path": "test/built-ins/Map/Symbol.species/length.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Map/Symbol.species/return-value.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Map/Symbol.species/symbol-species-name.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Map/Symbol.species/symbol-species.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'set')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Map/get-set-method-failure.js",
@@ -8641,24 +8641,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Sanity check failed: could not modify the global Object Expected SameValue(\u00abfunction Object() { ["
     },
     {
-      "path": "test/built-ins/Promise/Symbol.species/length.js",
-      "reason": "[sloppy] "
-    },
-    {
       "path": "test/built-ins/Promise/Symbol.species/prop-desc.js",
       "reason": "[sloppy] "
     },
     {
-      "path": "test/built-ins/Promise/Symbol.species/return-value.js",
-      "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Promise/Symbol.species/symbol-species-name.js",
-      "reason": "[sloppy] "
-    },
-    {
       "path": "test/built-ins/Promise/Symbol.species/symbol-species.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Promise[Symbol.species] is Promise Expected SameValue(\u00abundefined\u00bb, \u00abfunction Promise() { [native "
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Promise/all/call-resolve-element-after-return.js",
@@ -9062,7 +9050,7 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/Symbol.toStringTag.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Promise\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/invokes-then-with-function.js",
@@ -9150,7 +9138,7 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/then/ctor-throws.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/deferred-is-resolved-value.js",
@@ -10325,10 +10313,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Reflect/defineProperty/define-symbol-properties.js",
-      "reason": "[sloppy] "
-    },
-    {
       "path": "test/built-ins/Reflect/defineProperty/defineProperty.js",
       "reason": "[sloppy] zjs: throw: (unknown): defineProperty descriptor should not be enumerable\nzjs: throw: (unknown): defineProperty descript"
     },
@@ -10393,16 +10377,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/return-abrupt-from-property-key.js",
-      "reason": "[sloppy] "
-    },
-    {
       "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/return-abrupt-from-result.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/Reflect/getOwnPropertyDescriptor/symbol-property.js",
-      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Reflect/getPrototypeOf/getPrototypeOf.js",
@@ -10570,19 +10546,19 @@
     },
     {
       "path": "test/built-ins/Set/Symbol.species/length.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Set/Symbol.species/return-value.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Set/Symbol.species/symbol-species-name.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Set/Symbol.species/symbol-species.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'set')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Set/is-a-constructor.js",
@@ -12986,7 +12962,7 @@
     },
     {
       "path": "test/built-ins/Symbol/species/builtin-getter-name.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'get')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Symbol/species/cross-realm.js",
@@ -18230,11 +18206,11 @@
     },
     {
       "path": "test/language/statements/class/definition/fn-name-accessor-get.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/language/statements/class/definition/fn-name-accessor-set.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/language/statements/class/definition/fn-name-gen-method.js",
