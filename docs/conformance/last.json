@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 23:48 UTC",
+    "when": "2026-06-02 23:59 UTC",
     "total": 27491,
-    "passed": 22095,
-    "failed": 4676,
+    "passed": 22114,
+    "failed": 4657,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -11473,10 +11473,6 @@
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/expressions/assignment/dstr/array-elem-target-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-elision-iter-nrml-close-null.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -11585,10 +11581,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/expressions/assignment/dstr/obj-id-init-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/obj-id-put-const.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -11599,10 +11591,6 @@
     {
       "path": "test/language/expressions/assignment/dstr/obj-id-put-unresolvable-strict.js",
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/obj-id-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/assignment/dstr/obj-prop-elem-init-let.js",
@@ -11671,46 +11659,6 @@
     {
       "path": "test/language/expressions/assignment/dstr/obj-rest-str-val.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"f\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abunde"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/syntax-error-ident-ref-debugger-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/syntax-error-ident-ref-enum-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/syntax-error-ident-ref-implements-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/syntax-error-ident-ref-interface-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/syntax-error-ident-ref-package-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/syntax-error-ident-ref-private-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/syntax-error-ident-ref-protected-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/syntax-error-ident-ref-public-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/syntax-error-ident-ref-static-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/syntax-error-ident-ref-with-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/assignment/fn-name-arrow.js",
@@ -17245,24 +17193,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Unexpected value: 'aa1baundefinedca3'\nzjs: throw: (unknown): Unexpected value: 'aa1baundefinedca3"
     },
     {
-      "path": "test/language/statements/for-in/dstr/array-elem-target-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-in/dstr/array-rest-before-elision.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/for-in/dstr/array-rest-elision-invalid.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/obj-id-init-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/obj-id-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/for-in/dstr/obj-rest-not-last-element-invalid.js",
@@ -17413,10 +17349,6 @@
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/statements/for-of/dstr/array-elem-target-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-elision-iter-nrml-close-null.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -17537,10 +17469,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/statements/for-of/dstr/obj-id-init-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/obj-id-put-const.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -17551,10 +17479,6 @@
     {
       "path": "test/language/statements/for-of/dstr/obj-id-put-unresolvable-strict.js",
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-simple-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-in.js",
