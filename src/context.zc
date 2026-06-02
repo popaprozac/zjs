@@ -4622,6 +4622,36 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
             object_set(ctx, r, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(1));
             return r_v;
         }
+        // Named (non-index) own property — arrays store these in arr.props,
+        // same as plain objects. defineProperty / getOwnPropertyNames already
+        // route through it; mirror that here so the descriptor is visible.
+        if arr.props != NULL {
+            let o2 = arr.props;
+            let katom = ctx_intern_atom(ctx, key_str_a.data, key_str_a.length);
+            let slot2 = class_find_slot(o2.cls, katom);
+            if slot2 >= 0 {
+                let raw2 = o2.slots[(u32)slot2];
+                let dv = ctx_new_object(ctx);
+                ctx_push_temp_root(ctx, dv);
+                defer ctx_pop_temp_root(ctx);
+                let dobj = zjs_as_object(dv);
+                let at2 = object_get_attrs(o2, (u32)slot2);
+                if zjs_is_accessor(raw2) != 0 {
+                    let acc = zjs_as_accessor(raw2);
+                    object_set(ctx, dobj, ctx_intern_atom(ctx, (char*)"get", 3), acc.get);
+                    object_set(ctx, dobj, ctx_intern_atom(ctx, (char*)"set", 3), acc.set);
+                } else {
+                    object_set(ctx, dobj, ctx_intern_atom(ctx, (char*)"value", 5), raw2);
+                    object_set(ctx, dobj, ctx_intern_atom(ctx, (char*)"writable", 8),
+                               zjs_bool(if (at2 & PROP_WRITABLE) != 0 { 1 } else { 0 }));
+                }
+                object_set(ctx, dobj, ctx_intern_atom(ctx, (char*)"enumerable", 10),
+                           zjs_bool(if (at2 & PROP_ENUMERABLE) != 0 { 1 } else { 0 }));
+                object_set(ctx, dobj, ctx_intern_atom(ctx, (char*)"configurable", 12),
+                           zjs_bool(if (at2 & PROP_CONFIGURABLE) != 0 { 1 } else { 0 }));
+                return dv;
+            }
+        }
         return zjs_undefined();
     }
 

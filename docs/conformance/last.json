@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 04:13 UTC",
+    "when": "2026-06-02 04:40 UTC",
     "total": 27491,
-    "passed": 20951,
-    "failed": 5820,
+    "passed": 20986,
+    "failed": 5785,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -1362,7 +1362,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -5849,6 +5849,10 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
+      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-114.js",
+      "reason": "[sloppy] "
+    },
+    {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-116.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -5899,10 +5903,6 @@
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-129.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expe"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-13.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-130.js",
@@ -6378,7 +6378,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-266.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
+      "reason": "[sloppy] zjs: throw: (unknown): property descriptor should be enumerable; property descriptor should be configurable\nzjs: throw: "
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-267.js",
@@ -6387,26 +6387,6 @@
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-268.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected obj[property] to be writable, but was not.\nzjs: throw: (unknown): Expected obj[property]"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-269.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-270.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-271.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-272.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-273.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-274.js",
@@ -6522,7 +6502,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-302.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
+      "reason": "[sloppy] zjs: throw: (unknown): genericProperty descriptor should be enumerable; genericProperty descriptor should be configurabl"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-303.js",
@@ -6533,24 +6513,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected obj[genericProperty] to be writable, but was not.\nzjs: throw: (unknown): Expected obj[ge"
     },
     {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-305.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-306.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-307.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-308.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-309.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
+      "reason": "[sloppy] zjs: throw: (unknown): genericProperty descriptor should be enumerable\nzjs: throw: (unknown): genericProperty descriptor"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-310.js",
@@ -7426,7 +7390,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-277.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
+      "reason": "[sloppy] zjs: throw: (unknown): property descriptor should be enumerable; property descriptor should be configurable\nzjs: throw: "
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-278.js",
@@ -7435,26 +7399,6 @@
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-279.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected obj[property] to be writable, but was not.\nzjs: throw: (unknown): Expected obj[property]"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-280.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-281.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-282.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-283.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-284.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-285.js",
@@ -7642,11 +7586,11 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-313-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
+      "reason": "[sloppy] zjs: throw: (unknown): genericProperty descriptor should be enumerable; genericProperty descriptor should be configurabl"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-313.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
+      "reason": "[sloppy] zjs: throw: (unknown): genericProperty descriptor should be enumerable; genericProperty descriptor should be configurabl"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-314-1.js",
@@ -7665,44 +7609,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected obj[genericProperty] to be writable, but was not.\nzjs: throw: (unknown): Expected obj[ge"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-316-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-316.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-317-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-317.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-318-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-318.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-319-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
+      "reason": "[sloppy] zjs: throw: (unknown): genericProperty descriptor should be enumerable\nzjs: throw: (unknown): genericProperty descriptor"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-319.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-320-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-320.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
+      "reason": "[sloppy] zjs: throw: (unknown): genericProperty descriptor should be enumerable\nzjs: throw: (unknown): genericProperty descriptor"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-321-1.js",
@@ -7745,16 +7657,8 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-333-3.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-333-4.js",
       "reason": "[sloppy] zjs: throw: (unknown): obj[0] Expected SameValue(\u00ab2010\u00bb, \u00ab1001\u00bb) to be true\nzjs: throw: (unknown): obj[0] Expected SameV"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-333-7.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-333-8.js",
@@ -7765,27 +7669,15 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-339-2.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-339-3.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-339-4.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-354-11.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
+      "reason": "[sloppy] zjs: throw: (unknown): prop descriptor should be configurable\nzjs: throw: (unknown): prop descriptor should be configura"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-354-12.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-354-15.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
@@ -7798,26 +7690,14 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-354-3.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
+      "reason": "[sloppy] zjs: throw: (unknown): property descriptor should be configurable\nzjs: throw: (unknown): property descriptor should be c"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-354-6.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-354-7.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-360-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-360-2.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-360-5.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
     },
     {
@@ -7854,7 +7734,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-531-15.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'set')\nzjs: throw: TypeError: Cannot read properties"
+      "reason": "[sloppy] zjs: throw: (unknown): obj.prop Expected SameValue(\u00ab\"data\"\u00bb, \u00ab\"overrideData\"\u00bb) to be true\nzjs: throw: (unknown): obj.pro"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-531-16.js",
@@ -7873,20 +7753,16 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'writable')\nzjs: throw: TypeError: Cannot read prope"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-531-7.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'writable')\nzjs: throw: TypeError: Cannot read prope"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-538-1.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-538-2.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
+      "reason": "[sloppy] zjs: throw: (unknown): prop descriptor should be enumerable; prop descriptor should be configurable\nzjs: throw: (unknown"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-538-5.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
+      "reason": "[sloppy] zjs: throw: (unknown): prop descriptor should be enumerable; prop descriptor should be configurable\nzjs: throw: (unknown"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-538-6.js",
@@ -7910,7 +7786,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-540-5.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'set')\nzjs: throw: TypeError: Cannot read properties"
+      "reason": "[sloppy] zjs: throw: (unknown): obj.verifySetFunc Expected SameValue(\u00ab\"data\"\u00bb, \u00ab\"overrideData\"\u00bb) to be true\nzjs: throw: (unknown)"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-540-7.js",
@@ -7922,7 +7798,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-540-9.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'set')\nzjs: throw: TypeError: Cannot read properties"
+      "reason": "[sloppy] zjs: throw: (unknown): obj.verifySetFunc Expected SameValue(\u00ab\"data\"\u00bb, \u00ab\"overrideData\"\u00bb) to be true\nzjs: throw: (unknown)"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-547-1.js",
@@ -7930,11 +7806,11 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-547-2.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[prop] to be writable, but was not.\nzjs: throw: (unknown): Expected obj[prop] to be w"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-547-3.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[prop] to be writable, but was not.\nzjs: throw: (unknown): Expected obj[prop] to be w"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-547-4.js",
@@ -8161,10 +8037,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Object.freeze.length Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Object.freeze"
     },
     {
-      "path": "test/built-ins/Object/freeze/15.2.3.9-2-a-10.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
       "path": "test/built-ins/Object/freeze/15.2.3.9-2-a-11.js",
       "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should not be writable; 0 descriptor should not be configurable\nzjs: throw: (unknown"
     },
@@ -8175,10 +8047,6 @@
     {
       "path": "test/built-ins/Object/freeze/15.2.3.9-2-a-14.js",
       "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should not be writable; 0 descriptor should not be configurable\nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/Object/freeze/15.2.3.9-2-a-7.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/built-ins/Object/freeze/15.2.3.9-2-a-9.js",
@@ -9955,14 +9823,6 @@
     {
       "path": "test/built-ins/Object/seal/object-seal-p-is-own-property-of-a-reg-exp-object-that-uses-object-s-get-own-property.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
-    },
-    {
-      "path": "test/built-ins/Object/seal/object-seal-p-is-own-property-of-an-arguments-object-which-implements-its-own-get-own-property.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/seal/object-seal-p-is-own-property-of-an-array-object-that-uses-object-s-get-own-property.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/built-ins/Object/seal/proxy-no-ownkeys-returned-keys-order.js",
@@ -19546,7 +19406,7 @@
     },
     {
       "path": "test/language/expressions/tagged-template/template-object.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'enumerable')\nzjs: throw: TypeError: Cannot read pro"
+      "reason": "[sloppy] zjs: throw: (unknown): raw descriptor should not be enumerable; raw descriptor should not be writable; raw descriptor sh"
     },
     {
       "path": "test/language/expressions/template-literal/tv-line-continuation.js",
