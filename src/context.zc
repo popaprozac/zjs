@@ -17684,6 +17684,20 @@ fn host_symbol_species_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Z
     return ctx.host_this;
 }
 
+// Install a `get size()` accessor (non-enumerable, configurable, no
+// setter, name "get size") on a Map/Set prototype. The hot path for an
+// instance's `.size` is still the property_get fast case; this makes the
+// accessor discoverable via getOwnPropertyDescriptor and callable with a
+// brand check on a non-instance receiver.
+fn install_size_getter(ctx: ZjsContext*, proto: ZjsObject*, getter_ptr: void*) -> void {
+    let getter = ctx_make_host_function_arity(ctx, (char*)"get size", getter_ptr, 0);
+    let acc = zjs_accessor_new(getter, zjs_undefined());
+    ctx_register_cell(ctx, (void*)acc);
+    object_define_property_slot(ctx, proto,
+        ctx_intern_atom(ctx, (char*)"size", 4),
+        zjs_cell_from_ptr((void*)acc), PROP_CONFIGURABLE);
+}
+
 // Install `get [Symbol.species]() { return this; }` (non-enumerable,
 // configurable, no setter) on a constructor's static side. Shared by
 // Array/Map/Set/RegExp/ArrayBuffer/Promise so `C[Symbol.species] === C`.
@@ -25208,6 +25222,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         map_table_n = sizeof(map_proto_specs) / sizeof(map_proto_specs[0]);
     }
     zjs_install_methods(ctx, ctx.map_proto, map_table_p, map_table_n);
+    let map_size_ptr: void* = NULL; raw { map_size_ptr = (void*)host_map_size_getter; }
+    install_size_getter(ctx, ctx.map_proto, map_size_ptr);
     // Static: Map.groupBy(items, callback). Returns a fresh Map keyed
     // by callback output (SameValueZero), each value an array of items.
     let map_groupby_ptr: void* = NULL; raw { map_groupby_ptr = (void*)host_map_group_by; }
@@ -25252,6 +25268,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         set_table_n = sizeof(set_proto_specs) / sizeof(set_proto_specs[0]);
     }
     zjs_install_methods(ctx, ctx.set_proto, set_table_p, set_table_n);
+    let set_size_ptr: void* = NULL; raw { set_size_ptr = (void*)host_set_size_getter; }
+    install_size_getter(ctx, ctx.set_proto, set_size_ptr);
 
     // WeakMap / WeakSet — point at the Map / Set ctors and protos for
     // npm-compat. zod's $constructor uses `new WeakMap` to memoize
