@@ -4205,12 +4205,35 @@ fn descriptor_has_own(desc: ZjsValue, name: ZjsString*) -> bool {
 }
 
 fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if argc < 3 { return zjs_undefined(); }
-    let obj_v = args[0];
+    let obj_v = if argc >= 1 { args[0] } else { zjs_undefined() };
     let o = resolve_define_receiver(ctx, obj_v);
-    if o == NULL { return obj_v; }
+    // ECMA-262 §20.1.2.4 step 1: Type(O) must be Object, else TypeError.
+    if o == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Object.defineProperty called on non-object", 42);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
 
-    let key_v = args[1];
+    // ECMA-262 §6.2.5.5 ToPropertyDescriptor step 1: if the Attributes
+    // argument is not an Object, throw a TypeError. Validate BEFORE any
+    // mutation (the array migration below) so a bad descriptor has no
+    // observable side effect.
+    let desc_v = if argc >= 3 { args[2] } else { zjs_undefined() };
+    let desc_objlike: bool =
+           zjs_is_object(desc_v) != 0
+        || zjs_is_array(desc_v) != 0
+        || zjs_is_function(desc_v) != 0
+        || zjs_is_host_function(desc_v) != 0
+        || zjs_is_regexp(desc_v) != 0;
+    if !desc_objlike {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Property description must be an object", 38);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+
+    let key_v = if argc >= 2 { args[1] } else { zjs_undefined() };
     // Symbol keys coerce to their canonical atom ("@@toPrimitive",
     // "@@iterator", "@@sym:N") so the slot matches what property_get
     // / property_set use internally. ToString'ing a Symbol would
@@ -4250,19 +4273,10 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
         }
     }
 
-    // Descriptor may be a plain object OR an array (whose expando bag
-    // holds the value/get/set keys) OR a host/user function with
-    // .props. Use property_get to read named slots through whichever
-    // shape is present.
-    let desc_v = args[2];
-    let desc_objlike: bool =
-           zjs_is_object(desc_v) != 0
-        || zjs_is_array(desc_v) != 0
-        || zjs_is_function(desc_v) != 0
-        || zjs_is_host_function(desc_v) != 0
-        || zjs_is_regexp(desc_v) != 0;
-    if !desc_objlike { return obj_v; }
-
+    // Descriptor (validated as object-like at entry) may be a plain
+    // object OR an array (whose expando bag holds the value/get/set keys)
+    // OR a host/user function with .props. Use property_get to read named
+    // slots through whichever shape is present.
     let value_key  = ctx_intern_atom(ctx, (char*)"value", 5);
     let get_key    = ctx_intern_atom(ctx, (char*)"get",   3);
     let set_key    = ctx_intern_atom(ctx, (char*)"set",   3);
@@ -4431,15 +4445,13 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
 // Walks props's own keys (via the hidden-class chain) and calls
 // defineProperty for each.
 fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    if argc < 2 { return if argc > 0 { args[0] } else { zjs_undefined() }; }
-    let obj_v = args[0];
-    // ECMA-262 §19.1.2.3 step 1: receiver must be an Object. "Object"
-    // here includes callables (functions, closures, host functions) —
-    // chalk's `Object.defineProperties(() => {}, {...})` pattern. Route
-    // the descriptor writes via resolve_define_receiver so they land
-    // in the callable's .props bag (same place defineProperty stores).
-    // Previously we early-returned on non-plain-object receivers, so
-    // defineProperties silently no-op'd for callable targets (#290).
+    let obj_v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    // ECMA-262 §19.1.2.3 step 1: receiver must be an Object — else
+    // TypeError. "Object" here includes callables (functions, closures,
+    // host functions) — chalk's `Object.defineProperties(() => {}, {...})`
+    // pattern. Route the descriptor writes via resolve_define_receiver so
+    // they land in the callable's .props bag (same place defineProperty
+    // stores). Previously we early-returned on non-object receivers (#290).
     let recv_o: ZjsObject* = NULL;
     if zjs_is_object(obj_v) != 0
        || zjs_is_function(obj_v) != 0
@@ -4448,8 +4460,21 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
        || zjs_is_array(obj_v) != 0 {
         recv_o = resolve_define_receiver(ctx, obj_v);
     }
-    if recv_o == NULL { return obj_v; }
-    let props_v = args[1];
+    if recv_o == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Object.defineProperties called on non-object", 44);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    // step 2: Properties = ToObject(Properties). A missing / nullish
+    // argument throws TypeError.
+    let props_v = if argc >= 2 { args[1] } else { zjs_undefined() };
+    if zjs_is_undefined(props_v) != 0 || zjs_is_null(props_v) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Cannot convert undefined or null to object", 43);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
     // ECMA-262 §19.1.2.3 step 2: props is ToObject'd. Plain objects
     // use their own hidden class. Arrays / functions / host fns /
     // regex carry their named-property expando in a sub-object —
@@ -25086,9 +25111,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let dps_ptr:  void* = NULL; raw { dps_ptr  = (void*)host_object_define_properties; }
     let gopd_ptr: void* = NULL; raw { gopd_ptr = (void*)host_object_get_own_property_descriptor; }
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"defineProperty", 14),
-               ctx_make_host_function(ctx, (char*)"defineProperty", dp_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"defineProperty", dp_ptr, 3));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"defineProperties", 16),
-               ctx_make_host_function(ctx, (char*)"defineProperties", dps_ptr));
+               ctx_make_host_function_arity(ctx, (char*)"defineProperties", dps_ptr, 2));
     object_set(ctx, object_hf.props, ctx_intern_atom(ctx, (char*)"getOwnPropertyDescriptor", 24),
                ctx_make_host_function(ctx, (char*)"getOwnPropertyDescriptor", gopd_ptr));
     let gopds_ptr: void* = NULL; raw { gopds_ptr = (void*)host_object_get_own_property_descriptors; }

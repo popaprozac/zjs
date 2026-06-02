@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 06:22 UTC",
+    "when": "2026-06-02 06:37 UTC",
     "total": 27491,
-    "passed": 21138,
-    "failed": 5633,
+    "passed": 21172,
+    "failed": 5599,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -1126,7 +1126,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/flatMap/array-like-objects-typedarrays.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [1, 0, 42] should have the same contents. The value of actual is expected "
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Array/prototype/flatMap/proxy-access-count.js",
@@ -5669,44 +5669,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: Object.create properties must be an Object\nzjs: throw: TypeError: Object.create properties must b"
     },
     {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-0-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.defineProperties.length Expected SameValue(\u00ab0\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Obj"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-1-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-1-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-1-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-1-4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-2-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-2-12.js",
       "reason": "[sloppy] zjs: throw: (unknown): result !== true\nzjs: throw: (unknown): result !== true"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-2-16.js",
       "reason": "[sloppy] zjs: throw: (unknown): result !== true\nzjs: throw: (unknown): result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-2-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-5-b-131.js",
@@ -5978,7 +5946,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-18.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected TypeError, got Test262Error: Expected an exception.\nzjs: throw: (unknown): Expected Type"
+      "reason": "[sloppy] zjs: throw: (unknown): prop should be an own property\nzjs: throw: (unknown): prop should be an own property"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-180.js",
@@ -6002,7 +5970,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-19.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected TypeError, got Test262Error: Expected an exception.\nzjs: throw: (unknown): Expected Type"
+      "reason": "[sloppy] zjs: throw: (unknown): prop should be an own property\nzjs: throw: (unknown): prop should be an own property"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-194.js",
@@ -6374,31 +6342,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperties/typedarray-backed-by-resizable-buffer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [1, 0, 0, 0] should have the same contents. \nzjs: throw: (unknown): Actual"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-0-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.defineProperty.length Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true\nzjs: throw: (unknown): Objec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-1-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-1-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-1-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-1-4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperties called on non-object\nzjs: throw: TypeError: Object.defineProperties calle"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-2-20.js",
@@ -6438,11 +6382,11 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-145-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.property Expected SameValue(\u00abundefined\u00bb, \u00ab\"Date\"\u00bb) to be true\nzjs: throw: (unknown): obj.prop"
+      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-145.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.property Expected SameValue(\u00abundefined\u00bb, \u00ab\"Date\"\u00bb) to be true\nzjs: throw: (unknown): obj.prop"
+      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-146-1.js",
@@ -6453,14 +6397,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): obj.property Expected SameValue(\u00abundefined\u00bb, \u00ab\"arguments\"\u00bb) to be true\nzjs: throw: (unknown): obj"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-165-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): afterWrite Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): afterWrite Expec"
     },
@@ -6469,16 +6405,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): afterWrite Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): afterWrite Expec"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-17.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-171-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): property should be an own property\nzjs: throw: (unknown): property should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-171.js",
-      "reason": "[sloppy] zjs: throw: (unknown): beforeWrite Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): beforeWrite Exp"
+      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-172-1.js",
@@ -6487,14 +6419,6 @@
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-175-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): afterWrite Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): afterWrite Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-18.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-19.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-2.js",
@@ -6510,11 +6434,11 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-224-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.property Expected SameValue(\u00abundefined\u00bb, \u00ab\"dateGetProperty\"\u00bb) to be true\nzjs: throw: (unknown"
+      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-224.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.property Expected SameValue(\u00abundefined\u00bb, \u00ab\"dateGetProperty\"\u00bb) to be true\nzjs: throw: (unknown"
+      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-225-1.js",
@@ -6534,11 +6458,11 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-254-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): data Expected SameValue(\u00ab\"data\"\u00bb, \u00ab\"overrideData\"\u00bb) to be true\nzjs: throw: (unknown): data Expect"
+      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-254.js",
-      "reason": "[sloppy] zjs: throw: (unknown): data Expected SameValue(\u00ab\"data\"\u00bb, \u00ab\"overrideData\"\u00bb) to be true\nzjs: throw: (unknown): data Expect"
+      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-255-1.js",
@@ -6558,11 +6482,11 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-39-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): accessed !== true\nzjs: throw: (unknown): accessed !== true"
+      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-39.js",
-      "reason": "[sloppy] zjs: throw: (unknown): accessed !== true\nzjs: throw: (unknown): accessed !== true"
+      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-4.js",
@@ -6586,11 +6510,11 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-92-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): beforeDeleted Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): beforeDeleted"
+      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-92.js",
-      "reason": "[sloppy] zjs: throw: (unknown): beforeDeleted Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): beforeDeleted"
+      "reason": "[sloppy] zjs: throw: TypeError: Property description must be an object\nzjs: throw: TypeError: Property description must be an obj"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-93-1.js",
@@ -7609,43 +7533,7 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/coerced-P-shrink.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/property-description-must-be-an-object-not-bigint.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/property-description-must-be-an-object-not-false.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/property-description-must-be-an-object-not-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/property-description-must-be-an-object-not-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/property-description-must-be-an-object-not-string.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/property-description-must-be-an-object-not-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/property-description-must-be-an-object-not-true.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/property-description-must-be-an-object-not-undefined.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
@@ -7670,7 +7558,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/typedarray-backed-by-resizable-buffer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [1, 0, 0, 0] should have the same contents. \nzjs: throw: (unknown): Actual"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Object/entries/function-property-descriptor.js",
@@ -9318,7 +9206,7 @@
     },
     {
       "path": "test/built-ins/Object/values/order-after-define-property.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [a, b] should have the same contents. \nzjs: throw: (unknown): Actual [] an"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Object/values/primitive-strings.js",
@@ -9378,19 +9266,19 @@
     },
     {
       "path": "test/built-ins/Promise/all/invoke-then-error-close.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-then-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-then-get-error-close.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-then-get-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/all/invoke-then.js",
@@ -9506,11 +9394,11 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-then-get-error-close.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-then-get-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/allSettled/invoke-then.js",
@@ -9658,11 +9546,11 @@
     },
     {
       "path": "test/built-ins/Promise/any/invoke-then-get-error-close.js",
-      "reason": "[sloppy] timeout"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-then-get-error-reject.js",
-      "reason": "[sloppy] async: Test262Error: The promise should be rejected, but was resolved"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/any/invoke-then-on-promises-every-iteration.js",
@@ -9806,7 +9694,7 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/this-value-then-poisoned.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/prototype/finally/this-value-then-throws.js",
@@ -9826,7 +9714,7 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/then/ctor-access-count.js",
-      "reason": "[sloppy] async: Test262Error: Expected constructor access count: 1. Actual: 0"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/ctor-custom.js",
@@ -9838,7 +9726,7 @@
     },
     {
       "path": "test/built-ins/Promise/prototype/then/ctor-poisoned.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/prototype/then/ctor-throws.js",
@@ -9894,11 +9782,11 @@
     },
     {
       "path": "test/built-ins/Promise/race/invoke-then-get-error-close.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/race/invoke-then-get-error-reject.js",
-      "reason": "[sloppy] async test never signaled completion"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Promise/race/invoke-then.js",
@@ -10170,7 +10058,7 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/call-parameters.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected Sam"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/desc-realm.js",
@@ -10190,31 +10078,19 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/return-is-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-configurable-desc-not-configurable-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/defineProperty/targetdesc-configurable-desc-not-configurable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-not-compatible-descriptor-not-configurable-target-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/defineProperty/targetdesc-not-compatible-descriptor-not-configurable-target.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-not-compatible-descriptor-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/defineProperty/targetdesc-not-compatible-descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-not-configurable-writable-desc-not-writable.js",
@@ -10225,16 +10101,8 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/defineProperty/targetdesc-undefined-not-configurable-descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-undefined-target-is-not-extensible-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/defineProperty/targetdesc-undefined-target-is-not-extensible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-missing-target-is-proxy.js",
@@ -10243,10 +10111,6 @@
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-not-callable-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/defineProperty/trap-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-null-target-is-proxy.js",
@@ -10258,7 +10122,7 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[attr] to equal 1, actually undefined\nzjs: throw: (unknown): Expected obj[attr] to eq"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-return-is-false.js",
