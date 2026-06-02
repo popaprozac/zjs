@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 20:11 UTC",
+    "when": "2026-06-02 20:20 UTC",
     "total": 27491,
-    "passed": 21839,
-    "failed": 4932,
+    "passed": 21866,
+    "failed": 4905,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -1266,7 +1266,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -10333,184 +10333,76 @@
       "reason": "[sloppy] zjs: throw: (unknown): String.prototype.replace should throw a TypeError in its ToPrimitive step. Expected a TypeError t"
     },
     {
-      "path": "test/built-ins/String/prototype/replaceAll/cstm-replaceall-on-bigint-primitive.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/cstm-replaceall-on-boolean-primitive.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/cstm-replaceall-on-number-primitive.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/cstm-replaceall-on-string-primitive.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/getSubstitution-0x0024-0x0024.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/getSubstitution-0x0024-0x0026.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/getSubstitution-0x0024-0x0027.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/String/prototype/replaceAll/getSubstitution-0x0024-0x003C.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/getSubstitution-0x0024-0x0060.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/getSubstitution-0x0024.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"a($<$<)a($<$<)a($<$<)a($<$<)a($<$<)a($<$<)a($<$<)a($<$<)a($<$<)a($<$<)a($<$<"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/getSubstitution-0x0024N.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"a($1$1)a($1$1)a($1$1)a($1$1)a($1$1)a($1$1)a($1$1)a($1$1)a($1$1)a($1$1)a($1$1"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/getSubstitution-0x0024NN.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/replaceAll.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `typeof String.prototype.replaceAll` is `function` Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/replaceValue-call-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/replaceValue-call-each-match-position.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/replaceValue-call-matching-empty.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/replaceValue-call-skip-no-match.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"a($12$11)a($12$11)a($12$11)a($12$11)a($12$11)a($12$11)a($12$11)a($12$11)a($1"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/replaceValue-call-tostring-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/replaceValue-fn-skip-toString.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/replaceValue-tostring-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): function must exist Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unkno"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/replaceValue-value-replaces-string.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/replaceValue-value-tostring.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/searchValue-empty-string-this-empty-string.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/searchValue-empty-string.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: poison\nzjs: throw: poison"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-flags-no-g-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): function must exist Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unkno"
+      "reason": "[sloppy] zjs: throw: (unknown): flags is the empty string Thrown value was not an object!\nzjs: throw: (unknown): flags is the emp"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-flags-null-undefined-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): function must exist Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unkno"
+      "reason": "[sloppy] zjs: throw: (unknown): undefined Thrown value was not an object!\nzjs: throw: (unknown): undefined Thrown value was not a"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-flags-toString-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): function must exist Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unkno"
+      "reason": "[sloppy] zjs: throw: (unknown): Symbol Thrown value was not an object!\nzjs: throw: (unknown): Symbol Thrown value was not an obje"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-get-flags-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): from custom searchValue object Expected a Test262Error but got a TypeError\nzjs: throw: (unknown):"
+      "reason": "[sloppy] zjs: throw: (unknown): from custom searchValue object Thrown value was not an object!\nzjs: throw: (unknown): from custom"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-isRegExp-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Thrown value was not an object!\nzjs: throw: (unknown): Thrown value was not an object!"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-replacer-RegExp-call-fn.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'push')\nzjs: throw: TypeError: Cannot read propertie"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-replacer-RegExp-call.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): sample 0: 'abc abc abc'.replaceAll(/b/g, 'z') Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw:"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-replacer-before-tostring.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: Should not call toString on this/replaceValue\nzjs: throw: Should not call toString on this/replaceValue"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-replacer-call-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Thrown value was not an object!\nzjs: throw: (unknown): Thrown value was not an object!"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-replacer-call.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/searchValue-replacer-is-null.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Object][object Object][object Object]\"\u00bb, \u00ab42\u00bb) to be true\nzjs: throw"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-replacer-method-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): custom abrupt Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): custom abrupt Ex"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/searchValue-tostring-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): function must exist Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unkno"
+      "reason": "[sloppy] zjs: throw: (unknown): custom abrupt Thrown value was not an object!\nzjs: throw: (unknown): custom abrupt Thrown value w"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-tostring-regexp.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/this-is-null-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): function must exist Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unkno"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/this-is-undefined-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): function must exist Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unkno"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/this-tostring-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): function must exist Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unkno"
+      "reason": "[sloppy] zjs: throw: (unknown): /./g Expected SameValue(\u00ab\"zzzzzzzzzzzzzzz\"\u00bb, \u00ab\"aa z z aa\"\u00bb) to be true\nzjs: throw: (unknown): /./"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/this-tostring.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: poison\nzjs: throw: poison"
     },
     {
       "path": "test/built-ins/String/prototype/search/cstm-search-get-err.js",

@@ -7483,6 +7483,149 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     return ctx_intern_string_take(ctx, out_buf, out_len);
 }
 
+// String.prototype.replaceAll(searchValue, replaceValue) — ECMA-262
+// §22.1.3.20. A RegExp searchValue must be global (else TypeError) and
+// then behaves exactly like replace; a string searchValue replaces every
+// non-overlapping occurrence, honoring a function replacer or $-template.
+fn host_string_replace_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = coerce_string_this(ctx);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if zjs_is_string(this_val) == 0 { return this_val; }
+    let search_v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let repl_v   = if argc >= 2 { args[1] } else { zjs_undefined() };
+    // RegExp searchValue must carry the global flag; then == replace.
+    if zjs_is_regexp(search_v) != 0 {
+        let r = zjs_as_regexp(search_v);
+        if (r.flags & REGEX_FLAG_GLOBAL) == 0 {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"replaceAll must be called with a global RegExp", 46);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        return host_string_replace(ctx, args, argc);
+    }
+    let s = zjs_as_string(this_val);
+    let hay_d = s.data;
+    let hay_n = s.length;
+    let search_str_v = if zjs_is_string(search_v) != 0 { search_v } else { zjs_to_string(ctx, search_v) };
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let nee = zjs_as_string(search_str_v);
+    let nee_d = nee.data;
+    let nee_n = nee.length;
+    let repl_is_fn: bool = zjs_is_function(repl_v) != 0
+        || zjs_is_closure(repl_v) != 0
+        || zjs_is_host_function(repl_v) != 0;
+    let repl_str_v: ZjsValue = if !repl_is_fn {
+        if zjs_is_string(repl_v) != 0 { repl_v } else { zjs_to_string(ctx, repl_v) }
+    } else { zjs_undefined() };
+    if ctx.pending_throw_active { return zjs_undefined(); }
+
+    let out_cap: u32 = hay_n + 16;
+    let out_buf = alloc_n<char>((usize)out_cap);
+    let out_len: u32 = 0;
+    let cursor: u32 = 0;
+    let pos: u32 = 0;
+    let go: bool = true;
+    while go {
+        // Find next occurrence of `nee` at index >= pos.
+        let found: i32 = -1;
+        if nee_n == 0 {
+            if pos <= hay_n { found = (i32)pos; }
+        } else {
+            let i = pos;
+            while i + nee_n <= hay_n {
+                let eq: int = 0;
+                raw { eq = (memcmp(hay_d + i, nee_d, nee_n) == 0) ? 1 : 0; }
+                if eq != 0 { found = (i32)i; break; }
+                i = i + 1;
+            }
+        }
+        if found < 0 { go = false; }
+        if go {
+            let mstart = (u32)found;
+            let mend = mstart + nee_n;
+            // Append verbatim text [cursor, mstart).
+            let pre_len = mstart - cursor;
+            while out_len + pre_len + 64 > out_cap {
+                let new_cap = out_cap * 2 + 64;
+                out_buf = realloc_n<char>(out_buf, (usize)out_cap, (usize)new_cap);
+                out_cap = new_cap;
+            }
+            if pre_len > 0 {
+                let psrc: char* = NULL;
+                raw { psrc = &hay_d[cursor]; }
+                mem_copy<char>(out_buf + out_len, psrc, (usize)pre_len);
+                out_len = out_len + pre_len;
+            }
+            // Compute + append the replacement.
+            if repl_is_fn {
+                let cb_args: ZjsValue[3];
+                cb_args[0] = search_str_v;
+                cb_args[1] = zjs_int32((i32)mstart);
+                cb_args[2] = this_val;
+                let cb_argp: ZjsValue* = NULL;
+                raw { cb_argp = &cb_args[0]; }
+                let cb_r: ZjsValue = zjs_undefined();
+                raw { cb_r = zjs_call_value_with_this(ctx, repl_v, zjs_undefined(), cb_argp, 3); }
+                if ctx.pending_throw_active { dealloc(out_buf); return zjs_undefined(); }
+                if zjs_is_string(cb_r) == 0 { cb_r = zjs_to_string(ctx, cb_r); }
+                let rep_data = zjs_as_string(cb_r).data;
+                let rep_len  = zjs_as_string(cb_r).length;
+                while out_len + rep_len + 64 > out_cap {
+                    let new_cap = out_cap * 2 + 64;
+                    out_buf = realloc_n<char>(out_buf, (usize)out_cap, (usize)new_cap);
+                    out_cap = new_cap;
+                }
+                if rep_len > 0 {
+                    mem_copy<char>(out_buf + out_len, rep_data, (usize)rep_len);
+                    out_len = out_len + rep_len;
+                }
+            } else {
+                let tmpl_data = zjs_as_string(repl_str_v).data;
+                let tmpl_len  = zjs_as_string(repl_str_v).length;
+                let exp_len: u32 = 0;
+                let nullp_i32: i32* = NULL;
+                let exp_buf = expand_replacement(tmpl_data, tmpl_len,
+                                                  hay_d, hay_n, mstart, mend,
+                                                  nullp_i32, nullp_i32, 0, &exp_len);
+                while out_len + exp_len + 64 > out_cap {
+                    let new_cap = out_cap * 2 + 64;
+                    out_buf = realloc_n<char>(out_buf, (usize)out_cap, (usize)new_cap);
+                    out_cap = new_cap;
+                }
+                if exp_len > 0 {
+                    mem_copy<char>(out_buf + out_len, exp_buf, (usize)exp_len);
+                    out_len = out_len + exp_len;
+                }
+                dealloc(exp_buf);
+            }
+            cursor = mend;
+            // Advance scan position; empty needle steps one char forward.
+            if nee_n == 0 {
+                pos = mstart + 1;
+                if pos > hay_n { go = false; }
+            } else {
+                pos = mend;
+            }
+        }
+    }
+    // Trailing remainder [cursor, hay_n).
+    let tail_len = hay_n - cursor;
+    while out_len + tail_len + 1 > out_cap {
+        let new_cap = out_cap * 2 + 64;
+        out_buf = realloc_n<char>(out_buf, (usize)out_cap, (usize)new_cap);
+        out_cap = new_cap;
+    }
+    if tail_len > 0 {
+        let tsrc: char* = NULL;
+        raw { tsrc = &hay_d[cursor]; }
+        mem_copy<char>(out_buf + out_len, tsrc, (usize)tail_len);
+        out_len = out_len + tail_len;
+    }
+    out_buf[out_len] = (char)0;
+    return ctx_intern_string_take(ctx, out_buf, out_len);
+}
+
 // String.prototype.match(regexp): if regexp has the global flag,
 // return an array of all full-match strings (no captures). Else
 // delegate to RegExp.prototype.exec for the single match (full +
@@ -26744,6 +26887,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let srepl_ptr: void* = NULL; raw { srepl_ptr = (void*)host_string_replace; }
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"replace", 7),
                ctx_make_host_function_arity(ctx, (char*)"replace", srepl_ptr, 2));
+    let srepla_ptr: void* = NULL; raw { srepla_ptr = (void*)host_string_replace_all; }
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"replaceAll", 10),
+               ctx_make_host_function_arity(ctx, (char*)"replaceAll", srepla_ptr, 2));
     let scat_ptr:   void* = NULL; raw { scat_ptr   = (void*)host_string_concat; }
     let scha_ptr:   void* = NULL; raw { scha_ptr   = (void*)host_string_char_at; }
     let scca_ptr:   void* = NULL; raw { scca_ptr   = (void*)host_string_char_code_at; }
