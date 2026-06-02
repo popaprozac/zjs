@@ -17684,6 +17684,25 @@ fn host_symbol_species_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Z
     return ctx.host_this;
 }
 
+// Install `get [Symbol.species]() { return this; }` (non-enumerable,
+// configurable, no setter) on a constructor's static side. Shared by
+// Array/Map/Set/RegExp/ArrayBuffer/Promise so `C[Symbol.species] === C`.
+fn install_species_getter(ctx: ZjsContext*, ctor: ZjsValue) -> void {
+    if zjs_is_host_function(ctor) == 0 { return; }
+    let hf = zjs_as_host_function(ctor);
+    if hf.props == NULL {
+        let pv = ctx_new_object(ctx);
+        hf.props = zjs_as_object(pv);
+    }
+    let sp_ptr: void* = NULL; raw { sp_ptr = (void*)host_symbol_species_getter; }
+    let getter = ctx_make_host_function_arity(ctx, (char*)"get [Symbol.species]", sp_ptr, 0);
+    let acc = zjs_accessor_new(getter, zjs_undefined());
+    ctx_register_cell(ctx, (void*)acc);
+    object_define_property_slot(ctx, hf.props,
+        ctx_intern_atom(ctx, (char*)"@@species", 9),
+        zjs_cell_from_ptr((void*)acc), PROP_CONFIGURABLE);
+}
+
 fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // ECMA-262 §27.2.3.1 step 1: throw TypeError if NewTarget is
     // undefined — i.e. Promise(...) called without `new`.
@@ -24565,6 +24584,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let props_v = ctx_new_object(ctx);
     arr_ctor.props = zjs_as_object(props_v);
     object_set(ctx, arr_ctor.props, isarray_atom, is_array_v);
+    // After the props bag exists (it's replaced just above) — else the
+    // @@species slot would be wiped.
+    install_species_getter(ctx, arr_ctor_v);
     // Array.prototype is unified with ctx.array_proto below, after
     // the prototype object is fully populated.
 
@@ -24806,6 +24828,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // commit). property_get on TAG_REGEXP walks ctx.regexp_proto.
     let regexp_ctor_ptr: void* = NULL; raw { regexp_ctor_ptr = (void*)host_regexp_ctor; }
     let regexp_v = ctx_register_host_function(ctx, (char*)"RegExp", regexp_ctor_ptr);
+    install_species_getter(ctx, regexp_v);
     let regexp_hf = zjs_as_host_function(regexp_v);
     regexp_hf.arity = 2;
     let rp_v = ctx_new_object(ctx);
@@ -25085,6 +25108,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"throw", gen_throw_ptr, 1));
     let self_iter_v = ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", gen_self_ptr, 0);
     object_set(ctx, ctx.generator_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10), self_iter_v);
+    // %GeneratorPrototype%[Symbol.toStringTag] = "Generator" (so
+    // Object.prototype.toString.call(gen) === "[object Generator]").
+    object_define_property_slot(ctx, ctx.generator_proto,
+        ctx_intern_atom(ctx, (char*)"@@toStringTag", 13),
+        ctx_intern_string(ctx, (char*)"Generator", 9), PROP_CONFIGURABLE);
 
     // Well-known symbols. Each is a TAG_SYMBOL whose internal `key`
     // string matches the "@@xxx" sentinel the rest of the engine uses
@@ -25153,6 +25181,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Map (2026-05-16).
     let map_ctor_ptr: void* = NULL; raw { map_ctor_ptr = (void*)host_map_ctor; }
     let map_ctor_v = ctx_register_host_function(ctx, (char*)"Map", map_ctor_ptr);
+    install_species_getter(ctx, map_ctor_v);
     let map_proto_v = ctx_new_object(ctx);
     ctx.map_proto = zjs_as_object(map_proto_v);
     zjs_as_host_function(map_ctor_v).prototype = ctx.map_proto;
@@ -25189,6 +25218,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Set (2026-05-16).
     let set_ctor_ptr: void* = NULL; raw { set_ctor_ptr = (void*)host_set_ctor; }
     let set_ctor_v = ctx_register_host_function(ctx, (char*)"Set", set_ctor_ptr);
+    install_species_getter(ctx, set_ctor_v);
     let set_proto_v = ctx_new_object(ctx);
     ctx.set_proto = zjs_as_object(set_proto_v);
     zjs_as_host_function(set_ctor_v).prototype = ctx.set_proto;
@@ -25293,6 +25323,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let ab_ctor_ptr:  void* = NULL; raw { ab_ctor_ptr  = (void*)host_array_buffer_ctor;  }
     let ab_slice_ptr: void* = NULL; raw { ab_slice_ptr = (void*)host_array_buffer_slice; }
     let ab_ctor_v = ctx_register_host_function(ctx, (char*)"ArrayBuffer", ab_ctor_ptr);
+    install_species_getter(ctx, ab_ctor_v);
     let ab_proto_v = ctx_new_object(ctx);
     ctx.array_buffer_proto = zjs_as_object(ab_proto_v);
     zjs_as_host_function(ab_ctor_v).prototype = ctx.array_buffer_proto;
