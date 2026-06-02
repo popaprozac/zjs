@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 18:38 UTC",
+    "when": "2026-06-02 18:54 UTC",
     "total": 27491,
-    "passed": 21468,
-    "failed": 5303,
+    "passed": 21485,
+    "failed": 5286,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -642,11 +642,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/entries/iteration-mutable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/entries/iteration.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Exhausted result `done` flag (after push) Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: thr"
     },
     {
       "path": "test/built-ins/Array/prototype/entries/resizable-buffer-grow-mid-iteration.js",
@@ -659,14 +655,6 @@
     {
       "path": "test/built-ins/Array/prototype/entries/resizable-buffer.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents. \nzjs: throw: (unknown): Actual"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/entries/returns-iterator-from-object.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The prototype of [].entries() is %ArrayIteratorPrototype% Expected SameValue(\u00ab\u00bb, \u00ab[object Object]"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/entries/returns-iterator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The prototype of [].entries() is %ArrayIteratorPrototype% Expected SameValue(\u00ab\u00bb, \u00ab[object Object]"
     },
     {
       "path": "test/built-ins/Array/prototype/every/15.4.4.16-1-11.js",
@@ -1282,7 +1270,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -1350,11 +1338,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/keys/iteration-mutable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/keys/iteration.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Exhausted result `done` flag (after push) Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: thr"
     },
     {
       "path": "test/built-ins/Array/prototype/keys/resizable-buffer-grow-mid-iteration.js",
@@ -1367,14 +1351,6 @@
     {
       "path": "test/built-ins/Array/prototype/keys/resizable-buffer.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1, 2, 3] should have the same contents. \nzjs: throw: (unknown): Actual"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/keys/returns-iterator-from-object.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The prototype of [].keys() is %ArrayIteratorPrototype% Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/keys/returns-iterator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The prototype of [].keys() is %ArrayIteratorPrototype% Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) "
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-1-11.js",
@@ -2714,11 +2690,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/values/iteration-mutable.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/values/iteration.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Exhausted result `done` flag (after push) Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: thr"
     },
     {
       "path": "test/built-ins/Array/prototype/values/resizable-buffer-grow-mid-iteration.js",
@@ -2731,14 +2703,6 @@
     {
       "path": "test/built-ins/Array/prototype/values/resizable-buffer.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents. \nzjs: throw: (unknown): Actual"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/values/returns-iterator-from-object.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The prototype of [].values() is %ArrayIteratorPrototype% Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/values/returns-iterator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The prototype of [].values() is %ArrayIteratorPrototype% Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb"
     },
     {
       "path": "test/built-ins/Array/prototype/with/holes-not-preserved.js",
@@ -8262,7 +8226,7 @@
     },
     {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-array-builtin.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Array Iterator]\"\u00bb) to be true\nzjs: throw: (unkn"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Array Iterator]\"\u00bb, \u00ab\"[object Object]\"\u00bb) to be true\nzjs: throw: (unkn"
     },
     {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-generators-builtin.js",
@@ -8302,7 +8266,7 @@
     },
     {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-string-builtin.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object String Iterator]\"\u00bb) to be true\nzjs: throw: (unk"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Array Iterator]\"\u00bb, \u00ab\"[object String Iterator]\"\u00bb) to be true\nzjs: thr"
     },
     {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-weakmap-builtin.js",
@@ -10329,10 +10293,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/Set/prototype/difference/converts-negative-zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
-    },
-    {
       "path": "test/built-ins/Set/prototype/difference/difference.js",
       "reason": "[sloppy] zjs: throw: (unknown): difference descriptor should not be enumerable\nzjs: throw: (unknown): difference descriptor shoul"
     },
@@ -10361,20 +10321,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): has descriptor should not be enumerable\nzjs: throw: (unknown): has descriptor should not be enume"
     },
     {
-      "path": "test/built-ins/Set/prototype/intersection/converts-negative-zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
-    },
-    {
       "path": "test/built-ins/Set/prototype/intersection/intersection.js",
       "reason": "[sloppy] zjs: throw: (unknown): intersection descriptor should not be enumerable\nzjs: throw: (unknown): intersection descriptor s"
     },
     {
       "path": "test/built-ins/Set/prototype/intersection/set-like-class-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [getting size, ToNumber(size), getting has, getting keys, calling keys, getting next, call"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/isDisjointFrom/converts-negative-zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
     },
     {
       "path": "test/built-ins/Set/prototype/isDisjointFrom/isDisjointFrom.js",
@@ -10393,10 +10345,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): isSubsetOf descriptor should not be enumerable\nzjs: throw: (unknown): isSubsetOf descriptor shoul"
     },
     {
-      "path": "test/built-ins/Set/prototype/isSupersetOf/converts-negative-zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
-    },
-    {
       "path": "test/built-ins/Set/prototype/isSupersetOf/isSupersetOf.js",
       "reason": "[sloppy] zjs: throw: (unknown): isSupersetOf descriptor should not be enumerable\nzjs: throw: (unknown): isSupersetOf descriptor s"
     },
@@ -10413,28 +10361,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): The value of `Set.prototype.keys` is `Set.prototype.values` Expected SameValue(\u00abfunction keys() {"
     },
     {
-      "path": "test/built-ins/Set/prototype/symmetricDifference/converts-negative-zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/symmetricDifference/set-like-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
-    },
-    {
       "path": "test/built-ins/Set/prototype/symmetricDifference/set-like-class-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [getting size, ToNumber(size), getting has, getting keys, calling keys, getting next, call"
     },
     {
       "path": "test/built-ins/Set/prototype/symmetricDifference/symmetricDifference.js",
       "reason": "[sloppy] zjs: throw: (unknown): symmetricDifference descriptor should not be enumerable\nzjs: throw: (unknown): symmetricDifferenc"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/union/converts-negative-zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
-    },
-    {
-      "path": "test/built-ins/Set/prototype/union/set-like-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
     },
     {
       "path": "test/built-ins/Set/prototype/union/set-like-class-order.js",
