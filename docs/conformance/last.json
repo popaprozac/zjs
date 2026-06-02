@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 19:45 UTC",
+    "when": "2026-06-02 19:54 UTC",
     "total": 27491,
-    "passed": 21790,
-    "failed": 4981,
+    "passed": 21811,
+    "failed": 4960,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -158,7 +158,7 @@
     },
     {
       "path": "test/built-ins/Array/isArray/proxy-revoked.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Array.isArray(handle.proxy) throws a TypeError exception Expected a TypeError to be thrown but no"
     },
     {
       "path": "test/built-ins/Array/isArray/proxy.js",
@@ -442,7 +442,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/create-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/create-species-abrupt.js",
@@ -486,11 +486,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/is-concat-spreadable-is-array-proxy-revoked.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): [].concat(handle.proxy) throws a TypeError exception Expected a TypeError to be thrown but no exc"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/is-concat-spreadable-proxy-revoked.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): [].concat(handle.proxy) throws a TypeError exception Expected a TypeError to be thrown but no exc"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/is-concat-spreadable-proxy.js",
@@ -894,7 +894,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/filter/create-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Array/prototype/filter/create-species-abrupt.js",
@@ -1566,7 +1566,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-species-abrupt.js",
@@ -2118,7 +2118,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/slice/create-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Array/prototype/slice/create-species-abrupt.js",
@@ -2482,7 +2482,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/splice/create-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/create-species-abrupt.js",
@@ -3858,7 +3858,7 @@
     },
     {
       "path": "test/built-ins/Function/internals/Construct/base-ctor-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"object\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
     },
     {
       "path": "test/built-ins/Function/internals/Construct/derived-return-val-realm.js",
@@ -4198,7 +4198,7 @@
     },
     {
       "path": "test/built-ins/JSON/parse/revived-proxy-revoked.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/JSON/parse/revived-proxy.js",
@@ -4266,7 +4266,7 @@
     },
     {
       "path": "test/built-ins/JSON/stringify/replacer-array-proxy-revoked.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/JSON/stringify/replacer-array-proxy.js",
@@ -4294,7 +4294,7 @@
     },
     {
       "path": "test/built-ins/JSON/stringify/value-array-proxy-revoked.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): top-level value Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: "
     },
     {
       "path": "test/built-ins/JSON/stringify/value-array-proxy.js",
@@ -4318,7 +4318,7 @@
     },
     {
       "path": "test/built-ins/JSON/stringify/value-object-proxy-revoked.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): top-level value Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: "
     },
     {
       "path": "test/built-ins/JSON/stringify/value-object-proxy.js",
@@ -7822,11 +7822,7 @@
     },
     {
       "path": "test/built-ins/Object/prototype/toString/proxy-revoked-during-get-call.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Object/prototype/toString/proxy-revoked.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Array]\"\u00bb) to be true\nzjs: throw: (unknown): Exp"
     },
     {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-array-builtin.js",
@@ -8645,10 +8641,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/apply/null-handler.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/Proxy/apply/return-abrupt.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
@@ -8702,7 +8694,7 @@
     },
     {
       "path": "test/built-ins/Proxy/construct/null-handler.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/construct/return-is-abrupt.js",
@@ -8798,7 +8790,7 @@
     },
     {
       "path": "test/built-ins/Proxy/create-handler-is-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
     },
     {
       "path": "test/built-ins/Proxy/create-target-is-not-a-constructor.js",
@@ -8806,11 +8798,11 @@
     },
     {
       "path": "test/built-ins/Proxy/create-target-is-revoked-function-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
     },
     {
       "path": "test/built-ins/Proxy/create-target-is-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/call-parameters.js",
@@ -8822,10 +8814,6 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/null-handler-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/defineProperty/null-handler.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
@@ -8894,7 +8882,7 @@
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/null-handler.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/return-false-not-strict.js",
@@ -8957,10 +8945,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/Proxy/get/null-handler.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/Proxy/get/trap-is-missing-target-is-proxy.js",
       "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
     },
@@ -8998,7 +8982,7 @@
     },
     {
       "path": "test/built-ins/Proxy/getOwnPropertyDescriptor/null-handler.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/getOwnPropertyDescriptor/result-is-undefined-target-is-not-extensible.js",
@@ -9098,7 +9082,7 @@
     },
     {
       "path": "test/built-ins/Proxy/getPrototypeOf/null-handler.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/getPrototypeOf/return-is-abrupt.js",
@@ -9162,11 +9146,7 @@
     },
     {
       "path": "test/built-ins/Proxy/has/null-handler-using-with.js",
-      "reason": "zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/has/null-handler.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "zjs: throw: (unknown): Expected a TypeError but got a ReferenceError\nzjs: throw: (unknown): Expected a TypeError but got"
     },
     {
       "path": "test/built-ins/Proxy/has/return-false-target-not-extensible-using-with.js",
@@ -9238,7 +9218,7 @@
     },
     {
       "path": "test/built-ins/Proxy/isExtensible/null-handler.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/isExtensible/return-is-abrupt.js",
@@ -9314,7 +9294,7 @@
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/null-handler.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/return-all-non-configurable-keys.js",
@@ -9394,7 +9374,7 @@
     },
     {
       "path": "test/built-ins/Proxy/preventExtensions/null-handler.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/preventExtensions/return-false.js",
@@ -9433,72 +9413,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): Proxy should be an own property\nzjs: throw: (unknown): Proxy should be an own property"
     },
     {
-      "path": "test/built-ins/Proxy/revocable/builtin.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.isExtensible(Proxy.revocable) must return true\nzjs: throw: (unknown): Object.isExtensible("
-    },
-    {
       "path": "test/built-ins/Proxy/revocable/handler-is-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/revocation-function-extensible.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/revocation-function-length.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/revocation-function-name.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/revocation-function-not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/revocation-function-property-order.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/revocation-function-prototype.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/revoke-consecutive-call-returns-undefined.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/revoke-returns-undefined.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/revoke.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
     },
     {
       "path": "test/built-ins/Proxy/revocable/target-is-revoked-function-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
     },
     {
       "path": "test/built-ins/Proxy/revocable/target-is-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
     },
     {
       "path": "test/built-ins/Proxy/set/boolean-trap-result-is-false-boolean-return-false.js",
@@ -9519,10 +9443,6 @@
     {
       "path": "test/built-ins/Proxy/set/boolean-trap-result-is-false-undefined-return-false.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Proxy/set/null-handler.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
       "path": "test/built-ins/Proxy/set/target-property-is-accessor-not-configurable-set-is-undefined.js",
@@ -9567,10 +9487,6 @@
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/internals-call-order.js",
       "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
-    },
-    {
-      "path": "test/built-ins/Proxy/setPrototypeOf/null-handler.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/return-abrupt-from-isextensible-target.js",

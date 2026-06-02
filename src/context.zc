@@ -17754,6 +17754,44 @@ fn host_proxy_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_cell_from_ptr((void*)p);
 }
 
+// The revoke function returned by Proxy.revocable. The associated proxy
+// is carried on this host fn's .bound slot (read via ctx.current_host_fn).
+// Revoking flips `revoked` and clears target/handler so every subsequent
+// trap throws (ECMA-262 §28.2.1.1.1 Proxy Revocation Functions).
+fn host_proxy_revoke(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let proxy_v: ZjsValue = zjs_undefined();
+    if ctx.current_host_fn != NULL {
+        let hf: ZjsHostFunction* = NULL;
+        raw { hf = (ZjsHostFunction*)ctx->current_host_fn; }
+        proxy_v = hf.bound;
+    }
+    if zjs_is_proxy(proxy_v) != 0 {
+        let p = zjs_as_proxy(proxy_v);
+        p.revoked = true;
+        p.target = zjs_undefined();
+        p.handler = zjs_undefined();
+    }
+    return zjs_undefined();
+}
+
+// Proxy.revocable(target, handler) — ECMA-262 §28.2.2.1. Same validation
+// as `new Proxy`, returns { proxy, revoke } where revoke() disables the
+// proxy.
+fn host_proxy_revocable(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let proxy_v = host_proxy_ctor(ctx, args, argc);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    ctx_push_temp_root(ctx, proxy_v);
+    defer ctx_pop_temp_root(ctx);
+    let rev_ptr: void* = NULL; raw { rev_ptr = (void*)host_proxy_revoke; }
+    let revoke = ctx_make_host_function_arity(ctx, (char*)"", rev_ptr, 0);
+    zjs_as_host_function(revoke).bound = proxy_v;
+    let res = ctx_new_object(ctx);
+    let ro = zjs_as_object(res);
+    object_set(ctx, ro, ctx_intern_atom(ctx, (char*)"proxy", 5), proxy_v);
+    object_set(ctx, ro, ctx_intern_atom(ctx, (char*)"revoke", 6), revoke);
+    return res;
+}
+
 fn host_reflect_get(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc < 2 { return zjs_undefined(); }
     return property_get(ctx, args[0], args[1]);
@@ -25456,7 +25494,16 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Phase 4.6 — Proxy ctor + Reflect static methods.
     let proxy_ptr: void* = NULL; raw { proxy_ptr = (void*)host_proxy_ctor; }
     let proxy_v = ctx_register_host_function(ctx, (char*)"Proxy", proxy_ptr);
-    zjs_as_host_function(proxy_v).arity = 2;
+    let proxy_hf = zjs_as_host_function(proxy_v);
+    proxy_hf.arity = 2;
+    // Proxy.revocable static method.
+    let prevoc_ptr: void* = NULL; raw { prevoc_ptr = (void*)host_proxy_revocable; }
+    if proxy_hf.props == NULL {
+        let pv = ctx_new_object(ctx);
+        proxy_hf.props = zjs_as_object(pv);
+    }
+    object_set(ctx, proxy_hf.props, ctx_intern_atom(ctx, (char*)"revocable", 9),
+               ctx_make_host_function_arity(ctx, (char*)"revocable", prevoc_ptr, 2));
     let reflect_v = ctx_new_object(ctx);
     let reflect_o = zjs_as_object(reflect_v);
     let rget_ptr: void* = NULL; raw { rget_ptr = (void*)host_reflect_get; }
