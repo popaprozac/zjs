@@ -66,6 +66,7 @@ raw {
         "In", "Instanceof", "LoadThis", "LoadNewTarget",
         "NewInvoke", "Typeof", "SetProto", "SuperCall",
         "DefineMethod", "DefineMethodComputed", "SetParentCtor", "SetFunctionName",
+        "InitObjData",
         NULL,
     };
     static const char *zjs_op_name_lookup(int op) {
@@ -5296,6 +5297,37 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 ctx.pending_throw_active = true; ctx.pending_throw_value = e;
                 throwing = true; thrown = consume_pending_throw(ctx);
                 exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+            }
+        } else if op == Op::InitObjData {
+            // Object-literal data-property init (CreateDataPropertyOrThrow):
+            // define an OWN enumerable/writable/configurable data property,
+            // bypassing any inherited setter — notably the Object.prototype
+            // `__proto__` accessor, which would otherwise mutate the
+            // prototype instead of creating an own "__proto__" property for
+            // `{ ['__proto__']: x }` / `{ __proto__ }` (shorthand). a=obj,
+            // b=key, c=value.
+            let obj_val = regs[inst.a];
+            let key_val = regs[inst.b];
+            let value   = regs[inst.c];
+            if zjs_is_object(obj_val) != 0 {
+                let o = zjs_as_object(obj_val);
+                key_val = symbol_key_coerce(key_val);
+                if zjs_is_string(key_val) == 0 { key_val = zjs_to_string(ctx, key_val); }
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                let ks = zjs_as_string(key_val);
+                let katom = ctx_intern_atom(ctx, ks.data, ks.length);
+                object_define_property_slot(ctx, o, katom, value, PROP_DEFAULT);
+            } else {
+                // Non-object receiver shouldn't occur for object literals;
+                // fall back to ordinary set for safety.
+                property_set(ctx, obj_val, key_val, value);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
             }
         } else if op == Op::LoadThis {
             // Spec: in a derived-class constructor `this` is in the

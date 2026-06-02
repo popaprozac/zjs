@@ -428,6 +428,13 @@ enum Op {
                       // dst = a string from ECMA-262 §13.5.3
                       // (one of: "undefined" "object" "boolean"
                       // "number" "string" "function").
+    // InitObjData: object-literal data-property initialization.
+    //   ECMA-262 PropertyDefinitionEvaluation uses
+    //   CreateDataPropertyOrThrow — a [[DefineOwnProperty]], NOT a
+    //   [[Set]]. So it installs an own enumerable+writable+configurable
+    //   data property and must NOT invoke an inherited setter (e.g. the
+    //   Object.prototype `__proto__` accessor). a=obj, b=key, c=val.
+    InitObjData,      // a=obj, b=key_reg, c=val_reg.
 }
 
 struct Inst {

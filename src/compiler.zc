@@ -2418,7 +2418,10 @@ fn compile_object_literal(c: Compiler*, node: AstNode*) -> u8 {
             } else if prop.op == TokenKind::KwSet {
                 emit(c, make_inst_abc(Op::DefineSetter, dst, key_r, val_r));
             } else {
-                emit(c, make_inst_abc(Op::StoreElem, dst, key_r, val_r));
+                // Computed keys are never the B.3.1 `__proto__` proto-setter
+                // — `{ ['__proto__']: x }` creates an own property. Use
+                // CreateDataProperty (define-own), not [[Set]].
+                emit(c, make_inst_abc(Op::InitObjData, dst, key_r, val_r));
             }
             release_reg(c, val_r);
             release_reg(c, key_r);
@@ -2442,6 +2445,30 @@ fn compile_object_literal(c: Compiler*, node: AstNode*) -> u8 {
             name_len   = name_len - 2;
         }
 
+        // ECMA-262 B.3.1: the colon form `__proto__: AssignmentExpression`
+        // (non-computed, not a method/accessor) sets the object's
+        // [[Prototype]] instead of creating an own property. Shorthand
+        // `{ __proto__ }` and methods `{ __proto__() {} }` are excluded
+        // (prop.bool_value marks the colon form). The function value, if
+        // anonymous, is NOT named "__proto__" (isProtoSetter skips
+        // NamedEvaluation), so we bypass maybe_infer_anon_name here too.
+        let is_proto_setter: int = 0;
+        if prop.bool_value && prop.op != TokenKind::KwGet && prop.op != TokenKind::KwSet {
+            raw {
+                is_proto_setter = (name_len == 9
+                    && memcmp(c->source + name_start, "__proto__", 9) == 0) ? 1 : 0;
+            }
+        }
+        if is_proto_setter != 0 {
+            let val_r = compile_expr(c, prop.left);
+            // SetProto: a=proto(value), b=obj. Non-Object/Null values are
+            // a no-op (matches B.3.1's "Type(V) is Object or Null" guard).
+            emit(c, make_inst_ab(Op::SetProto, val_r, dst));
+            release_reg(c, val_r);
+            i = i + 1;
+            continue;
+        }
+
         let key_r = emit_load_name_string(c,
                                           c.source + name_start,
                                           name_len);
@@ -2459,7 +2486,10 @@ fn compile_object_literal(c: Compiler*, node: AstNode*) -> u8 {
         } else if prop.op == TokenKind::KwSet {
             emit(c, make_inst_abc(Op::DefineSetter, dst, key_r, val_r));
         } else {
-            emit(c, make_inst_abc(Op::StoreElem, dst, key_r, val_r));
+            // Data property — CreateDataProperty (define-own), NOT [[Set]],
+            // so an inherited setter (e.g. Object.prototype `__proto__`)
+            // is never invoked. Covers shorthand `{ __proto__ }` too.
+            emit(c, make_inst_abc(Op::InitObjData, dst, key_r, val_r));
         }
         release_reg(c, val_r);
         release_reg(c, key_r);

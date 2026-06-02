@@ -4166,9 +4166,15 @@ fn parse_object(p: Parser*) -> AstNode* {
         }
 
         let value: AstNode* = NULL;
+        // Track the colon `PropertyName : AssignmentExpression` form. Only
+        // this production triggers B.3.1 `__proto__:` proto-setter
+        // semantics; shorthand `{ __proto__ }` and methods create an own
+        // property instead. Stashed on prop.bool_value below.
+        let is_colon_form: bool = false;
         if match_kind(p, TokenKind::Colon) {
             // Data property. An async/* prefix is only valid on a method.
             if om_async || om_gen { p.had_error = true; break; }
+            is_colon_form = true;
             value = parse_assignment(p);
             if value == NULL { break; }
             prop_end = value.end;
@@ -4253,6 +4259,9 @@ fn parse_object(p: Parser*) -> AstNode* {
         prop.name_start = key_tok.start;
         prop.name_length = key_tok.length;
         prop.left = value;
+        // Mark the colon form (`k: v`) so the compiler can apply B.3.1
+        // `__proto__:` proto-setter semantics only to it (not shorthand).
+        prop.bool_value = is_colon_form;
 
         if count >= cap {
             cap = cap * 2;

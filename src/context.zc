@@ -18731,6 +18731,176 @@ fn host_is_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     return zjs_bool(0);
 }
 
+// =====================================================================
+// Annex-B legacy Object.prototype accessors (ECMA-262 §B.2.2):
+// __defineGetter__ / __defineSetter__ / __lookupGetter__ /
+// __lookupSetter__ + the `__proto__` accessor + toLocaleString.
+// Web-reality surface many bundles + ~80 test262 expect on every object.
+// =====================================================================
+
+// Walk `start` and its [[Prototype]] chain for an own property named
+// `name`. If it resolves to an accessor, return its [[Get]] (or [[Set]]
+// when want_setter); a data property shadows any inherited accessor
+// (return undefined); absent through the whole chain → undefined.
+fn annexb_walk_accessor(start: ZjsObject*, name: ZjsString*, want_setter: bool) -> ZjsValue {
+    let cur = start;
+    while cur != NULL {
+        let slot = class_find_slot(cur.cls, name);
+        if slot >= 0 && zjs_is_deleted(cur.slots[(u32)slot]) == 0 {
+            let raw = cur.slots[(u32)slot];
+            if zjs_is_accessor(raw) != 0 {
+                let acc = zjs_as_accessor(raw);
+                return if want_setter { acc.set } else { acc.get };
+            }
+            return zjs_undefined();
+        }
+        cur = cur.proto;
+    }
+    return zjs_undefined();
+}
+
+// Shared body for __lookupGetter__ / __lookupSetter__ (B.2.2.4/B.2.2.5).
+fn annexb_lookup(ctx: ZjsContext*, key_v: ZjsValue, want_setter: bool) -> ZjsValue {
+    let ov = ctx_to_object(ctx, ctx.host_this);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let k = symbol_key_coerce(key_v);
+    if zjs_is_string(k) == 0 { k = zjs_to_string(ctx, k); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let name = zjs_as_string(k);
+    if zjs_is_object(ov) != 0 {
+        return annexb_walk_accessor(zjs_as_object(ov), name, want_setter);
+    }
+    if zjs_is_array(ov) != 0 {
+        let a = zjs_as_array(ov);
+        // Array indices/length are never accessors (#343). Probe the
+        // expando bag for an own accessor, then continue up the proto
+        // chain (the array's proto, defaulting to Array.prototype).
+        if a.props != NULL {
+            let slot = class_find_slot(a.props.cls, name);
+            if slot >= 0 && zjs_is_deleted(a.props.slots[(u32)slot]) == 0 {
+                let raw = a.props.slots[(u32)slot];
+                if zjs_is_accessor(raw) != 0 {
+                    let acc = zjs_as_accessor(raw);
+                    return if want_setter { acc.set } else { acc.get };
+                }
+                return zjs_undefined();
+            }
+        }
+        let p: ZjsObject* = a.proto;
+        if p == NULL { p = ctx.array_proto; }
+        if p != NULL { return annexb_walk_accessor(p, name, want_setter); }
+    }
+    return zjs_undefined();
+}
+
+fn host_object_lookup_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let key = if argc >= 1 { args[0] } else { zjs_undefined() };
+    return annexb_lookup(ctx, key, false);
+}
+
+fn host_object_lookup_setter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let key = if argc >= 1 { args[0] } else { zjs_undefined() };
+    return annexb_lookup(ctx, key, true);
+}
+
+// __defineGetter__(P, getter) / __defineSetter__(P, setter)
+// (B.2.2.2/B.2.2.3): ToObject(this); IsCallable(fn) or TypeError;
+// install accessor { get|set: fn, enumerable:true, configurable:true }
+// via DefinePropertyOrThrow. Reuses host_object_define_property so the
+// full ValidateAndApplyPropertyDescriptor merge applies — the sibling
+// accessor half is preserved and a non-configurable redefine rejects.
+fn annexb_define_accessor(ctx: ZjsContext*, key_v: ZjsValue, fn_v: ZjsValue, is_setter: bool) -> ZjsValue {
+    let ov = ctx_to_object(ctx, ctx.host_this);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if zjs_is_callable(fn_v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"__defineGetter__/__defineSetter__ expecting a function", 54);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let desc_v = ctx_new_object(ctx);
+    ctx_push_temp_root(ctx, desc_v); defer ctx_pop_temp_root(ctx);
+    let desc_o = zjs_as_object(desc_v);
+    let acc_key = if is_setter { ctx_intern_atom(ctx, (char*)"set", 3) }
+                  else         { ctx_intern_atom(ctx, (char*)"get", 3) };
+    object_set(ctx, desc_o, acc_key, fn_v);
+    object_set(ctx, desc_o, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(1));
+    object_set(ctx, desc_o, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(1));
+    let dp_args: ZjsValue[3];
+    dp_args[0] = ov; dp_args[1] = key_v; dp_args[2] = desc_v;
+    let _ = host_object_define_property(ctx, &dp_args[0], 3);
+    return zjs_undefined();
+}
+
+fn host_object_define_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let key = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let g   = if argc >= 2 { args[1] } else { zjs_undefined() };
+    return annexb_define_accessor(ctx, key, g, false);
+}
+
+fn host_object_define_setter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let key = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let s   = if argc >= 2 { args[1] } else { zjs_undefined() };
+    return annexb_define_accessor(ctx, key, s, true);
+}
+
+// Object.prototype.toLocaleString() — ECMA-262 §20.1.3.5:
+// Return ? Invoke(this, "toString"). No Intl, so it's the identity
+// dispatch to the receiver's own toString.
+fn host_object_to_locale_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    let ts_key = ctx_intern_atom(ctx, (char*)"toString", 8);
+    let ts = property_get(ctx, this_val, zjs_cell_from_ptr((void*)ts_key));
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if zjs_is_callable(ts) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"toString is not a function", 26);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return zjs_call_value_with_this(ctx, ts, this_val, NULL, 0);
+}
+
+// get __proto__ / set __proto__ (ECMA-262 §B.2.2.1). Installed on
+// Object.prototype as { get, set, enumerable:false, configurable:true }.
+fn host_object_proto_get(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let ov = ctx_to_object(ctx, ctx.host_this);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let one: ZjsValue[1]; one[0] = ov;
+    return host_object_get_prototype_of(ctx, &one[0], 1);
+}
+
+fn host_object_proto_set(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_val = ctx.host_this;
+    let v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    // Step 1: RequireObjectCoercible(this).
+    if zjs_is_undefined(this_val) != 0 || zjs_is_null(this_val) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Cannot set __proto__ of null or undefined", 41);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    // Step 2: if Type(V) is neither Object nor Null, return undefined.
+    let v_ok = zjs_is_null(v) != 0
+            || zjs_is_object(v) != 0
+            || zjs_is_array(v) != 0
+            || zjs_is_function(v) != 0
+            || zjs_is_closure(v) != 0
+            || zjs_is_host_function(v) != 0;
+    if !v_ok { return zjs_undefined(); }
+    // Step 3: if Type(this) is not Object, return undefined (no-op on
+    // primitives — coercible, but no mutable [[Prototype]]).
+    let this_obj = zjs_is_object(this_val) != 0
+                || zjs_is_array(this_val) != 0
+                || zjs_is_function(this_val) != 0
+                || zjs_is_closure(this_val) != 0
+                || zjs_is_host_function(this_val) != 0;
+    if !this_obj { return zjs_undefined(); }
+    let two: ZjsValue[2]; two[0] = this_val; two[1] = v;
+    let _ = host_object_set_prototype_of(ctx, &two[0], 2);
+    return zjs_undefined();
+}
+
 fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 { return zjs_bool(0); }
     let this_val = ctx.host_this;
@@ -23631,6 +23801,41 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, ctx.object_proto,
                ctx_intern_atom(ctx, (char*)"valueOf", 7),
                ctx_make_host_function(ctx, (char*)"valueOf", ovo_ptr));
+
+    // --- Annex-B legacy accessors + toLocaleString (ECMA-262 §B.2.2) ---
+    let dg_ptr: void* = NULL; raw { dg_ptr = (void*)host_object_define_getter; }
+    let ds_ptr: void* = NULL; raw { ds_ptr = (void*)host_object_define_setter; }
+    let lg_ptr: void* = NULL; raw { lg_ptr = (void*)host_object_lookup_getter; }
+    let ls_ptr: void* = NULL; raw { ls_ptr = (void*)host_object_lookup_setter; }
+    let tls_ptr: void* = NULL; raw { tls_ptr = (void*)host_object_to_locale_string; }
+    object_set(ctx, ctx.object_proto,
+               ctx_intern_atom(ctx, (char*)"__defineGetter__", 16),
+               ctx_make_host_function_arity(ctx, (char*)"__defineGetter__", dg_ptr, 2));
+    object_set(ctx, ctx.object_proto,
+               ctx_intern_atom(ctx, (char*)"__defineSetter__", 16),
+               ctx_make_host_function_arity(ctx, (char*)"__defineSetter__", ds_ptr, 2));
+    object_set(ctx, ctx.object_proto,
+               ctx_intern_atom(ctx, (char*)"__lookupGetter__", 16),
+               ctx_make_host_function_arity(ctx, (char*)"__lookupGetter__", lg_ptr, 1));
+    object_set(ctx, ctx.object_proto,
+               ctx_intern_atom(ctx, (char*)"__lookupSetter__", 16),
+               ctx_make_host_function_arity(ctx, (char*)"__lookupSetter__", ls_ptr, 1));
+    object_set(ctx, ctx.object_proto,
+               ctx_intern_atom(ctx, (char*)"toLocaleString", 14),
+               ctx_make_host_function_arity(ctx, (char*)"toLocaleString", tls_ptr, 0));
+    // `__proto__` accessor: { get, set, enumerable:false, configurable:true }.
+    // Can't use object_define_accessor (it forces enumerable) — build it
+    // directly so it stays non-enumerable per spec.
+    let pg_ptr: void* = NULL; raw { pg_ptr = (void*)host_object_proto_get; }
+    let ps_ptr: void* = NULL; raw { ps_ptr = (void*)host_object_proto_set; }
+    let proto_get_fn = ctx_make_host_function_arity(ctx, (char*)"get __proto__", pg_ptr, 0);
+    let proto_set_fn = ctx_make_host_function_arity(ctx, (char*)"set __proto__", ps_ptr, 1);
+    let proto_acc = zjs_accessor_new(proto_get_fn, proto_set_fn);
+    ctx_register_cell(ctx, (void*)proto_acc);
+    let proto_acc_v = zjs_cell_from_ptr((void*)proto_acc);
+    object_define_property_slot(ctx, ctx.object_proto,
+                                ctx_intern_atom(ctx, (char*)"__proto__", 9),
+                                proto_acc_v, PROP_CONFIGURABLE);
 
     // --- Function.prototype (2026-05-15) ---
     // The [[Prototype]] for every callable. Carries the already-built
