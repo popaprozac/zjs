@@ -2643,6 +2643,15 @@ fn parse_arrow_paren(p: Parser*, is_async: bool) -> AstNode* {
     if !expect_kind(p, TokenKind::Arrow)  { return NULL; }
     let body = parse_arrow_body(p, is_async);
     if body == NULL { return NULL; }
+    // Early errors: ArrowParameters are UniqueFormalParameters (duplicate
+    // names illegal even when simple), and a non-simple parameter list
+    // cannot coexist with a "use strict" body directive.
+    if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
+        p.had_error = true; return NULL;
+    }
+    if params_have_duplicate(params, p.source) {
+        p.had_error = true; return NULL;
+    }
     let node = new_node(&p.tracker, NodeKind::ArrowFunc, start_pos, body.end);
     node.left = body;
     node.children = params.arr;

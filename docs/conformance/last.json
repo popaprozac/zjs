@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 21:49 UTC",
+    "when": "2026-06-02 21:57 UTC",
     "total": 27491,
-    "passed": 22001,
-    "failed": 4770,
+    "passed": 22009,
+    "failed": 4762,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -11177,16 +11177,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/language/expressions/arrow-function/array-destructuring-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/arrow-function/arrow/capturing-closure-variables-2.js",
       "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dflt-params-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/arrow-function/dflt-params-ref-later.js",
@@ -11273,24 +11265,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): name descriptor should be configurable\nzjs: throw: (unknown): name descriptor should be configura"
     },
     {
-      "path": "test/language/expressions/arrow-function/object-destructuring-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/arrow-function/param-dflt-yield-expr.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/arrow-function/param-dflt-yield-id-strict.js",
       "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/params-duplicate.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/rest-param-strict-body.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/arrow-function/scope-body-lex-distinct.js",
@@ -11373,14 +11353,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-cover-no-duplicates-rest.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-cover-no-duplicates.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-cover-no-eval.js",
       "reason": "expected SyntaxError, got Test262"
     },
@@ -11398,10 +11370,6 @@
     },
     {
       "path": "test/language/expressions/arrow-function/syntax/early-errors/asi-restriction-invalid.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/syntax/early-errors/use-strict-with-non-simple-param.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
