@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 19:09 UTC",
+    "when": "2026-06-02 19:27 UTC",
     "total": 27491,
-    "passed": 21571,
-    "failed": 5200,
+    "passed": 21733,
+    "failed": 5038,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -7389,10 +7389,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-67.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-7.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
@@ -7401,19 +7397,7 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-79.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-80.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-81.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
@@ -10177,44 +10161,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): ToNumber throws when its argument's ToPrimitive step calls a throwing valueOf, and String.fromCha"
     },
     {
-      "path": "test/built-ins/String/fromCodePoint/argument-is-not-integer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError but got a TypeError\nzjs: throw: (unknown): Expected a RangeError but got a "
-    },
-    {
-      "path": "test/built-ins/String/fromCodePoint/argument-not-coercible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/String/fromCodePoint/arguments-is-empty.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/String/fromCodePoint/fromCodePoint.js",
-      "reason": "[sloppy] zjs: throw: (unknown): fromCodePoint should be an own property\nzjs: throw: (unknown): fromCodePoint should be an own pro"
-    },
-    {
-      "path": "test/built-ins/String/fromCodePoint/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/fromCodePoint/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/fromCodePoint/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/String/fromCodePoint/number-is-out-of-range.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError but got a TypeError\nzjs: throw: (unknown): Expected a RangeError but got a "
+      "reason": "[sloppy] zjs: throw: (unknown): fromCodePoint descriptor should not be enumerable\nzjs: throw: (unknown): fromCodePoint descriptor"
     },
     {
       "path": "test/built-ins/String/fromCodePoint/return-string-value.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/fromCodePoint/to-number-conversions.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\\u0004\"\u00bb, \u00ab\"\u0404\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\"\\u00"
     },
     {
       "path": "test/built-ins/String/is-a-constructor.js",
@@ -10277,48 +10229,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
-      "path": "test/built-ins/String/prototype/at/index-argument-tointeger.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/at/index-non-numeric-argument-tointeger-invalid.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/at/index-non-numeric-argument-tointeger.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/at/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/at/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/at/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/at/return-abrupt-from-this.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
       "path": "test/built-ins/String/prototype/at/returns-code-unit.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/at/returns-item-relative-index.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/at/returns-item.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/at/returns-undefined-for-out-of-range-index.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
+      "reason": "[sloppy] zjs: throw: (unknown): s.at(2) must return \"\\uD800\" Expected SameValue(\u00ab\"\ufffd\"\u00bb, \u00ab\"\ufffd\ufffd\ufffd\"\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/String/prototype/charAt/S15.5.4.4_A1_T10.js",
@@ -10337,52 +10249,20 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/String/prototype/codePointAt/codePointAt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `typeof String.prototype.codePointAt` is `function` Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\""
-    },
-    {
-      "path": "test/built-ins/String/prototype/codePointAt/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/codePointAt/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/codePointAt/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/String/prototype/codePointAt/return-abrupt-from-object-pos-to-integer.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/String/prototype/codePointAt/return-abrupt-from-this.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
       "path": "test/built-ins/String/prototype/codePointAt/return-code-unit-coerced-position.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab237\u00bb, \u00ab65536\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab237\u00bb, \u00ab6"
     },
     {
       "path": "test/built-ins/String/prototype/codePointAt/return-first-code-unit.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab237\u00bb, \u00ab55296\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab237\u00bb, \u00ab5"
     },
     {
       "path": "test/built-ins/String/prototype/codePointAt/return-single-code-unit.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab234\u00bb, \u00ab43690\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab234\u00bb, \u00ab4"
     },
     {
       "path": "test/built-ins/String/prototype/codePointAt/return-utf16-decode.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/codePointAt/returns-undefined-on-position-equal-or-more-than-size.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/codePointAt/returns-undefined-on-position-less-than-zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): U+10000 Expected SameValue(\u00ab237\u00bb, \u00ab65536\u00bb) to be true\nzjs: throw: (unknown): U+10000 Expected Sam"
     },
     {
       "path": "test/built-ins/String/prototype/constructor/S15.5.4.1_A1_T2.js",
@@ -10473,152 +10353,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): coerces the receiver to a string Expected a Test262Error but got a TypeError\nzjs: throw: (unknown"
     },
     {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A10.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A11.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A1_T1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A1_T10.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A1_T2.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A1_T4.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A1_T5.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A1_T6.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A1_T7.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A1_T8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A1_T9.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A4_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: Exception === \"intointeger\". Actual: TypeError: property is not a function\nzjs: throw: (unk"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A4_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: Exception === \"intointeger\". Actual: TypeError: property is not a function\nzjs: throw: (unk"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A4_T3.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A4_T4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: Exception === \"intostr\". Actual: TypeError: property is not a function\nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A4_T5.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: Exception === \"intostr\". Actual: TypeError: property is not a function\nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A6.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/S15.5.4.8_A9.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/not-a-substring.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/lastIndexOf/this-value-not-obj-coercible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/localeCompare/15.5.4.9_3.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/String/prototype/localeCompare/15.5.4.9_CE.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/localeCompare/S15.5.4.9_A10.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/localeCompare/S15.5.4.9_A11.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/localeCompare/S15.5.4.9_A1_T1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/localeCompare/S15.5.4.9_A1_T2.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/localeCompare/S15.5.4.9_A6.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
-    },
-    {
-      "path": "test/built-ins/String/prototype/localeCompare/S15.5.4.9_A7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1: __FACTORY = String.prototype.localeCompare; __instance = new __FACTORY lead to throwing excep"
-    },
-    {
-      "path": "test/built-ins/String/prototype/localeCompare/S15.5.4.9_A8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/localeCompare/S15.5.4.9_A9.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/localeCompare/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/localeCompare/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/String/prototype/localeCompare/this-value-not-obj-coercible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
+      "reason": "[sloppy] zjs: throw: (unknown): String.prototype.localeCompare considers o\u0308 (\\u006f\\u00cc\\u0088) \u2260 \u00f6 (\\u00c3\\u00b6).\nzjs: throw: "
     },
     {
       "path": "test/built-ins/String/prototype/match/S15.5.4.10_A1_T6.js",
@@ -10635,30 +10371,6 @@
     {
       "path": "test/built-ins/String/prototype/match/S15.5.4.10_A1_T9.js",
       "reason": "[sloppy] zjs: throw: (unknown): #4.0: __obj = {valueOf:function(){}, toString:void 0}; __matched = new String(__obj).match(functi"
-    },
-    {
-      "path": "test/built-ins/String/prototype/match/S15.5.4.10_A2_T10.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/match/S15.5.4.10_A2_T11.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/match/S15.5.4.10_A2_T15.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/match/S15.5.4.10_A2_T16.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/match/S15.5.4.10_A2_T8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/match/S15.5.4.10_A2_T9.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
       "path": "test/built-ins/String/prototype/match/cstm-matcher-get-err.js",
@@ -10817,92 +10529,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/String/prototype/padEnd/exception-not-object-coercible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padEnd/fill-string-empty.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padEnd/fill-string-non-strings.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padEnd/fill-string-omitted.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padEnd/function-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padEnd/function-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padEnd/function-property-descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): padEnd should be an own property\nzjs: throw: (unknown): padEnd should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padEnd/max-length-not-greater-than-string.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/String/prototype/padEnd/normal-operation.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padEnd/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padEnd/observable-operations.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padStart/exception-not-object-coercible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padStart/fill-string-empty.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padStart/fill-string-non-strings.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padStart/fill-string-omitted.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padStart/function-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padStart/function-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padStart/function-property-descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): padStart should be an own property\nzjs: throw: (unknown): padStart should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padStart/max-length-not-greater-than-string.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"abc\ufffd\ufffd\ufffd\"\u00bb, \u00ab\"abc\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameV"
     },
     {
       "path": "test/built-ins/String/prototype/padStart/normal-operation.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padStart/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/String/prototype/padStart/observable-operations.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\ufffd\ufffd\ufffdabc\"\u00bb, \u00ab\"\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\ufffdabc\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameV"
     },
     {
       "path": "test/built-ins/String/prototype/repeat/return-abrupt-from-count-as-symbol.js",
@@ -11401,216 +11033,32 @@
       "reason": "[sloppy] zjs: throw: (unknown): String.prototype.substring throws in its toprimitive step. Expected a TypeError to be thrown but "
     },
     {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A10.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A11.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T10.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T11.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: Exception === \"intostr\". Actual: TypeError: property is not a function\nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T12.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: Exception === \"intostr\". Actual: TypeError: property is not a function\nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T13.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
       "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T14.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T2.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T3.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T4.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T5.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T6.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T7.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T9.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A2_T1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A6.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: var __FACTORY = String.prototype.toLocaleLowerCase; \"var __instance = new __FACTORY\" throw "
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A9.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
+      "reason": "[sloppy] zjs: throw: (unknown): #1: var __reg = new RegExp(\"ABC\"); __reg.toLocaleLowerCase = String.prototype.toLocaleLowerCase; "
     },
     {
       "path": "test/built-ins/String/prototype/toLocaleLowerCase/special_casing.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): GREEK CAPITAL LETTER ALPHA WITH PSILI AND PROSGEGRAMMENI Expected SameValue(\u00ab\"\u1f88\"\u00bb, \u00ab\"\u1f80\"\u00bb) to be t"
     },
     {
       "path": "test/built-ins/String/prototype/toLocaleLowerCase/special_casing_conditional.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Single GREEK CAPITAL LETTER SIGMA Expected SameValue(\u00ab\"\u03a3\"\u00bb, \u00ab\"\u03c3\"\u00bb) to be true\nzjs: throw: (unknow"
     },
     {
       "path": "test/built-ins/String/prototype/toLocaleLowerCase/supplementary_plane.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleLowerCase/this-value-not-obj-coercible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A10.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A11.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T10.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T11.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: Exception === \"intostr\". Actual: TypeError: property is not a function\nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T12.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: Exception === \"intostr\". Actual: TypeError: property is not a function\nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T13.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): DESERET CAPITAL LETTER LONG I Expected SameValue(\u00ab\"\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\"\u00bb, \u00ab\"\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\"\u00bb) to be true\nzjs: throw: ("
     },
     {
       "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T14.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T2.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T3.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T4.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T5.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T6.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T7.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A1_T9.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A2_T1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A6.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1:  var __instance = new __FACTORY;  Object has no construct lead  a TypeError. Actual: Test26"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A9.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasOwnProperty')\nzjs: throw: TypeError: Cannot read"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
+      "reason": "[sloppy] zjs: throw: (unknown): #1: var __reg = new RegExp(\"abc\"); __reg.toLocaleUpperCase = String.prototype.toLocaleUpperCase; "
     },
     {
       "path": "test/built-ins/String/prototype/toLocaleUpperCase/special_casing.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): LATIN SMALL LETTER SHARP S Expected SameValue(\u00ab\"\u00df\"\u00bb, \u00ab\"SS\"\u00bb) to be true\nzjs: throw: (unknown): LA"
     },
     {
       "path": "test/built-ins/String/prototype/toLocaleUpperCase/supplementary_plane.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLocaleUpperCase/this-value-not-obj-coercible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
+      "reason": "[sloppy] zjs: throw: (unknown): DESERET SMALL LETTER LONG I Expected SameValue(\u00ab\"\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\"\u00bb, \u00ab\"\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\"\u00bb) to be true\nzjs: throw: (un"
     },
     {
       "path": "test/built-ins/String/prototype/toLowerCase/S15.5.4.16_A1_T14.js",
@@ -11809,188 +11257,92 @@
       "reason": "[sloppy] zjs: throw: (unknown): \"\u00a0abc\".trim() Expected SameValue(\u00ab\"\u00a0abc\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): \"\u00a0abc\".trim"
     },
     {
-      "path": "test/built-ins/String/prototype/trimEnd/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): trimEnd should be an own property\nzjs: throw: (unknown): trimEnd should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-boolean.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
-    },
-    {
       "path": "test/built-ins/String/prototype/trimEnd/this-value-line-terminator.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-not-obj-coercible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-number.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\\n\\r\u2028\u2029a\\n\\r\u2028\u2029b\\n\\r\u2028\u2029\"\u00bb, \u00ab\"\\n\\r\u2028\u2029a\\n\\r\u2028\u2029b\"\u00bb) to be true\nzjs: throw: (unknown)"
     },
     {
       "path": "test/built-ins/String/prototype/trimEnd/this-value-object-cannot-convert-to-primitive-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/String/prototype/trimEnd/this-value-object-toprimitive-call-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/String/prototype/trimEnd/this-value-object-toprimitive-meth-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/String/prototype/trimEnd/this-value-object-toprimitive-meth-priority.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): thisVal[Symbol.toPrimitive] expected to have been accessed. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be tr"
     },
     {
       "path": "test/built-ins/String/prototype/trimEnd/this-value-object-toprimitive-returns-object-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-tostring-call-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-tostring-meth-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/String/prototype/trimEnd/this-value-object-tostring-meth-priority.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): thisVal.toString expected to have been accessed. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: thr"
     },
     {
       "path": "test/built-ins/String/prototype/trimEnd/this-value-object-tostring-returns-object-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-valueof-call-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-valueof-meth-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/String/prototype/trimEnd/this-value-object-valueof-meth-priority.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): thisVal[Symbol.toPrimitive should have been accessed. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs"
     },
     {
       "path": "test/built-ins/String/prototype/trimEnd/this-value-object-valueof-returns-object-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-symbol-typeerror.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/String/prototype/trimEnd/this-value-whitespace.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/not-a-constructor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConstructor invoked with a non-function value\nzjs: throw: (unknown): isConstructor invoked with"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): trimStart should be an own property\nzjs: throw: (unknown): trimStart should be an own property"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-boolean.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\\t\\n\\u000b\\f\\r \ufffd\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000\u2028\u2029\ufeffa\\t\\n\\u000b\\f\\r \ufffd\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000\u2028\u2029\ufeffb\\t\\n\\u"
     },
     {
       "path": "test/built-ins/String/prototype/trimStart/this-value-line-terminator.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-not-obj-coercible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-number.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\u2028\u2029a\\n\\r\u2028\u2029b\\n\\r\u2028\u2029\"\u00bb, \u00ab\"a\\n\\r\u2028\u2029b\\n\\r\u2028\u2029\"\u00bb) to be true\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/String/prototype/trimStart/this-value-object-cannot-convert-to-primitive-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/String/prototype/trimStart/this-value-object-toprimitive-call-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/String/prototype/trimStart/this-value-object-toprimitive-meth-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/String/prototype/trimStart/this-value-object-toprimitive-meth-priority.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): thisVal[Symbol.toPrimitive] expected to have been accessed. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be tr"
     },
     {
       "path": "test/built-ins/String/prototype/trimStart/this-value-object-toprimitive-returns-object-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-tostring-call-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-tostring-meth-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/String/prototype/trimStart/this-value-object-tostring-meth-priority.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): thisVal.toString expected to have been accessed. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: thr"
     },
     {
       "path": "test/built-ins/String/prototype/trimStart/this-value-object-tostring-returns-object-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-valueof-call-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-valueof-meth-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/String/prototype/trimStart/this-value-object-valueof-meth-priority.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): thisVal[Symbol.toPrimitive should have been accessed. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs"
     },
     {
       "path": "test/built-ins/String/prototype/trimStart/this-value-object-valueof-returns-object-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-symbol-typeerror.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/String/prototype/trimStart/this-value-whitespace.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'call')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\ufffd\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000\u2028\u2029\ufeffa\\t\\n\\u000b\\f\\r \ufffd\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000\u2028\u2029\ufeffb\\t\\n\\u000b\\f\\r \ufffd\u1680\u2000\u2001\u2002\u2003"
     },
     {
       "path": "test/built-ins/String/prototype/valueOf/non-generic-realm.js",

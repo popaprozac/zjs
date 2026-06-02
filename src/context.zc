@@ -6813,6 +6813,266 @@ fn host_string_to_lower_case(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zj
     return ctx_intern_string_take(ctx, buf, n);
 }
 
+// ToNumber that throws a TypeError on Symbol / BigInt (ECMA-262
+// ToNumber steps 3-4) and runs ToPrimitive(number) on objects. Plain
+// zjs_to_double silently yields NaN for these — wrong for spec methods
+// whose tests assert the abrupt completion propagates.
+fn to_number_or_throw(ctx: ZjsContext*, v: ZjsValue) -> f64 {
+    if zjs_is_symbol(v) != 0 { raise_symbol_to_number(ctx); return 0.0; }
+    if zjs_is_bigint(v) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Cannot convert a BigInt to a number", 35);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return 0.0;
+    }
+    if zjs_is_object(v) != 0 || zjs_is_array(v) != 0 {
+        let p = zjs_to_primitive(ctx, v, false);
+        if ctx.pending_throw_active { return 0.0; }
+        if zjs_is_symbol(p) != 0 { raise_symbol_to_number(ctx); return 0.0; }
+        return zjs_to_double(p);
+    }
+    return zjs_to_double(v);
+}
+
+// String.prototype.codePointAt(pos) — ECMA-262 §22.1.3.4. zjs strings
+// are byte (Latin-1-ish) sequences, so this returns the byte value at
+// `pos` (no surrogate-pair combining). undefined if out of range.
+fn host_string_code_point_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if zjs_is_string(str_v) == 0 { return zjs_undefined(); }
+    let s = zjs_as_string(str_v);
+    let d: f64 = 0.0;
+    if argc >= 1 { d = to_number_or_throw(ctx, args[0]); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    raw { if (isnan(d)) d = 0; }
+    if d < 0.0 || d >= (f64)s.length { return zjs_undefined(); }
+    let c = (u8)s.data[(u32)d];
+    return zjs_int32((i32)c);
+}
+
+// String.prototype.at(index) — ES2022 relative indexing.
+fn host_string_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if zjs_is_string(str_v) == 0 { return zjs_undefined(); }
+    let s = zjs_as_string(str_v);
+    let len = (i32)s.length;
+    let d: f64 = 0.0;
+    if argc >= 1 { d = to_number_or_throw(ctx, args[0]); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    raw { if (isnan(d)) d = 0; }
+    let rel = (i32)d;
+    let k = if rel >= 0 { rel } else { len + rel };
+    if k < 0 || k >= len { return zjs_undefined(); }
+    let buf = alloc_n<char>((usize)2);
+    buf[0] = s.data[(u32)k];
+    buf[1] = (char)0;
+    return ctx_intern_string_take(ctx, buf, 1);
+}
+
+// String.prototype.lastIndexOf(searchString, position) — §22.1.3.9.
+fn host_string_last_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if ctx.pending_throw_active { return zjs_int32(-1); }
+    if zjs_is_string(str_v) == 0 { return zjs_int32(-1); }
+    let needle_v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_string(needle_v) == 0 { needle_v = zjs_to_string(ctx, needle_v); }
+    if ctx.pending_throw_active { return zjs_int32(-1); }
+    let hay = zjs_as_string(str_v);
+    let nee = zjs_as_string(needle_v);
+    let hay_n = hay.length;
+    let nee_n = nee.length;
+    // position → start: NaN means search the whole string (start = len).
+    let pos: f64 = 0.0;
+    let pos_is_nan: int = 1;
+    if argc >= 2 {
+        pos = to_number_or_throw(ctx, args[1]);
+        if ctx.pending_throw_active { return zjs_int32(-1); }
+        raw { pos_is_nan = isnan(pos) ? 1 : 0; }
+    }
+    let start: i64 = (i64)hay_n;
+    if pos_is_nan == 0 {
+        if pos < 0.0 { pos = 0.0; }
+        if pos > (f64)hay_n { pos = (f64)hay_n; }
+        start = (i64)pos;
+    }
+    if nee_n == 0 {
+        let r: i64 = if start > (i64)hay_n { (i64)hay_n } else { start };
+        return zjs_int32((i32)r);
+    }
+    if nee_n > hay_n { return zjs_int32(-1); }
+    let hay_d = hay.data;
+    let nee_d = nee.data;
+    let result: i32 = -1;
+    raw {
+        int64_t maxi = (int64_t)hay_n - (int64_t)nee_n;
+        if (start < maxi) maxi = start;
+        for (int64_t i = maxi; i >= 0; i--) {
+            if (memcmp(hay_d + i, nee_d, nee_n) == 0) { result = (int32_t)i; break; }
+        }
+    }
+    return zjs_int32(result);
+}
+
+// String.prototype.localeCompare(that) — byte-wise comparison returning
+// -1 / 0 / 1. zjs has no ICU; the default-locale ordering is a plain
+// lexicographic compare, which satisfies the spec's loose requirements.
+fn host_string_locale_compare(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if ctx.pending_throw_active { return zjs_int32(0); }
+    if zjs_is_string(str_v) == 0 { return zjs_int32(0); }
+    let that_v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_string(that_v) == 0 { that_v = zjs_to_string(ctx, that_v); }
+    if ctx.pending_throw_active { return zjs_int32(0); }
+    let a = zjs_as_string(str_v);
+    let b = zjs_as_string(that_v);
+    let r: i32 = 0;
+    raw {
+        uint32_t an = a->length, bn = b->length;
+        uint32_t m = an < bn ? an : bn;
+        int cmp = m ? memcmp(a->data, b->data, m) : 0;
+        if (cmp < 0) r = -1;
+        else if (cmp > 0) r = 1;
+        else { if (an < bn) r = -1; else if (an > bn) r = 1; else r = 0; }
+    }
+    return zjs_int32(r);
+}
+
+// Shared String.prototype.padStart / padEnd core (§22.1.3.16-.17).
+fn string_pad_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32, at_start: int) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let s = zjs_as_string(str_v);
+    let target: f64 = 0.0;
+    if argc >= 1 {
+        target = to_number_or_throw(ctx, args[0]);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
+    raw { if (isnan(target)) target = 0; }
+    if target < 0.0 { target = 0.0; }
+    let tlen = (u32)target;
+    if tlen <= s.length { return str_v; }
+    let fill_d: char* = (char*)" ";
+    let fill_n: u32 = 1;
+    if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
+        let fv = if zjs_is_string(args[1]) != 0 { args[1] } else { zjs_to_string(ctx, args[1]) };
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let f = zjs_as_string(fv);
+        fill_d = f.data;
+        fill_n = f.length;
+    }
+    if fill_n == 0 { return str_v; }
+    let pad_count = tlen - s.length;
+    let total = tlen;
+    let buf = alloc_n<char>((usize)(total + 1));
+    let sd = s.data;
+    let slen = s.length;
+    raw {
+        if (at_start) {
+            for (uint32_t k = 0; k < pad_count; k++) buf[k] = fill_d[k % fill_n];
+            memcpy(buf + pad_count, sd, slen);
+        } else {
+            memcpy(buf, sd, slen);
+            for (uint32_t k = 0; k < pad_count; k++) buf[slen + k] = fill_d[k % fill_n];
+        }
+        buf[total] = 0;
+    }
+    return ctx_intern_string_take(ctx, buf, total);
+}
+
+fn host_string_pad_start(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return string_pad_impl(ctx, args, argc, 1);
+}
+
+fn host_string_pad_end(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return string_pad_impl(ctx, args, argc, 0);
+}
+
+// Shared String.prototype.trimStart / trimEnd core.
+fn string_trim_dir_impl(ctx: ZjsContext*, do_start: int, do_end: int) -> ZjsValue {
+    let str_v = coerce_string_this(ctx);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let s = zjs_as_string(str_v);
+    let sd = s.data;
+    let lo: u32 = 0;
+    let hi: u32 = s.length;
+    raw {
+        if (do_start) {
+            while (lo < hi) {
+                unsigned char c = (unsigned char)sd[lo];
+                if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') lo++;
+                else break;
+            }
+        }
+        if (do_end) {
+            while (hi > lo) {
+                unsigned char c = (unsigned char)sd[hi - 1];
+                if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') hi--;
+                else break;
+            }
+        }
+    }
+    let outlen = hi - lo;
+    let buf = alloc_n<char>((usize)(outlen + 1));
+    if outlen > 0 {
+        let src_at: char* = NULL;
+        let src_off = lo;
+        raw { src_at = &s->data[src_off]; }
+        mem_copy<char>(buf, src_at, (usize)outlen);
+    }
+    buf[outlen] = (char)0;
+    return ctx_intern_string_take(ctx, buf, outlen);
+}
+
+fn host_string_trim_start(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return string_trim_dir_impl(ctx, 1, 0);
+}
+
+fn host_string_trim_end(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return string_trim_dir_impl(ctx, 0, 1);
+}
+
+// String.fromCodePoint(...codePoints) — ECMA-262 §22.1.2.2. Each arg is
+// ToNumber'd and must be an integer in [0, 0x10FFFF] (else RangeError);
+// code points are UTF-16-encoded into code units. Byte-string storage
+// means units > 0xFF are truncated, but the validation + BMP-Latin1
+// cases match.
+fn host_string_from_code_point(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if argc == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
+    let cap = argc * 2 + 1;
+    let buf = alloc_n<char>((usize)cap);
+    let out: u32 = 0;
+    let i: u32 = 0;
+    while i < argc {
+        let d = to_number_or_throw(ctx, args[i]);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let bad: int = 0;
+        raw { bad = (isnan(d) || d < 0.0 || d > 1114111.0 || floor(d) != d) ? 1 : 0; }
+        if bad != 0 {
+            let err = build_typed_error(ctx, (char*)"RangeError", 10,
+                (char*)"Invalid code point", 18);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        let cp = (u32)d;
+        if cp <= 65535 {
+            buf[out] = (char)((u8)(cp & 255)); out = out + 1;
+        } else {
+            let c = cp - 65536;
+            let hi = 55296 + (c >> 10);
+            let lo = 56320 + (c & 1023);
+            buf[out] = (char)((u8)(hi & 255)); out = out + 1;
+            buf[out] = (char)((u8)(lo & 255)); out = out + 1;
+        }
+        i = i + 1;
+    }
+    buf[out] = (char)0;
+    return ctx_intern_string_take(ctx, buf, out);
+}
+
 fn host_string_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = coerce_string_this(ctx);
     if zjs_is_string(this_val) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
@@ -24683,6 +24943,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     }
     object_set(ctx, strv_hf.props,
                ctx_intern_atom(ctx, (char*)"fromCharCode", 12), fcc_v);
+    let fcp_ptr: void* = NULL; raw { fcp_ptr = (void*)host_string_from_code_point; }
+    object_set(ctx, strv_hf.props,
+               ctx_intern_atom(ctx, (char*)"fromCodePoint", 13),
+               ctx_make_host_function_arity(ctx, (char*)"fromCodePoint", fcp_ptr, 1));
     let raw_ptr: void* = NULL; raw { raw_ptr = (void*)host_string_raw; }
     let raw_v = ctx_make_host_function_arity(ctx, (char*)"raw", raw_ptr, 1);
     object_set(ctx, strv_hf.props,
@@ -26198,6 +26462,42 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"endsWith", sew_ptr, 1));
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"includes", 8),
                ctx_make_host_function_arity(ctx, (char*)"includes", sinc_ptr, 1));
+    // ES2015+ additions: codePointAt / at / lastIndexOf / localeCompare /
+    // padStart / padEnd / trimStart / trimEnd (+ legacy trimLeft/trimRight
+    // aliases) / toLocaleLowerCase / toLocaleUpperCase (locale-independent
+    // aliases of toLowerCase/toUpperCase).
+    let scpa_ptr:   void* = NULL; raw { scpa_ptr   = (void*)host_string_code_point_at; }
+    let sat_ptr:    void* = NULL; raw { sat_ptr    = (void*)host_string_at; }
+    let slio_ptr:   void* = NULL; raw { slio_ptr   = (void*)host_string_last_index_of; }
+    let slcmp_ptr:  void* = NULL; raw { slcmp_ptr  = (void*)host_string_locale_compare; }
+    let spads_ptr:  void* = NULL; raw { spads_ptr  = (void*)host_string_pad_start; }
+    let spade_ptr:  void* = NULL; raw { spade_ptr  = (void*)host_string_pad_end; }
+    let strs_ptr:   void* = NULL; raw { strs_ptr   = (void*)host_string_trim_start; }
+    let stre_ptr:   void* = NULL; raw { stre_ptr   = (void*)host_string_trim_end; }
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"codePointAt", 11),
+               ctx_make_host_function_arity(ctx, (char*)"codePointAt", scpa_ptr, 1));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"at", 2),
+               ctx_make_host_function_arity(ctx, (char*)"at", sat_ptr, 1));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"lastIndexOf", 11),
+               ctx_make_host_function_arity(ctx, (char*)"lastIndexOf", slio_ptr, 1));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"localeCompare", 13),
+               ctx_make_host_function_arity(ctx, (char*)"localeCompare", slcmp_ptr, 1));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"padStart", 8),
+               ctx_make_host_function_arity(ctx, (char*)"padStart", spads_ptr, 1));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"padEnd", 6),
+               ctx_make_host_function_arity(ctx, (char*)"padEnd", spade_ptr, 1));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"trimStart", 9),
+               ctx_make_host_function_arity(ctx, (char*)"trimStart", strs_ptr, 0));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"trimEnd", 7),
+               ctx_make_host_function_arity(ctx, (char*)"trimEnd", stre_ptr, 0));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"trimLeft", 8),
+               ctx_make_host_function_arity(ctx, (char*)"trimLeft", strs_ptr, 0));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"trimRight", 9),
+               ctx_make_host_function_arity(ctx, (char*)"trimRight", stre_ptr, 0));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"toLocaleLowerCase", 17),
+               ctx_make_host_function_arity(ctx, (char*)"toLocaleLowerCase", slc_ptr, 0));
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"toLocaleUpperCase", 17),
+               ctx_make_host_function_arity(ctx, (char*)"toLocaleUpperCase", suc_ptr, 0));
     // String.prototype[Symbol.iterator] — character iteration via the
     // same synthetic wrapper (host_array_iter_next branches on string
     // sources).
