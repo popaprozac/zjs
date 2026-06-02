@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 23:39 UTC",
+    "when": "2026-06-02 23:48 UTC",
     "total": 27491,
-    "passed": 22092,
-    "failed": 4679,
+    "passed": 22095,
+    "failed": 4676,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -1154,7 +1154,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -11205,10 +11205,6 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-static-escaped.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-with-escaped.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -14817,10 +14813,6 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/object/getter-body-strict-outside.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/object/getter-param-dflt.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -15150,10 +15142,6 @@
     },
     {
       "path": "test/language/expressions/object/setter-body-strict-inside.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/object/setter-body-strict-outside.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {

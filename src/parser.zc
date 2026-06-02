@@ -739,28 +739,28 @@ fn is_binding_ident_ctx(p: Parser*, k: TokenKind) -> bool {
 fn is_binding_ident_tok(p: Parser*, t: Token, source: char*) -> bool {
     if !is_binding_ident_ctx(p, t.kind) { return false; }
     if t.kind != TokenKind::Identifier { return true; }
-    // Only do the decode pass when the slice actually has an escape —
-    // gates the cost (handful of hex-parsing branches) on a 1-byte
-    // sniff that almost always returns false.
-    let i: u32 = 0;
-    let saw_escape: bool = false;
-    while i < t.length {
-        if (u8)source[t.start + i] == (u8)'\\' { saw_escape = true; break; }
-        i = i + 1;
-    }
-    if !saw_escape { return true; }
-    // Decoded name matches one of the context-restricted reserved
-    // words? Reject like the keyword form would have been rejected.
+    // An Identifier whose (decoded) spelling is a reserved word in the
+    // current context is illegal anywhere the reserved word itself is —
+    // both as a BindingIdentifier and as an IdentifierReference (this
+    // helper is reused at the parse_primary reference site). The checks
+    // are gated on the context flags, so non-strict code pays nothing;
+    // ident_source_matches handles both plain and `\uXXXX`-escaped
+    // spellings, so e.g. `public` AND `public` are both caught.
+    //
+    // `yield`/`await` only reach here as Identifier tokens via escapes
+    // (the unescaped forms lex as KwYield/KwAwait and are handled by
+    // is_binding_ident_ctx above); the future-reserved words below lex
+    // as plain Identifier in every mode, so they must be checked whether
+    // escaped or not.
     if p.in_generator || p.strict_mode {
         if ident_source_matches(source, t.start, t.length, (char*)"yield", 5) { return false; }
     }
     if p.in_async {
         if ident_source_matches(source, t.start, t.length, (char*)"await", 5) { return false; }
     }
-    // Other strict reserved words: implements, interface, package,
-    // private, protected, public, static — checked against the strict
-    // flag. (Plain Identifier escapes that decode to these are also
-    // illegal in strict mode.)
+    // Strict-mode future reserved words (§12.7.2): implements, interface,
+    // package, private, protected, public, static. Reserved as both
+    // BindingIdentifier and IdentifierReference in strict code.
     if p.strict_mode {
         if ident_source_matches(source, t.start, t.length, (char*)"implements", 10) { return false; }
         if ident_source_matches(source, t.start, t.length, (char*)"interface", 9)   { return false; }
@@ -768,6 +768,7 @@ fn is_binding_ident_tok(p: Parser*, t: Token, source: char*) -> bool {
         if ident_source_matches(source, t.start, t.length, (char*)"private", 7)     { return false; }
         if ident_source_matches(source, t.start, t.length, (char*)"protected", 9)   { return false; }
         if ident_source_matches(source, t.start, t.length, (char*)"public", 6)      { return false; }
+        if ident_source_matches(source, t.start, t.length, (char*)"static", 6)      { return false; }
     }
     return true;
 }
