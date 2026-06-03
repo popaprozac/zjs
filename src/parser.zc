@@ -2104,8 +2104,17 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
             field.name_length = 0;
             field.third       = computed_key;
         } else {
-            field.name_start  = name_tok.start;
-            field.name_length = name_tok.length;
+            // A string-literal field name ('x' = 1, static "y" = 2) stores
+            // the UNQUOTED name so the `this.<name> = init` desugar (and the
+            // static-field install) key it as `x`, not `'x'`. (Escapes
+            // aren't decoded — matches the string-literal *method* path.)
+            if name_tok.kind == TokenKind::StringLit && name_tok.length >= 2 {
+                field.name_start  = name_tok.start + 1;
+                field.name_length = name_tok.length - 2;
+            } else {
+                field.name_start  = name_tok.start;
+                field.name_length = name_tok.length;
+            }
         }
         field.bool_value = is_static;
         field.left = init_expr;

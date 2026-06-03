@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 18:31 UTC",
+    "when": "2026-06-03 18:42 UTC",
     "total": 27491,
-    "passed": 22640,
-    "failed": 4131,
+    "passed": 22676,
+    "failed": 4095,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -10381,48 +10381,24 @@
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-gen-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-method-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-gen-string-literal-names.js",
-      "reason": "[sloppy] async: Test262Error: a should be an own property"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-static-async-method-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-async-method-string-literal-names.js",
-      "reason": "[sloppy] async: Test262Error: a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/after-same-line-static-gen-computed-symbol-names.js",
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/expressions/class/elements/after-same-line-static-gen-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/expressions/class/elements/after-same-line-static-method-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/expressions/class/elements/after-same-line-static-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/arrow-body-derived-cls-direct-eval-contains-superproperty-1.js",
@@ -10541,10 +10517,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
-      "path": "test/language/expressions/class/elements/field-declaration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): g should be an own property\nzjs: throw: (unknown): g should be an own property"
-    },
-    {
       "path": "test/language/expressions/class/elements/fields-computed-name-static-propname-prototype.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -10581,16 +10553,8 @@
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/expressions/class/elements/multiple-definitions-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/expressions/class/elements/multiple-stacked-definitions-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/expressions/class/elements/multiple-stacked-definitions-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/nested-derived-cls-direct-eval-contains-superproperty-1.js",
@@ -10633,24 +10597,12 @@
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/expressions/class/elements/new-no-sc-line-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/expressions/class/elements/new-sc-line-gen-computed-symbol-names.js",
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/expressions/class/elements/new-sc-line-gen-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/expressions/class/elements/new-sc-line-method-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/expressions/class/elements/new-sc-line-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/private-derived-cls-direct-eval-contains-superproperty-1.js",
@@ -10845,40 +10797,20 @@
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/expressions/class/elements/regular-definitions-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/expressions/class/elements/same-line-async-gen-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-async-gen-string-literal-names.js",
-      "reason": "[sloppy] async: Test262Error: a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/same-line-async-method-computed-symbol-names.js",
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/expressions/class/elements/same-line-async-method-string-literal-names.js",
-      "reason": "[sloppy] async: Test262Error: a should be an own property"
-    },
-    {
       "path": "test/language/expressions/class/elements/same-line-gen-computed-symbol-names.js",
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/expressions/class/elements/same-line-gen-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/expressions/class/elements/same-line-method-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/expressions/class/elements/same-line-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/elements/static-as-valid-static-field-assigned.js",
@@ -10991,10 +10923,6 @@
     {
       "path": "test/language/expressions/class/elements/wrapped-in-sc-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/expressions/class/elements/wrapped-in-sc-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/expressions/class/gen-method/dflt-params-ref-later.js",
@@ -13829,48 +13757,24 @@
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-gen-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-method-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-async-gen-computed-symbol-names.js",
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-gen-string-literal-names.js",
-      "reason": "[sloppy] async: Test262Error: a should be an own property"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-static-async-method-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-async-method-string-literal-names.js",
-      "reason": "[sloppy] async: Test262Error: a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/after-same-line-static-gen-computed-symbol-names.js",
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/statements/class/elements/after-same-line-static-gen-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/statements/class/elements/after-same-line-static-method-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/statements/class/elements/after-same-line-static-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/arrow-body-derived-cls-direct-eval-contains-superproperty-1.js",
@@ -13993,10 +13897,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
-      "path": "test/language/statements/class/elements/field-declaration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): g should be an own property\nzjs: throw: (unknown): g should be an own property"
-    },
-    {
       "path": "test/language/statements/class/elements/fields-computed-name-static-computed-var-propname-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): constructor descriptor should be enumerable\nzjs: throw: (unknown): constructor descriptor should "
     },
@@ -14049,16 +13949,8 @@
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/statements/class/elements/multiple-definitions-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/statements/class/elements/multiple-stacked-definitions-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/statements/class/elements/multiple-stacked-definitions-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/nested-derived-cls-direct-eval-contains-superproperty-1.js",
@@ -14101,24 +13993,12 @@
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/statements/class/elements/new-no-sc-line-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/statements/class/elements/new-sc-line-gen-computed-symbol-names.js",
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/statements/class/elements/new-sc-line-gen-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/statements/class/elements/new-sc-line-method-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/statements/class/elements/new-sc-line-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/private-accessor-is-visible-in-computed-properties.js",
@@ -14553,40 +14433,20 @@
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/statements/class/elements/regular-definitions-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/statements/class/elements/same-line-async-gen-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-async-gen-string-literal-names.js",
-      "reason": "[sloppy] async: Test262Error: a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/same-line-async-method-computed-symbol-names.js",
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/statements/class/elements/same-line-async-method-string-literal-names.js",
-      "reason": "[sloppy] async: Test262Error: a should be an own property"
-    },
-    {
       "path": "test/language/statements/class/elements/same-line-gen-computed-symbol-names.js",
       "reason": "[sloppy] "
     },
     {
-      "path": "test/language/statements/class/elements/same-line-gen-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
-    },
-    {
       "path": "test/language/statements/class/elements/same-line-method-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/statements/class/elements/same-line-method-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/elements/set-access-of-private-method.js",
@@ -14703,10 +14563,6 @@
     {
       "path": "test/language/statements/class/elements/wrapped-in-sc-computed-symbol-names.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/language/statements/class/elements/wrapped-in-sc-string-literal-names.js",
-      "reason": "[sloppy] zjs: throw: (unknown): a should be an own property\nzjs: throw: (unknown): a should be an own property"
     },
     {
       "path": "test/language/statements/class/gen-method/dflt-params-ref-later.js",
