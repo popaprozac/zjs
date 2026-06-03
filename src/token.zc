@@ -36,6 +36,7 @@ enum TokenKind {
     KwTypeof, KwDelete, KwVoid, KwIn, KwOf, KwInstanceof,
     KwThrow, KwTry, KwCatch, KwFinally,
     KwSwitch, KwCase, KwDefault,
+    KwWith,
     KwAsync, KwAwait, KwYield,
     KwImport, KwExport, KwFrom, KwAs,
     // Sentinel TokenKind values used internally to mark accessor

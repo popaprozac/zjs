@@ -140,6 +140,11 @@ struct CallFrame {
     saved_host_this:        ZjsValue;
     saved_current_closure:  ZjsClosure*;
     try_depth_at_entry:     u32;
+    // ctx.with_count at frame entry. The `with` scope stack is
+    // frame-local: Return and throw-unwinding both reset ctx.with_count
+    // to this baseline so a with-scope can never leak out of the
+    // function that opened it (covers `return`/`throw` inside a with).
+    with_base:              u32;
     // True when this frame is a derived-class constructor that has
     // called super() (so `this` is bound). Pre-super reads of `this`
     // and a return-without-super both throw ReferenceError per spec.
@@ -364,6 +369,13 @@ struct ZjsContext {
     // throw (`throwing = true; thrown = pending_throw_value`).
     pending_throw_active: bool;
     pending_throw_value:  ZjsValue;
+    // `with` statement scope stack (ECMA-262 §14.11), innermost last.
+    // WithEnter pushes the ToObject'd binding object; WithLeave pops.
+    // Each call frame snapshots with_count on entry and restores it on
+    // return/throw so abrupt completions unwind cleanly. GC-rooted via
+    // gc_mark_roots. Depth 64 is far beyond any real nesting.
+    with_objs:   ZjsValue[64];
+    with_count:  u32;
     // Phase C: set by object_set / array_set when a write is silently
     // dropped (frozen / non-writable slot / non-extensible add). The
     // StoreProp / StoreElem opcodes clear this before the write and, in
@@ -583,6 +595,8 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
     // host receiver to JS `undefined`.
     result.host_this = zjs_undefined();
     result.async_outer_seed = zjs_undefined();
+    // `with` scope stack starts empty (calloc already zeroed it).
+    result.with_count = 0;
 
     // Strong-root table: -1 sentinel means "no free slot, append".
     result.roots_free_head = -1;
@@ -1048,6 +1062,7 @@ fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc
     ctx.frames[idx].saved_host_this = ctx.host_this;
     ctx.frames[idx].saved_current_closure = ctx.current_closure;
     ctx.frames[idx].try_depth_at_entry = ctx.ctx_try_depth;
+    ctx.frames[idx].with_base = ctx.with_count;
     ctx.frames[idx].super_called = false;
     ctx.frames[idx].outer_promise = zjs_undefined();
     ctx.frames[idx].generator     = NULL;
@@ -1106,6 +1121,7 @@ fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, r
     ctx.frames[idx].saved_host_this = ctx.host_this;
     ctx.frames[idx].saved_current_closure = ctx.current_closure;
     ctx.frames[idx].try_depth_at_entry = ctx.ctx_try_depth;
+    ctx.frames[idx].with_base = ctx.with_count;
     // Per-frame flag — Op::SuperCall sets it; Op::Return checks it
     // for derived-class ctors. Default false; non-derived ctors and
     // plain calls treat it as a no-op.
@@ -1129,11 +1145,17 @@ fn pop_call_frame(ctx: ZjsContext*) -> u8 {
     let saved_this = ctx.frames[idx].saved_host_this;
     let saved_cl   = ctx.frames[idx].saved_current_closure;
     let try_at_entry = ctx.frames[idx].try_depth_at_entry;
+    let with_at_entry = ctx.frames[idx].with_base;
 
     ctx.host_this = saved_this;
     ctx.current_closure = saved_cl;
     if ctx.ctx_try_depth > try_at_entry {
         ctx.ctx_try_depth = try_at_entry;
+    }
+    // Unwind any `with` scopes the frame left open (return/throw inside
+    // a with-body) so they never leak into the caller.
+    if ctx.with_count > with_at_entry {
+        ctx.with_count = with_at_entry;
     }
     reg_stack_release(ctx, total);
     ctx.frame_count = idx;
@@ -1775,6 +1797,12 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     while t < ctx.temp_root_count {
         gc_mark_value(ctx.temp_roots[t]);
         t = t + 1;
+    }
+    // Active `with` scope objects.
+    let wi: u32 = 0;
+    while wi < ctx.with_count {
+        gc_mark_value(ctx.with_objs[wi]);
+        wi = wi + 1;
     }
     // Strong roots — slots in the public zjs_root table. Free slots
     // hold a "next-free index" payload tagged as int32, which is a
@@ -18078,7 +18106,39 @@ fn host_reflect_has(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return zjs_bool(if zjs_is_undefined(v) != 0 { 0 } else { 1 });
 }
 
-// Reflect methods require an Object target (unlike Object.* which coerce
+// `with` binding resolution (ECMA-262 §9.1.1.2.1 HasBinding for an object
+// Environment Record with withEnvironment = true). Walks the active
+// with-objects innermost-first; for each, HasProperty(obj, key) — which
+// fires a Proxy `has` trap and walks the prototype chain — and then the
+// @@unscopables filter. Returns the binding object to use, or undefined
+// if no with-object provides `key` (caller falls back to normal scope).
+// `key` is the identifier name as a string value.
+fn ctx_with_lookup(ctx: ZjsContext*, key: ZjsValue) -> ZjsValue {
+    let i: i32 = (i32)ctx.with_count - 1;
+    while i >= 0 {
+        let obj = ctx.with_objs[(u32)i];
+        let ha: ZjsValue[2];
+        ha[0] = obj; ha[1] = key;
+        let hp = host_reflect_has(ctx, &ha[0], 2);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_as_bool(hp) != 0 {
+            // @@unscopables: if obj[@@unscopables] is an object and
+            // ToBoolean(unscopables[key]) is true, the binding is blocked.
+            let us_atom = ctx_intern_atom(ctx, (char*)"@@unscopables", 13);
+            let us = property_get(ctx, obj, zjs_cell_from_ptr((void*)us_atom));
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            let blocked: bool = false;
+            if reflect_is_object(us) {
+                let bv = property_get(ctx, us, key);
+                if ctx.pending_throw_active { return zjs_undefined(); }
+                if zjs_to_bool_coerce(bv) != 0 { blocked = true; }
+            }
+            if !blocked { return obj; }
+        }
+        i = i - 1;
+    }
+    return zjs_undefined();
+}
 // primitives) — they throw TypeError otherwise.
 fn reflect_is_object(v: ZjsValue) -> bool {
     return !(zjs_is_undefined(v) != 0 || zjs_is_null(v) != 0

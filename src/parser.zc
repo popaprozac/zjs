@@ -488,6 +488,7 @@ fn parse_statement(p: Parser*) -> AstNode* {
     if k == TokenKind::KwThrow     { return parse_throw(p); }
     if k == TokenKind::KwTry       { return parse_try(p); }
     if k == TokenKind::KwSwitch    { return parse_switch(p); }
+    if k == TokenKind::KwWith      { return parse_with(p); }
     if k == TokenKind::Semicolon {
         let semi = advance(p);
         return new_node(&p.tracker, NodeKind::EmptyStmt, semi.start, semi.start + semi.length);
@@ -789,6 +790,7 @@ fn is_keyword_token(k: TokenKind) -> bool {
     if k == TokenKind::KwIn || k == TokenKind::KwOf || k == TokenKind::KwInstanceof { return true; }
     if k == TokenKind::KwThrow || k == TokenKind::KwTry || k == TokenKind::KwCatch || k == TokenKind::KwFinally { return true; }
     if k == TokenKind::KwSwitch || k == TokenKind::KwCase || k == TokenKind::KwDefault { return true; }
+    if k == TokenKind::KwWith { return true; }
     if k == TokenKind::KwAsync || k == TokenKind::KwAwait || k == TokenKind::KwYield { return true; }
     if k == TokenKind::KwImport || k == TokenKind::KwExport || k == TokenKind::KwFrom || k == TokenKind::KwAs { return true; }
     return false;
@@ -1150,6 +1152,26 @@ fn parse_while(p: Parser*) -> AstNode* {
     if is_disallowed_statement_body(body) { p.had_error = true; return NULL; }
     let node = new_node(&p.tracker, NodeKind::WhileStmt, kw.start, body.end);
     node.left = cond;
+    node.right = body;
+    return node;
+}
+
+// WithStatement — `with ( Expression ) Statement` (ECMA-262 §14.11).
+// A SyntaxError in strict mode and in module code (§14.11.1).
+fn parse_with(p: Parser*) -> AstNode* {
+    let kw = advance(p);   // 'with'
+    if p.strict_mode || p.is_module { p.had_error = true; return NULL; }
+    if !expect_kind(p, TokenKind::LParen) { return NULL; }
+    let obj = parse_expression(p);
+    if obj == NULL { return NULL; }
+    if !expect_kind(p, TokenKind::RParen) { return NULL; }
+    let body = parse_statement(p);
+    if body == NULL { return NULL; }
+    // The body is a Statement, not a Declaration — `with(o) let x;` etc.
+    // are illegal, same rule as if/while bodies.
+    if is_disallowed_statement_body(body) { p.had_error = true; return NULL; }
+    let node = new_node(&p.tracker, NodeKind::WithStmt, kw.start, body.end);
+    node.left = obj;
     node.right = body;
     return node;
 }

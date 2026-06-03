@@ -38,6 +38,15 @@ enum Op {
     StoreGlobal,      // a=src, bc=slot (u16)  — also defines the global (sloppy semantics)
     LoadGlobalOrUndefined,  // a=dst, bc=slot (u16) — typeof's special-case load: undefined if undeclared
 
+    // `with` statement scope (ECMA-262 §14.11). The active with-objects
+    // live on a runtime stack on the context; identifier access inside a
+    // with-body is compiled as WithLookup + a branch on the result.
+    WithEnter,        // a=src  — ToObject(regs[a]) then push onto the with-stack
+    WithLeave,        // (none) — pop the innermost with-object
+    WithLookup,       // a=dst, b=name_reg — dst = innermost with-object whose
+                      //   HasProperty(regs[b]) is true (Symbol.unscopables-aware),
+                      //   else undefined. Caller branches on undefined.
+
     // Binary arithmetic
     Add, Sub, Mul, Div, Mod, Pow,
 

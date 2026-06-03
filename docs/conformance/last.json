@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 01:08 UTC",
+    "when": "2026-06-03 04:36 UTC",
     "total": 27491,
-    "passed": 22201,
-    "failed": 4570,
+    "passed": 22221,
+    "failed": 4550,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -8830,7 +8830,7 @@
     },
     {
       "path": "test/built-ins/Proxy/has/call-with.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: ReferenceError: attr is not defined\nzjs: throw: ReferenceError: attr is not defined"
     },
     {
       "path": "test/built-ins/Proxy/has/null-handler-using-with.js",
@@ -8839,10 +8839,6 @@
     {
       "path": "test/built-ins/Proxy/has/return-false-target-not-extensible-using-with.js",
       "reason": "zjs: throw: (unknown): Expected a TypeError but got a ReferenceError\nzjs: throw: (unknown): Expected a TypeError but got"
-    },
-    {
-      "path": "test/built-ins/Proxy/has/return-false-target-prop-exists-using-with.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
     },
     {
       "path": "test/built-ins/Proxy/has/return-false-target-prop-exists.js",
@@ -8862,7 +8858,7 @@
     },
     {
       "path": "test/built-ins/Proxy/has/return-true-target-prop-exists-using-with.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/built-ins/Proxy/has/return-true-target-prop-exists.js",
@@ -8894,7 +8890,7 @@
     },
     {
       "path": "test/built-ins/Proxy/has/trap-is-undefined-using-with.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: ReferenceError: length is not defined\nzjs: throw: ReferenceError: length is not defined"
     },
     {
       "path": "test/built-ins/Proxy/has/trap-is-undefined.js",
@@ -11078,7 +11074,7 @@
     },
     {
       "path": "test/language/expressions/arrow-function/arrow/capturing-closure-variables-2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Closure variable was captured incorrectly. Expected SameValue(\u00ab[object Object]\u00bb, \u00ab10\u00bb) to be true"
     },
     {
       "path": "test/language/expressions/arrow-function/dflt-params-ref-later.js",
@@ -11103,10 +11099,6 @@
     {
       "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-let-escaped.js",
       "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/dstr/syntax-error-ident-ref-with-escaped.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/arrow-function/eval-var-scope-syntax-err.js",
@@ -11217,14 +11209,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/language/expressions/arrow-function/unscopables-with-in-nested-fn.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/unscopables-with.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
-    },
-    {
       "path": "test/language/expressions/assignment/11.13.1-4-1.js",
       "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
@@ -11261,28 +11245,12 @@
       "reason": "zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/language/expressions/assignment/S11.13.1_A5_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
-    },
-    {
-      "path": "test/language/expressions/assignment/S11.13.1_A5_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
-    },
-    {
-      "path": "test/language/expressions/assignment/S11.13.1_A5_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
-    },
-    {
       "path": "test/language/expressions/assignment/S11.13.1_A6_T1.js",
       "reason": "zjs: throw: (unknown): #1: innerX === undefined. Actual: 1\nzjs: throw: (unknown): #1: innerX === undefined. Actual: 1"
     },
     {
       "path": "test/language/expressions/assignment/S11.13.1_A6_T2.js",
       "reason": "zjs: throw: (unknown): #1: innerX === 2. Actual: 1\nzjs: throw: (unknown): #1: innerX === 2. Actual: 1"
-    },
-    {
-      "path": "test/language/expressions/assignment/S11.13.1_A6_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
     },
     {
       "path": "test/language/expressions/assignment/S8.12.4_A1.js",
@@ -11294,7 +11262,7 @@
     },
     {
       "path": "test/language/expressions/assignment/assignment-operator-calls-putvalue-lref--rval-.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
       "path": "test/language/expressions/assignment/destructuring/default-expr-throws-iterator-return-get-throws.js",
@@ -11306,7 +11274,7 @@
     },
     {
       "path": "test/language/expressions/assignment/destructuring/keyed-destructuring-property-reference-target-evaluation-order-with-bindings.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Actual [sourceKey, get source, targetKey, set target] and expected [binding::source, binding::sou"
     },
     {
       "path": "test/language/expressions/assignment/destructuring/keyed-destructuring-property-reference-target-evaluation-order.js",
@@ -13262,135 +13230,135 @@
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.10_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 1. Actual: 3\nzjs: throw: (unknown): #1: scope.x === 1. Actual: 3"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.10_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 1. Actual: 3\nzjs: throw: (unknown): #1: scope.x === 1. Actual: 3"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.10_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: innerScope.x === 1. Actual: 3\nzjs: throw: (unknown): #1: innerScope.x === 1. Actual: 3"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.11_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 6. Actual: 4\nzjs: throw: (unknown): #1: scope.x === 6. Actual: 4"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.11_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 6. Actual: 4\nzjs: throw: (unknown): #1: scope.x === 6. Actual: 4"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.11_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: innerScope.x === 6. Actual: 4\nzjs: throw: (unknown): #1: innerScope.x === 6. Actual: 4"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.1_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 6. Actual: NaN\nzjs: throw: (unknown): #1: scope.x === 6. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.1_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 6. Actual: NaN\nzjs: throw: (unknown): #1: scope.x === 6. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.1_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: innerScope.x === 6. Actual: NaN\nzjs: throw: (unknown): #1: innerScope.x === 6. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.2_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 2. Actual: NaN\nzjs: throw: (unknown): #1: scope.x === 2. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.2_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 2. Actual: NaN\nzjs: throw: (unknown): #1: scope.x === 2. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.2_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: innerScope.x === 2. Actual: NaN\nzjs: throw: (unknown): #1: innerScope.x === 2. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.3_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 2. Actual: NaN\nzjs: throw: (unknown): #1: scope.x === 2. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.3_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 2. Actual: NaN\nzjs: throw: (unknown): #1: scope.x === 2. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.3_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: innerScope.x === 2. Actual: NaN\nzjs: throw: (unknown): #1: innerScope.x === 2. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.4_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 3. Actual: NaN\nzjs: throw: (unknown): #1: scope.x === 3. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.4_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 3. Actual: NaN\nzjs: throw: (unknown): #1: scope.x === 3. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.4_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: innerScope.x === 3. Actual: NaN\nzjs: throw: (unknown): #1: innerScope.x === 3. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.5_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 1. Actual: NaN\nzjs: throw: (unknown): #1: scope.x === 1. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.5_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 1. Actual: NaN\nzjs: throw: (unknown): #1: scope.x === 1. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.5_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: innerScope.x === 1. Actual: NaN\nzjs: throw: (unknown): #1: innerScope.x === 1. Actual: NaN"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.6_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 16. Actual: 0\nzjs: throw: (unknown): #1: scope.x === 16. Actual: 0"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.6_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 16. Actual: 0\nzjs: throw: (unknown): #1: scope.x === 16. Actual: 0"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.6_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: innerScope.x === 16. Actual: 0\nzjs: throw: (unknown): #1: innerScope.x === 16. Actual: 0"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.7_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 2. Actual: 0\nzjs: throw: (unknown): #1: scope.x === 2. Actual: 0"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.7_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 2. Actual: 0\nzjs: throw: (unknown): #1: scope.x === 2. Actual: 0"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.7_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: innerScope.x === 2. Actual: 0\nzjs: throw: (unknown): #1: innerScope.x === 2. Actual: 0"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.8_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 2. Actual: 0\nzjs: throw: (unknown): #1: scope.x === 2. Actual: 0"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.8_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 2. Actual: 0\nzjs: throw: (unknown): #1: scope.x === 2. Actual: 0"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.8_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: innerScope.x === 2. Actual: 0\nzjs: throw: (unknown): #1: innerScope.x === 2. Actual: 0"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.9_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 1. Actual: 0\nzjs: throw: (unknown): #1: scope.x === 1. Actual: 0"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.9_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: scope.x === 1. Actual: 0\nzjs: throw: (unknown): #1: scope.x === 1. Actual: 0"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A5.9_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: innerScope.x === 1. Actual: 0\nzjs: throw: (unknown): #1: innerScope.x === 1. Actual: 0"
     },
     {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A6.10_T1.js",
@@ -13582,7 +13550,7 @@
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--10.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--11.js",
@@ -13590,7 +13558,7 @@
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--12.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--13.js",
@@ -13598,7 +13566,7 @@
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--14.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--15.js",
@@ -13606,7 +13574,7 @@
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--16.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--17.js",
@@ -13614,7 +13582,7 @@
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--18.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--19.js",
@@ -13622,11 +13590,11 @@
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--20.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--21.js",
@@ -13638,7 +13606,7 @@
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--4.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--5.js",
@@ -13646,7 +13614,7 @@
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--6.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--7.js",
@@ -13654,7 +13622,7 @@
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--8.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v--9.js",
@@ -13662,7 +13630,7 @@
     },
     {
       "path": "test/language/expressions/compound-assignment/compound-assignment-operator-calls-putvalue-lref--v-.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/compound-assignment/div-whitespace.js",
@@ -13802,11 +13770,11 @@
     },
     {
       "path": "test/language/expressions/delete/11.4.1-4.a-5.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): d Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): d Expected SameValue(\u00abtru"
     },
     {
       "path": "test/language/expressions/delete/11.4.1-4.a-6.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): o.x Expected SameValue(\u00ab1\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): o.x Expected SameValue"
     },
     {
       "path": "test/language/expressions/delete/11.4.1-4.a-7.js",
@@ -14107,14 +14075,6 @@
     {
       "path": "test/language/expressions/function/static-init-await-reference.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/function/unscopables-with-in-nested-fn.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
-    },
-    {
-      "path": "test/language/expressions/function/unscopables-with.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
     },
     {
       "path": "test/language/expressions/greater-than/S11.8.2_A4.12_T1.js",
@@ -14773,10 +14733,6 @@
       "reason": "zjs: throw: (unknown): Expected a Test262Error but got a ReferenceError\nzjs: throw: (unknown): Expected a Test262Error b"
     },
     {
-      "path": "test/language/expressions/object/prop-def-id-eval-error.js",
-      "reason": "zjs: throw: (unknown): Expected a Test262Error but got a ReferenceError\nzjs: throw: (unknown): Expected a Test262Error b"
-    },
-    {
       "path": "test/language/expressions/object/prop-def-invalid-star-prefix.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -15211,14 +15167,6 @@
     {
       "path": "test/language/statements/async-function/syntax-declaration-no-line-terminator.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/async-function/unscopables-with-in-nested-fn.js",
-      "reason": "zjs: throw: (unknown): The value of `count` is 6 Expected SameValue(\u00ab3\u00bb, \u00ab6\u00bb) to be true\nzjs: throw: (unknown): The valu"
-    },
-    {
-      "path": "test/language/statements/async-function/unscopables-with.js",
-      "reason": "zjs: throw: (unknown): The value of `count` is 6 Expected SameValue(\u00ab3\u00bb, \u00ab6\u00bb) to be true\nzjs: throw: (unknown): The valu"
     },
     {
       "path": "test/language/statements/block/labeled-continue.js",
@@ -17489,52 +17437,44 @@
       "reason": "zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/language/statements/function/S13.2.2_A17_T2.js",
-      "reason": "zjs: throw: (unknown): #3: __obj.p1 === \"w1\". Actual: __obj.p1 ===1\nzjs: throw: (unknown): #3: __obj.p1 === \"w1\". Actual"
-    },
-    {
       "path": "test/language/statements/function/S13.2.2_A17_T3.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #4: __obj.getRight() === false. Actual: __obj.getRight()===right\nzjs: throw: (unknown): #4: __obj"
     },
     {
       "path": "test/language/statements/function/S13.2.2_A18_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: callee === 0. Actual: callee ===1\nzjs: throw: (unknown): #1: callee === 0. Actual: callee ==="
     },
     {
       "path": "test/language/statements/function/S13.2.2_A18_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
-    },
-    {
-      "path": "test/language/statements/function/S13.2.2_A19_T1.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: callee === 0. Actual: callee ===1\nzjs: throw: (unknown): #1: callee === 0. Actual: callee ==="
     },
     {
       "path": "test/language/statements/function/S13.2.2_A19_T2.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: result === 2. Actual: result ===1\nzjs: throw: (unknown): #1: result === 2. Actual: result ==="
     },
     {
       "path": "test/language/statements/function/S13.2.2_A19_T3.js",
-      "reason": "zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
+      "reason": "zjs: throw: (unknown): #1: result === 2. Actual: result ===1\nzjs: throw: (unknown): #1: result === 2. Actual: result ==="
     },
     {
       "path": "test/language/statements/function/S13.2.2_A19_T4.js",
-      "reason": "zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
+      "reason": "zjs: throw: (unknown): #1: result === 3. Actual: result ===1\nzjs: throw: (unknown): #1: result === 3. Actual: result ==="
     },
     {
       "path": "test/language/statements/function/S13.2.2_A19_T5.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: result === 2. Actual: result ===1\nzjs: throw: (unknown): #1: result === 2. Actual: result ==="
     },
     {
       "path": "test/language/statements/function/S13.2.2_A19_T6.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: result === 2. Actual: result ===1\nzjs: throw: (unknown): #1: result === 2. Actual: result ==="
     },
     {
       "path": "test/language/statements/function/S13.2.2_A19_T7.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #2: this.hasOwnProperty('__func') === true\nzjs: throw: (unknown): #2: this.hasOwnProperty('__func"
     },
     {
       "path": "test/language/statements/function/S13.2.2_A19_T8.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): #1: __func() === 2. Actual: __func() ===1\nzjs: throw: (unknown): #1: __func() === 2. Actual: __fu"
     },
     {
       "path": "test/language/statements/function/S13.2.2_A1_T1.js",
@@ -17677,14 +17617,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'x')\nzjs: throw: TypeError: Cannot read properties o"
     },
     {
-      "path": "test/language/statements/function/unscopables-with-in-nested-fn.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
-    },
-    {
-      "path": "test/language/statements/function/unscopables-with.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
-    },
-    {
       "path": "test/language/statements/generators/arguments-with-arguments-fn.js",
       "reason": "zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"object\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValu"
     },
@@ -17771,14 +17703,6 @@
     {
       "path": "test/language/statements/generators/scope-paramsbody-var-open.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'x')\nzjs: throw: TypeError: Cannot read properties o"
-    },
-    {
-      "path": "test/language/statements/generators/unscopables-with-in-nested-fn.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
-    },
-    {
-      "path": "test/language/statements/generators/unscopables-with.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
     },
     {
       "path": "test/language/statements/generators/yield-as-function-expression-binding-identifier.js",
@@ -18053,10 +17977,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): e instanceof ReferenceError\nzjs: throw: (unknown): e instanceof ReferenceError"
     },
     {
-      "path": "test/language/statements/try/S12.14_A14.js",
-      "reason": "zjs: throw: (unknown): #1: Exception ===\"ex\". Actual:  Exception ===ReferenceError: with is not defined\nzjs: throw: (unk"
-    },
-    {
       "path": "test/language/statements/try/catch-parameter-boundnames-restriction-arguments-eval-throws.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
@@ -18230,7 +18150,7 @@
     },
     {
       "path": "test/language/statements/variable/binding-resolution.js",
-      "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
+      "reason": "zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abund"
     },
     {
       "path": "test/language/statements/variable/dstr/ary-init-iter-get-err-array-prototype.js",

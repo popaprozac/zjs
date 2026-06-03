@@ -916,6 +916,7 @@ fn lookup_keyword(text: char*, len: usize) -> TokenKind {
     if streq_n(text, len, "switch", 6)      { return TokenKind::KwSwitch; }
     if streq_n(text, len, "case", 4)        { return TokenKind::KwCase; }
     if streq_n(text, len, "default", 7)     { return TokenKind::KwDefault; }
+    if streq_n(text, len, "with", 4)        { return TokenKind::KwWith; }
     if streq_n(text, len, "async", 5)       { return TokenKind::KwAsync; }
     if streq_n(text, len, "await", 5)       { return TokenKind::KwAwait; }
     if streq_n(text, len, "yield", 5)       { return TokenKind::KwYield; }

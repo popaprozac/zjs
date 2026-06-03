@@ -135,6 +135,12 @@ struct Compiler {
     parent:        Compiler*;
     needs_env:     bool;
     env_reg:       u8;
+    // Lexical nesting depth of enclosing `with` statements in THIS
+    // function. When > 0, IdentExpr reads and assignment targets emit a
+    // WithLookup-guarded branch so the with-object(s) shadow normal
+    // scope resolution. Zero everywhere else, so non-with code is
+    // byte-identical.
+    with_depth:    u32;
     // `has_outer_refs` is set on the inner compiler whenever its body
     // references a name resolved in a parent scope. Drives whether
     // the outer needs to wrap the resulting function in MakeClosure.
@@ -315,6 +321,7 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.source = source;
     c.last_expr_reg = -1;
     c.active_try_count = 0;
+    c.with_depth = 0;
     c.arguments_reg = -1;
     c.this_reg = -1;
     c.cached_outer_env_reg = -1;
@@ -1149,6 +1156,13 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         let name = c.source + node.start;
         let name_len = node.end - node.start;
 
+        // Inside a `with` body, an IdentifierReference is resolved against
+        // the with-object(s) first (WithLookup), falling back to normal
+        // scope resolution only when none bind the name.
+        if c.with_depth > 0 {
+            return compile_ident_read_with(c, node);
+        }
+
         // 1. Try our own locals first.
         let local_idx = find_local_index(c, name, name_len);
         if local_idx >= 0 {
@@ -1773,6 +1787,158 @@ fn compile_logical(c: Compiler*, node: AstNode*) -> u8 {
     return dst;
 }
 
+// Normal-scope GetValue for a bare name into `dst` (local / captured /
+// outer-env / global) — the same chain compile_assignment uses, factored
+// so the with-fallback path can reuse it.
+fn emit_load_name_normal(c: Compiler*, name: char*, name_len: u32, dst: u8) -> void {
+    let local_idx = find_local_index(c, name, name_len);
+    if local_idx >= 0 {
+        if c.locals[(u32)local_idx].captured {
+            let na = ctx_intern_atom(c.ctx, name, name_len);
+            emit_load_prop_atom(c, dst, c.env_reg, na);
+        } else {
+            emit(c, make_inst_ab(Op::Mov, dst, c.locals[(u32)local_idx].reg));
+        }
+        return;
+    }
+    let depth = outer_capture_depth(c, name, name_len);
+    if depth > 0 {
+        c.has_outer_refs = true;
+        let env_r = emit_env_chain_walk(c, depth);
+        let na = ctx_intern_atom(c.ctx, name, name_len);
+        emit_load_prop_atom(c, dst, env_r, na);
+        release_reg(c, env_r);
+        return;
+    }
+    let slot = ctx_intern_global(c.ctx, name, name_len);
+    emit(c, make_inst_a_u16(Op::LoadGlobal, dst, (u16)slot));
+}
+
+// Normal-scope PutValue of `val` to a bare name (mirrors the store half
+// of compile_assignment). Used by the with-fallback path.
+fn emit_store_name_normal(c: Compiler*, name: char*, name_len: u32, val: u8) -> void {
+    let local_idx = find_local_index(c, name, name_len);
+    if local_idx >= 0 {
+        if c.locals[(u32)local_idx].captured {
+            let na = ctx_intern_atom(c.ctx, name, name_len);
+            emit_store_prop_atom(c, c.env_reg, na, val);
+        } else {
+            emit(c, make_inst_ab(Op::Mov, c.locals[(u32)local_idx].reg, val));
+        }
+        return;
+    }
+    let depth = outer_capture_depth(c, name, name_len);
+    if depth > 0 {
+        c.has_outer_refs = true;
+        let env_r = emit_env_chain_walk(c, depth);
+        let na = ctx_intern_atom(c.ctx, name, name_len);
+        emit_store_prop_atom(c, env_r, na, val);
+        release_reg(c, env_r);
+        return;
+    }
+    let slot = ctx_intern_global(c.ctx, name, name_len);
+    emit(c, make_inst_a_u16(Op::StoreGlobal, val, (u16)slot));
+}
+
+// op= token -> arithmetic/bitwise Op, or Halt for `=`/logical/unknown.
+fn compound_assign_op(op_tok: TokenKind) -> Op {
+    if      op_tok == TokenKind::PlusEq    { return Op::Add; }
+    else if op_tok == TokenKind::MinusEq   { return Op::Sub; }
+    else if op_tok == TokenKind::StarEq    { return Op::Mul; }
+    else if op_tok == TokenKind::SlashEq   { return Op::Div; }
+    else if op_tok == TokenKind::PercentEq { return Op::Mod; }
+    else if op_tok == TokenKind::StarStarEq{ return Op::Pow; }
+    else if op_tok == TokenKind::AmpEq     { return Op::BitAnd; }
+    else if op_tok == TokenKind::PipeEq    { return Op::BitOr; }
+    else if op_tok == TokenKind::CaretEq   { return Op::BitXor; }
+    else if op_tok == TokenKind::LtLtEq    { return Op::Shl; }
+    else if op_tok == TokenKind::GtGtEq    { return Op::Shr; }
+    else if op_tok == TokenKind::GtGtGtEq  { return Op::UShr; }
+    return Op::Halt;
+}
+
+// Assignment to a bare IdentExpr target inside a `with` body. WithLookup
+// resolves the binding object (or undefined) ONCE; the RHS is compiled
+// ONCE with with_depth intact (so nested with-references resolve), and
+// only the GetValue / PutValue steps branch on whether a with-object owns
+// the name. Handles `=`, arithmetic/bitwise compound, and logical-assign.
+fn compile_assignment_with(c: Compiler*, node: AstNode*) -> u8 {
+    let target = node.left;
+    let op_tok = node.op;
+    let name = c.source + target.start;
+    let name_len = target.end - target.start;
+    let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+
+    let name_r = emit_load_atom(c, name_atom);
+    let holder = alloc_reg(c);
+    emit(c, make_inst_ab(Op::WithLookup, holder, name_r));
+    release_reg(c, name_r);
+    let result = alloc_reg(c);
+
+    if op_tok == TokenKind::Eq {
+        // §13.15.2: resolve ref (WithLookup, done) then evaluate RHS.
+        let rhs = compile_expr(c, node.right);
+        emit(c, make_inst_ab(Op::Mov, result, rhs));
+        release_reg(c, rhs);
+        // PutValue: holder ? holder[name]=result : normal store.
+        let jfb = emit(c, make_inst_a_i16(Op::JmpIfNullish, holder, 0));
+        emit_store_prop_atom(c, holder, name_atom, result);
+        let jdn = emit(c, make_inst_i16(Op::Jmp, 0));
+        patch_jump(c, jfb);
+        emit_store_name_normal(c, name, name_len, result);
+        patch_jump(c, jdn);
+        release_reg(c, holder);
+        return result;
+    }
+
+    // Compound: GetValue (branch on holder), evaluate RHS, combine, store.
+    let cur = alloc_reg(c);
+    let jl = emit(c, make_inst_a_i16(Op::JmpIfNullish, holder, 0));
+    emit_load_prop_atom(c, cur, holder, name_atom);
+    let jl_done = emit(c, make_inst_i16(Op::Jmp, 0));
+    patch_jump(c, jl);
+    emit_load_name_normal(c, name, name_len, cur);
+    patch_jump(c, jl_done);
+
+    let is_logical: bool =
+        op_tok == TokenKind::AmpAmpEq
+        || op_tok == TokenKind::PipePipeEq
+        || op_tok == TokenKind::QuestionQuestionEq;
+    if is_logical {
+        emit(c, make_inst_ab(Op::Mov, result, cur));
+        let jop = Op::JmpIfFalse;
+        if      op_tok == TokenKind::PipePipeEq         { jop = Op::JmpIfTrue; }
+        else if op_tok == TokenKind::QuestionQuestionEq { jop = Op::JmpIfNotNullish; }
+        let skip = emit(c, make_inst_a_i16(jop, result, 0));
+        let rhs = compile_expr(c, node.right);
+        emit(c, make_inst_ab(Op::Mov, result, rhs));
+        release_reg(c, rhs);
+        // store result (branch)
+        let js = emit(c, make_inst_a_i16(Op::JmpIfNullish, holder, 0));
+        emit_store_prop_atom(c, holder, name_atom, result);
+        let js_done = emit(c, make_inst_i16(Op::Jmp, 0));
+        patch_jump(c, js);
+        emit_store_name_normal(c, name, name_len, result);
+        patch_jump(c, js_done);
+        patch_jump(c, skip);
+    } else {
+        let rhs = compile_expr(c, node.right);
+        let op = compound_assign_op(op_tok);
+        if op == Op::Halt { c.had_error = true; }
+        emit(c, make_inst_abc(op, result, cur, rhs));
+        release_reg(c, rhs);
+        let js = emit(c, make_inst_a_i16(Op::JmpIfNullish, holder, 0));
+        emit_store_prop_atom(c, holder, name_atom, result);
+        let js_done = emit(c, make_inst_i16(Op::Jmp, 0));
+        patch_jump(c, js);
+        emit_store_name_normal(c, name, name_len, result);
+        patch_jump(c, js_done);
+    }
+    release_reg(c, cur);
+    release_reg(c, holder);
+    return result;
+}
+
 fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     let target = node.left;
     let op_tok = node.op;
@@ -1798,6 +1964,14 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     if target.kind != NodeKind::IdentExpr {
         c.had_error = true;
         return alloc_reg(c);
+    }
+
+    // Inside a `with` body: a with-object that binds the target name owns
+    // the assignment (PutValue on its property); otherwise fall through
+    // to normal resolution. (Member/destructuring targets resolve their
+    // base through the read path, which is already with-aware.)
+    if c.with_depth > 0 {
+        return compile_assignment_with(c, node);
     }
 
     let name = c.source + target.start;
@@ -1978,6 +2152,44 @@ fn emit_load_atom(c: Compiler*, atom: ZjsString*) -> u8 {
     let r = alloc_reg(c);
     emit(c, make_inst_a_u16(Op::LoadConst, r, idx));
     return r;
+}
+
+// IdentifierReference read inside a `with` body. Emits:
+//   holder = WithLookup(name)              ; with-object binding name, or undefined
+//   if (holder == undefined) goto fallback
+//   dst = holder[name]                     ; found in a with-object
+//   goto done
+// fallback:
+//   dst = <normal scope resolution>        ; local / env / global
+// done:
+// The fallback re-runs compile_expr with with_depth temporarily 0.
+fn compile_ident_read_with(c: Compiler*, node: AstNode*) -> u8 {
+    let name = c.source + node.start;
+    let name_len = node.end - node.start;
+    let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+    let name_r = emit_load_atom(c, name_atom);
+    let holder = alloc_reg(c);
+    emit(c, make_inst_ab(Op::WithLookup, holder, name_r));
+    release_reg(c, name_r);
+    let dst = alloc_reg(c);
+    let jmp_fb = emit(c, make_inst_a_i16(Op::JmpIfNullish, holder, 0));
+    // Found: dst = holder[name].
+    emit_load_prop_atom(c, dst, holder, name_atom);
+    let jmp_done = emit(c, make_inst_i16(Op::Jmp, 0));
+    patch_jump(c, jmp_fb);
+    // Fallback: normal resolution (with_depth = 0 so we don't recurse).
+    let saved_wd = c.with_depth;
+    let saved_borrow = c.borrow_local_ok;
+    c.with_depth = 0;
+    c.borrow_local_ok = false;
+    let normal = compile_expr(c, node);
+    c.borrow_local_ok = saved_borrow;
+    c.with_depth = saved_wd;
+    emit(c, make_inst_ab(Op::Mov, dst, normal));
+    release_reg(c, normal);
+    release_reg(c, holder);
+    patch_jump(c, jmp_done);
+    return dst;
 }
 
 // Property LOAD by atom name. Uses the ic-cached LoadProp opcode when
@@ -6199,6 +6411,22 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         loop_pop(c);
         dealloc(case_label_patches);
         dealloc(body_starts);
+        return;
+    }
+    if k == NodeKind::WithStmt {
+        // Evaluate the object expression, ToObject + push it onto the
+        // runtime with-stack, compile the body with with_depth raised
+        // (so IdentExpr reads / assignment targets route through
+        // WithLookup), then pop. WithEnter copies the object onto the
+        // ctx.with_objs stack (GC-rooted there), so the source register
+        // can be released immediately.
+        let obj_r = compile_expr(c, node.left);
+        emit(c, make_inst_a(Op::WithEnter, obj_r));
+        release_reg(c, obj_r);
+        c.with_depth = c.with_depth + 1;
+        compile_stmt(c, node.right);
+        c.with_depth = c.with_depth - 1;
+        emit(c, make_inst_a(Op::WithLeave, 0));
         return;
     }
     if k == NodeKind::WhileStmt {

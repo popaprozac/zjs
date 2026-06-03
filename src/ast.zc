@@ -87,6 +87,7 @@ enum NodeKind {
     ReturnStmt,             // left = argument (NULL for bare return)
     WhileStmt,              // left = test, right = body
     DoWhileStmt,            // left = body, right = test
+    WithStmt,               // left = object expr, right = body
     ForStmt,                // left = init, right = test, third = update,
                             // children[0] = body
     BreakStmt,              // name_start/length = target label name (0/0 = unlabeled)
