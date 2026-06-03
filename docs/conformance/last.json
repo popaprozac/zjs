@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 06:11 UTC",
+    "when": "2026-06-03 06:25 UTC",
     "total": 27491,
-    "passed": 22392,
-    "failed": 4379,
+    "passed": 22451,
+    "failed": 4320,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -59,10 +59,6 @@
     {
       "path": "test/built-ins/Array/Symbol.species/symbol-species.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Array/from/Array.from-descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): from descriptor should not be enumerable\nzjs: throw: (unknown): from descriptor should not be enu"
     },
     {
       "path": "test/built-ins/Array/from/Array.from_forwards-length-for-array-likes.js",
@@ -153,10 +149,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Array.isArray(arguments) must return false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: th"
     },
     {
-      "path": "test/built-ins/Array/isArray/descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isArray descriptor should not be enumerable\nzjs: throw: (unknown): isArray descriptor should not "
-    },
-    {
       "path": "test/built-ins/Array/isArray/proxy-revoked.js",
       "reason": "[sloppy] zjs: throw: (unknown): Array.isArray(handle.proxy) throws a TypeError exception Expected a TypeError to be thrown but no"
     },
@@ -219,10 +211,6 @@
     {
       "path": "test/built-ins/Array/of/construct-this-with-the-number-of-arguments.js",
       "reason": "[sloppy] zjs: throw: (unknown): The value of len is expected to be 0 Expected SameValue(\u00abundefined\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: "
-    },
-    {
-      "path": "test/built-ins/Array/of/of.js",
-      "reason": "[sloppy] zjs: throw: (unknown): of descriptor should not be enumerable\nzjs: throw: (unknown): of descriptor should not be enumera"
     },
     {
       "path": "test/built-ins/Array/of/proto-from-ctor-realm.js",
@@ -2821,10 +2809,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): positive non-integer values Expected SameValue(\u00ab0.9\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): posi"
     },
     {
-      "path": "test/built-ins/Date/UTC/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): UTC descriptor should not be enumerable\nzjs: throw: (unknown): UTC descriptor should not be enume"
-    },
-    {
       "path": "test/built-ins/Date/UTC/time-clip.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab8640000000000001\u00bb, \u00abNaN\u00bb) to be true\nzjs: throw: (unknown): Expected SameValu"
     },
@@ -2839,10 +2823,6 @@
     {
       "path": "test/built-ins/Date/coercion-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"yearmonthdatehoursminutessecondsms\"\u00bb) to be true\nzjs: throw: (unknown)"
-    },
-    {
-      "path": "test/built-ins/Date/parse/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): parse descriptor should not be enumerable\nzjs: throw: (unknown): parse descriptor should not be e"
     },
     {
       "path": "test/built-ins/Date/parse/time-value-maximum-range.js",
@@ -4438,11 +4418,11 @@
     },
     {
       "path": "test/built-ins/Number/EPSILON.js",
-      "reason": "[sloppy] zjs: throw: (unknown): EPSILON descriptor should not be enumerable; EPSILON descriptor should not be writable; EPSILON d"
+      "reason": "[sloppy] zjs: throw: (unknown): EPSILON descriptor should not be writable; EPSILON descriptor should not be configurable\nzjs: thr"
     },
     {
       "path": "test/built-ins/Number/MAX_SAFE_INTEGER.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[MAX_SAFE_INTEGER] to have enumerable:false.\nzjs: throw: (unknown): Expected obj[MAX_"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[MAX_SAFE_INTEGER] to have writable:false.\nzjs: throw: (unknown): Expected obj[MAX_SA"
     },
     {
       "path": "test/built-ins/Number/MAX_VALUE/S15.7.3.2_A2.js",
@@ -4454,7 +4434,7 @@
     },
     {
       "path": "test/built-ins/Number/MIN_SAFE_INTEGER.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[MIN_SAFE_INTEGER] to have enumerable:false.\nzjs: throw: (unknown): Expected obj[MIN_"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[MIN_SAFE_INTEGER] to have writable:false.\nzjs: throw: (unknown): Expected obj[MIN_SA"
     },
     {
       "path": "test/built-ins/Number/MIN_VALUE/S15.7.3.3_A2.js",
@@ -4470,11 +4450,11 @@
     },
     {
       "path": "test/built-ins/Number/NEGATIVE_INFINITY/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[NEGATIVE_INFINITY] to have enumerable:false.\nzjs: throw: (unknown): Expected obj[NEG"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[NEGATIVE_INFINITY] to have writable:false.\nzjs: throw: (unknown): Expected obj[NEGAT"
     },
     {
       "path": "test/built-ins/Number/NaN.js",
-      "reason": "[sloppy] zjs: throw: (unknown): NaN descriptor should not be enumerable; NaN descriptor should not be writable; NaN descriptor sh"
+      "reason": "[sloppy] zjs: throw: (unknown): NaN descriptor should not be writable; NaN descriptor should not be configurable\nzjs: throw: (unk"
     },
     {
       "path": "test/built-ins/Number/POSITIVE_INFINITY/S15.7.3.6_A2.js",
@@ -4482,7 +4462,7 @@
     },
     {
       "path": "test/built-ins/Number/POSITIVE_INFINITY/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[POSITIVE_INFINITY] to have enumerable:false.\nzjs: throw: (unknown): Expected obj[POS"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[POSITIVE_INFINITY] to have writable:false.\nzjs: throw: (unknown): Expected obj[POSIT"
     },
     {
       "path": "test/built-ins/Number/S15.7.2.1_A4.js",
@@ -4543,30 +4523,6 @@
     {
       "path": "test/built-ins/Number/S9.3_A5_T1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Number(new Number()) must return 0 Expected SameValue(\u00abNaN\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/Number/isFinite/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isFinite descriptor should not be enumerable\nzjs: throw: (unknown): isFinite descriptor should no"
-    },
-    {
-      "path": "test/built-ins/Number/isInteger/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isInteger descriptor should not be enumerable\nzjs: throw: (unknown): isInteger descriptor should "
-    },
-    {
-      "path": "test/built-ins/Number/isNaN/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isNaN descriptor should not be enumerable\nzjs: throw: (unknown): isNaN descriptor should not be e"
-    },
-    {
-      "path": "test/built-ins/Number/isSafeInteger/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isSafeInteger descriptor should not be enumerable\nzjs: throw: (unknown): isSafeInteger descriptor"
-    },
-    {
-      "path": "test/built-ins/Number/parseFloat.js",
-      "reason": "[sloppy] zjs: throw: (unknown): parseFloat descriptor should not be enumerable\nzjs: throw: (unknown): parseFloat descriptor shoul"
-    },
-    {
-      "path": "test/built-ins/Number/parseInt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): parseInt descriptor should not be enumerable\nzjs: throw: (unknown): parseInt descriptor should no"
     },
     {
       "path": "test/built-ins/Number/prop-desc.js",
@@ -4895,10 +4851,6 @@
     {
       "path": "test/built-ins/Object/assign/Target-Symbol.js",
       "reason": "[sloppy] zjs: throw: (unknown): Return value should be a symbol object. Expected SameValue(\u00ab\"symbol\"\u00bb, \u00ab\"object\"\u00bb) to be true\nzjs"
-    },
-    {
-      "path": "test/built-ins/Object/assign/assign-descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): assign descriptor should not be enumerable\nzjs: throw: (unknown): assign descriptor should not be"
     },
     {
       "path": "test/built-ins/Object/assign/assignment-to-readonly-property-of-target-must-throw-a-typeerror-exception.js",
@@ -5621,64 +5573,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"unlikelyValue\"\u00bb, \u00ab\"data\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-598.js",
-      "reason": "[sloppy] zjs: throw: (unknown): getPrototypeOf descriptor should not be enumerable\nzjs: throw: (unknown): getPrototypeOf descript"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-599.js",
-      "reason": "[sloppy] zjs: throw: (unknown): getOwnPropertyDescriptor descriptor should not be enumerable\nzjs: throw: (unknown): getOwnPropert"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-600.js",
-      "reason": "[sloppy] zjs: throw: (unknown): getOwnPropertyNames descriptor should not be enumerable\nzjs: throw: (unknown): getOwnPropertyName"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-601.js",
-      "reason": "[sloppy] zjs: throw: (unknown): getPrototypeOf descriptor should not be enumerable\nzjs: throw: (unknown): getPrototypeOf descript"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-602.js",
-      "reason": "[sloppy] zjs: throw: (unknown): defineProperty descriptor should not be enumerable\nzjs: throw: (unknown): defineProperty descript"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-603.js",
-      "reason": "[sloppy] zjs: throw: (unknown): defineProperties descriptor should not be enumerable\nzjs: throw: (unknown): defineProperties desc"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-604.js",
-      "reason": "[sloppy] zjs: throw: (unknown): seal descriptor should not be enumerable\nzjs: throw: (unknown): seal descriptor should not be enu"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-605.js",
-      "reason": "[sloppy] zjs: throw: (unknown): freeze descriptor should not be enumerable\nzjs: throw: (unknown): freeze descriptor should not be"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-606.js",
-      "reason": "[sloppy] zjs: throw: (unknown): preventExtensions descriptor should not be enumerable\nzjs: throw: (unknown): preventExtensions de"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-607.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isSealed descriptor should not be enumerable\nzjs: throw: (unknown): isSealed descriptor should no"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-608.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isFrozen descriptor should not be enumerable\nzjs: throw: (unknown): isFrozen descriptor should no"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-609.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isExtensible descriptor should not be enumerable\nzjs: throw: (unknown): isExtensible descriptor s"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-610.js",
-      "reason": "[sloppy] zjs: throw: (unknown): keys descriptor should not be enumerable\nzjs: throw: (unknown): keys descriptor should not be enu"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-611.js",
       "reason": "[sloppy] zjs: throw: (unknown): bind descriptor should not be enumerable\nzjs: throw: (unknown): bind descriptor should not be enu"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-622.js",
-      "reason": "[sloppy] zjs: throw: (unknown): now descriptor should not be enumerable\nzjs: throw: (unknown): now descriptor should not be enume"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-623.js",
@@ -5731,10 +5627,6 @@
     {
       "path": "test/built-ins/Object/defineProperty/typedarray-backed-by-resizable-buffer.js",
       "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
-    },
-    {
-      "path": "test/built-ins/Object/entries/function-property-descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): entries descriptor should not be enumerable\nzjs: throw: (unknown): entries descriptor should not "
     },
     {
       "path": "test/built-ins/Object/entries/getter-making-future-key-nonenumerable.js",
@@ -5897,14 +5789,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-114.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-115.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-116.js",
       "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
@@ -5993,10 +5877,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-14.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-140.js",
       "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
@@ -6037,10 +5917,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-150.js",
       "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
@@ -6077,10 +5953,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-160.js",
       "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
@@ -6102,10 +5974,6 @@
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-169.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-17.js",
       "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
     {
@@ -6141,10 +6009,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'writable')\nzjs: throw: TypeError: Cannot read prope"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-18.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-180.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'writable')\nzjs: throw: TypeError: Cannot read prope"
     },
@@ -6159,10 +6023,6 @@
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-189.js",
       "reason": "[sloppy] zjs: throw: (unknown): desc.writable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.writable"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-19.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-190.js",
@@ -6195,10 +6055,6 @@
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-199.js",
       "reason": "[sloppy] zjs: throw: (unknown): desc.writable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.writable"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-20.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-200.js",
@@ -6235,10 +6091,6 @@
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-209.js",
       "reason": "[sloppy] zjs: throw: (unknown): desc.writable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.writable"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-21.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-210.js",
@@ -6281,10 +6133,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): desc.writable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.writable"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-220.js",
       "reason": "[sloppy] zjs: throw: (unknown): desc.writable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.writable"
     },
@@ -6301,10 +6149,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): propDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): propDeleted Exp"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-23.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-230.js",
       "reason": "[sloppy] zjs: throw: (unknown): propDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): propDeleted Exp"
     },
@@ -6317,24 +6161,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): propDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): propDeleted Exp"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-24.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-242.js",
       "reason": "[sloppy] zjs: throw: (unknown): propDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): propDeleted Exp"
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-246.js",
       "reason": "[sloppy] zjs: throw: (unknown): propDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): propDeleted Exp"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-25.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-26.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-34.js",
@@ -6373,10 +6205,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-61.js",
-      "reason": "[sloppy] zjs: throw: (unknown): desc.enumerable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.enumer"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-7.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
@@ -6403,10 +6231,6 @@
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptors/function-length.js",
       "reason": "[sloppy] zjs: throw: (unknown): length descriptor value should be 1; length value should be 1\nzjs: throw: (unknown): length descr"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptors/function-property-descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): getOwnPropertyDescriptors descriptor should not be enumerable\nzjs: throw: (unknown): getOwnProper"
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptors/order-after-define-property.js",
@@ -6497,10 +6321,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Actual [before] and expected [after, before] should have the same contents. \nzjs: throw: (unknown"
     },
     {
-      "path": "test/built-ins/Object/hasOwn/descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): hasOwn descriptor should not be enumerable\nzjs: throw: (unknown): hasOwn descriptor should not be"
-    },
-    {
       "path": "test/built-ins/Object/hasOwn/symbol_own_property.js",
       "reason": "[sloppy] "
     },
@@ -6515,10 +6335,6 @@
     {
       "path": "test/built-ins/Object/hasOwn/symbol_property_valueOf.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Object/is/object-is.js",
-      "reason": "[sloppy] zjs: throw: (unknown): is descriptor should not be enumerable\nzjs: throw: (unknown): is descriptor should not be enumera"
     },
     {
       "path": "test/built-ins/Object/isExtensible/15.2.3.13-0-2.js",
@@ -6961,10 +6777,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/Object/setPrototypeOf/property-descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): setPrototypeOf descriptor should not be enumerable\nzjs: throw: (unknown): setPrototypeOf descript"
-    },
-    {
       "path": "test/built-ins/Object/setPrototypeOf/set-failure-non-extensible.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -6975,10 +6787,6 @@
     {
       "path": "test/built-ins/Object/symbol_object-returns-fresh-symbol.js",
       "reason": "[sloppy] zjs: throw: (unknown): The value of `Object(symA)` is not `symA` Expected SameValue(\u00abSymbol(A)\u00bb, \u00abSymbol(A)\u00bb) to be fals"
-    },
-    {
-      "path": "test/built-ins/Object/values/function-property-descriptor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): values descriptor should not be enumerable\nzjs: throw: (unknown): values descriptor should not be"
     },
     {
       "path": "test/built-ins/Object/values/getter-making-future-key-nonenumerable.js",
@@ -7059,10 +6867,6 @@
     {
       "path": "test/built-ins/Promise/all/new-resolve-function.js",
       "reason": "[sloppy] zjs: throw: (unknown): p1.then call count Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): p1.then call co"
-    },
-    {
-      "path": "test/built-ins/Promise/all/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): all descriptor should not be enumerable\nzjs: throw: (unknown): all descriptor should not be enume"
     },
     {
       "path": "test/built-ins/Promise/all/resolve-before-loop-exit-from-same.js",
@@ -7183,10 +6987,6 @@
     {
       "path": "test/built-ins/Promise/allSettled/new-resolve-function.js",
       "reason": "[sloppy] zjs: throw: (unknown): p1.then call count Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): p1.then call co"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): allSettled descriptor should not be enumerable\nzjs: throw: (unknown): allSettled descriptor shoul"
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-element-function-extensible.js",
@@ -7335,10 +7135,6 @@
     {
       "path": "test/built-ins/Promise/any/new-reject-function.js",
       "reason": "[sloppy] zjs: throw: (unknown): p1.then call count Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): p1.then call co"
-    },
-    {
-      "path": "test/built-ins/Promise/any/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): any descriptor should not be enumerable\nzjs: throw: (unknown): any descriptor should not be enume"
     },
     {
       "path": "test/built-ins/Promise/any/reject-element-function-extensible.js",
@@ -7561,10 +7357,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): `then` invoked once for every iterated value Expected SameValue(\u00ab0\u00bb, \u00ab3\u00bb) to be true\nzjs: throw: "
     },
     {
-      "path": "test/built-ins/Promise/race/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): race descriptor should not be enumerable\nzjs: throw: (unknown): race descriptor should not be enu"
-    },
-    {
       "path": "test/built-ins/Promise/race/reject-from-same-thenable.js",
       "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
@@ -7589,16 +7381,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): p1.then call count Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): p1.then call co"
     },
     {
-      "path": "test/built-ins/Promise/reject/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): reject descriptor should not be enumerable\nzjs: throw: (unknown): reject descriptor should not be"
-    },
-    {
       "path": "test/built-ins/Promise/resolve/arg-uniq-ctor.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Promise/resolve/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): resolve descriptor should not be enumerable\nzjs: throw: (unknown): resolve descriptor should not "
     },
     {
       "path": "test/built-ins/Promise/resolve/resolve-prms-cstm-then.js",
@@ -7619,10 +7403,6 @@
     {
       "path": "test/built-ins/Promise/try/ctx-ctor.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction Promise() { [native code] }\u00bb, \u00abfunction SubPromise() { [user code] }"
-    },
-    {
-      "path": "test/built-ins/Promise/try/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): try descriptor should not be enumerable\nzjs: throw: (unknown): try descriptor should not be enume"
     },
     {
       "path": "test/built-ins/Promise/withResolvers/ctx-ctor.js",
@@ -8993,10 +8773,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): ToNumber throws when its argument's ToPrimitive step calls a throwing valueOf, and String.fromCha"
     },
     {
-      "path": "test/built-ins/String/fromCodePoint/fromCodePoint.js",
-      "reason": "[sloppy] zjs: throw: (unknown): fromCodePoint descriptor should not be enumerable\nzjs: throw: (unknown): fromCodePoint descriptor"
-    },
-    {
       "path": "test/built-ins/String/fromCodePoint/return-string-value.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\\u0004\"\u00bb, \u00ab\"\u0404\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\"\\u00"
     },
@@ -9901,10 +9677,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/String/raw/raw.js",
-      "reason": "[sloppy] zjs: throw: (unknown): raw descriptor should not be enumerable\nzjs: throw: (unknown): raw descriptor should not be enume"
-    },
-    {
       "path": "test/built-ins/String/raw/return-empty-string-if-length-is-zero-or-less-number.js",
       "reason": "[sloppy] zjs: throw: (unknown): result is an empty string when length == 0.32 Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"\"\u00bb) to be true\n"
     },
@@ -9981,10 +9753,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Symbol/for/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): for descriptor should not be enumerable\nzjs: throw: (unknown): for descriptor should not be enume"
-    },
-    {
       "path": "test/built-ins/Symbol/for/to-string-err.js",
       "reason": "[sloppy] "
     },
@@ -9994,7 +9762,7 @@
     },
     {
       "path": "test/built-ins/Symbol/hasInstance/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): hasInstance descriptor should not be enumerable; hasInstance descriptor should not be writable; h"
+      "reason": "[sloppy] zjs: throw: (unknown): hasInstance descriptor should not be writable; hasInstance descriptor should not be configurable\n"
     },
     {
       "path": "test/built-ins/Symbol/is-constructor.js",
@@ -10006,7 +9774,7 @@
     },
     {
       "path": "test/built-ins/Symbol/isConcatSpreadable/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): isConcatSpreadable descriptor should not be enumerable; isConcatSpreadable descriptor should not "
+      "reason": "[sloppy] zjs: throw: (unknown): isConcatSpreadable descriptor should not be writable; isConcatSpreadable descriptor should not be"
     },
     {
       "path": "test/built-ins/Symbol/iterator/cross-realm.js",
@@ -10014,7 +9782,7 @@
     },
     {
       "path": "test/built-ins/Symbol/iterator/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): iterator descriptor should not be enumerable; iterator descriptor should not be writable; iterato"
+      "reason": "[sloppy] zjs: throw: (unknown): iterator descriptor should not be writable; iterator descriptor should not be configurable\nzjs: t"
     },
     {
       "path": "test/built-ins/Symbol/keyFor/arg-non-symbol.js",
@@ -10025,16 +9793,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Symbol/keyFor/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): keyFor descriptor should not be enumerable\nzjs: throw: (unknown): keyFor descriptor should not be"
-    },
-    {
       "path": "test/built-ins/Symbol/match/cross-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
       "path": "test/built-ins/Symbol/match/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): match descriptor should not be enumerable; match descriptor should not be writable; match descrip"
+      "reason": "[sloppy] zjs: throw: (unknown): match descriptor should not be writable; match descriptor should not be configurable\nzjs: throw: "
     },
     {
       "path": "test/built-ins/Symbol/matchAll/cross-realm.js",
@@ -10130,7 +9894,7 @@
     },
     {
       "path": "test/built-ins/Symbol/replace/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): replace descriptor should not be enumerable; replace descriptor should not be writable; replace d"
+      "reason": "[sloppy] zjs: throw: (unknown): replace descriptor should not be writable; replace descriptor should not be configurable\nzjs: thr"
     },
     {
       "path": "test/built-ins/Symbol/search/cross-realm.js",
@@ -10138,11 +9902,11 @@
     },
     {
       "path": "test/built-ins/Symbol/search/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): search descriptor should not be enumerable; search descriptor should not be writable; search desc"
+      "reason": "[sloppy] zjs: throw: (unknown): search descriptor should not be writable; search descriptor should not be configurable\nzjs: throw"
     },
     {
       "path": "test/built-ins/Symbol/species/basic.js",
-      "reason": "[sloppy] zjs: throw: (unknown): species descriptor should not be enumerable; species descriptor should not be writable; species d"
+      "reason": "[sloppy] zjs: throw: (unknown): species descriptor should not be writable; species descriptor should not be configurable\nzjs: thr"
     },
     {
       "path": "test/built-ins/Symbol/species/cross-realm.js",
@@ -10158,7 +9922,7 @@
     },
     {
       "path": "test/built-ins/Symbol/split/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): split descriptor should not be enumerable; split descriptor should not be writable; split descrip"
+      "reason": "[sloppy] zjs: throw: (unknown): split descriptor should not be writable; split descriptor should not be configurable\nzjs: throw: "
     },
     {
       "path": "test/built-ins/Symbol/symbol.js",
@@ -10170,7 +9934,7 @@
     },
     {
       "path": "test/built-ins/Symbol/toPrimitive/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): toPrimitive descriptor should not be enumerable; toPrimitive descriptor should not be writable; t"
+      "reason": "[sloppy] zjs: throw: (unknown): toPrimitive descriptor should not be writable; toPrimitive descriptor should not be configurable\n"
     },
     {
       "path": "test/built-ins/Symbol/toStringTag/cross-realm.js",
@@ -10178,7 +9942,7 @@
     },
     {
       "path": "test/built-ins/Symbol/toStringTag/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): toStringTag descriptor should not be enumerable; toStringTag descriptor should not be writable; t"
+      "reason": "[sloppy] zjs: throw: (unknown): toStringTag descriptor should not be writable; toStringTag descriptor should not be configurable\n"
     },
     {
       "path": "test/built-ins/Symbol/unscopables/cross-realm.js",
@@ -10186,7 +9950,7 @@
     },
     {
       "path": "test/built-ins/Symbol/unscopables/prop-desc.js",
-      "reason": "[sloppy] zjs: throw: (unknown): unscopables descriptor should not be enumerable; unscopables descriptor should not be writable; u"
+      "reason": "[sloppy] zjs: throw: (unknown): unscopables descriptor should not be writable; unscopables descriptor should not be configurable\n"
     },
     {
       "path": "test/built-ins/WeakMap/get-set-method-failure.js",

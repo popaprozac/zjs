@@ -27656,6 +27656,25 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
             mark_proto_methods_non_constructor(ctx, zjs_as_object(jv));
         }
     }
+    // Built-in constructor STATICS (Date.now, Object.keys, Number.isInteger,
+    // String.fromCharCode, Symbol.for, Promise.all, Array.isArray, …) live
+    // on each constructor host-function's `.props` bag. They're installed
+    // via object_set (PROP_DEFAULT = enumerable), but per spec all built-in
+    // properties are non-enumerable. The proto/namespace sweep above misses
+    // them, so walk every built-in global host function and clear the
+    // enumerable bit on its statics. (Runs at builtin-init, before any user
+    // code, so every host-function global here is a built-in.)
+    let gi: u32 = 0;
+    while gi < ctx.global_count {
+        let gv = ctx.globals[gi].value;
+        if zjs_is_host_function(gv) != 0 {
+            let hf = zjs_as_host_function(gv);
+            if hf.props != NULL {
+                proto_mark_nonenum(hf.props);
+            }
+        }
+        gi = gi + 1;
+    }
 
     // Ring-1 / Ring-2 stdlib extensions live in their own helper
     // (zjs_install_stdlib_extensions). They're NOT called from here —
