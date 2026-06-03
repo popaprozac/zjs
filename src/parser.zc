@@ -1977,11 +1977,21 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
                 return NULL;
             }
         }
-        // Field terminator: explicit `;`, or rely on ASI at `}` / newline.
-        match_kind(p, TokenKind::Semicolon);
+        // Field terminator: explicit `;`, or ASI. ASI only inserts the
+        // terminator if the next token is `}`, EOF, or on a new line —
+        // so `field method(){}` / `field = 1 method(){}` on a single line
+        // is a SyntaxError (no separator between class elements).
         let field_end: u32 = if init_expr != NULL { init_expr.end }
                              else if computed_key != NULL { computed_key.end }
                              else { name_tok.start + name_tok.length };
+        if !match_kind(p, TokenKind::Semicolon) {
+            let nxt = peek(p);
+            if nxt.kind != TokenKind::RBrace && nxt.kind != TokenKind::Eof
+               && !has_newline_between(p, field_end, nxt.start) {
+                p.had_error = true;
+                return NULL;
+            }
+        }
         let field = new_node(&p.tracker, NodeKind::ClassField, mut_start, field_end);
         if computed_key != NULL {
             field.name_start  = 0;

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 00:25 UTC",
+    "when": "2026-06-03 00:34 UTC",
     "total": 27491,
-    "passed": 22157,
-    "failed": 4614,
+    "passed": 22166,
+    "failed": 4605,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -12321,14 +12321,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): g should be an own property\nzjs: throw: (unknown): g should be an own property"
     },
     {
-      "path": "test/language/expressions/class/elements/fields-asi-same-line-1.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/fields-asi-same-line-2.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/fields-computed-name-static-propname-prototype.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -12757,19 +12749,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-fields-same-line-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-identifier-invalid-zwj-error.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatename-identifier-invalid-zwnj-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/early-errors/grammar-privatenames-same-line-error.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -15833,14 +15817,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): g should be an own property\nzjs: throw: (unknown): g should be an own property"
     },
     {
-      "path": "test/language/statements/class/elements/fields-asi-same-line-1.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/fields-asi-same-line-2.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/fields-computed-name-static-computed-var-propname-constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): constructor descriptor should be enumerable\nzjs: throw: (unknown): constructor descriptor should "
     },
@@ -16529,19 +16505,11 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-fields-same-line-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatename-identifier-invalid-zwj-error.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatename-identifier-invalid-zwnj-error.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/early-errors/grammar-privatenames-same-line-error.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
@@ -16930,10 +16898,6 @@
     },
     {
       "path": "test/language/statements/class/syntax/early-errors/class-definition-evaluation-scriptbody-duplicate-binding.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/syntax/escaped-static.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
