@@ -989,6 +989,7 @@ fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
     let buf = alloc_n<AstNode*>((usize)cap);
 
     let last_end: u32 = kw.start + kw.length;
+    let const_missing_init: bool = false;
     while true {
         let k = peek_kind(p);
         let is_pattern: bool = k == TokenKind::LBrace || k == TokenKind::LBracket;
@@ -1023,6 +1024,12 @@ fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
             if init == NULL { break; }
             decl.left = init;
             decl.end = init.end;
+        } else if kw.kind == TokenKind::KwConst {
+            // §14.3.1: a `const` LexicalBinding requires an Initializer.
+            // The lone exception is a for-in/for-of head (`for (const x
+            // of y)`), handled after the loop by inspecting the trailing
+            // `in`/`of`.
+            const_missing_init = true;
         }
 
         if count >= cap {
@@ -1039,6 +1046,16 @@ fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
 
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
     else         { dealloc(buf); buf = NULL; }
+
+    // A `const` declarator without an initializer is a SyntaxError unless
+    // this is the binding of a for-in / for-of statement — those bind a
+    // single ForBinding with no `=` and are followed by `in` / `of`.
+    if const_missing_init {
+        let nk = peek_kind(p);
+        if !(count == 1 && (nk == TokenKind::KwIn || nk == TokenKind::KwOf)) {
+            p.had_error = true;
+        }
+    }
 
     let node = new_node(&p.tracker, NodeKind::VarDecl, kw.start, last_end);
     node.op = kw.kind;
