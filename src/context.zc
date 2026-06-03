@@ -14661,6 +14661,49 @@ fn host_ta_get_buffer(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     return zjs_undefined();
 }
 
+// %TypedArray%.of(...items) — §23.2.2.2. TypedArrayCreate(this, items.length)
+// then set each element. `this` is the concrete constructor, so the result
+// is a TA of the right kind (works for TAG_TYPED_ARRAY and TAG_UINT8_ARRAY
+// alike via zjs_construct_value + the property_set element path).
+fn host_typed_array_of_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let ctor = ctx.host_this;
+    let lenv = zjs_int32((i32)argc);
+    let lp: ZjsValue* = NULL; raw { lp = &lenv; }
+    let ta = zjs_construct_value(ctx, ctor, lp, 1);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let i: u32 = 0;
+    while i < argc {
+        property_set(ctx, ta, zjs_int32((i32)i), args[i]);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i + 1;
+    }
+    return ta;
+}
+
+// %TypedArray%.from(source, mapfn?, thisArg?) — §23.2.2.1. Reuse the
+// Array.from machinery (iterable / array-like / mapfn / thisArg), then
+// TypedArrayCreate(this, len) and copy the collected values across.
+fn host_typed_array_from_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let ctor = ctx.host_this;
+    let collected = host_array_from_static(ctx, args, argc);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    ctx_push_temp_root(ctx, collected);
+    defer ctx_pop_temp_root(ctx);
+    let arr = zjs_as_array(collected);
+    let len = arr.length;
+    let lenv = zjs_int32((i32)len);
+    let lp: ZjsValue* = NULL; raw { lp = &lenv; }
+    let ta = zjs_construct_value(ctx, ctor, lp, 1);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let i: u32 = 0;
+    while i < len {
+        property_set(ctx, ta, zjs_int32((i32)i), array_get(arr, i));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i + 1;
+    }
+    return ta;
+}
+
 // %TypedArray%() / new %TypedArray%() — the abstract superclass is never
 // directly callable or constructable (ECMA-262 §23.2.1.1).
 fn host_typed_array_abstract(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -27025,6 +27068,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     }
     let ta_values_ptr: void* = NULL; raw { ta_values_ptr = (void*)host_typed_array_values; }
     let ta_tag_ptr:    void* = NULL; raw { ta_tag_ptr    = (void*)host_typed_array_to_string_tag; }
+    let ta_of_ptr:     void* = NULL; raw { ta_of_ptr     = (void*)host_typed_array_of_static; }
+    let ta_from_ptr:   void* = NULL; raw { ta_from_ptr   = (void*)host_typed_array_from_static; }
     // Bytes-per-element, indexed parallel to ta_protos below.
     let ta_bpe: u32[8];
     ta_bpe[0] = 1; ta_bpe[1] = 1; ta_bpe[2] = 2; ta_bpe[3] = 2;
@@ -27090,6 +27135,13 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ctx.typed_array_ctor = ta_intrinsic_v;
     ctx.typed_array_proto = zjs_as_object(ctx_new_object(ctx));
     zjs_as_host_function(ta_intrinsic_v).prototype = ctx.typed_array_proto;
+    // %TypedArray%.of / .from statics (own on the intrinsic).
+    let ta_intrinsic_o = zjs_as_host_function(ta_intrinsic_v);
+    if ta_intrinsic_o.props == NULL { ta_intrinsic_o.props = zjs_as_object(ctx_new_object(ctx)); }
+    object_set(ctx, ta_intrinsic_o.props, ctx_intern_atom(ctx, (char*)"of", 2),
+               ctx_make_host_function_arity(ctx, (char*)"of", ta_of_ptr, 0));
+    object_set(ctx, ta_intrinsic_o.props, ctx_intern_atom(ctx, (char*)"from", 4),
+               ctx_make_host_function_arity(ctx, (char*)"from", ta_from_ptr, 1));
     let ta_sp = ctx.typed_array_proto;
     object_set(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"constructor", 11), ta_intrinsic_v);
     object_set(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"fill", 4),
@@ -27158,6 +27210,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         if ctor_o.props == NULL { ctor_o.props = zjs_as_object(ctx_new_object(ctx)); }
         object_define_property_slot(ctx, ctor_o.props, ctx_intern_atom(ctx, (char*)"BYTES_PER_ELEMENT", 17),
                                     zjs_int32((i32)ta_bpe[ti]), 0);
+        // Per-kind .of / .from (own; spec also inherits from %TypedArray% but
+        // zjs host fns don't resolve inherited statics, so install directly).
+        object_set(ctx, ctor_o.props, ctx_intern_atom(ctx, (char*)"of", 2),
+                   ctx_make_host_function_arity(ctx, (char*)"of", ta_of_ptr, 0));
+        object_set(ctx, ctor_o.props, ctx_intern_atom(ctx, (char*)"from", 4),
+                   ctx_make_host_function_arity(ctx, (char*)"from", ta_from_ptr, 1));
         ti = ti + 1;
     }
 
