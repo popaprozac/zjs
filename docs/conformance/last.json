@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 18:42 UTC",
+    "when": "2026-06-03 20:27 UTC",
     "total": 27491,
-    "passed": 22676,
-    "failed": 4095,
+    "passed": 22712,
+    "failed": 4059,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -10249,80 +10249,8 @@
       "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-assignment-expression-assignment.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-assignment-expression-bitwise-or.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-assignment-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-assignment-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-assignment-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"2\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abunde"
-    },
-    {
       "path": "test/language/expressions/class/cpn-class-expr-fields-computed-property-name-from-yield-expression.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body\nzjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-assignment-expression-assignment.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-assignment-expression-bitwise-or.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-assignment-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-assignment-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-assignment-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
       "path": "test/language/expressions/class/cpn-class-expr-fields-methods-computed-property-name-from-yield-expression.js",
@@ -13549,80 +13477,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-assignment-expression-assignment.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-assignment-expression-bitwise-or.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-assignment-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-assignment-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-assignment-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-identifier.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"2\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abunde"
-    },
-    {
       "path": "test/language/statements/class/cpn-class-decl-fields-computed-property-name-from-yield-expression.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body\nzjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-assignment-expression-assignment.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-assignment-expression-bitwise-or.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-assignment-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-assignment-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-assignment-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-expression-coalesce.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-expression-logical-and.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-expression-logical-or.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-identifier.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
       "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-yield-expression.js",

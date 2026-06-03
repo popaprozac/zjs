@@ -1026,6 +1026,11 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     }
     // Closure: same .call / .apply behavior.
     if tag == TAG_CLOSURE {
+        // Numeric / other keys ToString — matches the TAG_FUNCTION path so
+        // a class-ctor closure's computed-name statics (`static [0] = x`,
+        // installed under "0" in Function*.props) read back. Without this
+        // an integer key skipped the whole lookup and returned undefined.
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         if zjs_is_string(key) != 0 {
             let ks = zjs_as_string(key);
             let kd = ks.data;
