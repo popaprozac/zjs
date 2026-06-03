@@ -6068,6 +6068,18 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let argc = (u32)inst.c;
             let callee = regs[base];
 
+            // Proxy [[Construct]] — route through the unified constructor
+            // path (construct trap + result-must-be-object invariant).
+            if zjs_is_proxy(callee) != 0 {
+                let argv_ptr: ZjsValue* = NULL; raw { argv_ptr = &regs[base + 1]; }
+                let pr = zjs_construct_value(ctx, callee, argv_ptr, argc);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; break;
+                }
+                regs[dst] = pr;
+            } else {
+
             // Class methods are not constructible. Built-in
             // prototype methods (`Array.prototype.push`, etc.) are
             // flagged via ZjsHostFunction.is_constructor = false at
@@ -6307,6 +6319,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             } else {
                 regs[dst] = new_obj_v;
             }
+            } // end non-proxy NewInvoke (proxy handled above)
         } else if op == Op::DeleteElem {
             // Mark the property's slot DELETED (sentinel). For arrays:
             // clear the element (set to undefined; the spec calls this
@@ -6929,6 +6942,51 @@ fn zjs_to_primitive(ctx: ZjsContext*, v: ZjsValue, prefer_string: bool) -> ZjsVa
 // host_this — preserve that even though the call returned undefined).
 // Caller checks ctx.pending_throw_active for failure.
 fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // Proxy [[Construct]] (§10.5.13): invoke the construct trap (result must
+    // be an Object), or forward to the target's [[Construct]] when absent.
+    if zjs_is_proxy(callee) != 0 {
+        let p = zjs_as_proxy(callee);
+        if p.revoked {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"Cannot perform 'construct' on a revoked proxy", 45);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        let trap_atom = ctx_intern_atom(ctx, (char*)"construct", 9);
+        let trap = property_get(ctx, p.handler, zjs_cell_from_ptr((void*)trap_atom));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        // No trap → forward to target.[[Construct]] (target must itself be
+        // a constructor; zjs_construct_value enforces that).
+        if zjs_is_undefined(trap) != 0 || zjs_is_null(trap) != 0 {
+            return zjs_construct_value(ctx, p.target, args, argc);
+        }
+        let callable: bool = zjs_is_function(trap) != 0 || zjs_is_closure(trap) != 0
+                          || zjs_is_host_function(trap) != 0;
+        if !callable {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy construct trap is not a function", 38);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        // Call trap(target, argumentsList, newTarget). newTarget is the proxy.
+        let arglist_v = ctx_new_array(ctx, argc);
+        let arglist = zjs_as_array(arglist_v);
+        let ai: u32 = 0;
+        while ai < argc { arglist.elements[ai] = args[ai]; ai = ai + 1; }
+        arglist.length = argc;
+        let ta: ZjsValue[3]; ta[0] = p.target; ta[1] = arglist_v; ta[2] = callee;
+        let tp: ZjsValue* = NULL; raw { tp = &ta[0]; }
+        let result = zjs_call_value_with_this(ctx, trap, p.handler, tp, 3);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        // §10.5.13 step 9: the trap result must be an Object.
+        if value_is_object_type(result) == 0 {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy construct trap must return an object", 42);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        return result;
+    }
     // Validate constructable.
     let constructable: bool = false;
     if zjs_is_function(callee) != 0 || zjs_is_closure(callee) != 0 { constructable = true; }

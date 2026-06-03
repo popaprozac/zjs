@@ -18866,6 +18866,12 @@ fn value_is_constructor(v: ZjsValue) -> bool {
     if zjs_is_host_function(v) != 0 {
         return host_fn_constructable(zjs_as_host_function(v));
     }
+    // IsConstructor(proxy): a Proxy has [[Construct]] iff its target does.
+    if zjs_is_proxy(v) != 0 {
+        let p = zjs_as_proxy(v);
+        if p.revoked { return false; }
+        return value_is_constructor(p.target);
+    }
     return false;
 }
 

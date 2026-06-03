@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 22:59 UTC",
+    "when": "2026-06-03 23:12 UTC",
     "total": 27491,
-    "passed": 22791,
-    "failed": 3980,
+    "passed": 22802,
+    "failed": 3969,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -330,7 +330,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-sparse-object.js",
-      "reason": "[strict] "
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-string-wrapper.js",
@@ -6734,75 +6734,35 @@
     },
     {
       "path": "test/built-ins/Proxy/construct/call-parameters-new-target.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct target is not a constructor\nzjs: throw: TypeError: Reflect.construct target is "
-    },
-    {
-      "path": "test/built-ins/Proxy/construct/call-parameters.js",
-      "reason": "[sloppy] zjs: throw: (unknown): trap context is the handler object Expected SameValue(\u00abundefined\u00bb, \u00ab[object Object]\u00bb) to be true\n"
-    },
-    {
-      "path": "test/built-ins/Proxy/construct/call-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab42\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundef"
+      "reason": "[sloppy] zjs: throw: (unknown): newTarget is passed as the third parameter Expected SameValue(\u00ab[object]\u00bb, \u00abfunction NewTarget() {"
     },
     {
       "path": "test/built-ins/Proxy/construct/null-handler-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/construct/null-handler.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/construct/return-is-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-boolean-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/construct/return-not-object-throws-boolean.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-null-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/construct/return-not-object-throws-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-number-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/construct/return-not-object-throws-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-string-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/construct/return-not-object-throws-string.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-symbol-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/construct/return-not-object-throws-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-undefined-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/construct/return-not-object-throws-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-missing-target-is-proxy.js",
@@ -6813,20 +6773,16 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/construct/trap-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Proxy/construct/trap-is-null-target-is-proxy.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-null.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct target is not a constructor\nzjs: throw: TypeError: Reflect.construct target is "
+      "reason": "[sloppy] zjs: throw: (unknown): construct is null: NewTarget is passed to [[Construct]] Expected SameValue(\u00ab[object]\u00bb, \u00abfunction "
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-undefined-no-property.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct target is not a constructor\nzjs: throw: TypeError: Reflect.construct target is "
+      "reason": "[sloppy] zjs: throw: (unknown): construct is missing: NewTarget is passed to [[Construct]] Expected SameValue(\u00ab[object]\u00bb, \u00abfuncti"
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-undefined-proto-from-cross-realm-newtarget.js",
@@ -6842,7 +6798,7 @@
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-undefined.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct target is not a constructor\nzjs: throw: TypeError: Reflect.construct target is "
+      "reason": "[sloppy] zjs: throw: (unknown): construct is undefined: NewTarget is passed to [[Construct]] Expected SameValue(\u00ab[object]\u00bb, \u00abfunc"
     },
     {
       "path": "test/built-ins/Proxy/create-target-is-not-a-constructor.js",
