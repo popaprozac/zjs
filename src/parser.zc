@@ -2832,8 +2832,10 @@ fn reinterpret_as_pattern(p: Parser*, expr: AstNode*) -> AstNode* {
                 // Elision — entry.left stays NULL, no default.
             } else if elem.kind == NodeKind::Spread {
                 // ECMA-262 AssignmentRestElement must be the LAST entry.
-                // `[...x, y]`, `[...x,,]`, `[...x, ...y]` all early-error.
-                if i + 1 != n {
+                // `[...x, y]`, `[...x,,]`, `[...x, ...y]` all early-error;
+                // so does a bare trailing comma `[...x,]` (flagged on the
+                // spread by parse_array via bool_value).
+                if i + 1 != n || elem.bool_value {
                     p.had_error = true;
                     return NULL;
                 }
@@ -2869,7 +2871,14 @@ fn reinterpret_as_pattern(p: Parser*, expr: AstNode*) -> AstNode* {
             if prop == NULL { p.had_error = true; return NULL; }
             let entry = new_node(&p.tracker, NodeKind::PatternEntry, prop.start, prop.end);
             if prop.kind == NodeKind::Spread {
-                // `{ ...rest }` at object-literal position.
+                // `{ ...rest }` at object-literal position. BindingRest /
+                // AssignmentRestProperty must be the LAST element — so
+                // `{...x, y}` and a trailing comma `{...x,}` (flagged on
+                // the spread by parse_object) are SyntaxErrors.
+                if i + 1 != n || prop.bool_value {
+                    p.had_error = true;
+                    return NULL;
+                }
                 entry.bool_value = true;
                 let tgt = reinterpret_assign_target(p, prop.left);
                 if tgt == NULL { return NULL; }
@@ -4104,6 +4113,12 @@ fn parse_array(p: Parser*) -> AstNode* {
         buf[count] = elem;
         count = count + 1;
         if !match_kind(p, TokenKind::Comma) { break; }
+        // A comma after a spread element only matters when this Array is
+        // reinterpreted as an AssignmentPattern: AssignmentRestElement
+        // must be the LAST element, so `[...x,]` and `[...x, y]` are
+        // pattern SyntaxErrors. Array *literals* ignore a trailing comma,
+        // so we just flag the spread and let reinterpret_as_pattern act.
+        if elem.kind == NodeKind::Spread { elem.bool_value = true; }
     }
 
     let close = peek(p);
@@ -4142,6 +4157,9 @@ fn parse_object(p: Parser*) -> AstNode* {
             buf[count] = s;
             count = count + 1;
             if !match_kind(p, TokenKind::Comma) { break; }
+            // As with arrays: a comma after the object rest only matters
+            // for pattern reinterpret (BindingRestProperty must be last).
+            s.bool_value = true;
             continue;
         }
         // ECMA-262 MethodDefinition prefixes inside an object literal:

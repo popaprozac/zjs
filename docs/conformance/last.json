@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 00:34 UTC",
+    "when": "2026-06-03 00:44 UTC",
     "total": 27491,
-    "passed": 22166,
-    "failed": 4605,
+    "passed": 22175,
+    "failed": 4596,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -11513,14 +11513,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/language/expressions/assignment/dstr/array-rest-before-elision.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-rest-elision-invalid.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/array-rest-iter-rtrn-close-err.js",
       "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
     },
@@ -11627,10 +11619,6 @@
     {
       "path": "test/language/expressions/assignment/dstr/obj-rest-non-string-computed-property-string-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): Expected Sam"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/obj-rest-not-last-element-invalid.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/assignment/dstr/obj-rest-order.js",
@@ -17005,18 +16993,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Unexpected value: 'aa1baundefinedca3'\nzjs: throw: (unknown): Unexpected value: 'aa1baundefinedca3"
     },
     {
-      "path": "test/language/statements/for-in/dstr/array-rest-before-elision.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/array-rest-elision-invalid.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/dstr/obj-rest-not-last-element-invalid.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-in/head-const-bound-names-dup.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -17217,14 +17193,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/language/statements/for-of/dstr/array-rest-before-elision.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-rest-elision-invalid.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/array-rest-iter-rtrn-close-err.js",
       "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
     },
@@ -17347,10 +17315,6 @@
     {
       "path": "test/language/statements/for-of/dstr/obj-rest-non-string-computed-property-string-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): Expected Sam"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-rest-not-last-element-invalid.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-rest-order.js",
