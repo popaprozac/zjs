@@ -18759,6 +18759,13 @@ fn host_reflect_is_extensible(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Z
 fn host_reflect_prevent_extensions(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let t = if argc >= 1 { args[0] } else { zjs_undefined() };
     if !reflect_is_object(t) { return reflect_throw_target(ctx); }
+    // Reflect.preventExtensions returns the [[PreventExtensions]] boolean
+    // (not the target, and without Object.preventExtensions's throw-on-false).
+    if zjs_is_proxy(t) != 0 {
+        let ok = proxy_prevent_extensions(ctx, t);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        return zjs_bool(if ok { 1 } else { 0 });
+    }
     let _ = host_object_prevent_extensions(ctx, args, argc);
     return zjs_bool(1);
 }
@@ -21005,10 +21012,98 @@ fn object_all_slots_have_zero(obj: ZjsObject*, required_zero: u8) -> bool {
 // objects, false for objects with non_extensible set, false for any
 // non-object input. ZjsContext is unused but kept for the host-fn
 // shape.
+// Proxy [[IsExtensible]] (§10.5.3): invoke the isExtensible trap (forwarding
+// when absent), then enforce that the boolean result matches the target's
+// actual extensibility. Returns a boolean value (undefined on a thrown error).
+fn proxy_is_extensible(ctx: ZjsContext*, p_v: ZjsValue) -> ZjsValue {
+    let p = zjs_as_proxy(p_v);
+    if p.revoked {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Cannot perform 'isExtensible' on a revoked proxy", 48);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return zjs_undefined();
+    }
+    let trap = property_get(ctx, p.handler,
+        zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"isExtensible", 12)));
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let tgt_buf: ZjsValue[1]; tgt_buf[0] = p.target;
+    let tgt_p: ZjsValue* = NULL; raw { tgt_p = &tgt_buf[0]; }
+    if zjs_is_undefined(trap) != 0 || zjs_is_null(trap) != 0 {
+        return host_object_is_extensible(ctx, tgt_p, 1);
+    }
+    let callable: bool = zjs_is_function(trap) != 0 || zjs_is_closure(trap) != 0
+                      || zjs_is_host_function(trap) != 0;
+    if !callable {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"proxy isExtensible trap is not a function", 41);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return zjs_undefined();
+    }
+    let res = zjs_call_value_with_this(ctx, trap, p.handler, tgt_p, 1);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let truthy: bool = zjs_to_bool_coerce(res) != 0;
+    let ext = host_object_is_extensible(ctx, tgt_p, 1);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let target_ext: bool = zjs_is_bool(ext) != 0 && zjs_as_bool(ext) != 0;
+    if truthy != target_ext {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"proxy isExtensible inconsistent with target", 43);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return zjs_undefined();
+    }
+    return zjs_bool(if truthy { 1 } else { 0 });
+}
+
+// Proxy [[PreventExtensions]] (§10.5.4): invoke the preventExtensions trap
+// (forwarding when absent); if it reports success, the target must actually
+// be non-extensible. Returns the boolean trap result (false on thrown error).
+fn proxy_prevent_extensions(ctx: ZjsContext*, p_v: ZjsValue) -> bool {
+    let p = zjs_as_proxy(p_v);
+    if p.revoked {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Cannot perform 'preventExtensions' on a revoked proxy", 53);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return false;
+    }
+    let trap = property_get(ctx, p.handler,
+        zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"preventExtensions", 17)));
+    if ctx.pending_throw_active { return false; }
+    let tgt_buf: ZjsValue[1]; tgt_buf[0] = p.target;
+    let tgt_p: ZjsValue* = NULL; raw { tgt_p = &tgt_buf[0]; }
+    if zjs_is_undefined(trap) != 0 || zjs_is_null(trap) != 0 {
+        let _ = host_object_prevent_extensions(ctx, tgt_p, 1);
+        if ctx.pending_throw_active { return false; }
+        return true;
+    }
+    let callable: bool = zjs_is_function(trap) != 0 || zjs_is_closure(trap) != 0
+                      || zjs_is_host_function(trap) != 0;
+    if !callable {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"proxy preventExtensions trap is not a function", 46);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return false;
+    }
+    let res = zjs_call_value_with_this(ctx, trap, p.handler, tgt_p, 1);
+    if ctx.pending_throw_active { return false; }
+    let truthy: bool = zjs_to_bool_coerce(res) != 0;
+    if truthy {
+        let ext = host_object_is_extensible(ctx, tgt_p, 1);
+        if ctx.pending_throw_active { return false; }
+        if zjs_is_bool(ext) != 0 && zjs_as_bool(ext) != 0 {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy preventExtensions invariant: target still extensible", 58);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return false;
+        }
+    }
+    return truthy;
+}
+
 fn host_object_is_extensible(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let _u = ctx;
     if argc == 0 { return zjs_bool(0); }
     let v = args[0];
+    if zjs_is_proxy(v) != 0 { return proxy_is_extensible(ctx, v); }
     if zjs_is_object(v) != 0 {
         return zjs_bool(if zjs_as_object(v).non_extensible { 0 } else { 1 });
     }
@@ -21100,6 +21195,19 @@ fn host_object_prevent_extensions(ctx: ZjsContext*, args: ZjsValue*, argc: u32) 
     let _u = ctx;
     if argc == 0 { return zjs_undefined(); }
     let v = args[0];
+    if zjs_is_proxy(v) != 0 {
+        // Object.preventExtensions: throw if [[PreventExtensions]] reported
+        // failure; otherwise return the proxy unchanged.
+        let ok = proxy_prevent_extensions(ctx, v);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if !ok {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"Object.preventExtensions failed on proxy", 40);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        return v;
+    }
     if zjs_is_object(v) != 0 { zjs_as_object(v).non_extensible = true; }
     else if zjs_is_array(v) != 0 {
         let a = zjs_as_array(v);
