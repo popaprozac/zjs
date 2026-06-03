@@ -26162,6 +26162,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let bp = ctx_new_object(ctx);
     bool_hf.prototype = zjs_as_object(bp);
     object_set(ctx, bool_hf.prototype, ctx_intern_atom(ctx, (char*)"constructor", 11), bool_full);
+    // §20.3.3: Boolean.prototype is itself a Boolean object with
+    // [[BooleanData]] false — so Boolean.prototype.toString()/valueOf()
+    // (and .call on it) unwrap to `false` instead of failing thisBooleanValue.
+    object_set(ctx, bool_hf.prototype, ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN), zjs_bool(0));
     object_set(ctx, bool_hf.prototype, valueof_atom,
                ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
     object_set(ctx, bool_hf.prototype, tostring_atom,
@@ -26170,6 +26174,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let np = ctx_new_object(ctx);
     num_hf.prototype = zjs_as_object(np);
     object_set(ctx, num_hf.prototype, ctx_intern_atom(ctx, (char*)"constructor", 11), num_full);
+    // §21.1.3: Number.prototype is itself a Number object with
+    // [[NumberData]] +0 — so Number.prototype.toString(radix)/valueOf()
+    // unwrap to 0 instead of NaN-ing on the prototype object.
+    object_set(ctx, num_hf.prototype, ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN), zjs_int32(0));
     object_set(ctx, num_hf.prototype, valueof_atom,
                ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
     // Number.prototype.toString takes a radix argument, unlike the
@@ -26238,6 +26246,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         let sp = ctx_new_object(ctx);
         strv_hf.prototype = zjs_as_object(sp);
     }
+    // §22.1.3: String.prototype is a String exotic with [[StringData]] "" —
+    // String.prototype.toString()/valueOf() unwrap to the empty string.
+    object_set(ctx, strv_hf.prototype, ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN),
+               ctx_intern_string(ctx, (char*)"", 0));
     object_set(ctx, strv_hf.prototype, valueof_atom,
                ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
     object_set(ctx, strv_hf.prototype, tostring_atom,

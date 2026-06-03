@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 20:27 UTC",
+    "when": "2026-06-03 21:28 UTC",
     "total": 27491,
-    "passed": 22712,
-    "failed": 4059,
+    "passed": 22761,
+    "failed": 4010,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -2550,7 +2550,7 @@
     },
     {
       "path": "test/built-ins/Boolean/prototype/S15.6.3.1_A1.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): Boolean.prototype.toString() must return \"[object Boolean]\" Expected SameValue(\u00ab\"[object Object]\""
     },
     {
       "path": "test/built-ins/Boolean/prototype/S15.6.3.1_A2.js",
@@ -2559,14 +2559,6 @@
     {
       "path": "test/built-ins/Boolean/prototype/S15.6.3.1_A3.js",
       "reason": "zjs: throw: (unknown): Expected obj[prototype] to have configurable:false.\nzjs: throw: (unknown): Expected obj[prototype"
-    },
-    {
-      "path": "test/built-ins/Boolean/prototype/toString/S15.6.4.2_A1_T1.js",
-      "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Boolean/prototype/toString/S15.6.4.2_A1_T2.js",
-      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Boolean/prototype/toString/S15.6.4.2_A2_T1.js",
@@ -2586,14 +2578,6 @@
     },
     {
       "path": "test/built-ins/Boolean/prototype/toString/S15.6.4.2_A2_T5.js",
-      "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Boolean/prototype/valueOf/S15.6.4.3_A1_T1.js",
-      "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Boolean/prototype/valueOf/S15.6.4.3_A1_T2.js",
       "reason": "[sloppy] "
     },
     {
@@ -4249,12 +4233,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString() must return \"[object Number]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb,"
     },
     {
-      "path": "test/built-ins/Number/prototype/S15.7.3.1_A3.js",
-      "reason": "[sloppy] "
-    },
-    {
       "path": "test/built-ins/Number/prototype/S15.7.4_A1.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString() must return \"[object Number]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb,"
     },
     {
       "path": "test/built-ins/Number/prototype/S15.7.4_A3.3.js",
@@ -4267,14 +4247,6 @@
     {
       "path": "test/built-ins/Number/prototype/toExponential/return-values.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"2e+1\"\u00bb, \u00ab\"3e+1\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\"2e+"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toExponential/this-is-0-fractiondigits-is-0.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Number.prototype.toExponential called on non-number\nzjs: throw: TypeError: Number.prototype.toExp"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toFixed/S15.7.4.5_A1.1_T01.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toFixed() must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: thr"
     },
     {
       "path": "test/built-ins/Number/prototype/toFixed/S15.7.4.5_A1.4_T01.js",
@@ -4301,166 +4273,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): toLocaleString should be an own property\nzjs: throw: (unknown): toLocaleString should be an own p"
     },
     {
-      "path": "test/built-ins/Number/prototype/toPrecision/return-abrupt-tointeger-precision.js",
-      "reason": "[sloppy] zjs: throw: (unknown): valueOf Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): valueOf Expected a Tes"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toPrecision/this-is-0-precision-is-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Number.prototype.toPrecision called on non-number\nzjs: throw: TypeError: Number.prototype.toPreci"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toPrecision/undefined-precision-arg.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Number.prototype.toPrecision called on non-number\nzjs: throw: TypeError: Number.prototype.toPreci"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A1_T01.js",
-      "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A1_T02.js",
-      "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A1_T03.js",
-      "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T01.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(2) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: t"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T02.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(3) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: t"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T03.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(4) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: t"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T04.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(5) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: t"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T05.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(6) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: t"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T06.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(7) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: t"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T07.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(8) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: t"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T08.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(9) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: t"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T09.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(11) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T10.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(12) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T11.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(13) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T12.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(14) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T13.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(15) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T14.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(16) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(17) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(18) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T17.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(19) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T18.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(20) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T19.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(21) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T20.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(22) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T21.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(23) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(24) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T23.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(25) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T24.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(26) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T25.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(27) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T26.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(28) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T27.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(29) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T28.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(30) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T29.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(31) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T30.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(32) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T31.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(33) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T32.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(34) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T33.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(35) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A2_T34.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString(36) must return \"0\" Expected SameValue(\u00ab\"NaN\"\u00bb, \u00ab\"0\"\u00bb) to be true\nzjs: "
-    },
-    {
       "path": "test/built-ins/Number/prototype/toString/S15.7.4.2_A4_T01.js",
       "reason": "[sloppy] zjs: throw: (unknown): The result of evaluating (e instanceof TypeError) is expected to be true\nzjs: throw: (unknown): T"
     },
@@ -4483,14 +4295,6 @@
     {
       "path": "test/built-ins/Number/prototype/toString/numeric-literal-tostring-radix-poisoned.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a RangeError\nzjs: throw: (unknown): Expected a Test262Error but g"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/valueOf/S15.7.4.4_A1_T01.js",
-      "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Number/prototype/valueOf/S15.7.4.4_A1_T02.js",
-      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Number/prototype/valueOf/S15.7.4.4_A2_T01.js",
@@ -7742,7 +7546,7 @@
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab0\u00bb) to be t"
     },
     {
       "path": "test/built-ins/Reflect/Symbol.toStringTag.js",
