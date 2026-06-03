@@ -4258,6 +4258,9 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         let ml = m.name_length;
         let is_ctor: int = 0;
         raw { is_ctor = (ml == 11 && memcmp(mn, "constructor", 11) == 0) ? 1 : 0; }
+        // A STATIC method named "constructor" is an ordinary static member,
+        // not the class constructor.
+        if m.bool_value { is_ctor = 0; }
         if m.num == 2.0 { is_ctor = 1; }
         if is_ctor != 0 { ctor_node = m; }
         i = i + 1;
@@ -4406,6 +4409,9 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         if !is_computed_name {
             raw { is_ctor = (ml == 11 && memcmp(mn, "constructor", 11) == 0) ? 1 : 0; }
         }
+        // A STATIC method named "constructor" is an ordinary static member
+        // (attaches to the constructor object), not the class constructor.
+        if m.bool_value { is_ctor = 0; }
         // Parser sentinel for an auto-synthesized constructor (used
         // when the body has instance fields but no explicit ctor).
         if m.num == 2.0 { is_ctor = 1; }

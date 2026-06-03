@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 17:57 UTC",
+    "when": "2026-06-03 18:31 UTC",
     "total": 27491,
-    "passed": 22631,
-    "failed": 4140,
+    "passed": 22640,
+    "failed": 4131,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -327,6 +327,10 @@
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-reg-exp.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [[object]] and expected [1, 2, 3] should have the same contents. [].concat(/abc/) must ret"
+    },
+    {
+      "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-sparse-object.js",
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-string-wrapper.js",
@@ -1066,7 +1070,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
@@ -10985,26 +10989,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-accessor-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-async-gen-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-async-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-gen-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
       "path": "test/language/expressions/class/elements/wrapped-in-sc-computed-symbol-names.js",
       "reason": "[sloppy] "
     },
@@ -14715,26 +14699,6 @@
     {
       "path": "test/language/statements/class/elements/syntax/early-errors/private-member-exp-cannot-escape-token.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-accessor-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-async-gen-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-async-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-gen-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/syntax/valid/grammar-static-ctor-meth-valid.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/wrapped-in-sc-computed-symbol-names.js",

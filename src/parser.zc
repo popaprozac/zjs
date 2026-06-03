@@ -2112,11 +2112,10 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
         return field;
     }
     // ECMA-262 §15.7.1 (Class Definitions) Static Semantics: Early Errors.
-    //   It is a Syntax Error if PropName of MethodDefinition is "constructor"
-    //   and SpecialMethod of MethodDefinition is true (async / generator /
-    //   getter / setter).
-    //   It is a Syntax Error if PropName of MethodDefinition is "constructor"
-    //   and the method is static (constructor is an instance-method-only name).
+    //   It is a Syntax Error if PropName of a NON-STATIC MethodDefinition is
+    //   "constructor" and SpecialMethod of MethodDefinition is true (async /
+    //   generator / getter / setter). A STATIC method named "constructor" is
+    //   legal — it's an ordinary static member, NOT the class constructor.
     //   It is a Syntax Error if PropName of MethodDefinition is "prototype"
     //   when the method is static (the class machinery owns Class.prototype).
     if computed_key == NULL && name_tok.length > 0 {
@@ -2135,7 +2134,7 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
                 let is_special = is_async_method || is_gen_method
                               || acc_kind == TokenKind::KwGet
                               || acc_kind == TokenKind::KwSet;
-                if is_special || is_static { p.had_error = true; return NULL; }
+                if !is_static && is_special { p.had_error = true; return NULL; }
             }
         }
         if is_static && nl == 9 {
