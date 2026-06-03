@@ -1,4 +1,40 @@
-# Binary-size audit — 2026-05-29
+# Binary-size audit — 2026-06-03
+
+## 2026-06-03 snapshot — post BigInt / Temporal / TypedArray-intrinsic / dynamic-import
+
+Embedder shape, measured as the audit always has: a pure-C consumer
+(`tests/embed_smoke.c`) linked against a per-tier `libzjs.a` with
+`clang -O2 ... -Wl,-dead_strip` then `strip -S`. Host: Darwin 25.5.0
+arm64, Apple clang, LTO on. This is what an embedder actually ships, not
+the intermediate archive.
+
+| Tier               | Embedder binary | vs 2026-05-27 |
+| ------------------ | --------------: | ------------: |
+| default (full)     | **1111.1 KB**   | +308 KB |
+| `ZJS_TIER=ring1`   | **1008.6 KB**   | +293 KB |
+| `ZJS_TIER=minimal` | **959.9 KB**    | +294 KB |
+
+Tier deltas: default→ring1 −102 KB (drops the `node:` module loader),
+ring1→minimal −49 KB (drops EventTarget/Event, AbortController,
+structuredClone, Blob/File/FormData, Streams, node:net, + the AOT writer
+half). Total default→minimal = −151 KB.
+
+The ~300 KB absolute growth since the 2026-05-27 tier audit is the
+cumulative cost of: full BigInt (limb-array arithmetic), Temporal
+(default-on, ZJS_NO_TEMPORAL opt-out — the single largest chunk), the
+WinterTC sweep already noted below, the real `%TypedArray%` intrinsic +
+method family, and `import()`/`import.meta`. Raw `libzjs.a` is ~2.10 MB
+across all tiers (archive holds every object incl. tier-gated code;
+`-dead_strip` removes the unreferenced install impls at link, which is
+why the *shipped* binary tiers down even though the `.a` does not).
+
+Raw (unstripped, non-dead-stripped) Makefile artifacts at this commit:
+CLI `build/zjs` 1.25 MB, `libzjs.dylib` 1.23 MB. Source: ~55.5k LOC `.zc`.
+
+Biggest remaining size lever if an embedder needs sub-MB: a
+`ZJS_NO_TEMPORAL` build (Temporal is default-on) drops the largest single
+feature — not yet measured here but expected to recover most of the gap
+toward the old ~700 KB minimal.
 
 ## 2026-05-29 snapshot — post WinterTC sweep
 
