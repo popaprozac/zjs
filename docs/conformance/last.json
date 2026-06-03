@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 21:47 UTC",
+    "when": "2026-06-03 22:00 UTC",
     "total": 27491,
-    "passed": 22762,
-    "failed": 4009,
+    "passed": 22771,
+    "failed": 4000,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -8013,16 +8013,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): s.at(2) must return \"\\uD800\" Expected SameValue(\u00ab\"\ufffd\"\u00bb, \u00ab\"\ufffd\ufffd\ufffd\"\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
-      "path": "test/built-ins/String/prototype/charAt/S15.5.4.4_A1_T10.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1: var __obj = {toString:function(){return 1;}}; var __str = \"lego\"; __str.charAt(__obj) === \"e\""
-    },
-    {
       "path": "test/built-ins/String/prototype/charAt/pos-coerce-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/charCodeAt/S15.5.4.5_A1_T10.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1: var __obj = {toString:function(){return 1;}}; var __str = \"lego\"; __str.charCodeAt(__obj) ==="
     },
     {
       "path": "test/built-ins/String/prototype/charCodeAt/pos-coerce-err.js",
@@ -8049,20 +8041,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): #3: __constr = String.prototype.constructor; __instance = new __constr(\"choosing one\"); delete St"
     },
     {
-      "path": "test/built-ins/String/prototype/endsWith/return-abrupt-from-position-as-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/endsWith/return-abrupt-from-position.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
       "path": "test/built-ins/String/prototype/endsWith/return-abrupt-from-searchstring-regexp-test.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/String/prototype/endsWith/searchstring-is-regexp-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
     },
     {
       "path": "test/built-ins/String/prototype/includes/return-abrupt-from-position-as-symbol.js",
@@ -8070,11 +8050,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/includes/return-abrupt-from-searchstring-regexp-test.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/String/prototype/includes/searchstring-is-regexp-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/position-tointeger-bigint.js",
@@ -8501,20 +8477,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): The result of `(e instanceof TypeError)` is true\nzjs: throw: (unknown): The result of `(e instanc"
     },
     {
-      "path": "test/built-ins/String/prototype/startsWith/return-abrupt-from-position-as-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/startsWith/return-abrupt-from-position.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
       "path": "test/built-ins/String/prototype/startsWith/return-abrupt-from-searchstring-regexp-test.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/String/prototype/startsWith/searchstring-is-regexp-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
     },
     {
       "path": "test/built-ins/String/prototype/substring/S15.5.4.15_A1_T10.js",

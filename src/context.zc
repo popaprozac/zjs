@@ -6816,16 +6816,45 @@ fn host_string_substring(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
 }
 
 // String.prototype.startsWith(searchString, position = 0)
+// ECMA-262 IsRegExp(argument): true if it's a RegExp object, or any object
+// whose @@match is truthy. Used by String.prototype.{startsWith,endsWith,
+// includes} to reject a RegExp search string (§22.1.3.x step "If
+// isRegExp(searchString) is true, throw a TypeError"). Sets pending_throw if
+// the @@match get is abrupt.
+fn arg_is_regexp(ctx: ZjsContext*, v: ZjsValue) -> bool {
+    if zjs_is_regexp(v) != 0 { return true; }
+    if zjs_is_object(v) == 0 { return false; }
+    let m_atom = ctx_intern_atom(ctx, (char*)"@@match", 7);
+    let m = property_get(ctx, v, zjs_cell_from_ptr((void*)m_atom));
+    if ctx.pending_throw_active { return false; }
+    if zjs_is_undefined(m) != 0 { return false; }
+    return zjs_to_bool_coerce(m) != 0;
+}
+
+// Throw TypeError if `v` is a RegExp (used by the search-string methods).
+fn reject_regexp_search(ctx: ZjsContext*, v: ZjsValue) -> bool {
+    let is_re = arg_is_regexp(ctx, v);
+    if ctx.pending_throw_active { return true; }
+    if is_re {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"First argument must not be a regular expression", 47);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return true;
+    }
+    return false;
+}
+
 fn host_string_starts_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let str_v = coerce_string_this(ctx);
     if zjs_is_string(str_v) == 0 { return zjs_bool(0); }
     let s = zjs_as_string(str_v);
     if argc == 0 { return zjs_bool(0); }
+    if reject_regexp_search(ctx, args[0]) { return zjs_bool(0); }
     let needle = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
     if ctx.pending_throw_active { return zjs_bool(0); }
     let ns = zjs_as_string(needle);
     let pos: i32 = 0;
-    if argc >= 2 { pos = (i32)zjs_to_double(args[1]); }
+    if argc >= 2 { pos = (i32)to_number_or_throw(ctx, args[1]); if ctx.pending_throw_active { return zjs_bool(0); } }
     if pos < 0 { pos = 0; }
     if pos > (i32)s.length { return zjs_bool(ns.length == 0); }
     if pos + (i32)ns.length > (i32)s.length { return zjs_bool(0); }
@@ -6841,12 +6870,14 @@ fn host_string_ends_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     if zjs_is_string(str_v) == 0 { return zjs_bool(0); }
     let s = zjs_as_string(str_v);
     if argc == 0 { return zjs_bool(0); }
+    if reject_regexp_search(ctx, args[0]) { return zjs_bool(0); }
     let needle = if zjs_is_string(args[0]) != 0 { args[0] } else { zjs_to_string(ctx, args[0]) };
     if ctx.pending_throw_active { return zjs_bool(0); }
     let ns = zjs_as_string(needle);
     let endp: i32 = (i32)s.length;
     if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
-        endp = (i32)zjs_to_double(args[1]);
+        endp = (i32)to_number_or_throw(ctx, args[1]);
+        if ctx.pending_throw_active { return zjs_bool(0); }
         if endp < 0 { endp = 0; }
         if endp > (i32)s.length { endp = (i32)s.length; }
     }
@@ -6863,8 +6894,9 @@ fn host_string_includes(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     let str_v = coerce_string_this(ctx);
     if zjs_is_string(str_v) == 0 { return zjs_bool(0); }
     if argc == 0 { return zjs_bool(0); }
-    // Delegate to indexOf semantics (skipping the regex-as-search guard
-    // since ECMA-262 forbids it; spec is detailed elsewhere).
+    // §22.1.3.8 step 3: a RegExp search string is a TypeError.
+    if reject_regexp_search(ctx, args[0]) { return zjs_bool(0); }
+    // Delegate to indexOf semantics for the actual search.
     let need_args: ZjsValue[2];
     need_args[0] = args[0];
     if argc >= 2 { need_args[1] = args[1]; }
@@ -6942,7 +6974,7 @@ fn host_string_char_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
     let s = zjs_as_string(str_v);
     let idx: i32 = 0;
-    if argc >= 1 { idx = (i32)zjs_to_double(args[0]); }
+    if argc >= 1 { idx = (i32)to_number_or_throw(ctx, args[0]); if ctx.pending_throw_active { return zjs_undefined(); } }
     if idx < 0 || (u32)idx >= s.length {
         return ctx_intern_string(ctx, (char*)"", 0);
     }
@@ -6960,7 +6992,7 @@ fn host_string_char_code_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
     }
     let s = zjs_as_string(str_v);
     let idx: i32 = 0;
-    if argc >= 1 { idx = (i32)zjs_to_double(args[0]); }
+    if argc >= 1 { idx = (i32)to_number_or_throw(ctx, args[0]); if ctx.pending_throw_active { return zjs_undefined(); } }
     if idx < 0 || (u32)idx >= s.length {
         let nan: f64 = 0.0; raw { nan = (double)NAN; }
         return zjs_double(nan);
