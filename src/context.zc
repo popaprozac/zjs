@@ -14601,6 +14601,34 @@ fn host_typed_array_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
     return build_array_iterator(ctx, ctx.host_this, 2);
 }
 
+// %TypedArray%.prototype accessor getters (length / byteLength / byteOffset
+// / buffer). Instances are served by the property_get fast path; these exist
+// on the shared prototype so the descriptor is a get-accessor and reading
+// them off a non-typed-array receiver throws TypeError (RequireInternalSlot).
+fn host_ta_get_length(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    return zjs_int32((i32)zjs_as_typed_array(tv).length);
+}
+fn host_ta_get_byte_length(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    let ta = zjs_as_typed_array(tv);
+    return zjs_int32((i32)(ta.length * (u32)ta.element_size));
+}
+fn host_ta_get_byte_offset(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    return zjs_int32((i32)zjs_as_typed_array(tv).byte_offset);
+}
+fn host_ta_get_buffer(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    let ta = zjs_as_typed_array(tv);
+    if ta.buffer != NULL { return zjs_cell_from_ptr((void*)ta.buffer); }
+    return zjs_undefined();
+}
+
 // %TypedArray%() / new %TypedArray%() — the abstract superclass is never
 // directly callable or constructable (ECMA-262 §23.2.1.1).
 fn host_typed_array_abstract(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
@@ -27034,6 +27062,30 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ctx_register_cell(ctx, (void*)ta_tag_acc);
     object_define_property_slot(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"@@toStringTag", 13),
                                 zjs_cell_from_ptr((void*)ta_tag_acc), PROP_CONFIGURABLE);
+    // length / byteLength / byteOffset / buffer — get-only accessors
+    // (non-enumerable, configurable). Instances hit the property_get fast
+    // path; these make the prototype descriptor spec-shaped + throw on a
+    // non-typed-array receiver.
+    let ta_len_ptr:  void* = NULL; raw { ta_len_ptr  = (void*)host_ta_get_length; }
+    let ta_blen_ptr: void* = NULL; raw { ta_blen_ptr = (void*)host_ta_get_byte_length; }
+    let ta_boff_ptr: void* = NULL; raw { ta_boff_ptr = (void*)host_ta_get_byte_offset; }
+    let ta_buf_ptr:  void* = NULL; raw { ta_buf_ptr  = (void*)host_ta_get_buffer; }
+    let ta_len_acc  = zjs_accessor_new(ctx_make_host_function_arity(ctx, (char*)"get length", ta_len_ptr, 0), zjs_undefined());
+    let ta_blen_acc = zjs_accessor_new(ctx_make_host_function_arity(ctx, (char*)"get byteLength", ta_blen_ptr, 0), zjs_undefined());
+    let ta_boff_acc = zjs_accessor_new(ctx_make_host_function_arity(ctx, (char*)"get byteOffset", ta_boff_ptr, 0), zjs_undefined());
+    let ta_buf_acc  = zjs_accessor_new(ctx_make_host_function_arity(ctx, (char*)"get buffer", ta_buf_ptr, 0), zjs_undefined());
+    ctx_register_cell(ctx, (void*)ta_len_acc);
+    ctx_register_cell(ctx, (void*)ta_blen_acc);
+    ctx_register_cell(ctx, (void*)ta_boff_acc);
+    ctx_register_cell(ctx, (void*)ta_buf_acc);
+    object_define_property_slot(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"length", 6),
+                                zjs_cell_from_ptr((void*)ta_len_acc), PROP_CONFIGURABLE);
+    object_define_property_slot(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"byteLength", 10),
+                                zjs_cell_from_ptr((void*)ta_blen_acc), PROP_CONFIGURABLE);
+    object_define_property_slot(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"byteOffset", 10),
+                                zjs_cell_from_ptr((void*)ta_boff_acc), PROP_CONFIGURABLE);
+    object_define_property_slot(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"buffer", 6),
+                                zjs_cell_from_ptr((void*)ta_buf_acc), PROP_CONFIGURABLE);
     // Methods aren't constructable (`new int8arr.map()` → TypeError).
     mark_proto_methods_non_constructor(ctx, ta_sp);
 
