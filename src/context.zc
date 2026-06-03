@@ -5055,6 +5055,140 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
     if zjs_is_string(key_v) == 0 { key_v = zjs_to_string(ctx, key_v); }
     if ctx.pending_throw_active { return zjs_undefined(); }
 
+    // Proxy [[GetOwnProperty]] (§10.5.5): invoke the getOwnPropertyDescriptor
+    // trap (forward when absent); the result must be an Object or undefined,
+    // and is reconciled against the target's own descriptor + extensibility.
+    if zjs_is_proxy(obj_v) != 0 {
+        let p = zjs_as_proxy(obj_v);
+        if p.revoked {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"Cannot perform 'getOwnPropertyDescriptor' on a revoked proxy", 60);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        let trap = property_get(ctx, p.handler,
+            zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"getOwnPropertyDescriptor", 24)));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let tt: ZjsValue[2]; tt[0] = p.target; tt[1] = key_v;
+        let ttp: ZjsValue* = NULL; raw { ttp = &tt[0]; }
+        if zjs_is_undefined(trap) != 0 || zjs_is_null(trap) != 0 {
+            return host_object_get_own_property_descriptor(ctx, ttp, 2);
+        }
+        let callable: bool = zjs_is_function(trap) != 0 || zjs_is_closure(trap) != 0
+                          || zjs_is_host_function(trap) != 0;
+        if !callable {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy getOwnPropertyDescriptor trap is not a function", 53);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        let trap_res = zjs_call_value_with_this(ctx, trap, p.handler, ttp, 2);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        // Step 6: result must be an Object or undefined.
+        if zjs_is_undefined(trap_res) == 0 && value_is_object_type(trap_res) == 0 {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy getOwnPropertyDescriptor must return an object or undefined", 64);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        // Step 7: the target's own descriptor (forward to the ordinary path).
+        let target_desc = host_object_get_own_property_descriptor(ctx, ttp, 2);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let target_has: bool = zjs_is_undefined(target_desc) == 0;
+        let cfg_atom_v = zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"configurable", 12));
+        if zjs_is_undefined(trap_res) != 0 {
+            // Step 8: trap reported "no such property".
+            if !target_has { return zjs_undefined(); }
+            let tcfg = property_get(ctx, target_desc, cfg_atom_v);
+            if zjs_to_bool_coerce(tcfg) == 0 {
+                let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"proxy getOwnPropertyDescriptor: non-configurable property reported missing", 73);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                return zjs_undefined();
+            }
+            let ext = host_object_is_extensible(ctx, ttp, 1);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if zjs_to_bool_coerce(ext) == 0 {
+                let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"proxy getOwnPropertyDescriptor: property of non-extensible target reported missing", 81);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                return zjs_undefined();
+            }
+            return zjs_undefined();
+        }
+        // Steps 9-15: ToPropertyDescriptor + CompletePropertyDescriptor +
+        // FromPropertyDescriptor, building a fresh normalized descriptor.
+        let get_atom_v = zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"get", 3));
+        let set_atom_v = zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"set", 3));
+        let val_atom_v = zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"value", 5));
+        let wri_atom_v = zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"writable", 8));
+        let enu_atom_v = zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"enumerable", 10));
+        let has_get = descriptor_has_own(trap_res, zjs_as_string(get_atom_v));
+        let has_set = descriptor_has_own(trap_res, zjs_as_string(set_atom_v));
+        let has_val = descriptor_has_own(trap_res, zjs_as_string(val_atom_v));
+        let has_wri = descriptor_has_own(trap_res, zjs_as_string(wri_atom_v));
+        let is_accessor: bool = has_get || has_set;
+        let wri: int = 0;
+        let out_v = ctx_new_object(ctx);
+        ctx_push_temp_root(ctx, out_v);
+        defer ctx_pop_temp_root(ctx);
+        let out = zjs_as_object(out_v);
+        if is_accessor {
+            let g = if has_get { property_get(ctx, trap_res, get_atom_v) } else { zjs_undefined() };
+            let s = if has_set { property_get(ctx, trap_res, set_atom_v) } else { zjs_undefined() };
+            // ToPropertyDescriptor: a present get/set must be callable or undefined.
+            let g_bad: bool = has_get && zjs_is_undefined(g) == 0 && zjs_is_function(g) == 0
+                           && zjs_is_closure(g) == 0 && zjs_is_host_function(g) == 0;
+            let s_bad: bool = has_set && zjs_is_undefined(s) == 0 && zjs_is_function(s) == 0
+                           && zjs_is_closure(s) == 0 && zjs_is_host_function(s) == 0;
+            if g_bad || s_bad {
+                let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"Getter/setter must be a function or undefined", 45);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                return zjs_undefined();
+            }
+            object_set(ctx, out, ctx_intern_atom(ctx, (char*)"get", 3), g);
+            object_set(ctx, out, ctx_intern_atom(ctx, (char*)"set", 3), s);
+        } else {
+            let val = if has_val { property_get(ctx, trap_res, val_atom_v) } else { zjs_undefined() };
+            wri = if has_wri { zjs_to_bool_coerce(property_get(ctx, trap_res, wri_atom_v)) } else { 0 };
+            object_set(ctx, out, ctx_intern_atom(ctx, (char*)"value", 5), val);
+            object_set(ctx, out, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(wri));
+        }
+        let enu: int = zjs_to_bool_coerce(property_get(ctx, trap_res, enu_atom_v));
+        let cfg: int = zjs_to_bool_coerce(property_get(ctx, trap_res, cfg_atom_v));
+        object_set(ctx, out, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(enu));
+        object_set(ctx, out, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(cfg));
+        // Step 14: a non-configurable result requires a matching
+        // non-configurable target property (and, for a data property
+        // reported non-writable, a non-writable target).
+        if cfg == 0 {
+            if !target_has {
+                let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"proxy getOwnPropertyDescriptor: non-configurable reported for missing property", 77);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                return zjs_undefined();
+            }
+            let tcfg = property_get(ctx, target_desc, cfg_atom_v);
+            if zjs_to_bool_coerce(tcfg) != 0 {
+                let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"proxy getOwnPropertyDescriptor: non-configurable reported for configurable property", 82);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                return zjs_undefined();
+            }
+            if !is_accessor && has_wri && wri == 0 {
+                let twri = property_get(ctx, target_desc, wri_atom_v);
+                if zjs_to_bool_coerce(twri) != 0 {
+                    let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                        (char*)"proxy getOwnPropertyDescriptor: non-writable reported for writable property", 74);
+                    ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                    return zjs_undefined();
+                }
+            }
+        }
+        return out_v;
+    }
+
     // Array fast path: numeric indices and "length".
     if zjs_is_array(obj_v) != 0 {
         let arr = zjs_as_array(obj_v);
