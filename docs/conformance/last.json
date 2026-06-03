@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 00:09 UTC",
+    "when": "2026-06-03 00:16 UTC",
     "total": 27491,
-    "passed": 22118,
-    "failed": 4653,
+    "passed": 22152,
+    "failed": 4619,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -13125,10 +13125,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/compound-assignment/11.13.2-6-1gs.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/compound-assignment/S11.13.2_A4.10_T1.1.js",
       "reason": "[sloppy] zjs: throw: (unknown): #2: x = new Boolean(true); x ^= true; x === 0. Actual: 1\nzjs: throw: (unknown): #2: x = new Boole"
     },
@@ -13701,24 +13697,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
-      "path": "test/language/expressions/compound-assignment/add-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/add-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/compound-assignment/add-whitespace.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: x\u00a0 is not defined\nzjs: throw: ReferenceError: x\u00a0 is not defined"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/and-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/and-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/compound-assignment/and-whitespace.js",
@@ -13813,14 +13793,6 @@
       "reason": "zjs: throw: ReferenceError: with is not defined\nzjs: throw: ReferenceError: with is not defined"
     },
     {
-      "path": "test/language/expressions/compound-assignment/div-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/div-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/compound-assignment/div-whitespace.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: x\u00a0 is not defined\nzjs: throw: ReferenceError: x\u00a0 is not defined"
     },
@@ -13885,96 +13857,32 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/expressions/compound-assignment/lshift-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/lshift-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/compound-assignment/lshift-whitespace.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: x\u00a0 is not defined\nzjs: throw: ReferenceError: x\u00a0 is not defined"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/mod-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/mod-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/compound-assignment/mod-whitespace.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: x\u00a0 is not defined\nzjs: throw: ReferenceError: x\u00a0 is not defined"
     },
     {
-      "path": "test/language/expressions/compound-assignment/mult-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/mult-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/compound-assignment/mult-whitespace.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: x\u00a0 is not defined\nzjs: throw: ReferenceError: x\u00a0 is not defined"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/or-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/or-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/compound-assignment/or-whitespace.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: x\u00a0 is not defined\nzjs: throw: ReferenceError: x\u00a0 is not defined"
     },
     {
-      "path": "test/language/expressions/compound-assignment/srshift-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/srshift-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/compound-assignment/srshift-whitespace.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: x\u00a0 is not defined\nzjs: throw: ReferenceError: x\u00a0 is not defined"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/sub-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/sub-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/compound-assignment/sub-whitespace.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: x\u00a0 is not defined\nzjs: throw: ReferenceError: x\u00a0 is not defined"
     },
     {
-      "path": "test/language/expressions/compound-assignment/urshift-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/urshift-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/compound-assignment/urshift-whitespace.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: x\u00a0 is not defined\nzjs: throw: ReferenceError: x\u00a0 is not defined"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/xor-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/compound-assignment/xor-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/compound-assignment/xor-whitespace.js",
@@ -14473,10 +14381,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): PutValue throws when storing the result in a method private reference Expected a TypeError to be "
     },
     {
-      "path": "test/language/expressions/logical-assignment/lgcl-and-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/logical-assignment/lgcl-and-assignment-operator-lhs-before-rhs.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -14493,16 +14397,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): value Expected SameValue(\u00abundefined\u00bb, \u00ab\"value\"\u00bb) to be true\nzjs: throw: (unknown): value Expected"
     },
     {
-      "path": "test/language/expressions/logical-assignment/lgcl-and-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/logical-assignment/lgcl-and-whitespace.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: x\u00a0 is not defined\nzjs: throw: ReferenceError: x\u00a0 is not defined"
-    },
-    {
-      "path": "test/language/expressions/logical-assignment/lgcl-nullish-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/logical-assignment/lgcl-nullish-assignment-operator-lhs-before-rhs.js",
@@ -14521,16 +14417,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): value Expected SameValue(\u00abundefined\u00bb, \u00ab\"value\"\u00bb) to be true\nzjs: throw: (unknown): value Expected"
     },
     {
-      "path": "test/language/expressions/logical-assignment/lgcl-nullish-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/logical-assignment/lgcl-nullish-whitespace.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: x\u00a0 is not defined\nzjs: throw: ReferenceError: x\u00a0 is not defined"
-    },
-    {
-      "path": "test/language/expressions/logical-assignment/lgcl-or-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/logical-assignment/lgcl-or-assignment-operator-lhs-before-rhs.js",
@@ -14547,10 +14435,6 @@
     {
       "path": "test/language/expressions/logical-assignment/lgcl-or-assignment-operator-namedevaluation-function.js",
       "reason": "[sloppy] zjs: throw: (unknown): value Expected SameValue(\u00abundefined\u00bb, \u00ab\"value\"\u00bb) to be true\nzjs: throw: (unknown): value Expected"
-    },
-    {
-      "path": "test/language/expressions/logical-assignment/lgcl-or-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/logical-assignment/lgcl-or-whitespace.js",
@@ -17705,24 +17589,8 @@
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
-      "path": "test/language/statements/function/13.0-15-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/function/13.0-16-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/function/13.0-7-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
       "path": "test/language/statements/function/13.0-8-s.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/function/13.0_4-5gs.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/function/13.1-13gs.js",
@@ -17926,10 +17794,6 @@
     },
     {
       "path": "test/language/statements/function/enable-strict-via-outer-body.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/function/enable-strict-via-outer-script.js",
       "reason": "expected SyntaxError, got Test262"
     },
     {

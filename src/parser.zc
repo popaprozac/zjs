@@ -3019,6 +3019,17 @@ fn parse_assignment(p: Parser*) -> AstNode* {
     let k = peek_kind(p);
     if is_assignment_op(k) {
         let op_tok = advance(p);
+        // §13.15.1 early error: a simple assignment / compound assignment
+        // whose target is an IdentifierReference to `eval` or `arguments`
+        // is a SyntaxError in strict mode (AssignmentTargetType is
+        // invalid). Reserved-word references are already rejected at the
+        // parse_primary reference site; only eval/arguments — legal as
+        // references but not as strict targets — need catching here.
+        if p.strict_mode && left.kind == NodeKind::IdentExpr
+           && name_is_arguments_or_eval(p.source, left.start, left.end - left.start) {
+            p.had_error = true;
+            return NULL;
+        }
         // Cover-grammar: for plain `=`, reinterpret an Array/Object
         // literal LHS as the matching AssignmentPattern. Compound
         // assignment (`+=` etc.) doesn't permit destructuring per spec.
