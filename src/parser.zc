@@ -626,6 +626,86 @@ fn params_have_duplicate(params: ParamList, source: char*) -> bool {
     return false;
 }
 
+// Recursively collect the BoundNames of a parameter node into the
+// (starts,lens) arrays, threading the running count through the return
+// value. Handles simple idents, array/object binding patterns (their
+// PatternEntry targets in `.left`), rest params, and the pattern stored
+// in a placeholder IdentExpr's `.third`. Defaults (`.right`) are
+// initializer expressions, not bindings, so they're skipped. Overflow
+// past `cap` silently stops collecting (no false positives).
+fn collect_param_bound_names(node: AstNode*, starts: u32*, lens: u32*, count: u32, cap: u32) -> u32 {
+    if node == NULL { return count; }
+    let k = node.kind;
+    if k == NodeKind::IdentExpr {
+        if node.name_length > 0 {
+            if count < cap {
+                starts[count] = node.name_start;
+                lens[count]   = node.name_length;
+                count = count + 1;
+            }
+            return count;
+        }
+        if node.third != NULL {
+            return collect_param_bound_names(node.third, starts, lens, count, cap);
+        }
+        return count;
+    }
+    if k == NodeKind::RestParam {
+        return collect_param_bound_names(node.left, starts, lens, count, cap);
+    }
+    if k == NodeKind::PatternEntry {
+        if node.left != NULL {
+            return collect_param_bound_names(node.left, starts, lens, count, cap);
+        }
+        return count;
+    }
+    if k == NodeKind::ArrayPattern || k == NodeKind::ObjectPattern {
+        let i: u32 = 0;
+        while i < node.children_count {
+            count = collect_param_bound_names(node.children[i], starts, lens, count, cap);
+            i = i + 1;
+        }
+        return count;
+    }
+    return count;
+}
+
+// Like params_have_duplicate, but collects BoundNames recursively through
+// destructuring patterns — so `([x, x]) =>`, `(x, {x}) =>`, `({x}, ...x)
+// =>` etc. are caught (UniqueFormalParameters / non-simple-params dup
+// rule, §15.1.1 / §15.2.1.1 / §15.3.1).
+fn params_have_duplicate_binding(params: ParamList, source: char*) -> bool {
+    let cap: u32 = 256;
+    let starts: u32[256];
+    let lens: u32[256];
+    let sp: u32* = NULL;
+    let lp: u32* = NULL;
+    raw { sp = &starts[0]; lp = &lens[0]; }
+    let count: u32 = 0;
+    let i: u32 = 0;
+    while i < params.count {
+        count = collect_param_bound_names(params.arr[i], sp, lp, count, cap);
+        i = i + 1;
+    }
+    let a: u32 = 0;
+    while a < count {
+        let b: u32 = a + 1;
+        while b < count {
+            if lens[a] == lens[b] {
+                let pa = source + starts[a];
+                let pb = source + starts[b];
+                let n = lens[a];
+                let eq: int = 0;
+                raw { eq = (memcmp(pa, pb, n) == 0) ? 1 : 0; }
+                if eq != 0 { return true; }
+            }
+            b = b + 1;
+        }
+        a = a + 1;
+    }
+    return false;
+}
+
 // Detect a `"use strict"` directive prologue at the top of a function
 // body. Walks past empty-statement noise but does not look past any
 // non-string statements (per spec, directives are a prologue that ends
@@ -1750,7 +1830,7 @@ fn parse_function_decl(p: Parser*, is_async: bool) -> AstNode* {
     if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
         p.had_error = true; return NULL;
     }
-    if !params_are_simple(params) && params_have_duplicate(params, p.source) {
+    if !params_are_simple(params) && params_have_duplicate_binding(params, p.source) {
         p.had_error = true; return NULL;
     }
 
@@ -2090,7 +2170,7 @@ fn parse_method_body_pair(p: Parser*) -> AstNode* {
     if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
         p.had_error = true; return NULL;
     }
-    if !params_are_simple(params) && params_have_duplicate(params, p.source) {
+    if !params_are_simple(params) && params_have_duplicate_binding(params, p.source) {
         p.had_error = true; return NULL;
     }
 
@@ -2678,7 +2758,7 @@ fn parse_function_expr(p: Parser*, is_async: bool) -> AstNode* {
     if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
         p.had_error = true; return NULL;
     }
-    if !params_are_simple(params) && params_have_duplicate(params, p.source) {
+    if !params_are_simple(params) && params_have_duplicate_binding(params, p.source) {
         p.had_error = true; return NULL;
     }
 
@@ -2757,7 +2837,7 @@ fn parse_arrow_paren(p: Parser*, is_async: bool) -> AstNode* {
     if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
         p.had_error = true; return NULL;
     }
-    if params_have_duplicate(params, p.source) {
+    if params_have_duplicate_binding(params, p.source) {
         p.had_error = true; return NULL;
     }
     let node = new_node(&p.tracker, NodeKind::ArrowFunc, start_pos, body.end);
@@ -4412,7 +4492,7 @@ fn parse_object(p: Parser*) -> AstNode* {
             if !params_are_simple(params) && body_has_use_strict_directive(body, p.source) {
                 p.had_error = true; break;
             }
-            if params_have_duplicate(params, p.source) {
+            if params_have_duplicate_binding(params, p.source) {
                 p.had_error = true; break;
             }
             let method_fn = new_node(&p.tracker, NodeKind::FunctionExpr, key_tok.start, body.end);
