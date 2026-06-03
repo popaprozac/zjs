@@ -2672,6 +2672,11 @@ fn parse_arrow_single(p: Parser*, is_async: bool) -> AstNode* {
                          name_tok.start, name_tok.start + name_tok.length);
     param.name_start  = name_tok.start;
     param.name_length = name_tok.length;
+    // The single BindingIdentifier of an arrow (`x => ...`) is reserved
+    // exactly where any binding name is: `eval`/`arguments`/future-
+    // reserved in strict, `await` in async, `enum` always, etc.
+    // ident_target_reserved encodes that same set.
+    if ident_target_reserved(p, param) { p.had_error = true; return NULL; }
     let arr: AstNode** = NULL;
     arr = alloc_n<AstNode*>(1);
     arr[0] = param;

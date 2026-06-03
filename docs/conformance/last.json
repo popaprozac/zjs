@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-02 23:59 UTC",
+    "when": "2026-06-03 00:09 UTC",
     "total": 27491,
-    "passed": 22114,
-    "failed": 4657,
+    "passed": 22118,
+    "failed": 4653,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -11263,22 +11263,6 @@
     {
       "path": "test/language/expressions/arrow-function/syntax/arrowparameters-bindingidentifier-yield.js",
       "reason": "zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-bindingidentifier-identifier-futurereservedword.js",
-      "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-bindingidentifier-identifier-strict-futurereservedword.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-bindingidentifier-no-arguments.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-bindingidentifier-no-eval.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/expressions/arrow-function/syntax/early-errors/arrowparameters-cover-no-duplicates-binding-array-1.js",
