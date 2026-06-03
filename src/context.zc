@@ -3486,9 +3486,12 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
         // are surfaced normally because their cls chain stops above
         // object_proto.
         if zjs_is_array(src) != 0 {
-            // Arrays: enumerate the present index keys as strings
-            // "0", "1", ... (skips holes per spec — for-in iterates
-            // own enumerable string keys, and a hole is not "own").
+            // Arrays: enumerate own enumerable string keys — integer
+            // indices ascending, then named expandos in insertion order.
+            // A defineProperty'd index (or a non-enumerable element) lives
+            // in arr.props with its dense slot deleted, so each index is
+            // "present + enumerable" if EITHER the dense slot holds a value
+            // OR arr.props has an enumerable entry for it.
             let a = zjs_as_array(src);
             let arr_v = ctx_new_array(ctx, 0);
             ctx_push_temp_root(ctx, arr_v);
@@ -3496,7 +3499,22 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
             let arr = zjs_as_array(arr_v);
             let i: u32 = 0;
             while i < a.length {
-                if zjs_is_deleted(a.elements[i]) == 0 {
+                let emit: bool = false;
+                if array_has_index(a, i) != 0 {
+                    emit = true;
+                } else if a.props != NULL {
+                    let ibuf: char[16];
+                    let ilen: int = 0;
+                    raw { ilen = snprintf(&ibuf[0], 16, "%u", (unsigned)i); }
+                    let ibp: char* = NULL; raw { ibp = &ibuf[0]; }
+                    let iatom = ctx_intern_atom(ctx, ibp, (u32)ilen);
+                    let islot = class_find_slot(a.props.cls, iatom);
+                    if islot >= 0 && zjs_is_deleted(a.props.slots[(u32)islot]) == 0 {
+                        let ia = object_get_attrs(a.props, (u32)islot);
+                        if (ia & PROP_ENUMERABLE) != 0 { emit = true; }
+                    }
+                }
+                if emit {
                     let buf: char[16];
                     let key_len: int = 0;
                     raw { key_len = snprintf(&buf[0], 16, "%u", (unsigned)i); }
@@ -3505,6 +3523,33 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
                     array_set(arr, arr.length, ctx_intern_string(ctx, kp, (u32)key_len));
                 }
                 i = i + 1;
+            }
+            // Named (non-index) enumerable expandos in arr.props, insertion
+            // order via the hidden-class transition chain.
+            if a.props != NULL {
+                let pc = a.props.cls.prop_count;
+                let scratch = alloc_n<ZjsString*>((usize)pc);
+                let sj: u32 = 0;
+                while sj < pc { scratch[sj] = NULL; sj = sj + 1; }
+                let cls = a.props.cls;
+                while cls != NULL && cls.parent != NULL {
+                    let slot = cls.transition_slot;
+                    if slot < pc {
+                        let ok = zjs_is_deleted(a.props.slots[slot]) == 0
+                            && (object_get_attrs(a.props, slot) & PROP_ENUMERABLE) != 0;
+                        if ok { scratch[slot] = cls.transition_name; }
+                    }
+                    cls = cls.parent;
+                }
+                let oi: u32 = 0;
+                while oi < pc {
+                    let nm = scratch[oi];
+                    if nm != NULL && zjs_to_array_index(zjs_cell_from_ptr((void*)nm)) < 0 {
+                        array_set(arr, arr.length, zjs_cell_from_ptr((void*)nm));
+                    }
+                    oi = oi + 1;
+                }
+                dealloc(scratch);
             }
             return arr_v;
         }
