@@ -708,9 +708,35 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 is_length = (klen == 6 && memcmp(kdata, "length", 6) == 0) ? 1 : 0;
             }
             if is_length != 0 { return zjs_int32((i32)arr.length); }
-            // String-coerced numeric index
+            // String-coerced numeric index. A defineProperty'd index
+            // (non-default attrs / accessor) lives in arr.props under the
+            // stringified index — check it before the dense slot, mirroring
+            // the int-key fast path above. (Without this, `arr["0"]` read
+            // undefined after Object.defineProperty(arr, 0, ...) even
+            // though `arr[0]` worked — the propertyHelper verifyProperty
+            // checks read via the string key.)
             let idx = zjs_to_array_index(key);
-            if idx >= 0 { return array_get(arr, (u32)idx); }
+            if idx >= 0 {
+                if arr.props != NULL {
+                    let slot_pi = class_find_slot(arr.props.cls, ks);
+                    if slot_pi >= 0 {
+                        let v = arr.props.slots[(u32)slot_pi];
+                        if zjs_is_deleted(v) == 0 {
+                            if zjs_is_accessor(v) != 0 {
+                                let acc = zjs_as_accessor(v);
+                                let g = acc.get;
+                                if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
+                                    let nullp: ZjsValue* = NULL;
+                                    return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                                }
+                                return zjs_undefined();
+                            }
+                            return v;
+                        }
+                    }
+                }
+                return array_get(arr, (u32)idx);
+            }
             // Expando bag (e.g. `let a = []; a.foo = 1;`) before
             // falling through to Array.prototype methods. Fire
             // accessors with `this = array`.

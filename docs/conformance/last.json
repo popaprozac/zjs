@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 04:36 UTC",
+    "when": "2026-06-03 04:51 UTC",
     "total": 27491,
-    "passed": 22221,
-    "failed": 4550,
+    "passed": 22330,
+    "failed": 4441,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -4117,10 +4117,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab22\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab22\u00bb, \u00ab2\u00bb) to "
     },
     {
-      "path": "test/built-ins/JSON/parse/reviver-get-name-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
       "path": "test/built-ins/JSON/parse/reviver-object-define-prop-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
@@ -5113,44 +5109,24 @@
       "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-197.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 1001\nzjs: throw: (unknown): 0 value should be 1001"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-200.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 1001\nzjs: throw: (unknown): 0 value should be 1001"
-    },
-    {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-202.js",
       "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-205.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 14, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-206.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 101; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: th"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-207.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 11, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-208.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 100; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: th"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-209.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 100, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal "
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-211.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be null\nzjs: throw: (unknown): 0 value should be null"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-212.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be NaN\nzjs: throw: (unknown): 0 value should be NaN"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-213.js",
@@ -5161,56 +5137,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected TypeError, got Test262Error: Expected an exception.\nzjs: throw: (unknown): Expected Type"
     },
     {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-215.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 101\nzjs: throw: (unknown): 0 value should be 101"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-216.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be abcd\nzjs: throw: (unknown): 0 value should be abcd"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-217.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be true\nzjs: throw: (unknown): 0 value should be true"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-218.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be [object Object]\nzjs: throw: (unknown): 0 value should be [object Object]"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-219.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be writable\nzjs: throw: (unknown): 0 descriptor should be writable"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-221.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-223.js",
       "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-227.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be 3\nzjs: throw: (unknown): 1 value should be 3"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-228.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be 3\nzjs: throw: (unknown): 1 value should be 3"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-230.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be 3\nzjs: throw: (unknown): 1 value should be 3"
-    },
-    {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-231.js",
       "reason": "[sloppy] zjs: throw: (unknown): 1 descriptor should be enumerable\nzjs: throw: (unknown): 1 descriptor should be enumerable"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-232.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be 12\nzjs: throw: (unknown): 1 value should be 12"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-234.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be 3\nzjs: throw: (unknown): 1 value should be 3"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-235.js",
@@ -5221,40 +5153,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected TypeError, got Test262Error: Expected an exception.\nzjs: throw: (unknown): Expected Type"
     },
     {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-237.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be 12\nzjs: throw: (unknown): 1 value should be 12"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-238.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be abcd\nzjs: throw: (unknown): 1 value should be abcd"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-239.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be true\nzjs: throw: (unknown): 1 value should be true"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-240.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be [object Object]\nzjs: throw: (unknown): 1 value should be [object Object]"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-244.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[1] to equal 36, actually undefined\nzjs: throw: (unknown): Expected obj[1] to equal 3"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-245.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[1] to equal 36, actually undefined\nzjs: throw: (unknown): Expected obj[1] to equal 3"
-    },
-    {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-247.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 36; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: thr"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-248.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: throw: (unknown): 0 descr"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-249.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 12; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: thr"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-25.js",
@@ -5262,31 +5170,15 @@
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-250.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 100; 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 value should be"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-251.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 12; 0 descriptor should be writable\nzjs: throw: (unknown): 0 value should be 12"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-252.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 12; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: thr"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-253.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 36; 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 value should be "
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-254.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 36, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 3"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-256.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 36, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 3"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-262.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 36, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 3"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-266.js",
@@ -5318,87 +5210,39 @@
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-278.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 10; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: thr"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-279.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-281.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 20\nzjs: throw: (unknown): 0 value should be 20"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-282.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 0; 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 value should be 0"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-283.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 0\nzjs: throw: (unknown): 0 value should be 0"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-284.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 0; 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 value should be 0"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-285.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 0\nzjs: throw: (unknown): 0 value should be 0"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-288.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 0, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 0,"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-289.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 0, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 0,"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-290.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 10\nzjs: throw: (unknown): 0 value should be 10"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-291.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-292.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 20, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 2"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-293.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 20\nzjs: throw: (unknown): 0 value should be 20"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-294.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 0\nzjs: throw: (unknown): 0 value should be 0"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-295.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 0\nzjs: throw: (unknown): 0 value should be 0"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-296.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 0; 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 value should be 0"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-297.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 0\nzjs: throw: (unknown): 0 value should be 0"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-298.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 0, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 0,"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-299.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 0, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 0,"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-300.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 0, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 0,"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-301.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 0, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 0,"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-302.js",
@@ -5645,18 +5489,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-190.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be ownDataProperty\nzjs: throw: (unknown): 0 value should be ownDataProperty"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-194.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 11, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-195.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 13, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-198.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -5666,23 +5498,15 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-200.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: throw: (unknown): 0 descr"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-201.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 1001; 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 value should b"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-202.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 1001; 0 descriptor should be writable\nzjs: throw: (unknown): 0 value should be "
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-203.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 1001; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: t"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-204.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 1001\nzjs: throw: (unknown): 0 value should be 1001"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-205.js",
@@ -5693,36 +5517,20 @@
       "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-209.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 14, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-210.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 101; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: th"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-211.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 11, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-212.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 100; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: th"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-213.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 100, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal "
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-214.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 101\nzjs: throw: (unknown): 0 value should be 101"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-216.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be null\nzjs: throw: (unknown): 0 value should be null"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-217.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be NaN\nzjs: throw: (unknown): 0 value should be NaN"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-218.js",
@@ -5733,88 +5541,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected TypeError, got Test262Error: Expected an exception.\nzjs: throw: (unknown): Expected Type"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-220.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 101\nzjs: throw: (unknown): 0 value should be 101"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-221.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 101\nzjs: throw: (unknown): 0 value should be 101"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-222.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be abcd\nzjs: throw: (unknown): 0 value should be abcd"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-223.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be abcd\nzjs: throw: (unknown): 0 value should be abcd"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-224.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be true\nzjs: throw: (unknown): 0 value should be true"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-225.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be true\nzjs: throw: (unknown): 0 value should be true"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-226.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be [object Object]\nzjs: throw: (unknown): 0 value should be [object Object]"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-227.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be [object Object]\nzjs: throw: (unknown): 0 value should be [object Object]"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-229.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be writable\nzjs: throw: (unknown): 0 descriptor should be writable"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-230.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-231.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-235.js",
       "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-238.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be 3; 1 descriptor should be writable\nzjs: throw: (unknown): 1 value should be 3; "
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-239.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be 3; 1 descriptor should be writable\nzjs: throw: (unknown): 1 value should be 3; "
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-241.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be 3\nzjs: throw: (unknown): 1 value should be 3"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-242-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 1001\nzjs: throw: (unknown): 0 value should be 1001"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-242.js",
       "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-243-1.js",
-      "reason": "zjs: throw: (unknown): Expected obj[1] to equal 3, actually undefined\nzjs: throw: (unknown): Expected obj[1] to equal 3,"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-243-2.js",
-      "reason": "zjs: throw: (unknown): Expected obj[1] to equal 3, actually undefined\nzjs: throw: (unknown): Expected obj[1] to equal 3,"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-243.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be 12\nzjs: throw: (unknown): 1 value should be 12"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-245.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be 3\nzjs: throw: (unknown): 1 value should be 3"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-246.js",
@@ -5825,64 +5557,24 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected TypeError, got Test262Error: Expected an exception.\nzjs: throw: (unknown): Expected Type"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-248.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be 12\nzjs: throw: (unknown): 1 value should be 12"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-249.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be abc\nzjs: throw: (unknown): 1 value should be abc"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-250.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be false\nzjs: throw: (unknown): 1 value should be false"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-251.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 1 value should be [object Object]\nzjs: throw: (unknown): 1 value should be [object Object]"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-253.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[1] to equal 12, actually undefined\nzjs: throw: (unknown): Expected obj[1] to equal 1"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-258.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 200; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: th"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-259.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: throw: (unknown): 0 descr"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-260.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 100; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: th"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-261.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 100; 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 value should be"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-262.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 100; 0 descriptor should be writable\nzjs: throw: (unknown): 0 value should be 1"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-263.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 100; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: th"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-264.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 100\nzjs: throw: (unknown): 0 value should be 100"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-265.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 100, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal "
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-267.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 12, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-273.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[1] to equal 12, actually undefined\nzjs: throw: (unknown): Expected obj[1] to equal 1"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-277.js",
@@ -5914,43 +5606,27 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-289-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 10; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: thr"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-289.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 10; 0 descriptor should be enumerable; 0 descriptor should be writable\nzjs: thr"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-290-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-290.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-291-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 20, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 2"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-291.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 20, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 2"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-292-1.js",
       "reason": "zjs: throw: (unknown): Expected a === 20, actually 0\nzjs: throw: (unknown): Expected a === 20, actually 0"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-292-2.js",
-      "reason": "zjs: throw: (unknown): 0 value should be 20\nzjs: throw: (unknown): 0 value should be 20"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-292.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 20\nzjs: throw: (unknown): 0 value should be 20"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-293-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 20; 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 value should be "
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-293-2.js",
@@ -5962,19 +5638,11 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-293-4.js",
-      "reason": "zjs: throw: (unknown): 0 value should be 20; 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 value should be "
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-293.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 10\nzjs: throw: (unknown): 0 value should be 10"
+      "reason": "zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-294-1.js",
       "reason": "zjs: throw: (unknown): Expected \"a === 10\", actually 0\nzjs: throw: (unknown): Expected \"a === 10\", actually 0"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-294.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 10\nzjs: throw: (unknown): 0 value should be 10"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-295-1.js",
@@ -5982,99 +5650,35 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-295.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 10; 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 value should be "
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-296-1.js",
       "reason": "zjs: throw: (unknown): Expected \"a === 10\", actually 0\nzjs: throw: (unknown): Expected \"a === 10\", actually 0"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-296.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 10\nzjs: throw: (unknown): 0 value should be 10"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-297-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-297.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-298-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-298.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-299-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-299.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-300-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 0, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 0,"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-300.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-301-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 10\nzjs: throw: (unknown): 0 value should be 10"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-301.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 10\nzjs: throw: (unknown): 0 value should be 10"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-302-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-302.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 10, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 1"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-303.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 20, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 2"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-304.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 20\nzjs: throw: (unknown): 0 value should be 20"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-305.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 0\nzjs: throw: (unknown): 0 value should be 0"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-306.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 0\nzjs: throw: (unknown): 0 value should be 0"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-307.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 0; 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 value should be 0"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-308.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 0\nzjs: throw: (unknown): 0 value should be 0"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-309.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 0, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 0,"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-310.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 0, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 0,"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-311.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 0, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal 0,"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-312.js",
@@ -6145,36 +5749,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected obj[genericProperty] to be writable, but was not.\nzjs: throw: (unknown): Expected obj[ge"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-333-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 1002; 0 descriptor should be writable\nzjs: throw: (unknown): 0 value should be "
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-333-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 1002; 0 descriptor should be writable\nzjs: throw: (unknown): 0 value should be "
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-354-11.js",
       "reason": "[sloppy] zjs: throw: (unknown): prop descriptor should be configurable\nzjs: throw: (unknown): prop descriptor should be configura"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-354-12.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 1002\nzjs: throw: (unknown): 0 value should be 1002"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-354-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 2010\nzjs: throw: (unknown): 0 value should be 2010"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-354-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 1002\nzjs: throw: (unknown): 0 value should be 1002"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-354-3.js",
       "reason": "[sloppy] zjs: throw: (unknown): property descriptor should be configurable\nzjs: throw: (unknown): property descriptor should be c"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-354-6.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 0 value should be 2010\nzjs: throw: (unknown): 0 value should be 2010"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-408.js",
@@ -6201,16 +5781,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected obj[prop] to be writable, but was not.\nzjs: throw: (unknown): Expected obj[prop] to be w"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-531-12.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal data1, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equa"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-531-15.js",
       "reason": "[sloppy] zjs: throw: (unknown): obj.prop Expected SameValue(\u00ab\"data\"\u00bb, \u00ab\"overrideData\"\u00bb) to be true\nzjs: throw: (unknown): obj.pro"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-531-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal data1, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equa"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-531-3.js",
@@ -6218,7 +5790,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-538-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 1001, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-538-2.js",
@@ -6230,11 +5802,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-538-6.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal 1001, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-540-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal data, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-540-3.js",
@@ -6249,16 +5817,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected obj[prop] to be writable, but was not.\nzjs: throw: (unknown): Expected obj[prop] to be w"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-540-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal data, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-540-9.js",
       "reason": "[sloppy] zjs: throw: (unknown): obj.verifySetFunc Expected SameValue(\u00ab\"data\"\u00bb, \u00ab\"overrideData\"\u00bb) to be true\nzjs: throw: (unknown)"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-547-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal data, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-547-2.js",
@@ -6270,7 +5834,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-547-4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected obj[0] to equal data, actually undefined\nzjs: throw: (unknown): Expected obj[0] to equal"
+      "reason": "[sloppy] zjs: throw: (unknown): 0 descriptor should be enumerable\nzjs: throw: (unknown): 0 descriptor should be enumerable"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-579.js",
