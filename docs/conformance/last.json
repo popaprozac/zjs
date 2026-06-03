@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 00:44 UTC",
+    "when": "2026-06-03 00:58 UTC",
     "total": 27491,
-    "passed": 22175,
-    "failed": 4596,
+    "passed": 22177,
+    "failed": 4594,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -126,11 +126,11 @@
     },
     {
       "path": "test/built-ins/Array/fromAsync/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Array/fromAsync/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Array/fromAsync/not-a-constructor.js",
@@ -290,7 +290,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/Symbol.unscopables/change-array-by-copy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): toReversed should be an own property\nzjs: throw: (unknown): toReversed should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Array/prototype/Symbol.unscopables/prop-desc.js",
@@ -2914,11 +2914,11 @@
     },
     {
       "path": "test/built-ins/Date/prototype/Symbol.toPrimitive/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Date/prototype/Symbol.toPrimitive/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Date/prototype/Symbol.toPrimitive/prop-desc.js",
@@ -2986,11 +2986,11 @@
     },
     {
       "path": "test/built-ins/Date/prototype/getUTCDay/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Date/prototype/getUTCDay/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Date/prototype/getUTCDay/not-a-constructor.js",
@@ -3294,11 +3294,11 @@
     },
     {
       "path": "test/built-ins/Date/prototype/toTemporalInstant/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Date/prototype/toTemporalInstant/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Date/prototype/toTemporalInstant/not-a-constructor.js",
@@ -3826,11 +3826,11 @@
     },
     {
       "path": "test/built-ins/Function/prototype/Symbol.hasInstance/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Function/prototype/Symbol.hasInstance/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Function/prototype/Symbol.hasInstance/prop-desc.js",
@@ -4398,11 +4398,11 @@
     },
     {
       "path": "test/built-ins/Math/f16round/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Math/f16round/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Math/f16round/not-a-constructor.js",
@@ -6581,14 +6581,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"first value\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameV"
     },
     {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-1-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-1-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-22.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
@@ -7814,11 +7806,11 @@
     },
     {
       "path": "test/built-ins/Promise/all/resolve-element-function-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Promise/all/resolve-element-function-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Promise/all/resolve-element-function-nonconstructor.js",
@@ -7850,11 +7842,11 @@
     },
     {
       "path": "test/built-ins/Promise/allKeyed/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Promise/allKeyed/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Promise/allKeyed/not-a-constructor.js",
@@ -7938,7 +7930,7 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-element-function-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Promise/allSettled/reject-element-function-nonconstructor.js",
@@ -7966,11 +7958,11 @@
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-element-function-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-element-function-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolve-element-function-nonconstructor.js",
@@ -8002,11 +7994,11 @@
     },
     {
       "path": "test/built-ins/Promise/allSettledKeyed/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Promise/allSettledKeyed/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Promise/allSettledKeyed/not-a-constructor.js",
@@ -8086,7 +8078,7 @@
     },
     {
       "path": "test/built-ins/Promise/any/reject-element-function-name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Promise/any/reject-element-function-nonconstructor.js",
@@ -9910,11 +9902,11 @@
     },
     {
       "path": "test/built-ins/String/prototype/isWellFormed/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/String/prototype/isWellFormed/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/String/prototype/isWellFormed/not-a-constructor.js",
@@ -10002,11 +9994,11 @@
     },
     {
       "path": "test/built-ins/String/prototype/matchAll/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/String/prototype/matchAll/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/String/prototype/matchAll/not-a-constructor.js",
@@ -10082,11 +10074,11 @@
     },
     {
       "path": "test/built-ins/String/prototype/normalize/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/String/prototype/normalize/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/String/prototype/normalize/normalize.js",
@@ -10434,11 +10426,11 @@
     },
     {
       "path": "test/built-ins/String/prototype/toWellFormed/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/String/prototype/toWellFormed/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/String/prototype/toWellFormed/not-a-constructor.js",
@@ -10834,11 +10826,11 @@
     },
     {
       "path": "test/built-ins/Symbol/prototype/Symbol.toPrimitive/length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): length should be an own property\nzjs: throw: (unknown): length should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Symbol/prototype/Symbol.toPrimitive/name.js",
-      "reason": "[sloppy] zjs: throw: (unknown): name should be an own property\nzjs: throw: (unknown): name should be an own property"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.getOwnPropertyDescriptor called on null or undefined\nzjs: throw: TypeError: Object.getOwnP"
     },
     {
       "path": "test/built-ins/Symbol/prototype/Symbol.toPrimitive/prop-desc.js",

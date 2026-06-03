@@ -4948,8 +4948,16 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
 // Returns a fresh descriptor object. MVP: all properties report as
 // data descriptors with all three attribute bits set to true.
 fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let obj_v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    // §20.1.2.8 step 1: ToObject(O) — undefined/null throw a TypeError
+    // before P is coerced.
+    if zjs_is_undefined(obj_v) != 0 || zjs_is_null(obj_v) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Object.getOwnPropertyDescriptor called on null or undefined", 59);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
     if argc < 2 { return zjs_undefined(); }
-    let obj_v = args[0];
     let key_v = args[1];
     // ToPropertyKey: a Symbol key coerces to its canonical atom
     // ("@@iterator" / "@@sym:N") — NOT via zjs_to_string, which throws on
