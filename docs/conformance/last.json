@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 00:58 UTC",
+    "when": "2026-06-03 01:08 UTC",
     "total": 27491,
-    "passed": 22177,
-    "failed": 4594,
+    "passed": 22201,
+    "failed": 4570,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -5473,30 +5473,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperties called on non-object\nzjs: throw: TypeError: Object.defineProperties calle"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-2-20.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.hasOwnProperty(\"0.000001\") !== true\nzjs: throw: (unknown): obj.hasOwnProperty(\"0.000001\") !=="
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-2-21.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.hasOwnProperty(\"1e-7\") !== true\nzjs: throw: (unknown): obj.hasOwnProperty(\"1e-7\") !== true"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-2-22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.hasOwnProperty(\"1e-8\") !== true\nzjs: throw: (unknown): obj.hasOwnProperty(\"1e-8\") !== true"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-2-23.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.hasOwnProperty(\"1e-7\") !== true\nzjs: throw: (unknown): obj.hasOwnProperty(\"1e-7\") !== true"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-2-24.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.hasOwnProperty(\"0.000001\") !== true\nzjs: throw: (unknown): obj.hasOwnProperty(\"0.000001\") !=="
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-2-25.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.hasOwnProperty(\"0.00001\") !== true\nzjs: throw: (unknown): obj.hasOwnProperty(\"0.00001\") !== t"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-2-47.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -6579,30 +6555,6 @@
     {
       "path": "test/built-ins/Object/fromEntries/uses-keys-not-iterator.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"first value\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameV"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-22.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-23.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-24.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-25.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-26.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-27.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-33.js",
@@ -9625,10 +9577,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Set should be an own property\nzjs: throw: (unknown): Set should be an own property"
     },
     {
-      "path": "test/built-ins/String/S15.5.1.1_A1_T16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #8: __str = String(.00000012345); __str === \"1.2345e-7\". Actual: __str ===1.2345e-07\nzjs: throw: "
-    },
-    {
       "path": "test/built-ins/String/S15.5.1.1_A1_T8.js",
       "reason": "[sloppy] zjs: throw: (unknown): #2: Array.prototype.toString=function(){return \"__ARRAY__\";}; __str = String(new Array); __str =="
     },
@@ -9639,10 +9587,6 @@
     {
       "path": "test/built-ins/String/S15.5.2.1_A1_T13.js",
       "reason": "[sloppy] zjs: throw: (unknown): #1.1: e===\"invalueof\". Actual: e===Test262Error: #1: __obj.valueOf=function(){throw \"invalueof\"};"
-    },
-    {
-      "path": "test/built-ins/String/S15.5.2.1_A1_T16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #8: __str =new  String(.00000012345); __str ==\"1.2345e-7\". Actual: __str ==1.2345e-07\nzjs: throw:"
     },
     {
       "path": "test/built-ins/String/S15.5.2.1_A1_T8.js",
@@ -9687,18 +9631,6 @@
     {
       "path": "test/built-ins/String/S8.12.8_A1.js",
       "reason": "[sloppy] zjs: throw: (unknown): #1.2: var __obj = {toString: function() {return new Object();}}; String(__obj) throw TypeError. A"
-    },
-    {
-      "path": "test/built-ins/String/S9.8.1_A10.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #7: String(.000012345) === \"0.000012345\". Actual: 1.2345e-05\nzjs: throw: (unknown): #7: String(.0"
-    },
-    {
-      "path": "test/built-ins/String/S9.8.1_A8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #2: String(0.000001) === \"0.000001\". Actual: 1e-06\nzjs: throw: (unknown): #2: String(0.000001) =="
-    },
-    {
-      "path": "test/built-ins/String/S9.8.1_A9_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1: String(0.0000001) === \"1e-7\". Actual: 1e-07\nzjs: throw: (unknown): #1: String(0.0000001) === "
     },
     {
       "path": "test/built-ins/String/fromCharCode/S15.5.3.2_A1.js",
@@ -10455,30 +10387,6 @@
     {
       "path": "test/built-ins/String/prototype/toWellFormed/to-string.js",
       "reason": "[sloppy] zjs: throw: (unknown): coerces the receiver to a string Expected a Test262Error but got a TypeError\nzjs: throw: (unknown"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-2-18.js",
-      "reason": "[sloppy] zjs: throw: (unknown): String.prototype.trim.call(0.000001) Expected SameValue(\u00ab\"1e-06\"\u00bb, \u00ab\"0.000001\"\u00bb) to be true\nzjs: "
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-2-19.js",
-      "reason": "[sloppy] zjs: throw: (unknown): String.prototype.trim.call(0.0000001) Expected SameValue(\u00ab\"1e-07\"\u00bb, \u00ab\"1e-7\"\u00bb) to be true\nzjs: thr"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-2-20.js",
-      "reason": "[sloppy] zjs: throw: (unknown): String.prototype.trim.call(0.00000001) Expected SameValue(\u00ab\"1e-08\"\u00bb, \u00ab\"1e-8\"\u00bb) to be true\nzjs: th"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-2-21.js",
-      "reason": "[sloppy] zjs: throw: (unknown): String.prototype.trim.call(1e-7) Expected SameValue(\u00ab\"1e-07\"\u00bb, \u00ab\"1e-7\"\u00bb) to be true\nzjs: throw: ("
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-2-22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): String.prototype.trim.call(1e-6) Expected SameValue(\u00ab\"1e-06\"\u00bb, \u00ab\"0.000001\"\u00bb) to be true\nzjs: thro"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-2-23.js",
-      "reason": "[sloppy] zjs: throw: (unknown): String.prototype.trim.call(1e-5) Expected SameValue(\u00ab\"1e-05\"\u00bb, \u00ab\"0.00001\"\u00bb) to be true\nzjs: throw"
     },
     {
       "path": "test/built-ins/String/prototype/trim/15.5.4.20-2-42.js",
@@ -14507,10 +14415,6 @@
     {
       "path": "test/language/expressions/object/accessor-name-computed-in.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/expressions/object/accessor-name-literal-numeric-non-canonical.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get string\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
     },
     {
       "path": "test/language/expressions/object/computed-property-name-topropertykey-before-value-evaluation.js",
