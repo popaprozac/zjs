@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 15:58 UTC",
+    "when": "2026-06-03 17:47 UTC",
     "total": 27491,
-    "passed": 22478,
-    "failed": 4293,
+    "passed": 22487,
+    "failed": 4284,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -154,7 +154,7 @@
     },
     {
       "path": "test/built-ins/Array/isArray/proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Array.isArray(new Proxy([], {})) must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\n"
     },
     {
       "path": "test/built-ins/Array/length/15.4.5.1-3.d-3.js",
@@ -370,7 +370,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/create-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Object.getPrototypeOf(Array.prototype.concat.call(proxy)) returns Ctor.prototype Expected SameVal"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/create-revoked-proxy.js",
@@ -418,7 +418,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/is-concat-spreadable-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): The value of [].concat(arrayProxy).length is expected to be 0 Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be "
     },
     {
       "path": "test/built-ins/Array/prototype/copyWithin/coerced-values-start-change-start.js",
@@ -694,7 +694,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/filter/create-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\u00bb"
     },
     {
       "path": "test/built-ins/Array/prototype/filter/create-revoked-proxy.js",
@@ -1366,7 +1366,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\u00bb"
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-revoked-proxy.js",
@@ -1918,7 +1918,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/slice/create-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\u00bb"
     },
     {
       "path": "test/built-ins/Array/prototype/slice/create-revoked-proxy.js",
@@ -2282,7 +2282,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/splice/create-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\u00bb"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/create-revoked-proxy.js",
@@ -3998,7 +3998,7 @@
     },
     {
       "path": "test/built-ins/JSON/parse/revived-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): proxy for ordinary object Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): p"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-array-define-prop-err.js",
@@ -6290,7 +6290,7 @@
     },
     {
       "path": "test/built-ins/Object/keys/property-traps-order-with-proxied-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [ownKeys, getOwnPropertyDescriptor] and expected [] should have the same contents. \nzjs: t"
     },
     {
       "path": "test/built-ins/Object/keys/proxy-keys.js",
@@ -6562,15 +6562,15 @@
     },
     {
       "path": "test/built-ins/Object/prototype/toString/proxy-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): array proxy Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Array]\"\u00bb) to be true\nzjs: throw: (u"
     },
     {
       "path": "test/built-ins/Object/prototype/toString/proxy-function-async.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): async function proxy Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object AsyncFunction]\"\u00bb) to be tr"
     },
     {
       "path": "test/built-ins/Object/prototype/toString/proxy-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): function proxy Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Function]\"\u00bb) to be true\nzjs: thr"
     },
     {
       "path": "test/built-ins/Object/prototype/toString/proxy-revoked-during-get-call.js",
@@ -6598,7 +6598,7 @@
     },
     {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-non-str-proxy-function.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-override-bigint.js",
@@ -7177,10 +7177,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Promise/prototype/finally/this-value-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
-    },
-    {
       "path": "test/built-ins/Promise/prototype/finally/this-value-then-not-callable.js",
       "reason": "[sloppy] zjs: throw: (unknown): undefined Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unkno"
     },
@@ -7362,7 +7358,7 @@
     },
     {
       "path": "test/built-ins/Proxy/apply/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got undefined\nzjs: throw: (unknown): Expected true but got undefined"
     },
     {
       "path": "test/built-ins/Proxy/apply/trap-is-not-callable-realm.js",
@@ -7370,23 +7366,23 @@
     },
     {
       "path": "test/built-ins/Proxy/apply/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
       "path": "test/built-ins/Proxy/apply/trap-is-null.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): apply is null: [[Call]] is invoked once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unkn"
     },
     {
       "path": "test/built-ins/Proxy/apply/trap-is-undefined-no-property.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): apply is missing: [[Call]] is invoked once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (u"
     },
     {
       "path": "test/built-ins/Proxy/apply/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.apply target is not a function\nzjs: throw: TypeError: Reflect.apply target is not a funct"
     },
     {
       "path": "test/built-ins/Proxy/apply/trap-is-undefined.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): apply is undefined: [[Call]] is invoked once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: "
     },
     {
       "path": "test/built-ins/Proxy/construct/arguments-realm.js",
@@ -7466,7 +7462,7 @@
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-not-callable-realm.js",
@@ -7478,15 +7474,15 @@
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-null.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct target is not a constructor\nzjs: throw: TypeError: Reflect.construct target is "
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-undefined-no-property.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct target is not a constructor\nzjs: throw: TypeError: Reflect.construct target is "
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-undefined-proto-from-cross-realm-newtarget.js",
@@ -7498,15 +7494,11 @@
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-undefined.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
-    },
-    {
-      "path": "test/built-ins/Proxy/create-handler-is-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct target is not a constructor\nzjs: throw: TypeError: Reflect.construct target is "
     },
     {
       "path": "test/built-ins/Proxy/create-target-is-not-a-constructor.js",
@@ -7514,11 +7506,7 @@
     },
     {
       "path": "test/built-ins/Proxy/create-target-is-revoked-function-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
-    },
-    {
-      "path": "test/built-ins/Proxy/create-target-is-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"object\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/call-parameters.js",
@@ -7566,7 +7554,7 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-not-callable-realm.js",
@@ -7574,11 +7562,11 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-undefined.js",
@@ -7622,7 +7610,7 @@
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): 'foo' property was deleted from original object\nzjs: throw: (unknown): 'foo' property was deleted"
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/trap-is-not-callable-realm.js",
@@ -7634,7 +7622,7 @@
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/trap-is-undefined-not-strict.js",
@@ -7646,7 +7634,7 @@
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/Proxy/enumerate/removed-does-not-trigger.js",
@@ -7662,7 +7650,7 @@
     },
     {
       "path": "test/built-ins/Proxy/get/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: Object prototype may only be an Object or null\u0000\nzjs: throw: TypeError: Object prototype may only "
     },
     {
       "path": "test/built-ins/Proxy/get/trap-is-not-callable-realm.js",
@@ -7674,7 +7662,7 @@
     },
     {
       "path": "test/built-ins/Proxy/get/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
     },
     {
       "path": "test/built-ins/Proxy/get/trap-is-undefined-receiver.js",
@@ -7682,7 +7670,7 @@
     },
     {
       "path": "test/built-ins/Proxy/get/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: Object prototype may only be an Object or null\u0000\nzjs: throw: TypeError: Object prototype may only "
     },
     {
       "path": "test/built-ins/Proxy/get-fn-realm-recursive.js",
@@ -7750,7 +7738,7 @@
     },
     {
       "path": "test/built-ins/Proxy/getOwnPropertyDescriptor/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): 0 should be an own property\nzjs: throw: (unknown): 0 should be an own property"
     },
     {
       "path": "test/built-ins/Proxy/getOwnPropertyDescriptor/trap-is-not-callable-realm.js",
@@ -7762,11 +7750,11 @@
     },
     {
       "path": "test/built-ins/Proxy/getOwnPropertyDescriptor/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): foo should be an own property\nzjs: throw: (unknown): foo should be an own property"
     },
     {
       "path": "test/built-ins/Proxy/getOwnPropertyDescriptor/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): 0 should be an own property\nzjs: throw: (unknown): 0 should be an own property"
     },
     {
       "path": "test/built-ins/Proxy/getOwnPropertyDescriptor/trap-is-undefined.js",
@@ -7806,7 +7794,7 @@
     },
     {
       "path": "test/built-ins/Proxy/getPrototypeOf/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValu"
     },
     {
       "path": "test/built-ins/Proxy/getPrototypeOf/trap-is-not-callable-realm.js",
@@ -7817,12 +7805,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/Proxy/getPrototypeOf/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
-    },
-    {
       "path": "test/built-ins/Proxy/getPrototypeOf/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00ab\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00ab\u00bb) t"
     },
     {
       "path": "test/built-ins/Proxy/getPrototypeOf/trap-is-undefined.js",
@@ -7898,7 +7882,7 @@
     },
     {
       "path": "test/built-ins/Proxy/has/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] timeout"
     },
     {
       "path": "test/built-ins/Proxy/has/trap-is-not-callable-realm.js",
@@ -7910,11 +7894,11 @@
     },
     {
       "path": "test/built-ins/Proxy/has/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] timeout"
     },
     {
       "path": "test/built-ins/Proxy/has/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: Object prototype may only be an Object or null\u0000\nzjs: throw: TypeError: Object prototype may only "
     },
     {
       "path": "test/built-ins/Proxy/has/trap-is-undefined-using-with.js",
@@ -7949,10 +7933,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abfalse\u00bb,"
     },
     {
-      "path": "test/built-ins/Proxy/isExtensible/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
-    },
-    {
       "path": "test/built-ins/Proxy/isExtensible/trap-is-not-callable-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
@@ -7962,11 +7942,11 @@
     },
     {
       "path": "test/built-ins/Proxy/isExtensible/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/Proxy/isExtensible/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/Proxy/isExtensible/trap-is-undefined.js",
@@ -8058,7 +8038,7 @@
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1, 2, length, Symbol()] should have the same contents. \nzjs: throw: (u"
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/trap-is-not-callable-realm.js",
@@ -8070,11 +8050,11 @@
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1, foo, bar] should have the same contents. \nzjs: throw: (unknown): Ac"
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [Symbol(), length, foo, 0] should have the same contents. \nzjs: throw: (un"
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/trap-is-undefined.js",
@@ -8102,7 +8082,7 @@
     },
     {
       "path": "test/built-ins/Proxy/preventExtensions/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/preventExtensions/trap-is-not-callable-realm.js",
@@ -8114,7 +8094,7 @@
     },
     {
       "path": "test/built-ins/Proxy/preventExtensions/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/Proxy/proxy-undefined-newtarget.js",
@@ -8125,16 +8105,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Proxy should be an own property\nzjs: throw: (unknown): Proxy should be an own property"
     },
     {
-      "path": "test/built-ins/Proxy/revocable/handler-is-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
-    },
-    {
       "path": "test/built-ins/Proxy/revocable/target-is-revoked-function-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
-    },
-    {
-      "path": "test/built-ins/Proxy/revocable/target-is-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"object\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
     },
     {
       "path": "test/built-ins/Proxy/set/boolean-trap-result-is-false-boolean-return-false.js",
@@ -8174,7 +8146,7 @@
     },
     {
       "path": "test/built-ins/Proxy/set/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/Proxy/set/trap-is-not-callable-realm.js",
@@ -8190,51 +8162,43 @@
     },
     {
       "path": "test/built-ins/Proxy/set/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/Proxy/set/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abnull\u00bb) to be true\nzjs: throw: (unknown): Expected SameValu"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/internals-call-order.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: proxy setPrototypeOf trap violated the non-extensible invariant\nzjs: throw: TypeError: proxy setP"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/return-abrupt-from-isextensible-target.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/return-abrupt-from-target-getprototypeof.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/toboolean-trap-result-false.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): false Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): false Expected SameVa"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/toboolean-trap-result-true-target-is-extensible.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: TypeError: proxy setPrototypeOf trap violated the non-extensible invariant\nzjs: throw: TypeError: proxy setP"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/trap-is-not-callable-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/setPrototypeOf/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
-    },
-    {
-      "path": "test/built-ins/Proxy/setPrototypeOf/trap-is-undefined-or-null.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
-    },
-    {
       "path": "test/built-ins/Proxy/setPrototypeOf/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Reflect/Symbol.toStringTag.js",

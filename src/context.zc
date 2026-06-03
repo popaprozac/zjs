@@ -18404,6 +18404,24 @@ fn host_promise_with_resolvers(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
 // =====================================================================
 // Proxy ctor + Reflect static methods (2026-05-20).
 // =====================================================================
+// ECMA-262 Type(x) is Object: any value that is not one of the seven
+// primitive types (undefined, null, boolean, number, string, symbol,
+// bigint). Covers every heap cell — plain objects, arrays, functions,
+// proxies, typed arrays, Map/Set, Date, RegExp, Promise, etc. — without
+// enumerating each tag (and missing one). Distinct from zjs_is_object,
+// which is plain-TAG_OBJECT-only.
+fn value_is_object_type(v: ZjsValue) -> bool {
+    if zjs_is_undefined(v) != 0 { return false; }
+    if zjs_is_null(v)      != 0 { return false; }
+    if zjs_is_bool(v)      != 0 { return false; }
+    if zjs_is_int32(v)     != 0 { return false; }
+    if zjs_is_double(v)    != 0 { return false; }
+    if zjs_is_string(v)    != 0 { return false; }
+    if zjs_is_symbol(v)    != 0 { return false; }
+    if zjs_is_bigint(v)    != 0 { return false; }
+    return true;
+}
+
 fn host_proxy_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc < 2 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
@@ -18413,14 +18431,10 @@ fn host_proxy_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     }
     let target  = args[0];
     let handler = args[1];
-    // Both target and handler must be object-like (per spec — including
-    // arrays, functions, but excluding primitives + null/undefined).
-    let target_ok = zjs_is_object(target) != 0 || zjs_is_array(target) != 0
-                 || zjs_is_function(target) != 0 || zjs_is_closure(target) != 0
-                 || zjs_is_host_function(target) != 0;
-    let handler_ok = zjs_is_object(handler) != 0 || zjs_is_array(handler) != 0
-                  || zjs_is_function(handler) != 0 || zjs_is_closure(handler) != 0
-                  || zjs_is_host_function(handler) != 0;
+    // Both target and handler must be objects (§28.2.1.1) — any object
+    // type, including proxies, typed arrays, Map/Set/Date/etc.
+    let target_ok  = value_is_object_type(target);
+    let handler_ok = value_is_object_type(handler);
     if !target_ok || !handler_ok {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                     (char*)"Proxy target and handler must be objects", 40);
