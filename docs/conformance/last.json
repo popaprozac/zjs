@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 22:00 UTC",
+    "when": "2026-06-03 22:59 UTC",
     "total": 27491,
-    "passed": 22771,
-    "failed": 4000,
+    "passed": 22791,
+    "failed": 3980,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -330,7 +330,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-sparse-object.js",
-      "reason": "[sloppy] "
+      "reason": "[strict] "
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-string-wrapper.js",
@@ -5789,10 +5789,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
-      "path": "test/built-ins/Object/prototype/__proto__/get-ordinary-obj.js",
-      "reason": "[sloppy] zjs: throw: (unknown): null prototype Expected SameValue(\u00ab[object Object]\u00bb, \u00abnull\u00bb) to be true\nzjs: throw: (unknown): nu"
-    },
-    {
       "path": "test/built-ins/Object/prototype/__proto__/set-abrupt.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
@@ -5878,7 +5874,7 @@
     },
     {
       "path": "test/built-ins/Object/prototype/setPrototypeOf-with-non-circular-values.js",
-      "reason": "[sloppy] zjs: throw: TypeError: cyclic __proto__ value\nzjs: throw: TypeError: cyclic __proto__ value"
+      "reason": "[sloppy] zjs: throw: (unknown): Object.setPrototypeOf(ObjProto, Object.create(null)) throws a TypeError Expected a TypeError to b"
     },
     {
       "path": "test/built-ins/Object/prototype/toLocaleString/primitive_this_value_getter.js",
@@ -7109,14 +7105,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): attr should be an own property\nzjs: throw: (unknown): attr should be an own property"
     },
     {
-      "path": "test/built-ins/Proxy/getPrototypeOf/call-parameters.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected Sam"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/extensible-target-return-handlerproto.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValu"
-    },
-    {
       "path": "test/built-ins/Proxy/getPrototypeOf/instanceof-custom-return-accepted.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
@@ -7125,60 +7113,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/Proxy/getPrototypeOf/not-extensible-not-same-proto-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/not-extensible-same-proto.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00ab\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00ab\u00bb) t"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/null-handler.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/return-is-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValu"
-    },
-    {
       "path": "test/built-ins/Proxy/getPrototypeOf/trap-is-not-callable-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/trap-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00ab\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00ab\u00bb) t"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/trap-is-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00ab\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abnull\u00bb, \u00ab\u00bb) t"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/trap-result-neither-object-nor-null-throws-boolean.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/trap-result-neither-object-nor-null-throws-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/trap-result-neither-object-nor-null-throws-string.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/trap-result-neither-object-nor-null-throws-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/getPrototypeOf/trap-result-neither-object-nor-null-throws-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/has/call-in.js",
@@ -7518,7 +7454,7 @@
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/internals-call-order.js",
-      "reason": "[sloppy] zjs: throw: TypeError: proxy setPrototypeOf trap violated the non-extensible invariant\nzjs: throw: TypeError: proxy setP"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab3\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab3\u00bb) to be"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/return-abrupt-from-isextensible-target.js",
@@ -7631,14 +7567,6 @@
     {
       "path": "test/built-ins/Reflect/getPrototypeOf/getPrototypeOf.js",
       "reason": "[sloppy] zjs: throw: (unknown): getPrototypeOf descriptor should not be enumerable\nzjs: throw: (unknown): getPrototypeOf descript"
-    },
-    {
-      "path": "test/built-ins/Reflect/getPrototypeOf/null-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abnull\u00bb) to be true\nzjs: throw: (unknown): Expected SameValu"
-    },
-    {
-      "path": "test/built-ins/Reflect/getPrototypeOf/return-abrupt-from-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Reflect/has/has.js",
@@ -8011,14 +7939,6 @@
     {
       "path": "test/built-ins/String/prototype/at/returns-code-unit.js",
       "reason": "[sloppy] zjs: throw: (unknown): s.at(2) must return \"\\uD800\" Expected SameValue(\u00ab\"\ufffd\"\u00bb, \u00ab\"\ufffd\ufffd\ufffd\"\u00bb) to be true\nzjs: throw: (unknown):"
-    },
-    {
-      "path": "test/built-ins/String/prototype/charAt/pos-coerce-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/charCodeAt/pos-coerce-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/String/prototype/codePointAt/return-code-unit-coerced-position.js",

@@ -4234,8 +4234,12 @@ fn host_object_create(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     let obj = zjs_as_object(obj_v);
     if zjs_is_object(proto_v) != 0 {
         obj.proto = zjs_as_object(proto_v);
+    } else {
+        // Object.create(null): [[Prototype]] is null. ctx_new_object
+        // defaults obj.proto to Object.prototype, so clear it explicitly —
+        // otherwise the result wrongly inherits Object.prototype.
+        obj.proto = NULL;
     }
-    // null proto stays as top-of-chain (obj.proto = NULL).
     // Phase 3.9a: second arg is a descriptor map. Accept any object-y
     // value (plain object, array with expandos, host/user function
     // with .props) — host_object_define_properties knows how to walk
@@ -5541,6 +5545,63 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
 fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let v = if argc >= 1 { args[0] } else { zjs_undefined() };
     if !require_object_keys_arg(ctx, v) { return zjs_undefined(); }
+    // Proxy [[GetPrototypeOf]] (§10.5.1): invoke the getPrototypeOf trap;
+    // result must be Object or null, and (if target is non-extensible) must
+    // SameValue the target's actual prototype.
+    if zjs_is_proxy(v) != 0 {
+        let p = zjs_as_proxy(v);
+        if p.revoked {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"Cannot perform 'getPrototypeOf' on a revoked proxy", 50);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        let trap_atom = ctx_intern_atom(ctx, (char*)"getPrototypeOf", 14);
+        let trap = property_get(ctx, p.handler, zjs_cell_from_ptr((void*)trap_atom));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let tgt_buf: ZjsValue[1]; tgt_buf[0] = p.target;
+        let tgt_p: ZjsValue* = NULL; raw { tgt_p = &tgt_buf[0]; }
+        // No trap → forward to the target's [[GetPrototypeOf]].
+        if zjs_is_undefined(trap) != 0 || zjs_is_null(trap) != 0 {
+            return host_object_get_prototype_of(ctx, tgt_p, 1);
+        }
+        let callable: bool = zjs_is_function(trap) != 0 || zjs_is_closure(trap) != 0
+                          || zjs_is_host_function(trap) != 0;
+        if !callable {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy getPrototypeOf trap is not a function", 43);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        let result = zjs_call_value_with_this(ctx, trap, p.handler, tgt_p, 1);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        // Result must be Object or null.
+        if zjs_is_null(result) == 0 && value_is_object_type(result) == 0 {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy getPrototypeOf must return an object or null", 50);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        // Non-extensible target: trap result must match the real prototype.
+        let ext = host_object_is_extensible(ctx, tgt_p, 1);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_bool(ext) != 0 && zjs_as_bool(ext) == 0 {
+            let real = host_object_get_prototype_of(ctx, tgt_p, 1);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            let same: bool = false;
+            if zjs_is_null(result) != 0 && zjs_is_null(real) != 0 { same = true; }
+            else if zjs_is_null(result) == 0 && zjs_is_null(real) == 0 {
+                if zjs_cell_as_ptr(result) == zjs_cell_as_ptr(real) { same = true; }
+            }
+            if !same {
+                let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"proxy getPrototypeOf inconsistent with non-extensible target", 59);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                return zjs_undefined();
+            }
+        }
+        return result;
+    }
     if zjs_is_object(v) != 0 {
         let o = zjs_as_object(v);
         if o.proto == NULL { return zjs_null(); }
