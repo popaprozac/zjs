@@ -6068,9 +6068,18 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let argc = (u32)inst.c;
             let callee = regs[base];
 
-            // Proxy [[Construct]] — route through the unified constructor
-            // path (construct trap + result-must-be-object invariant).
-            if zjs_is_proxy(callee) != 0 {
+            // Proxy and bound functions have exotic [[Construct]] methods
+            // (construct trap / bound-arg prepend + newTarget redirect) that
+            // the inline ladder below can't express — route them through the
+            // unified zjs_construct_value path (newTarget defaults to callee).
+            let route_unified: bool = zjs_is_proxy(callee) != 0;
+            if !route_unified && zjs_is_host_function(callee) != 0 {
+                // A bound function is identified by its trampoline fn_ptr
+                // (same canonical test as host_fn_constructable).
+                let bt_p: void* = NULL; raw { bt_p = (void*)host_function_bound_trampoline; }
+                if zjs_as_host_function(callee).fn_ptr == bt_p { route_unified = true; }
+            }
+            if route_unified {
                 let argv_ptr: ZjsValue* = NULL; raw { argv_ptr = &regs[base + 1]; }
                 let pr = zjs_construct_value(ctx, callee, argv_ptr, argc);
                 if ctx.pending_throw_active {
@@ -6942,6 +6951,15 @@ fn zjs_to_primitive(ctx: ZjsContext*, v: ZjsValue, prefer_string: bool) -> ZjsVa
 // host_this — preserve that even though the call returned undefined).
 // Caller checks ctx.pending_throw_active for failure.
 fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc: u32) -> ZjsValue {
+    // Default [[Construct]]: newTarget is the constructor itself (`new F()`).
+    return zjs_construct_value_nt(ctx, callee, args, argc, callee);
+}
+
+// Construct with an explicit newTarget (Reflect.construct's 3rd argument and
+// the proxy-forward chain). new_target drives OrdinaryCreateFromConstructor:
+// the new object's [[Prototype]] comes from Get(newTarget, "prototype"), and
+// new.target inside the body reads new_target.
+fn zjs_construct_value_nt(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc: u32, new_target: ZjsValue) -> ZjsValue {
     // Proxy [[Construct]] (§10.5.13): invoke the construct trap (result must
     // be an Object), or forward to the target's [[Construct]] when absent.
     if zjs_is_proxy(callee) != 0 {
@@ -6955,10 +6973,10 @@ fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc
         let trap_atom = ctx_intern_atom(ctx, (char*)"construct", 9);
         let trap = property_get(ctx, p.handler, zjs_cell_from_ptr((void*)trap_atom));
         if ctx.pending_throw_active { return zjs_undefined(); }
-        // No trap → forward to target.[[Construct]] (target must itself be
-        // a constructor; zjs_construct_value enforces that).
+        // No trap → forward to target.[[Construct]] with the SAME newTarget
+        // (target must itself be a constructor; the forward enforces that).
         if zjs_is_undefined(trap) != 0 || zjs_is_null(trap) != 0 {
-            return zjs_construct_value(ctx, p.target, args, argc);
+            return zjs_construct_value_nt(ctx, p.target, args, argc, new_target);
         }
         let callable: bool = zjs_is_function(trap) != 0 || zjs_is_closure(trap) != 0
                           || zjs_is_host_function(trap) != 0;
@@ -6968,13 +6986,14 @@ fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc
             ctx.pending_throw_active = true; ctx.pending_throw_value = e;
             return zjs_undefined();
         }
-        // Call trap(target, argumentsList, newTarget). newTarget is the proxy.
+        // Call trap(target, argumentsList, newTarget) — newTarget is threaded
+        // from the caller (the proxy itself for `new px()`, or Reflect's 3rd arg).
         let arglist_v = ctx_new_array(ctx, argc);
         let arglist = zjs_as_array(arglist_v);
         let ai: u32 = 0;
         while ai < argc { arglist.elements[ai] = args[ai]; ai = ai + 1; }
         arglist.length = argc;
-        let ta: ZjsValue[3]; ta[0] = p.target; ta[1] = arglist_v; ta[2] = callee;
+        let ta: ZjsValue[3]; ta[0] = p.target; ta[1] = arglist_v; ta[2] = new_target;
         let tp: ZjsValue* = NULL; raw { tp = &ta[0]; }
         let result = zjs_call_value_with_this(ctx, trap, p.handler, tp, 3);
         if ctx.pending_throw_active { return zjs_undefined(); }
@@ -6986,6 +7005,46 @@ fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc
             return zjs_undefined();
         }
         return result;
+    }
+    // Bound-function [[Construct]] (§10.4.1.2): prepend the bound arguments,
+    // redirect newTarget to the target when it still points at the bound
+    // function itself, then construct the [[BoundTargetFunction]]. A bound
+    // function is a host function whose `.bound` slot holds its state object.
+    if zjs_is_host_function(callee) != 0 {
+        let hfb = zjs_as_host_function(callee);
+        let bt_p2: void* = NULL; raw { bt_p2 = (void*)host_function_bound_trampoline; }
+        if hfb.fn_ptr == bt_p2 && zjs_is_object(hfb.bound) != 0 {
+            let bso = zjs_as_object(hfb.bound);
+            let btarget = object_get(bso, ctx_intern_atom(ctx, (char*)"__zjs_bound_target__", 20));
+            if value_is_constructor(btarget) == 0 {
+                let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"bound function's target is not a constructor", 44);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                return zjs_undefined();
+            }
+            let bprepend = object_get(bso, ctx_intern_atom(ctx, (char*)"__zjs_bound_prepend__", 21));
+            let pn: u32 = 0;
+            if zjs_is_array(bprepend) != 0 { pn = zjs_as_array(bprepend).length; }
+            let tot: u32 = pn + argc;
+            let mbuf: ZjsValue[16];
+            let mptr: ZjsValue* = NULL;
+            let mowned: bool = false;
+            if tot <= 16 { raw { mptr = &mbuf[0]; } }
+            else { mptr = alloc_n<ZjsValue>((usize)tot); mowned = true; }
+            let bi: u32 = 0;
+            if pn > 0 {
+                let pa = zjs_as_array(bprepend);
+                while bi < pn { mptr[bi] = pa.elements[bi]; bi = bi + 1; }
+            }
+            let bj: u32 = 0;
+            while bj < argc { mptr[pn + bj] = args[bj]; bj = bj + 1; }
+            // SameValue(F, newTarget) → use the bound target as newTarget.
+            let nt2 = new_target;
+            if new_target.bits == callee.bits { nt2 = btarget; }
+            let br = zjs_construct_value_nt(ctx, btarget, mptr, tot, nt2);
+            if mowned { dealloc(mptr); }
+            return br;
+        }
     }
     // Validate constructable.
     let constructable: bool = false;
@@ -7040,6 +7099,20 @@ fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc
         proto_obj = hf.prototype;
     }
 
+    // OrdinaryCreateFromConstructor(newTarget) (§10.1.13): when an explicit
+    // newTarget was supplied (Reflect.construct's 3rd arg / proxy forward) and
+    // it differs from the target, the new object's [[Prototype]] comes from
+    // Get(newTarget, "prototype") — fall back to %Object.prototype% when that
+    // is not an Object. The common `new F()` case (newTarget === callee) keeps
+    // the lazily-created target prototype resolved above, unchanged.
+    if new_target.bits != callee.bits {
+        let proto_v = property_get(ctx, new_target,
+            zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"prototype", 9)));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if value_is_object_type(proto_v) != 0 { proto_obj = zjs_as_object(proto_v); }
+        else { proto_obj = ctx.object_proto; }
+    }
+
     let new_obj_v = ctx_new_object(ctx);
     let new_obj = zjs_as_object(new_obj_v);
     new_obj.proto = proto_obj;
@@ -7049,7 +7122,7 @@ fn zjs_construct_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc
     let saved_ntv = ctx.new_target_value;
     ctx.host_this = new_obj_v;
     ctx.new_target_active = true;
-    ctx.new_target_value = callee;
+    ctx.new_target_value = new_target;
 
     let r = zjs_call_value_with_this(ctx, callee, new_obj_v, args, argc);
 

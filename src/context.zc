@@ -2798,6 +2798,10 @@ fn ctx_make_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> ZjsVa
     // proto_override defaults to undefined — Object.getPrototypeOf
     // then falls back to ctx.function_proto.
     hf.proto_override = zjs_undefined();
+    // .bound holds the bound-function state object (only for the bound
+    // trampoline). Initialize to undefined so non-bound host fns don't
+    // read garbage — callers detect "bound" via fn_ptr, but GC marks this.
+    hf.bound = zjs_undefined();
     // Default IsConstructor = true to match legacy behavior (Array,
     // Number, ... + tests that did `new f()` on user-defined host
     // wrappers). Prototype-method registrations flag themselves false
@@ -18934,7 +18938,11 @@ fn host_reflect_construct(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
             ap = sa.elements;
         }
     }
-    let r: ZjsValue = zjs_construct_value(ctx, target, ap, n);
+    // Reflect.construct(target, argumentsList[, newTarget]) — newTarget
+    // defaults to target, otherwise threads through as the [[Construct]]
+    // newTarget (drives the result's [[Prototype]] + new.target).
+    let new_target = if argc >= 3 { args[2] } else { target };
+    let r: ZjsValue = zjs_construct_value_nt(ctx, target, ap, n, new_target);
     if zjs_is_array(arglist) == 0 && n > 0 { ctx_pop_temp_root(ctx); }
     return r;
 }

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 23:12 UTC",
+    "when": "2026-06-03 23:33 UTC",
     "total": 27491,
-    "passed": 22802,
-    "failed": 3969,
+    "passed": 22814,
+    "failed": 3957,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -3094,7 +3094,7 @@
     },
     {
       "path": "test/built-ins/Date/subclassing.js",
-      "reason": "[sloppy] zjs: throw: (unknown): constructor defines an object `prototype` property Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object"
+      "reason": "[sloppy] zjs: throw: (unknown): constructor does not defines an object `prototype` property Expected SameValue(\u00ab[object Object]\u00bb,"
     },
     {
       "path": "test/built-ins/Date/value-get-symbol-to-prim-err.js",
@@ -3689,22 +3689,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Function/prototype/bind/instance-construct-newtarget-boundtarget-bound.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction bound() { [native code] }\u00bb, \u00abfunction A() { [user code] }\u00bb) to be tr"
-    },
-    {
-      "path": "test/built-ins/Function/prototype/bind/instance-construct-newtarget-boundtarget.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction bound() { [native code] }\u00bb, \u00abfunction A() { [user code] }\u00bb) to be tr"
-    },
-    {
-      "path": "test/built-ins/Function/prototype/bind/instance-construct-newtarget-self-new.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction bound() { [native code] }\u00bb, \u00abfunction A() { [user code] }\u00bb) to be tr"
-    },
-    {
-      "path": "test/built-ins/Function/prototype/bind/instance-construct-newtarget-self-reflect.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfunction bound() { [native code] }\u00bb, \u00abfunction A() { [user code] }\u00bb) to be tr"
-    },
-    {
       "path": "test/built-ins/Function/prototype/bind/instance-length-default-value.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot redefine property\nzjs: throw: TypeError: Cannot redefine property"
     },
@@ -4010,7 +3994,7 @@
     },
     {
       "path": "test/built-ins/Map/prototype/getOrInsertComputed/different-types-function-callbackfn-does-not-throw.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab5\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
     },
     {
       "path": "test/built-ins/Map/prototype/getOrInsertComputed/does-not-have-mapdata-internal-slot-weakmap.js",
@@ -6733,10 +6717,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/construct/call-parameters-new-target.js",
-      "reason": "[sloppy] zjs: throw: (unknown): newTarget is passed as the third parameter Expected SameValue(\u00ab[object]\u00bb, \u00abfunction NewTarget() {"
-    },
-    {
       "path": "test/built-ins/Proxy/construct/null-handler-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
@@ -6766,23 +6746,11 @@
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got [object]\nzjs: throw: (unknown): Expected true but got [object]"
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-not-callable-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/construct/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
-    },
-    {
-      "path": "test/built-ins/Proxy/construct/trap-is-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): construct is null: NewTarget is passed to [[Construct]] Expected SameValue(\u00ab[object]\u00bb, \u00abfunction "
-    },
-    {
-      "path": "test/built-ins/Proxy/construct/trap-is-undefined-no-property.js",
-      "reason": "[sloppy] zjs: throw: (unknown): construct is missing: NewTarget is passed to [[Construct]] Expected SameValue(\u00ab[object]\u00bb, \u00abfuncti"
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-undefined-proto-from-cross-realm-newtarget.js",
@@ -6791,14 +6759,6 @@
     {
       "path": "test/built-ins/Proxy/construct/trap-is-undefined-proto-from-newtarget-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/construct/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
-    },
-    {
-      "path": "test/built-ins/Proxy/construct/trap-is-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): construct is undefined: NewTarget is passed to [[Construct]] Expected SameValue(\u00ab[object]\u00bb, \u00abfunc"
     },
     {
       "path": "test/built-ins/Proxy/create-target-is-not-a-constructor.js",
@@ -7459,10 +7419,6 @@
     {
       "path": "test/built-ins/Reflect/construct/construct.js",
       "reason": "[sloppy] zjs: throw: (unknown): construct descriptor should not be enumerable\nzjs: throw: (unknown): construct descriptor should "
-    },
-    {
-      "path": "test/built-ins/Reflect/construct/return-with-newtarget-argument.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00ab\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab["
     },
     {
       "path": "test/built-ins/Reflect/defineProperty/defineProperty.js",
@@ -9002,7 +8958,7 @@
     },
     {
       "path": "test/built-ins/WeakMap/prototype/getOrInsertComputed/adds-value-different-callbackfn.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab5\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
     },
     {
       "path": "test/built-ins/WeakMap/prototype/getOrInsertComputed/check-callback-fn-args.js",
@@ -14203,10 +14159,6 @@
     {
       "path": "test/language/statements/class/strict-mode/with.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/class/subclass/binding.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The result of `this !== obj` is `true` Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw:"
     },
     {
       "path": "test/language/statements/class/subclass/builtin-objects/Array/contructor-calls-super-multiple-arguments.js",
