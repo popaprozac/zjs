@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 21:28 UTC",
+    "when": "2026-06-03 21:47 UTC",
     "total": 27491,
-    "passed": 22761,
-    "failed": 4010,
+    "passed": 22762,
+    "failed": 4009,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -7991,10 +7991,6 @@
     {
       "path": "test/built-ins/String/prototype/S15.5.4_A1.js",
       "reason": "[sloppy] zjs: throw: (unknown): #1: delete String.prototype.toString; String.prototype.toString() === \"[object \"+\"String\"+\"]\". Ac"
-    },
-    {
-      "path": "test/built-ins/String/prototype/S15.5.4_A2.js",
-      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/String/prototype/S15.5.4_A3.js",

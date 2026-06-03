@@ -26246,10 +26246,6 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         let sp = ctx_new_object(ctx);
         strv_hf.prototype = zjs_as_object(sp);
     }
-    // §22.1.3: String.prototype is a String exotic with [[StringData]] "" —
-    // String.prototype.toString()/valueOf() unwrap to the empty string.
-    object_set(ctx, strv_hf.prototype, ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN),
-               ctx_intern_string(ctx, (char*)"", 0));
     object_set(ctx, strv_hf.prototype, valueof_atom,
                ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
     object_set(ctx, strv_hf.prototype, tostring_atom,
@@ -27856,6 +27852,13 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"valueOf",  wv_ptr));
     object_set(ctx, string_proto, tostring_atom,
                ctx_make_host_function(ctx, (char*)"toString", wt_ptr));
+    // §22.1.3: String.prototype is itself a String exotic with [[StringData]]
+    // "". Without this hidden value, host_wrapper_value_of(String.prototype)
+    // returns the prototype OBJECT, so String.prototype.toString() does
+    // ToString(object) -> ToPrimitive -> toString -> ... infinite recursion
+    // -> stack-overflow crash (#352). The slot makes it unwrap to "".
+    object_set(ctx, string_proto, ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN),
+               ctx_intern_string(ctx, (char*)"", 0));
 
     // --- JSON namespace (Phase 3.5b) ---
     let json_v = ctx_new_object(ctx);
