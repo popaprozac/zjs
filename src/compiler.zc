@@ -1354,6 +1354,20 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         if src + 1 == c.next_reg && src != dst { c.next_reg = c.next_reg - 1; }
         return dst;
     }
+    if k == NodeKind::ImportCall {
+        // Dynamic import(specifier): evaluate the specifier, then resolve +
+        // load the module and produce a Promise of its namespace.
+        let src = compile_expr(c, node.left);
+        let dst = alloc_reg(c);
+        emit(c, make_inst_ab(Op::DynamicImport, dst, src));
+        if src + 1 == c.next_reg && src != dst { c.next_reg = c.next_reg - 1; }
+        return dst;
+    }
+    if k == NodeKind::ImportMetaExpr {
+        let dst = alloc_reg(c);
+        emit(c, make_inst_a(Op::ImportMeta, dst));
+        return dst;
+    }
     if k == NodeKind::YieldExpr {
         // `yield*` — delegating yield. Spec (§14.4.14) gets/uses the
         // operand's iterator and forwards each step out as a yield from

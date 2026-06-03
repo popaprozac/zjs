@@ -205,6 +205,11 @@ enum Op {
     // bodies).
     ImportBind,       // a=dst_reg,    b=spec_const_idx, c=name_const_idx
     ExportBind,       // a=src_reg,    b=name_const_idx, c=unused
+    // Dynamic import (ES2020). DynamicImport reads regs[b] as the specifier,
+    // resolves + loads the module, and writes a Promise of the namespace to
+    // regs[a]. ImportMeta writes the `import.meta` object to regs[a].
+    DynamicImport,    // a=dst_reg, b=spec_reg
+    ImportMeta,       // a=dst_reg
 
     // async / await (2026-05-15).
     // Op::Await reads regs[b] as the awaited value and writes the

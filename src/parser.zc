@@ -475,7 +475,11 @@ fn parse_statement(p: Parser*) -> AstNode* {
     // ES module top-level: import / export. Only valid when parsing
     // module source (p.is_module). Script-mode parses see them as
     // ordinary identifiers (the existing contextual-keyword behavior).
-    if p.is_module && k == TokenKind::KwImport { return parse_import_decl(p); }
+    // `import(` (dynamic import) and `import.meta` are EXPRESSIONS, not
+    // import declarations — fall through to the expression-statement path.
+    if p.is_module && k == TokenKind::KwImport
+       && peek_kind2(p) != TokenKind::LParen
+       && peek_kind2(p) != TokenKind::Dot { return parse_import_decl(p); }
     if p.is_module && k == TokenKind::KwExport { return parse_export_decl(p); }
     if k == TokenKind::KwClass     { return parse_class_decl(p); }
     if k == TokenKind::KwIf        { return parse_if(p); }
@@ -4084,6 +4088,41 @@ fn parse_primary(p: Parser*) -> AstNode* {
     // — fall through to the IdentifierReference path so is_binding_ident
     // rejects the keyword inside a generator/strict context.
     if k == TokenKind::KwClass    { return parse_class_expr(p); }
+
+    // Dynamic `import(specifier [, options])` and `import.meta` (ES2020).
+    if k == TokenKind::KwImport {
+        let kw_t = advance(p);
+        if peek_kind(p) == TokenKind::Dot {
+            advance(p);
+            let prop = peek(p);
+            let is_meta: bool = false;
+            if prop.length == 4 {
+                let sp = p.source;
+                raw { is_meta = (memcmp(sp + prop.start, "meta", 4) == 0) ? true : false; }
+            }
+            if !is_meta { p.had_error = true; return NULL; }
+            advance(p);
+            return new_node(&p.tracker, NodeKind::ImportMetaExpr, kw_t.start, prop.start + prop.length);
+        }
+        if !expect_kind(p, TokenKind::LParen) { return NULL; }
+        let spec = parse_assignment(p);
+        if spec == NULL { return NULL; }
+        // Optional import-attributes / assertions argument — parsed and
+        // discarded (zjs has no attribute semantics yet).
+        if peek_kind(p) == TokenKind::Comma {
+            advance(p);
+            if peek_kind(p) != TokenKind::RParen {
+                let opts = parse_assignment(p);
+                if opts == NULL { return NULL; }
+                if peek_kind(p) == TokenKind::Comma { advance(p); }
+            }
+        }
+        let rp = peek(p);
+        if !expect_kind(p, TokenKind::RParen) { return NULL; }
+        let node = new_node(&p.tracker, NodeKind::ImportCall, kw_t.start, rp.start + rp.length);
+        node.left = spec;
+        return node;
+    }
 
     if k == TokenKind::NumberLit {
         advance(p);

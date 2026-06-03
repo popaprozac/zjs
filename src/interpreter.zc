@@ -52,7 +52,7 @@ raw {
         "LoadProp", "StoreProp",
         "IterPrepare", "ArrayLength",
         "DeleteElem", "BuildArguments", "BuildRestArgs",
-        "ImportBind", "ExportBind",
+        "ImportBind", "ExportBind", "DynamicImport", "ImportMeta",
         "Await", "Yield", "GeneratorStart", "TemplateObject",
         "ArrayPush", "ArraySpread", "ObjectSpread",
         "ArrayRestFrom", "AssertCoercible",
@@ -3218,6 +3218,24 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let val  = regs[inst.a];
                 object_set(ctx, ctx.current_module.exports, name, val);
             }
+        } else if op == Op::DynamicImport {
+            // import(specifier): regs[b] is the specifier. ctx_dynamic_import
+            // resolves+loads and returns a Promise of the namespace; all
+            // failures become a rejected promise, so we never throw here.
+            let spec_v = regs[inst.b];
+            let result_v: ZjsValue = zjs_undefined();
+            raw {
+                extern ZjsValue ctx_dynamic_import(ZjsContext* ctx, ZjsValue spec);
+                result_v = ctx_dynamic_import(ctx, spec_v);
+            }
+            regs[inst.a] = result_v;
+        } else if op == Op::ImportMeta {
+            let meta_v: ZjsValue = zjs_undefined();
+            raw {
+                extern ZjsValue ctx_import_meta(ZjsContext* ctx);
+                meta_v = ctx_import_meta(ctx);
+            }
+            regs[inst.a] = meta_v;
         } else if op == Op::GeneratorStart {
             // End of the generator's prologue. Only the INITIAL call
             // from bytecode-Invoke (state == GEN_STARTING) suspends

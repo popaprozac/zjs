@@ -29046,6 +29046,67 @@ fn ctx_module_import_value(ctx: ZjsContext*, spec_v: ZjsValue, name_v: ZjsValue)
     return m.exports.slots[(u32)slot];
 }
 
+// Dynamic import(specifier) — ECMA-262 §13.3.10. Returns a Promise of the
+// module namespace. Resolution / coercion / load errors all become a
+// REJECTED promise (never a synchronous throw — IfAbruptRejectPromise), so
+// the Op::DynamicImport handler must not propagate pending_throw from here.
+// Module evaluation is synchronous under the hood; the returned promise is
+// settled immediately and its reactions fire on the next microtask tick.
+fn ctx_dynamic_import(ctx: ZjsContext*, spec_v: ZjsValue) -> ZjsValue {
+    let p = zjs_promise_new();
+    ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+
+    // ToString(specifier) — a throwing coercion (Symbol) rejects.
+    let spec_str = zjs_to_string(ctx, spec_v);
+    if ctx.pending_throw_active {
+        let e = consume_pending_throw(ctx);
+        promise_settle(ctx, pv, e, false);
+        return pv;
+    }
+    let spec = zjs_as_string(spec_str);
+    let base = if ctx.current_module != NULL { ctx.current_module.abs_path } else { NULL };
+    let resolved = module_resolve_specifier(ctx, base, spec);
+    if resolved == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"could not resolve module specifier", 34);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    let m = ctx_load_module(ctx, resolved);
+    if ctx.pending_throw_active {
+        let e = consume_pending_throw(ctx);
+        promise_settle(ctx, pv, e, false);
+        return pv;
+    }
+    if m == NULL {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"module load failed", 18);
+        promise_settle(ctx, pv, err, false);
+        return pv;
+    }
+    if m.state == MODULE_STATE_ERRORED {
+        promise_settle(ctx, pv, m.error, false);
+        return pv;
+    }
+    // Fulfill with the module namespace (its exports object).
+    promise_settle(ctx, pv, zjs_cell_from_ptr((void*)m.exports), true);
+    return pv;
+}
+
+// `import.meta` (ES2020). Minimal: an object carrying `url` (the current
+// module's path). Module-scope only — undefined receiver outside a module.
+fn ctx_import_meta(ctx: ZjsContext*) -> ZjsValue {
+    let o = ctx_new_object(ctx);
+    let oo = zjs_as_object(o);
+    if ctx.current_module != NULL && ctx.current_module.abs_path != NULL {
+        let ap = ctx.current_module.abs_path;
+        object_set(ctx, oo, ctx_intern_atom(ctx, (char*)"url", 3),
+                   zjs_cell_from_ptr((void*)ap));
+    }
+    return o;
+}
+
 // Helper used in InterpretResult-returning extern paths.
 fn zjs_undefined_result() -> InterpretResult {
     return InterpretResult{ is_throw: false, value: zjs_undefined() };

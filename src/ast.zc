@@ -213,6 +213,12 @@ enum NodeKind {
     ImportClause,
     ExportDecl,
     ExportClause,
+    //   ImportCall: dynamic `import(specifier)` (ES2020 §13.3.10)
+    //     - left: the specifier (AssignmentExpression)
+    //     evaluates to a Promise of the module namespace object
+    ImportCall,
+    //   ImportMetaExpr: the `import.meta` meta-property (ES2020)
+    ImportMetaExpr,
 }
 
 struct AstNode {
