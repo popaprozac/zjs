@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 06:25 UTC",
+    "when": "2026-06-03 15:49 UTC",
     "total": 27491,
-    "passed": 22451,
-    "failed": 4320,
+    "passed": 22469,
+    "failed": 4302,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -305,40 +305,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab3\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
     },
     {
-      "path": "test/built-ins/Array/prototype/concat/15.4.4.4-5-c-i-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The result of evaluating (newArrayFromConcat[0] instanceof Number) is expected to be true\nzjs: th"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_array-like-length-to-string-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [].concat(objWithPoisonedLengthToString) throws a Test262Error exception Expected a Test262Error "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_array-like-length-value-of-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [].concat(objWithPoisonedLengthValueOf) throws a Test262Error exception Expected a Test262Error t"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_array-like-negative-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [[object Object]] and expected [] should have the same contents. [].concat({\"length\": -429"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_array-like-primitive-non-number-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [[object Object]] and expected [] should have the same contents. [].concat({\"1\": \"A\", \"3\":"
-    },
-    {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_large-typed-array.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,160,1"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_length-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [].concat(spreadablePoisonedLengthGetter) throws a Test262Error exception Expected a Test262Error"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_non-array.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [4, 5, 6] and expected [[object Object], 4, 5, 6] should have the same contents. The value"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_sloppy-arguments-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): return [].concat(args, args) throws a Test262Error exception Expected a Test262Error to be thrown"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_small-typed-array.js",
@@ -346,19 +314,15 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-boolean-wrapper.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [1, 2, 3] and expected [true] should have the same contents. [1, 2, 3] must return the sam"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [1, 2, 3] and expected [, , ] should have the same contents. [1, 2, 3] must return the sam"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-function.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [1, 2, 3] and expected [function fn() { [user code] }] should have the same contents. [1, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-getter-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [].concat(spreadablePoisonedGetter) throws a Test262Error exception Expected a Test262Error to be"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [1, 2, 3] and expected [, , ] should have the same contents. [1, 2, 3] must return the sam"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-number-wrapper.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [1, 2, 3] and expected [1] should have the same contents. [1, 2, 3] must return the same v"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [1, 2, 3] and expected [, , ] should have the same contents. [1, 2, 3] must return the sam"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-reg-exp.js",
@@ -366,19 +330,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-sparse-object.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [undefined, undefined, undefined, undefined, undefined] and expected [[object Object]] sho"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-string-wrapper.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [y, u, c, k, \ufffd\ufffd\ufffd, \ufffd\ufffd\ufffd] and expected [yuck\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd] should have the same contents. [\"y\", \"u\","
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/S15.4.4.4_A2_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of arr[0] is expected to equal the value of x Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[o"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/S15.4.4.4_A2_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of arr[0] is expected to equal the value of x Expected SameValue(\u00abundefined\u00bb, \u00ab[object "
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [y, u, c, k, \ufffd\ufffd\ufffd, \ufffd\ufffd\ufffd] and expected [, , , , , , , , , ] should have the same contents. [\""
     },
     {
       "path": "test/built-ins/Array/prototype/concat/S15.4.4.4_A3_T1.js",
@@ -394,15 +350,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/arg-length-exceeding-integer-limit.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [1].concat(spreadableLengthOutOfRange) throws a TypeError exception Expected a TypeError to be th"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/arg-length-near-integer-limit.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [].concat(spreadableHasPoisonedIndex) throws a Test262Error exception Expected a Test262Error to "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/call-with-boolean.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The result of evaluating (Array.prototype.concat.call(true)[0] instanceof Boolean) is expected to"
+      "reason": "[sloppy] timeout"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/create-ctor-non-object.js",
@@ -411,10 +359,6 @@
     {
       "path": "test/built-ins/Array/prototype/concat/create-ctor-poisoned.js",
       "reason": "[sloppy] zjs: throw: (unknown): a.concat() throws a Test262Error exception Expected a Test262Error to be thrown but no exception "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/create-non-array.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of result.length is expected to be 1 Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/create-proto-from-ctor-realm-array.js",
@@ -465,19 +409,11 @@
       "reason": "[sloppy] zjs: throw: (unknown): The value of callCount is expected to be 1 Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (u"
     },
     {
-      "path": "test/built-ins/Array/prototype/concat/is-concat-spreadable-get-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.concat.call(o) throws a Test262Error exception Expected a Test262Error to be thro"
-    },
-    {
       "path": "test/built-ins/Array/prototype/concat/is-concat-spreadable-get-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [constructor, isConcatSpreadable] should have the same contents. The value"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [isConcatSpreadable] and expected [constructor, isConcatSpreadable] should have the same c"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/is-concat-spreadable-is-array-proxy-revoked.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [].concat(handle.proxy) throws a TypeError exception Expected a TypeError to be thrown but no exc"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/is-concat-spreadable-proxy-revoked.js",
       "reason": "[sloppy] zjs: throw: (unknown): [].concat(handle.proxy) throws a TypeError exception Expected a TypeError to be thrown but no exc"
     },
     {
@@ -485,16 +421,8 @@
       "reason": "[sloppy] zjs: throw: TypeError: Proxy target and handler must be objects\nzjs: throw: TypeError: Proxy target and handler must be "
     },
     {
-      "path": "test/built-ins/Array/prototype/concat/is-concat-spreadable-val-falsey.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of result.length is expected to be 1 Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/concat/is-concat-spreadable-val-truthy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of result.length is expected to be 0 Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw"
-    },
-    {
       "path": "test/built-ins/Array/prototype/copyWithin/coerced-values-start-change-start.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [, , , , , , , , , , , , , , , , , , , ] and expected [, , , , , , , , , , , , , , , , , ,"
+      "reason": "[sloppy] zjs: throw: TypeError: Object prototype may only be an Object or null\u0000\nzjs: throw: TypeError: Object prototype may only "
     },
     {
       "path": "test/built-ins/Array/prototype/copyWithin/length-near-integer-limit.js",

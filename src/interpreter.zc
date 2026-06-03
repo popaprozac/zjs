@@ -5296,6 +5296,15 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     if arr.props == NULL {
                         let u = (u32)i;
                         if u < arr.length {
+                            // A sparse array can have length > cap (e.g.
+                            // `a.length = 6` or a concat that left trailing
+                            // holes). Those slots aren't backed by the
+                            // elements buffer — reading them raw is an OOB.
+                            // Treat in-range-but-past-cap as a hole.
+                            if u >= arr.cap {
+                                regs[inst.a] = zjs_undefined();
+                                took_fast = true;
+                            } else {
                             let v = arr.elements[u];
                             // Hole → undefined inline (avoid one extra
                             // branch in array_get).
@@ -5305,6 +5314,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                                 regs[inst.a] = zjs_undefined();
                             }
                             took_fast = true;
+                            }
                         } else {
                             // Out-of-bounds read is `undefined` —
                             // common in defensive `i < arr.length`

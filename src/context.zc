@@ -8312,57 +8312,97 @@ fn host_array_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return out_v;
 }
 
+// ECMA-262 §23.1.3.1.1 IsConcatSpreadable(O): returns 1 (spread), 0 (do
+// not spread), or -1 (a Get on @@isConcatSpreadable threw — pending set).
+fn is_concat_spreadable(ctx: ZjsContext*, v: ZjsValue) -> i32 {
+    let is_obj: bool = zjs_is_object(v) != 0 || zjs_is_array(v) != 0
+        || zjs_is_function(v) != 0 || zjs_is_closure(v) != 0
+        || zjs_is_host_function(v) != 0 || zjs_is_uint8_array(v) != 0
+        || zjs_is_proxy(v) != 0;
+    if !is_obj { return 0; }
+    let sym_atom = ctx_intern_atom(ctx, (char*)"@@isConcatSpreadable", 20);
+    let sp = property_get(ctx, v, zjs_cell_from_ptr((void*)sym_atom));
+    if ctx.pending_throw_active { return -1; }
+    if zjs_is_undefined(sp) == 0 {
+        if zjs_to_bool_coerce(sp) != 0 { return 1; }
+        return 0;
+    }
+    if zjs_is_array(v) != 0 { return 1; }
+    return 0;
+}
+
+// Append one concat item E to `out` starting at output index `n`; returns
+// the new n. Spreadable items (IsConcatSpreadable) contribute their
+// 0..len elements (holes preserved by leaving the output slot unset);
+// everything else is appended as a single element. §23.1.3.1 steps 5.b–c.
+fn concat_append_item(ctx: ZjsContext*, out: ZjsArray*, e: ZjsValue, n: u32) -> u32 {
+    let spread = is_concat_spreadable(ctx, e);
+    if ctx.pending_throw_active { return n; }
+    if spread != 1 {
+        array_set(out, n, e);
+        return n + 1;
+    }
+    let len = read_length_u32(ctx, e);
+    if ctx.pending_throw_active { return n; }
+    let k: u32 = 0;
+    while k < len {
+        let key_v = zjs_int32((i32)k);
+        // HasProperty(E, k). For arrays the dense store covers the common
+        // case; a defineProperty'd / accessor index lives in arr.props
+        // (the int-key hasOwnProperty path misses it), so check props by
+        // stringified key. Objects route through hasOwnProperty.
+        let present: bool = false;
+        if zjs_is_array(e) != 0 {
+            let ea = zjs_as_array(e);
+            present = array_has_index(ea, k) != 0;
+            if !present && ea.props != NULL {
+                let kb: char[16];
+                let kl: int = 0;
+                raw { kl = snprintf(&kb[0], 16, "%u", (unsigned)k); }
+                let kbp: char* = NULL; raw { kbp = &kb[0]; }
+                let katom = ctx_intern_atom(ctx, kbp, (u32)kl);
+                let sp = class_find_slot(ea.props.cls, katom);
+                present = sp >= 0 && zjs_is_deleted(ea.props.slots[(u32)sp]) == 0;
+            }
+        } else {
+            present = array_like_has_own(ctx, e, key_v);
+            if ctx.pending_throw_active { return n; }
+        }
+        if present {
+            // property_get's int-key path fires an arr.props accessor
+            // getter (and propagates a throw).
+            let ev = property_get(ctx, e, key_v);
+            if ctx.pending_throw_active { return n; }
+            array_set(out, n + k, ev);
+        }
+        k = k + 1;
+    }
+    return n + len;
+}
+
 fn host_array_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_array_coercible_this(ctx) { return zjs_undefined(); }
-    let this_val = ctx.host_this;
-    // First pass: compute total length.
-    let total: u32 = read_length_u32(ctx, this_val);
-    let i: u32 = 0;
-    while i < argc {
-        let a = args[i];
-        if zjs_is_array(a) != 0 { total = total + zjs_as_array(a).length; }
-        else { total = total + 1; }
-        i = i + 1;
-    }
-    let out_v = ctx_new_array(ctx, total);
+    // §23.1.3.1 step 1: O = ToObject(this). A = ArraySpeciesCreate(O, 0)
+    // — we use a plain array (no @@species support yet).
+    let this_obj = ctx_to_object(ctx, ctx.host_this);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let out_v = ctx_new_array(ctx, 0);
     ctx_push_temp_root(ctx, out_v);
     defer ctx_pop_temp_root(ctx);
     let out = zjs_as_array(out_v);
-    let cursor: u32 = 0;
-    // Copy this.
-    if zjs_is_array(this_val) != 0 {
-        let arr = zjs_as_array(this_val);
-        let k: u32 = 0;
-        // array_get bounds by cap and converts holes → undefined; a raw
-        // arr.elements[k] read goes OOB when length > cap (sparse array,
-        // e.g. an arguments object whose length was extended).
-        while k < arr.length { out.elements[cursor + k] = array_get(arr, k); k = k + 1; }
-        cursor = cursor + arr.length;
-    } else if zjs_is_object(this_val) != 0 {
-        let len = read_length_u32(ctx, this_val);
-        let k: u32 = 0;
-        while k < len {
-            out.elements[cursor + k] = obj_get_indexed(ctx, zjs_as_object(this_val), k);
-            k = k + 1;
-        }
-        cursor = cursor + len;
-    }
-    // Then each arg.
-    i = 0;
+    let n: u32 = 0;
+    // The list of items to concat is [O, ...args], each tested for
+    // spreadability independently (so `this` honors @@isConcatSpreadable
+    // and array-likes too).
+    n = concat_append_item(ctx, out, this_obj, n);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let i: u32 = 0;
     while i < argc {
-        let a = args[i];
-        if zjs_is_array(a) != 0 {
-            let arr = zjs_as_array(a);
-            let k: u32 = 0;
-            while k < arr.length { out.elements[cursor + k] = array_get(arr, k); k = k + 1; }
-            cursor = cursor + arr.length;
-        } else {
-            out.elements[cursor] = a;
-            cursor = cursor + 1;
-        }
+        n = concat_append_item(ctx, out, args[i], n);
+        if ctx.pending_throw_active { return zjs_undefined(); }
         i = i + 1;
     }
-    out.length = total;
+    out.length = n;
     return out_v;
 }
 
