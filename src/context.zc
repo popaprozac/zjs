@@ -28083,6 +28083,53 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     proto_mark_nonenum(ctx.regexp_proto);
     proto_mark_nonenum(ctx.promise_ctor_proto);
     proto_mark_nonenum(ctx.typed_array_proto);
+    // The rest of the built-in prototypes — their methods + `constructor`
+    // are all { enumerable: false } per spec. These had the
+    // non-constructor sweep but not the non-enumerable one, so e.g.
+    // Object.getOwnPropertyDescriptor(Date.prototype, "getTime").enumerable
+    // wrongly read true.
+    proto_mark_nonenum(ctx.function_proto);
+    proto_mark_nonenum(ctx.date_proto);
+    proto_mark_nonenum(ctx.map_proto);
+    proto_mark_nonenum(ctx.set_proto);
+    proto_mark_nonenum(ctx.weakmap_proto);
+    proto_mark_nonenum(ctx.weakset_proto);
+    proto_mark_nonenum(ctx.symbol_proto);
+    proto_mark_nonenum(ctx.generator_proto);
+    proto_mark_nonenum(ctx.array_buffer_proto);
+    proto_mark_nonenum(ctx.data_view_proto);
+    // Per-kind TypedArray prototypes carry only `constructor` (+ the
+    // already-non-enum BYTES_PER_ELEMENT) as own props.
+    proto_mark_nonenum(ctx.int8_array_proto);
+    proto_mark_nonenum(ctx.uint8_array_proto);
+    proto_mark_nonenum(ctx.uint8_clamped_array_proto);
+    proto_mark_nonenum(ctx.int16_array_proto);
+    proto_mark_nonenum(ctx.uint16_array_proto);
+    proto_mark_nonenum(ctx.int32_array_proto);
+    proto_mark_nonenum(ctx.uint32_array_proto);
+    proto_mark_nonenum(ctx.float32_array_proto);
+    proto_mark_nonenum(ctx.float64_array_proto);
+    // Error + the native error subclass prototypes (name/message/
+    // constructor/toString are all non-enumerable). Swept via the global
+    // constructor table.
+    let err_names: char*[8];
+    err_names[0] = (char*)"Error";       err_names[1] = (char*)"EvalError";
+    err_names[2] = (char*)"RangeError";  err_names[3] = (char*)"ReferenceError";
+    err_names[4] = (char*)"SyntaxError"; err_names[5] = (char*)"TypeError";
+    err_names[6] = (char*)"URIError";    err_names[7] = (char*)"AggregateError";
+    let ei: u32 = 0;
+    while ei < 8 {
+        let nm = err_names[ei];
+        let nl: u32 = 0; raw { nl = (uint32_t)strlen(nm); }
+        let g = ctx_find_global(ctx, nm, nl);
+        if g >= 0 {
+            let gv = ctx.globals[g].value;
+            if zjs_is_host_function(gv) != 0 {
+                proto_mark_nonenum(zjs_as_host_function(gv).prototype);
+            }
+        }
+        ei = ei + 1;
+    }
     // Prototype methods are not constructors per spec — `new
     // Array.prototype.push()` should throw TypeError. Mark them now
     // that the method tables are installed.
