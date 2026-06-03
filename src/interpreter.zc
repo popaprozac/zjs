@@ -469,13 +469,23 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             if ta.buffer != NULL { return zjs_cell_from_ptr((void*)ta.buffer); }
             return zjs_undefined();
         }
+        // Walk the prototype chain. Accessor slots (e.g. @@toStringTag)
+        // are invoked with the typed array as the receiver.
         let proto = ta_proto_for(ctx, ta.kind);
-        if proto != NULL {
+        while proto != NULL {
             let slot = class_find_slot(proto.cls, name);
             if slot >= 0 {
                 let v = proto.slots[(u32)slot];
-                if zjs_is_deleted(v) == 0 { return v; }
+                if zjs_is_deleted(v) == 0 {
+                    if zjs_is_accessor(v) != 0 {
+                        let acc = zjs_as_accessor(v);
+                        if zjs_is_undefined(acc.get) != 0 { return zjs_undefined(); }
+                        return zjs_call_value_with_this(ctx, acc.get, obj, NULL, 0);
+                    }
+                    return v;
+                }
             }
+            proto = proto.proto;
         }
         return zjs_undefined();
     }

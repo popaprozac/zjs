@@ -428,6 +428,12 @@ struct ZjsContext {
     float64_array_proto:      ZjsObject*;
     array_buffer_proto:       ZjsObject*;
     data_view_proto:          ZjsObject*;
+    // %TypedArray% intrinsic: the abstract superclass shared by all kinds.
+    // typed_array_proto is %TypedArray%.prototype (where the generic methods
+    // live); per-kind protos chain their [[Prototype]] to it. typed_array_ctor
+    // is the abstract constructor — each kind ctor's [[Prototype]] override.
+    typed_array_proto:        ZjsObject*;
+    typed_array_ctor:         ZjsValue;
     websocket_proto:          ZjsObject*;
     headers_proto:            ZjsObject*;
     response_proto:           ZjsObject*;
@@ -1922,6 +1928,8 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     if ctx.float64_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.float64_array_proto)); }
     if ctx.array_buffer_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.array_buffer_proto)); }
     if ctx.data_view_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.data_view_proto)); }
+    if ctx.typed_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.typed_array_proto)); }
+    if zjs_is_host_function(ctx.typed_array_ctor) != 0 { gc_mark_value(ctx.typed_array_ctor); }
     if ctx.websocket_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.websocket_proto)); }
     // Live WebSocket cells — kept alive by the engine until close,
     // even when JS drops the last reference (a "ws.onmessage = ..."
@@ -14330,6 +14338,289 @@ fn host_typed_array_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Z
     return r;
 }
 
+// --- %TypedArray%.prototype generic methods (operate over any kind via
+// ta_load/ta_store). Installed on every per-kind prototype. -----------
+
+// Allocate + register a fresh typed array of `kind` and `n` elements.
+fn ta_result_new(ctx: ZjsContext*, kind: u8, n: u32) -> ZjsTypedArray* {
+    let r = zjs_typed_array_new(kind, n);
+    ctx_register_cell(ctx, (void*)r);
+    if r.buffer != NULL { ctx_register_cell(ctx, (void*)r.buffer); }
+    return r;
+}
+
+// ValidateTypedArray(this): every %TypedArray%.prototype method requires an
+// [[TypedArrayName]] receiver — throw TypeError otherwise (so `map.call(null)`
+// and `map.call({})` throw rather than silently returning).
+fn ta_require_this(ctx: ZjsContext*, tv: ZjsValue) -> bool {
+    if zjs_is_typed_array(tv) != 0 { return true; }
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+        (char*)"this is not a typed array", 25);
+    ctx.pending_throw_active = true;
+    ctx.pending_throw_value  = err;
+    return false;
+}
+
+fn host_typed_array_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    let ta = zjs_as_typed_array(tv);
+    let rel: i64 = 0;
+    if argc >= 1 { rel = (i64)ta_to_number(ctx, args[0]); }
+    if rel < 0 { rel = (i64)ta.length + rel; }
+    if rel < 0 || rel >= (i64)ta.length { return zjs_undefined(); }
+    return ta_load(ta, (u32)rel);
+}
+
+fn host_typed_array_join(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    let ta = zjs_as_typed_array(tv);
+    let sep = ctx_intern_string(ctx, (char*)",", 1);
+    if argc >= 1 && zjs_is_undefined(args[0]) == 0 { sep = zjs_to_string(ctx, args[0]); }
+    let acc = ctx_intern_string(ctx, (char*)"", 0);
+    let i: u32 = 0;
+    while i < ta.length {
+        if i > 0 { acc = zjs_string_concat(ctx, acc, sep); }
+        let el = ta_load(ta, i);
+        if zjs_is_undefined(el) == 0 {
+            acc = zjs_string_concat(ctx, acc, zjs_to_string(ctx, el));
+        }
+        i = i + 1;
+    }
+    return acc;
+}
+
+fn host_typed_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
+    let ta = zjs_as_typed_array(tv);
+    let cb = args[0];
+    let thisArg = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let i: u32 = 0;
+    while i < ta.length {
+        let ab: ZjsValue[3]; ab[0] = ta_load(ta, i); ab[1] = zjs_int32((i32)i); ab[2] = tv;
+        let ap: ZjsValue* = NULL; raw { ap = &ab[0]; }
+        let _ = zjs_call_value_with_this(ctx, cb, thisArg, ap, 3);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        i = i + 1;
+    }
+    return zjs_undefined();
+}
+
+fn host_typed_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
+    let ta = zjs_as_typed_array(tv);
+    let cb = args[0];
+    let thisArg = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let r = ta_result_new(ctx, ta.kind, ta.length);
+    let rv = zjs_cell_from_ptr((void*)r);
+    ctx_push_temp_root(ctx, rv);
+    defer ctx_pop_temp_root(ctx);
+    let i: u32 = 0;
+    while i < ta.length {
+        let ab: ZjsValue[3]; ab[0] = ta_load(ta, i); ab[1] = zjs_int32((i32)i); ab[2] = tv;
+        let ap: ZjsValue* = NULL; raw { ap = &ab[0]; }
+        let mapped = zjs_call_value_with_this(ctx, cb, thisArg, ap, 3);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        ta_store(ctx, r, i, mapped);
+        i = i + 1;
+    }
+    return rv;
+}
+
+fn host_typed_array_filter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
+    let ta = zjs_as_typed_array(tv);
+    let cb = args[0];
+    let thisArg = if argc >= 2 { args[1] } else { zjs_undefined() };
+    // Collect kept values into a temp plain array, then build the TA.
+    let tmp_v = ctx_new_array(ctx, 0);
+    ctx_push_temp_root(ctx, tmp_v);
+    defer ctx_pop_temp_root(ctx);
+    let tmp = zjs_as_array(tmp_v);
+    let i: u32 = 0;
+    while i < ta.length {
+        let el = ta_load(ta, i);
+        let ab: ZjsValue[3]; ab[0] = el; ab[1] = zjs_int32((i32)i); ab[2] = tv;
+        let ap: ZjsValue* = NULL; raw { ap = &ab[0]; }
+        let keep = zjs_call_value_with_this(ctx, cb, thisArg, ap, 3);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_to_bool_coerce(keep) != 0 { array_set(tmp, tmp.length, el); }
+        i = i + 1;
+    }
+    let r = ta_result_new(ctx, ta.kind, tmp.length);
+    let j: u32 = 0;
+    while j < tmp.length { ta_store(ctx, r, j, array_get(tmp, j)); j = j + 1; }
+    return zjs_cell_from_ptr((void*)r);
+}
+
+fn ta_reduce_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32, from_right: bool) -> ZjsValue {
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
+    let ta = zjs_as_typed_array(tv);
+    let cb = args[0];
+    let len = ta.length;
+    let has_init = argc >= 2;
+    let acc: ZjsValue = if has_init { args[1] } else { zjs_undefined() };
+    if !has_init && len == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Reduce of empty array with no initial value", 43);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let count: u32 = 0;
+    while count < len {
+        let idx = if from_right { len - 1 - count } else { count };
+        if !has_init && count == 0 {
+            acc = ta_load(ta, idx);
+        } else {
+            let ab: ZjsValue[4]; ab[0] = acc; ab[1] = ta_load(ta, idx); ab[2] = zjs_int32((i32)idx); ab[3] = tv;
+            let ap: ZjsValue* = NULL; raw { ap = &ab[0]; }
+            acc = zjs_call_value_with_this(ctx, cb, zjs_undefined(), ap, 4);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        }
+        count = count + 1;
+    }
+    return acc;
+}
+fn host_typed_array_reduce(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return ta_reduce_impl(ctx, args, argc, false); }
+fn host_typed_array_reduce_right(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return ta_reduce_impl(ctx, args, argc, true); }
+
+// every / some / find / findIndex / findLast / findLastIndex share a walk.
+// mode: 0=every 1=some 2=find 3=findIndex 4=findLast 5=findLastIndex
+fn ta_predicate_walk(ctx: ZjsContext*, args: ZjsValue*, argc: u32, mode: u32) -> ZjsValue {
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    if !require_callback_callable(ctx, args, argc) { return zjs_undefined(); }
+    let ta = zjs_as_typed_array(tv);
+    let cb = args[0];
+    let thisArg = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let len = ta.length;
+    let reverse = mode == 4 || mode == 5;
+    let c: u32 = 0;
+    while c < len {
+        let i = if reverse { len - 1 - c } else { c };
+        let el = ta_load(ta, i);
+        let ab: ZjsValue[3]; ab[0] = el; ab[1] = zjs_int32((i32)i); ab[2] = tv;
+        let ap: ZjsValue* = NULL; raw { ap = &ab[0]; }
+        let r = zjs_call_value_with_this(ctx, cb, thisArg, ap, 3);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let truthy = zjs_to_bool_coerce(r) != 0;
+        if mode == 0 { if !truthy { return zjs_bool(0); } }
+        else if mode == 1 { if truthy { return zjs_bool(1); } }
+        else if mode == 2 || mode == 4 { if truthy { return el; } }
+        else { if truthy { return zjs_int32((i32)i); } }   // 3 / 5
+        c = c + 1;
+    }
+    if mode == 0 { return zjs_bool(1); }
+    if mode == 1 { return zjs_bool(0); }
+    if mode == 2 || mode == 4 { return zjs_undefined(); }
+    return zjs_int32(-1);
+}
+fn host_typed_array_every(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return ta_predicate_walk(ctx, args, argc, 0); }
+fn host_typed_array_some(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return ta_predicate_walk(ctx, args, argc, 1); }
+fn host_typed_array_find(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return ta_predicate_walk(ctx, args, argc, 2); }
+fn host_typed_array_find_index(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return ta_predicate_walk(ctx, args, argc, 3); }
+fn host_typed_array_find_last(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return ta_predicate_walk(ctx, args, argc, 4); }
+fn host_typed_array_find_last_index(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return ta_predicate_walk(ctx, args, argc, 5); }
+
+// indexOf / lastIndexOf / includes. Elements are numbers (or BigInt);
+// compare numerically. includes uses SameValueZero (NaN matches NaN).
+fn ta_search(ctx: ZjsContext*, args: ZjsValue*, argc: u32, mode: u32) -> ZjsValue {
+    // mode: 0=indexOf 1=lastIndexOf 2=includes
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    let ta = zjs_as_typed_array(tv);
+    let search = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let len = ta.length;
+    // Non-number search can only match in a number typed array via NaN
+    // (includes). indexOf/lastIndexOf use strict-equality → numeric.
+    let want = zjs_to_double(search);
+    let search_is_num = zjs_is_number(search) != 0;
+    let c: u32 = 0;
+    while c < len {
+        let i = if mode == 1 { len - 1 - c } else { c };
+        let elv = ta_load(ta, i);
+        let ev = zjs_to_double(elv);
+        let match_: bool = false;
+        raw {
+            if (mode == 2) {
+                // SameValueZero: NaN==NaN, +0==-0
+                if (isnan(ev) && isnan(want)) match_ = 1;
+                else if (ev == want) match_ = 1;
+            } else {
+                if (search_is_num && ev == want && !isnan(ev)) match_ = 1;
+            }
+        }
+        if match_ {
+            if mode == 2 { return zjs_bool(1); }
+            return zjs_int32((i32)i);
+        }
+        c = c + 1;
+    }
+    if mode == 2 { return zjs_bool(0); }
+    return zjs_int32(-1);
+}
+fn host_typed_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return ta_search(ctx, args, argc, 0); }
+fn host_typed_array_last_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return ta_search(ctx, args, argc, 1); }
+fn host_typed_array_includes(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue { return ta_search(ctx, args, argc, 2); }
+
+fn host_typed_array_reverse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let tv = ctx.host_this;
+    if !ta_require_this(ctx, tv) { return zjs_undefined(); }
+    let ta = zjs_as_typed_array(tv);
+    let lo: u32 = 0;
+    let hi: u32 = ta.length;
+    while lo + 1 <= hi && hi > 0 && lo < hi - 1 {
+        let a = ta_load(ta, lo);
+        let b = ta_load(ta, hi - 1);
+        ta_store(ctx, ta, lo, b);
+        ta_store(ctx, ta, hi - 1, a);
+        lo = lo + 1; hi = hi - 1;
+    }
+    return tv;
+}
+
+fn host_typed_array_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !ta_require_this(ctx, ctx.host_this) { return zjs_undefined(); }
+    return build_array_iterator(ctx, ctx.host_this, 1);
+}
+fn host_typed_array_values(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !ta_require_this(ctx, ctx.host_this) { return zjs_undefined(); }
+    return build_array_iterator(ctx, ctx.host_this, 0);
+}
+fn host_typed_array_entries(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    if !ta_require_this(ctx, ctx.host_this) { return zjs_undefined(); }
+    return build_array_iterator(ctx, ctx.host_this, 2);
+}
+
+// %TypedArray%() / new %TypedArray%() — the abstract superclass is never
+// directly callable or constructable (ECMA-262 §23.2.1.1).
+fn host_typed_array_abstract(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+        (char*)"Abstract class TypedArray not directly constructable", 52);
+    ctx.pending_throw_active = true;
+    ctx.pending_throw_value  = err;
+    return zjs_undefined();
+}
+
+// @@toStringTag getter — returns the constructor name ("Int8Array" …) so
+// Object.prototype.toString gives "[object Int8Array]".
+fn host_typed_array_to_string_tag(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let tv = ctx.host_this;
+    if zjs_is_typed_array(tv) == 0 { return zjs_undefined(); }
+    let nm = ta_kind_name(zjs_as_typed_array(tv).kind);
+    let nl: u32 = 0; raw { nl = (uint32_t)strlen(nm); }
+    return ctx_intern_string(ctx, nm, nl);
+}
+
 // =====================================================================
 // ArrayBuffer host functions.
 // =====================================================================
@@ -26620,6 +26911,42 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let ta_sub_ptr:     void* = NULL; raw { ta_sub_ptr     = (void*)host_typed_array_subarray; }
     let ta_set_ptr:     void* = NULL; raw { ta_set_ptr     = (void*)host_typed_array_set; }
     let ta_ts_ptr:      void* = NULL; raw { ta_ts_ptr      = (void*)host_typed_array_to_string; }
+    // Generic %TypedArray%.prototype iteration methods, installed on every
+    // per-kind proto via zjs_install_methods (they dispatch over ta_load/
+    // ta_store reading ctx.host_this as the typed array).
+    let ta_gen_table_p: void* = NULL;
+    let ta_gen_table_n: usize = 0;
+    raw {
+        static const ZjsBuiltinSpec ta_gen_specs[] = {
+            {"at",             2, (void*)host_typed_array_at,              1},
+            {"join",           4, (void*)host_typed_array_join,           1},
+            {"forEach",        7, (void*)host_typed_array_for_each,        1},
+            {"map",            3, (void*)host_typed_array_map,            1},
+            {"filter",         6, (void*)host_typed_array_filter,         1},
+            {"reduce",         6, (void*)host_typed_array_reduce,         1},
+            {"reduceRight",   11, (void*)host_typed_array_reduce_right,   1},
+            {"every",          5, (void*)host_typed_array_every,          1},
+            {"some",           4, (void*)host_typed_array_some,           1},
+            {"find",           4, (void*)host_typed_array_find,           1},
+            {"findIndex",      9, (void*)host_typed_array_find_index,      1},
+            {"findLast",       8, (void*)host_typed_array_find_last,       1},
+            {"findLastIndex", 13, (void*)host_typed_array_find_last_index, 1},
+            {"indexOf",        7, (void*)host_typed_array_index_of,        1},
+            {"lastIndexOf",   11, (void*)host_typed_array_last_index_of,  1},
+            {"includes",       8, (void*)host_typed_array_includes,        1},
+            {"reverse",        7, (void*)host_typed_array_reverse,         0},
+            {"keys",           4, (void*)host_typed_array_keys,            0},
+            {"entries",        7, (void*)host_typed_array_entries,         0},
+        };
+        ta_gen_table_p = (void*)ta_gen_specs;
+        ta_gen_table_n = sizeof(ta_gen_specs) / sizeof(ta_gen_specs[0]);
+    }
+    let ta_values_ptr: void* = NULL; raw { ta_values_ptr = (void*)host_typed_array_values; }
+    let ta_tag_ptr:    void* = NULL; raw { ta_tag_ptr    = (void*)host_typed_array_to_string_tag; }
+    // Bytes-per-element, indexed parallel to ta_protos below.
+    let ta_bpe: u32[8];
+    ta_bpe[0] = 1; ta_bpe[1] = 1; ta_bpe[2] = 2; ta_bpe[3] = 2;
+    ta_bpe[4] = 4; ta_bpe[5] = 4; ta_bpe[6] = 4; ta_bpe[7] = 8;
 
     let i8_ctor_ptr:   void* = NULL; raw { i8_ctor_ptr   = (void*)host_int8_array_ctor; }
     let u8c_ctor_ptr:  void* = NULL; raw { u8c_ctor_ptr  = (void*)host_uint8_clamped_array_ctor; }
@@ -26670,20 +26997,61 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     ta_ctors[0] = i8_ctor_v; ta_ctors[1] = u8c_ctor_v; ta_ctors[2] = i16_ctor_v;
     ta_ctors[3] = u16_ctor_v; ta_ctors[4] = i32_ctor_v; ta_ctors[5] = u32_ctor_v;
     ta_ctors[6] = f32_ctor_v; ta_ctors[7] = f64_ctor_v;
+    // === %TypedArray% intrinsic + shared %TypedArray%.prototype ===
+    // The abstract superclass. All generic methods live on the shared
+    // prototype; each per-kind prototype chains its [[Prototype]] here, and
+    // each per-kind constructor's [[Prototype]] is the intrinsic — so the
+    // test262 harness's `Object.getPrototypeOf(Int8Array)` resolves it and
+    // `TypedArray.prototype.<method>` is the single shared function.
+    let ta_abstract_ptr: void* = NULL; raw { ta_abstract_ptr = (void*)host_typed_array_abstract; }
+    let ta_intrinsic_v = ctx_make_host_function_arity(ctx, (char*)"TypedArray", ta_abstract_ptr, 0);
+    ctx.typed_array_ctor = ta_intrinsic_v;
+    ctx.typed_array_proto = zjs_as_object(ctx_new_object(ctx));
+    zjs_as_host_function(ta_intrinsic_v).prototype = ctx.typed_array_proto;
+    let ta_sp = ctx.typed_array_proto;
+    object_set(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"constructor", 11), ta_intrinsic_v);
+    object_set(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"fill", 4),
+               ctx_make_host_function_arity(ctx, (char*)"fill", ta_fill_ptr, 1));
+    object_set(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"slice", 5),
+               ctx_make_host_function_arity(ctx, (char*)"slice", ta_slice_ptr, 2));
+    object_set(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"subarray", 8),
+               ctx_make_host_function_arity(ctx, (char*)"subarray", ta_sub_ptr, 2));
+    object_set(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"set", 3),
+               ctx_make_host_function_arity(ctx, (char*)"set", ta_set_ptr, 1));
+    object_set(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"toString", 8),
+               ctx_make_host_function(ctx, (char*)"toString", ta_ts_ptr));
+    // Generic iteration methods (at/map/filter/reduce/find/.../keys/entries).
+    zjs_install_methods(ctx, ta_sp, ta_gen_table_p, ta_gen_table_n);
+    // values + @@iterator must be the SAME function object (spec §23.2.3.33).
+    let ta_values_fn = ctx_make_host_function_arity(ctx, (char*)"values", ta_values_ptr, 0);
+    object_set(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"values", 6), ta_values_fn);
+    object_set(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"@@iterator", 10), ta_values_fn);
+    // %TypedArray%.prototype[@@toStringTag] — get-only accessor returning the
+    // kind name (non-enumerable, configurable) → Object.prototype.toString
+    // gives "[object Int8Array]" etc. for the receiver.
+    let ta_tag_getter = ctx_make_host_function_arity(ctx, (char*)"get [Symbol.toStringTag]", ta_tag_ptr, 0);
+    let ta_tag_acc = zjs_accessor_new(ta_tag_getter, zjs_undefined());
+    ctx_register_cell(ctx, (void*)ta_tag_acc);
+    object_define_property_slot(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"@@toStringTag", 13),
+                                zjs_cell_from_ptr((void*)ta_tag_acc), PROP_CONFIGURABLE);
+    // Methods aren't constructable (`new int8arr.map()` → TypeError).
+    mark_proto_methods_non_constructor(ctx, ta_sp);
+
     let ti: u32 = 0;
     while ti < 8 {
         let p = ta_protos[ti];
+        // Inherit the shared prototype; own props are constructor + BYTES_PER_ELEMENT.
+        p.proto = ctx.typed_array_proto;
         object_set(ctx, p, ctx_intern_atom(ctx, (char*)"constructor", 11), ta_ctors[ti]);
-        object_set(ctx, p, ctx_intern_atom(ctx, (char*)"fill", 4),
-                   ctx_make_host_function_arity(ctx, (char*)"fill", ta_fill_ptr, 1));
-        object_set(ctx, p, ctx_intern_atom(ctx, (char*)"slice", 5),
-                   ctx_make_host_function_arity(ctx, (char*)"slice", ta_slice_ptr, 2));
-        object_set(ctx, p, ctx_intern_atom(ctx, (char*)"subarray", 8),
-                   ctx_make_host_function_arity(ctx, (char*)"subarray", ta_sub_ptr, 2));
-        object_set(ctx, p, ctx_intern_atom(ctx, (char*)"set", 3),
-                   ctx_make_host_function_arity(ctx, (char*)"set", ta_set_ptr, 1));
-        object_set(ctx, p, ctx_intern_atom(ctx, (char*)"toString", 8),
-                   ctx_make_host_function(ctx, (char*)"toString", ta_ts_ptr));
+        // BYTES_PER_ELEMENT on the proto: {writable:false,enum:false,config:false}.
+        object_define_property_slot(ctx, p, ctx_intern_atom(ctx, (char*)"BYTES_PER_ELEMENT", 17),
+                                    zjs_int32((i32)ta_bpe[ti]), 0);
+        // Constructor: [[Prototype]] = %TypedArray%, plus its own BYTES_PER_ELEMENT.
+        let ctor_o = zjs_as_host_function(ta_ctors[ti]);
+        ctor_o.proto_override = ta_intrinsic_v;
+        if ctor_o.props == NULL { ctor_o.props = zjs_as_object(ctx_new_object(ctx)); }
+        object_define_property_slot(ctx, ctor_o.props, ctx_intern_atom(ctx, (char*)"BYTES_PER_ELEMENT", 17),
+                                    zjs_int32((i32)ta_bpe[ti]), 0);
         ti = ti + 1;
     }
 
@@ -27648,6 +28016,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     proto_mark_nonenum(ctx.string_proto);
     proto_mark_nonenum(ctx.regexp_proto);
     proto_mark_nonenum(ctx.promise_ctor_proto);
+    proto_mark_nonenum(ctx.typed_array_proto);
     // Prototype methods are not constructors per spec — `new
     // Array.prototype.push()` should throw TypeError. Mark them now
     // that the method tables are installed.
