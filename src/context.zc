@@ -3690,6 +3690,25 @@ fn object_set_exotic_proto(ctx: ZjsContext*, o: ZjsObject*, proto: ZjsValue) -> 
     ctx.any_exotic_proto = true;
 }
 
+// Store an exotic value under PROTO_EXOTIC_KEY in a Function's props bag — used
+// when a callee's `.prototype` is assigned a non-plain-object (an Array). The
+// bag, not obj.proto, holds it; property_get("prototype") + the construct path
+// read it back via object_get_exotic_proto.
+fn object_store_exotic_proto(ctx: ZjsContext*, props: ZjsObject*, value: ZjsValue) -> void {
+    let k = ctx_intern_atom(ctx, PROTO_EXOTIC_KEY, PROTO_EXOTIC_KEY_LEN);
+    object_set(ctx, props, k, value);
+    ctx.any_exotic_proto = true;
+}
+
+// Drop a previously-stashed exotic prototype (callee's `.prototype` reset to a
+// plain object). Marks the slot deleted so object_get_exotic_proto skips it.
+fn object_clear_exotic_proto(ctx: ZjsContext*, o: ZjsObject*) -> void {
+    if o == NULL || o.cls == NULL { return; }
+    let k = ctx_intern_atom(ctx, PROTO_EXOTIC_KEY, PROTO_EXOTIC_KEY_LEN);
+    let slot = class_find_slot(o.cls, k);
+    if slot >= 0 { o.slots[(u32)slot] = zjs_deleted(); }
+}
+
 fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
     if kind == 0 {
         // for-in: enumerate own + inherited string keys, in insertion
@@ -21529,24 +21548,24 @@ fn host_is_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     if argc == 0 { return zjs_bool(0); }
     let this_val = ctx.host_this;
     let v = args[0];
-    // We need a way to compare `this_val` (a ZjsObject) against each
-    // proto in V's chain. Only object-ish `this` can be a proto.
-    let proto_target: ZjsObject* = NULL;
-    if zjs_is_object(this_val) != 0 { proto_target = zjs_as_object(this_val); }
-    else { return zjs_bool(0); }
-    // V must have a proto chain we can walk — objects/arrays are
-    // covered uniformly via getPrototypeOf-style logic.
-    let cur: ZjsObject* = NULL;
-    if zjs_is_object(v) != 0 {
-        cur = zjs_as_object(v).proto;
-    } else if zjs_is_array(v) != 0 {
-        cur = ctx.array_proto;
-    } else {
-        return zjs_bool(0);
-    }
-    while cur != NULL {
-        if cur == proto_target { return zjs_bool(1); }
-        cur = cur.proto;
+    // Only an object-type `this` can be on a prototype chain; non-object V
+    // has no chain. Walk V's [[Prototype]] chain one step at a time via
+    // get_prototype_of (which handles plain / array / exotic / proxy
+    // prototypes uniformly), comparing object identity to `this`.
+    if value_is_object_type(this_val) == 0 { return zjs_bool(0); }
+    if value_is_object_type(v) == 0 { return zjs_bool(0); }
+    let cur = v;
+    let steps: u32 = 0;
+    while true {
+        let one: ZjsValue[1]; one[0] = cur;
+        let one_p: ZjsValue* = NULL; raw { one_p = &one[0]; }
+        let p = host_object_get_prototype_of(ctx, one_p, 1);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_null(p) != 0 || value_is_object_type(p) == 0 { return zjs_bool(0); }
+        if zjs_cell_as_ptr(p) == zjs_cell_as_ptr(this_val) { return zjs_bool(1); }
+        cur = p;
+        steps = steps + 1;
+        if steps > 1000000 { return zjs_bool(0); }
     }
     return zjs_bool(0);
 }

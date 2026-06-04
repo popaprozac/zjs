@@ -1003,6 +1003,12 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 let fp = zjs_cell_as_ptr(obj);
                 let f: Function* = NULL;
                 raw { f = (Function*)fp; }
+                // An exotic .prototype (e.g. `foo.prototype = [array]`) lives
+                // in the props bag, shadowing the ZjsObject* prototype field.
+                if ctx.any_exotic_proto && f.props != NULL {
+                    let ex = object_get_exotic_proto(ctx, f.props);
+                    if zjs_is_undefined(ex) == 0 { return ex; }
+                }
                 // Class methods / accessors don't have a .prototype.
                 if f.is_method { return zjs_undefined(); }
                 if f.prototype == NULL {
@@ -1173,6 +1179,18 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 let fp_p = cl_p.function;
                 let f_p: Function* = NULL;
                 raw { f_p = (Function*)fp_p; }
+                if ctx.any_exotic_proto {
+                    // Per-instance (generic closure) replacement first, then
+                    // the shared template (class ctors keep it on f_p.props).
+                    if cl_p.props != NULL {
+                        let exc = object_get_exotic_proto(ctx, cl_p.props);
+                        if zjs_is_undefined(exc) == 0 { return exc; }
+                    }
+                    if f_p.props != NULL {
+                        let ex = object_get_exotic_proto(ctx, f_p.props);
+                        if zjs_is_undefined(ex) == 0 { return ex; }
+                    }
+                }
                 if f_p.is_method { return zjs_undefined(); }
                 if f_p.prototype == NULL {
                     let proto_v = ctx_new_object(ctx);
@@ -1352,6 +1370,10 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
             let hf = zjs_as_host_function(obj);
             if is_proto != 0 {
+                if ctx.any_exotic_proto && hf.props != NULL {
+                    let ex = object_get_exotic_proto(ctx, hf.props);
+                    if zjs_is_undefined(ex) == 0 { return ex; }
+                }
                 // Built-in (non-constructor) host functions have no
                 // .prototype — return undefined rather than lazy-
                 // creating one. Constructors that genuinely need it
@@ -1885,13 +1907,24 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         let fp = zjs_cell_as_ptr(obj);
         let f: Function* = NULL;
         raw { f = (Function*)fp; }
-        if is_proto != 0 && zjs_is_object(value) != 0 {
-            f.prototype = zjs_as_object(value);
+        if is_proto != 0 {
+            if zjs_is_object(value) != 0 {
+                f.prototype = zjs_as_object(value);
+                if f.props != NULL { object_clear_exotic_proto(ctx, f.props); }
+                return;
+            }
+            if proto_is_exotic(value) {
+                // `foo.prototype = [array]` — instances must inherit from it.
+                if f.props == NULL {
+                    let pv = ctx_new_object(ctx);
+                    f.props = zjs_as_object(pv);
+                }
+                object_store_exotic_proto(ctx, f.props, value);
+                return;
+            }
+            // `.prototype = primitive` is a no-op in MVP (writable but coerces).
             return;
         }
-        // `.prototype = non-object` is a no-op in MVP (spec coerces /
-        // ignores per writable=false in some envs); preserve that.
-        if is_proto != 0 { return; }
         if f.props == NULL {
             let pv = ctx_new_object(ctx);
             f.props = zjs_as_object(pv);
@@ -1918,11 +1951,22 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
             let kn2 = ks2.length;
             let is_proto2: int = 0;
             raw { is_proto2 = (kn2 == 9 && memcmp(kd2, "prototype", 9) == 0) ? 1 : 0; }
-            if is_proto2 != 0 && zjs_is_object(value) != 0 {
-                f2.prototype = zjs_as_object(value);
+            if is_proto2 != 0 {
+                if zjs_is_object(value) != 0 {
+                    f2.prototype = zjs_as_object(value);
+                    if f2.props != NULL { object_clear_exotic_proto(ctx, f2.props); }
+                    return;
+                }
+                if proto_is_exotic(value) {
+                    if f2.props == NULL {
+                        let pv = ctx_new_object(ctx);
+                        f2.props = zjs_as_object(pv);
+                    }
+                    object_store_exotic_proto(ctx, f2.props, value);
+                    return;
+                }
                 return;
             }
-            if is_proto2 != 0 { return; }
             if f2.props == NULL {
                 let pv = ctx_new_object(ctx);
                 f2.props = zjs_as_object(pv);
@@ -1943,9 +1987,21 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
             is_name3   = (kn3 == 4 && memcmp(kd3, "name",      4) == 0) ? 1 : 0;
             is_length3 = (kn3 == 6 && memcmp(kd3, "length",    6) == 0) ? 1 : 0;
         }
-        // .prototype on a generic closure would alias the shared
-        // template; .name / .length are writable:false sloppy-drop.
-        if is_proto3 != 0 || is_name3 != 0 || is_length3 != 0 { return; }
+        // A wholesale `foo.prototype = obj` replacement on a generic closure
+        // can't use the shared template's prototype field (siblings share it),
+        // so store it PER-INSTANCE via the exotic-proto mechanism — instances
+        // delegate into it on lookup. .name / .length are sloppy-drops.
+        if is_proto3 != 0 {
+            if value_is_object_type(value) {
+                if cl.props == NULL {
+                    let pv = ctx_new_object(ctx);
+                    cl.props = zjs_as_object(pv);
+                }
+                object_store_exotic_proto(ctx, cl.props, value);
+            }
+            return;
+        }
+        if is_name3 != 0 || is_length3 != 0 { return; }
         if cl.props == NULL {
             let pv = ctx_new_object(ctx);
             cl.props = zjs_as_object(pv);
@@ -1967,9 +2023,21 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
             is_length = (kn == 6 && memcmp(kd, "length", 6) == 0) ? 1 : 0;
         }
         let hf = zjs_as_host_function(obj);
-        if is_proto != 0 && zjs_is_object(value) != 0 {
-            hf.prototype = zjs_as_object(value);
-            return;
+        if is_proto != 0 {
+            if zjs_is_object(value) != 0 {
+                hf.prototype = zjs_as_object(value);
+                if hf.props != NULL { object_clear_exotic_proto(ctx, hf.props); }
+                return;
+            }
+            if proto_is_exotic(value) {
+                if hf.props == NULL {
+                    let pv = ctx_new_object(ctx);
+                    hf.props = zjs_as_object(pv);
+                }
+                object_store_exotic_proto(ctx, hf.props, value);
+                return;
+            }
+            // fall through: name/length handling below for non-prototype keys
         }
         // ECMA-262 §10.2.4: built-in function `name` / `length`
         // descriptors are { writable: false, configurable: true }.
@@ -6387,10 +6455,18 @@ fn interpret_inner_full(ctx: ZjsContext*,
             // property_get, so even a never-touched ctor.prototype is
             // a real object after `new` runs.
             let proto_obj: ZjsObject* = NULL;
+            // An exotic `.prototype` (e.g. `foo.prototype = [array]`) makes the
+            // new object's [[Prototype]] that value (stashed via the exotic-proto
+            // slot). Generic closures keep it per-instance on cl.props.
+            let exotic_proto_v: ZjsValue = zjs_undefined();
             if zjs_is_function(callee) != 0 {
                 let fp = zjs_cell_as_ptr(callee);
                 let f: Function* = NULL;
                 raw { f = (Function*)fp; }
+                if ctx.any_exotic_proto && f.props != NULL {
+                    let ex = object_get_exotic_proto(ctx, f.props);
+                    if zjs_is_undefined(ex) == 0 { exotic_proto_v = ex; }
+                }
                 if f.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     f.prototype = zjs_as_object(pv);
@@ -6406,6 +6482,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let fp2 = cl.function;
                 let f: Function* = NULL;
                 raw { f = (Function*)fp2; }
+                if ctx.any_exotic_proto {
+                    if cl.props != NULL {
+                        let exc = object_get_exotic_proto(ctx, cl.props);
+                        if zjs_is_undefined(exc) == 0 { exotic_proto_v = exc; }
+                    }
+                    if zjs_is_undefined(exotic_proto_v) != 0 && f.props != NULL {
+                        let ex = object_get_exotic_proto(ctx, f.props);
+                        if zjs_is_undefined(ex) == 0 { exotic_proto_v = ex; }
+                    }
+                }
                 if f.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     f.prototype = zjs_as_object(pv);
@@ -6418,6 +6504,10 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 proto_obj = f.prototype;
             } else if zjs_is_host_function(callee) != 0 {
                 let hf = zjs_as_host_function(callee);
+                if ctx.any_exotic_proto && hf.props != NULL {
+                    let ex = object_get_exotic_proto(ctx, hf.props);
+                    if zjs_is_undefined(ex) == 0 { exotic_proto_v = ex; }
+                }
                 if hf.prototype == NULL {
                     let pv = ctx_new_object(ctx);
                     hf.prototype = zjs_as_object(pv);
@@ -6430,7 +6520,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
 
             let new_obj_v = ctx_new_object(ctx);
             let new_obj = zjs_as_object(new_obj_v);
-            new_obj.proto = proto_obj;
+            if zjs_is_undefined(exotic_proto_v) == 0 {
+                object_set_exotic_proto(ctx, new_obj, exotic_proto_v);
+            } else {
+                new_obj.proto = proto_obj;
+            }
 
             let saved_this = ctx.host_this;
             let saved_nt = ctx.new_target_active;
@@ -7341,12 +7435,20 @@ fn zjs_construct_value_nt(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, a
         return zjs_undefined();
     }
 
-    // Resolve or lazily create the constructor's .prototype.
+    // Resolve or lazily create the constructor's .prototype. An exotic
+    // .prototype (e.g. `foo.prototype = [array]`) lives in the props bag and,
+    // when present, becomes the new object's [[Prototype]] (stashed via
+    // object_set_exotic_proto below instead of the ZjsObject* proto field).
     let proto_obj: ZjsObject* = NULL;
+    let exotic_proto_v: ZjsValue = zjs_undefined();
     if zjs_is_function(callee) != 0 {
         let fp = zjs_cell_as_ptr(callee);
         let f: Function* = NULL;
         raw { f = (Function*)fp; }
+        if ctx.any_exotic_proto && f.props != NULL {
+            let ex = object_get_exotic_proto(ctx, f.props);
+            if zjs_is_undefined(ex) == 0 { exotic_proto_v = ex; }
+        }
         if f.prototype == NULL {
             let pv = ctx_new_object(ctx);
             f.prototype = zjs_as_object(pv);
@@ -7360,6 +7462,16 @@ fn zjs_construct_value_nt(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, a
         let fp2 = cl.function;
         let f2: Function* = NULL;
         raw { f2 = (Function*)fp2; }
+        if ctx.any_exotic_proto {
+            if cl.props != NULL {
+                let exc = object_get_exotic_proto(ctx, cl.props);
+                if zjs_is_undefined(exc) == 0 { exotic_proto_v = exc; }
+            }
+            if zjs_is_undefined(exotic_proto_v) != 0 && f2.props != NULL {
+                let ex = object_get_exotic_proto(ctx, f2.props);
+                if zjs_is_undefined(ex) == 0 { exotic_proto_v = ex; }
+            }
+        }
         if f2.prototype == NULL {
             let pv = ctx_new_object(ctx);
             f2.prototype = zjs_as_object(pv);
@@ -7370,6 +7482,10 @@ fn zjs_construct_value_nt(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, a
         proto_obj = f2.prototype;
     } else if zjs_is_host_function(callee) != 0 {
         let hf = zjs_as_host_function(callee);
+        if ctx.any_exotic_proto && hf.props != NULL {
+            let ex = object_get_exotic_proto(ctx, hf.props);
+            if zjs_is_undefined(ex) == 0 { exotic_proto_v = ex; }
+        }
         if hf.prototype == NULL {
             let pv = ctx_new_object(ctx);
             hf.prototype = zjs_as_object(pv);
@@ -7390,13 +7506,23 @@ fn zjs_construct_value_nt(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, a
         let proto_v = property_get(ctx, new_target,
             zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"prototype", 9)));
         if ctx.pending_throw_active { return zjs_undefined(); }
-        if value_is_object_type(proto_v) != 0 { proto_obj = zjs_as_object(proto_v); }
-        else { proto_obj = ctx.object_proto; }
+        // newTarget's prototype overrides the callee-resolved one.
+        if proto_is_exotic(proto_v) {
+            exotic_proto_v = proto_v;
+        } else {
+            exotic_proto_v = zjs_undefined();
+            if value_is_object_type(proto_v) != 0 { proto_obj = zjs_as_object(proto_v); }
+            else { proto_obj = ctx.object_proto; }
+        }
     }
 
     let new_obj_v = ctx_new_object(ctx);
     let new_obj = zjs_as_object(new_obj_v);
-    new_obj.proto = proto_obj;
+    if zjs_is_undefined(exotic_proto_v) == 0 {
+        object_set_exotic_proto(ctx, new_obj, exotic_proto_v);
+    } else {
+        new_obj.proto = proto_obj;
+    }
 
     let saved_this = ctx.host_this;
     let saved_nt = ctx.new_target_active;
