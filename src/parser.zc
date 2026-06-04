@@ -3530,6 +3530,17 @@ fn parse_postfix(p: Parser*) -> AstNode* {
     return operand;
 }
 
+// parse_expression with the for-head no-in restriction lifted — used for
+// bracketed contexts (computed member `obj[a in b]`) that are [+In] even
+// inside a `for(...)` head.
+fn parse_expression_in(p: Parser*) -> AstNode* {
+    let saved_no_in = p.no_in;
+    p.no_in = false;
+    let e = parse_expression(p);
+    p.no_in = saved_no_in;
+    return e;
+}
+
 // Level 1 — `new`, call, member, optional chain.
 fn parse_call_member(p: Parser*) -> AstNode* {
     let expr: AstNode* = NULL;
@@ -3578,7 +3589,7 @@ fn parse_call_member(p: Parser*) -> AstNode* {
                     callee = mnode;
                 } else if kk == TokenKind::LBracket {
                     advance(p);
-                    let prop = parse_expression(p);
+                    let prop = parse_expression_in(p);
                     if prop == NULL { return NULL; }
                     let close = peek(p);
                     if !expect_kind(p, TokenKind::RBracket) { return NULL; }
@@ -3627,7 +3638,7 @@ fn parse_call_member(p: Parser*) -> AstNode* {
             expr = mnode;
         } else if k == TokenKind::LBracket {
             advance(p);
-            let prop = parse_expression(p);
+            let prop = parse_expression_in(p);
             if prop == NULL { return NULL; }
             let close = peek(p);
             if !expect_kind(p, TokenKind::RBracket) { return NULL; }
@@ -3676,7 +3687,7 @@ fn parse_call_member(p: Parser*) -> AstNode* {
                 expr = cnode;
             } else if after == TokenKind::LBracket {
                 advance(p);
-                let prop = parse_expression(p);
+                let prop = parse_expression_in(p);
                 if prop == NULL { return NULL; }
                 let close = peek(p);
                 if !expect_kind(p, TokenKind::RBracket) { return NULL; }
@@ -3712,6 +3723,10 @@ struct ArgsResult {
 
 fn parse_arguments(p: Parser*) -> ArgsResult {
     let lparen = advance(p);     // consume '('
+    // Arguments are [+In] — reset the for-head no-in restriction inside
+    // the parens (`for (f(a in b); ;)`). Restored before returning.
+    let saved_no_in_args = p.no_in;
+    p.no_in = false;
     let cap: u32 = 4;
     let count: u32 = 0;
     let buf = alloc_n<AstNode*>((usize)cap);
@@ -3742,6 +3757,7 @@ fn parse_arguments(p: Parser*) -> ArgsResult {
         }
     }
 
+    p.no_in = saved_no_in_args;
     let close = peek(p);
     expect_kind(p, TokenKind::RParen);
 
@@ -4210,7 +4226,12 @@ fn parse_primary(p: Parser*) -> AstNode* {
     }
     if k == TokenKind::LParen {
         advance(p);
+        // A parenthesized expression is [+In] even inside a for-head
+        // (`for ((a in b); ;)`). Reset the no-in restriction inside.
+        let saved_no_in_paren = p.no_in;
+        p.no_in = false;
         let inner = parse_expression(p);
+        p.no_in = saved_no_in_paren;
         if inner == NULL { return NULL; }
         let close = peek(p);
         if !expect_kind(p, TokenKind::RParen) { return NULL; }
@@ -4233,6 +4254,11 @@ fn parse_primary(p: Parser*) -> AstNode* {
 
 fn parse_array(p: Parser*) -> AstNode* {
     let lbrack = advance(p);        // consume '['
+    // Inside `[ ... ]` the elements are [+In] even when the array literal
+    // appears in a `for(...)` head (`for (x = [a in b]; ;)`), so the for-head
+    // no-in restriction stops at the bracket. Restored before returning.
+    let saved_no_in_arr = p.no_in;
+    p.no_in = false;
     let cap: u32 = 4;
     let count: u32 = 0;
     let buf = alloc_n<AstNode*>((usize)cap);
@@ -4274,6 +4300,7 @@ fn parse_array(p: Parser*) -> AstNode* {
         if elem.kind == NodeKind::Spread { elem.bool_value = true; }
     }
 
+    p.no_in = saved_no_in_arr;
     let close = peek(p);
     expect_kind(p, TokenKind::RBracket);
 
@@ -4288,6 +4315,11 @@ fn parse_array(p: Parser*) -> AstNode* {
 
 fn parse_object(p: Parser*) -> AstNode* {
     let lbrace = advance(p);        // consume '{'
+    // Object-literal computed keys and property values are [+In] even when
+    // the literal appears in a `for(...)` head. Reset the no-in restriction
+    // inside the braces; restored at the (successful) return.
+    let saved_no_in_obj = p.no_in;
+    p.no_in = false;
     let cap: u32 = 4;
     let count: u32 = 0;
     let buf = alloc_n<AstNode*>((usize)cap);
@@ -4619,6 +4651,7 @@ fn parse_object(p: Parser*) -> AstNode* {
     if count > 0 { alloc_list_push(&p.tracker, (void*)buf); }
     else         { dealloc(buf); buf = NULL; }
 
+    p.no_in = saved_no_in_obj;
     let node = new_node(&p.tracker, NodeKind::Object, lbrace.start, close.start + close.length);
     node.children = buf;
     node.children_count = count;
