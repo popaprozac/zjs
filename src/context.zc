@@ -230,6 +230,14 @@ struct ZjsContext {
     attr_pool:       u8**;
     slot_pool_count: u32;
 
+    // Freelist for dead young ZjsObject cells. Short-lived objects (the
+    // dominant churn) recycle their whole cell here instead of free/malloc.
+    // Only YOUNG cells are pooled (from gc_sweep_young) — they're never
+    // remembered-set sources, so reuse can't strand a stale rem-set entry.
+    // Capped at OBJ_POOL_MAX; drained at teardown.
+    obj_pool:        ZjsObject**;
+    obj_pool_count:  u32;
+
     // Remembered set — old cells that hold a pointer to a young cell.
     // Populated by gc_write_barrier on every old.slot=young store and
     // at promotion time (walking the new-old cell's slots). Each entry
@@ -611,6 +619,8 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
     result.slot_pool         = NULL;
     result.attr_pool         = NULL;
     result.slot_pool_count   = 0;
+    result.obj_pool          = NULL;
+    result.obj_pool_count    = 0;
     // calloc gave us {bits: 0}; explicitly initialize the implicit
     // host receiver to JS `undefined`.
     result.host_this = zjs_undefined();
@@ -714,6 +724,14 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     ctx.slot_pool_count = 0;
     if ctx.slot_pool != NULL { dealloc(ctx.slot_pool); ctx.slot_pool = NULL; }
     if ctx.attr_pool != NULL { dealloc(ctx.attr_pool); ctx.attr_pool = NULL; }
+    // Drain the object-cell freelist (recycled cells are not in any GC list).
+    let cp: u32 = 0;
+    while cp < ctx.obj_pool_count {
+        dealloc(ctx.obj_pool[cp]);
+        cp = cp + 1;
+    }
+    ctx.obj_pool_count = 0;
+    if ctx.obj_pool != NULL { dealloc(ctx.obj_pool); ctx.obj_pool = NULL; }
     // Free per-timer args buffers (the timer array itself is freed
     // below with the rest of the ctx-owned buffers).
     let ti: u32 = 0;
@@ -2155,6 +2173,9 @@ fn gc_sweep_young(ctx: ZjsContext*) -> u32 {
         if h.mark != 0 {
             ctx_register_cell_old(ctx, p);
             promoted = promoted + 1;
+        } else if h.type_tag == TAG_OBJECT {
+            // Dead young plain object — recycle the whole cell for reuse.
+            object_recycle_young(ctx, p);
         } else {
             gc_free_one(ctx, p);
         }
@@ -2618,7 +2639,17 @@ fn ctx_intern_atom_take(ctx: ZjsContext*, data: char*, length: u32) -> ZjsString
 // Initializes with the root empty class — fresh property additions
 // will spawn transitions on first write.
 fn ctx_new_object(ctx: ZjsContext*) -> ZjsValue {
-    let o = zjs_object_new();
+    // Reuse a recycled cell from the object pool when available — zero it
+    // back to the fresh-zalloc state (mark/age/slots/flags all 0) + retag.
+    let o: ZjsObject* = NULL;
+    if ctx.obj_pool_count > 0 {
+        ctx.obj_pool_count = ctx.obj_pool_count - 1;
+        o = ctx.obj_pool[ctx.obj_pool_count];
+        raw { memset((void*)o, 0, sizeof(ZjsObject)); }
+        o.header.type_tag = TAG_OBJECT;
+    } else {
+        o = zjs_object_new();
+    }
     o.cls = ctx.empty_class;
     // Default proto: every {} inherits from Object.prototype.
     // Skipped while bootstrapping object_proto itself (it's NULL then).
@@ -2635,6 +2666,7 @@ fn ctx_new_object(ctx: ZjsContext*) -> ZjsValue {
 // heap normally. Pool depth is capped so a burst of frees can't balloon RSS.
 def SLOT_POOL_SLOTS: u32 = 4;
 def SLOT_POOL_MAX:   u32 = 2048;
+def OBJ_POOL_MAX:    u32 = 2048;
 
 // Pop a SLOT_POOL_SLOTS-sized (slots, attrs) pair from the freelist, or
 // allocate fresh when empty. Contents are stale — the caller initializes.
@@ -2709,18 +2741,43 @@ fn object_grow_slots(ctx: ZjsContext*, obj: ZjsObject*, needed: u32) -> void {
     obj.slot_cap = new_cap;
 }
 
-// Free an object cell, recycling a pool-sized slots/attrs pair through the
-// freelist (or releasing larger/heap arrays directly). ctx-aware variant of
-// object_free_void used by the GC sweep + teardown.
-fn object_free_pooled(ctx: ZjsContext*, p: void*) -> void {
-    let o: ZjsObject* = NULL;
-    raw { o = (ZjsObject*)p; }
-    if o == NULL { return; }
+// Release an object's slots/attrs — recycle a pool-sized pair through the
+// slot freelist, or hand larger/heap arrays back to the allocator.
+fn object_release_slots(ctx: ZjsContext*, o: ZjsObject*) -> void {
     if o.slots != NULL && o.slot_cap == SLOT_POOL_SLOTS {
         slotpair_free(ctx, o.slots, o.attrs);
     } else {
         dealloc(o.slots);
         dealloc(o.attrs);
+    }
+}
+
+// Free an object cell (slots recycled, cell released to the heap). Used by
+// gc_free_one for the major sweep + teardown, where cells are NOT pooled.
+fn object_free_pooled(ctx: ZjsContext*, p: void*) -> void {
+    let o: ZjsObject* = NULL;
+    raw { o = (ZjsObject*)p; }
+    if o == NULL { return; }
+    object_release_slots(ctx, o);
+    dealloc(o);
+}
+
+// Recycle a dead YOUNG object cell: pool its slots AND the cell itself for
+// reuse by ctx_new_object. Only called from gc_sweep_young (young cells are
+// never rem-set sources, so this can't strand a stale remembered-set entry).
+fn object_recycle_young(ctx: ZjsContext*, p: void*) -> void {
+    let o: ZjsObject* = NULL;
+    raw { o = (ZjsObject*)p; }
+    if o == NULL { return; }
+    object_release_slots(ctx, o);
+    if ctx.obj_pool == NULL {
+        ctx.obj_pool = alloc_n<ZjsObject*>((usize)OBJ_POOL_MAX);
+        ctx.obj_pool_count = 0;
+    }
+    if ctx.obj_pool_count < OBJ_POOL_MAX {
+        ctx.obj_pool[ctx.obj_pool_count] = o;
+        ctx.obj_pool_count = ctx.obj_pool_count + 1;
+        return;
     }
     dealloc(o);
 }
