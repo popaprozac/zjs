@@ -497,8 +497,25 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let nd = name.data;
         let nl = name.length;
         let is_blen: int = 0;
-        raw { is_blen = (nl == 10 && memcmp(nd, "byteLength", 10) == 0) ? 1 : 0; }
-        if is_blen != 0 { return zjs_int32((i32)b.length); }
+        let is_mbl:  int = 0;
+        let is_rsz:  int = 0;
+        let is_det:  int = 0;
+        raw {
+            is_blen = (nl == 10 && memcmp(nd, "byteLength",      10) == 0) ? 1 : 0;
+            is_mbl  = (nl == 13 && memcmp(nd, "maxByteLength",   13) == 0) ? 1 : 0;
+            is_rsz  = (nl == 9  && memcmp(nd, "resizable",       9)  == 0) ? 1 : 0;
+            is_det  = (nl == 8  && memcmp(nd, "detached",        8)  == 0) ? 1 : 0;
+        }
+        if is_blen != 0 { if b.detached { return zjs_int32(0); } return zjs_int32((i32)b.length); }
+        // §25.1.6: maxByteLength is the cap when resizable, else byteLength;
+        // 0 when detached. resizable / detached are boolean predicates.
+        if is_mbl != 0 {
+            if b.detached { return zjs_int32(0); }
+            if b.resizable { return zjs_int32((i32)b.max_byte_length); }
+            return zjs_int32((i32)b.length);
+        }
+        if is_rsz != 0 { return zjs_bool(if b.resizable { 1 } else { 0 }); }
+        if is_det != 0 { return zjs_bool(if b.detached { 1 } else { 0 }); }
         if ctx.array_buffer_proto != NULL {
             let slot = class_find_slot(ctx.array_buffer_proto.cls, name);
             if slot >= 0 {

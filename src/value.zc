@@ -1561,7 +1561,15 @@ fn uint8_array_free_void(p: void*) -> void {
 struct ZjsArrayBuffer {
     header: CellHeader;       // type_tag = TAG_ARRAY_BUFFER
     bytes:  u8*;              // owned; freed in array_buffer_free
-    length: u32;              // bytes
+    length: u32;              // bytes (current byteLength)
+    // Resizable ArrayBuffer (§25.1): max_byte_length is the resize cap and
+    // `resizable` is set when constructed with { maxByteLength }. `detached`
+    // is set by transfer / DetachArrayBuffer — a detached buffer has length 0
+    // and bytes == NULL. alloc<> zeroes, so plain buffers default to
+    // non-resizable / non-detached.
+    max_byte_length: u32;
+    resizable: bool;
+    detached:  bool;
 }
 
 struct ZjsTypedArray {
@@ -1600,6 +1608,26 @@ fn zjs_array_buffer_new(length: u32) -> ZjsArrayBuffer* {
         b.bytes = alloc_n<u8>((usize)length);
         let i: u32 = 0;
         while i < length { b.bytes[i] = (u8)0; i = i + 1; }
+    } else {
+        b.bytes = NULL;
+    }
+    return b;
+}
+
+// Resizable variant: current byteLength = `length`, resize cap = `maxlen`.
+// The full `maxlen` block is allocated up front (and zeroed) so resize never
+// moves `bytes` — any TypedArray / DataView / view holding a pointer into the
+// store stays valid across a resize (resize only adjusts `.length`).
+fn zjs_array_buffer_new_max(length: u32, maxlen: u32) -> ZjsArrayBuffer* {
+    let b = alloc<ZjsArrayBuffer>();
+    b.header.type_tag = TAG_ARRAY_BUFFER;
+    b.length = length;
+    b.max_byte_length = maxlen;
+    b.resizable = true;
+    if maxlen > 0 {
+        b.bytes = alloc_n<u8>((usize)maxlen);
+        let i: u32 = 0;
+        while i < maxlen { b.bytes[i] = (u8)0; i = i + 1; }
     } else {
         b.bytes = NULL;
     }
