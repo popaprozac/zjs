@@ -18938,6 +18938,12 @@ fn host_reflect_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
 fn host_reflect_delete_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let t = if argc >= 1 { args[0] } else { zjs_undefined() };
     if !reflect_is_object(t) { return reflect_throw_target(ctx); }
+    // Proxy [[Delete]] — dispatch through the deleteProperty trap.
+    if zjs_is_proxy(t) != 0 {
+        let ok = proxy_delete_property(ctx, t, if argc >= 2 { args[1] } else { zjs_undefined() });
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        return zjs_bool(if ok { 1 } else { 0 });
+    }
     let key = symbol_key_coerce(if argc >= 2 { args[1] } else { zjs_undefined() });
     if zjs_is_object(t) != 0 {
         let o = zjs_as_object(t);
@@ -21231,6 +21237,64 @@ fn proxy_prevent_extensions(ctx: ZjsContext*, p_v: ZjsValue) -> bool {
         }
     }
     return truthy;
+}
+
+// Proxy [[Delete]] (§10.5.10): invoke the deleteProperty trap (forward when
+// absent); when the trap reports success, the target must not retain the
+// property as non-configurable, and (if it still owns it) must be extensible.
+// Returns the boolean trap result (false on a thrown error).
+fn proxy_delete_property(ctx: ZjsContext*, p_v: ZjsValue, key_in: ZjsValue) -> bool {
+    let p = zjs_as_proxy(p_v);
+    if p.revoked {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Cannot perform 'deleteProperty' on a revoked proxy", 50);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return false;
+    }
+    let key = symbol_key_coerce(key_in);
+    if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+    if ctx.pending_throw_active { return false; }
+    let trap = property_get(ctx, p.handler,
+        zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"deleteProperty", 14)));
+    if ctx.pending_throw_active { return false; }
+    let tt: ZjsValue[2]; tt[0] = p.target; tt[1] = key;
+    let ttp: ZjsValue* = NULL; raw { ttp = &tt[0]; }
+    if zjs_is_undefined(trap) != 0 || zjs_is_null(trap) != 0 {
+        let r = host_reflect_delete_property(ctx, ttp, 2);
+        if ctx.pending_throw_active { return false; }
+        return zjs_to_bool_coerce(r) != 0;
+    }
+    let callable: bool = zjs_is_function(trap) != 0 || zjs_is_closure(trap) != 0
+                      || zjs_is_host_function(trap) != 0;
+    if !callable {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"proxy deleteProperty trap is not a function", 43);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return false;
+    }
+    let res = zjs_call_value_with_this(ctx, trap, p.handler, ttp, 2);
+    if ctx.pending_throw_active { return false; }
+    if zjs_to_bool_coerce(res) == 0 { return false; }
+    let td = host_object_get_own_property_descriptor(ctx, ttp, 2);
+    if ctx.pending_throw_active { return false; }
+    if zjs_is_undefined(td) != 0 { return true; }
+    let tcfg = property_get(ctx, td,
+        zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"configurable", 12)));
+    if zjs_to_bool_coerce(tcfg) == 0 {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"proxy deleteProperty cannot delete a non-configurable property", 62);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return false;
+    }
+    let ext = host_object_is_extensible(ctx, ttp, 1);
+    if ctx.pending_throw_active { return false; }
+    if zjs_to_bool_coerce(ext) == 0 {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"proxy deleteProperty cannot delete a property of a non-extensible target", 72);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return false;
+    }
+    return true;
 }
 
 fn host_object_is_extensible(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {

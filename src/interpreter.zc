@@ -6339,6 +6339,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let key   = regs[inst.c];
             let ok: bool = true;
             let obj_tag: u8 = if zjs_is_cell(obj_v) != 0 { zjs_cell_tag(obj_v) } else { 0xFF };
+            // Proxy [[Delete]] — route through the deleteProperty trap. The
+            // ordinary-object chain below all no-ops for TAG_PROXY, so `ok`
+            // (set here) flows straight to regs[dst].
+            if obj_tag == TAG_PROXY {
+                ok = proxy_delete_property(ctx, obj_v, key);
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; break;
+                }
+            }
             // Resolve the .props expando for function / closure / host-fn
             // receivers — they route property storage through that bag.
             let props_o: ZjsObject* = NULL;

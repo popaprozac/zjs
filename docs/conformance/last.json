@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-03 23:54 UTC",
+    "when": "2026-06-04 00:03 UTC",
     "total": 27491,
-    "passed": 22852,
-    "failed": 3919,
+    "passed": 22862,
+    "failed": 3909,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -6829,48 +6829,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
-      "path": "test/built-ins/Proxy/deleteProperty/boolean-trap-result-boolean-false.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Proxy/deleteProperty/call-parameters.js",
-      "reason": "[sloppy] zjs: throw: (unknown): handler object as the trap context Expected SameValue(\u00abundefined\u00bb, \u00ab[object Object]\u00bb) to be true\n"
-    },
-    {
-      "path": "test/built-ins/Proxy/deleteProperty/null-handler.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/deleteProperty/return-false-not-strict.js",
-      "reason": "zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Proxy/deleteProperty/return-false-strict.js",
-      "reason": "zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Proxy/deleteProperty/return-is-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/Proxy/deleteProperty/targetdesc-is-configurable-target-is-not-extensible.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/deleteProperty/targetdesc-is-not-configurable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Proxy/deleteProperty/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 'foo' property was deleted from original object\nzjs: throw: (unknown): 'foo' property was deleted"
+      "reason": "[sloppy] zjs: throw: (unknown): 'length' property was deleted from original object\nzjs: throw: (unknown): 'length' property was d"
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/trap-is-not-callable-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/deleteProperty/trap-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/trap-is-null-target-is-proxy.js",
@@ -7311,10 +7275,6 @@
     {
       "path": "test/built-ins/Reflect/deleteProperty/return-abrupt-from-property-key.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Reflect/deleteProperty/return-abrupt-from-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Reflect/get/get.js",
