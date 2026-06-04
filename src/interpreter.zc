@@ -945,6 +945,33 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 is_apply  = (kn == 5 && memcmp(kd, "apply",     5) == 0) ? 1 : 0;
                 is_length = (kn == 6 && memcmp(kd, "length",    6) == 0) ? 1 : 0;
             }
+            // §10.2.4 poison pill: a STRICT function's "caller" / "arguments"
+            // are %ThrowTypeError% accessors — reading them throws TypeError.
+            let is_caller_f: int = 0;
+            let is_args_f: int = 0;
+            raw {
+                is_caller_f = (kn == 6 && memcmp(kd, "caller",    6) == 0) ? 1 : 0;
+                is_args_f   = (kn == 9 && memcmp(kd, "arguments", 9) == 0) ? 1 : 0;
+            }
+            if is_caller_f != 0 || is_args_f != 0 {
+                let fpc = zjs_cell_as_ptr(obj);
+                let ffc: Function* = NULL;
+                raw { ffc = (Function*)fpc; }
+                // An OWN property named caller/arguments (e.g.
+                // `class C { static arguments(){} }`) shadows the poison
+                // pill — only throw when the property is otherwise absent.
+                let own_pp_f: bool = false;
+                if ffc.props != NULL {
+                    let pps = class_find_slot(ffc.props.cls, ks);
+                    if pps >= 0 && zjs_is_deleted(ffc.props.slots[(u32)pps]) == 0 { own_pp_f = true; }
+                }
+                if ffc.strict && !own_pp_f {
+                    let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                        (char*)"caller and arguments are poison pills on strict functions", 57);
+                    ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                    return zjs_undefined();
+                }
+            }
             if is_proto != 0 {
                 let fp = zjs_cell_as_ptr(obj);
                 let f: Function* = NULL;
@@ -1073,6 +1100,37 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
             if is_call  != 0 { return ctx.fn_call_v; }
             if is_apply != 0 { return ctx.fn_apply_v; }
+            // §10.2.4 poison pill on a strict function's caller/arguments.
+            let is_caller_c: int = 0;
+            let is_args_c: int = 0;
+            raw {
+                is_caller_c = (kn == 6 && memcmp(kd, "caller",    6) == 0) ? 1 : 0;
+                is_args_c   = (kn == 9 && memcmp(kd, "arguments", 9) == 0) ? 1 : 0;
+            }
+            if is_caller_c != 0 || is_args_c != 0 {
+                let clc = zjs_as_closure(obj);
+                let fpc2 = clc.function;
+                let ffc2: Function* = NULL;
+                raw { ffc2 = (Function*)fpc2; }
+                // An own static method named caller/arguments shadows the
+                // poison pill. Class statics live on Function*.props;
+                // generic closures use cl.props.
+                let own_pp_c: bool = false;
+                if ffc2.props != NULL {
+                    let pps2 = class_find_slot(ffc2.props.cls, ks);
+                    if pps2 >= 0 && zjs_is_deleted(ffc2.props.slots[(u32)pps2]) == 0 { own_pp_c = true; }
+                }
+                if !own_pp_c && clc.props != NULL {
+                    let pps3 = class_find_slot(clc.props.cls, ks);
+                    if pps3 >= 0 && zjs_is_deleted(clc.props.slots[(u32)pps3]) == 0 { own_pp_c = true; }
+                }
+                if ffc2.strict && !own_pp_c {
+                    let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                        (char*)"caller and arguments are poison pills on strict functions", 57);
+                    ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                    return zjs_undefined();
+                }
+            }
             // .prototype delegates to the wrapped Function* — same
             // lazy-create behavior as the Function path so a class
             // constructor that's been wrapped in a Closure (because
