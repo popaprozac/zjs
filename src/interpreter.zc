@@ -3753,6 +3753,24 @@ fn interpret_inner_full(ctx: ZjsContext*,
         // --- bitwise --------------------------------------------
         } else if op == Op::BitAnd {
             let av = regs[inst.b]; let bv = regs[inst.c];
+            let av_obj: int = is_object_like(av);
+            let bv_obj: int = is_object_like(bv);
+            if av_obj != 0 || bv_obj != 0 {
+                if av_obj != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if bv_obj != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             let bh = false;
             let br = zjs_undefined();
             if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br = bigint_try_bitop(ctx, 0, av, bv, &bh); }
@@ -3769,6 +3787,24 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
         } else if op == Op::BitOr {
             let av = regs[inst.b]; let bv = regs[inst.c];
+            let av_obj: int = is_object_like(av);
+            let bv_obj: int = is_object_like(bv);
+            if av_obj != 0 || bv_obj != 0 {
+                if av_obj != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if bv_obj != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             let bh = false;
             let br = zjs_undefined();
             if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br = bigint_try_bitop(ctx, 1, av, bv, &bh); }
@@ -3785,6 +3821,24 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
         } else if op == Op::BitXor {
             let av = regs[inst.b]; let bv = regs[inst.c];
+            let av_obj: int = is_object_like(av);
+            let bv_obj: int = is_object_like(bv);
+            if av_obj != 0 || bv_obj != 0 {
+                if av_obj != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if bv_obj != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             let bh = false;
             let br = zjs_undefined();
             if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br = bigint_try_bitop(ctx, 2, av, bv, &bh); }
@@ -3801,6 +3855,24 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
         } else if op == Op::Shl {
             let av = regs[inst.b]; let bv = regs[inst.c];
+            let av_obj: int = is_object_like(av);
+            let bv_obj: int = is_object_like(bv);
+            if av_obj != 0 || bv_obj != 0 {
+                if av_obj != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if bv_obj != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             let bh = false;
             let br = zjs_undefined();
             if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br = bigint_try_shift(ctx, true, av, bv, &bh); }
@@ -3817,6 +3889,24 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
         } else if op == Op::Shr {
             let av = regs[inst.b]; let bv = regs[inst.c];
+            let av_obj: int = is_object_like(av);
+            let bv_obj: int = is_object_like(bv);
+            if av_obj != 0 || bv_obj != 0 {
+                if av_obj != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if bv_obj != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             let bh = false;
             let br = zjs_undefined();
             if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br = bigint_try_shift(ctx, false, av, bv, &bh); }
@@ -3833,6 +3923,24 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
         } else if op == Op::UShr {
             let av = regs[inst.b]; let bv = regs[inst.c];
+            let av_obj: int = is_object_like(av);
+            let bv_obj: int = is_object_like(bv);
+            if av_obj != 0 || bv_obj != 0 {
+                if av_obj != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if bv_obj != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+            }
             // BigInts have no unsigned right shift — `>>>` throws TypeError.
             if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 {
                 let err = build_typed_error(ctx, (char*)"TypeError", 9,
