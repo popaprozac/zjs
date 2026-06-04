@@ -221,6 +221,15 @@ struct ZjsContext {
     young_threshold: u32;
     cells_since_minor: u32;
 
+    // Freelist for OBJECT_INLINE_SLOTS-sized property slot/attr arrays.
+    // Short-lived small objects (the dominant allocation pattern) recycle
+    // their slots+attrs arrays here instead of malloc/free churning them.
+    // Parallel stacks (slots[i] pairs with attrs[i]); capped at
+    // SLOT_POOL_MAX, beyond which freed arrays are returned to the heap.
+    slot_pool:       ZjsValue**;
+    attr_pool:       u8**;
+    slot_pool_count: u32;
+
     // Remembered set — old cells that hold a pointer to a young cell.
     // Populated by gc_write_barrier on every old.slot=young store and
     // at promotion time (walking the new-old cell's slots). Each entry
@@ -597,6 +606,11 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
     // overhead doesn't dominate.
     result.young_threshold   = 1024;
     result.cells_since_minor = 0;
+    // Slot-array freelist starts empty; the index arrays are allocated
+    // lazily on the first object free (slotpair_free).
+    result.slot_pool         = NULL;
+    result.attr_pool         = NULL;
+    result.slot_pool_count   = 0;
     // calloc gave us {bits: 0}; explicitly initialize the implicit
     // host receiver to JS `undefined`.
     result.host_this = zjs_undefined();
@@ -680,14 +694,26 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     // cell type only requires updating one place.
     let j: u32 = 0;
     while j < ctx.cell_count {
-        gc_free_one(ctx.cells[j]);
+        gc_free_one(ctx, ctx.cells[j]);
         j = j + 1;
     }
     let jy: u32 = 0;
     while jy < ctx.young_count {
-        gc_free_one(ctx.young_cells[jy]);
+        gc_free_one(ctx, ctx.young_cells[jy]);
         jy = jy + 1;
     }
+    // Drain the slot-array freelist (cells freed above recycle their
+    // slots/attrs here) and release its index arrays. Must run AFTER the
+    // cell-free loops so every object free has somewhere to push.
+    let sp: u32 = 0;
+    while sp < ctx.slot_pool_count {
+        dealloc(ctx.slot_pool[sp]);
+        dealloc(ctx.attr_pool[sp]);
+        sp = sp + 1;
+    }
+    ctx.slot_pool_count = 0;
+    if ctx.slot_pool != NULL { dealloc(ctx.slot_pool); ctx.slot_pool = NULL; }
+    if ctx.attr_pool != NULL { dealloc(ctx.attr_pool); ctx.attr_pool = NULL; }
     // Free per-timer args buffers (the timer array itself is freed
     // below with the rest of the ctx-owned buffers).
     let ti: u32 = 0;
@@ -2044,14 +2070,14 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
 // young-list sweep + zjs_free_context can share the dispatch.
 // Caller must have already determined the cell is dead (or that the
 // context is being torn down).
-fn gc_free_one(p: void*) -> void {
+fn gc_free_one(ctx: ZjsContext*, p: void*) -> void {
     let h: CellHeader* = NULL;
     raw { h = (CellHeader*)p; }
     let tag = h.type_tag;
     if tag == TAG_FUNCTION      {
         raw { extern void function_free_void(void* f); function_free_void(p); }
     } else if tag == TAG_STRING        { string_free_void(p); }
-      else if tag == TAG_OBJECT        { object_free_void(p); }
+      else if tag == TAG_OBJECT        { object_free_pooled(ctx, p); }
       else if tag == TAG_ARRAY         { array_free_void(p); }
       else if tag == TAG_HOST_FUNCTION { host_function_free_void(p); }
       else if tag == TAG_CLOSURE       { closure_free_void(p); }
@@ -2130,7 +2156,7 @@ fn gc_sweep_young(ctx: ZjsContext*) -> u32 {
             ctx_register_cell_old(ctx, p);
             promoted = promoted + 1;
         } else {
-            gc_free_one(p);
+            gc_free_one(ctx, p);
         }
         i = i + 1;
     }
@@ -2153,7 +2179,7 @@ fn gc_sweep_old(ctx: ZjsContext*) -> void {
             ctx.cells[kept] = p;
             kept = kept + 1;
         } else {
-            gc_free_one(p);
+            gc_free_one(ctx, p);
         }
         i = i + 1;
     }
@@ -2603,6 +2629,102 @@ fn ctx_new_object(ctx: ZjsContext*) -> ZjsValue {
     return zjs_cell_from_ptr((void*)o);
 }
 
+// The pooled slot-array size: the capacity a small object's slots/attrs
+// arrays get on their first allocation. Objects with up to this many own
+// properties recycle their arrays through the freelist; larger ones use the
+// heap normally. Pool depth is capped so a burst of frees can't balloon RSS.
+def SLOT_POOL_SLOTS: u32 = 4;
+def SLOT_POOL_MAX:   u32 = 2048;
+
+// Pop a SLOT_POOL_SLOTS-sized (slots, attrs) pair from the freelist, or
+// allocate fresh when empty. Contents are stale — the caller initializes.
+fn slotpair_alloc(ctx: ZjsContext*, out_attrs: u8**) -> ZjsValue* {
+    if ctx.slot_pool_count > 0 {
+        let n = ctx.slot_pool_count - 1;
+        ctx.slot_pool_count = n;
+        out_attrs[0] = ctx.attr_pool[n];
+        return ctx.slot_pool[n];
+    }
+    out_attrs[0] = alloc_n<u8>((usize)SLOT_POOL_SLOTS);
+    return alloc_n<ZjsValue>((usize)SLOT_POOL_SLOTS);
+}
+
+// Return a SLOT_POOL_SLOTS-sized (slots, attrs) pair to the freelist, or
+// release it to the heap when the pool is full. Lazily allocates the pool
+// index arrays on first use.
+fn slotpair_free(ctx: ZjsContext*, slots: ZjsValue*, attrs: u8*) -> void {
+    if ctx.slot_pool == NULL {
+        ctx.slot_pool = alloc_n<ZjsValue*>((usize)SLOT_POOL_MAX);
+        ctx.attr_pool = alloc_n<u8*>((usize)SLOT_POOL_MAX);
+        ctx.slot_pool_count = 0;
+    }
+    if ctx.slot_pool_count < SLOT_POOL_MAX {
+        let n = ctx.slot_pool_count;
+        ctx.slot_pool[n] = slots;
+        ctx.attr_pool[n] = attrs;
+        ctx.slot_pool_count = n + 1;
+        return;
+    }
+    dealloc(slots);
+    dealloc(attrs);
+}
+
+// Ensure obj.slots/attrs hold at least `needed` entries (no-op when already
+// big enough). The first allocation of the common small size comes from the
+// slot-array freelist; growth past it migrates to the heap and recycles the
+// freed pool-sized block. New slots init to undefined / PROP_DEFAULT.
+fn object_grow_slots(ctx: ZjsContext*, obj: ZjsObject*, needed: u32) -> void {
+    if obj.slot_cap >= needed { return; }
+    let und: ZjsValue = zjs_undefined();
+    if obj.slots == NULL && needed <= SLOT_POOL_SLOTS {
+        let attrs: u8* = NULL;
+        let slots = slotpair_alloc(ctx, &attrs);
+        let i: u32 = 0;
+        while i < SLOT_POOL_SLOTS { slots[i] = und; attrs[i] = PROP_DEFAULT; i = i + 1; }
+        obj.slots = slots;
+        obj.attrs = attrs;
+        obj.slot_cap = SLOT_POOL_SLOTS;
+        return;
+    }
+    let new_cap: u32 = if obj.slot_cap == 0 { 4 } else { obj.slot_cap * 2 };
+    while new_cap < needed { new_cap = new_cap * 2; }
+    let new_slots: ZjsValue* = NULL;
+    let new_attrs: u8* = NULL;
+    // A slot_cap == SLOT_POOL_SLOTS array is a pool-managed block — don't
+    // realloc it (it must go back to the pool); copy into fresh heap arrays.
+    if obj.slot_cap == SLOT_POOL_SLOTS {
+        new_slots = alloc_n<ZjsValue>((usize)new_cap);
+        new_attrs = alloc_n<u8>((usize)new_cap);
+        let j: u32 = 0;
+        while j < obj.slot_cap { new_slots[j] = obj.slots[j]; new_attrs[j] = obj.attrs[j]; j = j + 1; }
+        slotpair_free(ctx, obj.slots, obj.attrs);
+    } else {
+        new_slots = realloc_n<ZjsValue>(obj.slots, (usize)obj.slot_cap, (usize)new_cap);
+        new_attrs = realloc_n<u8>(obj.attrs, (usize)obj.slot_cap, (usize)new_cap);
+    }
+    let k = obj.slot_cap;
+    while k < new_cap { new_slots[k] = und; new_attrs[k] = PROP_DEFAULT; k = k + 1; }
+    obj.slots = new_slots;
+    obj.attrs = new_attrs;
+    obj.slot_cap = new_cap;
+}
+
+// Free an object cell, recycling a pool-sized slots/attrs pair through the
+// freelist (or releasing larger/heap arrays directly). ctx-aware variant of
+// object_free_void used by the GC sweep + teardown.
+fn object_free_pooled(ctx: ZjsContext*, p: void*) -> void {
+    let o: ZjsObject* = NULL;
+    raw { o = (ZjsObject*)p; }
+    if o == NULL { return; }
+    if o.slots != NULL && o.slot_cap == SLOT_POOL_SLOTS {
+        slotpair_free(ctx, o.slots, o.attrs);
+    } else {
+        dealloc(o.slots);
+        dealloc(o.attrs);
+    }
+    dealloc(o);
+}
+
 // Full object_set with hidden-class transition logic. Updates an
 // existing property if present; otherwise follows or creates a
 // transition edge. New properties get default attributes (writable
@@ -2654,26 +2776,10 @@ fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsVal
         class_add_transition(parent_cls, name, child);
     }
 
-    // Grow slots + attrs to accommodate the new property. Both arrays
-    // are sized identically so the slot index doubles as an attrs
-    // index — no separate cap tracking.
-    let needed = child.prop_count;
-    if obj.slot_cap < needed {
-        let new_cap: u32 = if obj.slot_cap == 0 { 4 } else { obj.slot_cap * 2 };
-        while new_cap < needed { new_cap = new_cap * 2; }
-        let new_slots = realloc_n<ZjsValue>(obj.slots, (usize)obj.slot_cap, (usize)new_cap);
-        let new_attrs = realloc_n<u8>(obj.attrs, (usize)obj.slot_cap, (usize)new_cap);
-        let und: ZjsValue = zjs_undefined();
-        let i = obj.slot_cap;
-        while i < new_cap {
-            new_slots[i] = und;
-            new_attrs[i] = PROP_DEFAULT;
-            i = i + 1;
-        }
-        obj.slots = new_slots;
-        obj.attrs = new_attrs;
-        obj.slot_cap = new_cap;
-    }
+    // Grow slots + attrs to accommodate the new property (freelist-backed
+    // for the common small size). Both arrays are sized identically so the
+    // slot index doubles as an attrs index — no separate cap tracking.
+    object_grow_slots(ctx, obj, child.prop_count);
 
     obj.slots[child.transition_slot] = value;
     obj.attrs[child.transition_slot] = PROP_DEFAULT;
@@ -2728,23 +2834,7 @@ fn object_define_property_slot(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsStrin
         ctx_register_cell(ctx, (void*)child);
         class_add_transition(parent_cls, name, child);
     }
-    let needed = child.prop_count;
-    if obj.slot_cap < needed {
-        let new_cap: u32 = if obj.slot_cap == 0 { 4 } else { obj.slot_cap * 2 };
-        while new_cap < needed { new_cap = new_cap * 2; }
-        let new_slots = realloc_n<ZjsValue>(obj.slots, (usize)obj.slot_cap, (usize)new_cap);
-        let new_attrs = realloc_n<u8>(obj.attrs, (usize)obj.slot_cap, (usize)new_cap);
-        let und: ZjsValue = zjs_undefined();
-        let i = obj.slot_cap;
-        while i < new_cap {
-            new_slots[i] = und;
-            new_attrs[i] = PROP_DEFAULT;
-            i = i + 1;
-        }
-        obj.slots = new_slots;
-        obj.attrs = new_attrs;
-        obj.slot_cap = new_cap;
-    }
+    object_grow_slots(ctx, obj, child.prop_count);
     obj.slots[child.transition_slot] = value;
     obj.attrs[child.transition_slot] = attrs;
     obj.cls = child;
