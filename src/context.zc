@@ -3638,6 +3638,22 @@ fn host_math_random(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 // iterables yield an empty array. Used by Op::IterPrepare.
 // =====================================================================
 
+// If `o` is a boxed String wrapper (`new String(s)` — detected by the
+// __zjs_primitive__ internal slot holding a string), return that string,
+// else NULL. String exotic objects (§10.4.3) expose each index in
+// [0, length) as an OWN, enumerable, non-writable, non-configurable data
+// property whose value is the 1-char substring. zjs reads `s[i]` directly
+// via property_get's wrapper path, but the index is otherwise invisible to
+// [[GetOwnProperty]] / [[OwnPropertyKeys]] / for-in; callers use this to
+// synthesize those keys.
+fn object_string_wrapper(ctx: ZjsContext*, o: ZjsObject*) -> ZjsString* {
+    if o == NULL || o.cls == NULL { return NULL; }
+    let wkey = ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN);
+    let prim = object_get(o, wkey);
+    if zjs_is_string(prim) != 0 { return zjs_as_string(prim); }
+    return NULL;
+}
+
 fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
     if kind == 0 {
         // for-in: enumerate own + inherited string keys, in insertion
@@ -3732,6 +3748,20 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
             defer ctx_pop_temp_root(ctx);
             let shadowed_v = zjs_as_array(shadowed_arr_v);
             let arr = zjs_as_array(arr_v);
+            // String-exotic own indices come first (own, enumerable).
+            let sw_fi = object_string_wrapper(ctx, zjs_as_object(src));
+            if sw_fi != NULL {
+                let swlen = sw_fi.length;
+                let wi: u32 = 0;
+                while wi < swlen {
+                    let ib: char[16];
+                    let ibl: int = 0;
+                    raw { ibl = snprintf(&ib[0], 16, "%u", (unsigned)wi); }
+                    let ibp: char* = NULL; raw { ibp = &ib[0]; }
+                    array_set(arr, arr.length, ctx_intern_string(ctx, ibp, (u32)ibl));
+                    wi = wi + 1;
+                }
+            }
             let cur: ZjsObject* = zjs_as_object(src);
             while cur != NULL && cur != ctx.object_proto {
                 // Collect this level's own names in insertion order
@@ -5505,6 +5535,44 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
         return out_v;
     }
 
+    // String-exotic own index (§10.4.3): a boxed String wrapper exposes
+    // each index in [0, length) as an own data property
+    // { value: <1-char string>, writable:false, enumerable:true,
+    //   configurable:false }.
+    if zjs_is_object(obj_v) != 0 {
+        let swo = object_string_wrapper(ctx, zjs_as_object(obj_v));
+        if swo != NULL {
+            let ksw = zjs_as_string(key_v);
+            let sidx: i64 = string_as_array_index(ksw);
+            if sidx >= 0 && (u32)sidx < swo.length {
+                let cbuf = alloc_n<char>((usize)2);
+                cbuf[0] = swo.data[(u32)sidx];
+                cbuf[1] = (char)0;
+                let cv = ctx_intern_string_take(ctx, cbuf, 1);
+                let rd_v = ctx_new_object(ctx);
+                let rd = zjs_as_object(rd_v);
+                object_set(ctx, rd, ctx_intern_atom(ctx, (char*)"value", 5), cv);
+                object_set(ctx, rd, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(0));
+                object_set(ctx, rd, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(1));
+                object_set(ctx, rd, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(0));
+                return rd_v;
+            }
+            // §10.4.3 String exotic "length": { value, writable:false,
+            // enumerable:false, configurable:false }.
+            let is_len_sw: int = 0;
+            raw { is_len_sw = (ksw->length == 6 && memcmp(ksw->data, "length", 6) == 0) ? 1 : 0; }
+            if is_len_sw != 0 {
+                let rl_v = ctx_new_object(ctx);
+                let rl = zjs_as_object(rl_v);
+                object_set(ctx, rl, ctx_intern_atom(ctx, (char*)"value", 5), zjs_int32((i32)swo.length));
+                object_set(ctx, rl, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(0));
+                object_set(ctx, rl, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(0));
+                object_set(ctx, rl, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(0));
+                return rl_v;
+            }
+        }
+    }
+
     // Array fast path: numeric indices and "length".
     if zjs_is_array(obj_v) != 0 {
         let arr = zjs_as_array(obj_v);
@@ -6705,8 +6773,14 @@ fn object_keys_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32, enum_only: boo
         return ctx_new_array(ctx, 0);
     }
     let o = receiver_obj;
+    // String-exotic own indices [0, len) precede the class-stored keys.
+    let sw_keys = object_string_wrapper(ctx, o);
+    let sw_keys_len: u32 = if sw_keys != NULL { sw_keys.length } else { 0 };
     let cap = o.cls.prop_count;
-    let arr_v = ctx_new_array(ctx, cap);
+    // +1 reserves room for the String wrapper's synthesized "length".
+    let arr_v = ctx_new_array(ctx, cap + sw_keys_len + 1);
+    ctx_push_temp_root(ctx, arr_v);
+    defer ctx_pop_temp_root(ctx);
     let arr = zjs_as_array(arr_v);
     // Build a name-by-slot scratch first, then compact down to only
     // the present (non-deleted) ones in insertion order. Heap-allocated
@@ -6772,6 +6846,24 @@ fn object_keys_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32, enum_only: boo
         si = si + 1;
     }
     let out: u32 = 0;
+    // String-exotic own indices first, ascending (these ARE the lowest
+    // integer-index keys; any class-stored int keys are necessarily >= len).
+    let swi: u32 = 0;
+    while swi < sw_keys_len {
+        let ib: char[16];
+        let ibl: int = 0;
+        raw { ibl = snprintf(&ib[0], 16, "%u", (unsigned)swi); }
+        let ibp: char* = NULL; raw { ibp = &ib[0]; }
+        arr.elements[out] = ctx_intern_string(ctx, ibp, (u32)ibl);
+        out = out + 1;
+        swi = swi + 1;
+    }
+    // String wrapper's non-enumerable "length" — getOwnPropertyNames only,
+    // after the indices and before any later-added string keys.
+    if sw_keys != NULL && enum_only == false {
+        arr.elements[out] = ctx_intern_string(ctx, (char*)"length", 6);
+        out = out + 1;
+    }
     let ii: u32 = 0;
     while ii < int_count {
         arr.elements[out] = zjs_cell_from_ptr((void*)int_names[ii]);
@@ -21496,6 +21588,16 @@ fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
                    else                       { zjs_as_string(zjs_to_string(ctx, key)) };
         let slot = class_find_slot(o.cls, name);
         if slot >= 0 && zjs_is_deleted(o.slots[(u32)slot]) == 0 { return zjs_bool(1); }
+        // String-exotic own index (§10.4.3): new String(s) owns 0..len-1
+        // plus a non-enumerable "length".
+        let swo = object_string_wrapper(ctx, o);
+        if swo != NULL {
+            let sidx: i64 = string_as_array_index(name);
+            if sidx >= 0 && (u32)sidx < swo.length { return zjs_bool(1); }
+            let is_len_h: int = 0;
+            raw { is_len_h = (name->length == 6 && memcmp(name->data, "length", 6) == 0) ? 1 : 0; }
+            if is_len_h != 0 { return zjs_bool(1); }
+        }
         return zjs_bool(0);
     }
     if zjs_is_array(this_val) != 0 {

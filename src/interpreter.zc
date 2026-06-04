@@ -830,6 +830,21 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 let s = zjs_as_string(obj);
                 return zjs_int32((i32)s.length);
             }
+            // Canonical integer index supplied as a STRING key ("0") →
+            // single-char string, mirroring the int32-key path above. The
+            // numeric-key opcode handles `s[0]`, but the generic
+            // property_get path (Reflect.get / Object.assign / computed
+            // string key / boxed-String-wrapper forwarding) arrives here
+            // with a string key and must resolve the index too.
+            let sidx = zjs_to_array_index(key);
+            if sidx >= 0 {
+                let s = zjs_as_string(obj);
+                if (u32)sidx < s.length {
+                    let sd = s.data;
+                    return ctx_intern_string(ctx, sd + (u32)sidx, 1);
+                }
+                return zjs_undefined();
+            }
             // Walk string_proto + chain (for object_proto methods like
             // hasOwnProperty).
             let cur = ctx.string_proto;
