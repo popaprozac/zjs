@@ -906,6 +906,8 @@ struct CellHeader {
 struct ZjsString {
     header: CellHeader;
     length: u32;
+    interned: bool;    // true once inserted into the atom table — lets hot
+                       // paths (object_set) skip a redundant re-intern.
     data:   char*;     // null-terminated, owned (freed in string_free_void)
 }
 
@@ -3092,6 +3094,7 @@ fn zjs_string_new_take(data: char*, length: u32) -> ZjsString* {
     let s = alloc<ZjsString>();
     s.header.type_tag = TAG_STRING;
     s.length = length;
+    s.interned = false;
     s.data = data;
     return s;
 }

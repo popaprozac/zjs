@@ -2393,6 +2393,9 @@ fn atom_table_insert_unchecked(ctx: ZjsContext*, s: ZjsString*, h: u32) -> void 
     ctx.atoms[i].str = s;
     ctx.atoms[i].hash = h;
     ctx.atom_count = ctx.atom_count + 1;
+    // Mark the canonical atom so hot property paths can skip re-interning
+    // a name that's already in the table (see object_set).
+    s.interned = true;
 }
 
 fn atom_table_grow(ctx: ZjsContext*) -> void {
@@ -2614,7 +2617,11 @@ fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsVal
     // string; storing it as a transition_name (or via class_find_transition's
     // move-to-front) would let GC sweep it and leave the class pointing at
     // freed memory. Intern up front so the invariant always holds.
-    if name != NULL { name = ctx_intern_atom_no_decode(ctx, name.data, name.length); }
+    // Only computed-key writes (`o["k"+i]=v`) arrive with a fresh, non-interned
+    // string; the bytecode/IC paths pass an already-pinned atom. Re-interning
+    // a name that's already an atom is pure overhead (hash + table memcmp) on
+    // the object-construction hot path — skip it via the interned flag.
+    if name != NULL && name.interned == false { name = ctx_intern_atom_no_decode(ctx, name.data, name.length); }
     if obj.frozen { ctx.write_rejected = true; return; }
     let existing = class_find_slot(obj.cls, name);
     if existing >= 0 {
