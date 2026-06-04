@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-06-04 00:23 UTC",
+    "when": "2026-06-04 16:23 UTC",
     "total": 27491,
     "passed": 22904,
     "failed": 3867,
@@ -330,7 +330,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-sparse-object.js",
-      "reason": "[strict] "
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-string-wrapper.js",
@@ -12286,11 +12286,11 @@
     },
     {
       "path": "test/language/expressions/optional-chaining/member-expression.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
     },
     {
       "path": "test/language/expressions/optional-chaining/new-target-optional-call.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/language/expressions/optional-chaining/optional-call-preserves-this.js",

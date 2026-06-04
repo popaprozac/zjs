@@ -3540,62 +3540,66 @@ fn parse_call_member(p: Parser*) -> AstNode* {
         // internal slot of the executing function (the ctor if called
         // via `new`, undefined otherwise). Encoded as a dedicated
         // ThisExpr-shaped node since it's a zero-arg primitive.
+        let is_new_target: bool = false;
         if peek_kind(p) == TokenKind::Dot {
-            let dot = peek_at(p, 1);
             let target_tok = peek_at(p, 1);
             if target_tok.kind == TokenKind::Identifier && target_tok.length == 6 {
                 let nm_data = p.source + target_tok.start;
                 let is_target: int = 0;
                 raw { is_target = (memcmp(nm_data, "target", 6) == 0) ? 1 : 0; }
-                if is_target != 0 {
-                    advance(p);                    // consume '.'
-                    advance(p);                    // consume 'target'
-                    let nt = new_node(&p.tracker, NodeKind::ThisExpr, new_tok.start, target_tok.start + 6);
-                    // Reuse ThisExpr kind with bool_value=true to mean
-                    // "new.target" — the compiler dispatches on this.
-                    nt.bool_value = true;
-                    return nt;
+                if is_target != 0 { is_new_target = true; }
+            }
+        }
+        if is_new_target {
+            advance(p);                        // consume '.'
+            let target_tok = advance(p);       // consume 'target'
+            let nt = new_node(&p.tracker, NodeKind::ThisExpr, new_tok.start, target_tok.start + 6);
+            // Reuse ThisExpr kind with bool_value=true to mean
+            // "new.target" — the compiler dispatches on this. Fall through
+            // to the suffix loop so `new.target.name` / `new.target[x]`
+            // (member access off the meta-property) parse.
+            nt.bool_value = true;
+            expr = nt;
+        } else {
+            // The callee can itself contain member access but NOT a call —
+            // `new Foo.bar()` is `new (Foo.bar)()`. We loop manually here
+            // for member access only, then accept an optional arg list.
+            let callee = parse_primary(p);
+            if callee == NULL { return NULL; }
+            while true {
+                let kk = peek_kind(p);
+                if kk == TokenKind::Dot {
+                    advance(p);
+                    let id_tok = advance(p);
+                    let mnode = new_node(&p.tracker, NodeKind::Member, callee.start, id_tok.start + id_tok.length);
+                    mnode.left = callee;
+                    mnode.name_start = id_tok.start;
+                    mnode.name_length = id_tok.length;
+                    callee = mnode;
+                } else if kk == TokenKind::LBracket {
+                    advance(p);
+                    let prop = parse_expression(p);
+                    if prop == NULL { return NULL; }
+                    let close = peek(p);
+                    if !expect_kind(p, TokenKind::RBracket) { return NULL; }
+                    let cnode = new_node(&p.tracker, NodeKind::Computed, callee.start, close.start + close.length);
+                    cnode.left = callee;
+                    cnode.right = prop;
+                    callee = cnode;
+                } else {
+                    break;
                 }
             }
-        }
-        // The callee can itself contain member access but NOT a call —
-        // `new Foo.bar()` is `new (Foo.bar)()`. We loop manually here
-        // for member access only, then accept an optional arg list.
-        let callee = parse_primary(p);
-        if callee == NULL { return NULL; }
-        while true {
-            let kk = peek_kind(p);
-            if kk == TokenKind::Dot {
-                advance(p);
-                let id_tok = advance(p);
-                let mnode = new_node(&p.tracker, NodeKind::Member, callee.start, id_tok.start + id_tok.length);
-                mnode.left = callee;
-                mnode.name_start = id_tok.start;
-                mnode.name_length = id_tok.length;
-                callee = mnode;
-            } else if kk == TokenKind::LBracket {
-                advance(p);
-                let prop = parse_expression(p);
-                if prop == NULL { return NULL; }
-                let close = peek(p);
-                if !expect_kind(p, TokenKind::RBracket) { return NULL; }
-                let cnode = new_node(&p.tracker, NodeKind::Computed, callee.start, close.start + close.length);
-                cnode.left = callee;
-                cnode.right = prop;
-                callee = cnode;
-            } else {
-                break;
+            let new_node_n = new_node(&p.tracker, NodeKind::New, new_tok.start, callee.end);
+            new_node_n.left = callee;
+            if peek_kind(p) == TokenKind::LParen {
+                let args_pair = parse_arguments(p);
+                new_node_n.children = args_pair.left_arr;
+                new_node_n.children_count = args_pair.count;
+                new_node_n.end = args_pair.end;
             }
+            expr = new_node_n;
         }
-        let new_node_n = new_node(&p.tracker, NodeKind::New, new_tok.start, callee.end);
-        new_node_n.left = callee;
-        if peek_kind(p) == TokenKind::LParen {
-            let args_pair = parse_arguments(p);
-            new_node_n.children = args_pair.left_arr;
-            new_node_n.children_count = args_pair.count;
-            new_node_n.end = args_pair.end;
-        }
-        expr = new_node_n;
     } else {
         expr = parse_primary(p);
         if expr == NULL { return NULL; }
