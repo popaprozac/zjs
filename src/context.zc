@@ -5580,10 +5580,17 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
         let r_v = ctx_new_object(ctx);
         let r = zjs_as_object(r_v);
         object_set(ctx, r, ctx_intern_atom(ctx, (char*)"value", 5), proto_v);
-        // For class constructors the prototype is non-writable +
-        // non-configurable; regular function ctors are writable +
-        // configurable. is_class_constructor only exists on Function*,
-        // not closures / host fns — treat host fns as regular ctors.
+        // The "prototype" own property is ALWAYS non-enumerable and
+        // non-configurable (ECMA-262 §10.2.4 / §20.x). Writability splits
+        // by callee kind:
+        //   - ordinary functions / closures: MakeConstructor →
+        //     { [[Writable]]: true,  [[Configurable]]: false }
+        //   - class constructors:            { [[Writable]]: false, [[Configurable]]: false }
+        //   - built-in constructors (host fns with a .prototype, e.g.
+        //     Object/Array/Map): { [[Writable]]: false, [[Configurable]]: false }
+        // is_class_constructor only exists on Function*; a host fn that
+        // reaches here necessarily owns a .prototype, i.e. is a built-in
+        // constructor, so it gets the non-writable built-in shape.
         let is_class: bool = false;
         if zjs_is_function(obj_v) != 0 {
             let fp = zjs_cell_as_ptr(obj_v);
@@ -5591,8 +5598,9 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
             raw { ff = (Function*)fp; }
             is_class = ff.is_class_constructor;
         }
-        let writable: int = if is_class { 0 } else { 1 };
-        let configurable: int = if is_class { 0 } else { 1 };
+        let is_host: bool = (zjs_is_host_function(obj_v) != 0);
+        let writable: int = if is_class || is_host { 0 } else { 1 };
+        let configurable: int = 0;
         object_set(ctx, r, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(writable));
         object_set(ctx, r, ctx_intern_atom(ctx, (char*)"enumerable", 10), zjs_bool(0));
         object_set(ctx, r, ctx_intern_atom(ctx, (char*)"configurable", 12), zjs_bool(configurable));
