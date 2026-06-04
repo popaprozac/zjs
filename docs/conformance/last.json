@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-04 00:03 UTC",
+    "when": "2026-06-04 00:23 UTC",
     "total": 27491,
-    "passed": 22862,
-    "failed": 3909,
+    "passed": 22904,
+    "failed": 3867,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -330,7 +330,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-sparse-object.js",
-      "reason": "[sloppy] "
+      "reason": "[strict] "
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-string-wrapper.js",
@@ -374,7 +374,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/create-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
+      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.concat.call(o.proxy) throws a TypeError exception Expected a TypeError to be thro"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/create-species-abrupt.js",
@@ -698,7 +698,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/filter/create-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Array/prototype/filter/create-species-abrupt.js",
@@ -1370,7 +1370,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-species-abrupt.js",
@@ -1921,10 +1921,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\u00bb"
     },
     {
-      "path": "test/built-ins/Array/prototype/slice/create-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
-    },
-    {
       "path": "test/built-ins/Array/prototype/slice/create-species-abrupt.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
@@ -2283,10 +2279,6 @@
     {
       "path": "test/built-ins/Array/prototype/splice/create-proxy.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\u00bb"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/splice/create-revoked-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/create-species-abrupt.js",
@@ -3789,12 +3781,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"JSON\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abu"
     },
     {
-      "path": "test/built-ins/JSON/parse/revived-proxy-revoked.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/JSON/parse/revived-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): proxy for ordinary object Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): p"
+      "reason": "[sloppy] zjs: throw: (unknown): proxy for array Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): proxy for a"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-array-define-prop-err.js",
@@ -3826,10 +3814,6 @@
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-object-delete-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/reviver-object-own-keys-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
@@ -4353,20 +4337,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/Object/assign/source-own-prop-desc-missing.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Proxy trap was invoked exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown)"
-    },
-    {
-      "path": "test/built-ins/Object/assign/source-own-prop-error.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/Object/assign/source-own-prop-keys-error.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
       "path": "test/built-ins/Object/assign/strings-and-symbol-order-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [Symbol(), foo, 0] should have the same contents. \nzjs: throw: (unknown): "
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [foo, 0] and expected [Symbol(), foo, 0] should have the same contents. \nzjs: throw: (unkn"
     },
     {
       "path": "test/built-ins/Object/assign/strings-and-symbol-order.js",
@@ -5502,7 +5474,7 @@
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptors/proxy-no-ownkeys-returned-keys-order.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, foo, Symbol()] should have the same contents. \nzjs: throw: (unknown): "
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [0, foo] and expected [0, foo, Symbol()] should have the same contents. \nzjs: throw: (unkn"
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptors/symbols-included.js",
@@ -5538,10 +5510,6 @@
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyNames/proxy-invariant-absent-not-configurable-symbol-key.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyNames/proxy-invariant-duplicate-symbol-entry.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
@@ -5621,20 +5589,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Actual [a, length] and expected [length, a] should have the same contents. \nzjs: throw: (unknown)"
     },
     {
-      "path": "test/built-ins/Object/keys/property-traps-order-with-proxied-array.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [ownKeys, getOwnPropertyDescriptor] and expected [] should have the same contents. \nzjs: t"
-    },
-    {
       "path": "test/built-ins/Object/keys/proxy-keys.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab10\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab10\u00bb) to "
-    },
-    {
-      "path": "test/built-ins/Object/keys/proxy-non-enumerable-prop-invariant-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/keys/proxy-non-enumerable-prop-invariant-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab10\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab10\u00bb) to "
     },
     {
       "path": "test/built-ins/Object/keys/return-order.js",
@@ -6043,10 +5999,6 @@
     {
       "path": "test/built-ins/Object/values/getter-removing-future-key.js",
       "reason": "[sloppy] zjs: throw: (unknown): result has 2 items Expected SameValue(\u00ab3\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): result has 2 it"
-    },
-    {
-      "path": "test/built-ins/Object/values/order-after-define-property.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Object/values/primitive-strings.js",
@@ -6761,24 +6713,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"object\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
     },
     {
-      "path": "test/built-ins/Proxy/defineProperty/call-parameters.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
-    },
-    {
       "path": "test/built-ins/Proxy/defineProperty/desc-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/null-handler-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/defineProperty/return-boolean-and-define-target.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
-    },
-    {
-      "path": "test/built-ins/Proxy/defineProperty/return-is-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-configurable-desc-not-configurable-realm.js",
@@ -6794,7 +6734,7 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-not-configurable-writable-desc-not-writable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-undefined-not-configurable-descriptor-realm.js",
@@ -6806,7 +6746,7 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-not-callable-realm.js",
@@ -6814,19 +6754,7 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
-    },
-    {
-      "path": "test/built-ins/Proxy/defineProperty/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
-    },
-    {
-      "path": "test/built-ins/Proxy/defineProperty/trap-is-undefined.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
-    },
-    {
-      "path": "test/built-ins/Proxy/defineProperty/trap-return-is-false.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'writable')\nzjs: throw: TypeError: Cannot read prope"
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/trap-is-missing-target-is-proxy.js",
@@ -7021,88 +6949,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/ownKeys/call-parameters-object-getownpropertynames.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"foo\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abun"
-    },
-    {
       "path": "test/built-ins/Proxy/ownKeys/call-parameters-object-getownpropertysymbols.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00abSymbol(a)\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
     },
     {
-      "path": "test/built-ins/Proxy/ownKeys/call-parameters-object-keys.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"foo\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abun"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/extensible-return-trap-result-absent-not-configurable-keys.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"foo\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abun"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/extensible-return-trap-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"foo\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abun"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/not-extensible-missing-keys-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/not-extensible-new-keys-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/not-extensible-return-keys.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"foo\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abun"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/null-handler.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/return-all-non-configurable-keys.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/return-duplicate-entries-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/return-duplicate-symbol-entries-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/return-is-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
       "path": "test/built-ins/Proxy/ownKeys/return-not-list-object-throws-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/return-not-list-object-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/return-type-throws-array.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/return-type-throws-boolean.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/return-type-throws-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/return-type-throws-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/return-type-throws-object.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/return-type-throws-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/trap-is-missing-target-is-proxy.js",
@@ -7113,20 +6965,8 @@
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
-      "path": "test/built-ins/Proxy/ownKeys/trap-is-not-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1, foo, bar] should have the same contents. \nzjs: throw: (unknown): Ac"
-    },
-    {
       "path": "test/built-ins/Proxy/ownKeys/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [Symbol(), length, foo, 0] should have the same contents. \nzjs: throw: (un"
-    },
-    {
-      "path": "test/built-ins/Proxy/ownKeys/trap-is-undefined.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"foo\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abun"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [length, foo, 0] and expected [Symbol(), length, foo, 0] should have the same contents. \nz"
     },
     {
       "path": "test/built-ins/Proxy/preventExtensions/trap-is-not-callable-realm.js",
@@ -7257,10 +7097,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
     },
     {
-      "path": "test/built-ins/Reflect/defineProperty/return-abrupt-from-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
       "path": "test/built-ins/Reflect/defineProperty/return-boolean.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
     },
@@ -7323,10 +7159,6 @@
     {
       "path": "test/built-ins/Reflect/ownKeys/ownKeys.js",
       "reason": "[sloppy] zjs: throw: (unknown): ownKeys descriptor should not be enumerable\nzjs: throw: (unknown): ownKeys descriptor should not "
-    },
-    {
-      "path": "test/built-ins/Reflect/ownKeys/return-abrupt-from-result.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
     {
       "path": "test/built-ins/Reflect/ownKeys/return-on-corresponding-order-large-index.js",

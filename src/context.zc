@@ -4531,8 +4531,153 @@ fn array_set_length(ctx: ZjsContext*, arr: ZjsArray*, new_len: u32) -> bool {
     return block < 0;
 }
 
+// Proxy [[DefineOwnProperty]] (§10.5.6): invoke the defineProperty trap
+// (forward when absent). On a truthy trap result, enforce the extensibility
+// + configurability invariants against the target's own descriptor. Throws
+// "Cannot define property ..." on a false result so Object.defineProperty
+// throws while Reflect.defineProperty (which keys off the "Cannot" prefix)
+// returns false; invariant violations throw under both (message starts
+// "proxy"). Returns the proxy on success.
+fn proxy_define_property(ctx: ZjsContext*, p_v: ZjsValue, key_v: ZjsValue, desc_v: ZjsValue) -> ZjsValue {
+    let p = zjs_as_proxy(p_v);
+    if p.revoked {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Cannot perform 'defineProperty' on a revoked proxy", 50);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return zjs_undefined();
+    }
+    // ToPropertyDescriptor step 1: the attributes must be an Object.
+    let desc_objlike: bool = !(zjs_is_undefined(desc_v) != 0 || zjs_is_null(desc_v) != 0
+        || zjs_is_bool(desc_v) != 0 || zjs_is_int32(desc_v) != 0 || zjs_is_double(desc_v) != 0
+        || zjs_is_string(desc_v) != 0 || zjs_is_symbol(desc_v) != 0 || zjs_is_bigint(desc_v) != 0);
+    if !desc_objlike {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Property description must be an object", 37);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return zjs_undefined();
+    }
+    let key = symbol_key_coerce(key_v);
+    if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let trap = property_get(ctx, p.handler,
+        zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"defineProperty", 14)));
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let fb: ZjsValue[3]; fb[0] = p.target; fb[1] = key; fb[2] = desc_v;
+    let fbp: ZjsValue* = NULL; raw { fbp = &fb[0]; }
+    if zjs_is_undefined(trap) != 0 || zjs_is_null(trap) != 0 {
+        return host_object_define_property(ctx, fbp, 3);
+    }
+    let callable: bool = zjs_is_function(trap) != 0 || zjs_is_closure(trap) != 0
+                      || zjs_is_host_function(trap) != 0;
+    if !callable {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"proxy defineProperty trap is not a function", 43);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return zjs_undefined();
+    }
+    // Validate get/set are callable-or-undefined (ToPropertyDescriptor)
+    // before the trap fires, mirroring Object.defineProperty's ordering.
+    let get_atom_v = zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"get", 3));
+    let set_atom_v = zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"set", 3));
+    let gv = property_get(ctx, desc_v, get_atom_v);
+    let sv = property_get(ctx, desc_v, set_atom_v);
+    if zjs_is_undefined(gv) == 0 && zjs_is_function(gv) == 0 && zjs_is_closure(gv) == 0 && zjs_is_host_function(gv) == 0 {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"Getter must be a function or undefined", 38);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined();
+    }
+    if zjs_is_undefined(sv) == 0 && zjs_is_function(sv) == 0 && zjs_is_closure(sv) == 0 && zjs_is_host_function(sv) == 0 {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"Setter must be a function or undefined", 38);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined();
+    }
+    let tb: ZjsValue[3]; tb[0] = p.target; tb[1] = key; tb[2] = desc_v;
+    let tbp: ZjsValue* = NULL; raw { tbp = &tb[0]; }
+    let res = zjs_call_value_with_this(ctx, trap, p.handler, tbp, 3);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if zjs_to_bool_coerce(res) == 0 {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Cannot define property: proxy defineProperty trap returned false", 64);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return zjs_undefined();
+    }
+    // Invariants (§10.5.6 steps 8-16, simplified — full
+    // IsCompatiblePropertyDescriptor left as a follow-up).
+    let td = host_object_get_own_property_descriptor(ctx, tbp, 2);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let ext_v = host_object_is_extensible(ctx, tbp, 1);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let extensible: bool = zjs_to_bool_coerce(ext_v) != 0;
+    let cfg_str = ctx_intern_atom(ctx, (char*)"configurable", 12);
+    let cfg_atom_v = zjs_cell_from_ptr((void*)cfg_str);
+    let setting_cfg_false: bool = descriptor_has_own(desc_v, cfg_str)
+        && zjs_to_bool_coerce(property_get(ctx, desc_v, cfg_atom_v)) == 0;
+    if zjs_is_undefined(td) != 0 {
+        if !extensible {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy defineProperty added a property to a non-extensible target", 64);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined();
+        }
+        if setting_cfg_false {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy defineProperty defined a non-configurable property absent on the target", 77);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined();
+        }
+    } else {
+        // Target already owns the property: a non-configurable definition
+        // requires the target property to also be non-configurable.
+        let t_cfg: int = zjs_to_bool_coerce(property_get(ctx, td, cfg_atom_v));
+        if setting_cfg_false && t_cfg != 0 {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy defineProperty made a configurable target property non-configurable", 73);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined();
+        }
+        // IsCompatiblePropertyDescriptor against a NON-configurable target
+        // property (ValidateAndApplyPropertyDescriptor §10.1.6.3 step 4).
+        if t_cfg == 0 {
+            let wri_str = ctx_intern_atom(ctx, (char*)"writable", 8);
+            let wri_atom_v = zjs_cell_from_ptr((void*)wri_str);
+            let val_str = ctx_intern_atom(ctx, (char*)"value", 5);
+            let val_atom_v = zjs_cell_from_ptr((void*)val_str);
+            // A present `configurable: true` cannot be set on it.
+            if descriptor_has_own(desc_v, cfg_str)
+               && zjs_to_bool_coerce(property_get(ctx, desc_v, cfg_atom_v)) != 0 {
+                let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"proxy defineProperty made a non-configurable target property configurable", 73);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined();
+            }
+            // Non-writable data target: writable can't flip true, and the
+            // value can't change (SameValue).
+            if descriptor_has_own(td, wri_str)
+               && zjs_to_bool_coerce(property_get(ctx, td, wri_atom_v)) == 0 {
+                if descriptor_has_own(desc_v, wri_str)
+                   && zjs_to_bool_coerce(property_get(ctx, desc_v, wri_atom_v)) != 0 {
+                    let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                        (char*)"proxy defineProperty made a non-writable target property writable", 65);
+                    ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined();
+                }
+                if descriptor_has_own(desc_v, val_str) {
+                    let dval = property_get(ctx, desc_v, val_atom_v);
+                    let tval = property_get(ctx, td, val_atom_v);
+                    if zjs_strict_eq(dval, tval) == 0 {
+                        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                            (char*)"proxy defineProperty changed a non-writable target property value", 65);
+                        ctx.pending_throw_active = true; ctx.pending_throw_value = e; return zjs_undefined();
+                    }
+                }
+            }
+        }
+    }
+    return p_v;
+}
+
 fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let obj_v = if argc >= 1 { args[0] } else { zjs_undefined() };
+    // Proxy [[DefineOwnProperty]] — dispatch through the defineProperty trap
+    // before resolve_define_receiver (which is NULL for a proxy).
+    if zjs_is_proxy(obj_v) != 0 {
+        let dv = if argc >= 3 { args[2] } else { zjs_undefined() };
+        let kv = if argc >= 2 { args[1] } else { zjs_undefined() };
+        return proxy_define_property(ctx, obj_v, kv, dv);
+    }
     let o = resolve_define_receiver(ctx, obj_v);
     // ECMA-262 §20.1.2.4 step 1: Type(O) must be Object, else TypeError.
     if o == NULL {
@@ -6099,6 +6244,150 @@ fn host_object_assign(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     return target;
 }
 
+// SameValue for property keys: strings compare by value, symbols by
+// identity. Used by the proxy ownKeys dedup + invariant reconciliation.
+fn proxy_key_same(a: ZjsValue, b: ZjsValue) -> bool {
+    if zjs_is_string(a) != 0 && zjs_is_string(b) != 0 {
+        return zjs_string_equals(zjs_as_string(a), zjs_as_string(b)) != 0;
+    }
+    if zjs_is_symbol(a) != 0 && zjs_is_symbol(b) != 0 {
+        return zjs_cell_as_ptr(a) == zjs_cell_as_ptr(b);
+    }
+    return false;
+}
+
+fn proxy_key_in_array(arr: ZjsArray*, key: ZjsValue) -> bool {
+    let i: u32 = 0;
+    while i < arr.length {
+        if proxy_key_same(arr.elements[i], key) { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+// Proxy [[OwnPropertyKeys]] (§10.5.11): invoke the ownKeys trap (forward when
+// absent), validate the result is a list of distinct Strings/Symbols, and
+// reconcile against the target's keys + extensibility. Returns an array of
+// the trap result keys (strings + symbols), or undefined on a thrown error.
+fn proxy_own_keys(ctx: ZjsContext*, p_v: ZjsValue) -> ZjsValue {
+    let p = zjs_as_proxy(p_v);
+    if p.revoked {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Cannot perform 'ownKeys' on a revoked proxy", 43);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return zjs_undefined();
+    }
+    let tt: ZjsValue[1]; tt[0] = p.target;
+    let ttp: ZjsValue* = NULL; raw { ttp = &tt[0]; }
+    let trap = property_get(ctx, p.handler,
+        zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"ownKeys", 7)));
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if zjs_is_undefined(trap) != 0 || zjs_is_null(trap) != 0 {
+        // No trap → the target's own (string) keys. Symbol-keyed forward is
+        // a known gap shared with Reflect.ownKeys on ordinary objects.
+        return object_keys_impl(ctx, ttp, 1, false);
+    }
+    let callable: bool = zjs_is_function(trap) != 0 || zjs_is_closure(trap) != 0
+                      || zjs_is_host_function(trap) != 0;
+    if !callable {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"proxy ownKeys trap is not a function", 36);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return zjs_undefined();
+    }
+    let trap_arr = zjs_call_value_with_this(ctx, trap, p.handler, ttp, 1);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    // CreateListFromArrayLike(trapResult, «String, Symbol»).
+    if value_is_object_type(trap_arr) == 0 {
+        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"proxy ownKeys must return an array-like object", 46);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+        return zjs_undefined();
+    }
+    let len = read_length_u32(ctx, trap_arr);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let out_v = ctx_new_array(ctx, len);
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
+    let out = zjs_as_array(out_v);
+    let i: u32 = 0;
+    while i < len {
+        let el = property_get(ctx, trap_arr, zjs_int32((i32)i));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_string(el) == 0 && zjs_is_symbol(el) == 0 {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy ownKeys element is neither a String nor a Symbol", 54);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        array_set(out, i, el);
+        i = i + 1;
+    }
+    out.length = len;
+    // Step 7: the list must not contain duplicates.
+    let a: u32 = 0;
+    while a < len {
+        let b: u32 = a + 1;
+        while b < len {
+            if proxy_key_same(out.elements[a], out.elements[b]) {
+                let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"proxy ownKeys returned duplicate entries", 40);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                return zjs_undefined();
+            }
+            b = b + 1;
+        }
+        a = a + 1;
+    }
+    // Steps 8-17: reconcile against the target's keys. (String keys only;
+    // symbol-key reconciliation is the documented Reflect.ownKeys gap.)
+    let ext_v = host_object_is_extensible(ctx, ttp, 1);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let extensible: bool = zjs_to_bool_coerce(ext_v) != 0;
+    let tkeys_v = object_keys_impl(ctx, ttp, 1, false);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let tkeys = zjs_as_array(tkeys_v);
+    let cfg_atom_v = zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"configurable", 12));
+    let ti: u32 = 0;
+    while ti < tkeys.length {
+        let tk = tkeys.elements[ti];
+        let present: bool = proxy_key_in_array(out, tk);
+        let dpair: ZjsValue[2]; dpair[0] = p.target; dpair[1] = tk;
+        let dpp: ZjsValue* = NULL; raw { dpp = &dpair[0]; }
+        let td = host_object_get_own_property_descriptor(ctx, dpp, 2);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let cfg: int = if zjs_is_undefined(td) != 0 { 1 }
+                       else { zjs_to_bool_coerce(property_get(ctx, td, cfg_atom_v)) };
+        if cfg == 0 && !present {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy ownKeys omitted a non-configurable target key", 51);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        if !extensible && !present {
+            let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"proxy ownKeys omitted a key of a non-extensible target", 54);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+            return zjs_undefined();
+        }
+        ti = ti + 1;
+    }
+    if !extensible {
+        // No keys beyond the target's own keys are allowed.
+        let oi: u32 = 0;
+        while oi < out.length {
+            if zjs_is_string(out.elements[oi]) != 0 && !proxy_key_in_array(tkeys, out.elements[oi]) {
+                let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"proxy ownKeys reported a key absent on a non-extensible target", 61);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                return zjs_undefined();
+            }
+            oi = oi + 1;
+        }
+    }
+    return out_v;
+}
+
 fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     return object_keys_impl(ctx, args, argc, true);
 }
@@ -6109,6 +6398,39 @@ fn host_object_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 fn object_keys_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32, enum_only: bool) -> ZjsValue {
     let arg0 = if argc >= 1 { args[0] } else { zjs_undefined() };
     if !require_object_keys_arg(ctx, arg0) { return zjs_undefined(); }
+    // Proxy [[OwnPropertyKeys]] — Object.keys / Object.getOwnPropertyNames
+    // surface only the STRING keys; Object.keys additionally keeps the
+    // enumerable ones (per-key [[GetOwnProperty]] via the proxy gOPD trap).
+    if zjs_is_proxy(arg0) != 0 {
+        let keys_v = proxy_own_keys(ctx, arg0);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let keys = zjs_as_array(keys_v);
+        let out_v = ctx_new_array(ctx, keys.length);
+        ctx_push_temp_root(ctx, out_v);
+        defer ctx_pop_temp_root(ctx);
+        let out = zjs_as_array(out_v);
+        let oi: u32 = 0;
+        let ki: u32 = 0;
+        while ki < keys.length {
+            let k = keys.elements[ki];
+            if zjs_is_string(k) != 0 {
+                let keep: bool = true;
+                if enum_only {
+                    let dpair: ZjsValue[2]; dpair[0] = arg0; dpair[1] = k;
+                    let dpp: ZjsValue* = NULL; raw { dpp = &dpair[0]; }
+                    let d = host_object_get_own_property_descriptor(ctx, dpp, 2);
+                    if ctx.pending_throw_active { return zjs_undefined(); }
+                    keep = zjs_is_undefined(d) == 0
+                        && zjs_to_bool_coerce(property_get(ctx, d,
+                            zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"enumerable", 10)))) != 0;
+                }
+                if keep { array_set(out, oi, k); oi = oi + 1; }
+            }
+            ki = ki + 1;
+        }
+        out.length = oi;
+        return out_v;
+    }
     // Array path: enumerate present indices as string keys. Holes and
     // out-of-length slots stay invisible. Length itself is
     // non-enumerable so it's omitted.
@@ -18879,6 +19201,10 @@ fn host_reflect_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, a
 fn host_reflect_own_keys(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let t = if argc >= 1 { args[0] } else { zjs_undefined() };
     if !reflect_is_object(t) { return reflect_throw_target(ctx); }
+    // Proxy: return the FULL ownKeys trap result (strings + symbols).
+    if zjs_is_proxy(t) != 0 {
+        return proxy_own_keys(ctx, t);
+    }
     // String keys (own, incl. non-enumerable). Symbol-keyed own props are
     // a known gap (see ownKeys note); most tests check the string keys.
     return host_object_get_own_property_names(ctx, args, argc);
