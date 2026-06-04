@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-04 16:30 UTC",
+    "when": "2026-06-04 16:41 UTC",
     "total": 27491,
-    "passed": 22910,
-    "failed": 3861,
+    "passed": 22913,
+    "failed": 3858,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -330,7 +330,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-sparse-object.js",
-      "reason": "[strict] "
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-string-wrapper.js",
@@ -6081,10 +6081,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
-      "path": "test/built-ins/Promise/all/resolve-poisoned-then.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
-    },
-    {
       "path": "test/built-ins/Promise/all/same-reject-function.js",
       "reason": "[sloppy] zjs: throw: (unknown): p1.then call count Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): p1.then call co"
     },
@@ -6227,10 +6223,6 @@
     {
       "path": "test/built-ins/Promise/allSettled/resolve-from-same-thenable.js",
       "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
-    },
-    {
-      "path": "test/built-ins/Promise/allSettled/resolve-poisoned-then.js",
-      "reason": "[sloppy] async: Test262Error: The promise should not be fulfilled."
     },
     {
       "path": "test/built-ins/Promise/allSettled/resolved-then-catch-finally.js",
@@ -6663,10 +6655,6 @@
     {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-undefined-realm.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Proxy/construct/trap-is-missing-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got [object]\nzjs: throw: (unknown): Expected true but got [object]"
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-not-callable-realm.js",

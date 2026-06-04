@@ -776,7 +776,22 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             let cur = if arr.proto != NULL { arr.proto } else { ctx.array_proto };
             while cur != NULL {
                 let slot = class_find_slot(cur.cls, ks);
-                if slot >= 0 { return cur.slots[(u32)slot]; }
+                if slot >= 0 {
+                    let av: ZjsValue = cur.slots[(u32)slot];
+                    // An inherited accessor (e.g. a getter on a `class Sub
+                    // extends Array` prototype) must fire with this = the
+                    // array, not be returned raw.
+                    if zjs_is_accessor(av) != 0 {
+                        let acc = zjs_as_accessor(av);
+                        let g = acc.get;
+                        if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
+                            let nullp: ZjsValue* = NULL;
+                            return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                        }
+                        return zjs_undefined();
+                    }
+                    return av;
+                }
                 cur = cur.proto;
             }
             return zjs_undefined();
