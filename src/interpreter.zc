@@ -2645,8 +2645,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
             } else {
                 // BigInt path (both must be BigInt; mixing → TypeError).
+                // Gate the (non-inlined) call on a cheap inline tag check —
+                // the overwhelmingly common number case skips it entirely.
                 let bh = false;
-                let br = bigint_try_binop(ctx, 0, av, bv, &bh);
+                let br = zjs_undefined();
+                if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br = bigint_try_binop(ctx, 0, av, bv, &bh); }
                 if bh {
                     if ctx.pending_throw_active {
                         throwing = true; thrown = consume_pending_throw(ctx);
@@ -2684,7 +2687,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
             }
             let bh_sub = false;
-            let br_sub = bigint_try_binop(ctx, 1, av, bv, &bh_sub);
+            let br_sub = zjs_undefined();
+            if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br_sub = bigint_try_binop(ctx, 1, av, bv, &bh_sub); }
             if bh_sub {
                 if ctx.pending_throw_active {
                     throwing = true; thrown = consume_pending_throw(ctx);
@@ -3618,7 +3622,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
             }
             let bh_mul = false;
-            let br_mul = bigint_try_binop(ctx, 2, av, bv, &bh_mul);
+            let br_mul = zjs_undefined();
+            if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br_mul = bigint_try_binop(ctx, 2, av, bv, &bh_mul); }
             if bh_mul {
                 if ctx.pending_throw_active {
                     throwing = true; thrown = consume_pending_throw(ctx);
@@ -3654,7 +3659,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
             }
             let bh_div = false;
-            let br_div = bigint_try_binop(ctx, 3, av, bv, &bh_div);
+            let br_div = zjs_undefined();
+            if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br_div = bigint_try_binop(ctx, 3, av, bv, &bh_div); }
             if bh_div {
                 if ctx.pending_throw_active {
                     throwing = true; thrown = consume_pending_throw(ctx);
@@ -3690,7 +3696,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
             }
             let bh_mod = false;
-            let br_mod = bigint_try_binop(ctx, 4, av, bv, &bh_mod);
+            let br_mod = zjs_undefined();
+            if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br_mod = bigint_try_binop(ctx, 4, av, bv, &bh_mod); }
             if bh_mod {
                 if ctx.pending_throw_active {
                     throwing = true; thrown = consume_pending_throw(ctx);
@@ -3726,7 +3733,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
             }
             let bh_pow = false;
-            let br_pow = bigint_try_binop(ctx, 5, av, bv, &bh_pow);
+            let br_pow = zjs_undefined();
+            if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br_pow = bigint_try_binop(ctx, 5, av, bv, &bh_pow); }
             if bh_pow {
                 if ctx.pending_throw_active {
                     throwing = true; thrown = consume_pending_throw(ctx);
@@ -3746,7 +3754,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
         } else if op == Op::BitAnd {
             let av = regs[inst.b]; let bv = regs[inst.c];
             let bh = false;
-            let br = bigint_try_bitop(ctx, 0, av, bv, &bh);
+            let br = zjs_undefined();
+            if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br = bigint_try_bitop(ctx, 0, av, bv, &bh); }
             if bh {
                 if ctx.pending_throw_active { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; ctx.frames[cur_idx].ip = ip; break; }
                 regs[inst.a] = br;
@@ -3761,7 +3770,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
         } else if op == Op::BitOr {
             let av = regs[inst.b]; let bv = regs[inst.c];
             let bh = false;
-            let br = bigint_try_bitop(ctx, 1, av, bv, &bh);
+            let br = zjs_undefined();
+            if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br = bigint_try_bitop(ctx, 1, av, bv, &bh); }
             if bh {
                 if ctx.pending_throw_active { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; ctx.frames[cur_idx].ip = ip; break; }
                 regs[inst.a] = br;
@@ -3776,7 +3786,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
         } else if op == Op::BitXor {
             let av = regs[inst.b]; let bv = regs[inst.c];
             let bh = false;
-            let br = bigint_try_bitop(ctx, 2, av, bv, &bh);
+            let br = zjs_undefined();
+            if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br = bigint_try_bitop(ctx, 2, av, bv, &bh); }
             if bh {
                 if ctx.pending_throw_active { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; ctx.frames[cur_idx].ip = ip; break; }
                 regs[inst.a] = br;
@@ -3791,7 +3802,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
         } else if op == Op::Shl {
             let av = regs[inst.b]; let bv = regs[inst.c];
             let bh = false;
-            let br = bigint_try_shift(ctx, true, av, bv, &bh);
+            let br = zjs_undefined();
+            if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br = bigint_try_shift(ctx, true, av, bv, &bh); }
             if bh {
                 if ctx.pending_throw_active { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; ctx.frames[cur_idx].ip = ip; break; }
                 regs[inst.a] = br;
@@ -3806,7 +3818,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
         } else if op == Op::Shr {
             let av = regs[inst.b]; let bv = regs[inst.c];
             let bh = false;
-            let br = bigint_try_shift(ctx, false, av, bv, &bh);
+            let br = zjs_undefined();
+            if zjs_is_bigint(av) != 0 || zjs_is_bigint(bv) != 0 { br = bigint_try_shift(ctx, false, av, bv, &bh); }
             if bh {
                 if ctx.pending_throw_active { throwing = true; thrown = consume_pending_throw(ctx); exit_reason = 3; ctx.frames[cur_idx].ip = ip; break; }
                 regs[inst.a] = br;
