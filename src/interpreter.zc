@@ -914,7 +914,17 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                     return v;
                 }
             }
-            cur = cur.proto;
+            let nxt = cur.proto;
+            // Chain end with an exotic [[Prototype]] (an Array etc. set via
+            // Object.create / setPrototypeOf): delegate the lookup into it.
+            // Gated on any_exotic_proto so the common case pays nothing.
+            if nxt == NULL && ctx.any_exotic_proto {
+                let ex = object_get_exotic_proto(ctx, cur);
+                if zjs_is_undefined(ex) == 0 {
+                    return property_get(ctx, ex, key);
+                }
+            }
+            cur = nxt;
         }
         // Primitive-wrapper fallback: if `o` carries a hidden
         // WRAPPER_VALUE_KEY pointing to a wrapped primitive, route

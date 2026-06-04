@@ -522,6 +522,13 @@ struct ZjsContext {
     // entirely when no proxies exist — the common case. host_proxy_ctor
     // flips it on first ctor call.
     any_proxy_alive:    bool;
+    // Set the first time an EXOTIC (non-plain-object, non-callable) value —
+    // typically an Array instance — is installed as an object's [[Prototype]]
+    // via Object.create / setPrototypeOf / `new F()` with an exotic F.prototype.
+    // The plain ZjsObject* proto chain can't hold such a value, so it's stashed
+    // in a hidden own slot (PROTO_EXOTIC_KEY) and the proto-walk delegates into
+    // it at chain end. The flag keeps that check off the hot path until used.
+    any_exotic_proto:   bool;
     // Symbol.for / Symbol.keyFor registry. Two parallel lists:
     // symbol_for_keys[i] is the user-visible key string, symbol_for_syms[i]
     // is the interned Symbol value. Linear scan for now.
@@ -3654,6 +3661,35 @@ fn object_string_wrapper(ctx: ZjsContext*, o: ZjsObject*) -> ZjsString* {
     return NULL;
 }
 
+// True when `v` is an object-type value that neither the plain ZjsObject*
+// proto chain nor the existing callable→.props aliasing can represent — i.e.
+// an Array (or other exotic cell) used as a [[Prototype]]. These are stashed
+// in PROTO_EXOTIC_KEY and reached via property_get delegation.
+fn proto_is_exotic(v: ZjsValue) -> bool {
+    if value_is_object_type(v) == false { return false; }
+    if zjs_is_object(v) != 0 { return false; }
+    if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 || zjs_is_host_function(v) != 0 { return false; }
+    return true;
+}
+
+// Read the exotic [[Prototype]] stashed on `o`, or undefined if none.
+fn object_get_exotic_proto(ctx: ZjsContext*, o: ZjsObject*) -> ZjsValue {
+    if o == NULL || o.cls == NULL { return zjs_undefined(); }
+    let k = ctx_intern_atom(ctx, PROTO_EXOTIC_KEY, PROTO_EXOTIC_KEY_LEN);
+    let slot = class_find_slot(o.cls, k);
+    if slot >= 0 && zjs_is_deleted(o.slots[(u32)slot]) == 0 { return o.slots[(u32)slot]; }
+    return zjs_undefined();
+}
+
+// Stash an exotic [[Prototype]] on `o` (hidden own slot) and clear the plain
+// proto pointer so the ZjsObject* chain terminates here and delegates.
+fn object_set_exotic_proto(ctx: ZjsContext*, o: ZjsObject*, proto: ZjsValue) -> void {
+    let k = ctx_intern_atom(ctx, PROTO_EXOTIC_KEY, PROTO_EXOTIC_KEY_LEN);
+    object_set(ctx, o, k, proto);
+    o.proto = NULL;
+    ctx.any_exotic_proto = true;
+}
+
 fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
     if kind == 0 {
         // for-in: enumerate own + inherited string keys, in insertion
@@ -4409,7 +4445,7 @@ fn host_object_create(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     // undefined per spec semantics.
     let proto_v = if argc > 0 { args[0] } else { zjs_undefined() };
     let proto_ok: bool =
-           zjs_is_object(proto_v) != 0
+           value_is_object_type(proto_v)
         || zjs_is_null(proto_v) != 0;
     if !proto_ok {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
@@ -4420,13 +4456,17 @@ fn host_object_create(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
     }
     let obj_v = ctx_new_object(ctx);
     let obj = zjs_as_object(obj_v);
-    if zjs_is_object(proto_v) != 0 {
-        obj.proto = zjs_as_object(proto_v);
-    } else {
+    if zjs_is_null(proto_v) != 0 {
         // Object.create(null): [[Prototype]] is null. ctx_new_object
         // defaults obj.proto to Object.prototype, so clear it explicitly —
         // otherwise the result wrongly inherits Object.prototype.
         obj.proto = NULL;
+    } else if zjs_is_object(proto_v) != 0 {
+        obj.proto = zjs_as_object(proto_v);
+    } else {
+        // Exotic prototype (an Array etc. — or a callable): the plain
+        // ZjsObject* chain can't hold it, so stash + delegate.
+        object_set_exotic_proto(ctx, obj, proto_v);
     }
     // Phase 3.9a: second arg is a descriptor map. Accept any object-y
     // value (plain object, array with expandos, host/user function
@@ -5956,13 +5996,21 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
                       || zjs_is_object(proto_v) != 0
                       || zjs_is_closure(proto_v) != 0
                       || zjs_is_function(proto_v) != 0
-                      || zjs_is_host_function(proto_v) != 0;
+                      || zjs_is_host_function(proto_v) != 0
+                      || proto_is_exotic(proto_v);
     if !proto_ok {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                     (char*)"Object prototype may only be an Object or null", 47);
         ctx.pending_throw_active = true;
         ctx.pending_throw_value = err;
         return zjs_undefined();
+    }
+    // Exotic prototype (an Array etc.) on a plain object: stash in the
+    // hidden slot and delegate. No cycle is possible (its chain is the
+    // Array.prototype family, never the receiver).
+    if proto_is_exotic(proto_v) && zjs_is_object(obj_v) != 0 {
+        object_set_exotic_proto(ctx, zjs_as_object(obj_v), proto_v);
+        return obj_v;
     }
     // For callable protos: route to the bag where defineProperty
     // actually stores descriptors. Closures route to function.props
@@ -6134,7 +6182,14 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
     }
     if zjs_is_object(v) != 0 {
         let o = zjs_as_object(v);
-        if o.proto == NULL { return zjs_null(); }
+        if o.proto == NULL {
+            // An exotic [[Prototype]] (Array etc.) lives in the hidden slot.
+            if ctx.any_exotic_proto {
+                let ex = object_get_exotic_proto(ctx, o);
+                if zjs_is_undefined(ex) == 0 { return ex; }
+            }
+            return zjs_null();
+        }
         return zjs_cell_from_ptr((void*)o.proto);
     }
     if zjs_is_array(v) != 0 {
@@ -22419,6 +22474,11 @@ fn host_function_apply(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
 // won't bump into. Read by the prototype's valueOf / toString.
 def WRAPPER_VALUE_KEY: char* = (char*)"__zjs_primitive__";
 def WRAPPER_VALUE_KEY_LEN: u32 = 17;
+// Hidden own slot that stores an EXOTIC [[Prototype]] value (an Array etc.
+// that can't live in the ZjsObject* proto chain). `__zjs_*` is skipped by
+// enumeration / Object.keys, and being a real slot it is GC-marked for free.
+def PROTO_EXOTIC_KEY: char* = (char*)"__zjs_proto__";
+def PROTO_EXOTIC_KEY_LEN: u32 = 13;
 
 // Hidden slot used by closure envs to chain to the enclosing
 // function's env. Used by deeply-nested closures to walk past their
