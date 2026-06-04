@@ -1676,6 +1676,34 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         // walks, and Object.create's descriptor walk.
         if zjs_is_string(key) != 0 {
             if arr.frozen { return; }
+            // If the expando bag already holds an ACCESSOR for this key
+            // (e.g. Object.defineProperty(arr, "p", {get,set})), invoke
+            // its setter — object_set below is a data-slot writer and
+            // would silently clobber the accessor cell. Mirrors the
+            // TAG_OBJECT [[Set]] accessor path.
+            if arr.props != NULL {
+                let aname = zjs_as_string(key);
+                let aslot = class_find_slot(arr.props.cls, aname);
+                if aslot >= 0 {
+                    let av = arr.props.slots[(u32)aslot];
+                    if zjs_is_deleted(av) == 0 && zjs_is_accessor(av) != 0 {
+                        let acc = zjs_as_accessor(av);
+                        let s = acc.set;
+                        if zjs_is_function(s) != 0 || zjs_is_closure(s) != 0 || zjs_is_host_function(s) != 0 {
+                            let setarg: ZjsValue[1];
+                            setarg[0] = value;
+                            let setargp: ZjsValue* = NULL;
+                            raw { setargp = &setarg[0]; }
+                            let _ = zjs_call_value_with_this(ctx, s, obj, setargp, 1);
+                            ctx.write_rejected = false;
+                        } else {
+                            // Accessor with no setter — strict mode throws.
+                            ctx.write_rejected = true;
+                        }
+                        return;
+                    }
+                }
+            }
             if arr.props == NULL {
                 // Adding a NEW named prop. If the array is sealed /
                 // preventExtensions'd, refuse — don't materialize the
