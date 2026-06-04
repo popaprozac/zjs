@@ -5534,7 +5534,10 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let name = zjs_as_string(key_str_val);
                 let cur = zjs_as_object(obj);
                 while cur != NULL {
-                    if class_find_slot(cur.cls, name) >= 0 { present = 1; cur = NULL; }
+                    let sl = class_find_slot(cur.cls, name);
+                    // A DELETED own slot is not present at this level — keep
+                    // walking the prototype chain (an inherited prop counts).
+                    if sl >= 0 && zjs_is_deleted(cur.slots[(u32)sl]) == 0 { present = 1; cur = NULL; }
                     else { cur = cur.proto; }
                 }
             } else if zjs_is_host_function(obj) != 0 {
@@ -5543,7 +5546,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if hf.props != NULL {
                     let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
                     let name = zjs_as_string(key_str_val);
-                    if class_find_slot(hf.props.cls, name) >= 0 { present = 1; }
+                    let sl = class_find_slot(hf.props.cls, name);
+                    if sl >= 0 && zjs_is_deleted(hf.props.slots[(u32)sl]) == 0 { present = 1; }
                 }
             } else if zjs_is_function(obj) != 0 {
                 // Function: probe .props (Function.prototype always
@@ -5557,7 +5561,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if f.props != NULL {
                     let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
                     let name = zjs_as_string(key_str_val);
-                    if class_find_slot(f.props.cls, name) >= 0 { present = 1; }
+                    let sl = class_find_slot(f.props.cls, name);
+                    if sl >= 0 && zjs_is_deleted(f.props.slots[(u32)sl]) == 0 { present = 1; }
                 }
             }
             // Closure: probe per-instance props first, then the
@@ -5567,14 +5572,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let key_str_val = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
                 let name_in = zjs_as_string(key_str_val);
                 if cl_in.props != NULL {
-                    if class_find_slot(cl_in.props.cls, name_in) >= 0 { present = 1; }
+                    let sl = class_find_slot(cl_in.props.cls, name_in);
+                    if sl >= 0 && zjs_is_deleted(cl_in.props.slots[(u32)sl]) == 0 { present = 1; }
                 }
                 if present == 0 {
                     let fp_in = cl_in.function;
                     let f_in: Function* = NULL;
                     raw { f_in = (Function*)fp_in; }
                     if f_in.props != NULL {
-                        if class_find_slot(f_in.props.cls, name_in) >= 0 { present = 1; }
+                        let sl2 = class_find_slot(f_in.props.cls, name_in);
+                        if sl2 >= 0 && zjs_is_deleted(f_in.props.slots[(u32)sl2]) == 0 { present = 1; }
                     }
                 }
             }

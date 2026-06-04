@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-04 16:23 UTC",
+    "when": "2026-06-04 16:30 UTC",
     "total": 27491,
-    "passed": 22904,
-    "failed": 3867,
+    "passed": 22910,
+    "failed": 3861,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -330,7 +330,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-sparse-object.js",
-      "reason": "[sloppy] "
+      "reason": "[strict] "
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-string-wrapper.js",
@@ -5395,30 +5395,6 @@
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-222.js",
       "reason": "[sloppy] zjs: throw: (unknown): desc.writable Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): desc.writable"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-226.js",
-      "reason": "[sloppy] zjs: throw: (unknown): propDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): propDeleted Exp"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-230.js",
-      "reason": "[sloppy] zjs: throw: (unknown): propDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): propDeleted Exp"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-234.js",
-      "reason": "[sloppy] zjs: throw: (unknown): propDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): propDeleted Exp"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-238.js",
-      "reason": "[sloppy] zjs: throw: (unknown): propDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): propDeleted Exp"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-242.js",
-      "reason": "[sloppy] zjs: throw: (unknown): propDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): propDeleted Exp"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-246.js",
-      "reason": "[sloppy] zjs: throw: (unknown): propDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): propDeleted Exp"
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-4.js",
