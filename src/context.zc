@@ -4891,6 +4891,16 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
         if idx >= 0 {
             let arr = zjs_as_array(obj_v);
             let ui = (u32)idx;
+            // §10.4.2.1 Array [[DefineOwnProperty]]: an index P >= length
+            // would extend length, which is rejected when length's
+            // [[Writable]] is false. (Redefining an in-bounds index is
+            // still allowed.)
+            if ui >= arr.length && arr.length_non_writable {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"Cannot define property: array length is not writable", 52);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return zjs_undefined();
+            }
             if ui < arr.cap && zjs_is_deleted(arr.elements[ui]) == 0 {
                 let cur_slot = class_find_slot(o.cls, key_atom);
                 if cur_slot < 0 {
@@ -5021,15 +5031,10 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
         ctx.pending_throw_active = true; ctx.pending_throw_value = err;
         return zjs_undefined();
     }
-    let has_value = zjs_is_undefined(value_lookup) == 0;
-    let has_get   = get_callable;
-    let has_set   = set_callable;
-    if has_value && (get_present || set_present) {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-                                    (char*)"Cannot both specify accessors and a value or writable attribute", 64);
-        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
-        return zjs_undefined();
-    }
+    // The data-vs-accessor conflict check (a descriptor with get/set AND
+    // value/writable is a TypeError) is field-presence based and lives
+    // below, after has_*_field are computed — matching ToPropertyDescriptor
+    // ordering (callability checks first, then the mix check).
 
     // Read attribute fields. ECMA-262 §6.2.5 ToPropertyDescriptor:
     // when defineProperty/Properties is given a descriptor, ABSENT
@@ -5083,6 +5088,18 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     let has_set_field = descriptor_has_own(desc_v, set_key);
     let new_is_acc = has_get_field || has_set_field;
     let cur_is_acc = existing_slot >= 0 && zjs_is_accessor(o.slots[(u32)existing_slot]) != 0;
+
+    // ECMA-262 §6.2.5 ToPropertyDescriptor step: a descriptor that has an
+    // accessor field (get/set, by PRESENCE — even `undefined`) AND a data
+    // field (value/writable) is a TypeError. Field-presence based, so
+    // { get: f, writable: false } and { set: f, value: undefined } both
+    // throw, matching the spec (not value-non-undefined).
+    if new_is_acc && (has_value_field || has_wri_field) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Cannot both specify accessors and a value or writable attribute", 64);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
 
     // ECMA-262 §10.1.6.3 ValidateAndApplyPropertyDescriptor — reject
     // illegal redefinition of a NON-configurable existing property.
