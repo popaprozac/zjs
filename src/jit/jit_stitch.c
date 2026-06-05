@@ -128,20 +128,34 @@ void *jit_compile(const JitInsn *prog, int n) {
     return jit_stitch(prog, n);
 }
 
+// NaN-box mirror (must match value.zc + stencils.c) for building/checking the
+// faithful self-test values.
+#define JIT_NUMBER_TAG  0xfffe000000000000ULL
+#define JIT_DBL_OFFSET  0x0002000000000000ULL   /* 1 << 49 */
+static uint64_t jit_box_int32(int32_t i) { return JIT_NUMBER_TAG | (uint32_t)i; }
+static uint64_t jit_box_double(double d) {
+    union { double d; uint64_t u; } x; x.d = d; return x.u + JIT_DBL_OFFSET;
+}
+
 // Self-test: JIT the int_loop body and confirm sum(0..N-1). Returns 1 on PASS.
-// Proves the engine binary contains + runs the JIT stitcher end to end.
+// Proves the engine binary contains + runs the JIT stitcher end to end — now
+// with the FAITHFUL NaN-box arithmetic stencils (J4): values are real boxed
+// cells, and because sum(0..N-1) overflows int32 partway, this exercises the
+// int32 fast path, the int32→double overflow promotion, AND the double-add
+// path, plus the boolean loop condition and the back-edge. EXPECTED is the
+// boxed double the interpreter's zjs_arith_add would produce.
 int jit_selftest_loop(void) {
     const int64_t N = 1000000;
-    const uint64_t EXPECTED = (uint64_t)(N * (N - 1) / 2);
+    const uint64_t EXPECTED = jit_box_double((double)(N * (N - 1) / 2));
     enum { ACC = 0, I = 1, NN = 2, COND = 3, LOOP = 3, DONE = 8 };
     JitInsn prog[] = {
-        { "LoadConst", ACC, -1, -1, 0, -1 },
-        { "LoadConst", I,   -1, -1, 0, -1 },
-        { "LoadConst", NN,  -1, -1, N, -1 },
+        { "LoadConst", ACC, -1, -1, (int64_t)jit_box_int32(0), -1 },
+        { "LoadConst", I,   -1, -1, (int64_t)jit_box_int32(0), -1 },
+        { "LoadConst", NN,  -1, -1, (int64_t)jit_box_int32((int32_t)N), -1 },
         { "CmpLt", COND, I, NN, 0, -1 },
         { "JmpIfFalse", COND, -1, -1, 0, DONE },
         { "Add", ACC, ACC, I, 0, -1 },
-        { "AddImm", I, I, -1, 1, -1 },
+        { "AddImm", I, I, -1, (int64_t)jit_box_int32(1), -1 },
         { "Jmp", -1, -1, -1, 0, LOOP },
         { "Return", -1, -1, -1, 0, -1 },
     };
@@ -149,6 +163,8 @@ int jit_selftest_loop(void) {
     if (!code) return 0;
     JitValue regs[16];
     memset(regs, 0, sizeof(regs));
-    ((void (*)(JitValue *))code)(regs);
+    int deopt = 0;
+    ((void (*)(JitValue *, int *))code)(regs, &deopt);
+    if (deopt) return 0;
     return regs[ACC].bits == EXPECTED ? 1 : 0;
 }

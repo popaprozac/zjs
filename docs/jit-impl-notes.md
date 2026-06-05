@@ -157,28 +157,47 @@ This proves the whole real-bytecode path: `Op`→stencil, operands from `Inst`
 safety net. The frame here is a fresh `alloc_n<ZjsValue>` (true `reg_stack`
 sharing comes with nested calls); good enough for a top-level program.
 
-## Next — faithful arithmetic + loops + measurement (J4)
+## J4 — faithful NaN-box arithmetic (DONE)
 
-1. **Build gating** — DONE.
-2. **Real bytecode consume + bail** — DONE (value-faithful subset).
-3. **Faithful arithmetic/compare/branch stencils.** Make `Add`/`AddImm`/`CmpLt`/
-   `JmpIfFalse`/`JmpIfNotLt` (the fused loop op) NaN-box-correct: inline the
-   int32 fast path (unbox via tag check, add with overflow → rebox) and `call`
-   the existing interpreter helper on the slow path. Then a real JS loop JITs.
-4. **Branch target mapping.** `Jmp`/`JmpIfFalse` carry a signed instruction
-   offset (`inst_bc_i16`); convert to a target instruction index for the
-   stitcher's `_JIT_TARGET` hole (the loop_test already proved back-edges).
-5. **Hot-loop detection + dispatch hook**, then **measure a real JS loop vs the
-   spike's 4–6× model** — the implementation GO/NO-GO.
-2. **Consume real bytecode.** Map zjs `Op` → stencil, extract operands from
-   the real `Inst` (`inst.a`/`inst.b`/`inst.c` + `inst_bc_*` immediates),
-   build the pc-map over the function's `code[]`, bail (don't JIT) on any op
-   outside the easy set so correctness is never at risk.
-3. **Frame sharing.** Run the JIT'd code on the interpreter's live `reg_stack`
-   frame (design study §4) so deopt + GC stay free; the entry passes
-   `&reg_stack[regs_base]`.
-4. **Hot-loop detection + dispatch hook + measure.** Count back-edges per
-   Function*; once hot, JIT the body and run vs the interpreter; **measure
-   int_loop against the spike's 4–6× model** — the implementation GO/NO-GO.
-5. Conformance-faithful stencils (share the interpreter op-bodies / NaN-box),
-   then IC inlining + deopt + the platform gate (J5/J6).
+The value-infaithful stencils (raw int64) are replaced with **conformance-
+faithful** ones that match `value.zc`'s encoding and `zjs_arith_*` semantics
+exactly. Key decisions:
+
+- **2-arg ABI.** Every stencil is now `void f(ZjsValue *regs, int *deopt)`
+  (x0/x1). A value op that meets an operand outside its fast domain (a non-
+  number for arithmetic, a non-primitive for a branch test, a TDZ hole) writes
+  `*deopt = 1` and `return`s; the bridge discards the partial run and falls back
+  to the interpreter. Both regs/deopt thread through every continuation
+  unchanged, so a `musttail` is still a bare `b` — the stitcher is untouched.
+- **Faithful number ops** (`Add`/`Sub`/`AddImm`/`SubImm`/`CmpLt`): int32 fast
+  path with overflow→double, then the both-number (double) path, mirroring
+  `zjs_arith_add`/`_sub`. `JmpIfFalse` does real ToBoolean (bool/null/undefined/
+  numeric-zero inline; strings/objects deopt). `ThrowIfHole` deopts on the hole.
+- **No new relocations.** The 64-bit NaN-box constants (`NUMBER_TAG`,
+  `1<<49`) materialize inline via movz/movk and the bit-casts use unions — so
+  the only holes remain GOT (kind 5/6) + BRANCH26 (kind 2). Copy-and-patch is
+  unchanged; faithfulness was free at the toolchain level.
+
+**Validated.** `jit-selftest` now runs the register loop with *boxed* values:
+sum(0..1e6−1) overflows int32 partway, so it exercises the int32 path → the
+int32→double promotion → the double-add path → the boolean condition → the
+back-edge, and checks the boxed-double result. `jit-check` PASSes real compiled
+JS: `1+2`, `1+2+3`, `10-3`, `100+200+300`, and **`2147483647+1`** (the overflow
+boundary, on real bytecode). Default build unchanged (test262 diff empty).
+
+## Next — real JS loops + measurement (J4b → J5/J6)
+
+1. **Fused loop ops + branch mapping.** Add `CmpLtImm`/`CmpLeImm`,
+   `JmpIfNotLt(Imm)` (two-slot: condition in `inst.a/b`, `next.bc` = i16
+   offset), and the plain `Jmp`/`JmpIfTrue` target math (`i + 1 +
+   inst_bc_i16`). The stitcher's `_JIT_TARGET` hole already does back-edges
+   (proved by loop_test); this is just bridge-side index mapping.
+2. **Register-based loop bodies.** Top-level `let` compiles to *globals*
+   (`DefineGlobal`/`LoadGlobal`), so a script-level loop is all global-table
+   access — not JIT-able yet. Register locals only exist inside a function, so
+   either extract the inner `Function*` for `jit-check`, or add
+   `LoadGlobal`/`StoreGlobal` stencils (need `ctx` in the ABI). Function-body
+   first — it matches the eventual hot-loop target.
+3. **Hot-loop detection + dispatch hook**, then **measure a real JS loop vs the
+   spike's 4–6× model** — the implementation GO/NO-GO. Then IC inlining +
+   deopt-resume + the platform gate (J5/J6).
