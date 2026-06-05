@@ -317,16 +317,26 @@ stencil — the mechanism that unlocks all future property/element access.
 JITs (note: it takes an array param — a non-numeric arg — and still JITs).
 **Measured ~1.71×** (1e8 element reads: interp 1.13 s → JIT 0.66 s) even with a
 per-element helper call, since the surrounding loop/arith run dispatch-free.
-test262 ZJS_JIT `THRESHOLD=1` byte-identical to baseline.
 
-## Next — J8b/J9
+## J8b — array writes (StoreElem) (DONE)
 
-1. **`StoreElem`** (array write fast path) — in-bounds dense write of a
-   NON-cell value (number/bool) needs no barrier; cell values / append / sparse
-   deopt. Unlocks in-place array transforms + (function-wrapped) sieve.
-2. **`LoadProp`/`LoadGlobal`** via the same helper-call mechanism (hidden-class
-   IC for props; realm globals for `LoadGlobal`) — covers object-field loops
-   (nbody) and global reads.
+`StoreElem` (a=obj, b=key, c=val) via `jit_array_set_fast` through the same
+helper-call mechanism. The **barrier-free, alloc-free** subset only: plain
+array, no expando, not frozen, int32 index strictly in-bounds of the dense
+buffer (no length bump / realloc), and — the key constraint — a **non-cell
+value** (number / bool / null / undefined). A cell store would need a
+generational write barrier → deopt; append / grow / frozen / expando also
+deopt. So the fast write touches one existing slot with an immediate value:
+no barrier, no allocation, OSR-safe. `a[i] = a[i] * 2` (LoadElem + Mul +
+StoreElem) JITs and matches the interpreter; test262 `THRESHOLD=1`
+byte-identical to baseline.
+
+## Next — J9
+
+1. **`LoadProp`/`StoreProp`** via the helper mechanism (hidden-class fast path;
+   non-cell stores barrier-free like StoreElem) — covers object-field loops
+   (nbody). **`LoadGlobal`** needs `ctx` (realm globals) → the first 3-arg-ABI
+   helper (ctx in x2, threaded through continuations).
 3. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`
    (`while`/`if` bodies).
 4. **Multi-`Return`** via the unified exit channel (Return reports its index

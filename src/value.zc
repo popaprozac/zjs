@@ -3367,6 +3367,30 @@ fn jit_array_get_fast(arr_bits: u64, idx: i32, ok: int*) -> u64 {
     return v.bits;
 }
 
+// JIT fast path for `arr[i] = v` (Op::StoreElem). The barrier-free, alloc-free
+// subset of the interpreter's fast path: plain array, no expando, not frozen,
+// int32 index strictly in-bounds of the dense buffer (`i < length` and within
+// `cap`, so no length bump / realloc), and — critically — a NON-CELL value
+// (number / bool / null / undefined). A cell store would need a generational
+// write barrier, so it deopts to the interpreter. Everything else (append,
+// grow, frozen, expando, cell value) sets *ok=0 → OSR deopt. ctx-free.
+fn jit_array_set_fast(arr_bits: u64, idx: i32, val_bits: u64, ok: int*) -> void {
+    *ok = 0;
+    let av = ZjsValue{ bits: arr_bits };
+    if zjs_is_array(av) == 0 { return; }
+    if idx < 0 { return; }
+    let vv = ZjsValue{ bits: val_bits };
+    if zjs_is_cell(vv) != 0 { return; }   // cell store needs a write barrier
+    let arr = zjs_as_array(av);
+    if arr.props != NULL { return; }
+    if arr.frozen { return; }
+    let u = (u32)idx;
+    if u >= arr.length { return; }        // append / grow / OOB → interpreter
+    if u >= arr.cap { return; }           // sparse (length>cap) slot → interpreter
+    arr.elements[u] = vv;
+    *ok = 1;
+}
+
 // True if `idx` is in range and the slot is not a hole. Used by
 // Array.prototype methods that follow the spec's HasProperty step
 // (forEach / map / indexOf / etc. skip absent indices entirely).

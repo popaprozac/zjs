@@ -61,7 +61,8 @@ extern uint8_t  _JIT_RB;        // operand register index b
 extern uint8_t  _JIT_RC;        // operand register index c
 extern uint64_t _JIT_IMM64;     // a 64-bit immediate (boxed constant, or raw int)
 extern int      _JIT_BCIDX;     // this instruction's bytecode index (for OSR deopt)
-extern uint64_t _JIT_HELP_arrget;  // GOT slot holds &jit_array_get_fast (J8)
+extern uint64_t _JIT_HELP_arrget;  // GOT slot holds &jit_array_get_fast (J8a)
+extern uint64_t _JIT_HELP_arrset;  // GOT slot holds &jit_array_set_fast (J8b)
 extern void     _JIT_CONTINUE(ZjsValue *regs, int *deopt);  // fall-through
 extern void     _JIT_TARGET(ZjsValue *regs, int *deopt);    // branch destination
 
@@ -236,6 +237,23 @@ void zjs_stencil_LoadElem(ZjsValue *regs, int *deopt) {
                         (int32_t)(uint32_t)regs[(uintptr_t)&_JIT_RC].bits, &ok);
     if (!ok) { JIT_DEOPT(deopt); }
     regs[(uintptr_t)&_JIT_RA].bits = r;
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
+// StoreElem: regs[RA][regs[RB]] = regs[RC] for the array fast path (J8b).
+// a=obj, b=key, c=val. Calls jit_array_set_fast through its GOT-held address.
+// The helper writes only in-bounds dense slots with non-cell values (no write
+// barrier, no allocation); anything else is a clean OSR deopt. No dst register.
+void zjs_stencil_StoreElem(ZjsValue *regs, int *deopt) {
+    typedef void (*arrset_fn)(uint64_t arr, int32_t idx, uint64_t val, int *ok);
+    uintptr_t haddr = (uintptr_t)&_JIT_HELP_arrset;
+    arrset_fn helper;
+    __asm__("" : "=r"(helper) : "0"(haddr));   // opaque → indirect call
+    int ok = 0;
+    helper(regs[(uintptr_t)&_JIT_RA].bits,
+           (int32_t)(uint32_t)regs[(uintptr_t)&_JIT_RB].bits,
+           regs[(uintptr_t)&_JIT_RC].bits, &ok);
+    if (!ok) { JIT_DEOPT(deopt); }
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
 }
 

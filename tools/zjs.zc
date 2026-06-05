@@ -931,6 +931,8 @@ fn jit_try_run(ctx: ZjsContext*, f: Function*) -> JitResult {
             descs[i].op = (char*)"Mul";
         } else if inst.op == Op::LoadElem {
             descs[i].op = (char*)"LoadElem";
+        } else if inst.op == Op::StoreElem {
+            descs[i].op = (char*)"StoreElem";
         } else if inst.op == Op::CmpLt {
             descs[i].op = (char*)"CmpLt";
         } else if inst.op == Op::AddImm {
