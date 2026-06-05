@@ -64,6 +64,11 @@ typedef struct {
     int ra, rb, rc;        // operand register indices (-1 = unused)
     int64_t imm;           // immediate operand
     int target;            // branch destination instruction index (-1 = none)
+    int bc_index;          // absolute bytecode index for this prog entry — the
+                           // value a deopt at this insn reports (so the engine
+                           // resumes at the right ip). For whole-function JIT
+                           // it equals the prog index; for an OSR loop region it
+                           // is header + prog_index.
 } JitInsn;
 
 // Two-pass stitch of `prog` into a W^X region; returns the entry function
@@ -129,7 +134,7 @@ static void *jit_stitch(const JitInsn *prog, int n) {
                     !strcmp(hole->sym, "__JIT_RB")    ? (uint64_t)prog[i].rb  :
                     !strcmp(hole->sym, "__JIT_RC")    ? (uint64_t)prog[i].rc  :
                     !strcmp(hole->sym, "__JIT_IMM64") ? (uint64_t)prog[i].imm :
-                    !strcmp(hole->sym, "__JIT_BCIDX") ? (uint64_t)i           :
+                    !strcmp(hole->sym, "__JIT_BCIDX") ? (uint64_t)prog[i].bc_index :
                     // Engine-helper address holes: the slot holds the runtime
                     // address of a ctx-free fast-path helper (J8). The stencil
                     // loads it from the GOT and blr's it.

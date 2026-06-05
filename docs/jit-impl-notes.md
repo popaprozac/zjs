@@ -449,16 +449,70 @@ too. (Caveat: it runs the inner fn in isolation, so an inner fn that calls a
 *program-defined* global still BAILs there; validate those via the engine path /
 test262. A builtin global call like `parseInt(x)` validates fine.)
 
-## Next — J12+
+## J12a — OSR-entry / partial-region loop JIT (DONE)
+
+The lever that makes the JIT fire on *realistic* code. Until now compilation was
+**all-or-nothing per function**: one unmappable op (a `console.log`, a
+`function(){}` expr, a method call) anywhere in a function disqualified the whole
+function — hot loop included. So J10's "top-level loops JIT" only fired for a
+*pure* loop with nothing else around it; the bench harness's own timer wrapper
+(`var __zjs_now = …function(){…}; … console.log(…)`) was enough to kill it, which
+is why only `func_loop` (hot work quarantined in its own clean function) moved.
+
+OSR-entry compiles **just the loop region** `[header … back-edge]` and enters the
+JIT *at the loop head* with the live registers, so the rest of the function no
+longer has to be mappable. Independent of the whole-function cache: a new
+`jit_osr_state`/`jit_osr_code`/`jit_osr_header` triple on `Function`. The
+whole-fn compile still runs at `ip==0` (clean loop fns take that fast path and
+never reach OSR); when it fails (`jit_state=2`), the back-edge can still OSR.
+
+Mechanism:
+- **Trigger** is the backward `Op::Jmp` (loop back-edge). After N hot back-edges
+  (`jit_hot_threshold`), `jit_compile_osr(f, header, back)` compiles the region;
+  on the next back-edge the JIT runs on the live frame. Folds out of the default
+  build; bailed loops (`jit_osr_state==2`) short-circuit the check so non-fitting
+  loops pay almost nothing per iteration.
+- **Region build** reuses the shared `jit_map_insn` (extracted so whole-fn and
+  OSR map ops identically). A post-pass rebases jump targets to the region:
+  in-region → a branch; **out-of-region** (the loop-exit condition, or a `break`)
+  → an appended **`DeoptExit`** stencil that reports the post-loop bytecode index
+  as a deopt, so the interpreter resumes there with the live regs. A new
+  `bc_index` field on each desc carries the absolute bytecode index for the
+  `_JIT_BCIDX` deopt slot (whole-fn: `bc_index == prog index`; OSR: `header + k`).
+- **Deopt outcomes:** a fast-path miss *inside* the region deopts at its own bc
+  (the engine disables OSR for that fn and finishes the loop interpreted); a
+  deopt *outside* the region is the normal loop exit (region kept for next time).
+- **reg_stack realloc / throw** handled exactly as the whole-fn hook: re-derive
+  `regs` after the run; a call that threw routes to the outer-loop unwind. No
+  `Return` in the region (a mid-loop function return isn't modelled) — bail.
+
+Also fixed a **latent J11 bug** while here: the whole-fn hook read
+`regs[jit_ret_reg]` with a possibly-stale `regs` after a reallocating call — now
+re-derived from the stable base index.
+
+Dashboard (interp `build/zjs` vs JIT `build/zjs-jit`, the harness's own wrapped
+form): `obj_field` 0.99→**2.90×**, `property_mono` 1.04→**2.51×**, `double_loop`
+1.04→**1.72×**, `int_loop`/`int_loop_big` 1.03→**1.57×**, `func_loop` 1.46×.
+Loops outside the subset (method calls / float-array / recursion: `mandelbrot`,
+`sieve`, `quicksort`, `richards`, `fib`) stay ~1.0× — their region bails OSR and
+runs interpreted. test262 `THRESHOLD=1` (OSR compiled across the whole suite) and
+default build both byte-identical to baseline. Correctness spot-checked on
+loop+`console.log`, call-in-loop, array loops, in-region `if`/`else`, `break`
+(→ DeoptExit), and `while`.
+
+## Next — J12b+
 
 1. **`MethodInvoke`** (`obj.m(args)`) — unlocks `method_call`, `richards`, and
-   most OO code. Needs receiver binding (this = regs[base+1] region) + the same
-   reg_stack-realloc / throw discipline as Invoke.
+   most OO code (and a *lot* more loops now that OSR lets them live anywhere).
+   Receiver binding (this = regs[base+1]) + the same reg_stack/throw discipline
+   as Invoke. (`jit_method_invoke_fast` sketch lives in the J11 notes.)
 2. **Multi-`Return`** via a unified exit channel (Return reports its index too) —
    drops the single-Return restriction, so `fib` (`if(n<2)return n; …`) and most
    real functions become eligible. Pairs naturally with `JmpIfFalse`/`JmpIfTrue`.
 3. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`
-   (`while`/`if` bodies).
-4. **Platform-gate finalize + lifetime:** the `ZJS_JIT` Makefile gate already
+   (`while`/`if` bodies); also lets more loop *bodies* fit the OSR region.
+4. **OSR polish:** reusable scratch desc buffer (avoid the per-attempt 256-desc
+   alloc), multiple OSR regions per function, do-while (`JmpIfTrue` back-edge).
+5. **Platform-gate finalize + lifetime:** the `ZJS_JIT` Makefile gate already
    excludes iOS — lock it in + document, and free cached regions on
    `Function`/GC teardown (today they leak for the process lifetime).

@@ -2248,7 +2248,7 @@ fn build_iter_result(ctx: ZjsContext*, value: ZjsValue, done: bool) -> ZjsValue 
 // committed. Off by default in non-JIT builds; runtime-toggleable via
 // ZJS_JIT_OFF / ZJS_JIT_THRESHOLD. Never iOS. See docs/jit-impl-notes.md.
 // ===================================================================
-struct JitFnDesc { op: char*; ra: i32; rb: i32; rc: i32; imm: i64; target: i32; }
+struct JitFnDesc { op: char*; ra: i32; rb: i32; rc: i32; imm: i64; target: i32; bc_index: i32; }
 
 raw {
     // Lazy, process-wide. -1 = uninit.
@@ -2319,6 +2319,101 @@ fn jit_fn_has_backedge(f: Function*) -> bool {
     return false;
 }
 
+// Map one bytecode instruction at index i into descs[i] (op + imm + target),
+// the single source of truth shared by the whole-function compile and the OSR
+// loop compile. Caller pre-sets descs[i] defaults (ra/rb/rc from the inst,
+// imm=0, target=-1, bc_index). Returns 1 if mapped, 0 if unmappable. Jump
+// targets are ABSOLUTE bytecode indices (i + offset + 1); for the whole
+// function that equals the prog index, for an OSR region the caller rebases
+// them. Fused 2-slot compares mark their offset-carrier slot (i+1) as a Nop.
+// Return maps to "Return" (the caller decides whether that's allowed).
+fn jit_map_insn(f: Function*, i: u32, descs: JitFnDesc*, n: u32) -> i32 {
+    let inst = f.code[i];
+    if inst.op == Op::LoadInt {
+        descs[i].op = (char*)"LoadConst";
+        descs[i].imm = (i64)zjs_int32(inst_bc_i16(inst)).bits;
+    } else if inst.op == Op::LoadConst {
+        descs[i].op = (char*)"LoadConst";
+        descs[i].imm = (i64)f.constants[(u32)inst_bc_u16(inst)].bits;
+    } else if inst.op == Op::LoadUndefined {
+        descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_undefined().bits;
+    } else if inst.op == Op::LoadNull {
+        descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_null().bits;
+    } else if inst.op == Op::LoadTrue {
+        descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_bool(1).bits;
+    } else if inst.op == Op::LoadFalse {
+        descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_bool(0).bits;
+    } else if inst.op == Op::LoadHole {
+        descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_deleted().bits;
+    } else if inst.op == Op::ThrowIfHole {
+        descs[i].op = (char*)"ThrowIfHole";
+    } else if inst.op == Op::Mov {
+        descs[i].op = (char*)"Mov";
+    } else if inst.op == Op::Add {
+        descs[i].op = (char*)"Add";
+    } else if inst.op == Op::Sub {
+        descs[i].op = (char*)"Sub";
+    } else if inst.op == Op::Mul {
+        descs[i].op = (char*)"Mul";
+    } else if inst.op == Op::LoadElem {
+        descs[i].op = (char*)"LoadElem";
+    } else if inst.op == Op::StoreElem {
+        descs[i].op = (char*)"StoreElem";
+    } else if inst.op == Op::LoadProp {
+        descs[i].op = (char*)"LoadProp";
+        let icp: i64 = 0;
+        raw { icp = (int64_t)(intptr_t)&f->ics[(unsigned char)inst.c]; }
+        descs[i].imm = icp;
+    } else if inst.op == Op::StoreProp {
+        descs[i].op = (char*)"StoreProp";
+        let icp2: i64 = 0;
+        raw { icp2 = (int64_t)(intptr_t)&f->ics[(unsigned char)inst.b]; }
+        descs[i].imm = icp2;
+    } else if inst.op == Op::Invoke {
+        descs[i].op = (char*)"Invoke";
+        descs[i].imm = (i64)(u32)inst.c;
+    } else if inst.op == Op::LoadGlobal {
+        descs[i].op = (char*)"LoadGlobal";
+        descs[i].imm = (i64)inst_bc_u16(inst);
+    } else if inst.op == Op::StoreGlobal || inst.op == Op::DefineGlobal {
+        descs[i].op = (char*)"GlobalSet";
+        descs[i].imm = (i64)inst_bc_u16(inst);
+    } else if inst.op == Op::CmpLt {
+        descs[i].op = (char*)"CmpLt";
+    } else if inst.op == Op::AddImm {
+        descs[i].op = (char*)"AddImm"; descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
+    } else if inst.op == Op::SubImm {
+        descs[i].op = (char*)"SubImm"; descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
+    } else if inst.op == Op::Jmp {
+        descs[i].op = (char*)"Jmp";
+        descs[i].target = (i32)i + inst_bc_i16(inst) + 1;
+    } else if inst.op == Op::JmpIfNotLt || inst.op == Op::JmpIfNotLe
+           || inst.op == Op::JmpIfNotGt || inst.op == Op::JmpIfNotGe {
+        if i + 1 >= n { return 0; }
+        if inst.op == Op::JmpIfNotLt { descs[i].op = (char*)"JmpIfNotLt"; }
+        else if inst.op == Op::JmpIfNotLe { descs[i].op = (char*)"JmpIfNotLe"; }
+        else if inst.op == Op::JmpIfNotGt { descs[i].op = (char*)"JmpIfNotGt"; }
+        else { descs[i].op = (char*)"JmpIfNotGe"; }
+        descs[i].target = (i32)i + inst_bc_i16(f.code[i + 1]) + 2;
+        descs[i + 1].op = (char*)"Nop"; descs[i + 1].target = -1;
+    } else if inst.op == Op::JmpIfNotLtImm || inst.op == Op::JmpIfNotLeImm
+           || inst.op == Op::JmpIfNotGtImm || inst.op == Op::JmpIfNotGeImm {
+        if i + 1 >= n { return 0; }
+        if inst.op == Op::JmpIfNotLtImm { descs[i].op = (char*)"JmpIfNotLtImm"; }
+        else if inst.op == Op::JmpIfNotLeImm { descs[i].op = (char*)"JmpIfNotLeImm"; }
+        else if inst.op == Op::JmpIfNotGtImm { descs[i].op = (char*)"JmpIfNotGtImm"; }
+        else { descs[i].op = (char*)"JmpIfNotGeImm"; }
+        descs[i].imm = (i64)(i32)(i8)inst.b;
+        descs[i].target = (i32)i + inst_bc_i16(f.code[i + 1]) + 2;
+        descs[i + 1].op = (char*)"Nop"; descs[i + 1].target = -1;
+    } else if inst.op == Op::Return {
+        descs[i].op = (char*)"Return";
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
 // Try to compile f's body into a cached copy-and-patch region. Sets
 // f.jit_state to 1 (compiled, f.jit_code/jit_ret_reg valid) or 2 (disabled).
 // Mirrors the CLI jit_try_run op→stencil mapping; kept separate so the
@@ -2345,111 +2440,16 @@ fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
         descs[i].rc = (i32)inst.c;
         descs[i].imm = 0;
         descs[i].target = -1;
-        if inst.op == Op::LoadInt {
-            descs[i].op = (char*)"LoadConst";
-            descs[i].imm = (i64)zjs_int32(inst_bc_i16(inst)).bits;
-        } else if inst.op == Op::LoadConst {
-            descs[i].op = (char*)"LoadConst";
-            descs[i].imm = (i64)f.constants[(u32)inst_bc_u16(inst)].bits;
-        } else if inst.op == Op::LoadUndefined {
-            descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_undefined().bits;
-        } else if inst.op == Op::LoadNull {
-            descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_null().bits;
-        } else if inst.op == Op::LoadTrue {
-            descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_bool(1).bits;
-        } else if inst.op == Op::LoadFalse {
-            descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_bool(0).bits;
-        } else if inst.op == Op::LoadHole {
-            descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_deleted().bits;
-        } else if inst.op == Op::ThrowIfHole {
-            descs[i].op = (char*)"ThrowIfHole";
-        } else if inst.op == Op::Mov {
-            descs[i].op = (char*)"Mov";
-        } else if inst.op == Op::Add {
-            descs[i].op = (char*)"Add";
-        } else if inst.op == Op::Sub {
-            descs[i].op = (char*)"Sub";
-        } else if inst.op == Op::Mul {
-            descs[i].op = (char*)"Mul";
-        } else if inst.op == Op::LoadElem {
-            // a=dst, b=obj reg, c=key reg. Array fast path; helper deopts
-            // on anything exotic.
-            descs[i].op = (char*)"LoadElem";
-        } else if inst.op == Op::StoreElem {
-            // a=obj, b=key, c=val. Dense in-bounds non-cell write; deopt else.
-            descs[i].op = (char*)"StoreElem";
-        } else if inst.op == Op::LoadProp {
-            // a=dst, b=obj, c=ic_slot. Pass the inline-cache entry address as
-            // the immediate; the helper probes it (own-slot IC hit, else deopt).
-            descs[i].op = (char*)"LoadProp";
-            let icp: i64 = 0;
-            raw { icp = (int64_t)(intptr_t)&f->ics[(unsigned char)inst.c]; }
-            descs[i].imm = icp;
-        } else if inst.op == Op::StoreProp {
-            // a=obj, b=ic_slot, c=val. Pass &f.ics[ic_slot] as the immediate.
-            descs[i].op = (char*)"StoreProp";
-            let icp2: i64 = 0;
-            raw { icp2 = (int64_t)(intptr_t)&f->ics[(unsigned char)inst.b]; }
-            descs[i].imm = icp2;
-        } else if inst.op == Op::Invoke {
-            // a=dst, b=base (callee reg; args at base+1..base+argc), c=argc.
-            // jit_invoke_fast runs the callee via the engine; argc baked into
-            // IMM64. Throw → routed by the hook; non-callable/big-argc → deopt.
-            descs[i].op = (char*)"Invoke";
-            descs[i].imm = (i64)(u32)inst.c;
-        } else if inst.op == Op::LoadGlobal {
-            // a=dst, bc=realm-global slot. Helper reads realm.globals[slot] via
-            // g_active_ctx; an undefined slot (globalThis fallthrough) → deopt.
-            descs[i].op = (char*)"LoadGlobal";
-            descs[i].imm = (i64)inst_bc_u16(inst);
-        } else if inst.op == Op::StoreGlobal || inst.op == Op::DefineGlobal {
-            // a=src, bc=slot. Both set value + defined=true → one GlobalSet
-            // stencil (non-cell only; a cell store deopts to the interpreter).
-            descs[i].op = (char*)"GlobalSet";
-            descs[i].imm = (i64)inst_bc_u16(inst);
-        } else if inst.op == Op::CmpLt {
-            descs[i].op = (char*)"CmpLt";
-        } else if inst.op == Op::AddImm {
-            descs[i].op = (char*)"AddImm"; descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
-        } else if inst.op == Op::SubImm {
-            descs[i].op = (char*)"SubImm"; descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
-        } else if inst.op == Op::Jmp {
-            descs[i].op = (char*)"Jmp";
-            descs[i].target = (i32)i + inst_bc_i16(inst) + 1;
-        } else if inst.op == Op::JmpIfNotLt || inst.op == Op::JmpIfNotLe
-               || inst.op == Op::JmpIfNotGt || inst.op == Op::JmpIfNotGe {
-            // Fused 2-slot compare-branch (reg form): a=lhs, b=rhs; i16 offset
-            // in code[i+1]. Carrier slot → Nop. (Same index math as the < form.)
-            if i + 1 >= n { ok_all = false; i = n; }
-            else {
-                if inst.op == Op::JmpIfNotLt { descs[i].op = (char*)"JmpIfNotLt"; }
-                else if inst.op == Op::JmpIfNotLe { descs[i].op = (char*)"JmpIfNotLe"; }
-                else if inst.op == Op::JmpIfNotGt { descs[i].op = (char*)"JmpIfNotGt"; }
-                else { descs[i].op = (char*)"JmpIfNotGe"; }
-                descs[i].target = (i32)i + inst_bc_i16(f.code[i + 1]) + 2;
-                descs[i + 1].op = (char*)"Nop"; descs[i + 1].target = -1;
-            }
-        } else if inst.op == Op::JmpIfNotLtImm || inst.op == Op::JmpIfNotLeImm
-               || inst.op == Op::JmpIfNotGtImm || inst.op == Op::JmpIfNotGeImm {
-            // Fused 2-slot compare-branch (imm form): a=lhs, b=i8 imm.
-            if i + 1 >= n { ok_all = false; i = n; }
-            else {
-                if inst.op == Op::JmpIfNotLtImm { descs[i].op = (char*)"JmpIfNotLtImm"; }
-                else if inst.op == Op::JmpIfNotLeImm { descs[i].op = (char*)"JmpIfNotLeImm"; }
-                else if inst.op == Op::JmpIfNotGtImm { descs[i].op = (char*)"JmpIfNotGtImm"; }
-                else { descs[i].op = (char*)"JmpIfNotGeImm"; }
-                descs[i].imm = (i64)(i32)(i8)inst.b;
-                descs[i].target = (i32)i + inst_bc_i16(f.code[i + 1]) + 2;
-                descs[i + 1].op = (char*)"Nop"; descs[i + 1].target = -1;
-            }
-        } else if inst.op == Op::Return {
-            descs[i].op = (char*)"Return";
-            ret_count = ret_count + 1;
-            ret_reg = (i32)inst.a;
-        } else {
+        descs[i].bc_index = (i32)i;   // whole-fn: prog index == bytecode index
+        if jit_map_insn(f, i, descs, n) == 0 {
             ok_all = false; i = n;
+        } else {
+            if inst.op == Op::Return {
+                ret_count = ret_count + 1;
+                ret_reg = (i32)inst.a;
+            }
+            i = i + 1;
         }
-        i = i + 1;
     }
     // Require a fully-mapped body with exactly one Return (so the cached
     // return register is unambiguous).
@@ -2472,6 +2472,94 @@ fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
         f.jit_state = 1;
     } else {
         f.jit_state = 2;
+    }
+}
+
+// OSR-entry compile (J12a): compile ONLY the loop region [header..back] (back =
+// the backward-Jmp index, header = its target) so a hot loop JITs even when the
+// enclosing function has unmappable code (console.log, a function expr, a method
+// call) outside the loop. The JIT is entered at the loop head with the live
+// registers and deopt-exits at the loop boundary back to the interpreter.
+//
+// Targets are rebased to the region: an in-region jump stays a branch; an
+// out-of-region jump (the loop-exit condition, or a `break`) becomes an appended
+// DeoptExit stencil that resumes the interpreter at that bytecode index. A
+// fast-path miss inside the region deopts at its own bc index (the engine
+// disables OSR and finishes the loop interpreted). No Return in the region (a
+// mid-loop function return isn't modelled) — bail.
+fn jit_compile_osr(ctx: ZjsContext*, f: Function*, header: u32, back: u32) -> void {
+    if f.jit_osr_state != 0 { return; }
+    let n: u32 = (u32)f.code_len;
+    if header >= back || back >= n || (back - header) > 240 {
+        f.jit_osr_state = 2; return;
+    }
+    let descs = alloc_n<JitFnDesc>(256);
+    let ok: bool = true;
+    let j: u32 = header;
+    while j <= back {
+        if descs[j].op != NULL { j = j + 1; continue; }   // fused-carrier Nop
+        let inst = f.code[j];
+        descs[j].ra = (i32)inst.a;
+        descs[j].rb = (i32)inst.b;
+        descs[j].rc = (i32)inst.c;
+        descs[j].imm = 0;
+        descs[j].target = -1;
+        descs[j].bc_index = (i32)j;
+        if inst.op == Op::Return { ok = false; j = back + 1; }
+        else if jit_map_insn(f, j, descs, n) == 0 { ok = false; j = back + 1; }
+        else { j = j + 1; }
+    }
+    if !ok { dealloc(descs); f.jit_osr_state = 2; return; }
+    // Rebase targets to prog indices (prog base = header); collect out-of-region
+    // exits as appended DeoptExit stencils at descs[back+1 ..].
+    let n_region: u32 = back - header + 1;
+    let num_exits: u32 = 0;
+    let k: u32 = header;
+    while k <= back {
+        if descs[k].op != NULL && descs[k].target >= 0 {
+            let tbc: i32 = descs[k].target;
+            if tbc >= (i32)header && tbc <= (i32)back {
+                descs[k].target = tbc - (i32)header;
+            } else {
+                let found: i32 = -1;
+                let e: u32 = 0;
+                while e < num_exits {
+                    if descs[back + 1 + e].imm == (i64)tbc { found = (i32)e; e = num_exits; }
+                    else { e = e + 1; }
+                }
+                if found < 0 {
+                    if back + 1 + num_exits >= 256 { ok = false; k = back; }
+                    else {
+                        let slot = back + 1 + num_exits;
+                        descs[slot].op = (char*)"DeoptExit";
+                        descs[slot].imm = (i64)tbc;
+                        descs[slot].target = -1;
+                        descs[slot].bc_index = (i32)tbc;
+                        found = (i32)num_exits;
+                        num_exits = num_exits + 1;
+                    }
+                }
+                if found >= 0 { descs[k].target = (i32)n_region + found; }
+            }
+        }
+        k = k + 1;
+    }
+    if !ok { dealloc(descs); f.jit_osr_state = 2; return; }
+    let n_prog: u32 = n_region + num_exits;
+    let code: void* = NULL;
+    raw {
+        #ifdef ZJS_JIT
+        extern void* jit_compile(const void*, int);
+        code = jit_compile((const void*)&descs[header], (int)n_prog);
+        #endif
+    }
+    dealloc(descs);
+    if code != NULL {
+        f.jit_osr_code = code;
+        f.jit_osr_header = (i32)header;
+        f.jit_osr_state = 1;
+    } else {
+        f.jit_osr_state = 2;
     }
 }
 
@@ -2842,6 +2930,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 raw {
                     #ifdef ZJS_JIT
                     ((void(*)(ZjsValue*, int*))f->jit_code)(regs, &jdeopt);
+                    // A call in the JIT body (J11) may have realloc'd reg_stack,
+                    // dangling `regs` — re-derive from the stable base index.
+                    regs = &ctx->reg_stack[regs_base];
                     #endif
                 }
                 if jdeopt < 0 {
@@ -4715,6 +4806,51 @@ fn interpret_inner_full(ctx: ZjsContext*,
             // to keep loops responsive to GC pressure.
             if off < 0 {
                 ctx_maybe_gc(ctx);
+                // OSR-entry (J12a; folds out of the default/iOS build). The
+                // back-edge target is the loop head (ip + 1 after the bottom
+                // increment). Compile just the loop region once it's hot, then
+                // run it on the live frame; it deopt-exits at the loop boundary.
+                // `jit_osr_state == 2` (a loop that already failed to compile,
+                // or whose JIT region deopted) is the steady state for any loop
+                // outside the subset — check it first so those loops skip the
+                // per-back-edge work entirely (no runtime-enabled call).
+                if f.jit_osr_state != 2 && jit_build_enabled() != 0 && jit_runtime_enabled() != 0 {
+                    let header: u32 = (u32)(ip + 1);
+                    if f.jit_osr_state == 0 {
+                        f.jit_osr_calls = f.jit_osr_calls + 1;
+                        if f.jit_osr_calls >= jit_hot_threshold() {
+                            jit_compile_osr(ctx, f, header, (u32)prev_ip);
+                        }
+                    }
+                    if f.jit_osr_state == 1 && f.jit_osr_header == (i32)header {
+                        let jdeopt: int = -1;
+                        raw {
+                            #ifdef ZJS_JIT
+                            ((void(*)(ZjsValue*, int*))f->jit_osr_code)(regs, &jdeopt);
+                            // A call inside the loop may have realloc'd reg_stack.
+                            regs = &ctx->reg_stack[regs_base];
+                            #endif
+                        }
+                        if ctx.pending_throw_active {
+                            // A call in the loop threw — route to the outer-loop
+                            // unwind exactly like the whole-fn hook (J11).
+                            throwing = true;
+                            thrown = ctx.pending_throw_value;
+                            ctx.pending_throw_active = false;
+                            ctx.frames[cur_idx].ip = (usize)jdeopt;
+                            exit_reason = 3;
+                            break;
+                        }
+                        ip = (usize)jdeopt;
+                        // jdeopt inside the region = a fast-path miss (polymorphic
+                        // loop) → stop OSR for this fn. Outside = the normal loop
+                        // exit → keep the region for the next time the loop runs.
+                        if jdeopt >= (int)header && jdeopt <= (int)prev_ip {
+                            f.jit_osr_state = 2;
+                        }
+                        continue;
+                    }
+                }
             }
         } else if op == Op::JmpIfTrue {
             if zjs_to_bool_coerce(regs[inst.a]) != 0 {

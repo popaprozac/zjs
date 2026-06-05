@@ -720,6 +720,16 @@ struct Function {
     jit_ret_reg: i32;     // register holding the return value after a JIT run
     jit_calls:   u32;     // hotness counter (frame entries at ip==0)
     jit_state:   i32;
+    // --- OSR-entry / partial-region loop JIT (J12a). Independent of the
+    // whole-function cache above: a function whose whole body is outside the
+    // subset (e.g. has a top-level console.log) can still JIT just its hot
+    // loop. jit_osr_state: 0=untried, 1=compiled (run jit_osr_code), 2=disabled.
+    // The JIT is entered at bytecode index jit_osr_header (the loop head) and
+    // deopt-exits at the loop boundary back to the interpreter.
+    jit_osr_code:   void*;   // entry: void (*)(ZjsValue *regs, int *deopt)
+    jit_osr_header: i32;     // loop-header bc index this region was compiled for
+    jit_osr_state:  i32;     // 0=untried, 1=compiled, 2=disabled
+    jit_osr_calls:  u32;     // back-edge hotness counter
 }
 
 fn function_new() -> Function* {

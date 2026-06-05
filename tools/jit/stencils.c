@@ -351,6 +351,16 @@ void zjs_stencil_Invoke(ZjsValue *regs, int *deopt) {
     __attribute__((musttail)) return _JIT_CONTINUE(nr, deopt);
 }
 
+// DeoptExit: terminal exit from an OSR loop region (J12a). When a loop-exit
+// branch is taken (the loop condition fails), the fused jump targets one of
+// these appended stencils, which reports the post-loop bytecode index (baked
+// into IMM64) as a deopt — the engine resumes the interpreter there with the
+// live registers. Not a fast-path miss: the engine keeps the region compiled.
+void zjs_stencil_DeoptExit(ZjsValue *regs, int *deopt) {
+    (void)regs;
+    *deopt = (int)(intptr_t)&_JIT_IMM64;
+}
+
 // Jmp: unconditional branch to TARGET.
 void zjs_stencil_Jmp(ZjsValue *regs, int *deopt) {
     __attribute__((musttail)) return _JIT_TARGET(regs, deopt);
