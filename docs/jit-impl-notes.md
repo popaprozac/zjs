@@ -217,14 +217,49 @@ Honest read: real but below the spike's 4–6× — the bench *includes* per-cal
 compile/alloc, and the copy-and-patch baseline still pays per-op tail-call
 overhead (no fusion/IC yet). The number is the floor, not the ceiling.
 
-## Next — J5/J6
+## J5 — the JIT fires under `run` (DONE)
 
-1. **Hot-loop dispatch hook.** Count back-edges per `Function*`; once hot, JIT
-   the body once (cache the region) and run it from the interpreter's live
-   frame instead of re-compiling. Removes the per-call compile cost the bench
-   still pays, and is where the JIT actually pays off in `run`.
-2. **Deopt-resume.** Today a deopt discards the run and re-interprets from the
-   top (fine for pure bodies / jit-check). Real hot-loop deopt must resume the
-   interpreter at the current bytecode index with the live frame.
-3. **More ops + IC inlining** (`Mul`/`Div`, `CmpLtImm`, property/`LoadGlobal`
-   with `ctx` in the ABI), then the **platform gate** finalize (off iOS).
+The JIT now dispatches from inside the interpreter: a hot function is compiled
+once, cached on the `Function*`, and run from the live frame — so it pays off
+under plain `zjs run`, not just `jit-check`/`jit-bench`.
+
+- **One seam, every call path.** The hook sits at the top of the dispatch loop
+  at `ip == 0` (after the `this`-seed, before the inner loop). Every call —
+  the entry frame AND trampoline `Op::Invoke` pushes — funnels through here, so
+  no call-machinery surgery was needed. It reuses the existing frame setup
+  (params/`this`/env already bound) and, on a successful run, finishes exactly
+  as `Op::Return` would (`pop_call_frame` + write the result to the caller /
+  `final_result`, then `continue` — verified equivalent to `exit_reason==1`).
+- **Compile once, cache.** `Function` gains `jit_code`/`jit_ret_reg`/
+  `jit_calls`/`jit_state` (all zero-init). State machine: 0 unknown → count to
+  `ZJS_JIT_THRESHOLD` (default 8) → `jit_compile_fn` → 1 compiled or 2 disabled.
+- **Eligibility (kept tight for safety):** plain sync functions (not
+  generator/async/ctor), body fully in the op subset, **exactly one `Return`**
+  (unambiguous return reg), and **no in-place write to a param register**.
+  That last rule is the deopt-safety invariant: a deopt re-interprets from
+  `ip==0`, which re-inits locals but not params, so a partial JIT run that
+  mutated a param would corrupt the re-run's inputs. Read-only params (e.g.
+  `sumTo(n)`) still qualify; the subset is otherwise side-effect-free, so a
+  deopt is a safe no-op rollback.
+- **Gating.** Folded out entirely in the default/iOS build via
+  `jit_build_enabled()` (clang constant-folds → zero cost). Runtime knobs:
+  `ZJS_JIT_OFF=1` disables, `ZJS_JIT_THRESHOLD=N` tunes hotness.
+
+**Validated.** test262 on the **ZJS_JIT build with `ZJS_JIT_THRESHOLD=1`**
+(every eligible function JIT'd) = **byte-identical** failure set to the
+interpreter baseline (0 new / 0 fixed across 27k tests). Real `run` (1e8 iters
+across 100 hot `sumTo(1e6)` calls): interp **1.60 s** → JIT **0.82 s** =
+**1.95×** — clean ~2× now that compile is cached (no per-call recompile).
+
+## Next — J6
+
+1. **Deopt-resume.** Today a deopt discards the run and re-interprets from
+   `ip==0` (safe for the side-effect-free subset, which is why the param-write
+   guard exists). True OSR-style resume at the deopt bytecode index would lift
+   that guard and let richer (param-mutating) bodies JIT.
+2. **More ops + IC inlining** (`Mul`/`Div`, `CmpLtImm`/fused `≤,>,≥`,
+   property / `LoadGlobal` with `ctx` threaded into the ABI), then **fusion**
+   to close toward the spike's 4–6×.
+3. **Platform gate finalize** — the `ZJS_JIT` Makefile gate already excludes
+   iOS; lock it in + document, and free cached regions on `Function`/GC teardown
+   (today they leak for the process lifetime).

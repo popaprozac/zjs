@@ -65,7 +65,19 @@ printf '\n[matrix] JIT vs interpreter on real JS loops (jit-bench, jit==interp g
 "$JD" jit-bench 2>/dev/null | sed 's/jit-bench: /  s+=i (1e7, overflow):  /'
 "$JD" jit-bench "(function(){ let a=0; for(let i=0;i<10000000;i++){ a=i; } return a; })" 2>/dev/null | sed 's/jit-bench: /  a=i  (1e7, int32):     /'
 
-printf '\nNote: J4/J4b — faithful NaN-box arithmetic + fused loop jumps; a real\n'
-printf 'register-based JS loop JITs and matches the interpreter. Measured ~1.5-2x\n'
-printf '(copy-and-patch baseline; bench includes per-call compile). Hot-loop\n'
-printf 'dispatch + IC/fusion (J5+) is where it climbs toward the 4-6x model.\n'
+# J5: the JIT firing automatically under `run` (hot function, cached compile).
+cat > /tmp/m_hot.js <<'HOTEOF'
+function sumTo(n){ let s=0; for(let i=0;i<n;i++){ s+=i; } return s; }
+let t=0; for(let k=0;k<100;k++){ t += sumTo(1000000); } console.log(t);
+HOTEOF
+hot_best() { for _ in 1 2 3; do { /usr/bin/time -p "$@" "$JD" run /tmp/m_hot.js >/dev/null; } 2>&1; done | awk '/real/{if(m==""||$2<m)m=$2}END{printf "%.2f", m}'; }
+H_OFF=$(hot_best env ZJS_JIT_OFF=1); H_ON=$(hot_best env)
+printf '\n[matrix] JIT under `run` (auto hot-dispatch, 1e8 iters / 100 hot calls):\n'
+printf '  interp (ZJS_JIT_OFF): %ss\n' "$H_OFF"
+printf '  JIT  (auto, cached) : %ss   speedup=%s\n' "$H_ON" \
+  "$(awk "BEGIN{printf \"%.2fx\", $H_OFF/$H_ON}")"
+
+printf '\nNote: J4/J4b/J5 — faithful NaN-box arithmetic + fused loop jumps; hot\n'
+printf 'functions JIT automatically under `run`, compiled once + cached. Measured\n'
+printf '~2x; conformance-identical (test262 ZJS_JIT/threshold=1 == interp).\n'
+printf 'IC inlining + fusion (J6) is where it climbs toward the 4-6x model.\n'

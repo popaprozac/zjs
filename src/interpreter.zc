@@ -2236,6 +2236,188 @@ fn build_iter_result(ctx: ZjsContext*, value: ZjsValue, done: bool) -> ZjsValue 
     return obj_v;
 }
 
+// ===================================================================
+// Copy-and-patch JIT — engine-side hot-function dispatch (ZJS_JIT only).
+//
+// A function whose ENTIRE body is in the JIT's faithful op subset (pure
+// register arithmetic + loops, single Return, no calls/property/global
+// access) is compiled once and cached on the Function*. The dispatch loop
+// runs the cached code from the live frame at ip==0; a deopt (a non-number
+// reaches arithmetic, or a hole) discards the run and falls back to the
+// interpreter — SAFE because the subset is side-effect-free, so nothing was
+// committed. Off by default in non-JIT builds; runtime-toggleable via
+// ZJS_JIT_OFF / ZJS_JIT_THRESHOLD. Never iOS. See docs/jit-impl-notes.md.
+// ===================================================================
+struct JitFnDesc { op: char*; ra: i32; rb: i32; rc: i32; imm: i64; target: i32; }
+
+raw {
+    // Lazy, process-wide. -1 = uninit.
+    static int g_jit_enabled = -1;     // 0 = off (ZJS_JIT_OFF set), 1 = on
+    static int g_jit_threshold = -1;   // frame-entries before compile
+}
+
+// Compile-time gate: 1 only in a ZJS_JIT build. clang folds this to a
+// constant, so the hot-dispatch hook below is dead-eliminated in the
+// default/iOS build (zero cost).
+fn jit_build_enabled() -> int {
+    let v: int = 0;
+    raw {
+        #ifdef ZJS_JIT
+        v = 1;
+        #endif
+    }
+    return v;
+}
+
+fn jit_runtime_enabled() -> int {
+    let on: int = 0;
+    raw {
+        if (g_jit_enabled < 0) {
+            const char* off = getenv("ZJS_JIT_OFF");
+            g_jit_enabled = (off && off[0] && off[0] != '0') ? 0 : 1;
+        }
+        on = g_jit_enabled;
+    }
+    return on;
+}
+
+fn jit_set_runtime_enabled(v: int) -> void {
+    raw { g_jit_enabled = v ? 1 : 0; }
+}
+
+fn jit_hot_threshold() -> u32 {
+    let t: u32 = 8;
+    raw {
+        if (g_jit_threshold < 0) {
+            const char* s = getenv("ZJS_JIT_THRESHOLD");
+            g_jit_threshold = (s && s[0]) ? atoi(s) : 8;
+            if (g_jit_threshold < 0) g_jit_threshold = 0;
+        }
+        t = (unsigned)g_jit_threshold;
+    }
+    return t;
+}
+
+// Try to compile f's body into a cached copy-and-patch region. Sets
+// f.jit_state to 1 (compiled, f.jit_code/jit_ret_reg valid) or 2 (disabled).
+// Mirrors the CLI jit_try_run op→stencil mapping; kept separate so the
+// engine path is self-contained (no dependency on the CLI tool).
+fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
+    if f.jit_state != 0 { return; }
+    // Only plain sync functions: generator/async/ctor Returns have extra
+    // semantics the single-Return fast tail doesn't model.
+    if f.is_generator || f.is_async || f.is_class_constructor {
+        f.jit_state = 2; return;
+    }
+    let n: u32 = (u32)f.code_len;
+    if n == 0 || n > 250 { f.jit_state = 2; return; }
+    let descs = alloc_n<JitFnDesc>(256);
+    let ok_all: bool = true;
+    let ret_count: u32 = 0;
+    let ret_reg: i32 = -1;
+    let i: u32 = 0;
+    while i < n {
+        let inst = f.code[i];
+        if descs[i].op != NULL { i = i + 1; continue; }   // pre-marked Nop slot
+        descs[i].ra = (i32)inst.a;
+        descs[i].rb = (i32)inst.b;
+        descs[i].rc = (i32)inst.c;
+        descs[i].imm = 0;
+        descs[i].target = -1;
+        // Deopt re-runs the interpreter from ip=0, which re-inits LOCALS but
+        // not PARAMS. If the body writes a param register in place, a partial
+        // JIT run before a deopt would corrupt the re-run's inputs. So bail on
+        // any value-writing op whose dest is a param reg (read-only params are
+        // fine — sumTo(n) still qualifies). writes_dst defaults true; the jump
+        // / return / hole-check ops (which don't write a value reg) clear it.
+        let writes_dst: bool = true;
+        if inst.op == Op::LoadInt {
+            descs[i].op = (char*)"LoadConst";
+            descs[i].imm = (i64)zjs_int32(inst_bc_i16(inst)).bits;
+        } else if inst.op == Op::LoadConst {
+            descs[i].op = (char*)"LoadConst";
+            descs[i].imm = (i64)f.constants[(u32)inst_bc_u16(inst)].bits;
+        } else if inst.op == Op::LoadUndefined {
+            descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_undefined().bits;
+        } else if inst.op == Op::LoadNull {
+            descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_null().bits;
+        } else if inst.op == Op::LoadTrue {
+            descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_bool(1).bits;
+        } else if inst.op == Op::LoadFalse {
+            descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_bool(0).bits;
+        } else if inst.op == Op::LoadHole {
+            descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_deleted().bits;
+        } else if inst.op == Op::ThrowIfHole {
+            descs[i].op = (char*)"ThrowIfHole"; writes_dst = false;
+        } else if inst.op == Op::Mov {
+            descs[i].op = (char*)"Mov";
+        } else if inst.op == Op::Add {
+            descs[i].op = (char*)"Add";
+        } else if inst.op == Op::Sub {
+            descs[i].op = (char*)"Sub";
+        } else if inst.op == Op::CmpLt {
+            descs[i].op = (char*)"CmpLt";
+        } else if inst.op == Op::AddImm {
+            descs[i].op = (char*)"AddImm"; descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
+        } else if inst.op == Op::SubImm {
+            descs[i].op = (char*)"SubImm"; descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
+        } else if inst.op == Op::Jmp {
+            descs[i].op = (char*)"Jmp"; writes_dst = false;
+            descs[i].target = (i32)i + inst_bc_i16(inst) + 1;
+        } else if inst.op == Op::JmpIfNotLt {
+            writes_dst = false;
+            if i + 1 >= n { ok_all = false; i = n; }
+            else {
+                descs[i].op = (char*)"JmpIfNotLt";
+                descs[i].target = (i32)i + inst_bc_i16(f.code[i + 1]) + 2;
+                descs[i + 1].op = (char*)"Nop"; descs[i + 1].target = -1;
+            }
+        } else if inst.op == Op::JmpIfNotLtImm {
+            writes_dst = false;
+            if i + 1 >= n { ok_all = false; i = n; }
+            else {
+                descs[i].op = (char*)"JmpIfNotLtImm";
+                descs[i].imm = (i64)(i32)(i8)inst.b;
+                descs[i].target = (i32)i + inst_bc_i16(f.code[i + 1]) + 2;
+                descs[i + 1].op = (char*)"Nop"; descs[i + 1].target = -1;
+            }
+        } else if inst.op == Op::Return {
+            descs[i].op = (char*)"Return"; writes_dst = false;
+            ret_count = ret_count + 1;
+            ret_reg = (i32)inst.a;
+        } else {
+            ok_all = false; i = n;
+        }
+        // Param-write guard (deopt re-run safety; see above).
+        if writes_dst && (u32)inst.a < f.param_count {
+            ok_all = false; i = n;
+        }
+        i = i + 1;
+    }
+    // Require a fully-mapped body with exactly one Return (so the cached
+    // return register is unambiguous).
+    if !ok_all || ret_count != 1 || ret_reg < 0 {
+        dealloc(descs);
+        f.jit_state = 2;
+        return;
+    }
+    let code: void* = NULL;
+    raw {
+        #ifdef ZJS_JIT
+        extern void* jit_compile(const void*, int);
+        code = jit_compile((const void*)descs, (int)n);
+        #endif
+    }
+    dealloc(descs);
+    if code != NULL {
+        f.jit_code = code;
+        f.jit_ret_reg = ret_reg;
+        f.jit_state = 1;
+    } else {
+        f.jit_state = 2;
+    }
+}
+
 fn interpret(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u32) -> InterpretResult {
     // One-shot eager init of the op-profile gate so the per-op
     // dispatch path inside interpret_inner can use a single load +
@@ -2573,6 +2755,47 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 regs[(u32)f.this_reg] = ctx.current_closure.captured_this;
             } else {
                 regs[(u32)f.this_reg] = ctx.host_this;
+            }
+        }
+
+        // --- Copy-and-patch JIT hot-dispatch (ZJS_JIT only; folded out
+        // otherwise). At a fresh frame entry (ip==0): count toward hot and
+        // compile once; if a compiled region exists, run it on the live
+        // frame and finish exactly as Op::Return would (pop + write the
+        // result to the caller / final_result). A deopt discards the run
+        // (side-effect-free subset) and falls through to the interpreter,
+        // marking the function so we don't keep retrying.
+        if ip == 0 && jit_build_enabled() != 0 && jit_runtime_enabled() != 0 {
+            let jst = f.jit_state;
+            if jst == 0 {
+                f.jit_calls = f.jit_calls + 1;
+                if f.jit_calls >= jit_hot_threshold() {
+                    jit_compile_fn(ctx, f);
+                    jst = f.jit_state;
+                }
+            }
+            if jst == 1 {
+                let jdeopt: int = 0;
+                raw {
+                    #ifdef ZJS_JIT
+                    ((void(*)(ZjsValue*, int*))f->jit_code)(regs, &jdeopt);
+                    #endif
+                }
+                if jdeopt == 0 {
+                    ctx_maybe_gc(ctx);
+                    let rv = regs[(u32)f.jit_ret_reg];
+                    let ret_dst = pop_call_frame(ctx);
+                    if ctx.frame_count <= entry_frame {
+                        final_result = rv;
+                    } else {
+                        let cidx = ctx.frame_count - 1;
+                        let cb = ctx.frames[cidx].regs_base;
+                        ctx.reg_stack[cb + (u32)ret_dst] = rv;
+                    }
+                    continue;
+                } else {
+                    f.jit_state = 2;
+                }
             }
         }
 

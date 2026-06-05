@@ -710,6 +710,16 @@ struct Function {
     template_raw:        ZjsString**;
     template_seg_start:  u32*;
     template_cache:      ZjsArray**;
+
+    // --- Copy-and-patch JIT cache (ZJS_JIT builds only; see docs/jit-impl-notes.md).
+    // jit_state: 0=unknown (count toward hot), 1=compiled (run jit_code),
+    // 2=disabled (body outside the JIT subset, or it deopted → interpret).
+    // All zero-init by function_new()'s zalloc, so the default (no JIT
+    // build / cold function) is "unknown → interpret".
+    jit_code:    void*;   // entry: void (*)(ZjsValue *regs, int *deopt)
+    jit_ret_reg: i32;     // register holding the return value after a JIT run
+    jit_calls:   u32;     // hotness counter (frame entries at ip==0)
+    jit_state:   i32;
 }
 
 fn function_new() -> Function* {
