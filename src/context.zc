@@ -240,7 +240,14 @@ struct ZjsRealm {
 }
 
 struct ZjsContext {
+    // The currently-executing realm (one today; createRealm adds more —
+    // docs/realm-refactor-design.md). `realms` is the registry of ALL live
+    // realms on this runtime, walked by the GC root scan so every realm's
+    // intrinsics + globals stay reachable regardless of which is current.
     realm: ZjsRealm*;
+    realms: ZjsRealm**;
+    realm_count: u32;
+    realm_cap: u32;
     // Root empty hidden class — every fresh {} starts here.
     empty_class:    ZjsHiddenClass*;
 
@@ -613,6 +620,8 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
     // allocate it before any intrinsic is installed. alloc<> zeroes, so every
     // intrinsic starts NULL (the GC root scan NULL-checks each).
     result.realm = alloc<ZjsRealm>();
+    // Register it in the runtime's realm list so the GC root scan walks it.
+    ctx_register_realm(result, result.realm);
     // GC initial threshold: collect after the first 4096 cell allocations,
     // then adapt to 2× live count after each collection.
     result.gc_threshold = 4096;
@@ -707,7 +716,13 @@ fn zjs_new_minimal_context() -> ZjsContext* {
 
 fn zjs_free_context(ctx: ZjsContext*) -> void {
     if ctx == NULL { return; }
-    if ctx.realm != NULL { dealloc(ctx.realm); }
+    // Free every realm registered on this runtime, then the registry array.
+    let rfi: u32 = 0;
+    while rfi < ctx.realm_count {
+        if ctx.realms[rfi] != NULL { dealloc(ctx.realms[rfi]); }
+        rfi = rfi + 1;
+    }
+    if ctx.realms != NULL { dealloc(ctx.realms); }
     dealloc(ctx.root_frames);
     dealloc(ctx.atoms);
     // Free every interned global name.
@@ -1821,6 +1836,76 @@ fn gc_mark_hidden_class(c: ZjsHiddenClass*) -> void {
     }
 }
 
+// Append a realm to the runtime's realm registry, growing it as needed.
+// Every realm built on this runtime (the bootstrap one, and later any
+// createRealm result) must be registered so gc_mark_roots can walk it.
+fn ctx_register_realm(ctx: ZjsContext*, r: ZjsRealm*) -> void {
+    if ctx.realm_count >= ctx.realm_cap {
+        let old_cap = ctx.realm_cap;
+        let new_cap: u32 = 4;
+        if old_cap != 0 { new_cap = old_cap * 2; }
+        if ctx.realms == NULL {
+            ctx.realms = alloc_n<ZjsRealm*>(new_cap);
+        } else {
+            ctx.realms = realloc_n<ZjsRealm*>(ctx.realms, old_cap, new_cap);
+        }
+        ctx.realm_cap = new_cap;
+    }
+    ctx.realms[ctx.realm_count] = r;
+    ctx.realm_count = ctx.realm_count + 1;
+}
+
+// Mark all of a single realm's intrinsic prototypes / cached helpers /
+// global object as live. Called once per registered realm from
+// gc_mark_roots — the per-realm half of the root set (the runtime-level
+// VM stacks, microtask queue, etc. are marked directly in gc_mark_roots).
+fn gc_mark_realm(realm: ZjsRealm*) -> void {
+    if realm == NULL { return; }
+    if realm.array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.array_proto)); }
+    if realm.string_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.string_proto)); }
+    if realm.object_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.object_proto)); }
+    if realm.function_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.function_proto)); }
+    if realm.global_this_obj != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.global_this_obj)); }
+    gc_mark_value(realm.fn_call_v);
+    gc_mark_value(realm.fn_apply_v);
+    if realm.promise_ctor_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.promise_ctor_proto)); }
+    if realm.regexp_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.regexp_proto)); }
+    if realm.generator_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.generator_proto)); }
+    if realm.map_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.map_proto)); }
+    if realm.set_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.set_proto)); }
+    if realm.weakmap_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.weakmap_proto)); }
+    if realm.weakset_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.weakset_proto)); }
+    if realm.date_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.date_proto)); }
+    if realm.symbol_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.symbol_proto)); }
+    if realm.url_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.url_proto)); }
+    if realm.usp_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.usp_proto)); }
+    if realm.uint8_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.uint8_array_proto)); }
+    if realm.int8_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.int8_array_proto)); }
+    if realm.uint8_clamped_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.uint8_clamped_array_proto)); }
+    if realm.int16_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.int16_array_proto)); }
+    if realm.uint16_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.uint16_array_proto)); }
+    if realm.int32_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.int32_array_proto)); }
+    if realm.uint32_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.uint32_array_proto)); }
+    if realm.float32_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.float32_array_proto)); }
+    if realm.float64_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.float64_array_proto)); }
+    if realm.array_buffer_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.array_buffer_proto)); }
+    if realm.data_view_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.data_view_proto)); }
+    if realm.typed_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.typed_array_proto)); }
+    if zjs_is_host_function(realm.typed_array_ctor) != 0 { gc_mark_value(realm.typed_array_ctor); }
+    if realm.websocket_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.websocket_proto)); }
+    if realm.headers_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.headers_proto)); }
+    if realm.response_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.response_proto)); }
+    if realm.request_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.request_proto)); }
+    if realm.temporal_duration_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.temporal_duration_proto)); }
+    if realm.temporal_instant_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.temporal_instant_proto)); }
+    if realm.temporal_plaindate_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.temporal_plaindate_proto)); }
+    if realm.temporal_plaintime_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.temporal_plaintime_proto)); }
+    if realm.temporal_plaindatetime_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.temporal_plaindatetime_proto)); }
+    if realm.temporal_yearmonth_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.temporal_yearmonth_proto)); }
+    if realm.temporal_monthday_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.temporal_monthday_proto)); }
+    if realm.temporal_zoneddatetime_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.temporal_zoneddatetime_proto)); }
+}
+
 fn gc_mark_roots(ctx: ZjsContext*) -> void {
     // Root empty class
     if ctx.empty_class != NULL {
@@ -1834,33 +1919,18 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     }
     // Implicit host receiver for the in-flight host call.
     gc_mark_value(ctx.host_this);
-    // Built-in prototype objects (kept alive across the whole context).
-    if ctx.realm.array_proto != NULL {
-        let ap_val = zjs_cell_from_ptr((void*)ctx.realm.array_proto);
-        gc_mark_value(ap_val);
-    }
-    if ctx.realm.string_proto != NULL {
-        let sp_val = zjs_cell_from_ptr((void*)ctx.realm.string_proto);
-        gc_mark_value(sp_val);
-    }
-    if ctx.realm.object_proto != NULL {
-        let op_val = zjs_cell_from_ptr((void*)ctx.realm.object_proto);
-        gc_mark_value(op_val);
-    }
-    if ctx.realm.function_proto != NULL {
-        let fp_val = zjs_cell_from_ptr((void*)ctx.realm.function_proto);
-        gc_mark_value(fp_val);
-    }
-    if ctx.realm.global_this_obj != NULL {
-        let gt_val = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
-        gc_mark_value(gt_val);
+    // Per-realm intrinsics (protos, cached call/apply helpers, global
+    // object) for every live realm on this runtime. One realm today;
+    // createRealm adds more — each must be rooted so cross-realm edges
+    // stay reachable (the heap is shared). See gc_mark_realm.
+    let ri: u32 = 0;
+    while ri < ctx.realm_count {
+        gc_mark_realm(ctx.realms[ri]);
+        ri = ri + 1;
     }
     if ctx.process_obj != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.process_obj));
     }
-    // Phase 3.8d cached helpers
-    gc_mark_value(ctx.realm.fn_call_v);
-    gc_mark_value(ctx.realm.fn_apply_v);
     // Phase 3.5b temp roots
     let t: u32 = 0;
     while t < ctx.temp_root_count {
@@ -1947,53 +2017,13 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         }
         fi = fi + 1;
     }
-    // Phase 3.10 — microtask queue + cached Promise prototype.
+    // Phase 3.10 — microtask queue. (Per-realm Promise/Map/Set/Date/Symbol/
+    // URL/TypedArray/etc. prototypes are rooted via gc_mark_realm above.)
     let mq: u32 = 0;
     while mq < ctx.microtask_count * 4 {
         gc_mark_value(ctx.microtask_queue[mq]);
         mq = mq + 1;
     }
-    if ctx.realm.promise_ctor_proto != NULL {
-        let pv = zjs_cell_from_ptr((void*)ctx.realm.promise_ctor_proto);
-        gc_mark_value(pv);
-    }
-    if ctx.realm.generator_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.generator_proto));
-    }
-    if ctx.realm.map_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.map_proto));
-    }
-    if ctx.realm.set_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.set_proto));
-    }
-    if ctx.realm.date_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.date_proto));
-    }
-    if ctx.realm.symbol_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.symbol_proto));
-    }
-    if ctx.realm.url_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.url_proto));
-    }
-    if ctx.realm.usp_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.usp_proto));
-    }
-    if ctx.realm.uint8_array_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.uint8_array_proto));
-    }
-    if ctx.realm.int8_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.int8_array_proto)); }
-    if ctx.realm.uint8_clamped_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.uint8_clamped_array_proto)); }
-    if ctx.realm.int16_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.int16_array_proto)); }
-    if ctx.realm.uint16_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.uint16_array_proto)); }
-    if ctx.realm.int32_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.int32_array_proto)); }
-    if ctx.realm.uint32_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.uint32_array_proto)); }
-    if ctx.realm.float32_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.float32_array_proto)); }
-    if ctx.realm.float64_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.float64_array_proto)); }
-    if ctx.realm.array_buffer_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.array_buffer_proto)); }
-    if ctx.realm.data_view_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.data_view_proto)); }
-    if ctx.realm.typed_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.typed_array_proto)); }
-    if zjs_is_host_function(ctx.realm.typed_array_ctor) != 0 { gc_mark_value(ctx.realm.typed_array_ctor); }
-    if ctx.realm.websocket_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.websocket_proto)); }
     // Live WebSocket cells — kept alive by the engine until close,
     // even when JS drops the last reference (a "ws.onmessage = ..."
     // handler still needs to fire).
@@ -2002,39 +2032,6 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         let w = ctx.websockets[wsi];
         if w != NULL { gc_mark_value(zjs_cell_from_ptr((void*)w)); }
         wsi = wsi + 1;
-    }
-    if ctx.realm.headers_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.headers_proto));
-    }
-    if ctx.realm.response_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.response_proto));
-    }
-    if ctx.realm.request_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.request_proto));
-    }
-    if ctx.realm.temporal_duration_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_duration_proto));
-    }
-    if ctx.realm.temporal_instant_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_instant_proto));
-    }
-    if ctx.realm.temporal_plaindate_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_plaindate_proto));
-    }
-    if ctx.realm.temporal_plaintime_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_plaintime_proto));
-    }
-    if ctx.realm.temporal_plaindatetime_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_plaindatetime_proto));
-    }
-    if ctx.realm.temporal_yearmonth_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_yearmonth_proto));
-    }
-    if ctx.realm.temporal_monthday_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_monthday_proto));
-    }
-    if ctx.realm.temporal_zoneddatetime_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_zoneddatetime_proto));
     }
     // In-flight fetch promises + URLs must stay alive even if user
     // code dropped the only reference — completion still needs to
