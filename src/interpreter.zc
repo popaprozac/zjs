@@ -882,14 +882,19 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let name = zjs_as_string(key_str_val);
         // globalThis: a property miss falls through to the globals
         // table so `var g = this; g.someGlobal` works at top level.
-        if o == ctx.realm.global_this_obj {
+        // Cross-realm: resolve against the realm that OWNS this globalThis
+        // (a foreign realm's `other.Array` must read other's binding), not
+        // the current realm. realm_of_global_this fast-paths the current
+        // realm and only scans realms[] when more than one exists.
+        let gthis_realm = realm_of_global_this(ctx, o);
+        if gthis_realm != NULL {
             // Try the own-slot path first (allows defineProperty on
             // globalThis to shadow); then fall back to the globals table.
             let slot_g = class_find_slot(o.cls, name);
             if slot_g < 0 {
-                let gslot = ctx_find_global(ctx, name.data, name.length);
-                if gslot >= 0 && ctx.realm.globals[(u32)gslot].defined {
-                    return ctx.realm.globals[(u32)gslot].value;
+                let gslot = realm_find_global(gthis_realm, name.data, name.length);
+                if gslot >= 0 && gthis_realm.globals[(u32)gslot].defined {
+                    return gthis_realm.globals[(u32)gslot].value;
                 }
             }
         }

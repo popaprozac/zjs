@@ -29972,10 +29972,19 @@ fn zjs_string_concat(ctx: ZjsContext*, a: ZjsValue, b: ZjsValue) -> ZjsValue {
 // Find an existing global by name. Returns -1 if not found (i32 so we
 // can use a sentinel).
 fn ctx_find_global(ctx: ZjsContext*, name: char*, name_len: u32) -> i32 {
+    return realm_find_global(ctx.realm, name, name_len);
+}
+
+// Find a global slot in a SPECIFIC realm's binding table (the realm-scoped
+// half of ctx_find_global). Used by the globalThis-property bridge so a
+// foreign realm's globalThis resolves against ITS own globals, not the
+// current realm's (cross-realm — Runtime/Realm split P5).
+fn realm_find_global(realm: ZjsRealm*, name: char*, name_len: u32) -> i32 {
+    if realm == NULL { return -1; }
     let i: u32 = 0;
-    while i < ctx.realm.global_count {
-        if ctx.realm.globals[i].name_len == name_len {
-            let ent_name = ctx.realm.globals[i].name;
+    while i < realm.global_count {
+        if realm.globals[i].name_len == name_len {
+            let ent_name = realm.globals[i].name;
             let eq: int = 0;
             raw { eq = (memcmp(ent_name, name, name_len) == 0) ? 1 : 0; }
             if eq != 0 { return (i32)i; }
@@ -29983,6 +29992,23 @@ fn ctx_find_global(ctx: ZjsContext*, name: char*, name_len: u32) -> i32 {
         i = i + 1;
     }
     return -1;
+}
+
+// Return the realm whose global object IS `o`, or NULL if `o` is not any
+// live realm's globalThis. Fast path checks the current realm first (the
+// overwhelmingly common case); the realms[] scan only runs when more than
+// one realm exists, so single-realm programs pay nothing.
+fn realm_of_global_this(ctx: ZjsContext*, o: ZjsObject*) -> ZjsRealm* {
+    if o == NULL { return NULL; }
+    if o == ctx.realm.global_this_obj { return ctx.realm; }
+    if ctx.realm_count > 1 {
+        let ri: u32 = 0;
+        while ri < ctx.realm_count {
+            if ctx.realms[ri].global_this_obj == o { return ctx.realms[ri]; }
+            ri = ri + 1;
+        }
+    }
+    return NULL;
 }
 
 // Intern a global name: return its slot index, creating a fresh slot
