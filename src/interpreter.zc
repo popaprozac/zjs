@@ -2364,6 +2364,12 @@ fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
             let icp: i64 = 0;
             raw { icp = (int64_t)(intptr_t)&f->ics[(unsigned char)inst.c]; }
             descs[i].imm = icp;
+        } else if inst.op == Op::StoreProp {
+            // a=obj, b=ic_slot, c=val. Pass &f.ics[ic_slot] as the immediate.
+            descs[i].op = (char*)"StoreProp";
+            let icp2: i64 = 0;
+            raw { icp2 = (int64_t)(intptr_t)&f->ics[(unsigned char)inst.b]; }
+            descs[i].imm = icp2;
         } else if inst.op == Op::CmpLt {
             descs[i].op = (char*)"CmpLt";
         } else if inst.op == Op::AddImm {

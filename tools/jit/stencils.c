@@ -64,6 +64,7 @@ extern int      _JIT_BCIDX;     // this instruction's bytecode index (for OSR de
 extern uint64_t _JIT_HELP_arrget;  // GOT slot holds &jit_array_get_fast (J8a)
 extern uint64_t _JIT_HELP_arrset;  // GOT slot holds &jit_array_set_fast (J8b)
 extern uint64_t _JIT_HELP_propget; // GOT slot holds &jit_prop_get_fast  (J9)
+extern uint64_t _JIT_HELP_propset; // GOT slot holds &jit_prop_set_fast  (J9b)
 extern void     _JIT_CONTINUE(ZjsValue *regs, int *deopt);  // fall-through
 extern void     _JIT_TARGET(ZjsValue *regs, int *deopt);    // branch destination
 
@@ -272,6 +273,22 @@ void zjs_stencil_LoadProp(ZjsValue *regs, int *deopt) {
                         regs[(uintptr_t)&_JIT_RB].bits, &ok);
     if (!ok) { JIT_DEOPT(deopt); }
     regs[(uintptr_t)&_JIT_RA].bits = r;
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
+// StoreProp: regs[RA].<name> = regs[RC] for the own-slot IC fast path (J9b).
+// a=obj, b=ic_slot (folded into IMM64 = &f.ics[ic_slot]), c=val. Non-cell
+// writable-slot write only (barrier-free); miss → OSR deopt. No dst register.
+void zjs_stencil_StoreProp(ZjsValue *regs, int *deopt) {
+    typedef void (*propset_fn)(uint64_t ic, uint64_t obj, uint64_t val, int *ok);
+    uintptr_t haddr = (uintptr_t)&_JIT_HELP_propset;
+    propset_fn helper;
+    __asm__("" : "=r"(helper) : "0"(haddr));   // opaque → indirect call
+    int ok = 0;
+    helper((uint64_t)(uintptr_t)&_JIT_IMM64,
+           regs[(uintptr_t)&_JIT_RA].bits,
+           regs[(uintptr_t)&_JIT_RC].bits, &ok);
+    if (!ok) { JIT_DEOPT(deopt); }
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
 }
 

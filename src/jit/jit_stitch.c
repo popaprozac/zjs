@@ -27,6 +27,7 @@ typedef struct { uint64_t bits; } JitValue;
 extern uint64_t jit_array_get_fast(uint64_t arr, int32_t idx, int *ok);
 extern void     jit_array_set_fast(uint64_t arr, int32_t idx, uint64_t val, int *ok);
 extern uint64_t jit_prop_get_fast(uint64_t ic, uint64_t obj, int *ok);
+extern void     jit_prop_set_fast(uint64_t ic, uint64_t obj, uint64_t val, int *ok);
 
 static const JitStencil *jit_find_stencil(const char *name) {
     for (int i = 0; i < JIT_STENCIL_COUNT; i++)
@@ -130,7 +131,8 @@ static void *jit_stitch(const JitInsn *prog, int n) {
                     // loads it from the GOT and blr's it.
                     !strcmp(hole->sym, "__JIT_HELP_arrget")  ? (uint64_t)&jit_array_get_fast :
                     !strcmp(hole->sym, "__JIT_HELP_arrset")  ? (uint64_t)&jit_array_set_fast :
-                    !strcmp(hole->sym, "__JIT_HELP_propget") ? (uint64_t)&jit_prop_get_fast  : 0;
+                    !strcmp(hole->sym, "__JIT_HELP_propget") ? (uint64_t)&jit_prop_get_fast  :
+                    !strcmp(hole->sym, "__JIT_HELP_propset") ? (uint64_t)&jit_prop_set_fast  : 0;
             }
             uint64_t slot = (uint64_t)slot_addr[si];
             if (hole->kind == JIT_HOLE_GOT_PAGE21)         jit_patch_adrp(insn, pc, slot);
