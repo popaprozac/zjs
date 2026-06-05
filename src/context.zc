@@ -2947,6 +2947,13 @@ fn object_define_property_slot(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsStrin
 // Allocate a fresh array with `length` slots, all undefined.
 fn ctx_new_array(ctx: ZjsContext*, length: u32) -> ZjsValue {
     let a = zjs_array_new(length);
+    // Capture the CREATING realm's %Array.prototype% as this array's
+    // [[Prototype]] (Runtime/Realm split, P5). Without this, an array's
+    // proto resolved dynamically against the *current* ctx.realm, so a
+    // foreign-realm array read the wrong Array.prototype when inspected
+    // from another realm. NULL during bootstrap (before array_proto is
+    // built) is fine — the proto-resolution fallback handles it.
+    a.proto = ctx.realm.array_proto;
     ctx_register_cell(ctx, (void*)a);
     return zjs_cell_from_ptr((void*)a);
 }
