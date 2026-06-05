@@ -117,6 +117,22 @@ static inline uint64_t jv_num_sub(uint64_t a, uint64_t b, int *ok) {
     return 0;
 }
 
+// Mirror of zjs_arith_mul's number cases.
+static inline uint64_t jv_num_mul(uint64_t a, uint64_t b, int *ok) {
+    if (jv_is_int32(a) && jv_is_int32(b)) {
+        int64_t p = (int64_t)(int32_t)(uint32_t)a * (int64_t)(int32_t)(uint32_t)b;
+        *ok = 1;
+        if (p >= -2147483647LL - 1 && p <= 2147483647LL) return jv_box_int32((int32_t)p);
+        return jv_box_double((double)p);
+    }
+    if (jv_is_number(a) && jv_is_number(b)) {
+        *ok = 1;
+        return jv_box_double(jv_to_double(a) * jv_to_double(b));
+    }
+    *ok = 0;
+    return 0;
+}
+
 // ---- Stencils ---------------------------------------------------------------
 
 // LoadConst: regs[RA] = IMM64 (the boxed constant value).
@@ -173,6 +189,16 @@ void zjs_stencil_SubImm(ZjsValue *regs, int *deopt) {
     int ok;
     uint64_t r = jv_num_sub(regs[(uintptr_t)&_JIT_RB].bits,
                             (uint64_t)(uintptr_t)&_JIT_IMM64, &ok);
+    if (!ok) { JIT_DEOPT(deopt); }
+    regs[(uintptr_t)&_JIT_RA].bits = r;
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
+// Mul: regs[RA] = regs[RB] * regs[RC], spec number semantics (else deopt).
+void zjs_stencil_Mul(ZjsValue *regs, int *deopt) {
+    int ok;
+    uint64_t r = jv_num_mul(regs[(uintptr_t)&_JIT_RB].bits,
+                            regs[(uintptr_t)&_JIT_RC].bits, &ok);
     if (!ok) { JIT_DEOPT(deopt); }
     regs[(uintptr_t)&_JIT_RA].bits = r;
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
@@ -239,6 +265,40 @@ void zjs_stencil_JmpIfNotLtImm(ZjsValue *regs, int *deopt) {
     if (lt) __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
     __attribute__((musttail)) return _JIT_TARGET(regs, deopt);
 }
+
+// The ≤ / > / ≥ fused jumps are identical to JmpIfNotLt(Imm) but for the
+// comparison operator (NaN → all false, matching JS, since C double compares
+// are false on NaN). Generated to keep them byte-for-byte consistent.
+#define JIT_FUSED_JMP_REG(NAME, OP)                                            \
+void zjs_stencil_##NAME(ZjsValue *regs, int *deopt) {                          \
+    uint64_t a = regs[(uintptr_t)&_JIT_RA].bits;                              \
+    uint64_t b = regs[(uintptr_t)&_JIT_RB].bits;                              \
+    int cond;                                                                 \
+    if (jv_is_int32(a) && jv_is_int32(b))                                     \
+        cond = ((int32_t)(uint32_t)a) OP ((int32_t)(uint32_t)b);             \
+    else if (jv_is_number(a) && jv_is_number(b))                              \
+        cond = jv_to_double(a) OP jv_to_double(b);                            \
+    else { JIT_DEOPT(deopt); }                                                \
+    if (cond) __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);    \
+    __attribute__((musttail)) return _JIT_TARGET(regs, deopt);                \
+}
+#define JIT_FUSED_JMP_IMM(NAME, OP)                                           \
+void zjs_stencil_##NAME(ZjsValue *regs, int *deopt) {                          \
+    uint64_t a = regs[(uintptr_t)&_JIT_RA].bits;                             \
+    int32_t imm = (int32_t)(int64_t)(uintptr_t)&_JIT_IMM64;                  \
+    int cond;                                                                 \
+    if (jv_is_int32(a))       cond = ((int32_t)(uint32_t)a) OP imm;          \
+    else if (jv_is_number(a)) cond = jv_to_double(a) OP (double)imm;         \
+    else { JIT_DEOPT(deopt); }                                                \
+    if (cond) __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);    \
+    __attribute__((musttail)) return _JIT_TARGET(regs, deopt);                \
+}
+JIT_FUSED_JMP_REG(JmpIfNotLe, <=)
+JIT_FUSED_JMP_REG(JmpIfNotGt, >)
+JIT_FUSED_JMP_REG(JmpIfNotGe, >=)
+JIT_FUSED_JMP_IMM(JmpIfNotLeImm, <=)
+JIT_FUSED_JMP_IMM(JmpIfNotGtImm, >)
+JIT_FUSED_JMP_IMM(JmpIfNotGeImm, >=)
 
 // JmpIfFalse: branch to TARGET when ToBoolean(regs[RA]) is false. Handles the
 // boolean / null / undefined / numeric-zero cases inline (a CmpLt result is a

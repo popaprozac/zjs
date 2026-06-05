@@ -277,13 +277,25 @@ deopt instruction** with the live registers.
 eligible fn JIT'd, now including param-mutating bodies) = byte-identical
 failure set to the interpreter baseline. Default build unchanged.
 
-## Next — J6+/J7
+## J7 — wider loop shapes (DONE, ongoing)
 
-1. **More ops + wider loop shapes:** `Mul`/`Div`/`Mod`, the rest of the compare
-   + fused-jump family (`CmpLtImm`/`≤,>,≥` and `JmpIfNotLe/Gt/Ge(Imm)`), so
-   `for(i=n;i>0;i--)` / `i<=n` / multiply-heavy bodies JIT.
-2. **IC inlining + property/global access** (`LoadGlobal`/`LoadProp` with `ctx`
-   threaded into the ABI), then **fusion** to close toward the spike's 4–6×.
+Broadened the op subset so more loop shapes JIT, not just `for(i=0;i<n;i++)`:
+
+- **`Mul`** — int32 fast path with overflow→double, mirroring `zjs_arith_mul`.
+- **The full fused compare-branch family**: `JmpIfNotLe/Gt/Ge` (reg) and
+  `JmpIfNotLeImm/GtImm/GeImm` (imm), generated from a macro so they stay
+  byte-consistent with the `<` form. Now `for(i=n;i>0;i--)`, `i<=n`, `i>=0`,
+  and multiply-heavy bodies (e.g. factorial) JIT. Verified `jit==interp` on
+  each shape; test262 ZJS_JIT `THRESHOLD=1` byte-identical to baseline.
+
+## Next — J7+/J8
+
+1. **More ops:** `Div`/`Mod` (mind ÷0 → Infinity, `%` sign rules), non-fused
+   `CmpLe/Gt/Ge` + `Cmp*Imm` (for `let b = i < n` style), and
+   `JmpIfFalse`/`JmpIfTrue` mapping so `while`/`if`-bearing numeric bodies JIT.
+2. **IC inlining + property/global access** (`LoadGlobal`/`LoadProp`/`LoadElem`
+   with `ctx` threaded into the ABI) — the biggest remaining coverage gap
+   (array-indexing loops like sieve), then **fusion** toward the spike's 4–6×.
 3. **Multi-`Return`** via the unified exit channel (Return reports its index
    too → drop the single-Return restriction).
 4. **Platform-gate finalize + lifetime:** the `ZJS_JIT` Makefile gate already
