@@ -4698,6 +4698,50 @@ fn has_arguments_local(c: Compiler*) -> bool {
 
 // Postfix / prefix ++/-- on an identifier target. MVP — only IdentExpr;
 // `obj.x++` and `arr[i]++` are future work.
+// `x++` / `--x` on a bare identifier inside a `with` block: resolve `x`
+// through the runtime with-object first (WithLookup), else normal scope —
+// mirroring compile_assignment_with's GetValue/PutValue branch pattern.
+fn compile_inc_dec_with(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: bool) -> u8 {
+    let name = c.source + target.start;
+    let name_len = target.end - target.start;
+    let name_atom = ctx_intern_atom(c.ctx, name, name_len);
+
+    let name_r = emit_load_atom(c, name_atom);
+    let holder = alloc_reg(c);
+    emit(c, make_inst_ab(Op::WithLookup, holder, name_r));
+    release_reg(c, name_r);
+
+    // GetValue: cur = holder ? holder[name] : normal-resolve(name).
+    let cur = alloc_reg(c);
+    let jl = emit(c, make_inst_a_i16(Op::JmpIfNullish, holder, 0));
+    emit_load_prop_atom(c, cur, holder, name_atom);
+    let jl_done = emit(c, make_inst_i16(Op::Jmp, 0));
+    patch_jump(c, jl);
+    emit_load_name_normal(c, name, name_len, cur);
+    patch_jump(c, jl_done);
+
+    // new = cur ± 1.
+    let new_reg = alloc_reg(c);
+    let op_ = if is_inc { Op::AddImm } else { Op::SubImm };
+    emit(c, make_inst_abc(op_, new_reg, cur, (u8)1));
+
+    // PutValue: holder ? holder[name]=new : normal-store(name, new).
+    let js = emit(c, make_inst_a_i16(Op::JmpIfNullish, holder, 0));
+    emit_store_prop_atom(c, holder, name_atom, new_reg);
+    let js_done = emit(c, make_inst_i16(Op::Jmp, 0));
+    patch_jump(c, js);
+    emit_store_name_normal(c, name, name_len, new_reg);
+    patch_jump(c, js_done);
+
+    release_reg(c, holder);
+    if is_postfix {
+        release_reg(c, new_reg);
+        return cur;
+    }
+    release_reg(c, cur);
+    return new_reg;
+}
+
 fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: bool) -> u8 {
     if target == NULL {
         c.had_error = true;
@@ -4745,6 +4789,11 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
     if target.kind != NodeKind::IdentExpr {
         c.had_error = true;
         return alloc_reg(c);
+    }
+    // Inside a `with`, a bare-identifier `x++` must resolve `x` through the
+    // with-object first (same as `x += 1` does via compile_assignment_with).
+    if c.with_depth > 0 {
+        return compile_inc_dec_with(c, target, is_postfix, is_inc);
     }
     let name = c.source + target.start;
     let name_len = target.end - target.start;
