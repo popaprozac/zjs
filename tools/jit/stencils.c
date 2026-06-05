@@ -65,6 +65,8 @@ extern uint64_t _JIT_HELP_arrget;  // GOT slot holds &jit_array_get_fast (J8a)
 extern uint64_t _JIT_HELP_arrset;  // GOT slot holds &jit_array_set_fast (J8b)
 extern uint64_t _JIT_HELP_propget; // GOT slot holds &jit_prop_get_fast  (J9)
 extern uint64_t _JIT_HELP_propset; // GOT slot holds &jit_prop_set_fast  (J9b)
+extern uint64_t _JIT_HELP_gget;    // GOT slot holds &jit_global_get      (J10)
+extern uint64_t _JIT_HELP_gset;    // GOT slot holds &jit_global_set      (J10)
 extern void     _JIT_CONTINUE(ZjsValue *regs, int *deopt);  // fall-through
 extern void     _JIT_TARGET(ZjsValue *regs, int *deopt);    // branch destination
 
@@ -288,6 +290,38 @@ void zjs_stencil_StoreProp(ZjsValue *regs, int *deopt) {
     helper((uint64_t)(uintptr_t)&_JIT_IMM64,
            regs[(uintptr_t)&_JIT_RA].bits,
            regs[(uintptr_t)&_JIT_RC].bits, &ok);
+    if (!ok) { JIT_DEOPT(deopt); }
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
+// LoadGlobal: regs[RA] = realm.globals[slot] for a defined top-level binding
+// (J10). a=dst; IMM64 carries the global slot index (the bridge bakes it in).
+// The helper reaches the active ctx via g_active_ctx — no ctx in the ABI. An
+// undefined slot (falls through to globalThis, or ReferenceError) → OSR deopt.
+void zjs_stencil_LoadGlobal(ZjsValue *regs, int *deopt) {
+    typedef uint64_t (*gget_fn)(uint64_t slot, int *ok);
+    uintptr_t haddr = (uintptr_t)&_JIT_HELP_gget;
+    gget_fn helper;
+    __asm__("" : "=r"(helper) : "0"(haddr));   // opaque → indirect call
+    int ok = 0;
+    uint64_t r = helper((uint64_t)(uintptr_t)&_JIT_IMM64, &ok);
+    if (!ok) { JIT_DEOPT(deopt); }
+    regs[(uintptr_t)&_JIT_RA].bits = r;
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
+// GlobalSet: realm.globals[slot] = regs[RA] (J10). Serves both Op::StoreGlobal
+// and Op::DefineGlobal (both set value + defined=true). a=src; IMM64 = slot.
+// Non-cell values only (a cell into the globals root could need a write
+// barrier → deopt). Out-of-range slot → deopt.
+void zjs_stencil_GlobalSet(ZjsValue *regs, int *deopt) {
+    typedef void (*gset_fn)(uint64_t slot, uint64_t val, int *ok);
+    uintptr_t haddr = (uintptr_t)&_JIT_HELP_gset;
+    gset_fn helper;
+    __asm__("" : "=r"(helper) : "0"(haddr));   // opaque → indirect call
+    int ok = 0;
+    helper((uint64_t)(uintptr_t)&_JIT_IMM64,
+           regs[(uintptr_t)&_JIT_RA].bits, &ok);
     if (!ok) { JIT_DEOPT(deopt); }
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
 }

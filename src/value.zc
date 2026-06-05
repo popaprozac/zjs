@@ -3463,6 +3463,48 @@ fn jit_prop_set_fast(ic_bits: u64, obj_bits: u64, val_bits: u64, ok: int*) -> vo
     *ok = 1;
 }
 
+// JIT fast path for a top-level `let`/`var` read (Op::LoadGlobal). Top-level
+// bindings live in ctx.realm.globals[slot]; the JIT reaches the active ctx via
+// the g_active_ctx global (set by interpret()) — no ctx in the ABI. A defined
+// slot returns its value; an undefined slot (would fall through to the
+// globalThis ObjectRecord, or throw ReferenceError) → *ok=0 → OSR deopt.
+fn jit_global_get(slot: u64, ok: int*) -> u64 {
+    *ok = 0;
+    let v: u64 = 0;
+    raw {
+        extern ZjsContext* g_active_ctx;
+        if (g_active_ctx != NULL) {
+            ZjsRealm* rm = g_active_ctx->realm;
+            if (rm != NULL && (uint32_t)slot < rm->global_count
+                && rm->globals[slot].defined) {
+                v = rm->globals[slot].value.bits;
+                *ok = 1;
+            }
+        }
+    }
+    return v;
+}
+
+// JIT fast path for a top-level binding write (Op::StoreGlobal / DefineGlobal —
+// identical: value = src, defined = true). NON-CELL values only (a cell store
+// into the globals root could need a generational write barrier → deopt).
+fn jit_global_set(slot: u64, val_bits: u64, ok: int*) -> void {
+    *ok = 0;
+    let vv = ZjsValue{ bits: val_bits };
+    if zjs_is_cell(vv) != 0 { return; }
+    raw {
+        extern ZjsContext* g_active_ctx;
+        if (g_active_ctx != NULL) {
+            ZjsRealm* rm = g_active_ctx->realm;
+            if (rm != NULL && (uint32_t)slot < rm->global_count) {
+                rm->globals[slot].value.bits = val_bits;
+                rm->globals[slot].defined = true;
+                *ok = 1;
+            }
+        }
+    }
+}
+
 // True if `idx` is in range and the slot is not a hole. Used by
 // Array.prototype methods that follow the spec's HasProperty step
 // (forEach / map / indexOf / etc. skip absent indices entirely).

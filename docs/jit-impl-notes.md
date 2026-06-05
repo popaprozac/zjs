@@ -349,27 +349,67 @@ New `obj_field` bench: interp **374 ms → JIT 120 ms = 3.11×** (LoadElem +
 LoadProp + Mul + Add, all dispatch-free); `func_loop` 1.55×. test262 ZJS_JIT
 `THRESHOLD=1` byte-identical to baseline.
 
-## Why most *legacy* benches still read ~1.0×
+## J9b — object-field writes (StoreProp) (DONE)
 
-The JIT covers **hot functions** (called repeatedly, register-local, numeric /
-array / object-field). The legacy suite is mostly **top-level loops**
-(`int_loop`, `double_loop`, `sieve`, `mandelbrot`, `property_mono`): the hot
-loop is at script top level, so its vars are *globals* and the program is
-entered *once* → the call-count threshold never fires. Moving those needs
-**(a) global access** and **(b) OSR-entry** (detect a hot loop via back-edges
-and jump *into* the JIT mid-loop) — the biggest remaining lever, with a modest
-ceiling since those loops are global-access-bound. Call-heavy benches
-(`fib`, `method_call`, `quicksort`, `richards`) need **calls-from-JIT**.
+`StoreProp` (a=obj, b=ic_slot, c=val) via `jit_prop_set_fast` — the write twin
+of LoadProp, same baked-IC immediate (`&f.ics[ic_slot]`, from `inst.b`). Own
+writable slot, NON-CELL value only (a cell store into an object slot needs a
+generational write barrier → deopt); IC miss / proto / accessor / non-object /
+non-extensible-new-prop → OSR deopt. `o.x = o.x + 1` ≈ **1.94×**. Object-field
+read-modify-write loops now JIT end to end. Commit `57c9dac`.
 
-## Next — J9b/J10
+## J10 — top-level loops: back-edge compile + globals (DONE)
 
-1. **`StoreProp`** (object-field write; non-cell barrier-free like StoreElem) —
-   completes object-field loops.
-2. **Hot-loop OSR-entry + `LoadGlobal`/`StoreGlobal`** (needs `ctx` → first
-   3-arg ABI) — the top-level-loop unlock; the biggest legacy-bench lever.
-3. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`
+The legacy-bench unlock, and **simpler than the J9b/J10-plan predicted** on both
+axes:
+
+- **No OSR-*entry*, no 3-arg ABI.** The plan assumed top-level loops needed
+  jumping *into* the JIT mid-loop. They don't: a top-level script function is
+  entered exactly once, at `ip==0`, *before* its loop runs. So "compile on first
+  entry, then run the whole body from the top" already captures the entire loop.
+  The only missing piece was the *trigger*: the hotness gate counts **calls**,
+  and a script entered once never reaches the threshold. Fix = `jit_fn_has_backedge(f)`
+  (one-pass scan for a backward `Jmp`/`JmpIf*`, i16 offset < 0): a function with
+  a back-edge is a loop, dominated by its body not its call count, so compile it
+  on **first** entry. ~10-line change in the `ip==0` hook.
+- **Globals are ctx-free via `g_active_ctx`.** `LoadGlobal`/`GlobalSet` stencils
+  (`GlobalSet` serves both `StoreGlobal` and `DefineGlobal` — both = value +
+  `defined=true`) call `jit_global_get`/`jit_global_set` (value.zc) through the
+  J8 helper mechanism. Those read `g_active_ctx->realm->globals[slot]` — and
+  `g_active_ctx` is the global the engine already sets around `interpret()`, so
+  **no `ctx` in the ABI**. Slot index baked into IMM64 (`inst_bc_u16`). Write
+  path is non-cell only (a cell into the globals root could need a barrier →
+  deopt); undefined slot (would fall through to the globalThis ObjectRecord) →
+  deopt.
+
+Measured (engine path, 10M-iter top-level loops, JIT on vs `ZJS_JIT_OFF=1`,
+loop-only after subtracting process startup): `int_loop_big` (let → registers)
+**1.60×**, `var`-globals **1.69×**, `double`-globals **2.07×**. test262 ZJS_JIT
+`THRESHOLD=1` byte-identical to baseline.
+
+**Corrected fact (supersedes the J4b/J9 notes):** top-level **`let`** compiles
+to **registers** in the script function frame (Mov + local regs); only **`var`**
+(and function declarations) compile to **globals** (`DefineGlobal`/`LoadGlobal`/
+`StoreGlobal`). So `int_loop`'s `let sum/n/i` was *always* register-local and was
+never blocked on globals — it was blocked purely on the entry-once gate. The
+globals stencils matter for `var`-style top-level loops and any global-heavy hot
+function.
+
+**CLI-harness gotcha:** `jit_try_run` (the `jit-check`/`jit-bench` path) executes
+the JIT *outside* `interpret()`, so it must set `g_active_ctx` itself
+(`gc_set_active_ctx(ctx)` around the run) — otherwise the first global op sees a
+NULL ctx and deopts, and the harness reports a spurious BAIL. The engine path is
+unaffected (it runs the JIT *inside* `interpret_inner_full`, ctx already set).
+
+## Next — J11+
+
+1. **Calls-from-JIT** (`Invoke`/`MethodInvoke`/`TailInvoke`) — the call-heavy
+   benches (`fib`, `method_call`, `quicksort`, `richards`) and any top-level loop
+   whose body calls a function (incl. `console.log`, which is why
+   `console.log(sum)` bails today).
+2. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`
    (`while`/`if` bodies).
-4. **Multi-`Return`** via the unified exit channel (Return reports its index
+3. **Multi-`Return`** via the unified exit channel (Return reports its index
    too → drop the single-Return restriction).
 4. **Platform-gate finalize + lifetime:** the `ZJS_JIT` Makefile gate already
    excludes iOS — lock it in + document, and free cached regions on
