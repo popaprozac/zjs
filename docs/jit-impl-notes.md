@@ -401,16 +401,64 @@ the JIT *outside* `interpret()`, so it must set `g_active_ctx` itself
 NULL ctx and deopts, and the harness reports a spurious BAIL. The engine path is
 unaffected (it runs the JIT *inside* `interpret_inner_full`, ctx already set).
 
-## Next — J11+
+## J11 — calls from JIT (Invoke) (DONE)
 
-1. **Calls-from-JIT** (`Invoke`/`MethodInvoke`/`TailInvoke`) — the call-heavy
-   benches (`fib`, `method_call`, `quicksort`, `richards`) and any top-level loop
-   whose body calls a function (incl. `console.log`, which is why
-   `console.log(sum)` bails today).
-2. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`
+A JIT'd body's `Op::Invoke` (`a=dst`, `b=base`, `c=argc`; callee at `regs[base]`,
+args contiguous after) calls back into the engine through `jit_invoke_fast`
+(interpreter.zc, beside `zjs_call_value_with_this`). The hard parts:
+
+- **reg_stack relocation.** A re-entrant call pushes the callee's frame onto the
+  same `ctx.reg_stack`, which `push_call_frame` may **realloc** — dangling the
+  JIT's raw `regs` pointer. The helper (a) copies args to a C-stack buffer before
+  calling (the callee-frame setup would otherwise read through a dangling
+  args pointer), and (b) after the call **re-derives** F's base from the top
+  frame's `regs_base` *index* (`&reg_stack[frames[frame_count-1].regs_base]`) and
+  returns it; the Invoke stencil threads that fresh base forward via the musttail
+  `_JIT_CONTINUE(nr, deopt)`. F is always the top frame after the call returns
+  (the callee's frames are popped), so the re-derivation is exact.
+- **Throws.** The call can throw. A JIT'd fn is never try/catch-bearing (EnterTry
+  isn't in the subset), so the throw must unwind F to its caller. The helper runs
+  the callee via `zjs_call_value_with_this`, which on a sync throw sets
+  `ctx.pending_throw_active`/`_value` and returns. The stencil then sets
+  `*deopt = bcindex` (status 2) and returns; the hot-dispatch hook, seeing
+  `jdeopt>=0 && pending_throw_active`, routes to the **outer-loop throw handler**
+  (`throwing=true; thrown=pending; continue`) instead of resuming — so the call
+  is NOT re-executed (it already ran). A normal deopt (status 1, pre-call bail:
+  non-callable / argc>16 / no ctx) leaves pending_throw clear → resume + the
+  interpreter re-executes the Invoke (no call ran yet, so no double effect; the
+  interpreter also throws the spec-correct "not a function").
+- **Callee-kind gate (the subtle one).** `jit_invoke_fast` BAILS (pre-call) on
+  **generator / async / class-constructor** callees and only fast-calls plain
+  sync function/closure/host-fn. Reason: `Op::Invoke` runs a generator's
+  **prologue eagerly** — so `function* g({}=null){}` throws on `g()` from the
+  param destructuring — but `zjs_call_value_with_this`→`make_generator_iter`
+  *defers* param binding. Without the gate, a JIT'd `function(){ g() }` (e.g. an
+  `assert.throws` callback) swallowed that throw. This was 182 test262 regressions
+  (all generator/async-gen `dstr` error tests) caught by the `THRESHOLD=1` gate
+  before commit; the flag check on the resolved `Function*` fixed it, 0 reg.
+
+`func` calling a user `func` 20M times: **1.54×** (JIT on vs `ZJS_JIT_OFF`).
+A loop body that calls a function (incl. `console.log(x)`) now JITs. test262
+`THRESHOLD=1` and default-build both byte-identical to baseline.
+
+**jit-check now frame-backs the run.** `jit_try_run` used to run the JIT on a
+standalone `regs` buffer; with calls that breaks the frame re-derivation. It now
+`push_call_frame`s F, runs the JIT on the real reg-stack slice, re-derives the
+result via the base index, and pops — so `jit-check`/`jit-bench` validate calls
+too. (Caveat: it runs the inner fn in isolation, so an inner fn that calls a
+*program-defined* global still BAILs there; validate those via the engine path /
+test262. A builtin global call like `parseInt(x)` validates fine.)
+
+## Next — J12+
+
+1. **`MethodInvoke`** (`obj.m(args)`) — unlocks `method_call`, `richards`, and
+   most OO code. Needs receiver binding (this = regs[base+1] region) + the same
+   reg_stack-realloc / throw discipline as Invoke.
+2. **Multi-`Return`** via a unified exit channel (Return reports its index too) —
+   drops the single-Return restriction, so `fib` (`if(n<2)return n; …`) and most
+   real functions become eligible. Pairs naturally with `JmpIfFalse`/`JmpIfTrue`.
+3. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`
    (`while`/`if` bodies).
-3. **Multi-`Return`** via the unified exit channel (Return reports its index
-   too → drop the single-Return restriction).
 4. **Platform-gate finalize + lifetime:** the `ZJS_JIT` Makefile gate already
    excludes iOS — lock it in + document, and free cached regions on
    `Function`/GC teardown (today they leak for the process lifetime).

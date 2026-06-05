@@ -67,6 +67,7 @@ extern uint64_t _JIT_HELP_propget; // GOT slot holds &jit_prop_get_fast  (J9)
 extern uint64_t _JIT_HELP_propset; // GOT slot holds &jit_prop_set_fast  (J9b)
 extern uint64_t _JIT_HELP_gget;    // GOT slot holds &jit_global_get      (J10)
 extern uint64_t _JIT_HELP_gset;    // GOT slot holds &jit_global_set      (J10)
+extern uint64_t _JIT_HELP_invoke;  // GOT slot holds &jit_invoke_fast     (J11)
 extern void     _JIT_CONTINUE(ZjsValue *regs, int *deopt);  // fall-through
 extern void     _JIT_TARGET(ZjsValue *regs, int *deopt);    // branch destination
 
@@ -324,6 +325,30 @@ void zjs_stencil_GlobalSet(ZjsValue *regs, int *deopt) {
            regs[(uintptr_t)&_JIT_RA].bits, &ok);
     if (!ok) { JIT_DEOPT(deopt); }
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
+// Invoke: regs[RA] = regs[RB](regs[RB+1 .. RB+argc]) — plain call (J11). a=dst
+// (RA), b=base (RB; callee at regs[base], args contiguous after), argc in IMM64.
+// jit_invoke_fast runs the callee via the engine and returns the (possibly
+// relocated — a re-entrant call can realloc reg_stack) regs base, which we
+// thread forward. status: 1 = pre-call bail (non-callable / big argc / no ctx)
+// → OSR deopt + the interpreter re-executes the call; 2 = the callee threw
+// (pending_throw set) → deopt at this index, and the engine hook routes to the
+// throw handler instead of resuming. 0 = success → continue with the new base.
+void zjs_stencil_Invoke(ZjsValue *regs, int *deopt) {
+    typedef ZjsValue *(*invoke_fn)(ZjsValue *regs, uint32_t base,
+                                   uint32_t argc, uint32_t dst, int *st);
+    uintptr_t haddr = (uintptr_t)&_JIT_HELP_invoke;
+    invoke_fn helper;
+    __asm__("" : "=r"(helper) : "0"(haddr));   // opaque → indirect call
+    int st = 0;
+    ZjsValue *nr = helper(regs,
+                          (uint32_t)(uintptr_t)&_JIT_RB,
+                          (uint32_t)(uintptr_t)&_JIT_IMM64,
+                          (uint32_t)(uintptr_t)&_JIT_RA, &st);
+    if (st == 1) { JIT_DEOPT(deopt); }
+    if (st == 2) { *deopt = (int)(intptr_t)&_JIT_BCIDX; return; }
+    __attribute__((musttail)) return _JIT_CONTINUE(nr, deopt);
 }
 
 // Jmp: unconditional branch to TARGET.

@@ -2391,6 +2391,12 @@ fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
             let icp2: i64 = 0;
             raw { icp2 = (int64_t)(intptr_t)&f->ics[(unsigned char)inst.b]; }
             descs[i].imm = icp2;
+        } else if inst.op == Op::Invoke {
+            // a=dst, b=base (callee reg; args at base+1..base+argc), c=argc.
+            // jit_invoke_fast runs the callee via the engine; argc baked into
+            // IMM64. Throw → routed by the hook; non-callable/big-argc → deopt.
+            descs[i].op = (char*)"Invoke";
+            descs[i].imm = (i64)(u32)inst.c;
         } else if inst.op == Op::LoadGlobal {
             // a=dst, bc=realm-global slot. Helper reads realm.globals[slot] via
             // g_active_ctx; an undefined slot (globalThis fallthrough) → deopt.
@@ -2851,6 +2857,19 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         ctx.reg_stack[cb + (u32)ret_dst] = rv;
                     }
                     continue;
+                } else if ctx.pending_throw_active {
+                    // J11: a call inside the JIT body threw. The call already
+                    // ran (observable), so we must NOT resume-and-re-execute —
+                    // route to the outer-loop throw handler instead. A JIT'd fn
+                    // is never try/catch-bearing (EnterTry isn't in the subset),
+                    // so the unwind pops F and propagates to the caller, exactly
+                    // as if F itself threw.
+                    throwing = true;
+                    thrown   = ctx.pending_throw_value;
+                    ctx.pending_throw_active = false;
+                    ctx.frames[cur_idx].ip = (usize)jdeopt;
+                    f.jit_state = 2;
+                    continue;   // outer-loop top: `if throwing` unwinds F
                 } else {
                     // J6 OSR: deopt at bytecode index jdeopt. The live regs hold
                     // the JIT's faithful state through jdeopt-1 (params and all),
@@ -8003,6 +8022,63 @@ fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsVal
     }
     ctx.host_this = saved;
     return r;
+}
+
+// JIT call helper (J11). The JIT runs F's body on the live top frame; an
+// Op::Invoke calls back here. We reach ctx via g_active_ctx (set around
+// interpret()), run the callee synchronously via zjs_call_value_with_this, and
+// return the (possibly relocated) regs base so the stencil threads it forward —
+// a re-entrant call may realloc reg_stack and dangle the JIT's raw pointer, so
+// args are copied to a C-stack buffer first and F's base is re-derived after.
+//   status: 0 = ok (result written to nr[dst]); 1 = pre-call bail (no call ran
+//   → deopt + interpreter re-executes the Invoke); 2 = the callee threw
+//   (pending_throw is set → the hook routes to the outer-loop throw handler).
+// Plain-call `this` = undefined (coerced to global for user fns), matching
+// Op::Invoke. Non-callable receiver → bail so the interpreter throws the
+// spec-correct "not a function" TypeError.
+fn jit_invoke_fast(regs: ZjsValue*, base: u32, argc: u32, dst: u32, status: int*) -> ZjsValue* {
+    *status = 1;
+    let ctx: ZjsContext* = NULL;
+    raw { extern ZjsContext* g_active_ctx; ctx = g_active_ctx; }
+    if ctx == NULL || argc > 16 { return regs; }
+    let callee = regs[base];
+    // Only plain sync function/closure/host-fn callees take the fast call.
+    // Generator / async / class-constructor callees have call semantics that
+    // differ from zjs_call_value_with_this's path — e.g. Op::Invoke runs a
+    // generator's PROLOGUE eagerly (so a throwing destructuring param like
+    // `function* g({}=null){}` throws on `g()`), whereas make_generator_iter
+    // defers it. Bail (pre-call deopt) so the interpreter's Op::Invoke handles
+    // those exactly. Host functions never carry these flags.
+    let tgt: Function* = NULL;
+    if zjs_is_function(callee) != 0 {
+        raw { tgt = (Function*)zjs_cell_as_ptr(callee); }
+    } else if zjs_is_closure(callee) != 0 {
+        let cl = zjs_as_closure(callee);
+        raw { tgt = (Function*)cl->function; }
+    } else if zjs_is_host_function(callee) == 0 {
+        return regs;   // not callable → interpreter throws "not a function"
+    }
+    if tgt != NULL {
+        if tgt.is_generator || tgt.is_async || tgt.is_class_constructor {
+            return regs;
+        }
+    }
+    let result: ZjsValue = zjs_undefined();
+    let nr: ZjsValue* = regs;
+    raw {
+        ZjsValue argbuf[16];
+        for (uint32_t i = 0; i < argc; i++) argbuf[i] = regs[base + 1u + i];
+        ZjsValue undef = zjs_undefined();
+        result = zjs_call_value_with_this(ctx, callee, undef, argbuf, argc);
+        nr = &ctx->reg_stack[ctx->frames[ctx->frame_count - 1].regs_base];
+    }
+    if ctx.pending_throw_active {
+        *status = 2;
+        return nr;
+    }
+    raw { nr[dst] = result; }
+    *status = 0;
+    return nr;
 }
 
 fn zjs_call_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc: u32) -> ZjsValue {
