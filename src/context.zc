@@ -19548,9 +19548,30 @@ fn host_reflect_has(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         }
         return host_reflect_has(ctx, args, 2);  // forward
     }
-    let v = property_get(ctx, obj, key);
-    if ctx.pending_throw_active { return zjs_bool(0); }
-    return zjs_bool(if zjs_is_undefined(v) != 0 { 0 } else { 1 });
+    // Real [[HasProperty]] = own-descriptor existence walked up the prototype
+    // chain. Uses getOwnPropertyDescriptor (which does NOT invoke a getter —
+    // it returns the accessor's {get,set}) + getPrototypeOf (exotic/proxy
+    // aware), so a side-effecting getter isn't fired by a mere `key in obj`,
+    // Reflect.has, or `with`-binding probe — and a property whose VALUE is
+    // undefined still reports present. (property_get did both wrong.)
+    let cur = obj;
+    let steps: u32 = 0;
+    while value_is_object_type(cur) {
+        let dd: ZjsValue[2]; dd[0] = cur; dd[1] = key;
+        let dd_p: ZjsValue* = NULL; raw { dd_p = &dd[0]; }
+        let desc = host_object_get_own_property_descriptor(ctx, dd_p, 2);
+        if ctx.pending_throw_active { return zjs_bool(0); }
+        if zjs_is_undefined(desc) == 0 { return zjs_bool(1); }
+        let one: ZjsValue[1]; one[0] = cur;
+        let one_p: ZjsValue* = NULL; raw { one_p = &one[0]; }
+        let proto = host_object_get_prototype_of(ctx, one_p, 1);
+        if ctx.pending_throw_active { return zjs_bool(0); }
+        if zjs_is_null(proto) != 0 { return zjs_bool(0); }
+        cur = proto;
+        steps = steps + 1;
+        if steps > 1000000 { return zjs_bool(0); }
+    }
+    return zjs_bool(0);
 }
 
 // `with` binding resolution (ECMA-262 §9.1.1.2.1 HasBinding for an object
