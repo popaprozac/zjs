@@ -131,9 +131,45 @@ defines, so raw{} `#ifdef` is the right gate. comptime IS the future lever for
 CODEGEN — generate the `Op`→stencil dispatch table (and maybe stencil bodies)
 from one comptime list instead of hand-maintaining them.
 
-## Next — real bytecode (J3b-2 / J4)
+## J3b-2a — JIT real compiled bytecode (value-faithful subset, done)
 
-1. **Build gating** — DONE (above).
+The engine now JITs REAL compiled JS bytecode (not hand-written self-test
+descriptors) and matches the interpreter.
+
+- `src/jit/jit_stitch.c`: `jit_compile(prog, n)` extern — the zc side hands it a
+  layout-matched `JitInsn[]` and runs the returned pointer.
+- `tools/zjs.zc`: `JitDesc`/`JitResult` zc structs (mirror the C `JitInsn`) + a
+  `jit_try_run(ctx, f)` that walks `f.code[]`, maps each `Op` to a stencil +
+  operands, and **bails** (`ok=0`) on any op outside the value-faithful subset —
+  so the interpreter result always stands. Subset: `LoadInt`/`LoadConst`/
+  `LoadUndefined`/`LoadNull`/`LoadTrue`/`LoadFalse` (→ the `LoadConst` stencil
+  with the right boxed bits), `Mov`, `Return`. These reproduce the interpreter
+  EXACTLY (load/copy boxed values), so JIT == interpret by construction. The
+  `jit_compile` call lives in a `raw{} #ifdef ZJS_JIT` block, so the function is
+  a harmless always-bail no-op in the default build.
+- `jit-check "<expr>"` CLI: compile → run via interpreter AND via the JIT →
+  compare bits. Verified: `42`, `1000000`, `undefined`/`null`/`true`/`false`
+  → `PASS (jit == interp)`; `1+2`, `-7` → clean `BAIL` (Add/Neg not yet
+  faithful). Default build: `jit-check` reports no-JIT; test262 unchanged.
+
+This proves the whole real-bytecode path: `Op`→stencil, operands from `Inst`
+(+ constants pool), a frame-allocated run, return-value read, and the bail
+safety net. The frame here is a fresh `alloc_n<ZjsValue>` (true `reg_stack`
+sharing comes with nested calls); good enough for a top-level program.
+
+## Next — faithful arithmetic + loops + measurement (J4)
+
+1. **Build gating** — DONE.
+2. **Real bytecode consume + bail** — DONE (value-faithful subset).
+3. **Faithful arithmetic/compare/branch stencils.** Make `Add`/`AddImm`/`CmpLt`/
+   `JmpIfFalse`/`JmpIfNotLt` (the fused loop op) NaN-box-correct: inline the
+   int32 fast path (unbox via tag check, add with overflow → rebox) and `call`
+   the existing interpreter helper on the slow path. Then a real JS loop JITs.
+4. **Branch target mapping.** `Jmp`/`JmpIfFalse` carry a signed instruction
+   offset (`inst_bc_i16`); convert to a target instruction index for the
+   stitcher's `_JIT_TARGET` hole (the loop_test already proved back-edges).
+5. **Hot-loop detection + dispatch hook**, then **measure a real JS loop vs the
+   spike's 4–6× model** — the implementation GO/NO-GO.
 2. **Consume real bytecode.** Map zjs `Op` → stencil, extract operands from
    the real `Inst` (`inst.a`/`inst.b`/`inst.c` + `inst_bc_*` immediates),
    build the pc-map over the function's `code[]`, bail (don't JIT) on any op

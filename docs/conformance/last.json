@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-06-05 06:43 UTC",
+    "when": "2026-06-05 07:04 UTC",
     "total": 27491,
     "passed": 23338,
     "failed": 3433,
@@ -950,7 +950,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",

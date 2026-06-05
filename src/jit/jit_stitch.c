@@ -121,6 +121,13 @@ static void *jit_stitch(const JitInsn *prog, int n) {
 
 // ---- extern interface called from the zc side (interpreter) ----------------
 
+// Compile a decoded instruction list into an executable region. The zc side
+// (which can read Function*/Inst/Op natively) builds `prog` — a layout-matched
+// array of JitInsn — and runs the returned pointer on its frame. NULL = bail.
+void *jit_compile(const JitInsn *prog, int n) {
+    return jit_stitch(prog, n);
+}
+
 // Self-test: JIT the int_loop body and confirm sum(0..N-1). Returns 1 on PASS.
 // Proves the engine binary contains + runs the JIT stitcher end to end.
 int jit_selftest_loop(void) {

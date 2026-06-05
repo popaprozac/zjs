@@ -793,6 +793,99 @@ fn print_usage() -> int {
     return 1;
 }
 
+// --- JIT bytecode bridge (J3b-2) -------------------------------------------
+// Layout-matched mirror of the C JitInsn the stitcher consumes.
+struct JitDesc {
+    op:     char*;
+    ra:     i32;
+    rb:     i32;
+    rc:     i32;
+    imm:    i64;
+    target: i32;
+}
+struct JitResult {
+    ok:  int;        // 1 = JIT'd + ran; 0 = bailed (unsupported op / non-JIT build)
+    val: ZjsValue;   // the function's return value when ok
+}
+
+// JIT a Function* whose body uses only the value-FAITHFUL op subset
+// (LoadInt / LoadConst / Mov / Return) — ops the current stencils reproduce
+// exactly (load/copy boxed values). Any other op bails (ok=0) so the
+// interpreter result always stands. Proves real-bytecode -> stencil -> frame-
+// shared run -> correct result + the bail path. Arithmetic/loops (faithful
+// NaN-box stencils) are the next step.
+fn jit_try_run(ctx: ZjsContext*, f: Function*) -> JitResult {
+    let res: JitResult;
+    res.ok = 0;
+    res.val = zjs_undefined();
+    let n: u32 = (u32)f.code_len;
+    if n == 0 || n > 250 { return res; }
+    let descs = alloc_n<JitDesc>(256);
+    let ret_reg: i32 = -1;
+    let ok_all: bool = true;
+    let i: u32 = 0;
+    while i < n {
+        let inst = f.code[i];
+        descs[i].ra = (i32)inst.a;
+        descs[i].rb = (i32)inst.b;
+        descs[i].rc = (i32)inst.c;
+        descs[i].imm = 0;
+        descs[i].target = -1;
+        if inst.op == Op::LoadInt {
+            descs[i].op = (char*)"LoadConst";
+            descs[i].imm = (i64)zjs_int32(inst_bc_i16(inst)).bits;
+        } else if inst.op == Op::LoadConst {
+            descs[i].op = (char*)"LoadConst";
+            descs[i].imm = (i64)f.constants[(u32)inst_bc_u16(inst)].bits;
+        } else if inst.op == Op::LoadUndefined {
+            descs[i].op = (char*)"LoadConst";
+            descs[i].imm = (i64)zjs_undefined().bits;
+        } else if inst.op == Op::LoadNull {
+            descs[i].op = (char*)"LoadConst";
+            descs[i].imm = (i64)zjs_null().bits;
+        } else if inst.op == Op::LoadTrue {
+            descs[i].op = (char*)"LoadConst";
+            descs[i].imm = (i64)zjs_bool(1).bits;
+        } else if inst.op == Op::LoadFalse {
+            descs[i].op = (char*)"LoadConst";
+            descs[i].imm = (i64)zjs_bool(0).bits;
+        } else if inst.op == Op::Mov {
+            descs[i].op = (char*)"Mov";
+        } else if inst.op == Op::Return {
+            descs[i].op = (char*)"Return";
+            ret_reg = (i32)inst.a;
+        } else {
+            ok_all = false;
+            i = n;
+        }
+        i = i + 1;
+    }
+    if !ok_all || ret_reg < 0 {
+        dealloc(descs);
+        return res;
+    }
+    let rc: u32 = if f.register_count > 0 { f.register_count } else { 1 };
+    let regs = alloc_n<ZjsValue>(rc);
+    let did: int = 0;
+    raw {
+        #ifdef ZJS_JIT
+        extern void* jit_compile(const void*, int);
+        void* code = jit_compile((const void*)descs, (int)n);
+        if (code) {
+            ((void(*)(ZjsValue*))code)(regs);
+            did = 1;
+        }
+        #endif
+    }
+    if did != 0 {
+        res.ok = 1;
+        res.val = regs[ret_reg];
+    }
+    dealloc(regs);
+    dealloc(descs);
+    return res;
+}
+
 fn main(argc: int, argv: char**) -> int {
     if argc < 2 { return print_usage(); }
 
@@ -822,6 +915,32 @@ fn main(argc: int, argv: char**) -> int {
         }
         if pass != 0 { raw { printf("jit-selftest: PASS\n"); } return 0; }
         raw { printf("jit-selftest: FAIL\n"); }
+        return 1;
+    }
+
+    // jit-check "<expr>": compile, run via interpreter AND via the JIT (when the
+    // body is in the supported op subset), and compare. Proves real-bytecode
+    // JIT correctness vs the interpreter; BAILs to interpreter-only otherwise.
+    if libc_str::strcmp(argv[1], "jit-check") == 0 {
+        let src: char* = (char*)"42";
+        if argc >= 3 { src = argv[2]; }
+        let ctx = zjs_new_context();
+        let f = zjs_compile(ctx, src);
+        if f == NULL { raw { printf("jit-check: compile failed\n"); } return 1; }
+        let r = interpret(ctx, f, NULL, 0);
+        let jr = jit_try_run(ctx, f);
+        if jr.ok == 0 {
+            raw { printf("jit-check: BAIL (unsupported ops or non-JIT build)\n"); }
+            return 0;
+        }
+        if jr.val.bits == r.value.bits {
+            raw { printf("jit-check: PASS (jit == interp)\n"); }
+            return 0;
+        }
+        raw {
+            printf("jit-check: FAIL jit=0x%llx interp=0x%llx\n",
+                   (unsigned long long)jr.val.bits, (unsigned long long)r.value.bits);
+        }
         return 1;
     }
 
