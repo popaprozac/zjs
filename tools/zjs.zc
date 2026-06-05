@@ -803,6 +803,28 @@ fn main(argc: int, argv: char**) -> int {
     // (parse / lex / --version) are unaffected.
     install_signal_handlers();
 
+    // JIT self-test (only present in a ZJS_JIT build; default/iOS builds omit
+    // the stitcher entirely). Proves the engine binary contains + runs the
+    // copy-and-patch JIT. See docs/jit-impl-notes.md.
+    if libc_str::strcmp(argv[1], "jit-selftest") == 0 {
+        let pass: int = 0;
+        let present: int = 0;
+        raw {
+            #ifdef ZJS_JIT
+            extern int jit_selftest_loop(void);
+            present = 1;
+            pass = jit_selftest_loop();
+            #endif
+        }
+        if present == 0 {
+            raw { printf("jit-selftest: this build has no JIT (rebuild with ZJS_JIT=1)\n"); }
+            return 1;
+        }
+        if pass != 0 { raw { printf("jit-selftest: PASS\n"); } return 0; }
+        raw { printf("jit-selftest: FAIL\n"); }
+        return 1;
+    }
+
     if libc_str::strcmp(argv[1], "--version") == 0 { return run_version(); }
 
     if libc_str::strcmp(argv[1], "eval") == 0 {

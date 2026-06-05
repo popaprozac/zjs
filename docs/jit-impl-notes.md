@@ -102,16 +102,38 @@ GOT patch encodings (arm64), for reference:
 The toolchain is complete and proven: compile → extract → two-pass stitch of a
 real loop with operands, continuations, a conditional branch, and a back-edge.
 
-## Next — engine integration (J3b/J4)
+## J3b-1 — engine build integration (done)
 
-The remaining work is wiring this into the engine behind `ZJS_JIT`:
-1. **Build gating.** Add `src/jit/jit.zc` to the engine build only when
-   `ZJS_JIT` is set, with `-DZJS_JIT` reaching the clang that compiles the
-   raw{} blocks + the generated header `#include`. (Investigate the existing
-   `ZJS_NO_*` define plumbing — it currently rides a separate clang step at
-   Makefile:250, NOT the main `zc build`; the JIT needs the define on the
-   main engine build. Likely append to `ZC_FLAGS` for a JIT build and confirm
-   `zc` forwards `-D`/`-I` like it does `-Isrc`.)
+The JIT is now compiled INTO the engine behind `ZJS_JIT`, and the engine binary
+runs the copy-and-patch stitcher end to end.
+
+- **Gating mechanism (settled).** `zc build` forwards command-line `-D`/`-I` to
+  its clang backend AND compiles+links extra `.c` sources passed positionally
+  (verified: `zc build jt.zc jp.c -DZJS_JIT` defines the macro for raw{} blocks
+  and resolves the extern). So the gate is just conditional command-line args —
+  no `ZC_FLAGS` surgery, no touching the separate stdlib clang step. Makefile:
+  when `ZJS_JIT` is set, `JIT_BUILD_ARGS := -DZJS_JIT -Ibuild src/jit/jit_stitch.c`
+  and `JIT_BUILD_DEPS := <generated header>`, appended to the `cli` rule; both
+  EMPTY by default so the default/iOS build is byte-identical (recipe unchanged).
+  The vars are defined before the `cli` rule (prereqs expand at parse time).
+- `src/jit/jit_stitch.c`: the engine-side stitcher (the two-pass loop stitcher
+  generalized + `jit_selftest_loop()`), includes the generated header. Pure C,
+  no zc-type coupling yet.
+- `tools/zjs.zc`: a `jit-selftest` subcommand inside a `raw { #ifdef ZJS_JIT
+  extern int jit_selftest_loop(void); ... #endif }` block. Absent (prints "no
+  JIT") in the default build; PASS in the `ZJS_JIT=1` build.
+- Verified: `make ZJS_JIT=1 cli` → `./build/zjs jit-selftest` = PASS, normal JS
+  still runs; default `make cli` → "no JIT" and test262 unchanged (87.2%,
+  23338, 0 delta).
+
+NOTE on comptime: Zen-c `comptime { yield(...) }` can't read external `-D`
+defines, so raw{} `#ifdef` is the right gate. comptime IS the future lever for
+CODEGEN — generate the `Op`→stencil dispatch table (and maybe stencil bodies)
+from one comptime list instead of hand-maintaining them.
+
+## Next — real bytecode (J3b-2 / J4)
+
+1. **Build gating** — DONE (above).
 2. **Consume real bytecode.** Map zjs `Op` → stencil, extract operands from
    the real `Inst` (`inst.a`/`inst.b`/`inst.c` + `inst_bc_*` immediates),
    build the pc-map over the function's `code[]`, bail (don't JIT) on any op

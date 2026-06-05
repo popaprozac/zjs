@@ -289,10 +289,6 @@ $(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(QJSRE_OBJS) $(AESGCM_OBJ)
 	@rm -f $@
 	ar rcs $@ $^
 
-cli: $(CLI)
-$(CLI): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) $(STDLIB_GEN) | $(BUILD_DIR) stdlib-link
-	$(ZC) build $(ZC_FLAGS) $(CLI_SRC) $(ZC_LINK) -o $@
-
 # === JIT — opt-in copy-and-patch baseline (second-class; OFF by default) =====
 # docs/jit-design-study.md + docs/jit-spike-phase1.md. Enable with `ZJS_JIT=1`.
 # NEVER built for iOS / sandboxed targets — those stay pure interpreter (the
@@ -301,7 +297,8 @@ $(CLI): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) $(STDLIB_GEN) | $(BUILD_DIR) st
 # Stencil pipeline (CPython Tools/jit model): compile tools/jit/stencils.c (one
 # fn per opcode, holes = extern symbols) to a relocatable .o, then
 # extract_stencils.py (J2) reads its machine code + relocations into a generated
-# header the JIT runtime stitches at execution time.
+# header the JIT runtime stitches at execution time. The vars are defined HERE,
+# before the cli rule, so a ZJS_JIT build can fold the stitcher into the engine.
 UNAME_M := $(shell uname -m)
 ifeq ($(UNAME_M),arm64)
   JIT_ARCH := arm64
@@ -319,8 +316,21 @@ JIT_STENCIL_OBJ := $(BUILD_DIR)/jit_stencils-$(JIT_ARCH).o
 # protector / PIC noise, so the only relocations in the .o are the real holes.
 JIT_STENCIL_CFLAGS := -O3 -c -fno-asynchronous-unwind-tables -fomit-frame-pointer \
                       -fno-stack-protector -fno-pic
-
 JIT_STENCIL_HDR := $(BUILD_DIR)/jit_stencils_$(JIT_ARCH).h
+
+# When ZJS_JIT is set, fold the C stitcher + define + header into the engine
+# build (empty otherwise → the default/iOS engine never sees the JIT at all).
+ifneq ($(ZJS_JIT),)
+  JIT_BUILD_ARGS := -DZJS_JIT -I$(BUILD_DIR) src/jit/jit_stitch.c
+  JIT_BUILD_DEPS := $(JIT_STENCIL_HDR) src/jit/jit_stitch.c
+else
+  JIT_BUILD_ARGS :=
+  JIT_BUILD_DEPS :=
+endif
+
+cli: $(CLI)
+$(CLI): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) $(STDLIB_GEN) $(JIT_BUILD_DEPS) | $(BUILD_DIR) stdlib-link
+	$(ZC) build $(ZC_FLAGS) $(CLI_SRC) $(ZC_LINK) $(JIT_BUILD_ARGS) -o $@
 
 .PHONY: jit-stencils
 jit-stencils: $(JIT_STENCIL_OBJ)
