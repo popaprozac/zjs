@@ -404,7 +404,7 @@ fn zjs_install_node_net_globals(ctx: ZjsContext*) -> void {
     let p5: void* = NULL; raw { p5 = (void*)host_net_close_client_impl; }
     let p6: void* = NULL; raw { p6 = (void*)host_net_poll_impl; }
     let p7: void* = NULL; raw { p7 = (void*)host_net_server_port_impl; }
-    let gt = ctx.global_this_obj;
+    let gt = ctx.realm.global_this_obj;
     object_set(ctx, gt, ctx_intern_atom(ctx, (char*)"__zjs_net_listen", 16),
                ctx_make_host_function_arity(ctx, (char*)"__zjs_net_listen", p1, 2));
     object_set(ctx, gt, ctx_intern_atom(ctx, (char*)"__zjs_net_register", 18),

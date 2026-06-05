@@ -987,7 +987,7 @@ struct ZjsArray {
     // Per-instance [[Prototype]] — non-NULL when the array was
     // constructed via `class Sub extends Array {}` (or via
     // Reflect.construct with a non-Array newTarget). Lookups walk
-    // this chain first; NULL falls back to ctx.array_proto.
+    // this chain first; NULL falls back to ctx.realm.array_proto.
     proto:    ZjsObject*;
     // Object.freeze / template-object mutability gate. When set, any
     // property assignment / indexed write is silently dropped in
@@ -1030,7 +1030,7 @@ struct ZjsHostFunction {
     // host_fn.length.
     arity:     u32;
     // 2026-05-15 — explicit [[Prototype]] override. NULL means default
-    // to ctx.function_proto. Used for the error-subclass constructors
+    // to ctx.realm.function_proto. Used for the error-subclass constructors
     // (EvalError, TypeError, ...) whose [[Prototype]] is Error itself,
     // matching the spec's `class EvalError extends Error`.
     proto_override: ZjsValue;
@@ -1095,7 +1095,7 @@ struct ZjsPromise {
     reaction_cap:  u32;
     // Per-instance [[Prototype]] — non-NULL when constructed via
     // `class Sub extends Promise {}`. NULL falls back to
-    // ctx.promise_ctor_proto.
+    // ctx.realm.promise_ctor_proto.
     proto:         ZjsObject*;
 }
 
@@ -1269,7 +1269,7 @@ struct ZjsMap {
     // defineProperty. Matches Array's pattern. NULL until first set.
     props:   ZjsObject*;
     // Per-instance [[Prototype]] — non-NULL when constructed via
-    // `class Sub extends Map {}`. NULL falls back to ctx.map_proto.
+    // `class Sub extends Map {}`. NULL falls back to ctx.realm.map_proto.
     proto:   ZjsObject*;
     // WeakMap instances reuse the ZjsMap cell but carry [[WeakMapData]],
     // not [[MapData]] — so the strong Map.prototype iteration methods
@@ -1316,7 +1316,7 @@ struct ZjsSet {
     // Lazy expando bag — same as Map's. NULL until first own prop set.
     props:   ZjsObject*;
     // Per-instance [[Prototype]] — non-NULL when constructed via
-    // `class Sub extends Set {}`. NULL falls back to ctx.set_proto.
+    // `class Sub extends Set {}`. NULL falls back to ctx.realm.set_proto.
     proto:   ZjsObject*;
     // WeakSet instances carry [[WeakSetData]] — strong Set.prototype
     // iteration methods reject them. See ZjsMap.is_weak.
@@ -1359,7 +1359,7 @@ struct ZjsDate {
     // Lazy expando bag for own properties (\`d.foo = 1\`, defineProperty).
     props:   ZjsObject*;
     // Per-instance [[Prototype]] — set when constructed via
-    // `class Sub extends Date {}`. NULL falls back to ctx.date_proto.
+    // `class Sub extends Date {}`. NULL falls back to ctx.realm.date_proto.
     proto:   ZjsObject*;
 }
 
@@ -1505,7 +1505,7 @@ struct ZjsUint8Array {
     bytes:    u8*;          // owned heap buffer (freed in uint8_array_free)
     length:   u32;          // number of bytes
     capacity: u32;          // backing-buffer capacity
-    // Per-instance [[Prototype]] override. NULL = use ctx.uint8_array_proto.
+    // Per-instance [[Prototype]] override. NULL = use ctx.realm.uint8_array_proto.
     // Set by Object.setPrototypeOf so `node:buffer`'s Buffer (whose
     // prototype chains to Uint8Array.prototype) can give instances its
     // own methods. property_get walks this chain first; GC marks it.
@@ -2818,7 +2818,7 @@ struct ZjsRegExp {
     // lazy-alloc shape as ZjsArray.props / ZjsHostFunction.props.
     props:      ZjsObject*;
     // Per-instance [[Prototype]] — set when constructed via
-    // `class Sub extends RegExp {}`. NULL falls back to ctx.regexp_proto.
+    // `class Sub extends RegExp {}`. NULL falls back to ctx.realm.regexp_proto.
     proto:      ZjsObject*;
 }
 
@@ -2853,7 +2853,7 @@ struct ZjsClosure {
     env:      ZjsObject*;        // captured environment; may be NULL for arity-0 captures
     props:    ZjsObject*;        // per-instance expando bag (NULL until first write)
     // Per-instance [[Prototype]] override, set by Object.setPrototypeOf(closure, X).
-    // NULL means "default lookup chain — walk ctx.function_proto then ctx.object_proto"
+    // NULL means "default lookup chain — walk ctx.realm.function_proto then ctx.realm.object_proto"
     // (the path before this field existed). When set, property_get walks
     // proto_override first, BEFORE Function.prototype — this is what lets
     // chalk's `(...) => ...; Object.setPrototypeOf(it, Chalk.prototype)`

@@ -191,7 +191,56 @@ struct AtomEntry {
     hash: u32;
 }
 
+// Per-realm intrinsics (Runtime/Realm split, docs/realm-refactor-design.md).
+// One realm per ZjsContext today (ctx.realm); multi-realm is a later phase.
+struct ZjsRealm {
+    array_proto: ZjsObject*;
+    string_proto: ZjsObject*;
+    object_proto: ZjsObject*;
+    fn_call_v: ZjsValue;
+    fn_apply_v: ZjsValue;
+    function_proto: ZjsObject*;
+    global_this_obj: ZjsObject*;
+    promise_ctor_proto: ZjsObject*;
+    regexp_proto: ZjsObject*;
+    generator_proto: ZjsObject*;
+    map_proto: ZjsObject*;
+    set_proto: ZjsObject*;
+    weakmap_proto: ZjsObject*;
+    weakset_proto: ZjsObject*;
+    date_proto: ZjsObject*;
+    symbol_proto: ZjsObject*;
+    url_proto: ZjsObject*;
+    usp_proto: ZjsObject*;
+    uint8_array_proto: ZjsObject*;
+    int8_array_proto: ZjsObject*;
+    uint8_clamped_array_proto: ZjsObject*;
+    int16_array_proto: ZjsObject*;
+    uint16_array_proto: ZjsObject*;
+    int32_array_proto: ZjsObject*;
+    uint32_array_proto: ZjsObject*;
+    float32_array_proto: ZjsObject*;
+    float64_array_proto: ZjsObject*;
+    array_buffer_proto: ZjsObject*;
+    data_view_proto: ZjsObject*;
+    typed_array_proto: ZjsObject*;
+    typed_array_ctor: ZjsValue;
+    websocket_proto: ZjsObject*;
+    headers_proto: ZjsObject*;
+    response_proto: ZjsObject*;
+    request_proto: ZjsObject*;
+    temporal_duration_proto: ZjsObject*;
+    temporal_instant_proto: ZjsObject*;
+    temporal_plaindate_proto: ZjsObject*;
+    temporal_plaintime_proto: ZjsObject*;
+    temporal_plaindatetime_proto: ZjsObject*;
+    temporal_yearmonth_proto: ZjsObject*;
+    temporal_monthday_proto: ZjsObject*;
+    temporal_zoneddatetime_proto: ZjsObject*;
+}
+
 struct ZjsContext {
+    realm: ZjsRealm*;
     // Root empty hidden class — every fresh {} starts here.
     empty_class:    ZjsHiddenClass*;
 
@@ -279,26 +328,19 @@ struct ZjsContext {
     // falls back to array_proto for unrecognized method names; same for
     // TAG_STRING / string_proto. Phase 3.6 will replace this with a real
     // hidden-class-driven proto chain.
-    array_proto:    ZjsObject*;
-    string_proto:   ZjsObject*;
     // Phase 3.8c — the default proto for every {} created via
     // ctx_new_object. Carries hasOwnProperty + toString.
-    object_proto:   ZjsObject*;
 
     // Phase 3.8d — cached Function.prototype.{call, apply} host
     // helpers. property_get on Function/Closure/HostFunction returns
     // these when key == "call" / "apply" so f.call(thisArg, ...) works.
-    fn_call_v:      ZjsValue;
-    fn_apply_v:     ZjsValue;
     // 2026-05-15 — real Function.prototype. Every callable's
     // [[Prototype]] resolves to this object; `Function.prototype`
     // returns it; property_get on a callable walks it before
     // object_proto. Created in ctx_init_builtins.
-    function_proto: ZjsObject*;
     // Top-level `this` (and the `globalThis` global). Property
     // reads / writes go through the existing globals table; this
     // object serves as a JS-visible handle to the global scope.
-    global_this_obj: ZjsObject*;
 
     // Phase 3.5b — temp-root stack. Host functions that invoke JS
     // callbacks (Array.prototype.map / forEach) need to keep
@@ -412,59 +454,23 @@ struct ZjsContext {
     microtask_cap:   u32;
     // Bound ctor for Promise — used by the .then path to construct
     // the result promise. Cached at init.
-    promise_ctor_proto: ZjsObject*;
 
     // RegExp.prototype — carries .test / .exec / .source / .flags.
     // property_get on TAG_REGEXP walks this chain.
-    regexp_proto:       ZjsObject*;
 
     // Generator iterator prototype — carries .next / .return / .throw
     // and the well-known Symbol.iterator self-reference (under a
     // stand-in string key since real Symbols aren't implemented yet).
     // property_get on TAG_GENERATOR walks this chain.
-    generator_proto:    ZjsObject*;
 
     // Map / Set prototypes (2026-05-16). property_get on TAG_MAP /
     // TAG_SET walks these chains.
-    map_proto:          ZjsObject*;
-    set_proto:          ZjsObject*;
-    weakmap_proto:      ZjsObject*;
-    weakset_proto:      ZjsObject*;
-    date_proto:         ZjsObject*;
-    symbol_proto:       ZjsObject*;
-    url_proto:          ZjsObject*;
-    usp_proto:          ZjsObject*;
-    uint8_array_proto:        ZjsObject*;
-    int8_array_proto:         ZjsObject*;
-    uint8_clamped_array_proto: ZjsObject*;
-    int16_array_proto:        ZjsObject*;
-    uint16_array_proto:       ZjsObject*;
-    int32_array_proto:        ZjsObject*;
-    uint32_array_proto:       ZjsObject*;
-    float32_array_proto:      ZjsObject*;
-    float64_array_proto:      ZjsObject*;
-    array_buffer_proto:       ZjsObject*;
-    data_view_proto:          ZjsObject*;
     // %TypedArray% intrinsic: the abstract superclass shared by all kinds.
     // typed_array_proto is %TypedArray%.prototype (where the generic methods
     // live); per-kind protos chain their [[Prototype]] to it. typed_array_ctor
     // is the abstract constructor — each kind ctor's [[Prototype]] override.
-    typed_array_proto:        ZjsObject*;
-    typed_array_ctor:         ZjsValue;
-    websocket_proto:          ZjsObject*;
-    headers_proto:            ZjsObject*;
-    response_proto:           ZjsObject*;
-    request_proto:            ZjsObject*;
     // Temporal per-kind method prototypes (TAG_TEMPORAL receivers route
     // here by kind in property_get). NULL when ZJS_NO_TEMPORAL.
-    temporal_duration_proto:  ZjsObject*;
-    temporal_instant_proto:   ZjsObject*;
-    temporal_plaindate_proto: ZjsObject*;
-    temporal_plaintime_proto: ZjsObject*;
-    temporal_plaindatetime_proto: ZjsObject*;
-    temporal_yearmonth_proto: ZjsObject*;
-    temporal_monthday_proto:  ZjsObject*;
-    temporal_zoneddatetime_proto: ZjsObject*;
 
     // Live WebSocket cells — polled on each event-loop tick. Owned
     // by ZjsContext (GC marks them so handlers stay reachable across
@@ -602,6 +608,11 @@ struct ZjsBuiltinModule {
 // Ring-2 stdlib extensions. The two public entry points call this and
 // then opt in to whatever stdlib pieces they need.
 fn ctx_bootstrap_core(result: ZjsContext*) -> void {
+    // Per-realm intrinsics live in a ZjsRealm reached via ctx.realm (the
+    // Runtime/Realm split — docs/realm-refactor-design.md). One realm today;
+    // allocate it before any intrinsic is installed. alloc<> zeroes, so every
+    // intrinsic starts NULL (the GC root scan NULL-checks each).
+    result.realm = alloc<ZjsRealm>();
     // GC initial threshold: collect after the first 4096 cell allocations,
     // then adapt to 2× live count after each collection.
     result.gc_threshold = 4096;
@@ -696,6 +707,7 @@ fn zjs_new_minimal_context() -> ZjsContext* {
 
 fn zjs_free_context(ctx: ZjsContext*) -> void {
     if ctx == NULL { return; }
+    if ctx.realm != NULL { dealloc(ctx.realm); }
     dealloc(ctx.root_frames);
     dealloc(ctx.atoms);
     // Free every interned global name.
@@ -1823,32 +1835,32 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     // Implicit host receiver for the in-flight host call.
     gc_mark_value(ctx.host_this);
     // Built-in prototype objects (kept alive across the whole context).
-    if ctx.array_proto != NULL {
-        let ap_val = zjs_cell_from_ptr((void*)ctx.array_proto);
+    if ctx.realm.array_proto != NULL {
+        let ap_val = zjs_cell_from_ptr((void*)ctx.realm.array_proto);
         gc_mark_value(ap_val);
     }
-    if ctx.string_proto != NULL {
-        let sp_val = zjs_cell_from_ptr((void*)ctx.string_proto);
+    if ctx.realm.string_proto != NULL {
+        let sp_val = zjs_cell_from_ptr((void*)ctx.realm.string_proto);
         gc_mark_value(sp_val);
     }
-    if ctx.object_proto != NULL {
-        let op_val = zjs_cell_from_ptr((void*)ctx.object_proto);
+    if ctx.realm.object_proto != NULL {
+        let op_val = zjs_cell_from_ptr((void*)ctx.realm.object_proto);
         gc_mark_value(op_val);
     }
-    if ctx.function_proto != NULL {
-        let fp_val = zjs_cell_from_ptr((void*)ctx.function_proto);
+    if ctx.realm.function_proto != NULL {
+        let fp_val = zjs_cell_from_ptr((void*)ctx.realm.function_proto);
         gc_mark_value(fp_val);
     }
-    if ctx.global_this_obj != NULL {
-        let gt_val = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+    if ctx.realm.global_this_obj != NULL {
+        let gt_val = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
         gc_mark_value(gt_val);
     }
     if ctx.process_obj != NULL {
         gc_mark_value(zjs_cell_from_ptr((void*)ctx.process_obj));
     }
     // Phase 3.8d cached helpers
-    gc_mark_value(ctx.fn_call_v);
-    gc_mark_value(ctx.fn_apply_v);
+    gc_mark_value(ctx.realm.fn_call_v);
+    gc_mark_value(ctx.realm.fn_apply_v);
     // Phase 3.5b temp roots
     let t: u32 = 0;
     while t < ctx.temp_root_count {
@@ -1941,47 +1953,47 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         gc_mark_value(ctx.microtask_queue[mq]);
         mq = mq + 1;
     }
-    if ctx.promise_ctor_proto != NULL {
-        let pv = zjs_cell_from_ptr((void*)ctx.promise_ctor_proto);
+    if ctx.realm.promise_ctor_proto != NULL {
+        let pv = zjs_cell_from_ptr((void*)ctx.realm.promise_ctor_proto);
         gc_mark_value(pv);
     }
-    if ctx.generator_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.generator_proto));
+    if ctx.realm.generator_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.generator_proto));
     }
-    if ctx.map_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.map_proto));
+    if ctx.realm.map_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.map_proto));
     }
-    if ctx.set_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.set_proto));
+    if ctx.realm.set_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.set_proto));
     }
-    if ctx.date_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.date_proto));
+    if ctx.realm.date_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.date_proto));
     }
-    if ctx.symbol_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.symbol_proto));
+    if ctx.realm.symbol_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.symbol_proto));
     }
-    if ctx.url_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.url_proto));
+    if ctx.realm.url_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.url_proto));
     }
-    if ctx.usp_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.usp_proto));
+    if ctx.realm.usp_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.usp_proto));
     }
-    if ctx.uint8_array_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.uint8_array_proto));
+    if ctx.realm.uint8_array_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.uint8_array_proto));
     }
-    if ctx.int8_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.int8_array_proto)); }
-    if ctx.uint8_clamped_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.uint8_clamped_array_proto)); }
-    if ctx.int16_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.int16_array_proto)); }
-    if ctx.uint16_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.uint16_array_proto)); }
-    if ctx.int32_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.int32_array_proto)); }
-    if ctx.uint32_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.uint32_array_proto)); }
-    if ctx.float32_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.float32_array_proto)); }
-    if ctx.float64_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.float64_array_proto)); }
-    if ctx.array_buffer_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.array_buffer_proto)); }
-    if ctx.data_view_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.data_view_proto)); }
-    if ctx.typed_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.typed_array_proto)); }
-    if zjs_is_host_function(ctx.typed_array_ctor) != 0 { gc_mark_value(ctx.typed_array_ctor); }
-    if ctx.websocket_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.websocket_proto)); }
+    if ctx.realm.int8_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.int8_array_proto)); }
+    if ctx.realm.uint8_clamped_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.uint8_clamped_array_proto)); }
+    if ctx.realm.int16_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.int16_array_proto)); }
+    if ctx.realm.uint16_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.uint16_array_proto)); }
+    if ctx.realm.int32_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.int32_array_proto)); }
+    if ctx.realm.uint32_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.uint32_array_proto)); }
+    if ctx.realm.float32_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.float32_array_proto)); }
+    if ctx.realm.float64_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.float64_array_proto)); }
+    if ctx.realm.array_buffer_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.array_buffer_proto)); }
+    if ctx.realm.data_view_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.data_view_proto)); }
+    if ctx.realm.typed_array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.typed_array_proto)); }
+    if zjs_is_host_function(ctx.realm.typed_array_ctor) != 0 { gc_mark_value(ctx.realm.typed_array_ctor); }
+    if ctx.realm.websocket_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.websocket_proto)); }
     // Live WebSocket cells — kept alive by the engine until close,
     // even when JS drops the last reference (a "ws.onmessage = ..."
     // handler still needs to fire).
@@ -1991,38 +2003,38 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         if w != NULL { gc_mark_value(zjs_cell_from_ptr((void*)w)); }
         wsi = wsi + 1;
     }
-    if ctx.headers_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.headers_proto));
+    if ctx.realm.headers_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.headers_proto));
     }
-    if ctx.response_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.response_proto));
+    if ctx.realm.response_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.response_proto));
     }
-    if ctx.request_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.request_proto));
+    if ctx.realm.request_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.request_proto));
     }
-    if ctx.temporal_duration_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.temporal_duration_proto));
+    if ctx.realm.temporal_duration_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_duration_proto));
     }
-    if ctx.temporal_instant_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.temporal_instant_proto));
+    if ctx.realm.temporal_instant_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_instant_proto));
     }
-    if ctx.temporal_plaindate_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.temporal_plaindate_proto));
+    if ctx.realm.temporal_plaindate_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_plaindate_proto));
     }
-    if ctx.temporal_plaintime_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.temporal_plaintime_proto));
+    if ctx.realm.temporal_plaintime_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_plaintime_proto));
     }
-    if ctx.temporal_plaindatetime_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.temporal_plaindatetime_proto));
+    if ctx.realm.temporal_plaindatetime_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_plaindatetime_proto));
     }
-    if ctx.temporal_yearmonth_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.temporal_yearmonth_proto));
+    if ctx.realm.temporal_yearmonth_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_yearmonth_proto));
     }
-    if ctx.temporal_monthday_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.temporal_monthday_proto));
+    if ctx.realm.temporal_monthday_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_monthday_proto));
     }
-    if ctx.temporal_zoneddatetime_proto != NULL {
-        gc_mark_value(zjs_cell_from_ptr((void*)ctx.temporal_zoneddatetime_proto));
+    if ctx.realm.temporal_zoneddatetime_proto != NULL {
+        gc_mark_value(zjs_cell_from_ptr((void*)ctx.realm.temporal_zoneddatetime_proto));
     }
     // In-flight fetch promises + URLs must stay alive even if user
     // code dropped the only reference — completion still needs to
@@ -2660,8 +2672,8 @@ fn ctx_new_object(ctx: ZjsContext*) -> ZjsValue {
     o.cls = ctx.empty_class;
     // Default proto: every {} inherits from Object.prototype.
     // Skipped while bootstrapping object_proto itself (it's NULL then).
-    if ctx.object_proto != NULL && o != ctx.object_proto {
-        o.proto = ctx.object_proto;
+    if ctx.realm.object_proto != NULL && o != ctx.realm.object_proto {
+        o.proto = ctx.realm.object_proto;
     }
     ctx_register_cell(ctx, (void*)o);
     return zjs_cell_from_ptr((void*)o);
@@ -2957,7 +2969,7 @@ fn ctx_make_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> ZjsVa
     mem_copy<char>(name_copy, name, name_len + 1);
     hf.name = name_copy;
     // proto_override defaults to undefined — Object.getPrototypeOf
-    // then falls back to ctx.function_proto.
+    // then falls back to ctx.realm.function_proto.
     hf.proto_override = zjs_undefined();
     // .bound holds the bound-function state object (only for the bound
     // trampoline). Initialize to undefined so non-bound host fns don't
@@ -3716,7 +3728,7 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
         // at a more-specific level (own shadows inherited) and skipping
         // DELETED slots.
         //
-        // We stop at ctx.object_proto so the global Object.prototype's
+        // We stop at ctx.realm.object_proto so the global Object.prototype's
         // built-in methods (toString/hasOwnProperty) don't appear in
         // for-in output — those are non-enumerable per spec, and we
         // don't track enumerable flags yet. Plain objects' own props
@@ -3818,7 +3830,7 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
                 }
             }
             let cur: ZjsObject* = zjs_as_object(src);
-            while cur != NULL && cur != ctx.object_proto {
+            while cur != NULL && cur != ctx.realm.object_proto {
                 // Collect this level's own names in insertion order
                 // (= slot index order). Then append to the result,
                 // skipping shadowed names.
@@ -6214,14 +6226,14 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
     if zjs_is_array(v) != 0 {
         let a = zjs_as_array(v);
         if a.proto != NULL { return zjs_cell_from_ptr((void*)a.proto); }
-        if ctx.array_proto == NULL { return zjs_null(); }
-        return zjs_cell_from_ptr((void*)ctx.array_proto);
+        if ctx.realm.array_proto == NULL { return zjs_null(); }
+        return zjs_cell_from_ptr((void*)ctx.realm.array_proto);
     }
     if zjs_is_uint8_array(v) != 0 {
         let u = zjs_as_uint8_array(v);
         if u.proto != NULL { return zjs_cell_from_ptr((void*)u.proto); }
-        if ctx.uint8_array_proto == NULL { return zjs_null(); }
-        return zjs_cell_from_ptr((void*)ctx.uint8_array_proto);
+        if ctx.realm.uint8_array_proto == NULL { return zjs_null(); }
+        return zjs_cell_from_ptr((void*)ctx.realm.uint8_array_proto);
     }
     if zjs_is_host_function(v) != 0 {
         // Host fns may carry an explicit override (used for error
@@ -6229,8 +6241,8 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         // every callable's [[Prototype]] is Function.prototype.
         let hf = zjs_as_host_function(v);
         if zjs_is_undefined(hf.proto_override) == 0 { return hf.proto_override; }
-        if ctx.function_proto == NULL { return zjs_null(); }
-        return zjs_cell_from_ptr((void*)ctx.function_proto);
+        if ctx.realm.function_proto == NULL { return zjs_null(); }
+        return zjs_cell_from_ptr((void*)ctx.realm.function_proto);
     }
     if zjs_is_function(v) != 0 {
         let fp = zjs_cell_as_ptr(v);
@@ -6241,8 +6253,8 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
             return zjs_cell_from_ptr((void*)ff.proto_override);
         }
         if zjs_is_undefined(ff.parent_ctor) == 0 { return ff.parent_ctor; }
-        if ctx.function_proto == NULL { return zjs_null(); }
-        return zjs_cell_from_ptr((void*)ctx.function_proto);
+        if ctx.realm.function_proto == NULL { return zjs_null(); }
+        return zjs_cell_from_ptr((void*)ctx.realm.function_proto);
     }
     if zjs_is_closure(v) != 0 {
         let cl = zjs_as_closure(v);
@@ -6254,60 +6266,60 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         let ff2: Function* = NULL;
         raw { ff2 = (Function*)fp2; }
         if zjs_is_undefined(ff2.parent_ctor) == 0 { return ff2.parent_ctor; }
-        if ctx.function_proto == NULL { return zjs_null(); }
-        return zjs_cell_from_ptr((void*)ctx.function_proto);
+        if ctx.realm.function_proto == NULL { return zjs_null(); }
+        return zjs_cell_from_ptr((void*)ctx.realm.function_proto);
     }
     if zjs_is_regexp(v) != 0 {
         let rr = zjs_as_regexp(v);
         if rr.proto != NULL { return zjs_cell_from_ptr((void*)rr.proto); }
-        if ctx.regexp_proto != NULL { return zjs_cell_from_ptr((void*)ctx.regexp_proto); }
+        if ctx.realm.regexp_proto != NULL { return zjs_cell_from_ptr((void*)ctx.realm.regexp_proto); }
     }
     if zjs_is_map(v) != 0 {
         let mm = zjs_as_map(v);
         if mm.proto != NULL { return zjs_cell_from_ptr((void*)mm.proto); }
-        if ctx.map_proto != NULL { return zjs_cell_from_ptr((void*)ctx.map_proto); }
+        if ctx.realm.map_proto != NULL { return zjs_cell_from_ptr((void*)ctx.realm.map_proto); }
     }
     if zjs_is_set(v) != 0 {
         let ss = zjs_as_set(v);
         if ss.proto != NULL { return zjs_cell_from_ptr((void*)ss.proto); }
-        if ctx.set_proto != NULL { return zjs_cell_from_ptr((void*)ctx.set_proto); }
+        if ctx.realm.set_proto != NULL { return zjs_cell_from_ptr((void*)ctx.realm.set_proto); }
     }
     if zjs_is_date(v) != 0 {
         let dd = zjs_as_date(v);
         if dd.proto != NULL { return zjs_cell_from_ptr((void*)dd.proto); }
-        if ctx.date_proto != NULL { return zjs_cell_from_ptr((void*)ctx.date_proto); }
+        if ctx.realm.date_proto != NULL { return zjs_cell_from_ptr((void*)ctx.realm.date_proto); }
     }
     if zjs_is_promise(v) != 0 {
         let pp = zjs_as_promise(v);
         if pp.proto != NULL { return zjs_cell_from_ptr((void*)pp.proto); }
-        if ctx.promise_ctor_proto != NULL {
-            return zjs_cell_from_ptr((void*)ctx.promise_ctor_proto);
+        if ctx.realm.promise_ctor_proto != NULL {
+            return zjs_cell_from_ptr((void*)ctx.realm.promise_ctor_proto);
         }
     }
-    if zjs_is_generator(v) != 0 && ctx.generator_proto != NULL {
-        return zjs_cell_from_ptr((void*)ctx.generator_proto);
+    if zjs_is_generator(v) != 0 && ctx.realm.generator_proto != NULL {
+        return zjs_cell_from_ptr((void*)ctx.realm.generator_proto);
     }
-    if zjs_is_uint8_array(v) != 0 && ctx.uint8_array_proto != NULL {
-        return zjs_cell_from_ptr((void*)ctx.uint8_array_proto);
+    if zjs_is_uint8_array(v) != 0 && ctx.realm.uint8_array_proto != NULL {
+        return zjs_cell_from_ptr((void*)ctx.realm.uint8_array_proto);
     }
     if zjs_is_typed_array(v) != 0 {
         let p = ta_proto_for(ctx, zjs_as_typed_array(v).kind);
         if p != NULL { return zjs_cell_from_ptr((void*)p); }
     }
-    if zjs_is_array_buffer(v) != 0 && ctx.array_buffer_proto != NULL {
-        return zjs_cell_from_ptr((void*)ctx.array_buffer_proto);
+    if zjs_is_array_buffer(v) != 0 && ctx.realm.array_buffer_proto != NULL {
+        return zjs_cell_from_ptr((void*)ctx.realm.array_buffer_proto);
     }
-    if zjs_is_data_view(v) != 0 && ctx.data_view_proto != NULL {
-        return zjs_cell_from_ptr((void*)ctx.data_view_proto);
+    if zjs_is_data_view(v) != 0 && ctx.realm.data_view_proto != NULL {
+        return zjs_cell_from_ptr((void*)ctx.realm.data_view_proto);
     }
-    if zjs_is_websocket(v) != 0 && ctx.websocket_proto != NULL {
-        return zjs_cell_from_ptr((void*)ctx.websocket_proto);
+    if zjs_is_websocket(v) != 0 && ctx.realm.websocket_proto != NULL {
+        return zjs_cell_from_ptr((void*)ctx.realm.websocket_proto);
     }
     // Primitives — ToObject(v) would wrap, then get its prototype.
     // Surface the matching prototype chain root directly; that's the
     // observable result.
-    if zjs_is_string(v) != 0 && ctx.string_proto != NULL {
-        return zjs_cell_from_ptr((void*)ctx.string_proto);
+    if zjs_is_string(v) != 0 && ctx.realm.string_proto != NULL {
+        return zjs_cell_from_ptr((void*)ctx.realm.string_proto);
     }
     if zjs_is_bool(v) != 0 {
         let bool_g = ctx_find_global(ctx, (char*)"Boolean", 7);
@@ -7254,8 +7266,8 @@ fn value_has_index(ctx: ZjsContext*, v: ZjsValue, idx: u32) -> bool {
         }
         // Walk up the array's proto chain — Array.prototype is a
         // plain ZjsObject in our model, so the same class walk works.
-        if ctx.array_proto != NULL {
-            let cur: ZjsObject* = ctx.array_proto;
+        if ctx.realm.array_proto != NULL {
+            let cur: ZjsObject* = ctx.realm.array_proto;
             while cur != NULL {
                 let slot = class_find_slot(cur.cls, key_atom);
                 if slot >= 0 && zjs_is_deleted(cur.slots[(u32)slot]) == 0 { return true; }
@@ -11578,7 +11590,7 @@ fn host_regexp_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     }
     if zjs_is_string(flags_v) == 0 { flags_v = zjs_to_string(ctx, flags_v); }
     let re_v = ctx_new_regexp(ctx, pattern_v, flags_v);
-    let nt_proto_r = subclass_proto_for(ctx, ctx.regexp_proto);
+    let nt_proto_r = subclass_proto_for(ctx, ctx.realm.regexp_proto);
     if nt_proto_r != NULL {
         let re = zjs_as_regexp(re_v);
         re.proto = nt_proto_r;
@@ -12281,7 +12293,7 @@ fn map_require_strong_this(ctx: ZjsContext*) -> ZjsMap* {
 fn host_map_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let m = zjs_map_new();
     ctx_register_cell(ctx, (void*)m);
-    let nt_proto_m = subclass_proto_for(ctx, ctx.map_proto);
+    let nt_proto_m = subclass_proto_for(ctx, ctx.realm.map_proto);
     if nt_proto_m != NULL { m.proto = nt_proto_m; }
     let m_v = zjs_cell_from_ptr((void*)m);
     // Optional iterable arg — each entry must itself be an iterable of
@@ -12606,7 +12618,7 @@ fn set_require_strong_this(ctx: ZjsContext*) -> ZjsSet* {
 fn host_set_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let s = zjs_set_new();
     ctx_register_cell(ctx, (void*)s);
-    let nt_proto_s = subclass_proto_for(ctx, ctx.set_proto);
+    let nt_proto_s = subclass_proto_for(ctx, ctx.realm.set_proto);
     if nt_proto_s != NULL { s.proto = nt_proto_s; }
     let s_v = zjs_cell_from_ptr((void*)s);
     if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
@@ -12661,8 +12673,8 @@ fn host_weakmap_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let m = zjs_map_new();
     ctx_register_cell(ctx, (void*)m);
     m.is_weak = true;
-    let nt = subclass_proto_for(ctx, ctx.weakmap_proto);
-    m.proto = if nt != NULL { nt } else { ctx.weakmap_proto };
+    let nt = subclass_proto_for(ctx, ctx.realm.weakmap_proto);
+    m.proto = if nt != NULL { nt } else { ctx.realm.weakmap_proto };
     let m_v = zjs_cell_from_ptr((void*)m);
     if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
         let adder = property_get(ctx, m_v, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"set", 3)));
@@ -12706,8 +12718,8 @@ fn host_weakset_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let s = zjs_set_new();
     ctx_register_cell(ctx, (void*)s);
     s.is_weak = true;
-    let nt = subclass_proto_for(ctx, ctx.weakset_proto);
-    s.proto = if nt != NULL { nt } else { ctx.weakset_proto };
+    let nt = subclass_proto_for(ctx, ctx.realm.weakset_proto);
+    s.proto = if nt != NULL { nt } else { ctx.realm.weakset_proto };
     let s_v = zjs_cell_from_ptr((void*)s);
     if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
         let adder = property_get(ctx, s_v, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"add", 3)));
@@ -13593,7 +13605,7 @@ fn host_headers_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let obj_v = ctx.host_this;
     if zjs_is_object(obj_v) == 0 {
         obj_v = ctx_new_object(ctx);
-        if ctx.headers_proto != NULL { zjs_as_object(obj_v).proto = ctx.headers_proto; }
+        if ctx.realm.headers_proto != NULL { zjs_as_object(obj_v).proto = ctx.realm.headers_proto; }
     }
     let obj = zjs_as_object(obj_v);
     let bag_v = ctx_new_object(ctx);
@@ -13887,7 +13899,7 @@ def RESP_STATUS_TEXT_KEY: char* = (char*)"__zjs_resp_status_text__";
 
 fn build_response_object(ctx: ZjsContext*, status: i32, body_v: ZjsValue, headers_v: ZjsValue, url_v: ZjsValue) -> ZjsValue {
     let obj_v = ctx_new_object(ctx);
-    if ctx.response_proto != NULL { zjs_as_object(obj_v).proto = ctx.response_proto; }
+    if ctx.realm.response_proto != NULL { zjs_as_object(obj_v).proto = ctx.realm.response_proto; }
     let o = zjs_as_object(obj_v);
     object_set(ctx, o, ctx_intern_atom(ctx, RESP_STATUS_KEY,  19), zjs_int32(status));
     object_set(ctx, o, ctx_intern_atom(ctx, RESP_BODY_KEY,    17), body_v);
@@ -13984,7 +13996,7 @@ fn host_request_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         ctx.host_this = saved_this;
     }
     let obj_v = ctx_new_object(ctx);
-    if ctx.request_proto != NULL { zjs_as_object(obj_v).proto = ctx.request_proto; }
+    if ctx.realm.request_proto != NULL { zjs_as_object(obj_v).proto = ctx.realm.request_proto; }
     let o = zjs_as_object(obj_v);
     object_set(ctx, o, ctx_intern_atom(ctx, REQ_URL_KEY,     15), url_v);
     object_set(ctx, o, ctx_intern_atom(ctx, REQ_METHOD_KEY,  18), method_v);
@@ -14169,8 +14181,8 @@ fn marshal_request_headers(ctx: ZjsContext*, hv: ZjsValue,
     let count: usize = 0;
 
     // Headers instance — read the hidden bag.
-    if zjs_is_object(hv) != 0 && ctx.headers_proto != NULL
-       && zjs_as_object(hv).proto == ctx.headers_proto {
+    if zjs_is_object(hv) != 0 && ctx.realm.headers_proto != NULL
+       && zjs_as_object(hv).proto == ctx.realm.headers_proto {
         let bag = headers_bag(ctx, zjs_as_object(hv));
         if bag == NULL { return 0; }
         // Walk the bag's hidden-class chain to recover all key/value pairs.
@@ -14252,8 +14264,8 @@ fn host_fetch(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc >= 1 {
         if zjs_is_string(args[0]) != 0 {
             url_v = args[0];
-        } else if zjs_is_object(args[0]) != 0 && ctx.url_proto != NULL
-                  && zjs_as_object(args[0]).proto == ctx.url_proto {
+        } else if zjs_is_object(args[0]) != 0 && ctx.realm.url_proto != NULL
+                  && zjs_as_object(args[0]).proto == ctx.realm.url_proto {
             // URL instance — host_url_to_string reads from
             // ctx.host_this, so swap it in for the call.
             let saved = ctx.host_this;
@@ -14845,15 +14857,15 @@ fn host_uint8_array_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Z
 // =====================================================================
 
 fn ta_proto_for(ctx: ZjsContext*, kind: u8) -> ZjsObject* {
-    if kind == TA_INT8           { return ctx.int8_array_proto; }
-    if kind == TA_UINT8          { return ctx.uint8_array_proto; }
-    if kind == TA_UINT8_CLAMPED  { return ctx.uint8_clamped_array_proto; }
-    if kind == TA_INT16          { return ctx.int16_array_proto; }
-    if kind == TA_UINT16         { return ctx.uint16_array_proto; }
-    if kind == TA_INT32          { return ctx.int32_array_proto; }
-    if kind == TA_UINT32         { return ctx.uint32_array_proto; }
-    if kind == TA_FLOAT32        { return ctx.float32_array_proto; }
-    if kind == TA_FLOAT64        { return ctx.float64_array_proto; }
+    if kind == TA_INT8           { return ctx.realm.int8_array_proto; }
+    if kind == TA_UINT8          { return ctx.realm.uint8_array_proto; }
+    if kind == TA_UINT8_CLAMPED  { return ctx.realm.uint8_clamped_array_proto; }
+    if kind == TA_INT16          { return ctx.realm.int16_array_proto; }
+    if kind == TA_UINT16         { return ctx.realm.uint16_array_proto; }
+    if kind == TA_INT32          { return ctx.realm.int32_array_proto; }
+    if kind == TA_UINT32         { return ctx.realm.uint32_array_proto; }
+    if kind == TA_FLOAT32        { return ctx.realm.float32_array_proto; }
+    if kind == TA_FLOAT64        { return ctx.realm.float64_array_proto; }
     return NULL;
 }
 
@@ -18038,7 +18050,7 @@ fn host_url_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         // Parse the base by recursing — fresh obj, no base for the base itself.
         let bo_v = ctx_new_object(ctx);
         let bo = zjs_as_object(bo_v);
-        if ctx.url_proto != NULL { bo.proto = ctx.url_proto; }
+        if ctx.realm.url_proto != NULL { bo.proto = ctx.realm.url_proto; }
         let bs = zjs_as_string(base_v);
         if !parse_url_into(ctx, bo, bs.data, bs.length, NULL) {
             let err = build_typed_error(ctx, (char*)"TypeError", 9,
@@ -18055,7 +18067,7 @@ fn host_url_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let obj_v = ctx.host_this;
     if zjs_is_object(obj_v) == 0 {
         obj_v = ctx_new_object(ctx);
-        if ctx.url_proto != NULL { zjs_as_object(obj_v).proto = ctx.url_proto; }
+        if ctx.realm.url_proto != NULL { zjs_as_object(obj_v).proto = ctx.realm.url_proto; }
     }
     let obj = zjs_as_object(obj_v);
     let is = zjs_as_string(in_v);
@@ -18420,7 +18432,7 @@ fn host_url_searchparams_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Z
     let obj_v = ctx.host_this;
     if zjs_is_object(obj_v) == 0 {
         obj_v = ctx_new_object(ctx);
-        if ctx.usp_proto != NULL { zjs_as_object(obj_v).proto = ctx.usp_proto; }
+        if ctx.realm.usp_proto != NULL { zjs_as_object(obj_v).proto = ctx.realm.usp_proto; }
     }
     let obj = zjs_as_object(obj_v);
     let pairs_v = ctx_new_array(ctx, 0);
@@ -18716,7 +18728,7 @@ fn host_url_search_params(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
     let obj = zjs_as_object(this_v);
     let search = url_get_str(obj, ctx, URL_SEARCH_KEY, 18);
     let usp_v = ctx_new_object(ctx);
-    if ctx.usp_proto != NULL { zjs_as_object(usp_v).proto = ctx.usp_proto; }
+    if ctx.realm.usp_proto != NULL { zjs_as_object(usp_v).proto = ctx.realm.usp_proto; }
     let pairs_v = ctx_new_array(ctx, 0);
     object_set(ctx, zjs_as_object(usp_v),
                ctx_intern_atom(ctx, USP_PAIRS_KEY, 17), pairs_v);
@@ -18787,7 +18799,7 @@ fn host_date_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     }
     let d = zjs_date_new(ms);
     ctx_register_cell(ctx, (void*)d);
-    let nt_proto_d = subclass_proto_for(ctx, ctx.date_proto);
+    let nt_proto_d = subclass_proto_for(ctx, ctx.realm.date_proto);
     if nt_proto_d != NULL { d.proto = nt_proto_d; }
     return zjs_cell_from_ptr((void*)d);
 }
@@ -19940,7 +19952,7 @@ fn host_promise_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // as the cell's per-instance [[Prototype]] so `instanceof Sub`,
     // `getPrototypeOf`, and method lookups (e.g. Sub.prototype.then2)
     // resolve correctly.
-    let p_nt_proto = subclass_proto_for(ctx, ctx.promise_ctor_proto);
+    let p_nt_proto = subclass_proto_for(ctx, ctx.realm.promise_ctor_proto);
     if p_nt_proto != NULL { p.proto = p_nt_proto; }
     let pv = zjs_cell_from_ptr((void*)p);
     ctx_push_temp_root(ctx, pv);
@@ -20118,7 +20130,7 @@ fn value_is_builtin_promise_ctor(ctx: ZjsContext*, v: ZjsValue) -> bool {
     if zjs_is_host_function(v) == 0 { return false; }
     let hf = zjs_as_host_function(v);
     if hf.prototype == NULL { return false; }
-    return hf.prototype == ctx.promise_ctor_proto;
+    return hf.prototype == ctx.realm.promise_ctor_proto;
 }
 
 fn capability_call_resolve(ctx: ZjsContext*, cap: PromiseCapability, value: ZjsValue) -> void {
@@ -21657,7 +21669,7 @@ fn annexb_lookup(ctx: ZjsContext*, key_v: ZjsValue, want_setter: bool) -> ZjsVal
             }
         }
         let p: ZjsObject* = a.proto;
-        if p == NULL { p = ctx.array_proto; }
+        if p == NULL { p = ctx.realm.array_proto; }
         if p != NULL { return annexb_walk_accessor(p, name, want_setter); }
     }
     return zjs_undefined();
@@ -22405,7 +22417,7 @@ fn subclass_proto_for(ctx: ZjsContext*, builtin_proto: ZjsObject*) -> ZjsObject*
 }
 
 fn host_array_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let nt_proto = subclass_proto_for(ctx, ctx.array_proto);
+    let nt_proto = subclass_proto_for(ctx, ctx.realm.array_proto);
     // Array() / new Array() → []
     if argc == 0 {
         let arr_v0 = ctx_new_array(ctx, 0);
@@ -22598,7 +22610,7 @@ fn ctx_to_object(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
             }
         }
     } else if zjs_is_string(v) != 0 {
-        proto = ctx.string_proto;
+        proto = ctx.realm.string_proto;
     }
 
     let obj_v = ctx_new_object(ctx);
@@ -26927,19 +26939,19 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     let dur_ctor_ptr: void* = NULL; raw { dur_ctor_ptr = (void*)host_temporal_duration_ctor; }
     let dur_ctor = ctx_make_host_function(ctx, (char*)"Duration", dur_ctor_ptr);
     let dur_proto_v = ctx_new_object(ctx);
-    ctx.temporal_duration_proto = zjs_as_object(dur_proto_v);
-    zjs_as_host_function(dur_ctor).prototype = ctx.temporal_duration_proto;
+    ctx.realm.temporal_duration_proto = zjs_as_object(dur_proto_v);
+    zjs_as_host_function(dur_ctor).prototype = ctx.realm.temporal_duration_proto;
     let dts_ptr: void* = NULL; raw { dts_ptr = (void*)host_temporal_duration_to_string; }
     let dneg_ptr: void* = NULL; raw { dneg_ptr = (void*)host_temporal_duration_negated; }
     let dabs_ptr: void* = NULL; raw { dabs_ptr = (void*)host_temporal_duration_abs; }
     let dts_fn = ctx_make_host_function(ctx, (char*)"toString", dts_ptr);
-    object_set(ctx, ctx.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"toString", 8), dts_fn);
-    object_set(ctx, ctx.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), dts_fn);
-    object_set(ctx, ctx.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"negated", 7),
+    object_set(ctx, ctx.realm.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"toString", 8), dts_fn);
+    object_set(ctx, ctx.realm.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), dts_fn);
+    object_set(ctx, ctx.realm.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"negated", 7),
                ctx_make_host_function(ctx, (char*)"negated", dneg_ptr));
-    object_set(ctx, ctx.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"abs", 3),
+    object_set(ctx, ctx.realm.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"abs", 3),
                ctx_make_host_function(ctx, (char*)"abs", dabs_ptr));
-    object_set(ctx, ctx.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), dur_ctor);
+    object_set(ctx, ctx.realm.temporal_duration_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), dur_ctor);
     let dfrom_ptr: void* = NULL; raw { dfrom_ptr = (void*)host_temporal_duration_from; }
     property_set(ctx, dur_ctor, ctx_intern_string(ctx, (char*)"from", 4),
                  ctx_make_host_function(ctx, (char*)"from", dfrom_ptr));
@@ -26949,31 +26961,31 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     let inst_ctor_ptr: void* = NULL; raw { inst_ctor_ptr = (void*)host_temporal_instant_ctor; }
     let inst_ctor = ctx_make_host_function(ctx, (char*)"Instant", inst_ctor_ptr);
     let inst_proto_v = ctx_new_object(ctx);
-    ctx.temporal_instant_proto = zjs_as_object(inst_proto_v);
-    zjs_as_host_function(inst_ctor).prototype = ctx.temporal_instant_proto;
+    ctx.realm.temporal_instant_proto = zjs_as_object(inst_proto_v);
+    zjs_as_host_function(inst_ctor).prototype = ctx.realm.temporal_instant_proto;
     let its_ptr: void* = NULL; raw { its_ptr = (void*)host_temporal_instant_to_string; }
     let its_fn = ctx_make_host_function(ctx, (char*)"toString", its_ptr);
-    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"toString", 8), its_fn);
-    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), its_fn);
+    object_set(ctx, ctx.realm.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"toString", 8), its_fn);
+    object_set(ctx, ctx.realm.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), its_fn);
     let iadd_ptr: void* = NULL; raw { iadd_ptr = (void*)host_temporal_instant_add; }
     let isub_ptr: void* = NULL; raw { isub_ptr = (void*)host_temporal_instant_subtract; }
     let iunt_ptr: void* = NULL; raw { iunt_ptr = (void*)host_temporal_instant_until; }
     let isin_ptr: void* = NULL; raw { isin_ptr = (void*)host_temporal_instant_since; }
     let ieq_ptr:  void* = NULL; raw { ieq_ptr  = (void*)host_temporal_instant_equals; }
-    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"add", 3),
+    object_set(ctx, ctx.realm.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"add", 3),
                ctx_make_host_function(ctx, (char*)"add", iadd_ptr));
-    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
+    object_set(ctx, ctx.realm.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
                ctx_make_host_function(ctx, (char*)"subtract", isub_ptr));
-    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"until", 5),
+    object_set(ctx, ctx.realm.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"until", 5),
                ctx_make_host_function(ctx, (char*)"until", iunt_ptr));
-    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"since", 5),
+    object_set(ctx, ctx.realm.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"since", 5),
                ctx_make_host_function(ctx, (char*)"since", isin_ptr));
-    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
+    object_set(ctx, ctx.realm.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
                ctx_make_host_function(ctx, (char*)"equals", ieq_ptr));
     let irnd_ptr: void* = NULL; raw { irnd_ptr = (void*)host_temporal_instant_round; }
-    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"round", 5),
+    object_set(ctx, ctx.realm.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"round", 5),
                ctx_make_host_function(ctx, (char*)"round", irnd_ptr));
-    object_set(ctx, ctx.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), inst_ctor);
+    object_set(ctx, ctx.realm.temporal_instant_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), inst_ctor);
     let ifem_ptr: void* = NULL; raw { ifem_ptr = (void*)host_temporal_instant_from_epoch_ms; }
     let ifen_ptr: void* = NULL; raw { ifen_ptr = (void*)host_temporal_instant_from_epoch_ns; }
     let icmp_ptr: void* = NULL; raw { icmp_ptr = (void*)host_temporal_instant_compare; }
@@ -26992,31 +27004,31 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     let pd_ctor_ptr: void* = NULL; raw { pd_ctor_ptr = (void*)host_temporal_plaindate_ctor; }
     let pd_ctor = ctx_make_host_function(ctx, (char*)"PlainDate", pd_ctor_ptr);
     let pd_proto_v = ctx_new_object(ctx);
-    ctx.temporal_plaindate_proto = zjs_as_object(pd_proto_v);
-    zjs_as_host_function(pd_ctor).prototype = ctx.temporal_plaindate_proto;
+    ctx.realm.temporal_plaindate_proto = zjs_as_object(pd_proto_v);
+    zjs_as_host_function(pd_ctor).prototype = ctx.realm.temporal_plaindate_proto;
     let pdts_ptr: void* = NULL; raw { pdts_ptr = (void*)host_temporal_plaindate_to_string; }
     let pdeq_ptr: void* = NULL; raw { pdeq_ptr = (void*)host_temporal_plaindate_equals; }
     let pdwith_ptr: void* = NULL; raw { pdwith_ptr = (void*)host_temporal_plaindate_with; }
     let pdts_fn = ctx_make_host_function(ctx, (char*)"toString", pdts_ptr);
-    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"toString", 8), pdts_fn);
-    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), pdts_fn);
-    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"toString", 8), pdts_fn);
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), pdts_fn);
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
                ctx_make_host_function(ctx, (char*)"equals", pdeq_ptr));
-    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"with", 4),
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"with", 4),
                ctx_make_host_function(ctx, (char*)"with", pdwith_ptr));
     let pdadd_ptr: void* = NULL; raw { pdadd_ptr = (void*)host_temporal_plaindate_add; }
     let pdsub_ptr: void* = NULL; raw { pdsub_ptr = (void*)host_temporal_plaindate_subtract; }
-    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"add", 3),
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"add", 3),
                ctx_make_host_function(ctx, (char*)"add", pdadd_ptr));
-    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
                ctx_make_host_function(ctx, (char*)"subtract", pdsub_ptr));
     let pduntil_ptr: void* = NULL; raw { pduntil_ptr = (void*)host_temporal_plaindate_until; }
     let pdsince_ptr: void* = NULL; raw { pdsince_ptr = (void*)host_temporal_plaindate_since; }
-    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"until", 5),
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"until", 5),
                ctx_make_host_function(ctx, (char*)"until", pduntil_ptr));
-    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"since", 5),
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"since", 5),
                ctx_make_host_function(ctx, (char*)"since", pdsince_ptr));
-    object_set(ctx, ctx.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pd_ctor);
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pd_ctor);
     let pdfrom_ptr: void* = NULL; raw { pdfrom_ptr = (void*)host_temporal_plaindate_from; }
     let pdcmp_ptr: void* = NULL; raw { pdcmp_ptr = (void*)host_temporal_plaindate_compare; }
     property_set(ctx, pd_ctor, ctx_intern_string(ctx, (char*)"from", 4),
@@ -27029,28 +27041,28 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     let pt_ctor_ptr: void* = NULL; raw { pt_ctor_ptr = (void*)host_temporal_plaintime_ctor; }
     let pt_ctor = ctx_make_host_function(ctx, (char*)"PlainTime", pt_ctor_ptr);
     let pt_proto_v = ctx_new_object(ctx);
-    ctx.temporal_plaintime_proto = zjs_as_object(pt_proto_v);
-    zjs_as_host_function(pt_ctor).prototype = ctx.temporal_plaintime_proto;
+    ctx.realm.temporal_plaintime_proto = zjs_as_object(pt_proto_v);
+    zjs_as_host_function(pt_ctor).prototype = ctx.realm.temporal_plaintime_proto;
     let ptts_ptr: void* = NULL; raw { ptts_ptr = (void*)host_temporal_plaintime_to_string; }
     let pteq_ptr: void* = NULL; raw { pteq_ptr = (void*)host_temporal_plaintime_equals; }
     let ptwith_ptr: void* = NULL; raw { ptwith_ptr = (void*)host_temporal_plaintime_with; }
     let ptts_fn = ctx_make_host_function(ctx, (char*)"toString", ptts_ptr);
-    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"toString", 8), ptts_fn);
-    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), ptts_fn);
-    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
+    object_set(ctx, ctx.realm.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"toString", 8), ptts_fn);
+    object_set(ctx, ctx.realm.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), ptts_fn);
+    object_set(ctx, ctx.realm.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
                ctx_make_host_function(ctx, (char*)"equals", pteq_ptr));
-    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"with", 4),
+    object_set(ctx, ctx.realm.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"with", 4),
                ctx_make_host_function(ctx, (char*)"with", ptwith_ptr));
     let ptadd_ptr: void* = NULL; raw { ptadd_ptr = (void*)host_temporal_plaintime_add; }
     let ptsub_ptr: void* = NULL; raw { ptsub_ptr = (void*)host_temporal_plaintime_subtract; }
-    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"add", 3),
+    object_set(ctx, ctx.realm.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"add", 3),
                ctx_make_host_function(ctx, (char*)"add", ptadd_ptr));
-    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
+    object_set(ctx, ctx.realm.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
                ctx_make_host_function(ctx, (char*)"subtract", ptsub_ptr));
     let ptrnd_ptr: void* = NULL; raw { ptrnd_ptr = (void*)host_temporal_plaintime_round; }
-    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"round", 5),
+    object_set(ctx, ctx.realm.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"round", 5),
                ctx_make_host_function(ctx, (char*)"round", ptrnd_ptr));
-    object_set(ctx, ctx.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pt_ctor);
+    object_set(ctx, ctx.realm.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pt_ctor);
     let ptfrom_ptr: void* = NULL; raw { ptfrom_ptr = (void*)host_temporal_plaintime_from; }
     let ptcmp_ptr: void* = NULL; raw { ptcmp_ptr = (void*)host_temporal_plaintime_compare; }
     property_set(ctx, pt_ctor, ctx_intern_string(ctx, (char*)"from", 4),
@@ -27063,37 +27075,37 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     let pdt_ctor_ptr: void* = NULL; raw { pdt_ctor_ptr = (void*)host_temporal_plaindatetime_ctor; }
     let pdt_ctor = ctx_make_host_function(ctx, (char*)"PlainDateTime", pdt_ctor_ptr);
     let pdt_proto_v = ctx_new_object(ctx);
-    ctx.temporal_plaindatetime_proto = zjs_as_object(pdt_proto_v);
-    zjs_as_host_function(pdt_ctor).prototype = ctx.temporal_plaindatetime_proto;
+    ctx.realm.temporal_plaindatetime_proto = zjs_as_object(pdt_proto_v);
+    zjs_as_host_function(pdt_ctor).prototype = ctx.realm.temporal_plaindatetime_proto;
     let pdtts_ptr: void* = NULL; raw { pdtts_ptr = (void*)host_temporal_plaindatetime_to_string; }
     let pdteq_ptr: void* = NULL; raw { pdteq_ptr = (void*)host_temporal_plaindatetime_equals; }
     let pdt2d_ptr: void* = NULL; raw { pdt2d_ptr = (void*)host_temporal_plaindatetime_to_plain_date; }
     let pdt2t_ptr: void* = NULL; raw { pdt2t_ptr = (void*)host_temporal_plaindatetime_to_plain_time; }
     let pdtts_fn = ctx_make_host_function(ctx, (char*)"toString", pdtts_ptr);
-    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"toString", 8), pdtts_fn);
-    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), pdtts_fn);
-    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"toString", 8), pdtts_fn);
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), pdtts_fn);
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
                ctx_make_host_function(ctx, (char*)"equals", pdteq_ptr));
-    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"toPlainDate", 11),
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"toPlainDate", 11),
                ctx_make_host_function(ctx, (char*)"toPlainDate", pdt2d_ptr));
-    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"toPlainTime", 11),
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"toPlainTime", 11),
                ctx_make_host_function(ctx, (char*)"toPlainTime", pdt2t_ptr));
     let pdtadd_ptr: void* = NULL; raw { pdtadd_ptr = (void*)host_temporal_plaindatetime_add; }
     let pdtsub_ptr: void* = NULL; raw { pdtsub_ptr = (void*)host_temporal_plaindatetime_subtract; }
-    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"add", 3),
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"add", 3),
                ctx_make_host_function(ctx, (char*)"add", pdtadd_ptr));
-    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
                ctx_make_host_function(ctx, (char*)"subtract", pdtsub_ptr));
     let pdtrnd_ptr: void* = NULL; raw { pdtrnd_ptr = (void*)host_temporal_plaindatetime_round; }
-    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"round", 5),
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"round", 5),
                ctx_make_host_function(ctx, (char*)"round", pdtrnd_ptr));
     let pdtunt_ptr: void* = NULL; raw { pdtunt_ptr = (void*)host_temporal_plaindatetime_until; }
     let pdtsin_ptr: void* = NULL; raw { pdtsin_ptr = (void*)host_temporal_plaindatetime_since; }
-    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"until", 5),
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"until", 5),
                ctx_make_host_function(ctx, (char*)"until", pdtunt_ptr));
-    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"since", 5),
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"since", 5),
                ctx_make_host_function(ctx, (char*)"since", pdtsin_ptr));
-    object_set(ctx, ctx.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pdt_ctor);
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pdt_ctor);
     let pdtfrom_ptr: void* = NULL; raw { pdtfrom_ptr = (void*)host_temporal_plaindatetime_from; }
     let pdtcmp_ptr: void* = NULL; raw { pdtcmp_ptr = (void*)host_temporal_plaindatetime_compare; }
     property_set(ctx, pdt_ctor, ctx_intern_string(ctx, (char*)"from", 4),
@@ -27106,25 +27118,25 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     let ym_ctor_ptr: void* = NULL; raw { ym_ctor_ptr = (void*)host_temporal_yearmonth_ctor; }
     let ym_ctor = ctx_make_host_function(ctx, (char*)"PlainYearMonth", ym_ctor_ptr);
     let ym_proto_v = ctx_new_object(ctx);
-    ctx.temporal_yearmonth_proto = zjs_as_object(ym_proto_v);
-    zjs_as_host_function(ym_ctor).prototype = ctx.temporal_yearmonth_proto;
+    ctx.realm.temporal_yearmonth_proto = zjs_as_object(ym_proto_v);
+    zjs_as_host_function(ym_ctor).prototype = ctx.realm.temporal_yearmonth_proto;
     let ymts_ptr: void* = NULL; raw { ymts_ptr = (void*)host_temporal_yearmonth_to_string; }
     let ymeq_ptr: void* = NULL; raw { ymeq_ptr = (void*)host_temporal_yearmonth_equals; }
     let ymadd_ptr: void* = NULL; raw { ymadd_ptr = (void*)host_temporal_yearmonth_add; }
     let ymsub_ptr: void* = NULL; raw { ymsub_ptr = (void*)host_temporal_yearmonth_subtract; }
     let ym2d_ptr: void* = NULL; raw { ym2d_ptr = (void*)host_temporal_yearmonth_to_plain_date; }
     let ymts_fn = ctx_make_host_function(ctx, (char*)"toString", ymts_ptr);
-    object_set(ctx, ctx.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"toString", 8), ymts_fn);
-    object_set(ctx, ctx.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), ymts_fn);
-    object_set(ctx, ctx.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
+    object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"toString", 8), ymts_fn);
+    object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), ymts_fn);
+    object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
                ctx_make_host_function(ctx, (char*)"equals", ymeq_ptr));
-    object_set(ctx, ctx.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"add", 3),
+    object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"add", 3),
                ctx_make_host_function(ctx, (char*)"add", ymadd_ptr));
-    object_set(ctx, ctx.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
+    object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
                ctx_make_host_function(ctx, (char*)"subtract", ymsub_ptr));
-    object_set(ctx, ctx.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"toPlainDate", 11),
+    object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"toPlainDate", 11),
                ctx_make_host_function(ctx, (char*)"toPlainDate", ym2d_ptr));
-    object_set(ctx, ctx.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), ym_ctor);
+    object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), ym_ctor);
     let ymfrom_ptr: void* = NULL; raw { ymfrom_ptr = (void*)host_temporal_yearmonth_from; }
     let ymcmp_ptr: void* = NULL; raw { ymcmp_ptr = (void*)host_temporal_yearmonth_compare; }
     property_set(ctx, ym_ctor, ctx_intern_string(ctx, (char*)"from", 4),
@@ -27137,19 +27149,19 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     let md_ctor_ptr: void* = NULL; raw { md_ctor_ptr = (void*)host_temporal_monthday_ctor; }
     let md_ctor = ctx_make_host_function(ctx, (char*)"PlainMonthDay", md_ctor_ptr);
     let md_proto_v = ctx_new_object(ctx);
-    ctx.temporal_monthday_proto = zjs_as_object(md_proto_v);
-    zjs_as_host_function(md_ctor).prototype = ctx.temporal_monthday_proto;
+    ctx.realm.temporal_monthday_proto = zjs_as_object(md_proto_v);
+    zjs_as_host_function(md_ctor).prototype = ctx.realm.temporal_monthday_proto;
     let mdts_ptr: void* = NULL; raw { mdts_ptr = (void*)host_temporal_monthday_to_string; }
     let mdeq_ptr: void* = NULL; raw { mdeq_ptr = (void*)host_temporal_monthday_equals; }
     let md2d_ptr: void* = NULL; raw { md2d_ptr = (void*)host_temporal_monthday_to_plain_date; }
     let mdts_fn = ctx_make_host_function(ctx, (char*)"toString", mdts_ptr);
-    object_set(ctx, ctx.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"toString", 8), mdts_fn);
-    object_set(ctx, ctx.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), mdts_fn);
-    object_set(ctx, ctx.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
+    object_set(ctx, ctx.realm.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"toString", 8), mdts_fn);
+    object_set(ctx, ctx.realm.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), mdts_fn);
+    object_set(ctx, ctx.realm.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
                ctx_make_host_function(ctx, (char*)"equals", mdeq_ptr));
-    object_set(ctx, ctx.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"toPlainDate", 11),
+    object_set(ctx, ctx.realm.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"toPlainDate", 11),
                ctx_make_host_function(ctx, (char*)"toPlainDate", md2d_ptr));
-    object_set(ctx, ctx.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), md_ctor);
+    object_set(ctx, ctx.realm.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), md_ctor);
     let mdfrom_ptr: void* = NULL; raw { mdfrom_ptr = (void*)host_temporal_monthday_from; }
     property_set(ctx, md_ctor, ctx_intern_string(ctx, (char*)"from", 4),
                  ctx_make_host_function(ctx, (char*)"from", mdfrom_ptr));
@@ -27159,20 +27171,20 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     let zdt_ctor_ptr: void* = NULL; raw { zdt_ctor_ptr = (void*)host_temporal_zoneddatetime_ctor; }
     let zdt_ctor = ctx_make_host_function(ctx, (char*)"ZonedDateTime", zdt_ctor_ptr);
     let zdt_proto_v = ctx_new_object(ctx);
-    ctx.temporal_zoneddatetime_proto = zjs_as_object(zdt_proto_v);
-    zjs_as_host_function(zdt_ctor).prototype = ctx.temporal_zoneddatetime_proto;
+    ctx.realm.temporal_zoneddatetime_proto = zjs_as_object(zdt_proto_v);
+    zjs_as_host_function(zdt_ctor).prototype = ctx.realm.temporal_zoneddatetime_proto;
     let zts_ptr: void* = NULL; raw { zts_ptr = (void*)host_temporal_zdt_to_string; }
     let zti_ptr: void* = NULL; raw { zti_ptr = (void*)host_temporal_zdt_to_instant; }
     let ztd_ptr: void* = NULL; raw { ztd_ptr = (void*)host_temporal_zdt_to_plain_datetime; }
     let zeq_ptr: void* = NULL; raw { zeq_ptr = (void*)host_temporal_zdt_equals; }
     let zts_fn = ctx_make_host_function(ctx, (char*)"toString", zts_ptr);
-    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"toString", 8), zts_fn);
-    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), zts_fn);
-    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"toInstant", 9),
+    object_set(ctx, ctx.realm.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"toString", 8), zts_fn);
+    object_set(ctx, ctx.realm.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6), zts_fn);
+    object_set(ctx, ctx.realm.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"toInstant", 9),
                ctx_make_host_function(ctx, (char*)"toInstant", zti_ptr));
-    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"toPlainDateTime", 15),
+    object_set(ctx, ctx.realm.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"toPlainDateTime", 15),
                ctx_make_host_function(ctx, (char*)"toPlainDateTime", ztd_ptr));
-    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
+    object_set(ctx, ctx.realm.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"equals", 6),
                ctx_make_host_function(ctx, (char*)"equals", zeq_ptr));
     let zadd_ptr: void* = NULL; raw { zadd_ptr = (void*)host_temporal_zdt_add; }
     let zsub_ptr: void* = NULL; raw { zsub_ptr = (void*)host_temporal_zdt_subtract; }
@@ -27180,19 +27192,19 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     let zrnd_ptr: void* = NULL; raw { zrnd_ptr = (void*)host_temporal_zdt_round; }
     let zunt_ptr: void* = NULL; raw { zunt_ptr = (void*)host_temporal_zdt_until; }
     let zsin_ptr: void* = NULL; raw { zsin_ptr = (void*)host_temporal_zdt_since; }
-    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"add", 3),
+    object_set(ctx, ctx.realm.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"add", 3),
                ctx_make_host_function(ctx, (char*)"add", zadd_ptr));
-    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
+    object_set(ctx, ctx.realm.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"subtract", 8),
                ctx_make_host_function(ctx, (char*)"subtract", zsub_ptr));
-    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"with", 4),
+    object_set(ctx, ctx.realm.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"with", 4),
                ctx_make_host_function(ctx, (char*)"with", zwith_ptr));
-    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"round", 5),
+    object_set(ctx, ctx.realm.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"round", 5),
                ctx_make_host_function(ctx, (char*)"round", zrnd_ptr));
-    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"until", 5),
+    object_set(ctx, ctx.realm.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"until", 5),
                ctx_make_host_function(ctx, (char*)"until", zunt_ptr));
-    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"since", 5),
+    object_set(ctx, ctx.realm.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"since", 5),
                ctx_make_host_function(ctx, (char*)"since", zsin_ptr));
-    object_set(ctx, ctx.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), zdt_ctor);
+    object_set(ctx, ctx.realm.temporal_zoneddatetime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), zdt_ctor);
     let zcmp_ptr: void* = NULL; raw { zcmp_ptr = (void*)host_temporal_zdt_compare; }
     let zfrom_ptr: void* = NULL; raw { zfrom_ptr = (void*)host_temporal_zdt_from; }
     property_set(ctx, zdt_ctor, ctx_intern_string(ctx, (char*)"compare", 7),
@@ -27235,33 +27247,33 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // --- Function.prototype.{call, apply} cached helpers (Phase 3.8d)
     let fcall_ptr:  void* = NULL; raw { fcall_ptr  = (void*)host_function_call; }
     let fapply_ptr: void* = NULL; raw { fapply_ptr = (void*)host_function_apply; }
-    ctx.fn_call_v  = ctx_make_host_function(ctx, (char*)"call",  fcall_ptr);
-    ctx.fn_apply_v = ctx_make_host_function(ctx, (char*)"apply", fapply_ptr);
+    ctx.realm.fn_call_v  = ctx_make_host_function(ctx, (char*)"call",  fcall_ptr);
+    ctx.realm.fn_apply_v = ctx_make_host_function(ctx, (char*)"apply", fapply_ptr);
 
     // --- Object.prototype (Phase 3.8c) ---
     // Bootstrap order: create this FIRST so every later ctx_new_object
     // call gets it as a default proto. ctx_new_object short-circuits
     // for the object_proto itself (whose proto stays NULL).
     let obj_proto_v = ctx_new_object(ctx);
-    ctx.object_proto = zjs_as_object(obj_proto_v);
+    ctx.realm.object_proto = zjs_as_object(obj_proto_v);
     let hop_ptr: void* = NULL; raw { hop_ptr = (void*)host_has_own_property; }
     let ipo_ptr: void* = NULL; raw { ipo_ptr = (void*)host_is_prototype_of; }
     let pie_ptr: void* = NULL; raw { pie_ptr = (void*)host_property_is_enumerable; }
     let ots_ptr: void* = NULL; raw { ots_ptr = (void*)host_object_to_string; }
     let ovo_ptr: void* = NULL; raw { ovo_ptr = (void*)host_object_value_of; }
-    object_set(ctx, ctx.object_proto,
+    object_set(ctx, ctx.realm.object_proto,
                ctx_intern_atom(ctx, (char*)"hasOwnProperty", 14),
                ctx_make_host_function_arity(ctx, (char*)"hasOwnProperty", hop_ptr, 1));
-    object_set(ctx, ctx.object_proto,
+    object_set(ctx, ctx.realm.object_proto,
                ctx_intern_atom(ctx, (char*)"isPrototypeOf", 13),
                ctx_make_host_function_arity(ctx, (char*)"isPrototypeOf", ipo_ptr, 1));
-    object_set(ctx, ctx.object_proto,
+    object_set(ctx, ctx.realm.object_proto,
                ctx_intern_atom(ctx, (char*)"propertyIsEnumerable", 20),
                ctx_make_host_function_arity(ctx, (char*)"propertyIsEnumerable", pie_ptr, 1));
-    object_set(ctx, ctx.object_proto,
+    object_set(ctx, ctx.realm.object_proto,
                ctx_intern_atom(ctx, (char*)"toString", 8),
                ctx_make_host_function(ctx, (char*)"toString", ots_ptr));
-    object_set(ctx, ctx.object_proto,
+    object_set(ctx, ctx.realm.object_proto,
                ctx_intern_atom(ctx, (char*)"valueOf", 7),
                ctx_make_host_function(ctx, (char*)"valueOf", ovo_ptr));
 
@@ -27271,19 +27283,19 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let lg_ptr: void* = NULL; raw { lg_ptr = (void*)host_object_lookup_getter; }
     let ls_ptr: void* = NULL; raw { ls_ptr = (void*)host_object_lookup_setter; }
     let tls_ptr: void* = NULL; raw { tls_ptr = (void*)host_object_to_locale_string; }
-    object_set(ctx, ctx.object_proto,
+    object_set(ctx, ctx.realm.object_proto,
                ctx_intern_atom(ctx, (char*)"__defineGetter__", 16),
                ctx_make_host_function_arity(ctx, (char*)"__defineGetter__", dg_ptr, 2));
-    object_set(ctx, ctx.object_proto,
+    object_set(ctx, ctx.realm.object_proto,
                ctx_intern_atom(ctx, (char*)"__defineSetter__", 16),
                ctx_make_host_function_arity(ctx, (char*)"__defineSetter__", ds_ptr, 2));
-    object_set(ctx, ctx.object_proto,
+    object_set(ctx, ctx.realm.object_proto,
                ctx_intern_atom(ctx, (char*)"__lookupGetter__", 16),
                ctx_make_host_function_arity(ctx, (char*)"__lookupGetter__", lg_ptr, 1));
-    object_set(ctx, ctx.object_proto,
+    object_set(ctx, ctx.realm.object_proto,
                ctx_intern_atom(ctx, (char*)"__lookupSetter__", 16),
                ctx_make_host_function_arity(ctx, (char*)"__lookupSetter__", ls_ptr, 1));
-    object_set(ctx, ctx.object_proto,
+    object_set(ctx, ctx.realm.object_proto,
                ctx_intern_atom(ctx, (char*)"toLocaleString", 14),
                ctx_make_host_function_arity(ctx, (char*)"toLocaleString", tls_ptr, 0));
     // `__proto__` accessor: { get, set, enumerable:false, configurable:true }.
@@ -27296,7 +27308,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let proto_acc = zjs_accessor_new(proto_get_fn, proto_set_fn);
     ctx_register_cell(ctx, (void*)proto_acc);
     let proto_acc_v = zjs_cell_from_ptr((void*)proto_acc);
-    object_define_property_slot(ctx, ctx.object_proto,
+    object_define_property_slot(ctx, ctx.realm.object_proto,
                                 ctx_intern_atom(ctx, (char*)"__proto__", 9),
                                 proto_acc_v, PROP_CONFIGURABLE);
 
@@ -27305,17 +27317,17 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // call/apply helpers so `Function.prototype.call` is reachable AND
     // a prototype-chain walk from any callable finds them.
     let function_proto_v = ctx_new_object(ctx);
-    ctx.function_proto = zjs_as_object(function_proto_v);
-    object_set(ctx, ctx.function_proto,
-               ctx_intern_atom(ctx, (char*)"call", 4),  ctx.fn_call_v);
-    object_set(ctx, ctx.function_proto,
-               ctx_intern_atom(ctx, (char*)"apply", 5), ctx.fn_apply_v);
+    ctx.realm.function_proto = zjs_as_object(function_proto_v);
+    object_set(ctx, ctx.realm.function_proto,
+               ctx_intern_atom(ctx, (char*)"call", 4),  ctx.realm.fn_call_v);
+    object_set(ctx, ctx.realm.function_proto,
+               ctx_intern_atom(ctx, (char*)"apply", 5), ctx.realm.fn_apply_v);
     let fbind_ptr: void* = NULL; raw { fbind_ptr = (void*)host_function_bind; }
-    object_set(ctx, ctx.function_proto,
+    object_set(ctx, ctx.realm.function_proto,
                ctx_intern_atom(ctx, (char*)"bind", 4),
                ctx_make_host_function_arity(ctx, (char*)"bind", fbind_ptr, 1));
     let fts_ptr: void* = NULL; raw { fts_ptr = (void*)host_function_to_string; }
-    object_set(ctx, ctx.function_proto,
+    object_set(ctx, ctx.realm.function_proto,
                ctx_intern_atom(ctx, (char*)"toString", 8),
                ctx_make_host_function_arity(ctx, (char*)"toString", fts_ptr, 0));
 
@@ -27324,7 +27336,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // fall through to the globals table (handled in property_get).
     // Tests like `var g = this; g.foo` rely on this.
     let global_this_v = ctx_new_object(ctx);
-    ctx.global_this_obj = zjs_as_object(global_this_v);
+    ctx.realm.global_this_obj = zjs_as_object(global_this_v);
     let gt_slot = ctx_intern_global(ctx, (char*)"globalThis", 10);
     ctx.globals[gt_slot].value = global_this_v;
     ctx.globals[gt_slot].defined = true;
@@ -27377,7 +27389,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // After the props bag exists (it's replaced just above) — else the
     // @@species slot would be wiped.
     install_species_getter(ctx, arr_ctor_v);
-    // Array.prototype is unified with ctx.array_proto below, after
+    // Array.prototype is unified with ctx.realm.array_proto below, after
     // the prototype object is fully populated.
 
     // --- Coercion-style constructors + Error subtypes (Phase 3.8c) ---
@@ -27570,9 +27582,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let fn_ctor_ptr: void* = NULL; raw { fn_ctor_ptr = (void*)host_function_ctor; }
     let function_ctor_v = ctx_register_host_function(ctx, (char*)"Function", fn_ctor_ptr);
     let function_ctor_hf = zjs_as_host_function(function_ctor_v);
-    function_ctor_hf.prototype = ctx.function_proto;
-    if ctx.function_proto != NULL {
-        object_set(ctx, ctx.function_proto,
+    function_ctor_hf.prototype = ctx.realm.function_proto;
+    if ctx.realm.function_proto != NULL {
+        object_set(ctx, ctx.realm.function_proto,
                    ctx_intern_atom(ctx, (char*)"constructor", 11), function_ctor_v);
     }
     // Date (2026-05-16). UTC-only ms-since-epoch; locale-aware
@@ -27598,9 +27610,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"UTC",   date_utc_ptr,   7));
     // Prototype.
     let date_proto_v = ctx_new_object(ctx);
-    ctx.date_proto = zjs_as_object(date_proto_v);
-    date_hf.prototype = ctx.date_proto;
-    object_set(ctx, ctx.date_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), date_ctor_v);
+    ctx.realm.date_proto = zjs_as_object(date_proto_v);
+    date_hf.prototype = ctx.realm.date_proto;
+    object_set(ctx, ctx.realm.date_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), date_ctor_v);
     // Date.prototype methods (table-driven — see zjs_install_methods).
     // Pragmatic v0.1: all toX-String / toLocaleX-String methods alias to
     // toString (ISO format). The host-fn presence is what most test262
@@ -27657,9 +27669,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         date_table_p = (void*)date_proto_specs;
         date_table_n = sizeof(date_proto_specs) / sizeof(date_proto_specs[0]);
     }
-    zjs_install_methods(ctx, ctx.date_proto, date_table_p, date_table_n);
+    zjs_install_methods(ctx, ctx.realm.date_proto, date_table_p, date_table_n);
     // RegExp — real constructor + prototype carrying .test (.exec next
-    // commit). property_get on TAG_REGEXP walks ctx.regexp_proto.
+    // commit). property_get on TAG_REGEXP walks ctx.realm.regexp_proto.
     let regexp_ctor_ptr: void* = NULL; raw { regexp_ctor_ptr = (void*)host_regexp_ctor; }
     let regexp_v = ctx_register_host_function(ctx, (char*)"RegExp", regexp_ctor_ptr);
     install_species_getter(ctx, regexp_v);
@@ -27667,7 +27679,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     regexp_hf.arity = 2;
     let rp_v = ctx_new_object(ctx);
     regexp_hf.prototype = zjs_as_object(rp_v);
-    ctx.regexp_proto = regexp_hf.prototype;
+    ctx.realm.regexp_proto = regexp_hf.prototype;
     object_set(ctx, regexp_hf.prototype,
                ctx_intern_atom(ctx, (char*)"constructor", 11), regexp_v);
     let rtest_ptr: void* = NULL; raw { rtest_ptr = (void*)host_regexp_test; }
@@ -27694,21 +27706,21 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"keyFor", sym_keyf_ptr, 1));
     // Symbol.prototype.
     let sym_proto_v = ctx_new_object(ctx);
-    ctx.symbol_proto = zjs_as_object(sym_proto_v);
-    sym_hf2.prototype = ctx.symbol_proto;
-    object_set(ctx, ctx.symbol_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
+    ctx.realm.symbol_proto = zjs_as_object(sym_proto_v);
+    sym_hf2.prototype = ctx.realm.symbol_proto;
+    object_set(ctx, ctx.realm.symbol_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
                ctx_make_host_function_arity(ctx, (char*)"toString", sym_tostr_ptr, 0));
-    object_set(ctx, ctx.symbol_proto, ctx_intern_atom(ctx, (char*)"valueOf", 7),
+    object_set(ctx, ctx.realm.symbol_proto, ctx_intern_atom(ctx, (char*)"valueOf", 7),
                ctx_make_host_function_arity(ctx, (char*)"valueOf", sym_valof_ptr, 0));
-    object_set(ctx, ctx.symbol_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), sym_ctor_v);
+    object_set(ctx, ctx.realm.symbol_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), sym_ctor_v);
 
     // === URL (2026-05-18) — WHATWG URL parser at v0.1 coverage. ===
     let url_ctor_ptr: void* = NULL; raw { url_ctor_ptr = (void*)host_url_ctor; }
     let url_ctor_v  = ctx_register_host_function(ctx, (char*)"URL", url_ctor_ptr);
     let url_proto_v = ctx_new_object(ctx);
-    ctx.url_proto = zjs_as_object(url_proto_v);
-    zjs_as_host_function(url_ctor_v).prototype = ctx.url_proto;
-    object_set(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), url_ctor_v);
+    ctx.realm.url_proto = zjs_as_object(url_proto_v);
+    zjs_as_host_function(url_ctor_v).prototype = ctx.realm.url_proto;
+    object_set(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), url_ctor_v);
     // Component getters. Per spec these are accessors; we install them
     // as plain methods first so `url.protocol` works via property_get's
     // host-function-accessor path. A future polish pass can convert to
@@ -27737,37 +27749,37 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let u_set_path_ptr:  void* = NULL; raw { u_set_path_ptr  = (void*)host_url_set_pathname; }
     let u_set_srch_ptr:  void* = NULL; raw { u_set_srch_ptr  = (void*)host_url_set_search; }
     let u_set_hash_ptr:  void* = NULL; raw { u_set_hash_ptr  = (void*)host_url_set_hash; }
-    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"protocol", 8),
+    object_define_accessor(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"protocol", 8),
                            ctx_make_host_function(ctx, (char*)"get protocol", u_proto_ptr),
                            ctx_make_host_function(ctx, (char*)"set protocol", u_set_proto_ptr));
-    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"username", 8),
+    object_define_accessor(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"username", 8),
                            ctx_make_host_function(ctx, (char*)"get username", u_user_ptr), zjs_undefined());
-    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"password", 8),
+    object_define_accessor(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"password", 8),
                            ctx_make_host_function(ctx, (char*)"get password", u_pass_ptr), zjs_undefined());
-    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"hostname", 8),
+    object_define_accessor(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"hostname", 8),
                            ctx_make_host_function(ctx, (char*)"get hostname", u_hname_ptr),
                            ctx_make_host_function(ctx, (char*)"set hostname", u_set_hname_ptr));
-    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"port", 4),
+    object_define_accessor(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"port", 4),
                            ctx_make_host_function(ctx, (char*)"get port", u_port_ptr),
                            ctx_make_host_function(ctx, (char*)"set port", u_set_port_ptr));
-    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"pathname", 8),
+    object_define_accessor(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"pathname", 8),
                            ctx_make_host_function(ctx, (char*)"get pathname", u_path_ptr),
                            ctx_make_host_function(ctx, (char*)"set pathname", u_set_path_ptr));
-    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"search", 6),
+    object_define_accessor(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"search", 6),
                            ctx_make_host_function(ctx, (char*)"get search", u_search_ptr),
                            ctx_make_host_function(ctx, (char*)"set search", u_set_srch_ptr));
-    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"hash", 4),
+    object_define_accessor(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"hash", 4),
                            ctx_make_host_function(ctx, (char*)"get hash", u_hash_ptr),
                            ctx_make_host_function(ctx, (char*)"set hash", u_set_hash_ptr));
-    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"host", 4),
+    object_define_accessor(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"host", 4),
                            ctx_make_host_function(ctx, (char*)"get host", u_host_ptr), zjs_undefined());
-    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"origin", 6),
+    object_define_accessor(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"origin", 6),
                            ctx_make_host_function(ctx, (char*)"get origin", u_origin_ptr), zjs_undefined());
-    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"href", 4),
+    object_define_accessor(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"href", 4),
                            ctx_make_host_function(ctx, (char*)"get href", u_tostr_ptr), zjs_undefined());
-    object_set(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
+    object_set(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
                ctx_make_host_function(ctx, (char*)"toString", u_tostr_ptr));
-    object_set(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6),
+    object_set(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"toJSON", 6),
                ctx_make_host_function(ctx, (char*)"toJSON", u_tostr_ptr));
 
     // === URLSearchParams ===
@@ -27782,30 +27794,30 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let usp_size_ptr:   void* = NULL; raw { usp_size_ptr   = (void*)host_usp_size; }
     let usp_ctor_v = ctx_register_host_function(ctx, (char*)"URLSearchParams", usp_ctor_ptr);
     let usp_proto_v = ctx_new_object(ctx);
-    ctx.usp_proto = zjs_as_object(usp_proto_v);
-    zjs_as_host_function(usp_ctor_v).prototype = ctx.usp_proto;
-    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), usp_ctor_v);
-    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"get", 3),
+    ctx.realm.usp_proto = zjs_as_object(usp_proto_v);
+    zjs_as_host_function(usp_ctor_v).prototype = ctx.realm.usp_proto;
+    object_set(ctx, ctx.realm.usp_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), usp_ctor_v);
+    object_set(ctx, ctx.realm.usp_proto, ctx_intern_atom(ctx, (char*)"get", 3),
                ctx_make_host_function_arity(ctx, (char*)"get", usp_get_ptr, 1));
-    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"getAll", 6),
+    object_set(ctx, ctx.realm.usp_proto, ctx_intern_atom(ctx, (char*)"getAll", 6),
                ctx_make_host_function_arity(ctx, (char*)"getAll", usp_getall_ptr, 1));
-    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"has", 3),
+    object_set(ctx, ctx.realm.usp_proto, ctx_intern_atom(ctx, (char*)"has", 3),
                ctx_make_host_function_arity(ctx, (char*)"has", usp_has_ptr, 1));
-    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"set", 3),
+    object_set(ctx, ctx.realm.usp_proto, ctx_intern_atom(ctx, (char*)"set", 3),
                ctx_make_host_function_arity(ctx, (char*)"set", usp_set_ptr, 2));
-    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"append", 6),
+    object_set(ctx, ctx.realm.usp_proto, ctx_intern_atom(ctx, (char*)"append", 6),
                ctx_make_host_function_arity(ctx, (char*)"append", usp_app_ptr, 2));
-    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"delete", 6),
+    object_set(ctx, ctx.realm.usp_proto, ctx_intern_atom(ctx, (char*)"delete", 6),
                ctx_make_host_function_arity(ctx, (char*)"delete", usp_del_ptr, 1));
-    object_set(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
+    object_set(ctx, ctx.realm.usp_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
                ctx_make_host_function(ctx, (char*)"toString", usp_str_ptr));
-    object_define_accessor(ctx, ctx.usp_proto, ctx_intern_atom(ctx, (char*)"size", 4),
+    object_define_accessor(ctx, ctx.realm.usp_proto, ctx_intern_atom(ctx, (char*)"size", 4),
                            ctx_make_host_function(ctx, (char*)"get size", usp_size_ptr), zjs_undefined());
 
     // url.searchParams accessor (returns a fresh URLSearchParams each
     // call — v0.1 limitation, mutations don't write back to url.search).
     let u_sp_ptr: void* = NULL; raw { u_sp_ptr = (void*)host_url_search_params; }
-    object_define_accessor(ctx, ctx.url_proto, ctx_intern_atom(ctx, (char*)"searchParams", 12),
+    object_define_accessor(ctx, ctx.realm.url_proto, ctx_intern_atom(ctx, (char*)"searchParams", 12),
                            ctx_make_host_function(ctx, (char*)"get searchParams", u_sp_ptr), zjs_undefined());
 
     // Well-known symbols installed below replace the prior string
@@ -27883,7 +27895,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Promise.prototype — instance methods.
     let pp_v = ctx_new_object(ctx);
     promise_hf.prototype = zjs_as_object(pp_v);
-    ctx.promise_ctor_proto = promise_hf.prototype;
+    ctx.realm.promise_ctor_proto = promise_hf.prototype;
     object_set(ctx, promise_hf.prototype, ctx_intern_atom(ctx, (char*)"constructor", 11), promise_v);
     let pthen_ptr:  void* = NULL; raw { pthen_ptr  = (void*)host_promise_then; }
     let pcatch_ptr: void* = NULL; raw { pcatch_ptr = (void*)host_promise_catch; }
@@ -27941,22 +27953,22 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // TAG_GENERATOR cell looks methods up here. Symbol.iterator is
     // shimmed under the string "@@iterator" until we ship real Symbols.
     let gen_proto_v = ctx_new_object(ctx);
-    ctx.generator_proto = zjs_as_object(gen_proto_v);
+    ctx.realm.generator_proto = zjs_as_object(gen_proto_v);
     let gen_next_ptr:   void* = NULL; raw { gen_next_ptr   = (void*)host_generator_next; }
     let gen_return_ptr: void* = NULL; raw { gen_return_ptr = (void*)host_generator_return; }
     let gen_throw_ptr:  void* = NULL; raw { gen_throw_ptr  = (void*)host_generator_throw; }
     let gen_self_ptr:   void* = NULL; raw { gen_self_ptr   = (void*)host_generator_self_iter; }
-    object_set(ctx, ctx.generator_proto, ctx_intern_atom(ctx, (char*)"next", 4),
+    object_set(ctx, ctx.realm.generator_proto, ctx_intern_atom(ctx, (char*)"next", 4),
                ctx_make_host_function_arity(ctx, (char*)"next", gen_next_ptr, 1));
-    object_set(ctx, ctx.generator_proto, ctx_intern_atom(ctx, (char*)"return", 6),
+    object_set(ctx, ctx.realm.generator_proto, ctx_intern_atom(ctx, (char*)"return", 6),
                ctx_make_host_function_arity(ctx, (char*)"return", gen_return_ptr, 1));
-    object_set(ctx, ctx.generator_proto, ctx_intern_atom(ctx, (char*)"throw", 5),
+    object_set(ctx, ctx.realm.generator_proto, ctx_intern_atom(ctx, (char*)"throw", 5),
                ctx_make_host_function_arity(ctx, (char*)"throw", gen_throw_ptr, 1));
     let self_iter_v = ctx_make_host_function_arity(ctx, (char*)"[Symbol.iterator]", gen_self_ptr, 0);
-    object_set(ctx, ctx.generator_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10), self_iter_v);
+    object_set(ctx, ctx.realm.generator_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10), self_iter_v);
     // %GeneratorPrototype%[Symbol.toStringTag] = "Generator" (so
     // Object.prototype.toString.call(gen) === "[object Generator]").
-    object_define_property_slot(ctx, ctx.generator_proto,
+    object_define_property_slot(ctx, ctx.realm.generator_proto,
         ctx_intern_atom(ctx, (char*)"@@toStringTag", 13),
         ctx_intern_string(ctx, (char*)"Generator", 9), PROP_CONFIGURABLE);
 
@@ -28029,9 +28041,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let map_ctor_v = ctx_register_host_function(ctx, (char*)"Map", map_ctor_ptr);
     install_species_getter(ctx, map_ctor_v);
     let map_proto_v = ctx_new_object(ctx);
-    ctx.map_proto = zjs_as_object(map_proto_v);
-    zjs_as_host_function(map_ctor_v).prototype = ctx.map_proto;
-    object_set(ctx, ctx.map_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), map_ctor_v);
+    ctx.realm.map_proto = zjs_as_object(map_proto_v);
+    zjs_as_host_function(map_ctor_v).prototype = ctx.realm.map_proto;
+    object_set(ctx, ctx.realm.map_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), map_ctor_v);
     // @@iterator on Map.prototype === entries.
     let map_table_p: void* = NULL;
     let map_table_n: usize = 0;
@@ -28053,9 +28065,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         map_table_p = (void*)map_proto_specs;
         map_table_n = sizeof(map_proto_specs) / sizeof(map_proto_specs[0]);
     }
-    zjs_install_methods(ctx, ctx.map_proto, map_table_p, map_table_n);
+    zjs_install_methods(ctx, ctx.realm.map_proto, map_table_p, map_table_n);
     let map_size_ptr: void* = NULL; raw { map_size_ptr = (void*)host_map_size_getter; }
-    install_size_getter(ctx, ctx.map_proto, map_size_ptr);
+    install_size_getter(ctx, ctx.realm.map_proto, map_size_ptr);
     // Static: Map.groupBy(items, callback). Returns a fresh Map keyed
     // by callback output (SameValueZero), each value an array of items.
     let map_groupby_ptr: void* = NULL; raw { map_groupby_ptr = (void*)host_map_group_by; }
@@ -28068,9 +28080,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let set_ctor_v = ctx_register_host_function(ctx, (char*)"Set", set_ctor_ptr);
     install_species_getter(ctx, set_ctor_v);
     let set_proto_v = ctx_new_object(ctx);
-    ctx.set_proto = zjs_as_object(set_proto_v);
-    zjs_as_host_function(set_ctor_v).prototype = ctx.set_proto;
-    object_set(ctx, ctx.set_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), set_ctor_v);
+    ctx.realm.set_proto = zjs_as_object(set_proto_v);
+    zjs_as_host_function(set_ctor_v).prototype = ctx.realm.set_proto;
+    object_set(ctx, ctx.realm.set_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), set_ctor_v);
     // @@iterator on Set.prototype === values (per spec) — same fn ptr,
     // different name. ES2025 set-methods proposal adds difference /
     // intersection / union / symmetricDifference / isSubsetOf /
@@ -28099,9 +28111,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         set_table_p = (void*)set_proto_specs;
         set_table_n = sizeof(set_proto_specs) / sizeof(set_proto_specs[0]);
     }
-    zjs_install_methods(ctx, ctx.set_proto, set_table_p, set_table_n);
+    zjs_install_methods(ctx, ctx.realm.set_proto, set_table_p, set_table_n);
     let set_size_ptr: void* = NULL; raw { set_size_ptr = (void*)host_set_size_getter; }
-    install_size_getter(ctx, ctx.set_proto, set_size_ptr);
+    install_size_getter(ctx, ctx.realm.set_proto, set_size_ptr);
 
     // WeakMap / WeakSet — point at the Map / Set ctors and protos for
     // npm-compat. zod's $constructor uses `new WeakMap` to memoize
@@ -28122,9 +28134,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
 
     let wm_v = ctx_make_host_function_arity(ctx, (char*)"WeakMap", wmap_ctor_ptr, 0);
     let wmap_proto_v = ctx_new_object(ctx);
-    ctx.weakmap_proto = zjs_as_object(wmap_proto_v);
-    zjs_as_host_function(wm_v).prototype = ctx.weakmap_proto;
-    object_set(ctx, ctx.weakmap_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), wm_v);
+    ctx.realm.weakmap_proto = zjs_as_object(wmap_proto_v);
+    zjs_as_host_function(wm_v).prototype = ctx.realm.weakmap_proto;
+    object_set(ctx, ctx.realm.weakmap_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), wm_v);
     let wmap_table_p: void* = NULL; let wmap_table_n: usize = 0;
     raw {
         static const ZjsBuiltinSpec wmap_proto_specs[] = {
@@ -28138,8 +28150,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         wmap_table_p = (void*)wmap_proto_specs;
         wmap_table_n = sizeof(wmap_proto_specs) / sizeof(wmap_proto_specs[0]);
     }
-    zjs_install_methods(ctx, ctx.weakmap_proto, wmap_table_p, wmap_table_n);
-    object_define_property_slot(ctx, ctx.weakmap_proto, tag_atom,
+    zjs_install_methods(ctx, ctx.realm.weakmap_proto, wmap_table_p, wmap_table_n);
+    object_define_property_slot(ctx, ctx.realm.weakmap_proto, tag_atom,
                                 ctx_intern_string(ctx, (char*)"WeakMap", 7), PROP_CONFIGURABLE);
     let wm_slot = ctx_intern_global(ctx, (char*)"WeakMap", 7);
     ctx.globals[wm_slot].value = wm_v;
@@ -28147,9 +28159,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
 
     let ws_v = ctx_make_host_function_arity(ctx, (char*)"WeakSet", wset_ctor_ptr, 0);
     let wset_proto_v = ctx_new_object(ctx);
-    ctx.weakset_proto = zjs_as_object(wset_proto_v);
-    zjs_as_host_function(ws_v).prototype = ctx.weakset_proto;
-    object_set(ctx, ctx.weakset_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), ws_v);
+    ctx.realm.weakset_proto = zjs_as_object(wset_proto_v);
+    zjs_as_host_function(ws_v).prototype = ctx.realm.weakset_proto;
+    object_set(ctx, ctx.realm.weakset_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), ws_v);
     let wset_table_p: void* = NULL; let wset_table_n: usize = 0;
     raw {
         static const ZjsBuiltinSpec wset_proto_specs[] = {
@@ -28160,8 +28172,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         wset_table_p = (void*)wset_proto_specs;
         wset_table_n = sizeof(wset_proto_specs) / sizeof(wset_proto_specs[0]);
     }
-    zjs_install_methods(ctx, ctx.weakset_proto, wset_table_p, wset_table_n);
-    object_define_property_slot(ctx, ctx.weakset_proto, tag_atom,
+    zjs_install_methods(ctx, ctx.realm.weakset_proto, wset_table_p, wset_table_n);
+    object_define_property_slot(ctx, ctx.realm.weakset_proto, tag_atom,
                                 ctx_intern_string(ctx, (char*)"WeakSet", 7), PROP_CONFIGURABLE);
     let ws_slot = ctx_intern_global(ctx, (char*)"WeakSet", 7);
     ctx.globals[ws_slot].value = ws_v;
@@ -28175,13 +28187,13 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let ab_ctor_v = ctx_register_host_function(ctx, (char*)"ArrayBuffer", ab_ctor_ptr);
     install_species_getter(ctx, ab_ctor_v);
     let ab_proto_v = ctx_new_object(ctx);
-    ctx.array_buffer_proto = zjs_as_object(ab_proto_v);
-    zjs_as_host_function(ab_ctor_v).prototype = ctx.array_buffer_proto;
-    object_set(ctx, ctx.array_buffer_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), ab_ctor_v);
-    object_set(ctx, ctx.array_buffer_proto, ctx_intern_atom(ctx, (char*)"slice", 5),
+    ctx.realm.array_buffer_proto = zjs_as_object(ab_proto_v);
+    zjs_as_host_function(ab_ctor_v).prototype = ctx.realm.array_buffer_proto;
+    object_set(ctx, ctx.realm.array_buffer_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), ab_ctor_v);
+    object_set(ctx, ctx.realm.array_buffer_proto, ctx_intern_atom(ctx, (char*)"slice", 5),
                ctx_make_host_function_arity(ctx, (char*)"slice", ab_slice_ptr, 2));
     let ab_resize_ptr: void* = NULL; raw { ab_resize_ptr = (void*)host_array_buffer_resize; }
-    object_set(ctx, ctx.array_buffer_proto, ctx_intern_atom(ctx, (char*)"resize", 6),
+    object_set(ctx, ctx.realm.array_buffer_proto, ctx_intern_atom(ctx, (char*)"resize", 6),
                ctx_make_host_function_arity(ctx, (char*)"resize", ab_resize_ptr, 1));
 
     // === Uint8Array (real, 2026-05-18) ===
@@ -28192,9 +28204,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let u8_ts_ptr:    void* = NULL; raw { u8_ts_ptr    = (void*)host_uint8_array_to_string; }
     let u8_ctor_v = ctx_register_host_function(ctx, (char*)"Uint8Array", u8_ctor_ptr);
     let u8_proto_v = ctx_new_object(ctx);
-    ctx.uint8_array_proto = zjs_as_object(u8_proto_v);
-    zjs_as_host_function(u8_ctor_v).prototype = ctx.uint8_array_proto;
-    object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), u8_ctor_v);
+    ctx.realm.uint8_array_proto = zjs_as_object(u8_proto_v);
+    zjs_as_host_function(u8_ctor_v).prototype = ctx.realm.uint8_array_proto;
+    object_set(ctx, ctx.realm.uint8_array_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), u8_ctor_v);
     // Uint8Array.of / Uint8Array.from — used by uuid v5 (and many
     // other packages) for building byte buffers from variadic args
     // or iterables.
@@ -28206,18 +28218,18 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"of", u8_of_ptr));
     object_set(ctx, u8_ctor_hf.props, ctx_intern_atom(ctx, (char*)"from", 4),
                ctx_make_host_function_arity(ctx, (char*)"from", u8_from_ptr, 1));
-    object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"fill", 4),
+    object_set(ctx, ctx.realm.uint8_array_proto, ctx_intern_atom(ctx, (char*)"fill", 4),
                ctx_make_host_function_arity(ctx, (char*)"fill", u8_fill_ptr, 1));
-    object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"slice", 5),
+    object_set(ctx, ctx.realm.uint8_array_proto, ctx_intern_atom(ctx, (char*)"slice", 5),
                ctx_make_host_function_arity(ctx, (char*)"slice", u8_slice_ptr, 2));
     // subarray: spec returns a shared-memory view, but TAG_UINT8_ARRAY
     // owns its bytes (no ArrayBuffer view model), so it aliases slice =
     // a copy. Adequate for read slicing; documented limitation.
-    object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"subarray", 8),
+    object_set(ctx, ctx.realm.uint8_array_proto, ctx_intern_atom(ctx, (char*)"subarray", 8),
                ctx_make_host_function_arity(ctx, (char*)"subarray", u8_slice_ptr, 2));
-    object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"set", 3),
+    object_set(ctx, ctx.realm.uint8_array_proto, ctx_intern_atom(ctx, (char*)"set", 3),
                ctx_make_host_function_arity(ctx, (char*)"set", u8_set_ptr, 1));
-    object_set(ctx, ctx.uint8_array_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
+    object_set(ctx, ctx.realm.uint8_array_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
                ctx_make_host_function(ctx, (char*)"toString", u8_ts_ptr));
     // === TypedArray family (Int8 / Uint8Clamped / Int16 / ... / Float64) ===
     let ta_fill_ptr:    void* = NULL; raw { ta_fill_ptr    = (void*)host_typed_array_fill; }
@@ -28282,33 +28294,33 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let f32_ctor_v  = ctx_register_host_function(ctx, (char*)"Float32Array", f32_ctor_ptr);
     let f64_ctor_v  = ctx_register_host_function(ctx, (char*)"Float64Array", f64_ctor_ptr);
 
-    ctx.int8_array_proto          = zjs_as_object(ctx_new_object(ctx));
-    ctx.uint8_clamped_array_proto = zjs_as_object(ctx_new_object(ctx));
-    ctx.int16_array_proto         = zjs_as_object(ctx_new_object(ctx));
-    ctx.uint16_array_proto        = zjs_as_object(ctx_new_object(ctx));
-    ctx.int32_array_proto         = zjs_as_object(ctx_new_object(ctx));
-    ctx.uint32_array_proto        = zjs_as_object(ctx_new_object(ctx));
-    ctx.float32_array_proto       = zjs_as_object(ctx_new_object(ctx));
-    ctx.float64_array_proto       = zjs_as_object(ctx_new_object(ctx));
+    ctx.realm.int8_array_proto          = zjs_as_object(ctx_new_object(ctx));
+    ctx.realm.uint8_clamped_array_proto = zjs_as_object(ctx_new_object(ctx));
+    ctx.realm.int16_array_proto         = zjs_as_object(ctx_new_object(ctx));
+    ctx.realm.uint16_array_proto        = zjs_as_object(ctx_new_object(ctx));
+    ctx.realm.int32_array_proto         = zjs_as_object(ctx_new_object(ctx));
+    ctx.realm.uint32_array_proto        = zjs_as_object(ctx_new_object(ctx));
+    ctx.realm.float32_array_proto       = zjs_as_object(ctx_new_object(ctx));
+    ctx.realm.float64_array_proto       = zjs_as_object(ctx_new_object(ctx));
 
-    zjs_as_host_function(i8_ctor_v).prototype  = ctx.int8_array_proto;
-    zjs_as_host_function(u8c_ctor_v).prototype = ctx.uint8_clamped_array_proto;
-    zjs_as_host_function(i16_ctor_v).prototype = ctx.int16_array_proto;
-    zjs_as_host_function(u16_ctor_v).prototype = ctx.uint16_array_proto;
-    zjs_as_host_function(i32_ctor_v).prototype = ctx.int32_array_proto;
-    zjs_as_host_function(u32_ctor_v).prototype = ctx.uint32_array_proto;
-    zjs_as_host_function(f32_ctor_v).prototype = ctx.float32_array_proto;
-    zjs_as_host_function(f64_ctor_v).prototype = ctx.float64_array_proto;
+    zjs_as_host_function(i8_ctor_v).prototype  = ctx.realm.int8_array_proto;
+    zjs_as_host_function(u8c_ctor_v).prototype = ctx.realm.uint8_clamped_array_proto;
+    zjs_as_host_function(i16_ctor_v).prototype = ctx.realm.int16_array_proto;
+    zjs_as_host_function(u16_ctor_v).prototype = ctx.realm.uint16_array_proto;
+    zjs_as_host_function(i32_ctor_v).prototype = ctx.realm.int32_array_proto;
+    zjs_as_host_function(u32_ctor_v).prototype = ctx.realm.uint32_array_proto;
+    zjs_as_host_function(f32_ctor_v).prototype = ctx.realm.float32_array_proto;
+    zjs_as_host_function(f64_ctor_v).prototype = ctx.realm.float64_array_proto;
 
     let ta_protos: ZjsObject*[8];
-    ta_protos[0] = ctx.int8_array_proto;
-    ta_protos[1] = ctx.uint8_clamped_array_proto;
-    ta_protos[2] = ctx.int16_array_proto;
-    ta_protos[3] = ctx.uint16_array_proto;
-    ta_protos[4] = ctx.int32_array_proto;
-    ta_protos[5] = ctx.uint32_array_proto;
-    ta_protos[6] = ctx.float32_array_proto;
-    ta_protos[7] = ctx.float64_array_proto;
+    ta_protos[0] = ctx.realm.int8_array_proto;
+    ta_protos[1] = ctx.realm.uint8_clamped_array_proto;
+    ta_protos[2] = ctx.realm.int16_array_proto;
+    ta_protos[3] = ctx.realm.uint16_array_proto;
+    ta_protos[4] = ctx.realm.int32_array_proto;
+    ta_protos[5] = ctx.realm.uint32_array_proto;
+    ta_protos[6] = ctx.realm.float32_array_proto;
+    ta_protos[7] = ctx.realm.float64_array_proto;
     let ta_ctors: ZjsValue[8];
     ta_ctors[0] = i8_ctor_v; ta_ctors[1] = u8c_ctor_v; ta_ctors[2] = i16_ctor_v;
     ta_ctors[3] = u16_ctor_v; ta_ctors[4] = i32_ctor_v; ta_ctors[5] = u32_ctor_v;
@@ -28321,9 +28333,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // `TypedArray.prototype.<method>` is the single shared function.
     let ta_abstract_ptr: void* = NULL; raw { ta_abstract_ptr = (void*)host_typed_array_abstract; }
     let ta_intrinsic_v = ctx_make_host_function_arity(ctx, (char*)"TypedArray", ta_abstract_ptr, 0);
-    ctx.typed_array_ctor = ta_intrinsic_v;
-    ctx.typed_array_proto = zjs_as_object(ctx_new_object(ctx));
-    zjs_as_host_function(ta_intrinsic_v).prototype = ctx.typed_array_proto;
+    ctx.realm.typed_array_ctor = ta_intrinsic_v;
+    ctx.realm.typed_array_proto = zjs_as_object(ctx_new_object(ctx));
+    zjs_as_host_function(ta_intrinsic_v).prototype = ctx.realm.typed_array_proto;
     // %TypedArray%.of / .from statics (own on the intrinsic).
     let ta_intrinsic_o = zjs_as_host_function(ta_intrinsic_v);
     if ta_intrinsic_o.props == NULL { ta_intrinsic_o.props = zjs_as_object(ctx_new_object(ctx)); }
@@ -28331,7 +28343,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"of", ta_of_ptr, 0));
     object_set(ctx, ta_intrinsic_o.props, ctx_intern_atom(ctx, (char*)"from", 4),
                ctx_make_host_function_arity(ctx, (char*)"from", ta_from_ptr, 1));
-    let ta_sp = ctx.typed_array_proto;
+    let ta_sp = ctx.realm.typed_array_proto;
     object_set(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"constructor", 11), ta_intrinsic_v);
     object_set(ctx, ta_sp, ctx_intern_atom(ctx, (char*)"fill", 4),
                ctx_make_host_function_arity(ctx, (char*)"fill", ta_fill_ptr, 1));
@@ -28388,7 +28400,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     while ti < 8 {
         let p = ta_protos[ti];
         // Inherit the shared prototype; own props are constructor + BYTES_PER_ELEMENT.
-        p.proto = ctx.typed_array_proto;
+        p.proto = ctx.realm.typed_array_proto;
         object_set(ctx, p, ctx_intern_atom(ctx, (char*)"constructor", 11), ta_ctors[ti]);
         // BYTES_PER_ELEMENT on the proto: {writable:false,enum:false,config:false}.
         object_define_property_slot(ctx, p, ctx_intern_atom(ctx, (char*)"BYTES_PER_ELEMENT", 17),
@@ -28412,9 +28424,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let dv_ctor_ptr: void* = NULL; raw { dv_ctor_ptr = (void*)host_data_view_ctor; }
     let dv_ctor_v = ctx_register_host_function(ctx, (char*)"DataView", dv_ctor_ptr);
     let dv_proto_v = ctx_new_object(ctx);
-    ctx.data_view_proto = zjs_as_object(dv_proto_v);
-    zjs_as_host_function(dv_ctor_v).prototype = ctx.data_view_proto;
-    object_set(ctx, ctx.data_view_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), dv_ctor_v);
+    ctx.realm.data_view_proto = zjs_as_object(dv_proto_v);
+    zjs_as_host_function(dv_ctor_v).prototype = ctx.realm.data_view_proto;
+    object_set(ctx, ctx.realm.data_view_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), dv_ctor_v);
     let dv_table_p: void* = NULL;
     let dv_table_n: usize = 0;
     raw {
@@ -28439,7 +28451,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         dv_table_p = (void*)dv_proto_specs;
         dv_table_n = sizeof(dv_proto_specs) / sizeof(dv_proto_specs[0]);
     }
-    zjs_install_methods(ctx, ctx.data_view_proto, dv_table_p, dv_table_n);
+    zjs_install_methods(ctx, ctx.realm.data_view_proto, dv_table_p, dv_table_n);
 
     let bigint_ctor_ptr: void* = NULL; raw { bigint_ctor_ptr = (void*)host_bigint_ctor; }
     let bigint_v = ctx_register_host_function(ctx, (char*)"BigInt", bigint_ctor_ptr);
@@ -28485,18 +28497,18 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let ws_disp_ptr:  void* = NULL; raw { ws_disp_ptr  = (void*)host_websocket_dispatch_event; }
     let ws_ctor_v = ctx_register_host_function(ctx, (char*)"WebSocket", ws_ctor_ptr);
     let ws_proto_v = ctx_new_object(ctx);
-    ctx.websocket_proto = zjs_as_object(ws_proto_v);
-    zjs_as_host_function(ws_ctor_v).prototype = ctx.websocket_proto;
-    object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), ws_ctor_v);
-    object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"send", 4),
+    ctx.realm.websocket_proto = zjs_as_object(ws_proto_v);
+    zjs_as_host_function(ws_ctor_v).prototype = ctx.realm.websocket_proto;
+    object_set(ctx, ctx.realm.websocket_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), ws_ctor_v);
+    object_set(ctx, ctx.realm.websocket_proto, ctx_intern_atom(ctx, (char*)"send", 4),
                ctx_make_host_function_arity(ctx, (char*)"send", ws_send_ptr, 1));
-    object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"close", 5),
+    object_set(ctx, ctx.realm.websocket_proto, ctx_intern_atom(ctx, (char*)"close", 5),
                ctx_make_host_function_arity(ctx, (char*)"close", ws_close_ptr, 2));
-    object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"addEventListener", 16),
+    object_set(ctx, ctx.realm.websocket_proto, ctx_intern_atom(ctx, (char*)"addEventListener", 16),
                ctx_make_host_function_arity(ctx, (char*)"addEventListener", ws_add_ptr, 2));
-    object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"removeEventListener", 19),
+    object_set(ctx, ctx.realm.websocket_proto, ctx_intern_atom(ctx, (char*)"removeEventListener", 19),
                ctx_make_host_function_arity(ctx, (char*)"removeEventListener", ws_rem_ptr, 2));
-    object_set(ctx, ctx.websocket_proto, ctx_intern_atom(ctx, (char*)"dispatchEvent", 13),
+    object_set(ctx, ctx.realm.websocket_proto, ctx_intern_atom(ctx, (char*)"dispatchEvent", 13),
                ctx_make_host_function_arity(ctx, (char*)"dispatchEvent", ws_disp_ptr, 1));
 
     // Static constants on the constructor (spec): WebSocket.CONNECTING etc.
@@ -28514,9 +28526,9 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let h_ctor_ptr: void* = NULL; raw { h_ctor_ptr = (void*)host_headers_ctor; }
     let h_ctor_v = ctx_register_host_function(ctx, (char*)"Headers", h_ctor_ptr);
     let h_proto_v = ctx_new_object(ctx);
-    ctx.headers_proto = zjs_as_object(h_proto_v);
-    zjs_as_host_function(h_ctor_v).prototype = ctx.headers_proto;
-    object_set(ctx, ctx.headers_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), h_ctor_v);
+    ctx.realm.headers_proto = zjs_as_object(h_proto_v);
+    zjs_as_host_function(h_ctor_v).prototype = ctx.realm.headers_proto;
+    object_set(ctx, ctx.realm.headers_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), h_ctor_v);
     // Iteration default is entries (Headers walks name/value pairs).
     // `append` combines values with ", "; `set` replaces (spec
     // distinction — the WinterTC suite caught us aliasing them earlier).
@@ -28538,7 +28550,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         h_table_p = (void*)headers_proto_specs;
         h_table_n = sizeof(headers_proto_specs) / sizeof(headers_proto_specs[0]);
     }
-    zjs_install_methods(ctx, ctx.headers_proto, h_table_p, h_table_n);
+    zjs_install_methods(ctx, ctx.realm.headers_proto, h_table_p, h_table_n);
 
     let r_status_ptr:   void* = NULL; raw { r_status_ptr   = (void*)host_response_status; }
     let r_ok_ptr:       void* = NULL; raw { r_ok_ptr       = (void*)host_response_ok; }
@@ -28555,24 +28567,24 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let r_ctor_ptr: void* = NULL; raw { r_ctor_ptr = (void*)host_response_ctor; }
     let r_ctor_v   = ctx_register_host_function(ctx, (char*)"Response", r_ctor_ptr);
     let r_proto_v  = ctx_new_object(ctx);
-    ctx.response_proto = zjs_as_object(r_proto_v);
-    zjs_as_host_function(r_ctor_v).prototype = ctx.response_proto;
-    object_set(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), r_ctor_v);
-    object_define_accessor(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"status", 6),
+    ctx.realm.response_proto = zjs_as_object(r_proto_v);
+    zjs_as_host_function(r_ctor_v).prototype = ctx.realm.response_proto;
+    object_set(ctx, ctx.realm.response_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), r_ctor_v);
+    object_define_accessor(ctx, ctx.realm.response_proto, ctx_intern_atom(ctx, (char*)"status", 6),
                            ctx_make_host_function(ctx, (char*)"get status", r_status_ptr), zjs_undefined());
-    object_define_accessor(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"ok", 2),
+    object_define_accessor(ctx, ctx.realm.response_proto, ctx_intern_atom(ctx, (char*)"ok", 2),
                            ctx_make_host_function(ctx, (char*)"get ok", r_ok_ptr), zjs_undefined());
-    object_define_accessor(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"statusText", 10),
+    object_define_accessor(ctx, ctx.realm.response_proto, ctx_intern_atom(ctx, (char*)"statusText", 10),
                            ctx_make_host_function(ctx, (char*)"get statusText", r_stext_ptr), zjs_undefined());
-    object_define_accessor(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"url", 3),
+    object_define_accessor(ctx, ctx.realm.response_proto, ctx_intern_atom(ctx, (char*)"url", 3),
                            ctx_make_host_function(ctx, (char*)"get url", r_url_ptr), zjs_undefined());
-    object_define_accessor(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"headers", 7),
+    object_define_accessor(ctx, ctx.realm.response_proto, ctx_intern_atom(ctx, (char*)"headers", 7),
                            ctx_make_host_function(ctx, (char*)"get headers", r_hdrs_ptr), zjs_undefined());
-    object_set(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"text", 4),
+    object_set(ctx, ctx.realm.response_proto, ctx_intern_atom(ctx, (char*)"text", 4),
                ctx_make_host_function(ctx, (char*)"text", r_text_ptr));
-    object_set(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"arrayBuffer", 11),
+    object_set(ctx, ctx.realm.response_proto, ctx_intern_atom(ctx, (char*)"arrayBuffer", 11),
                ctx_make_host_function(ctx, (char*)"arrayBuffer", r_ab_ptr));
-    object_set(ctx, ctx.response_proto, ctx_intern_atom(ctx, (char*)"json", 4),
+    object_set(ctx, ctx.realm.response_proto, ctx_intern_atom(ctx, (char*)"json", 4),
                ctx_make_host_function(ctx, (char*)"json", r_json_ptr));
 
     // Request — opaque carrier of (url, method, headers, body). Used
@@ -28586,16 +28598,16 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let req_body_ptr: void* = NULL; raw { req_body_ptr = (void*)host_request_body; }
     let req_ctor_v  = ctx_register_host_function(ctx, (char*)"Request", req_ctor_ptr);
     let req_proto_v = ctx_new_object(ctx);
-    ctx.request_proto = zjs_as_object(req_proto_v);
-    zjs_as_host_function(req_ctor_v).prototype = ctx.request_proto;
-    object_set(ctx, ctx.request_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), req_ctor_v);
-    object_define_accessor(ctx, ctx.request_proto, ctx_intern_atom(ctx, (char*)"url", 3),
+    ctx.realm.request_proto = zjs_as_object(req_proto_v);
+    zjs_as_host_function(req_ctor_v).prototype = ctx.realm.request_proto;
+    object_set(ctx, ctx.realm.request_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), req_ctor_v);
+    object_define_accessor(ctx, ctx.realm.request_proto, ctx_intern_atom(ctx, (char*)"url", 3),
                            ctx_make_host_function(ctx, (char*)"get url", req_url_ptr), zjs_undefined());
-    object_define_accessor(ctx, ctx.request_proto, ctx_intern_atom(ctx, (char*)"method", 6),
+    object_define_accessor(ctx, ctx.realm.request_proto, ctx_intern_atom(ctx, (char*)"method", 6),
                            ctx_make_host_function(ctx, (char*)"get method", req_meth_ptr), zjs_undefined());
-    object_define_accessor(ctx, ctx.request_proto, ctx_intern_atom(ctx, (char*)"headers", 7),
+    object_define_accessor(ctx, ctx.realm.request_proto, ctx_intern_atom(ctx, (char*)"headers", 7),
                            ctx_make_host_function(ctx, (char*)"get headers", req_hdrs_ptr), zjs_undefined());
-    object_define_accessor(ctx, ctx.request_proto, ctx_intern_atom(ctx, (char*)"body", 4),
+    object_define_accessor(ctx, ctx.realm.request_proto, ctx_intern_atom(ctx, (char*)"body", 4),
                            ctx_make_host_function(ctx, (char*)"get body", req_body_ptr), zjs_undefined());
 
     let fetch_ptr: void* = NULL; raw { fetch_ptr = (void*)host_fetch; }
@@ -28777,8 +28789,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let obj_ctor_ptr: void* = NULL; raw { obj_ctor_ptr = (void*)host_object_ctor; }
     let object_v = ctx_register_host_function(ctx, (char*)"Object", obj_ctor_ptr);
     let object_hf = zjs_as_host_function(object_v);
-    object_hf.prototype = ctx.object_proto;
-    object_set(ctx, ctx.object_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), object_v);
+    object_hf.prototype = ctx.realm.object_proto;
+    object_set(ctx, ctx.realm.object_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), object_v);
     let keys_ptr:   void* = NULL; raw { keys_ptr   = (void*)host_object_keys; }
     let create_ptr: void* = NULL; raw { create_ptr = (void*)host_object_create; }
     let gpo_ptr:    void* = NULL; raw { gpo_ptr    = (void*)host_object_get_prototype_of; }
@@ -29007,7 +29019,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // String @@iterator lookups resolve to this exact host fn).
     ctx.array_iter_host_fn = array_iter_v;
     object_set(ctx, array_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10), array_iter_v);
-    ctx.array_proto = array_proto;
+    ctx.realm.array_proto = array_proto;
     // Unify with the Array constructor's .prototype (set lazily here so
     // `Array.prototype.push.call(arr, x)` and similar find our method
     // table).
@@ -29119,7 +29131,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // so the fast-path identity check in iter_get matches strings too.
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"@@iterator", 10),
                ctx.array_iter_host_fn);
-    ctx.string_proto = string_proto;
+    ctx.realm.string_proto = string_proto;
     object_set(ctx, string_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), strv_full);
     // Unify with the String constructor's .prototype so
     // `new String(x).slice(...)` reaches the same methods as a
@@ -29371,38 +29383,38 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // those bits off in one pass so Object.keys / for-in / the
     // descriptor walk in Object.create({}, SomeProto) all see them
     // as non-enumerable.
-    proto_mark_nonenum(ctx.object_proto);
-    proto_mark_nonenum(ctx.array_proto);
-    proto_mark_nonenum(ctx.string_proto);
-    proto_mark_nonenum(ctx.regexp_proto);
-    proto_mark_nonenum(ctx.promise_ctor_proto);
-    proto_mark_nonenum(ctx.typed_array_proto);
+    proto_mark_nonenum(ctx.realm.object_proto);
+    proto_mark_nonenum(ctx.realm.array_proto);
+    proto_mark_nonenum(ctx.realm.string_proto);
+    proto_mark_nonenum(ctx.realm.regexp_proto);
+    proto_mark_nonenum(ctx.realm.promise_ctor_proto);
+    proto_mark_nonenum(ctx.realm.typed_array_proto);
     // The rest of the built-in prototypes — their methods + `constructor`
     // are all { enumerable: false } per spec. These had the
     // non-constructor sweep but not the non-enumerable one, so e.g.
     // Object.getOwnPropertyDescriptor(Date.prototype, "getTime").enumerable
     // wrongly read true.
-    proto_mark_nonenum(ctx.function_proto);
-    proto_mark_nonenum(ctx.date_proto);
-    proto_mark_nonenum(ctx.map_proto);
-    proto_mark_nonenum(ctx.set_proto);
-    proto_mark_nonenum(ctx.weakmap_proto);
-    proto_mark_nonenum(ctx.weakset_proto);
-    proto_mark_nonenum(ctx.symbol_proto);
-    proto_mark_nonenum(ctx.generator_proto);
-    proto_mark_nonenum(ctx.array_buffer_proto);
-    proto_mark_nonenum(ctx.data_view_proto);
+    proto_mark_nonenum(ctx.realm.function_proto);
+    proto_mark_nonenum(ctx.realm.date_proto);
+    proto_mark_nonenum(ctx.realm.map_proto);
+    proto_mark_nonenum(ctx.realm.set_proto);
+    proto_mark_nonenum(ctx.realm.weakmap_proto);
+    proto_mark_nonenum(ctx.realm.weakset_proto);
+    proto_mark_nonenum(ctx.realm.symbol_proto);
+    proto_mark_nonenum(ctx.realm.generator_proto);
+    proto_mark_nonenum(ctx.realm.array_buffer_proto);
+    proto_mark_nonenum(ctx.realm.data_view_proto);
     // Per-kind TypedArray prototypes carry only `constructor` (+ the
     // already-non-enum BYTES_PER_ELEMENT) as own props.
-    proto_mark_nonenum(ctx.int8_array_proto);
-    proto_mark_nonenum(ctx.uint8_array_proto);
-    proto_mark_nonenum(ctx.uint8_clamped_array_proto);
-    proto_mark_nonenum(ctx.int16_array_proto);
-    proto_mark_nonenum(ctx.uint16_array_proto);
-    proto_mark_nonenum(ctx.int32_array_proto);
-    proto_mark_nonenum(ctx.uint32_array_proto);
-    proto_mark_nonenum(ctx.float32_array_proto);
-    proto_mark_nonenum(ctx.float64_array_proto);
+    proto_mark_nonenum(ctx.realm.int8_array_proto);
+    proto_mark_nonenum(ctx.realm.uint8_array_proto);
+    proto_mark_nonenum(ctx.realm.uint8_clamped_array_proto);
+    proto_mark_nonenum(ctx.realm.int16_array_proto);
+    proto_mark_nonenum(ctx.realm.uint16_array_proto);
+    proto_mark_nonenum(ctx.realm.int32_array_proto);
+    proto_mark_nonenum(ctx.realm.uint32_array_proto);
+    proto_mark_nonenum(ctx.realm.float32_array_proto);
+    proto_mark_nonenum(ctx.realm.float64_array_proto);
     // Error + the native error subclass prototypes (name/message/
     // constructor/toString are all non-enumerable). Swept via the global
     // constructor table.
@@ -29427,16 +29439,16 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Prototype methods are not constructors per spec — `new
     // Array.prototype.push()` should throw TypeError. Mark them now
     // that the method tables are installed.
-    mark_proto_methods_non_constructor(ctx, ctx.object_proto);
-    mark_proto_methods_non_constructor(ctx, ctx.array_proto);
-    mark_proto_methods_non_constructor(ctx, ctx.string_proto);
-    mark_proto_methods_non_constructor(ctx, ctx.regexp_proto);
-    mark_proto_methods_non_constructor(ctx, ctx.promise_ctor_proto);
-    mark_proto_methods_non_constructor(ctx, ctx.generator_proto);
-    mark_proto_methods_non_constructor(ctx, ctx.map_proto);
-    mark_proto_methods_non_constructor(ctx, ctx.set_proto);
-    mark_proto_methods_non_constructor(ctx, ctx.date_proto);
-    mark_proto_methods_non_constructor(ctx, ctx.symbol_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.realm.object_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.realm.array_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.realm.string_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.realm.regexp_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.realm.promise_ctor_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.realm.generator_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.realm.map_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.realm.set_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.realm.date_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.realm.symbol_proto);
     // Wrapper prototypes (Number.prototype, Boolean.prototype) and
     // Math live as the .prototype of their constructor or as a plain
     // global. Walk via the global table.
@@ -30211,8 +30223,8 @@ fn ctx_eval_module_with_source(ctx: ZjsContext*, abs_path: ZjsString*, src: char
     let saved_cm = ctx.current_module;
     let saved_th = ctx.host_this;
     ctx.current_module = m;
-    if ctx.global_this_obj != NULL {
-        ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+    if ctx.realm.global_this_obj != NULL {
+        ctx.host_this = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
     }
     let r: InterpretResult = zjs_undefined_result();
     raw {

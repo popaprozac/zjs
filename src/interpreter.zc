@@ -266,12 +266,12 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     // Generator iterators have no own state-exposed props; everything
     // (.next, .return, .throw, Symbol.iterator) lives on the shared
     // generator_proto. Walk it directly.
-    if tag == TAG_GENERATOR && ctx.generator_proto != NULL {
+    if tag == TAG_GENERATOR && ctx.realm.generator_proto != NULL {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
-        let slot = class_find_slot(ctx.generator_proto.cls, name);
+        let slot = class_find_slot(ctx.realm.generator_proto.cls, name);
         if slot >= 0 {
-            let v = ctx.generator_proto.slots[(u32)slot];
+            let v = ctx.realm.generator_proto.slots[(u32)slot];
             if zjs_is_deleted(v) == 0 { return v; }
         }
         return zjs_undefined();
@@ -295,7 +295,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let is_size: int = 0;
         raw { is_size = (kn == 4 && memcmp(kd, "size", 4) == 0) ? 1 : 0; }
         if is_size != 0 && mm.is_weak == false { return zjs_int32((i32)mm.size); }
-        let cur: ZjsObject* = ctx.map_proto;
+        let cur: ZjsObject* = ctx.realm.map_proto;
         if mm.proto != NULL { cur = mm.proto; }
         while cur != NULL {
             let slot = class_find_slot(cur.cls, name);
@@ -320,7 +320,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let is_size: int = 0;
         raw { is_size = (kn == 4 && memcmp(kd, "size", 4) == 0) ? 1 : 0; }
         if is_size != 0 && ss.is_weak == false { return zjs_int32((i32)ss.size); }
-        let cur: ZjsObject* = ctx.set_proto;
+        let cur: ZjsObject* = ctx.realm.set_proto;
         if ss.proto != NULL { cur = ss.proto; }
         while cur != NULL {
             let slot = class_find_slot(cur.cls, name);
@@ -405,10 +405,10 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             pc = pc.proto;
         }
         // Fallback: the shared Uint8Array.prototype methods.
-        if ctx.uint8_array_proto != NULL {
-            let slot = class_find_slot(ctx.uint8_array_proto.cls, name);
+        if ctx.realm.uint8_array_proto != NULL {
+            let slot = class_find_slot(ctx.realm.uint8_array_proto.cls, name);
             if slot >= 0 {
-                let v = ctx.uint8_array_proto.slots[(u32)slot];
+                let v = ctx.realm.uint8_array_proto.slots[(u32)slot];
                 if zjs_is_deleted(v) == 0 { return v; }
             }
         }
@@ -516,10 +516,10 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         }
         if is_rsz != 0 { return zjs_bool(if b.resizable { 1 } else { 0 }); }
         if is_det != 0 { return zjs_bool(if b.detached { 1 } else { 0 }); }
-        if ctx.array_buffer_proto != NULL {
-            let slot = class_find_slot(ctx.array_buffer_proto.cls, name);
+        if ctx.realm.array_buffer_proto != NULL {
+            let slot = class_find_slot(ctx.realm.array_buffer_proto.cls, name);
             if slot >= 0 {
-                let v = ctx.array_buffer_proto.slots[(u32)slot];
+                let v = ctx.realm.array_buffer_proto.slots[(u32)slot];
                 if zjs_is_deleted(v) == 0 { return v; }
             }
         }
@@ -570,10 +570,10 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             return ctx_intern_string(ctx, (char*)"", 0);
         }
         if is_ext != 0 { return ctx_intern_string(ctx, (char*)"", 0); }
-        if ctx.websocket_proto != NULL {
-            let slot = class_find_slot(ctx.websocket_proto.cls, name);
+        if ctx.realm.websocket_proto != NULL {
+            let slot = class_find_slot(ctx.realm.websocket_proto.cls, name);
             if slot >= 0 {
-                let v = ctx.websocket_proto.slots[(u32)slot];
+                let v = ctx.realm.websocket_proto.slots[(u32)slot];
                 if zjs_is_deleted(v) == 0 { return v; }
             }
         }
@@ -600,10 +600,10 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             if dv.buffer != NULL { return zjs_cell_from_ptr((void*)dv.buffer); }
             return zjs_undefined();
         }
-        if ctx.data_view_proto != NULL {
-            let slot = class_find_slot(ctx.data_view_proto.cls, name);
+        if ctx.realm.data_view_proto != NULL {
+            let slot = class_find_slot(ctx.realm.data_view_proto.cls, name);
             if slot >= 0 {
-                let v = ctx.data_view_proto.slots[(u32)slot];
+                let v = ctx.realm.data_view_proto.slots[(u32)slot];
                 if zjs_is_deleted(v) == 0 { return v; }
             }
         }
@@ -625,14 +625,14 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         // Methods live on the kind's prototype.
         let proto: ZjsObject* = NULL;
         if tm.proto != NULL { proto = tm.proto; }
-        else if tm.kind == TMP_DURATION   { proto = ctx.temporal_duration_proto; }
-        else if tm.kind == TMP_INSTANT    { proto = ctx.temporal_instant_proto; }
-        else if tm.kind == TMP_PLAIN_DATE { proto = ctx.temporal_plaindate_proto; }
-        else if tm.kind == TMP_PLAIN_TIME { proto = ctx.temporal_plaintime_proto; }
-        else if tm.kind == TMP_PLAIN_DATETIME { proto = ctx.temporal_plaindatetime_proto; }
-        else if tm.kind == TMP_PLAIN_YEARMONTH { proto = ctx.temporal_yearmonth_proto; }
-        else if tm.kind == TMP_PLAIN_MONTHDAY { proto = ctx.temporal_monthday_proto; }
-        else if tm.kind == TMP_ZONED_DATETIME { proto = ctx.temporal_zoneddatetime_proto; }
+        else if tm.kind == TMP_DURATION   { proto = ctx.realm.temporal_duration_proto; }
+        else if tm.kind == TMP_INSTANT    { proto = ctx.realm.temporal_instant_proto; }
+        else if tm.kind == TMP_PLAIN_DATE { proto = ctx.realm.temporal_plaindate_proto; }
+        else if tm.kind == TMP_PLAIN_TIME { proto = ctx.realm.temporal_plaintime_proto; }
+        else if tm.kind == TMP_PLAIN_DATETIME { proto = ctx.realm.temporal_plaindatetime_proto; }
+        else if tm.kind == TMP_PLAIN_YEARMONTH { proto = ctx.realm.temporal_yearmonth_proto; }
+        else if tm.kind == TMP_PLAIN_MONTHDAY { proto = ctx.realm.temporal_monthday_proto; }
+        else if tm.kind == TMP_ZONED_DATETIME { proto = ctx.realm.temporal_zoneddatetime_proto; }
         let cur = proto;
         while cur != NULL {
             let slot = class_find_slot(cur.cls, name);
@@ -653,7 +653,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             let pv = read_from_props_bag(ctx, dd.props, key);
             if zjs_is_deleted(pv) == 0 { return pv; }
         }
-        let cur: ZjsObject* = ctx.date_proto;
+        let cur: ZjsObject* = ctx.realm.date_proto;
         if dd.proto != NULL { cur = dd.proto; }
         while cur != NULL {
             let slot = class_find_slot(cur.cls, name);
@@ -665,7 +665,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         }
         return zjs_undefined();
     }
-    if tag == TAG_SYMBOL && ctx.symbol_proto != NULL {
+    if tag == TAG_SYMBOL && ctx.realm.symbol_proto != NULL {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
         let kd = name.data;
@@ -683,9 +683,9 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             let pv = read_from_props_bag(ctx, sym.props, key);
             if zjs_is_deleted(pv) == 0 { return pv; }
         }
-        let slot = class_find_slot(ctx.symbol_proto.cls, name);
+        let slot = class_find_slot(ctx.realm.symbol_proto.cls, name);
         if slot >= 0 {
-            let v = ctx.symbol_proto.slots[(u32)slot];
+            let v = ctx.realm.symbol_proto.slots[(u32)slot];
             if zjs_is_deleted(v) == 0 { return v; }
         }
         return zjs_undefined();
@@ -789,8 +789,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             // was constructed via a subclass (e.g. `class Sub extends
             // Array {}`) and points at Sub.prototype; its own proto
             // is Array.prototype so the chain still reaches the
-            // built-in methods. NULL falls back to ctx.array_proto.
-            let cur = if arr.proto != NULL { arr.proto } else { ctx.array_proto };
+            // built-in methods. NULL falls back to ctx.realm.array_proto.
+            let cur = if arr.proto != NULL { arr.proto } else { ctx.realm.array_proto };
             while cur != NULL {
                 let slot = class_find_slot(cur.cls, ks);
                 if slot >= 0 {
@@ -864,7 +864,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
             // Walk string_proto + chain (for object_proto methods like
             // hasOwnProperty).
-            let cur = ctx.string_proto;
+            let cur = ctx.realm.string_proto;
             while cur != NULL {
                 let slot = class_find_slot(cur.cls, ks);
                 if slot >= 0 { return cur.slots[(u32)slot]; }
@@ -882,7 +882,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let name = zjs_as_string(key_str_val);
         // globalThis: a property miss falls through to the globals
         // table so `var g = this; g.someGlobal` works at top level.
-        if o == ctx.global_this_obj {
+        if o == ctx.realm.global_this_obj {
             // Try the own-slot path first (allows defineProperty on
             // globalThis to shadow); then fall back to the globals table.
             let slot_g = class_find_slot(o.cls, name);
@@ -1022,8 +1022,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 }
                 return zjs_cell_from_ptr((void*)f.prototype);
             }
-            if is_call   != 0 { return ctx.fn_call_v; }
-            if is_apply  != 0 { return ctx.fn_apply_v; }
+            if is_call   != 0 { return ctx.realm.fn_call_v; }
+            if is_apply  != 0 { return ctx.realm.fn_apply_v; }
             let fp_p = zjs_cell_as_ptr(obj);
             let f_p: Function* = NULL;
             raw { f_p = (Function*)fp_p; }
@@ -1089,8 +1089,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             // Walk Function.prototype (which carries the call/apply
             // helpers and the constructor link to the Function global)
             // before Object.prototype.
-            if f_p.proto_override == NULL && ctx.function_proto != NULL {
-                let cur = ctx.function_proto;
+            if f_p.proto_override == NULL && ctx.realm.function_proto != NULL {
+                let cur = ctx.realm.function_proto;
                 while cur != NULL {
                     let s = class_find_slot(cur.cls, ks);
                     if s >= 0 {
@@ -1100,8 +1100,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                     cur = cur.proto;
                 }
             }
-            if ctx.object_proto != NULL {
-                let cur = ctx.object_proto;
+            if ctx.realm.object_proto != NULL {
+                let cur = ctx.realm.object_proto;
                 while cur != NULL {
                     let s = class_find_slot(cur.cls, ks);
                     if s >= 0 {
@@ -1131,8 +1131,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 is_call  = (kn == 4 && memcmp(kd, "call",  4) == 0) ? 1 : 0;
                 is_apply = (kn == 5 && memcmp(kd, "apply", 5) == 0) ? 1 : 0;
             }
-            if is_call  != 0 { return ctx.fn_call_v; }
-            if is_apply != 0 { return ctx.fn_apply_v; }
+            if is_call  != 0 { return ctx.realm.fn_call_v; }
+            if is_apply != 0 { return ctx.realm.fn_apply_v; }
             // §10.2.4 poison pill on a strict function's caller/arguments.
             let is_caller_c: int = 0;
             let is_args_c: int = 0;
@@ -1300,8 +1300,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             // shadow inherited — but no test262 test that we've seen
             // exercises this corner, and the perf win on hot closure-
             // property access paths is real (~3% richards).
-            if cl_po.proto_override == NULL && ctx.function_proto != NULL {
-                let cur = ctx.function_proto;
+            if cl_po.proto_override == NULL && ctx.realm.function_proto != NULL {
+                let cur = ctx.realm.function_proto;
                 while cur != NULL {
                     let s = class_find_slot(cur.cls, ks);
                     if s >= 0 {
@@ -1311,8 +1311,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                     cur = cur.proto;
                 }
             }
-            if ctx.object_proto != NULL {
-                let cur = ctx.object_proto;
+            if ctx.realm.object_proto != NULL {
+                let cur = ctx.realm.object_proto;
                 while cur != NULL {
                     let s = class_find_slot(cur.cls, ks);
                     if s >= 0 {
@@ -1382,8 +1382,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                 if hf.prototype == NULL { return zjs_undefined(); }
                 return zjs_cell_from_ptr((void*)hf.prototype);
             }
-            if is_call  != 0 { return ctx.fn_call_v; }
-            if is_apply != 0 { return ctx.fn_apply_v; }
+            if is_call  != 0 { return ctx.realm.fn_call_v; }
+            if is_apply != 0 { return ctx.realm.fn_apply_v; }
             // ECMA-262 §10.2.4: every built-in function exposes a
             // `length` (param count) and a `name`. Both are
             // [[Configurable]]: true so `delete fn.name` etc. must
@@ -1426,8 +1426,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
             // Same Function.prototype → Object.prototype walk as the
             // other callable cases.
-            if ctx.function_proto != NULL {
-                let cur = ctx.function_proto;
+            if ctx.realm.function_proto != NULL {
+                let cur = ctx.realm.function_proto;
                 while cur != NULL {
                     let s = class_find_slot(cur.cls, ks);
                     if s >= 0 {
@@ -1440,8 +1440,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             // Fall back through Object.prototype so methods like
             // hasOwnProperty / toString / valueOf are reachable on a
             // host function the same way they are on a plain object.
-            if ctx.object_proto != NULL {
-                let cur = ctx.object_proto;
+            if ctx.realm.object_proto != NULL {
+                let cur = ctx.realm.object_proto;
                 while cur != NULL {
                     let s = class_find_slot(cur.cls, ks);
                     if s >= 0 {
@@ -1458,7 +1458,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     // Promise cell — read through Promise.prototype (then / catch).
     if tag == TAG_PROMISE && zjs_is_string(key) != 0 {
         let pcell = zjs_as_promise(obj);
-        let cur = if pcell.proto != NULL { pcell.proto } else { ctx.promise_ctor_proto };
+        let cur = if pcell.proto != NULL { pcell.proto } else { ctx.realm.promise_ctor_proto };
         if cur != NULL {
             let ks = zjs_as_string(key);
             while cur != NULL {
@@ -1532,7 +1532,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             }
         }
         // Methods + everything else through the prototype.
-        let cur: ZjsObject* = ctx.regexp_proto;
+        let cur: ZjsObject* = ctx.realm.regexp_proto;
         if r.proto != NULL { cur = r.proto; }
         while cur != NULL {
             let slot = class_find_slot(cur.cls, ks);
@@ -2716,12 +2716,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let nl = ctx.globals[slot].name_len;
                 let found_v: ZjsValue = zjs_undefined();
                 let found: bool = false;
-                if ctx.global_this_obj != NULL {
+                if ctx.realm.global_this_obj != NULL {
                     let key_str = ctx_intern_atom(ctx, nm, nl);
-                    let cur = ctx.global_this_obj;
+                    let cur = ctx.realm.global_this_obj;
                     while cur != NULL {
                         if class_find_slot(cur.cls, key_str) >= 0 {
-                            let obj_v = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                            let obj_v = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
                             let key_v = zjs_cell_from_ptr((void*)key_str);
                             found_v = property_get(ctx, obj_v, key_v);
                             found = true;
@@ -2747,12 +2747,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let nm = ctx.globals[slot].name;
                 let nl = ctx.globals[slot].name_len;
                 let found_v: ZjsValue = zjs_undefined();
-                if ctx.global_this_obj != NULL {
+                if ctx.realm.global_this_obj != NULL {
                     let key_str = ctx_intern_atom(ctx, nm, nl);
-                    let cur = ctx.global_this_obj;
+                    let cur = ctx.realm.global_this_obj;
                     while cur != NULL {
                         if class_find_slot(cur.cls, key_str) >= 0 {
-                            let obj_v = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                            let obj_v = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
                             let key_v = zjs_cell_from_ptr((void*)key_str);
                             found_v = property_get(ctx, obj_v, key_v);
                             cur = NULL;
@@ -4570,8 +4570,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     push_call_frame_inplace(ctx, target, regs_base + (u32)base + 1, argc, dst);
                     let new_fi = ctx.frame_count - 1;
                     ctx.frames[new_fi].generator = gen;
-                    if ctx.global_this_obj != NULL {
-                        ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                    if ctx.realm.global_this_obj != NULL {
+                        ctx.host_this = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
                     } else {
                         ctx.host_this = zjs_undefined();
                     }
@@ -4587,8 +4587,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 // Non-strict default `this` is the global object per
                 // ECMA-262 OrdinaryCallBindThis step 6. We don't track
                 // strict-mode-per-function yet; default to global.
-                if ctx.global_this_obj != NULL {
-                    ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                if ctx.realm.global_this_obj != NULL {
+                    ctx.host_this = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
                 } else {
                     ctx.host_this = zjs_undefined();
                 }
@@ -4619,8 +4619,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 1, argc, dst);
                     let new_fi = ctx.frame_count - 1;
                     ctx.frames[new_fi].generator = gen;
-                    if ctx.global_this_obj != NULL {
-                        ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                    if ctx.realm.global_this_obj != NULL {
+                        ctx.host_this = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
                     } else {
                         ctx.host_this = zjs_undefined();
                     }
@@ -4631,8 +4631,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 ctx.frames[cur_idx].ip = ip + 1;
                 push_call_frame_inplace(ctx, target2, regs_base + (u32)base + 1, argc, dst);
                 if target2.is_async { wire_async_call(ctx, target2, regs_base, dst); }
-                if ctx.global_this_obj != NULL {
-                    ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                if ctx.realm.global_this_obj != NULL {
+                    ctx.host_this = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
                 } else {
                     ctx.host_this = zjs_undefined();
                 }
@@ -4711,8 +4711,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if target.is_async { wire_async_call(ctx, target, regs_base, dst); }
                 if is_method {
                     ctx.host_this = new_this;
-                } else if ctx.global_this_obj != NULL {
-                    ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                } else if ctx.realm.global_this_obj != NULL {
+                    ctx.host_this = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
                 } else {
                     ctx.host_this = zjs_undefined();
                 }
@@ -4734,8 +4734,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if target2.is_async { wire_async_call(ctx, target2, regs_base, dst); }
                 if is_method {
                     ctx.host_this = new_this;
-                } else if ctx.global_this_obj != NULL {
-                    ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+                } else if ctx.realm.global_this_obj != NULL {
+                    ctx.host_this = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
                 } else {
                     ctx.host_this = zjs_undefined();
                 }
@@ -5982,7 +5982,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 ctor_callable = true;
                 proto_obj = zjs_as_host_function(ctor).prototype;
             } else if zjs_is_object(ctor) != 0
-                      && zjs_as_object(ctor) == ctx.function_proto {
+                      && zjs_as_object(ctor) == ctx.realm.function_proto {
                 // Function.prototype is callable per spec (a no-op
                 // anonymous function). For OrdinaryHasInstance, step 3
                 // (Type(O) is not Object → return false) happens BEFORE
@@ -6063,26 +6063,26 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_array(val) != 0 {
-                    // Arrays delegate to ctx.array_proto by default;
+                    // Arrays delegate to ctx.realm.array_proto by default;
                     // when constructed via `class Sub extends Array {}`,
                     // arr.proto is non-NULL and points at Sub.prototype
                     // (whose chain reaches Array.prototype).
                     let av = zjs_as_array(val);
-                    let cur = if av.proto != NULL { av.proto } else { ctx.array_proto };
+                    let cur = if av.proto != NULL { av.proto } else { ctx.realm.array_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_promise(val) != 0 {
                     let pv = zjs_as_promise(val);
-                    let cur = if pv.proto != NULL { pv.proto } else { ctx.promise_ctor_proto };
+                    let cur = if pv.proto != NULL { pv.proto } else { ctx.realm.promise_ctor_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_regexp(val) != 0 {
                     let rv = zjs_as_regexp(val);
-                    let cur = if rv.proto != NULL { rv.proto } else { ctx.regexp_proto };
+                    let cur = if rv.proto != NULL { rv.proto } else { ctx.realm.regexp_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
@@ -6091,7 +6091,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     // node:buffer's Buffer sets a per-instance proto whose
                     // chain reaches Uint8Array.prototype.
                     let uv = zjs_as_uint8_array(val);
-                    let cur = if uv.proto != NULL { uv.proto } else { ctx.uint8_array_proto };
+                    let cur = if uv.proto != NULL { uv.proto } else { ctx.realm.uint8_array_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
@@ -6099,27 +6099,27 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 } else if zjs_is_function(val) != 0 || zjs_is_closure(val) != 0
                           || zjs_is_host_function(val) != 0 {
                     // Every callable implicitly inherits from Function.prototype.
-                    let cur = ctx.function_proto;
+                    let cur = ctx.realm.function_proto;
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_map(val) != 0 {
                     let mv = zjs_as_map(val);
-                    let cur = if mv.proto != NULL { mv.proto } else { ctx.map_proto };
+                    let cur = if mv.proto != NULL { mv.proto } else { ctx.realm.map_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_set(val) != 0 {
                     let sv = zjs_as_set(val);
-                    let cur = if sv.proto != NULL { sv.proto } else { ctx.set_proto };
+                    let cur = if sv.proto != NULL { sv.proto } else { ctx.realm.set_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_uint8_array(val) != 0 {
-                    let cur = ctx.uint8_array_proto;
+                    let cur = ctx.realm.uint8_array_proto;
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
@@ -6131,26 +6131,26 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_array_buffer(val) != 0 {
-                    let cur = ctx.array_buffer_proto;
+                    let cur = ctx.realm.array_buffer_proto;
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_data_view(val) != 0 {
-                    let cur = ctx.data_view_proto;
+                    let cur = ctx.realm.data_view_proto;
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_websocket(val) != 0 {
-                    let cur = ctx.websocket_proto;
+                    let cur = ctx.realm.websocket_proto;
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
                     }
                 } else if zjs_is_date(val) != 0 {
                     let dv = zjs_as_date(val);
-                    let cur = if dv.proto != NULL { dv.proto } else { ctx.date_proto };
+                    let cur = if dv.proto != NULL { dv.proto } else { ctx.realm.date_proto };
                     while cur != NULL {
                         if cur == proto_obj { result = 1; cur = NULL; }
                         else                { cur = cur.proto; }
@@ -7512,7 +7512,7 @@ fn zjs_construct_value_nt(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, a
         } else {
             exotic_proto_v = zjs_undefined();
             if value_is_object_type(proto_v) != 0 { proto_obj = zjs_as_object(proto_v); }
-            else { proto_obj = ctx.object_proto; }
+            else { proto_obj = ctx.realm.object_proto; }
         }
     }
 
@@ -7562,8 +7562,8 @@ fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsVal
     // Host functions get the explicit this_val unchanged.
     if (zjs_is_undefined(this_val) != 0 || zjs_is_null(this_val) != 0)
        && (zjs_is_function(callee) != 0 || zjs_is_closure(callee) != 0)
-       && ctx.global_this_obj != NULL {
-        this_val = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+       && ctx.realm.global_this_obj != NULL {
+        this_val = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
     }
     ctx.host_this = this_val;
     let r: ZjsValue = zjs_undefined();

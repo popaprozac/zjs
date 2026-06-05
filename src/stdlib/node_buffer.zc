@@ -44,8 +44,8 @@ fn nb_copy(ctx: ZjsContext*, modobj: ZjsValue, exports: ZjsObject*, name: char*,
 }
 
 fn populate_node_buffer(ctx: ZjsContext*, exports: ZjsObject*) -> void {
-    if ctx.global_this_obj == NULL { return; }
-    let g = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+    if ctx.realm.global_this_obj == NULL { return; }
+    let g = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
     let modobj = property_get(ctx, g, ctx_intern_string(ctx, (char*)"__zjs_node_buffer", 17));
     if zjs_is_object(modobj) == 0 { return; }
     nb_copy(ctx, modobj, exports, (char*)"Buffer", 6);

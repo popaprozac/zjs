@@ -47,8 +47,8 @@ fn zjs_eval(ctx: ZjsContext*, source: char*) -> ZjsValue {
     // call-frame mechanism saves/restores host_this around inner
     // calls; we only need to set it at the top.
     let saved_this = ctx.host_this;
-    if ctx.global_this_obj != NULL {
-        ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+    if ctx.realm.global_this_obj != NULL {
+        ctx.host_this = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
     }
     let r = interpret(ctx, f, NULL, 0);
     ctx.host_this = saved_this;
@@ -99,8 +99,8 @@ fn zjs_compile(ctx: ZjsContext*, source: char*) -> Function* {
 fn zjs_run_function(ctx: ZjsContext*, f: Function*) -> ZjsValue {
     if ctx == NULL || f == NULL { return zjs_undefined(); }
     let saved_this = ctx.host_this;
-    if ctx.global_this_obj != NULL {
-        ctx.host_this = zjs_cell_from_ptr((void*)ctx.global_this_obj);
+    if ctx.realm.global_this_obj != NULL {
+        ctx.host_this = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
     }
     let r = interpret(ctx, f, NULL, 0);
     ctx.host_this = saved_this;
