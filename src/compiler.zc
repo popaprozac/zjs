@@ -3725,6 +3725,7 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
 
     // 6. Move ownership into a fresh Function.
     let f = function_new();
+    f.realm = c.ctx.realm;   // [[Realm]] — the realm this code compiled in
     f.code = c.code;
     f.code_len = c.code_count;
     f.constants = c.constants;
@@ -7675,6 +7676,7 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
 
     // Transfer ownership of code + constants + ICs to a fresh Function.
     let f = function_new();
+    f.realm = c.ctx.realm;   // [[Realm]] — the realm this code compiled in
     f.code = c.code;
     f.code_len = c.code_count;
     f.constants = c.constants;

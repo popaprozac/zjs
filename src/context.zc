@@ -139,6 +139,11 @@ struct CallFrame {
     return_dst:             u8;
     saved_host_this:        ZjsValue;
     saved_current_closure:  ZjsClosure*;
+    // ctx.realm at the moment this frame was pushed. The callee runs with
+    // ctx.realm = its function's [[Realm]]; pop_call_frame restores this
+    // saved value so the caller resumes in its own realm. (Mirrors
+    // saved_host_this / saved_current_closure.)
+    saved_realm:            ZjsRealm*;
     try_depth_at_entry:     u32;
     // ctx.with_count at frame entry. The `with` scope stack is
     // frame-local: Return and throw-unwinding both reset ctx.with_count
@@ -1155,6 +1160,11 @@ fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc
     ctx.frames[idx].return_dst = ret_dst;
     ctx.frames[idx].saved_host_this = ctx.host_this;
     ctx.frames[idx].saved_current_closure = ctx.current_closure;
+    // [[Realm]] switch: run the callee against its own realm's intrinsics +
+    // globals; pop_call_frame restores ctx.realm. NULL f.realm (bootstrap
+    // window) leaves the caller's realm in place. One realm today ⇒ no-op.
+    ctx.frames[idx].saved_realm = ctx.realm;
+    if f.realm != NULL { ctx.realm = f.realm; }
     ctx.frames[idx].try_depth_at_entry = ctx.ctx_try_depth;
     ctx.frames[idx].with_base = ctx.with_count;
     ctx.frames[idx].super_called = false;
@@ -1214,6 +1224,9 @@ fn push_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32, r
     ctx.frames[idx].return_dst = ret_dst;
     ctx.frames[idx].saved_host_this = ctx.host_this;
     ctx.frames[idx].saved_current_closure = ctx.current_closure;
+    // [[Realm]] switch — see push_call_frame_inplace.
+    ctx.frames[idx].saved_realm = ctx.realm;
+    if f.realm != NULL { ctx.realm = f.realm; }
     ctx.frames[idx].try_depth_at_entry = ctx.ctx_try_depth;
     ctx.frames[idx].with_base = ctx.with_count;
     // Per-frame flag — Op::SuperCall sets it; Op::Return checks it
@@ -1243,6 +1256,8 @@ fn pop_call_frame(ctx: ZjsContext*) -> u8 {
 
     ctx.host_this = saved_this;
     ctx.current_closure = saved_cl;
+    // Restore the caller's realm (see push_call_frame_inplace).
+    ctx.realm = ctx.frames[idx].saved_realm;
     if ctx.ctx_try_depth > try_at_entry {
         ctx.ctx_try_depth = try_at_entry;
     }
@@ -1308,8 +1323,12 @@ fn tail_call_frame(ctx: ZjsContext*, f: Function*, args: ZjsValue*, argc: u32) -
     ctx.frames[idx].argc = argc;
     ctx.frames[idx].regs_base = regs_base;
     ctx.frames[idx].reg_count = reg_count;
-    // return_dst, saved_host_this, saved_current_closure,
-    // try_depth_at_entry: unchanged — inherited from the outgoing frame.
+    // return_dst, saved_host_this, saved_current_closure, saved_realm,
+    // try_depth_at_entry: unchanged — inherited from the outgoing frame
+    // (the tail callee returns DIRECTLY to the original caller, so the
+    // realm to restore stays that caller's). But switch the CURRENT realm
+    // to the tail callee's, mirroring push_call_frame.
+    if f.realm != NULL { ctx.realm = f.realm; }
 }
 
 // Push a try frame on the shared context try stack. Lazily allocates.
@@ -2953,6 +2972,7 @@ fn ctx_register_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> Z
     hf.name = name_copy;
     hf.proto_override = zjs_undefined();
     hf.is_constructor = true;
+    hf.realm = ctx.realm;   // [[Realm]] — the realm installing this builtin
 
     ctx_register_cell(ctx, (void*)hf);
     let val = zjs_cell_from_ptr((void*)hf);
@@ -2989,6 +3009,7 @@ fn ctx_make_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> ZjsVa
     // wrappers). Prototype-method registrations flag themselves false
     // via a post-init sweep over each prototype object.
     hf.is_constructor = true;
+    hf.realm = ctx.realm;   // [[Realm]] — the realm installing this builtin
 
     ctx_register_cell(ctx, (void*)hf);
     return zjs_cell_from_ptr((void*)hf);

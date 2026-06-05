@@ -571,6 +571,16 @@ struct Function {
     // none). Read by Function.length / host-func length getters.
     expected_arg_count: u32;
 
+    // [[Realm]] — the realm this function was compiled in (its intrinsics
+    // + globals). Stamped = ctx.realm at compile time. The call boundary
+    // switches ctx.realm to this on entry and restores on return, so a
+    // function always runs against its own realm's intrinsics regardless
+    // of which realm called it (ECMA-262 §10.2.1.x). NULL only for the
+    // bootstrap window before a realm is current; a NULL realm means
+    // "don't switch" (the caller's realm stands). Weak ref — realms are
+    // owned by ctx.realms and outlive every Function, so not GC-marked.
+    realm:          ZjsRealm*;
+
     // Inline-cache table for LoadProp / StoreProp (Phase 3.2b).
     ics:            ICEntry*;
     ic_count:       u32;

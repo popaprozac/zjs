@@ -1,6 +1,6 @@
 {
   "summary": {
-    "when": "2026-06-05 02:58 UTC",
+    "when": "2026-06-05 03:50 UTC",
     "total": 27491,
     "passed": 23282,
     "failed": 3489,
@@ -326,7 +326,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-sparse-object.js",
-      "reason": "[sloppy] "
+      "reason": "[strict] "
     },
     {
       "path": "test/built-ins/Array/prototype/concat/Array.prototype.concat_spreadable-string-wrapper.js",

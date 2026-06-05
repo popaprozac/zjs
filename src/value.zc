@@ -1040,6 +1040,12 @@ struct ZjsHostFunction {
     // this to false; Op::NewInvoke / Op::SpreadNewInvoke / Reflect.construct
     // / etc throw TypeError when constructed.
     is_constructor: bool;
+    // [[Realm]] — the realm this builtin was installed in. The call
+    // boundary switches ctx.realm to this for the duration of the C body
+    // so e.g. `realmB.Array(...)` builds with realmB's %Array.prototype%
+    // and errors use realmB's constructors. NULL ⇒ don't switch (caller's
+    // realm stands). Weak ref into ctx.realms (not GC-marked).
+    realm:  ZjsRealm*;
 }
 
 // Closure: a function template paired with a captured environment.
