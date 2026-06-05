@@ -361,6 +361,11 @@ jit-loop-test: $(JIT_STENCIL_HDR) tools/jit/loop_test.c
 .PHONY: jit-test
 jit-test: jit-stitch-test jit-loop-test
 
+# Regenerate the interpreter-vs-JIT metrics matrix (size / perf / JIT status).
+.PHONY: jit-matrix
+jit-matrix:
+	@sh tools/jit/matrix.sh
+
 smoke: $(SMOKE)
 $(SMOKE): $(SMOKE_SRC) include/zjs.h $(LIB) | $(BUILD_DIR)
 	$(CLANG) -O0 -g -Wall -Iinclude $(SMOKE_SRC) -L$(BUILD_DIR) -lzjs $(RPATH_FLAG) -o $@
