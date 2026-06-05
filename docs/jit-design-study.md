@@ -216,16 +216,24 @@ allocation sites must hit the same write-barrier and safepoint hooks.
 - Interaction with the AOT bundle: JIT hot functions loaded from `.zbc` — verify
   the bytecode-index ↔ source mapping survives AOT for deopt/debugging.
 
-## Realm note (cross-cutting)
+## Realm note (cross-cutting) — UPDATED
 
-Cross-realm support (`$262.createRealm`, ShadowRealm, `node:vm`) is **deferred**
-— every intrinsic is a `ZjsContext` singleton, so realms are a bootstrap
-rearchitecture, not a lever (see [project: longterm-plays]). The JIT does **not**
-require realms first. The §6 guard principle keeps the option open at zero
-correctness cost. Revisit realms when (a) a concrete ShadowRealm/`vm`/sandbox
-product need appears, (b) the conformance push targets >~95% and hits the realm
-wall, or (c) **before** finalizing the JIT's intrinsic-speculation design, so
-realm-keying is a known extension of the guards rather than a retrofit.
+> An earlier draft here called cross-realm "deferred / prohibitive." **That was
+> too conservative and is corrected** in [`realm-refactor-design.md`](./realm-refactor-design.md):
+> realms are *shared-heap + per-realm-globals* (QuickJS's `JSRuntime`/`JSContext`),
+> NOT separate heaps — so they don't break the GC, and the refactor is the
+> well-trodden split a peer engine already shipped. The plan is to land it
+> **before** JIT implementation.
+
+This makes the §6 guard principle **load-bearing**, not hypothetical: every
+intrinsic/global speculation in the JIT MUST be an identity/shape guard with a
+deopt path, never "the unique `Array.prototype`," because once realms exist there
+genuinely are several. With realms landing first, the JIT is realm-correct by
+construction (a cross-realm object fails the guard → slow path) and a future
+optimizing tier can realm-key its speculation deliberately. The ~423
+`ctx.<intrinsic>` sites the realm refactor makes realm-scoped are the same
+surface the JIT speculates against — do the realm split first and the JIT
+inherits the right shape.
 
 ## Refs — prior art bookmarks
 
