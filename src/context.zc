@@ -22446,11 +22446,68 @@ fn ctor_prototype_object(ctx: ZjsContext*, c: ZjsValue) -> ZjsObject* {
 // If we're inside `new Sub(...)` where Sub extends a built-in, return
 // Sub.prototype so the built-in cell's per-instance [[Prototype]] can
 // be set. Returns NULL when not subclassing (plain `new Array()`).
+// GetFunctionRealm(fn) (§10.2.x) — the realm a callable was defined in.
+// Functions/host-fns carry a realm field ([[Realm]], P3); a bound function
+// or proxy forwards to its target. NULL when not a realm-bearing callable.
+fn get_function_realm(ctx: ZjsContext*, callee: ZjsValue) -> ZjsRealm* {
+    if zjs_is_closure(callee) != 0 {
+        let cl = zjs_as_closure(callee);
+        let fp = cl.function;
+        let f: Function* = NULL;
+        raw { f = (Function*)fp; }
+        if f != NULL { return f.realm; }
+    } else if zjs_is_function(callee) != 0 {
+        let f: Function* = NULL;
+        raw { f = (Function*)zjs_cell_as_ptr(callee); }
+        if f != NULL { return f.realm; }
+    } else if zjs_is_host_function(callee) != 0 {
+        return zjs_as_host_function(callee).realm;
+    } else if zjs_is_proxy(callee) != 0 {
+        let p = zjs_as_proxy(callee);
+        if !p.revoked { return get_function_realm(ctx, p.target); }
+    }
+    return NULL;
+}
+
+// Map an intrinsic prototype of the CURRENT realm to the same intrinsic in
+// `r`. Used by GetPrototypeFromConstructor when newTarget is cross-realm:
+// the default proto comes from newTarget's realm, not the running one.
+// Covers the protos that flow into subclass_proto_for (the built-in
+// constructors). Only consulted on the rare cross-realm construct path.
+fn realm_corresponding_proto(ctx: ZjsContext*, r: ZjsRealm*, p: ZjsObject*) -> ZjsObject* {
+    if r == NULL || p == NULL { return NULL; }
+    if p == ctx.realm.array_proto         { return r.array_proto; }
+    if p == ctx.realm.object_proto        { return r.object_proto; }
+    if p == ctx.realm.function_proto      { return r.function_proto; }
+    if p == ctx.realm.regexp_proto        { return r.regexp_proto; }
+    if p == ctx.realm.map_proto           { return r.map_proto; }
+    if p == ctx.realm.set_proto           { return r.set_proto; }
+    if p == ctx.realm.weakmap_proto       { return r.weakmap_proto; }
+    if p == ctx.realm.weakset_proto       { return r.weakset_proto; }
+    if p == ctx.realm.date_proto          { return r.date_proto; }
+    if p == ctx.realm.promise_ctor_proto  { return r.promise_ctor_proto; }
+    return NULL;
+}
+
 fn subclass_proto_for(ctx: ZjsContext*, builtin_proto: ZjsObject*) -> ZjsObject* {
     if !ctx.new_target_active { return NULL; }
     let np = ctor_prototype_object(ctx, ctx.new_target_value);
-    if np == NULL || np == builtin_proto { return NULL; }
-    return np;
+    if np != NULL {
+        // newTarget.prototype is an object → use it directly (subclass, or
+        // a cross-realm constructor whose .prototype is its realm's proto).
+        if np == builtin_proto { return NULL; }
+        return np;
+    }
+    // newTarget.prototype is NOT an object: GetPrototypeFromConstructor
+    // (§10.1.13 step 4) falls back to newTarget's realm's intrinsic. When
+    // that realm differs from the running one, return its corresponding
+    // proto so the result lands in newTarget's realm.
+    let r = get_function_realm(ctx, ctx.new_target_value);
+    if r != NULL && r != ctx.realm {
+        let mapped = realm_corresponding_proto(ctx, r, builtin_proto);
+        if mapped != NULL && mapped != builtin_proto { return mapped; }
+    }
+    return NULL;
 }
 
 fn host_array_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {

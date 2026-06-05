@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-05 05:05 UTC",
+    "when": "2026-06-05 05:15 UTC",
     "total": 27491,
-    "passed": 23323,
-    "failed": 3448,
+    "passed": 23324,
+    "failed": 3447,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -6058,10 +6058,6 @@
     },
     {
       "path": "test/built-ins/Proxy/get-fn-realm-recursive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
-    },
-    {
-      "path": "test/built-ins/Proxy/get-fn-realm.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
