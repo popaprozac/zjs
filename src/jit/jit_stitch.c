@@ -21,6 +21,11 @@
 
 typedef struct { uint64_t bits; } JitValue;
 
+// Engine fast-path helpers the stencils call through GOT-held addresses (J8).
+// Defined in value.zc; the stitcher writes their runtime address into the
+// matching helper-hole slot.
+extern uint64_t jit_array_get_fast(uint64_t arr, int32_t idx, int *ok);
+
 static const JitStencil *jit_find_stencil(const char *name) {
     for (int i = 0; i < JIT_STENCIL_COUNT; i++)
         if (!strcmp(JIT_STENCILS[i].name, name)) return &JIT_STENCILS[i];
@@ -68,7 +73,7 @@ static void *jit_stitch(const JitInsn *prog, int n) {
         code_len += s->code_len;
     }
     size_t got_off = (code_len + 7) & ~7ULL;
-    size_t total   = got_off + (size_t)n * 4 * 8;
+    size_t total   = got_off + (size_t)n * 8 * 8;   // up to 8 GOT slots / insn
     size_t page    = (size_t)getpagesize();
     size_t map_len = (total + page - 1) & ~(page - 1);
     void *mem = mmap(NULL, map_len, PROT_READ | PROT_WRITE | PROT_EXEC,
@@ -83,10 +88,15 @@ static void *jit_stitch(const JitInsn *prog, int n) {
         memcpy(base + off[i], s->code, s->code_len);
     }
     size_t next_slot = 0;
+    // Distinct GOT-slot symbols per instruction. LoadElem already needs 5
+    // (helper + RA/RB/RC + BCIDX); size with headroom and bail (rather than
+    // overflow these stack arrays) if a future stencil exceeds it. The `got`
+    // region was sized n*4 slots — bump per-instruction slot budget there too.
+    enum { MAX_SLOTS_PER_INSN = 8 };
     for (int i = 0; i < n; i++) {
         const JitStencil *s = jit_find_stencil(prog[i].op);
-        const char *slot_sym[4]  = {0, 0, 0, 0};
-        uint64_t   *slot_addr[4] = {0, 0, 0, 0};
+        const char *slot_sym[MAX_SLOTS_PER_INSN]  = {0};
+        uint64_t   *slot_addr[MAX_SLOTS_PER_INSN] = {0};
         int         nslot = 0;
         for (uint32_t h = 0; h < s->nholes; h++) {
             const JitHole *hole = &s->holes[h];
@@ -100,6 +110,10 @@ static void *jit_stitch(const JitInsn *prog, int n) {
             int si = -1;
             for (int k = 0; k < nslot; k++) if (slot_sym[k] == hole->sym) { si = k; break; }
             if (si < 0) {
+                if (nslot >= MAX_SLOTS_PER_INSN) {   // unreachable today; defensive
+                    pthread_jit_write_protect_np(1);
+                    return 0;                        // bail rather than overflow
+                }
                 si = nslot++;
                 slot_sym[si]  = hole->sym;
                 slot_addr[si] = &got[next_slot++];
@@ -108,7 +122,11 @@ static void *jit_stitch(const JitInsn *prog, int n) {
                     !strcmp(hole->sym, "__JIT_RB")    ? (uint64_t)prog[i].rb  :
                     !strcmp(hole->sym, "__JIT_RC")    ? (uint64_t)prog[i].rc  :
                     !strcmp(hole->sym, "__JIT_IMM64") ? (uint64_t)prog[i].imm :
-                    !strcmp(hole->sym, "__JIT_BCIDX") ? (uint64_t)i           : 0;
+                    !strcmp(hole->sym, "__JIT_BCIDX") ? (uint64_t)i           :
+                    // Engine-helper address holes: the slot holds the runtime
+                    // address of a ctx-free fast-path helper (J8). The stencil
+                    // loads it from the GOT and blr's it.
+                    !strcmp(hole->sym, "__JIT_HELP_arrget") ? (uint64_t)&jit_array_get_fast : 0;
             }
             uint64_t slot = (uint64_t)slot_addr[si];
             if (hole->kind == JIT_HOLE_GOT_PAGE21)         jit_patch_adrp(insn, pc, slot);

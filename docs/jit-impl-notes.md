@@ -288,15 +288,48 @@ Broadened the op subset so more loop shapes JIT, not just `for(i=0;i<n;i++)`:
   and multiply-heavy bodies (e.g. factorial) JIT. Verified `jit==interp` on
   each shape; test262 ZJS_JIT `THRESHOLD=1` byte-identical to baseline.
 
-## Next — J7+/J8
+## J8a — array reads + the helper-call mechanism (DONE)
 
-1. **More ops:** `Div`/`Mod` (mind ÷0 → Infinity, `%` sign rules), non-fused
-   `CmpLe/Gt/Ge` + `Cmp*Imm` (for `let b = i < n` style), and
-   `JmpIfFalse`/`JmpIfTrue` mapping so `while`/`if`-bearing numeric bodies JIT.
-2. **IC inlining + property/global access** (`LoadGlobal`/`LoadProp`/`LoadElem`
-   with `ctx` threaded into the ABI) — the biggest remaining coverage gap
-   (array-indexing loops like sieve), then **fusion** toward the spike's 4–6×.
-3. **Multi-`Return`** via the unified exit channel (Return reports its index
+The first heap-touching op, via a **ctx-free engine helper** called from the
+stencil — the mechanism that unlocks all future property/element access.
+
+- **Helper-call holes.** A stencil calls `jit_array_get_fast(arr, idx, &ok)` —
+  a read-only, allocation-free helper in value.zc that mirrors the
+  interpreter's `Op::LoadElem` fast path (plain array, no expando, int32 index
+  in dense bounds, non-hole). Hit → `*ok=1` + element; miss → `*ok=0` → OSR
+  deopt. It's reached through a GOT-held address (`_JIT_HELP_arrget`), with the
+  call site **asm-laundered** (`__asm__("" : "=r"(f) : "0"(addr))`) so clang
+  emits an indirect `blr` instead of a direct `bl` — no ±128 MB branch-range
+  limit between the mmap'd JIT region and the engine. The stitcher fills the
+  slot with `&jit_array_get_fast`; no new reloc kind.
+- **Why it's safe.** Reads don't mutate the heap → no write barrier; the helper
+  doesn't allocate → no GC mid-stencil; the result lands in a GC-rooted
+  register. A miss is a clean OSR deopt (J6).
+- **Latent stitcher bug this surfaced (fixed):** the per-instruction GOT-slot
+  arrays were sized `[4]`. `LoadElem` is the first stencil with **5** distinct
+  GOT symbols (helper + RA/RB/RC + BCIDX) — `Add` had exactly 4 — so the 5th
+  overflowed those stack arrays (and the `n*4`-slot GOT region), corrupting the
+  stitch → SIGILL only when a 5-hole stencil was followed by another op.
+  Bumped to `MAX_SLOTS_PER_INSN = 8` (arrays + GOT region) with a defensive
+  bail. **Invariant for new stencils: distinct GOT symbols per stencil ≤ 8.**
+
+`function sumArr(a,n){ let s=0; for(let i=0;i<n;i++) s+=a[i]; return s; }` now
+JITs (note: it takes an array param — a non-numeric arg — and still JITs).
+**Measured ~1.71×** (1e8 element reads: interp 1.13 s → JIT 0.66 s) even with a
+per-element helper call, since the surrounding loop/arith run dispatch-free.
+test262 ZJS_JIT `THRESHOLD=1` byte-identical to baseline.
+
+## Next — J8b/J9
+
+1. **`StoreElem`** (array write fast path) — in-bounds dense write of a
+   NON-cell value (number/bool) needs no barrier; cell values / append / sparse
+   deopt. Unlocks in-place array transforms + (function-wrapped) sieve.
+2. **`LoadProp`/`LoadGlobal`** via the same helper-call mechanism (hidden-class
+   IC for props; realm globals for `LoadGlobal`) — covers object-field loops
+   (nbody) and global reads.
+3. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`
+   (`while`/`if` bodies).
+4. **Multi-`Return`** via the unified exit channel (Return reports its index
    too → drop the single-Return restriction).
 4. **Platform-gate finalize + lifetime:** the `ZJS_JIT` Makefile gate already
    excludes iOS — lock it in + document, and free cached regions on

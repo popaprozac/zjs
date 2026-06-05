@@ -2350,6 +2350,10 @@ fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
             descs[i].op = (char*)"Sub";
         } else if inst.op == Op::Mul {
             descs[i].op = (char*)"Mul";
+        } else if inst.op == Op::LoadElem {
+            // a=dst, b=obj reg, c=key reg. Array fast path; helper deopts
+            // on anything exotic.
+            descs[i].op = (char*)"LoadElem";
         } else if inst.op == Op::CmpLt {
             descs[i].op = (char*)"CmpLt";
         } else if inst.op == Op::AddImm {

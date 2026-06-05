@@ -3343,6 +3343,30 @@ fn array_get(arr: ZjsArray*, idx: u32) -> ZjsValue {
     return v;
 }
 
+// JIT fast path for `arr[i]` (Op::LoadElem). Mirrors the interpreter's
+// inline fast path: plain array, no expando bag (a numeric-key accessor
+// would have to fire), int32 index in [0, length) and within the dense
+// backing buffer, non-hole slot. On a hit, sets *ok=1 and returns the
+// element bits; on anything else (non-array, OOB, sparse, hole, expando)
+// sets *ok=0 so the JIT deopts to the interpreter — which is read-only and
+// allocation-free, so it never triggers GC or needs a write barrier. ctx-free
+// by design: the JIT calls it through a GOT-held address (see stencils.c).
+fn jit_array_get_fast(arr_bits: u64, idx: i32, ok: int*) -> u64 {
+    *ok = 0;
+    let av = ZjsValue{ bits: arr_bits };
+    if zjs_is_array(av) == 0 { return 0; }
+    if idx < 0 { return 0; }
+    let arr = zjs_as_array(av);
+    if arr.props != NULL { return 0; }
+    let u = (u32)idx;
+    if u >= arr.length { return 0; }
+    if u >= arr.cap { return 0; }
+    let v = arr.elements[u];
+    if zjs_is_deleted(v) != 0 { return 0; }
+    *ok = 1;
+    return v.bits;
+}
+
 // True if `idx` is in range and the slot is not a hole. Used by
 // Array.prototype methods that follow the spec's HasProperty step
 // (forEach / map / indexOf / etc. skip absent indices entirely).

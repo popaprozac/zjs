@@ -61,6 +61,7 @@ extern uint8_t  _JIT_RB;        // operand register index b
 extern uint8_t  _JIT_RC;        // operand register index c
 extern uint64_t _JIT_IMM64;     // a 64-bit immediate (boxed constant, or raw int)
 extern int      _JIT_BCIDX;     // this instruction's bytecode index (for OSR deopt)
+extern uint64_t _JIT_HELP_arrget;  // GOT slot holds &jit_array_get_fast (J8)
 extern void     _JIT_CONTINUE(ZjsValue *regs, int *deopt);  // fall-through
 extern void     _JIT_TARGET(ZjsValue *regs, int *deopt);    // branch destination
 
@@ -217,6 +218,24 @@ void zjs_stencil_CmpLt(ZjsValue *regs, int *deopt) {
         JIT_DEOPT(deopt);
     }
     regs[(uintptr_t)&_JIT_RA].bits = lt ? JIT_VAL_TRUE : JIT_VAL_FALSE;
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
+// LoadElem: regs[RA] = regs[RB][regs[RC]] for the array fast path (J8). Calls
+// the ctx-free engine helper jit_array_get_fast through the GOT-held address
+// (asm-laundered so clang emits an indirect blr — no branch-range limit). The
+// helper is read-only / allocation-free, so a miss is a clean deopt and a hit
+// needs no write barrier (the result lands in a GC-rooted register).
+void zjs_stencil_LoadElem(ZjsValue *regs, int *deopt) {
+    typedef uint64_t (*arrget_fn)(uint64_t arr, int32_t idx, int *ok);
+    uintptr_t haddr = (uintptr_t)&_JIT_HELP_arrget;
+    arrget_fn helper;
+    __asm__("" : "=r"(helper) : "0"(haddr));   // opaque → indirect call
+    int ok = 0;
+    uint64_t r = helper(regs[(uintptr_t)&_JIT_RB].bits,
+                        (int32_t)(uint32_t)regs[(uintptr_t)&_JIT_RC].bits, &ok);
+    if (!ok) { JIT_DEOPT(deopt); }
+    regs[(uintptr_t)&_JIT_RA].bits = r;
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
 }
 
