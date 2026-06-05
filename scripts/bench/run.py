@@ -57,6 +57,11 @@ else:
     PLATFORM_TAG = None
     PLATFORM_LABEL = "macOS"
 ZJS_BIN    = REPO_ROOT / "build" / ("zjs.exe" if IS_WINDOWS else "zjs")
+# Optional second binary built WITH the copy-and-patch JIT (`make cli-jit`).
+# When present it shows up as a JIT column in the solo run and a "zjs-jit"
+# engine in --compare, so the interpreter-vs-JIT delta is visible per bench.
+# Absent on non-JIT arches → benches behave exactly as before.
+ZJS_JIT_BIN = REPO_ROOT / "build" / ("zjs-jit.exe" if IS_WINDOWS else "zjs-jit")
 _suffix    = f"-{PLATFORM_TAG}" if PLATFORM_TAG else ""
 HISTORY    = OUT_DIR / f"history{_suffix}.jsonl"
 LAST_JSON  = OUT_DIR / f"last{_suffix}.json"
@@ -744,12 +749,22 @@ def main():
                     first_baseline.setdefault(r["name"], r.get("median"))
                 if first_baseline: break
 
+    jit_avail = ZJS_JIT_BIN.exists()
+    if jit_avail:
+        print(f"[bench] JIT binary present ({ZJS_JIT_BIN.name}) — timing interpreter vs JIT")
+
     results = []
     for name, path in benches:
         stats, err = time_one(ZJS_BIN, path, args.iters)
         if stats is None:
             print(f"FAIL {name}: {err}", file=sys.stderr)
             continue
+        # Same bench under the JIT binary (if built).
+        jit_median = None
+        if jit_avail:
+            jstats, _jerr = time_one(ZJS_JIT_BIN, path, args.iters)
+            if jstats is not None:
+                jit_median = jstats["median"]
         baseline = first_baseline.get(name)
         results.append({
             "name": name,
@@ -765,6 +780,9 @@ def main():
             "wall_median":     stats.get("wall_median", stats["median"]),
             "startup_min":     stats.get("startup_min", 0.0),
             "startup_median":  stats.get("startup_median", 0.0),
+            # Optional JIT median (None unless build/zjs-jit exists). Extra key
+            # — the solo HTML/history readers ignore it.
+            "jit_median":      jit_median,
         })
         delta_str = ""
         if baseline:
@@ -775,7 +793,11 @@ def main():
         sm = stats.get("startup_median")
         if sm is not None and sm > 0:
             startup_str = f"  startup={sm*1000:.2f}ms"
-        print(f"{name:20s}  {stats['median']*1000:7.2f} ms  (min {stats['min']*1000:6.2f}, max {stats['max']*1000:6.2f}){startup_str}{delta_str}")
+        jit_str = ""
+        if jit_median is not None and jit_median > 0:
+            spd = stats["median"] / jit_median
+            jit_str = f"  jit={jit_median*1000:7.2f}ms ({spd:.2f}x)"
+        print(f"{name:20s}  {stats['median']*1000:7.2f} ms  (min {stats['min']*1000:6.2f}, max {stats['max']*1000:6.2f}){jit_str}{startup_str}{delta_str}")
 
     when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     sha  = commit_short_sha()
@@ -806,6 +828,12 @@ def main():
         compare_results = []
         for name, path in benches:
             engines_data = {"zjs": next((r["median"] for r in results if r["name"] == name), None)}
+            # zjs's own JIT variant lands right after the interpreter column.
+            jm = next((r.get("jit_median") for r in results if r["name"] == name), None)
+            if jm is not None:
+                engines_data["zjs-jit"] = jm
+                if "zjs-jit" not in engine_names:
+                    engine_names.append("zjs-jit")
             for ename, ebin, eargs in DEFAULT_OTHER_ENGINES:
                 stats = time_engine(ename, ebin, eargs, path, args.iters)
                 if stats is not None:

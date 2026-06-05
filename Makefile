@@ -122,7 +122,7 @@ PARSER_TEST_SRC := tests/parser_test.zc
 INTERP_TEST_SRC := tests/interpreter_test.zc
 T262_RUNNER_SRC := tests/test262_runner.c
 
-.PHONY: all lib lib-static cli smoke smoke-static lexer-test parser-test interp-test test test262-runner test262 test262-quick bench bench-compare clean
+.PHONY: all lib lib-static cli cli-jit smoke smoke-static lexer-test parser-test interp-test test test262-runner test262 test262-quick bench bench-compare clean
 
 all: lib lib-static cli smoke smoke-static lexer-test parser-test interp-test
 
@@ -332,6 +332,16 @@ cli: $(CLI)
 $(CLI): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) $(STDLIB_GEN) $(JIT_BUILD_DEPS) | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(CLI_SRC) $(ZC_LINK) $(JIT_BUILD_ARGS) -o $@
 
+# Second CLI binary built WITH the copy-and-patch JIT (always, regardless of
+# the ZJS_JIT var) at build/zjs-jit, alongside the default interpreter binary.
+# Used by the perf benches to show interpreter-vs-JIT side by side. Only builds
+# on a JIT-capable arch (the stencil header / jit_stitch.c must exist); the
+# bench targets invoke it best-effort.
+ZJS_JIT_CLI := $(BUILD_DIR)/zjs-jit
+cli-jit: $(ZJS_JIT_CLI)
+$(ZJS_JIT_CLI): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) $(STDLIB_GEN) $(JIT_STENCIL_HDR) src/jit/jit_stitch.c | $(BUILD_DIR) stdlib-link
+	$(ZC) build $(ZC_FLAGS) $(CLI_SRC) $(ZC_LINK) -DZJS_JIT -I$(BUILD_DIR) src/jit/jit_stitch.c -o $@
+
 .PHONY: jit-stencils
 jit-stencils: $(JIT_STENCIL_OBJ)
 $(JIT_STENCIL_OBJ): $(JIT_STENCIL_SRC) | $(BUILD_DIR)
@@ -422,11 +432,14 @@ test262-full: cli
 # wall-clock around `zjs run`, records the median, appends history,
 # regenerates docs/perf/index.html.
 bench: cli
+	-@$(MAKE) --no-print-directory cli-jit 2>/dev/null || true
 	@python3 scripts/bench/run.py
 
 # Cross-engine comparison: also runs each bench under qjs (jitless,
 # our closest peer), node (V8), and bun (JSC). Writes docs/perf/compare.html.
+# Also builds build/zjs-jit (best-effort) so the JIT lands as its own column.
 bench-compare: cli
+	-@$(MAKE) --no-print-directory cli-jit 2>/dev/null || true
 	@python3 scripts/bench/run.py --compare
 
 # Quick C-based runner — older, harness-light, no recording. Useful for
