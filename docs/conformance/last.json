@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-05 05:15 UTC",
+    "when": "2026-06-05 05:29 UTC",
     "total": 27491,
-    "passed": 23324,
-    "failed": 3447,
+    "passed": 23338,
+    "failed": 3433,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -247,18 +247,6 @@
     {
       "path": "test/built-ins/Array/property-cast-number.js",
       "reason": "[sloppy] zjs: throw: (unknown): The value of x[\"4294967296\"] is expected to be 1 Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true\n"
-    },
-    {
-      "path": "test/built-ins/Array/proto-from-ctor-realm-one.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.getPrototypeOf(Reflect.construct(Array, [1], newTarget)) returns other.Array.prototype Exp"
-    },
-    {
-      "path": "test/built-ins/Array/proto-from-ctor-realm-two.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.getPrototypeOf(Reflect.construct(Array, [\"a\", \"b\"], newTarget)) returns other.Array.protot"
-    },
-    {
-      "path": "test/built-ins/Array/proto-from-ctor-realm-zero.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.getPrototypeOf(Reflect.construct(Array, [], newTarget)) returns other.Array.prototype Expe"
     },
     {
       "path": "test/built-ins/Array/prototype/Symbol.iterator.js",
@@ -2481,18 +2469,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Date should be an own property\nzjs: throw: (unknown): Date should be an own property"
     },
     {
-      "path": "test/built-ins/Date/proto-from-ctor-realm-one.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expect"
-    },
-    {
-      "path": "test/built-ins/Date/proto-from-ctor-realm-two.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expect"
-    },
-    {
-      "path": "test/built-ins/Date/proto-from-ctor-realm-zero.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expect"
-    },
-    {
       "path": "test/built-ins/Date/prototype/S15.9.5_A17_T1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Date.prototype.hasOwnProperty(\"getUTCDay\") must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) t"
     },
@@ -2823,10 +2799,6 @@
     {
       "path": "test/built-ins/Date/prototype/valueOf/S9.4_A3_T2.js",
       "reason": "[sloppy] zjs: throw: (unknown): d2.valueOf() returns NaN Expected SameValue(\u00abInfinity\u00bb, \u00abNaN\u00bb) to be true\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/built-ins/Date/subclassing.js",
-      "reason": "[sloppy] zjs: throw: (unknown): constructor does not defines an object `prototype` property Expected SameValue(\u00ab[object Object]\u00bb,"
     },
     {
       "path": "test/built-ins/Date/value-get-symbol-to-prim-err.js",
@@ -3563,10 +3535,6 @@
     {
       "path": "test/built-ins/Map/map.js",
       "reason": "[sloppy] zjs: throw: (unknown): Map should be an own property\nzjs: throw: (unknown): Map should be an own property"
-    },
-    {
-      "path": "test/built-ins/Map/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expect"
     },
     {
       "path": "test/built-ins/Map/prototype/Symbol.iterator.js",
@@ -5729,10 +5697,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Promise should be an own property\nzjs: throw: (unknown): Promise should be an own property"
     },
     {
-      "path": "test/built-ins/Promise/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object Promise]\u00bb) to be true\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Promise/prototype/Symbol.toStringTag.js",
       "reason": "[sloppy] "
     },
@@ -6246,7 +6210,7 @@
     },
     {
       "path": "test/built-ins/Proxy/set/trap-is-undefined-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abnull\u00bb) to be true\nzjs: throw: (unknown): Expected SameValu"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/return-abrupt-from-isextensible-target.js",
@@ -6447,10 +6411,6 @@
     {
       "path": "test/built-ins/Set/Symbol.species/symbol-species.js",
       "reason": "[sloppy] "
-    },
-    {
-      "path": "test/built-ins/Set/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expect"
     },
     {
       "path": "test/built-ins/Set/prototype/Symbol.iterator.js",
@@ -7745,10 +7705,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
     },
     {
-      "path": "test/built-ins/WeakMap/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object WeakMap]\u00bb) to be true\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/WeakMap/prototype/Symbol.toStringTag.js",
       "reason": "[sloppy] "
     },
@@ -7819,10 +7775,6 @@
     {
       "path": "test/built-ins/WeakSet/iterator-close-after-add-failure.js",
       "reason": "[sloppy] zjs: throw: (unknown): The iterator is closed when `WeakSet.prototype.add` throws an error. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb)"
-    },
-    {
-      "path": "test/built-ins/WeakSet/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00ab[object WeakSet]\u00bb) to be true\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/WeakSet/prototype/Symbol.toStringTag.js",
@@ -13001,10 +12953,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/language/statements/function/13.2-18-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): prototype descriptor should be writable\nzjs: throw: (unknown): prototype descriptor should be wri"
-    },
-    {
       "path": "test/language/statements/function/13.2-18-s.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -13082,10 +13030,6 @@
     },
     {
       "path": "test/language/statements/function/S13.2.2_A3_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1: typeof __FACTORY.prototype === 'number'. Actual: typeof __FACTORY.prototype ===object\nzjs: th"
-    },
-    {
-      "path": "test/language/statements/function/S13.2.2_A3_T2.js",
       "reason": "[sloppy] zjs: throw: (unknown): #1: typeof __FACTORY.prototype === 'number'. Actual: typeof __FACTORY.prototype ===object\nzjs: th"
     },
     {

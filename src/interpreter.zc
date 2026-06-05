@@ -1014,6 +1014,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                     let ex = object_get_exotic_proto(ctx, f.props);
                     if zjs_is_undefined(ex) == 0 { return ex; }
                 }
+                // A non-object value was assigned to .prototype — return it.
+                if f.proto_nonobj_set { return f.proto_nonobj; }
                 // Class methods / accessors don't have a .prototype.
                 if f.is_method { return zjs_undefined(); }
                 if f.prototype == NULL {
@@ -1196,6 +1198,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                         if zjs_is_undefined(ex) == 0 { return ex; }
                     }
                 }
+                if f_p.proto_nonobj_set { return f_p.proto_nonobj; }
                 if f_p.is_method { return zjs_undefined(); }
                 if f_p.prototype == NULL {
                     let proto_v = ctx_new_object(ctx);
@@ -1915,6 +1918,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         if is_proto != 0 {
             if zjs_is_object(value) != 0 {
                 f.prototype = zjs_as_object(value);
+                f.proto_nonobj_set = false;   // back to an object prototype
                 if f.props != NULL { object_clear_exotic_proto(ctx, f.props); }
                 return;
             }
@@ -1925,9 +1929,15 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
                     f.props = zjs_as_object(pv);
                 }
                 object_store_exotic_proto(ctx, f.props, value);
+                f.proto_nonobj_set = false;
                 return;
             }
-            // `.prototype = primitive` is a no-op in MVP (writable but coerces).
+            // `.prototype = <non-object>` (undefined/null/primitive): the
+            // property is writable, so record the value. The getter returns
+            // it and GetPrototypeFromConstructor treats the prototype as
+            // "not an object" (ctor_prototype_object returns NULL).
+            f.proto_nonobj = value;
+            f.proto_nonobj_set = true;
             return;
         }
         if f.props == NULL {
@@ -1959,6 +1969,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
             if is_proto2 != 0 {
                 if zjs_is_object(value) != 0 {
                     f2.prototype = zjs_as_object(value);
+                    f2.proto_nonobj_set = false;
                     if f2.props != NULL { object_clear_exotic_proto(ctx, f2.props); }
                     return;
                 }
@@ -1968,8 +1979,13 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
                         f2.props = zjs_as_object(pv);
                     }
                     object_store_exotic_proto(ctx, f2.props, value);
+                    f2.proto_nonobj_set = false;
                     return;
                 }
+                // `.prototype = <non-object>` — record it (see the bare-Function
+                // setter for the rationale; the wrapped Function* carries it).
+                f2.proto_nonobj = value;
+                f2.proto_nonobj_set = true;
                 return;
             }
             if f2.props == NULL {
@@ -6257,27 +6273,36 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let fp = zjs_cell_as_ptr(callee);
                 let f2: Function* = NULL;
                 raw { f2 = (Function*)fp; }
-                if f2.prototype == NULL {
-                    let pv = ctx_new_object(ctx);
-                    f2.prototype = zjs_as_object(pv);
-                    object_define_property_slot(ctx, f2.prototype,
-                        ctx_intern_atom(ctx, (char*)"constructor", 11),
-                        callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+                if f2.proto_nonobj_set {
+                    // .prototype is non-object → instance inherits Object.prototype.
+                    proto_obj = ctx.realm.object_proto;
+                } else {
+                    if f2.prototype == NULL {
+                        let pv = ctx_new_object(ctx);
+                        f2.prototype = zjs_as_object(pv);
+                        object_define_property_slot(ctx, f2.prototype,
+                            ctx_intern_atom(ctx, (char*)"constructor", 11),
+                            callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+                    }
+                    proto_obj = f2.prototype;
                 }
-                proto_obj = f2.prototype;
             } else if zjs_is_closure(callee) != 0 {
                 let cl = zjs_as_closure(callee);
                 let fp2 = cl.function;
                 let f3: Function* = NULL;
                 raw { f3 = (Function*)fp2; }
-                if f3.prototype == NULL {
-                    let pv = ctx_new_object(ctx);
-                    f3.prototype = zjs_as_object(pv);
-                    object_define_property_slot(ctx, f3.prototype,
-                        ctx_intern_atom(ctx, (char*)"constructor", 11),
-                        callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+                if f3.proto_nonobj_set {
+                    proto_obj = ctx.realm.object_proto;
+                } else {
+                    if f3.prototype == NULL {
+                        let pv = ctx_new_object(ctx);
+                        f3.prototype = zjs_as_object(pv);
+                        object_define_property_slot(ctx, f3.prototype,
+                            ctx_intern_atom(ctx, (char*)"constructor", 11),
+                            callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+                    }
+                    proto_obj = f3.prototype;
                 }
-                proto_obj = f3.prototype;
             } else if zjs_is_host_function(callee) != 0 {
                 let hf = zjs_as_host_function(callee);
                 if hf.prototype == NULL {

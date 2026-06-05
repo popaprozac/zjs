@@ -604,6 +604,16 @@ struct Function {
     // Phase 3.6: `.prototype` for instanceof + constructor-style use.
     // Lazy — first read auto-creates an empty object.
     prototype:      ZjsObject*;
+    // `.prototype` is a WRITABLE data property; a user can assign a
+    // NON-object value (`fn.prototype = undefined / null / 42`). The
+    // ZjsObject* `prototype` field can't hold that, so when it happens we
+    // record the value here and set `proto_nonobj_set`. The .prototype
+    // getter then returns proto_nonobj, and GetPrototypeFromConstructor /
+    // ctor_prototype_object treat the prototype as "not an object" (falling
+    // back to the realm's intrinsic). Assigning an object again clears the
+    // flag. GC-marked (the value can be a string/symbol/bigint cell).
+    proto_nonobj:     ZjsValue;
+    proto_nonobj_set: bool;
 
     // Expando bag for arbitrary properties (`fn.foo = 1`). Lazy — NULL
     // until the first non-`prototype` string-keyed property is set.
@@ -710,6 +720,7 @@ fn function_new() -> Function* {
     let f = zalloc<Function>();
     f.header.type_tag = TAG_FUNCTION;
     f.parent_ctor = zjs_undefined();
+    f.proto_nonobj = zjs_undefined();  // unused until proto_nonobj_set
     f.this_reg = -1;  // default: body doesn't use `this`
     return f;
 }

@@ -1683,6 +1683,7 @@ fn gc_mark_cell_children(p: void*) -> void {
             gc_mark_value(zjs_cell_from_ptr((void*)f.proto_override));
         }
         gc_mark_value(f.parent_ctor);
+        if f.proto_nonobj_set { gc_mark_value(f.proto_nonobj); }
         // Tagged-template strings array cache — each entry is a
         // ZjsArray (allocated lazily on first reach of the site).
         if f.template_cache != NULL {
@@ -22418,6 +22419,9 @@ fn ctor_prototype_object(ctx: ZjsContext*, c: ZjsValue) -> ZjsObject* {
     if zjs_is_function(c) != 0 {
         let fp = zjs_cell_as_ptr(c);
         let f: Function* = NULL; raw { f = (Function*)fp; }
+        // `.prototype` was assigned a non-object → GetPrototypeFromConstructor
+        // treats it as absent (NULL = "not an object").
+        if f.proto_nonobj_set { return NULL; }
         if f.prototype == NULL {
             let pv = ctx_new_object(ctx);
             f.prototype = zjs_as_object(pv);
@@ -22431,6 +22435,7 @@ fn ctor_prototype_object(ctx: ZjsContext*, c: ZjsValue) -> ZjsObject* {
         let cl = zjs_as_closure(c);
         let fp2 = cl.function;
         let f2: Function* = NULL; raw { f2 = (Function*)fp2; }
+        if f2.proto_nonobj_set { return NULL; }
         if f2.prototype == NULL {
             let pv = ctx_new_object(ctx);
             f2.prototype = zjs_as_object(pv);
