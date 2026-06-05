@@ -53,10 +53,13 @@ printf '%-26s | %-22s | %-22s | %s\n' "folded stencil .text" "-" "$STENCIL_SZ B"
 printf '%-26s | %-22ss | %-22ss | ~0\n' "perf int_loop (1e8)" "$I_ILOOP" "$J_ILOOP"
 printf '%-26s | %-22ss | %-22ss | ~0\n' "perf fib(32)" "$I_FIB" "$J_FIB"
 printf '%-26s | %-22s | %-22s | =\n' "conformance (test262)" "87.2% (run test262)" "identical (bails)"
-printf '\n[matrix] JIT functional status (ZJS_JIT build, jit-check):\n'
-for e in "42" "true" "undefined" "1+2"; do
-  printf '  jit-check %-8s -> %s\n' "\"$e\"" "$(jit_probe "$e")"
+printf '\n[matrix] JIT functional status (ZJS_JIT build):\n'
+printf '  jit-selftest (register loop, int32->double overflow) -> %s\n' "$("$JD" jit-selftest 2>/dev/null | sed 's/jit-selftest: //')"
+for e in "42" "true" "undefined" "1+2" "1+2+3" "2147483647+1"; do
+  printf '  jit-check %-14s -> %s\n' "\"$e\"" "$(jit_probe "$e")"
 done
-printf '\nNote: until faithful arithmetic stencils land (J4), the JIT bails on\n'
-printf 'real-JS loops, so int_loop/fib run via the interpreter in BOTH builds.\n'
+printf '\nNote: J4 landed faithful NaN-box arithmetic (Add/Sub/AddImm/SubImm/CmpLt\n'
+printf 'with int32 fast path + overflow->double + deopt), validated on real\n'
+printf 'compiled JS above. Real *loops* still run via the interpreter in both\n'
+printf 'builds until fused loop ops + register-body JITting land (J4b).\n'
 printf 'Spike-validated copy-and-patch projection for int-loops: ~4-6x.\n'
