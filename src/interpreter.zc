@@ -2324,13 +2324,6 @@ fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
         descs[i].rc = (i32)inst.c;
         descs[i].imm = 0;
         descs[i].target = -1;
-        // Deopt re-runs the interpreter from ip=0, which re-inits LOCALS but
-        // not PARAMS. If the body writes a param register in place, a partial
-        // JIT run before a deopt would corrupt the re-run's inputs. So bail on
-        // any value-writing op whose dest is a param reg (read-only params are
-        // fine — sumTo(n) still qualifies). writes_dst defaults true; the jump
-        // / return / hole-check ops (which don't write a value reg) clear it.
-        let writes_dst: bool = true;
         if inst.op == Op::LoadInt {
             descs[i].op = (char*)"LoadConst";
             descs[i].imm = (i64)zjs_int32(inst_bc_i16(inst)).bits;
@@ -2348,7 +2341,7 @@ fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
         } else if inst.op == Op::LoadHole {
             descs[i].op = (char*)"LoadConst"; descs[i].imm = (i64)zjs_deleted().bits;
         } else if inst.op == Op::ThrowIfHole {
-            descs[i].op = (char*)"ThrowIfHole"; writes_dst = false;
+            descs[i].op = (char*)"ThrowIfHole";
         } else if inst.op == Op::Mov {
             descs[i].op = (char*)"Mov";
         } else if inst.op == Op::Add {
@@ -2362,10 +2355,9 @@ fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
         } else if inst.op == Op::SubImm {
             descs[i].op = (char*)"SubImm"; descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
         } else if inst.op == Op::Jmp {
-            descs[i].op = (char*)"Jmp"; writes_dst = false;
+            descs[i].op = (char*)"Jmp";
             descs[i].target = (i32)i + inst_bc_i16(inst) + 1;
         } else if inst.op == Op::JmpIfNotLt {
-            writes_dst = false;
             if i + 1 >= n { ok_all = false; i = n; }
             else {
                 descs[i].op = (char*)"JmpIfNotLt";
@@ -2373,7 +2365,6 @@ fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
                 descs[i + 1].op = (char*)"Nop"; descs[i + 1].target = -1;
             }
         } else if inst.op == Op::JmpIfNotLtImm {
-            writes_dst = false;
             if i + 1 >= n { ok_all = false; i = n; }
             else {
                 descs[i].op = (char*)"JmpIfNotLtImm";
@@ -2382,14 +2373,10 @@ fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
                 descs[i + 1].op = (char*)"Nop"; descs[i + 1].target = -1;
             }
         } else if inst.op == Op::Return {
-            descs[i].op = (char*)"Return"; writes_dst = false;
+            descs[i].op = (char*)"Return";
             ret_count = ret_count + 1;
             ret_reg = (i32)inst.a;
         } else {
-            ok_all = false; i = n;
-        }
-        // Param-write guard (deopt re-run safety; see above).
-        if writes_dst && (u32)inst.a < f.param_count {
             ok_all = false; i = n;
         }
         i = i + 1;
@@ -2775,13 +2762,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
             }
             if jst == 1 {
-                let jdeopt: int = 0;
+                let jdeopt: int = -1;
                 raw {
                     #ifdef ZJS_JIT
                     ((void(*)(ZjsValue*, int*))f->jit_code)(regs, &jdeopt);
                     #endif
                 }
-                if jdeopt == 0 {
+                if jdeopt < 0 {
+                    // Ran to the Return — finish exactly as Op::Return.
                     ctx_maybe_gc(ctx);
                     let rv = regs[(u32)f.jit_ret_reg];
                     let ret_dst = pop_call_frame(ctx);
@@ -2794,7 +2782,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     }
                     continue;
                 } else {
+                    // J6 OSR: deopt at bytecode index jdeopt. The live regs hold
+                    // the JIT's faithful state through jdeopt-1 (params and all),
+                    // so resume the interpreter exactly there — no re-run from
+                    // the top, which is why no param-write guard is needed.
+                    // Disable further JIT for this fn: a deopting body is usually
+                    // polymorphic, and re-JITting would just waste work each call.
+                    ip = (usize)jdeopt;
+                    ctx.frames[cur_idx].ip = ip;
                     f.jit_state = 2;
+                    // fall through to the inner dispatch loop at ip = jdeopt
                 }
             }
         }

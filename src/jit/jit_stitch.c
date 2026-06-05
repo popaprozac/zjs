@@ -107,7 +107,8 @@ static void *jit_stitch(const JitInsn *prog, int n) {
                     !strcmp(hole->sym, "__JIT_RA")    ? (uint64_t)prog[i].ra  :
                     !strcmp(hole->sym, "__JIT_RB")    ? (uint64_t)prog[i].rb  :
                     !strcmp(hole->sym, "__JIT_RC")    ? (uint64_t)prog[i].rc  :
-                    !strcmp(hole->sym, "__JIT_IMM64") ? (uint64_t)prog[i].imm : 0;
+                    !strcmp(hole->sym, "__JIT_IMM64") ? (uint64_t)prog[i].imm :
+                    !strcmp(hole->sym, "__JIT_BCIDX") ? (uint64_t)i           : 0;
             }
             uint64_t slot = (uint64_t)slot_addr[si];
             if (hole->kind == JIT_HOLE_GOT_PAGE21)         jit_patch_adrp(insn, pc, slot);
@@ -163,8 +164,8 @@ int jit_selftest_loop(void) {
     if (!code) return 0;
     JitValue regs[16];
     memset(regs, 0, sizeof(regs));
-    int deopt = 0;
+    int deopt = -1;   // J6: -1 = ran to a Return; >=0 = deopt at that bc index
     ((void (*)(JitValue *, int *))code)(regs, &deopt);
-    if (deopt) return 0;
+    if (deopt >= 0) return 0;   // the pure-int loop must never deopt
     return regs[ACC].bits == EXPECTED ? 1 : 0;
 }

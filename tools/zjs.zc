@@ -986,12 +986,11 @@ fn jit_try_run(ctx: ZjsContext*, f: Function*) -> JitResult {
         extern void* jit_compile(const void*, int);
         void* code = jit_compile((const void*)descs, (int)n);
         if (code) {
-            int deopt = 0;
+            int deopt = -1;   // J6: -1 = ran to Return; >=0 = deopt at that bc index
             ((void(*)(ZjsValue*, int*))code)(regs, &deopt);
-            // A deopt means an op met an operand outside its fast domain (e.g.
-            // a non-number reached arithmetic): the JIT bailed mid-run, so the
-            // frame is partial — fall back to the interpreter result instead.
-            if (!deopt) did = 1;
+            // A deopt (>=0) means an op met an operand outside its fast domain;
+            // the CLI path just reports the interpreter result instead.
+            if (deopt < 0) did = 1;
         }
         #endif
     }

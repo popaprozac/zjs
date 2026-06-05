@@ -251,15 +251,41 @@ interpreter baseline (0 new / 0 fixed across 27k tests). Real `run` (1e8 iters
 across 100 hot `sumTo(1e6)` calls): interp **1.60 s** → JIT **0.82 s** =
 **1.95×** — clean ~2× now that compile is cached (no per-call recompile).
 
-## Next — J6
+## J6 — deopt-resume / OSR (DONE)
 
-1. **Deopt-resume.** Today a deopt discards the run and re-interprets from
-   `ip==0` (safe for the side-effect-free subset, which is why the param-write
-   guard exists). True OSR-style resume at the deopt bytecode index would lift
-   that guard and let richer (param-mutating) bodies JIT.
-2. **More ops + IC inlining** (`Mul`/`Div`, `CmpLtImm`/fused `≤,>,≥`,
-   property / `LoadGlobal` with `ctx` threaded into the ABI), then **fusion**
-   to close toward the spike's 4–6×.
-3. **Platform gate finalize** — the `ZJS_JIT` Makefile gate already excludes
-   iOS; lock it in + document, and free cached regions on `Function`/GC teardown
-   (today they leak for the process lifetime).
+A deopt no longer re-runs from the top — the interpreter **resumes at the exact
+deopt instruction** with the live registers.
+
+- **The deopt channel carries an index, not a flag.** Each deopt-capable
+  stencil reports its OWN bytecode index via a new `_JIT_BCIDX` hole
+  (`*deopt = (int)&_JIT_BCIDX`, the same GOT-slot-holds-the-value trick as the
+  reg holes; the stitcher patches it to the instruction index `i`). `-1` =
+  "ran to the Return". The engine hook: `jdeopt < 0` → finish as `Op::Return`;
+  `jdeopt >= 0` → `ip = jdeopt` and fall through to the interpreter.
+- **Why it's correct.** The JIT executed `0..jdeopt-1` faithfully in place
+  (every stencil mirrors its interpreter op), so the live frame at `jdeopt` is
+  bit-identical to what the interpreter would have — *including any params it
+  mutated*. Resuming at `jdeopt` continues rather than replays, so the
+  **param-write guard is gone**: `g(x){ x = x-1; return x + null; }` now JITs,
+  deopts at `x + null`, and resumes with `x = 4` → correct `4`. A deopting
+  function is then disabled (`jit_state = 2`) — usually polymorphic, not worth
+  re-JITting.
+- The pure-numeric monomorphic path (the actual hot case) never deopts and is
+  unaffected.
+
+**Validated.** test262 on the ZJS_JIT build with `ZJS_JIT_THRESHOLD=1` (every
+eligible fn JIT'd, now including param-mutating bodies) = byte-identical
+failure set to the interpreter baseline. Default build unchanged.
+
+## Next — J6+/J7
+
+1. **More ops + wider loop shapes:** `Mul`/`Div`/`Mod`, the rest of the compare
+   + fused-jump family (`CmpLtImm`/`≤,>,≥` and `JmpIfNotLe/Gt/Ge(Imm)`), so
+   `for(i=n;i>0;i--)` / `i<=n` / multiply-heavy bodies JIT.
+2. **IC inlining + property/global access** (`LoadGlobal`/`LoadProp` with `ctx`
+   threaded into the ABI), then **fusion** to close toward the spike's 4–6×.
+3. **Multi-`Return`** via the unified exit channel (Return reports its index
+   too → drop the single-Return restriction).
+4. **Platform-gate finalize + lifetime:** the `ZJS_JIT` Makefile gate already
+   excludes iOS — lock it in + document, and free cached regions on
+   `Function`/GC teardown (today they leak for the process lifetime).

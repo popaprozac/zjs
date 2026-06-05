@@ -20,15 +20,18 @@
 // rather than inline movz/movk; the extractor + stitcher handle the GOT-indirect
 // form (per the J1 toolchain finding — see jit-impl-notes.md).
 //
-// ABI (J4): every stencil is `void f(ZjsValue *regs, int *deopt)`.
+// ABI (J4/J6): every stencil is `void f(ZjsValue *regs, int *deopt)`.
 //   x0 = regs  — the frame's register file (NaN-boxed cells, interpreter layout)
-//   x1 = deopt — a one-int bail flag. A value op that meets an operand outside
-//                its fast domain (a non-number for arithmetic, a non-primitive
-//                truthiness for a branch) writes *deopt=1 and returns; the bridge
-//                discards the run and falls back to the interpreter. This keeps
-//                the JIT faithful: it only ever produces a value the interpreter
-//                would, or bails. Both x0/x1 thread through every continuation
-//                unchanged, so a musttail is a bare branch.
+//   x1 = deopt — the deopt channel (init -1 = "ran to a Return"). A value op
+//                that meets an operand outside its fast domain (a non-number for
+//                arithmetic, a non-primitive truthiness, a TDZ hole) writes its
+//                OWN bytecode instruction index (the _JIT_BCIDX hole) and
+//                returns. The engine resumes the interpreter at that index with
+//                the live registers (J6 OSR) — so a partial run is continued,
+//                not re-run, and faithfulness still means "produces what the
+//                interpreter would, or hands control back at the exact op."
+//                Both x0/x1 thread through every continuation unchanged, so a
+//                musttail is a bare branch.
 
 #include <stdint.h>
 
@@ -57,8 +60,13 @@ extern uint8_t  _JIT_RA;        // operand register index a (usually dest)
 extern uint8_t  _JIT_RB;        // operand register index b
 extern uint8_t  _JIT_RC;        // operand register index c
 extern uint64_t _JIT_IMM64;     // a 64-bit immediate (boxed constant, or raw int)
+extern int      _JIT_BCIDX;     // this instruction's bytecode index (for OSR deopt)
 extern void     _JIT_CONTINUE(ZjsValue *regs, int *deopt);  // fall-through
 extern void     _JIT_TARGET(ZjsValue *regs, int *deopt);    // branch destination
+
+// Report a deopt at this stencil's bytecode index; the engine resumes the
+// interpreter there with the live registers.
+#define JIT_DEOPT(d) do { *(d) = (int)(intptr_t)&_JIT_BCIDX; return; } while (0)
 
 // ---- NaN-box helpers (all inline, no external symbols / no libcalls) --------
 static inline int jv_is_int32(uint64_t b)  { return (b & JIT_NUMBER_TAG) == JIT_NUMBER_TAG; }
@@ -126,7 +134,7 @@ void zjs_stencil_Mov(ZjsValue *regs, int *deopt) {
 // ThrowIfHole: TDZ check — if regs[RA] is the hole sentinel, bail to the
 // interpreter (which raises the ReferenceError); otherwise pass through.
 void zjs_stencil_ThrowIfHole(ZjsValue *regs, int *deopt) {
-    if (regs[(uintptr_t)&_JIT_RA].bits == JIT_VAL_DELETED) { *deopt = 1; return; }
+    if (regs[(uintptr_t)&_JIT_RA].bits == JIT_VAL_DELETED) { JIT_DEOPT(deopt); }
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
 }
 
@@ -135,7 +143,7 @@ void zjs_stencil_Add(ZjsValue *regs, int *deopt) {
     int ok;
     uint64_t r = jv_num_add(regs[(uintptr_t)&_JIT_RB].bits,
                             regs[(uintptr_t)&_JIT_RC].bits, &ok);
-    if (!ok) { *deopt = 1; return; }
+    if (!ok) { JIT_DEOPT(deopt); }
     regs[(uintptr_t)&_JIT_RA].bits = r;
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
 }
@@ -145,7 +153,7 @@ void zjs_stencil_AddImm(ZjsValue *regs, int *deopt) {
     int ok;
     uint64_t r = jv_num_add(regs[(uintptr_t)&_JIT_RB].bits,
                             (uint64_t)(uintptr_t)&_JIT_IMM64, &ok);
-    if (!ok) { *deopt = 1; return; }
+    if (!ok) { JIT_DEOPT(deopt); }
     regs[(uintptr_t)&_JIT_RA].bits = r;
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
 }
@@ -155,7 +163,7 @@ void zjs_stencil_Sub(ZjsValue *regs, int *deopt) {
     int ok;
     uint64_t r = jv_num_sub(regs[(uintptr_t)&_JIT_RB].bits,
                             regs[(uintptr_t)&_JIT_RC].bits, &ok);
-    if (!ok) { *deopt = 1; return; }
+    if (!ok) { JIT_DEOPT(deopt); }
     regs[(uintptr_t)&_JIT_RA].bits = r;
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
 }
@@ -165,7 +173,7 @@ void zjs_stencil_SubImm(ZjsValue *regs, int *deopt) {
     int ok;
     uint64_t r = jv_num_sub(regs[(uintptr_t)&_JIT_RB].bits,
                             (uint64_t)(uintptr_t)&_JIT_IMM64, &ok);
-    if (!ok) { *deopt = 1; return; }
+    if (!ok) { JIT_DEOPT(deopt); }
     regs[(uintptr_t)&_JIT_RA].bits = r;
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
 }
@@ -180,7 +188,7 @@ void zjs_stencil_CmpLt(ZjsValue *regs, int *deopt) {
     } else if (jv_is_number(a) && jv_is_number(b)) {
         lt = jv_to_double(a) < jv_to_double(b);   // NaN → false, matching JS <
     } else {
-        *deopt = 1; return;
+        JIT_DEOPT(deopt);
     }
     regs[(uintptr_t)&_JIT_RA].bits = lt ? JIT_VAL_TRUE : JIT_VAL_FALSE;
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
@@ -211,7 +219,7 @@ void zjs_stencil_JmpIfNotLt(ZjsValue *regs, int *deopt) {
     } else if (jv_is_number(a) && jv_is_number(b)) {
         lt = jv_to_double(a) < jv_to_double(b);
     } else {
-        *deopt = 1; return;
+        JIT_DEOPT(deopt);
     }
     if (lt) __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
     __attribute__((musttail)) return _JIT_TARGET(regs, deopt);
@@ -227,7 +235,7 @@ void zjs_stencil_JmpIfNotLtImm(ZjsValue *regs, int *deopt) {
     int lt;
     if (jv_is_int32(a))       lt = ((int32_t)(uint32_t)a) < imm;
     else if (jv_is_number(a)) lt = jv_to_double(a) < (double)imm;
-    else { *deopt = 1; return; }
+    else { JIT_DEOPT(deopt); }
     if (lt) __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
     __attribute__((musttail)) return _JIT_TARGET(regs, deopt);
 }
@@ -248,7 +256,7 @@ void zjs_stencil_JmpIfFalse(ZjsValue *regs, int *deopt) {
         double d = jv_to_double(v);
         falsy = (d == 0.0) || (d != d);           // +0/-0/NaN are falsy
     } else {
-        *deopt = 1; return;
+        JIT_DEOPT(deopt);
     }
     if (falsy) __attribute__((musttail)) return _JIT_TARGET(regs, deopt);
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
