@@ -6554,8 +6554,18 @@ fn host_object_assign(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
                     let k = karr.elements[i];
                     let v = property_get(ctx, src, k);
                     if ctx.pending_throw_active { return zjs_undefined(); }
+                    // §20.1.2.1: Object.assign performs Set(to, k, v, Throw=true),
+                    // so a [[Set]] the target rejects (read-only / frozen /
+                    // non-extensible) is a TypeError — regardless of strict mode.
+                    ctx.write_rejected = false;
                     property_set(ctx, target, k, v);
                     if ctx.pending_throw_active { return zjs_undefined(); }
+                    if ctx.write_rejected {
+                        let e = build_typed_error(ctx, (char*)"TypeError", 9,
+                            (char*)"Cannot assign to read only property", 35);
+                        ctx.pending_throw_active = true; ctx.pending_throw_value = e;
+                        return zjs_undefined();
+                    }
                     i = i + 1;
                 }
             }
