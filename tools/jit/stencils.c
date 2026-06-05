@@ -63,6 +63,7 @@ extern uint64_t _JIT_IMM64;     // a 64-bit immediate (boxed constant, or raw in
 extern int      _JIT_BCIDX;     // this instruction's bytecode index (for OSR deopt)
 extern uint64_t _JIT_HELP_arrget;  // GOT slot holds &jit_array_get_fast (J8a)
 extern uint64_t _JIT_HELP_arrset;  // GOT slot holds &jit_array_set_fast (J8b)
+extern uint64_t _JIT_HELP_propget; // GOT slot holds &jit_prop_get_fast  (J9)
 extern void     _JIT_CONTINUE(ZjsValue *regs, int *deopt);  // fall-through
 extern void     _JIT_TARGET(ZjsValue *regs, int *deopt);    // branch destination
 
@@ -254,6 +255,23 @@ void zjs_stencil_StoreElem(ZjsValue *regs, int *deopt) {
            (int32_t)(uint32_t)regs[(uintptr_t)&_JIT_RB].bits,
            regs[(uintptr_t)&_JIT_RC].bits, &ok);
     if (!ok) { JIT_DEOPT(deopt); }
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
+// LoadProp: regs[RA] = regs[RB].<name> for the own-slot IC fast path (J9).
+// a=dst, b=obj. IMM64 carries the inline-cache entry pointer (&f.ics[ic_slot]),
+// which the bridge bakes in; the helper probes it. Read-only / no barrier; miss
+// → OSR deopt.
+void zjs_stencil_LoadProp(ZjsValue *regs, int *deopt) {
+    typedef uint64_t (*propget_fn)(uint64_t ic, uint64_t obj, int *ok);
+    uintptr_t haddr = (uintptr_t)&_JIT_HELP_propget;
+    propget_fn helper;
+    __asm__("" : "=r"(helper) : "0"(haddr));   // opaque → indirect call
+    int ok = 0;
+    uint64_t r = helper((uint64_t)(uintptr_t)&_JIT_IMM64,
+                        regs[(uintptr_t)&_JIT_RB].bits, &ok);
+    if (!ok) { JIT_DEOPT(deopt); }
+    regs[(uintptr_t)&_JIT_RA].bits = r;
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
 }
 

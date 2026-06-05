@@ -933,6 +933,11 @@ fn jit_try_run(ctx: ZjsContext*, f: Function*) -> JitResult {
             descs[i].op = (char*)"LoadElem";
         } else if inst.op == Op::StoreElem {
             descs[i].op = (char*)"StoreElem";
+        } else if inst.op == Op::LoadProp {
+            descs[i].op = (char*)"LoadProp";
+            let icp: i64 = 0;
+            raw { icp = (int64_t)(intptr_t)&f->ics[(unsigned char)inst.c]; }
+            descs[i].imm = icp;
         } else if inst.op == Op::CmpLt {
             descs[i].op = (char*)"CmpLt";
         } else if inst.op == Op::AddImm {

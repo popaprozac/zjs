@@ -331,12 +331,42 @@ no barrier, no allocation, OSR-safe. `a[i] = a[i] * 2` (LoadElem + Mul +
 StoreElem) JITs and matches the interpreter; test262 `THRESHOLD=1`
 byte-identical to baseline.
 
-## Next — J9
+## J9 — object-field reads (LoadProp) (DONE)
 
-1. **`LoadProp`/`StoreProp`** via the helper mechanism (hidden-class fast path;
-   non-cell stores barrier-free like StoreElem) — covers object-field loops
-   (nbody). **`LoadGlobal`** needs `ctx` (realm globals) → the first 3-arg-ABI
-   helper (ctx in x2, threaded through continuations).
+`LoadProp` (a=dst, b=obj, c=ic_slot) via `jit_prop_get_fast` through the same
+helper mechanism. The **own-slot IC hit** only: the bridge bakes the inline-
+cache entry address (`&f.ics[ic_slot]`) into the immediate; the helper probes
+its cached hidden classes against the receiver's shape and, on a hit whose slot
+is an own slot (top bit clear), returns it. Proto-chain hits / accessors /
+deleted / IC miss / non-object → OSR deopt (and the interpreter, which runs on
+the deopt, also *warms* the IC — so a cold-IC first run self-heals on the next
+call). Read-only, ctx-free.
+
+**This is where the benches start to move.** A function reading array elements
+*and* object fields now JITs end to end:
+`function sumField(pts,n){ let s=0; for(...){ let p=pts[i]; s+=p.x*p.x+p.y*p.y; } return s; }`.
+New `obj_field` bench: interp **374 ms → JIT 120 ms = 3.11×** (LoadElem +
+LoadProp + Mul + Add, all dispatch-free); `func_loop` 1.55×. test262 ZJS_JIT
+`THRESHOLD=1` byte-identical to baseline.
+
+## Why most *legacy* benches still read ~1.0×
+
+The JIT covers **hot functions** (called repeatedly, register-local, numeric /
+array / object-field). The legacy suite is mostly **top-level loops**
+(`int_loop`, `double_loop`, `sieve`, `mandelbrot`, `property_mono`): the hot
+loop is at script top level, so its vars are *globals* and the program is
+entered *once* → the call-count threshold never fires. Moving those needs
+**(a) global access** and **(b) OSR-entry** (detect a hot loop via back-edges
+and jump *into* the JIT mid-loop) — the biggest remaining lever, with a modest
+ceiling since those loops are global-access-bound. Call-heavy benches
+(`fib`, `method_call`, `quicksort`, `richards`) need **calls-from-JIT**.
+
+## Next — J9b/J10
+
+1. **`StoreProp`** (object-field write; non-cell barrier-free like StoreElem) —
+   completes object-field loops.
+2. **Hot-loop OSR-entry + `LoadGlobal`/`StoreGlobal`** (needs `ctx` → first
+   3-arg ABI) — the top-level-loop unlock; the biggest legacy-bench lever.
 3. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`
    (`while`/`if` bodies).
 4. **Multi-`Return`** via the unified exit channel (Return reports its index

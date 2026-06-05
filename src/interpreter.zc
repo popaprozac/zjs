@@ -2357,6 +2357,13 @@ fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
         } else if inst.op == Op::StoreElem {
             // a=obj, b=key, c=val. Dense in-bounds non-cell write; deopt else.
             descs[i].op = (char*)"StoreElem";
+        } else if inst.op == Op::LoadProp {
+            // a=dst, b=obj, c=ic_slot. Pass the inline-cache entry address as
+            // the immediate; the helper probes it (own-slot IC hit, else deopt).
+            descs[i].op = (char*)"LoadProp";
+            let icp: i64 = 0;
+            raw { icp = (int64_t)(intptr_t)&f->ics[(unsigned char)inst.c]; }
+            descs[i].imm = icp;
         } else if inst.op == Op::CmpLt {
             descs[i].op = (char*)"CmpLt";
         } else if inst.op == Op::AddImm {
