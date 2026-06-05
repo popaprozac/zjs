@@ -191,6 +191,47 @@ void zjs_stencil_Jmp(ZjsValue *regs, int *deopt) {
     __attribute__((musttail)) return _JIT_TARGET(regs, deopt);
 }
 
+// Nop: pass through. Used for the offset-carrier slot of a fused 2-slot jump
+// (JmpIfNotLtImm et al.), which the interpreter never executes — keeping it in
+// the layout preserves the 1:1 instruction-index ↔ stencil-slot mapping that
+// branch targets depend on.
+void zjs_stencil_Nop(ZjsValue *regs, int *deopt) {
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
+// JmpIfNotLt: fused compare-and-branch, register form. regs[RA] < regs[RB] ?
+// fall through (CONTINUE) : branch to TARGET. Number compare; non-number
+// deopts. Same 2-slot layout as the Imm form (offset carrier → Nop).
+void zjs_stencil_JmpIfNotLt(ZjsValue *regs, int *deopt) {
+    uint64_t a = regs[(uintptr_t)&_JIT_RA].bits;
+    uint64_t b = regs[(uintptr_t)&_JIT_RB].bits;
+    int lt;
+    if (jv_is_int32(a) && jv_is_int32(b)) {
+        lt = ((int32_t)(uint32_t)a) < ((int32_t)(uint32_t)b);
+    } else if (jv_is_number(a) && jv_is_number(b)) {
+        lt = jv_to_double(a) < jv_to_double(b);
+    } else {
+        *deopt = 1; return;
+    }
+    if (lt) __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+    __attribute__((musttail)) return _JIT_TARGET(regs, deopt);
+}
+
+// JmpIfNotLtImm: fused compare-and-branch. regs[RA] < IMM (a raw int, the i8
+// immediate) ? fall through (CONTINUE) : branch to TARGET. Number compare;
+// non-number deopts. The bridge sets CONTINUE to skip the offset-carrier slot
+// (Nop) and TARGET to the loop-exit index.
+void zjs_stencil_JmpIfNotLtImm(ZjsValue *regs, int *deopt) {
+    uint64_t a = regs[(uintptr_t)&_JIT_RA].bits;
+    int32_t imm = (int32_t)(int64_t)(uintptr_t)&_JIT_IMM64;
+    int lt;
+    if (jv_is_int32(a))       lt = ((int32_t)(uint32_t)a) < imm;
+    else if (jv_is_number(a)) lt = jv_to_double(a) < (double)imm;
+    else { *deopt = 1; return; }
+    if (lt) __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+    __attribute__((musttail)) return _JIT_TARGET(regs, deopt);
+}
+
 // JmpIfFalse: branch to TARGET when ToBoolean(regs[RA]) is false. Handles the
 // boolean / null / undefined / numeric-zero cases inline (a CmpLt result is a
 // boolean, so the hot loop-condition path is exact); strings/objects deopt.

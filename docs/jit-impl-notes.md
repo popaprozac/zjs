@@ -185,19 +185,46 @@ back-edge, and checks the boxed-double result. `jit-check` PASSes real compiled
 JS: `1+2`, `1+2+3`, `10-3`, `100+200+300`, and **`2147483647+1`** (the overflow
 boundary, on real bytecode). Default build unchanged (test262 diff empty).
 
-## Next — real JS loops + measurement (J4b → J5/J6)
+## J4b — real JS loops JIT + first measurement (DONE)
 
-1. **Fused loop ops + branch mapping.** Add `CmpLtImm`/`CmpLeImm`,
-   `JmpIfNotLt(Imm)` (two-slot: condition in `inst.a/b`, `next.bc` = i16
-   offset), and the plain `Jmp`/`JmpIfTrue` target math (`i + 1 +
-   inst_bc_i16`). The stitcher's `_JIT_TARGET` hole already does back-edges
-   (proved by loop_test); this is just bridge-side index mapping.
-2. **Register-based loop bodies.** Top-level `let` compiles to *globals*
-   (`DefineGlobal`/`LoadGlobal`), so a script-level loop is all global-table
-   access — not JIT-able yet. Register locals only exist inside a function, so
-   either extract the inner `Function*` for `jit-check`, or add
-   `LoadGlobal`/`StoreGlobal` stencils (need `ctx` in the ABI). Function-body
-   first — it matches the eventual hot-loop target.
-3. **Hot-loop detection + dispatch hook**, then **measure a real JS loop vs the
-   spike's 4–6× model** — the implementation GO/NO-GO. Then IC inlining +
-   deopt-resume + the platform gate (J5/J6).
+A real register-based loop now JITs end to end and matches the interpreter.
+
+- **Inner-function extraction.** Top-level `let` compiles to *globals*
+  (`DefineGlobal`/`LoadGlobal`), so a script-level loop is all global-table
+  access — not register-based. Register locals only exist inside a function
+  body, which the compiler stores as a function value in the enclosing
+  constant pool. `jit-check`/`jit-bench` dig out the first 0-arg inner function
+  (`jit_find_inner_function`) and JIT *that*, which is also the eventual
+  hot-loop target.
+- **Fused 2-slot jumps.** `JmpIfNotLt` (reg form) and `JmpIfNotLtImm` carry
+  their i16 offset in the *following* instruction slot. The dispatch loop has a
+  universal bottom `ip += 1`, so: `Jmp` target = `i + off + 1`; fused-jump
+  exit = `i + off + 2`, continue = `i + 2` (skips the carrier). The bridge maps
+  the carrier slot to a new `Nop` stencil (never executed — preserves the 1:1
+  index↔slot mapping branch targets need) and points the jump's `_JIT_TARGET`
+  at the exit index.
+- **Authoritative op identity.** The interpreter's op-name *table* drifts from
+  the `Op` enum past `Mov`; `jit_op_name` (symbolic `Op::` comparisons) is the
+  reliable disassembler (`JITDUMP=1`).
+
+**Measured** (`jit-bench`, K=5, jit==interp gated first; Apple Silicon):
+| loop (1e7 iters) | interp | jit | speedup |
+|---|---|---|---|
+| `s += i` (overflows int32 → double) | 140.8 ms | 67.5 ms | **2.08×** |
+| `a = i` (stays int32) | 101.8 ms | 65.2 ms | **1.56×** |
+
+Honest read: real but below the spike's 4–6× — the bench *includes* per-call
+compile/alloc, and the copy-and-patch baseline still pays per-op tail-call
+overhead (no fusion/IC yet). The number is the floor, not the ceiling.
+
+## Next — J5/J6
+
+1. **Hot-loop dispatch hook.** Count back-edges per `Function*`; once hot, JIT
+   the body once (cache the region) and run it from the interpreter's live
+   frame instead of re-compiling. Removes the per-call compile cost the bench
+   still pays, and is where the JIT actually pays off in `run`.
+2. **Deopt-resume.** Today a deopt discards the run and re-interprets from the
+   top (fine for pure bodies / jit-check). Real hot-loop deopt must resume the
+   interpreter at the current bytecode index with the live frame.
+3. **More ops + IC inlining** (`Mul`/`Div`, `CmpLtImm`, property/`LoadGlobal`
+   with `ctx` in the ABI), then the **platform gate** finalize (off iOS).

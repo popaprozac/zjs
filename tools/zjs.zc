@@ -808,6 +808,67 @@ struct JitResult {
     val: ZjsValue;   // the function's return value when ok
 }
 
+// Top-level `let` compiles to globals, so a script-level loop is all
+// global-table access (not JIT-able yet). Register-based locals only exist
+// inside a function body — which the compiler stores as a function value in
+// the enclosing constant pool. Dig out the first 0-arg inner function so
+// `jit-check "(function(){ ...loop... })"` can JIT a real register-based body.
+// Authoritative op name via symbolic comparison (the interpreter's name
+// TABLE drifts from the enum past Mov; this can't). Debug aid for jit-check.
+fn jit_op_name(op: Op) -> char* {
+    if op == Op::LoadConst { return (char*)"LoadConst"; }
+    if op == Op::LoadInt { return (char*)"LoadInt"; }
+    if op == Op::LoadUndefined { return (char*)"LoadUndefined"; }
+    if op == Op::LoadHole { return (char*)"LoadHole"; }
+    if op == Op::ThrowIfHole { return (char*)"ThrowIfHole"; }
+    if op == Op::Mov { return (char*)"Mov"; }
+    if op == Op::DefineGlobal { return (char*)"DefineGlobal"; }
+    if op == Op::LoadGlobal { return (char*)"LoadGlobal"; }
+    if op == Op::StoreGlobal { return (char*)"StoreGlobal"; }
+    if op == Op::Add { return (char*)"Add"; }
+    if op == Op::Sub { return (char*)"Sub"; }
+    if op == Op::Mul { return (char*)"Mul"; }
+    if op == Op::AddImm { return (char*)"AddImm"; }
+    if op == Op::SubImm { return (char*)"SubImm"; }
+    if op == Op::CmpLt { return (char*)"CmpLt"; }
+    if op == Op::CmpLtImm { return (char*)"CmpLtImm"; }
+    if op == Op::CmpLeImm { return (char*)"CmpLeImm"; }
+    if op == Op::Jmp { return (char*)"Jmp"; }
+    if op == Op::JmpIfTrue { return (char*)"JmpIfTrue"; }
+    if op == Op::JmpIfFalse { return (char*)"JmpIfFalse"; }
+    if op == Op::JmpIfNotLt { return (char*)"JmpIfNotLt"; }
+    if op == Op::JmpIfNotLtImm { return (char*)"JmpIfNotLtImm"; }
+    if op == Op::JmpIfNotLeImm { return (char*)"JmpIfNotLeImm"; }
+    if op == Op::Return { return (char*)"Return"; }
+    return (char*)"?other";
+}
+
+fn jit_mono_ns() -> u64 {
+    let ns: u64 = 0;
+    raw {
+        #include <time.h>
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        ns = (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+    }
+    return ns;
+}
+
+fn jit_find_inner_function(f: Function*) -> Function* {
+    let i: u32 = 0;
+    while i < f.const_count {
+        let cv = f.constants[i];
+        if zjs_is_function(cv) != 0 {
+            let p: void* = zjs_cell_as_ptr(cv);
+            let inner: Function* = NULL;
+            raw { inner = (Function*)p; }
+            if inner != NULL && inner.param_count == 0 { return inner; }
+        }
+        i = i + 1;
+    }
+    return NULL;
+}
+
 // JIT a Function* whose body uses only the value-FAITHFUL op subset
 // (LoadInt / LoadConst / Mov / Return) — ops the current stencils reproduce
 // exactly (load/copy boxed values). Any other op bails (ok=0) so the
@@ -826,6 +887,12 @@ fn jit_try_run(ctx: ZjsContext*, f: Function*) -> JitResult {
     let i: u32 = 0;
     while i < n {
         let inst = f.code[i];
+        // A fused 2-slot jump (below) pre-marks its offset-carrier slot as a
+        // Nop; don't remap it as whatever op its bytes happen to encode.
+        if descs[i].op != NULL {
+            i = i + 1;
+            continue;
+        }
         descs[i].ra = (i32)inst.a;
         descs[i].rb = (i32)inst.b;
         descs[i].rc = (i32)inst.c;
@@ -869,6 +936,35 @@ fn jit_try_run(ctx: ZjsContext*, f: Function*) -> JitResult {
         } else if inst.op == Op::SubImm {
             descs[i].op = (char*)"SubImm";
             descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
+        } else if inst.op == Op::Jmp {
+            // Unconditional. Interp: ip += off, then the bottom ip+=1 ⇒
+            // target = i + off + 1.
+            descs[i].op = (char*)"Jmp";
+            descs[i].target = (i32)i + inst_bc_i16(inst) + 1;
+        } else if inst.op == Op::JmpIfNotLt {
+            // Register form: a=lhs reg, b=rhs reg; i16 offset in code[i+1].bc.
+            // Same index math + Nop carrier as the Imm variant below.
+            if i + 1 >= n { ok_all = false; i = n; }
+            else {
+                descs[i].op = (char*)"JmpIfNotLt";
+                descs[i].target = (i32)i + inst_bc_i16(f.code[i + 1]) + 2;
+                descs[i + 1].op = (char*)"Nop";
+                descs[i + 1].target = -1;
+            }
+        } else if inst.op == Op::JmpIfNotLtImm {
+            // Fused 2-slot compare-branch. a=lhs reg, b=i8 imm; the i16 offset
+            // lives in code[i+1].bc. Interp: continue (lt) ⇒ ip+=1 then +1 ⇒
+            // i+2 (skips the carrier slot); exit ⇒ ip=ip+1+off then +1 ⇒
+            // i+off+2. Mark the carrier slot Nop so CONTINUE (→i+1) passes
+            // through to i+2, and point TARGET at the exit.
+            if i + 1 >= n { ok_all = false; i = n; }
+            else {
+                descs[i].op = (char*)"JmpIfNotLtImm";
+                descs[i].imm = (i64)(i32)(i8)inst.b;
+                descs[i].target = (i32)i + inst_bc_i16(f.code[i + 1]) + 2;
+                descs[i + 1].op = (char*)"Nop";
+                descs[i + 1].target = -1;
+            }
         } else if inst.op == Op::Return {
             descs[i].op = (char*)"Return";
             ret_reg = (i32)inst.a;
@@ -949,8 +1045,27 @@ fn main(argc: int, argv: char**) -> int {
         let ctx = zjs_new_context();
         let f = zjs_compile(ctx, src);
         if f == NULL { raw { printf("jit-check: compile failed\n"); } return 1; }
-        let r = interpret(ctx, f, NULL, 0);
-        let jr = jit_try_run(ctx, f);
+        // Prefer a register-based inner function body (see jit_find_inner_function).
+        let target: Function* = f;
+        let inner = jit_find_inner_function(f);
+        if inner != NULL { target = inner; }
+        let do_dump: int = 0;
+        raw { do_dump = getenv("JITDUMP") ? 1 : 0; }
+        if do_dump != 0 {
+            raw { fprintf(stderr, "[dump] code_len=%u regs=%u params=%u\n",
+                  (unsigned)target->code_len, (unsigned)target->register_count,
+                  (unsigned)target->param_count); }
+            let k: u32 = 0;
+            while k < (u32)target.code_len {
+                let ins = target.code[k];
+                let nm = jit_op_name(ins.op);
+                raw { fprintf(stderr, "  [%2u] %-15s a=%d b=%d c=%d\n",
+                      (unsigned)k, nm, (int)ins.a, (int)ins.b, (int)ins.c); }
+                k = k + 1;
+            }
+        }
+        let r = interpret(ctx, target, NULL, 0);
+        let jr = jit_try_run(ctx, target);
         if jr.ok == 0 {
             raw { printf("jit-check: BAIL (unsupported ops or non-JIT build)\n"); }
             return 0;
@@ -964,6 +1079,47 @@ fn main(argc: int, argv: char**) -> int {
                    (unsigned long long)jr.val.bits, (unsigned long long)r.value.bits);
         }
         return 1;
+    }
+
+    // jit-bench "<fn-expr>": time the interpreter vs the JIT on a register-based
+    // function body (verifies they agree first, then reports the speedup). The
+    // body should be a 0-arg function whose loop stays in the JIT's faithful op
+    // subset — e.g. "(function(){ let s=0; for(let i=0;i<1e7;i++) s+=i; return s; })".
+    if libc_str::strcmp(argv[1], "jit-bench") == 0 {
+        // Default body built in raw{} — a zc string literal containing `{`
+        // would trip f-string interpolation (the (char*)"{..." quirk).
+        let src: char* = NULL;
+        raw { src = (char*)"(function(){ let s=0; for(let i=0;i<10000000;i++){ s+=i; } return s; })"; }
+        if argc >= 3 { src = argv[2]; }
+        let ctx = zjs_new_context();
+        let f = zjs_compile(ctx, src);
+        if f == NULL { raw { printf("jit-bench: compile failed\n"); } return 1; }
+        let target: Function* = f;
+        let inner = jit_find_inner_function(f);
+        if inner != NULL { target = inner; }
+        // Correctness gate first.
+        let ri = interpret(ctx, target, NULL, 0);
+        let rj = jit_try_run(ctx, target);
+        if rj.ok == 0 { raw { printf("jit-bench: BAIL (body outside JIT subset)\n"); } return 0; }
+        if rj.val.bits != ri.value.bits {
+            raw { printf("jit-bench: FAIL jit=0x%llx interp=0x%llx\n",
+                  (unsigned long long)rj.val.bits, (unsigned long long)ri.value.bits); }
+            return 1;
+        }
+        let K: int = 5;
+        let t0 = jit_mono_ns();
+        let a: int = 0; while a < K { interpret(ctx, target, NULL, 0); a = a + 1; }
+        let t1 = jit_mono_ns();
+        let b: int = 0; while b < K { jit_try_run(ctx, target); b = b + 1; }
+        let t2 = jit_mono_ns();
+        let interp_ns = (t1 - t0) / (u64)K;
+        let jit_ns    = (t2 - t1) / (u64)K;
+        raw {
+            double sp = jit_ns ? (double)interp_ns / (double)jit_ns : 0.0;
+            printf("jit-bench: interp=%.2f ms  jit=%.2f ms  speedup=%.2fx  (K=%d, agreed)\n",
+                   (double)interp_ns/1e6, (double)jit_ns/1e6, sp, K);
+        }
+        return 0;
     }
 
     if libc_str::strcmp(argv[1], "--version") == 0 { return run_version(); }
