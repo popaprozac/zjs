@@ -31,19 +31,66 @@ typedef struct { uint64_t bits; } ZjsValue;
 typedef void (*JitCont)(ZjsValue *regs);
 
 // ---- Holes (patched per instruction at stitch time) ------------------------
-extern uint8_t  _JIT_RA;        // operand register index a (dest)
-extern uint8_t  _JIT_RB;        // operand register index b (src)
-extern uint64_t _JIT_IMM64;     // a 64-bit immediate (e.g. a NaN-boxed constant)
+extern uint8_t  _JIT_RA;        // operand register index a (usually dest)
+extern uint8_t  _JIT_RB;        // operand register index b
+extern uint8_t  _JIT_RC;        // operand register index c
+extern uint64_t _JIT_IMM64;     // a 64-bit immediate (constant / int operand)
 extern void     _JIT_CONTINUE(ZjsValue *regs);   // fall-through to next stencil
+extern void     _JIT_TARGET(ZjsValue *regs);     // explicit branch destination
 
-// LoadConst-shaped: regs[RA] = IMM64.  (constant materialized as a 64-bit hole)
+// NOTE on value model: these first ops operate on regs[].bits as a raw int64 to
+// validate the STITCHING machinery (operands, branches, back-edges) on the real
+// int_loop shape. The conformance-faithful stencils share the interpreter's
+// actual op-bodies (NaN-box unbox/rebox + guards) — that's the engine-integration
+// step. The extractor/stitcher are identical either way.
+
+// LoadConst: regs[RA] = IMM64.
 void zjs_stencil_LoadConst(ZjsValue *regs) {
     regs[(uintptr_t)&_JIT_RA].bits = (uint64_t)(uintptr_t)&_JIT_IMM64;
     __attribute__((musttail)) return _JIT_CONTINUE(regs);
 }
 
-// Mov: regs[RA] = regs[RB].  (two register-index holes, no value hole)
+// Mov: regs[RA] = regs[RB].
 void zjs_stencil_Mov(ZjsValue *regs) {
     regs[(uintptr_t)&_JIT_RA] = regs[(uintptr_t)&_JIT_RB];
     __attribute__((musttail)) return _JIT_CONTINUE(regs);
+}
+
+// Add: regs[RA] = regs[RB] + regs[RC].
+void zjs_stencil_Add(ZjsValue *regs) {
+    regs[(uintptr_t)&_JIT_RA].bits =
+        regs[(uintptr_t)&_JIT_RB].bits + regs[(uintptr_t)&_JIT_RC].bits;
+    __attribute__((musttail)) return _JIT_CONTINUE(regs);
+}
+
+// AddImm: regs[RA] = regs[RB] + IMM64.
+void zjs_stencil_AddImm(ZjsValue *regs) {
+    regs[(uintptr_t)&_JIT_RA].bits =
+        regs[(uintptr_t)&_JIT_RB].bits + (uint64_t)(uintptr_t)&_JIT_IMM64;
+    __attribute__((musttail)) return _JIT_CONTINUE(regs);
+}
+
+// CmpLt: regs[RA] = (regs[RB] < regs[RC]) ? 1 : 0  (signed).
+void zjs_stencil_CmpLt(ZjsValue *regs) {
+    regs[(uintptr_t)&_JIT_RA].bits =
+        ((int64_t)regs[(uintptr_t)&_JIT_RB].bits <
+         (int64_t)regs[(uintptr_t)&_JIT_RC].bits) ? 1 : 0;
+    __attribute__((musttail)) return _JIT_CONTINUE(regs);
+}
+
+// Jmp: unconditional branch to TARGET.
+void zjs_stencil_Jmp(ZjsValue *regs) {
+    __attribute__((musttail)) return _JIT_TARGET(regs);
+}
+
+// JmpIfFalse: if regs[RA] == 0 branch to TARGET, else fall through.
+void zjs_stencil_JmpIfFalse(ZjsValue *regs) {
+    if (regs[(uintptr_t)&_JIT_RA].bits == 0)
+        __attribute__((musttail)) return _JIT_TARGET(regs);
+    __attribute__((musttail)) return _JIT_CONTINUE(regs);
+}
+
+// Return: leave the JIT'd region (back to the caller / interpreter).
+void zjs_stencil_Return(ZjsValue *regs) {
+    (void)regs;
 }

@@ -81,14 +81,46 @@ GOT patch encodings (arm64), for reference:
 - `LDR Xt, [Xn, #imm12]`: imm12 = (slot & 0xFFF) >> 3 (bits 21:10; /8 for x-reg).
 - `B`: imm26 = (target − pc) >> 2 (bits 25:0); opcode 0x14000000.
 
-## Next (J3)
+## J3a — easy-op stencil set + two-pass LOOP stitcher (done)
 
-Move the stitcher into the engine behind `ZJS_JIT`: an `src/jit/*.zc` runtime
-that, given a hot `Function*`'s bytecode, allocates a MAP_JIT region, copies the
-right stencil per instruction, builds the per-function GOT, patches operand
-holes from the real `Inst` operands (`inst.a`/`inst.b`/immediates → GOT slots)
-and chains the `BRANCH26` continuations, then runs it sharing the interpreter's
-`reg_stack` frame (design study §4 — free deopt/GC). Grow the stencil set to the
-§A.2 easy ops (Add/Sub/Mul/CmpLt*/Jmp/JmpIfFalse) and stand up one real loop
-(J4) measured vs the spike's 4–6× model. Add a `Return`/epilogue stencil so the
-last op returns to the interpreter instead of a hand-appended RET.
+- `tools/jit/stencils.c` grown to 8 ops: `LoadConst`, `Mov`, `Add`, `AddImm`,
+  `CmpLt`, `Jmp`, `JmpIfFalse`, `Return`. New holes: `_JIT_RC` (3rd operand),
+  `_JIT_TARGET` (explicit branch destination, a 2nd `BRANCH26`). The extractor
+  picks all of them up unchanged (8 stencils, holes verified).
+- `tools/jit/loop_test.c` (Makefile: `jit-loop-test`): a **two-pass stitcher**
+  for a real loop. Pass 1 lays out a stencil per bytecode instruction and
+  records each instruction's code offset (the pc-map). Pass 2 patches each
+  instruction's operand holes (per-instruction GOT slots from `ra/rb/rc/imm`),
+  its `_JIT_CONTINUE` (BRANCH26 → next instruction), and its `_JIT_TARGET`
+  (BRANCH26 → the jump-destination instruction — forward branch AND back-edge).
+  Assembles the `int_loop` body (acc+=i; i++; if i<N goto loop) and runs it:
+  `sum(0..1000000-1) = 499999500000` → **PASS**. This is the J4 mechanism
+  proven; values are raw int64 in `.bits` (validates STITCHING — conformance-
+  faithful NaN-box stencils are the engine step).
+- `make jit-test` runs the whole self-test chain (stitch + loop).
+
+The toolchain is complete and proven: compile → extract → two-pass stitch of a
+real loop with operands, continuations, a conditional branch, and a back-edge.
+
+## Next — engine integration (J3b/J4)
+
+The remaining work is wiring this into the engine behind `ZJS_JIT`:
+1. **Build gating.** Add `src/jit/jit.zc` to the engine build only when
+   `ZJS_JIT` is set, with `-DZJS_JIT` reaching the clang that compiles the
+   raw{} blocks + the generated header `#include`. (Investigate the existing
+   `ZJS_NO_*` define plumbing — it currently rides a separate clang step at
+   Makefile:250, NOT the main `zc build`; the JIT needs the define on the
+   main engine build. Likely append to `ZC_FLAGS` for a JIT build and confirm
+   `zc` forwards `-D`/`-I` like it does `-Isrc`.)
+2. **Consume real bytecode.** Map zjs `Op` → stencil, extract operands from
+   the real `Inst` (`inst.a`/`inst.b`/`inst.c` + `inst_bc_*` immediates),
+   build the pc-map over the function's `code[]`, bail (don't JIT) on any op
+   outside the easy set so correctness is never at risk.
+3. **Frame sharing.** Run the JIT'd code on the interpreter's live `reg_stack`
+   frame (design study §4) so deopt + GC stay free; the entry passes
+   `&reg_stack[regs_base]`.
+4. **Hot-loop detection + dispatch hook + measure.** Count back-edges per
+   Function*; once hot, JIT the body and run vs the interpreter; **measure
+   int_loop against the spike's 4–6× model** — the implementation GO/NO-GO.
+5. Conformance-faithful stencils (share the interpreter op-bodies / NaN-box),
+   then IC inlining + deopt + the platform gate (J5/J6).

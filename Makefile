@@ -340,6 +340,17 @@ jit-stitch-test: $(JIT_STENCIL_HDR) tools/jit/stitch_test.c
 	$(CLANG) -O2 -I$(BUILD_DIR) -o $(BUILD_DIR)/jit_stitch_test tools/jit/stitch_test.c
 	@$(BUILD_DIR)/jit_stitch_test
 
+# J3 validation: two-pass stitch of a real loop (int_loop / back-edge) from the
+# extracted stencil set; computes sum(0..N-1) and checks the closed form.
+.PHONY: jit-loop-test
+jit-loop-test: $(JIT_STENCIL_HDR) tools/jit/loop_test.c
+	$(CLANG) -O2 -I$(BUILD_DIR) -o $(BUILD_DIR)/jit_loop_test tools/jit/loop_test.c
+	@$(BUILD_DIR)/jit_loop_test
+
+# Run the whole JIT toolchain self-test chain.
+.PHONY: jit-test
+jit-test: jit-stitch-test jit-loop-test
+
 smoke: $(SMOKE)
 $(SMOKE): $(SMOKE_SRC) include/zjs.h $(LIB) | $(BUILD_DIR)
 	$(CLANG) -O0 -g -Wall -Iinclude $(SMOKE_SRC) -L$(BUILD_DIR) -lzjs $(RPATH_FLAG) -o $@
