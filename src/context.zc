@@ -27273,6 +27273,67 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     ctx.realm.globals[temporal_slot].defined = true;
 }
 
+// === Realms: runtime_new_realm + the $262 / createRealm record ==========
+// (Runtime/Realm split, P4 — docs/realm-refactor-design.md.)
+
+// Build a fresh realm on this runtime: its own intrinsics, global object,
+// and global binding table, all sharing the runtime's heap / GC / atoms.
+// Re-runs the per-realm builtin installer (ctx_init_builtins) with ctx.realm
+// pointed at the new realm, then restores the caller's realm. The few
+// runtime-level caches ctx_init_builtins repoints (array_iter_host_fn) are
+// saved/restored so the caller's realm is unaffected. Returns the new realm.
+fn runtime_new_realm(ctx: ZjsContext*) -> ZjsRealm* {
+    let r = alloc<ZjsRealm>();
+    ctx_register_realm(ctx, r);
+    r.globals = alloc_n<GlobalEntry>(128);
+    r.global_cap = 128;
+    let saved_realm = ctx.realm;
+    let saved_iter  = ctx.array_iter_host_fn;
+    ctx.realm = r;
+    ctx_init_builtins(ctx);
+    ctx.realm = saved_realm;
+    ctx.array_iter_host_fn = saved_iter;
+    return r;
+}
+
+// Forward-referenced below (Zen-c is unit-shared).
+fn host_create_realm(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue;
+
+// Build the test262 `$262`-shaped record for `realm`:
+//   { global, evalScript, createRealm }
+// evalScript is installed IN `realm` (its hf.realm = realm), so calling it
+// switches ctx.realm to `realm` (the host-fn realm swap, P4a) and then
+// evaluates its source argument there — i.e. evalScript runs in the realm
+// the record belongs to. createRealm makes a fresh sub-realm per call.
+fn build_realm_record(ctx: ZjsContext*, realm: ZjsRealm*) -> ZjsValue {
+    let rec = ctx_new_object(ctx);
+    ctx_push_temp_root(ctx, rec);            // protect across the allocs below
+    let rec_o = zjs_as_object(rec);
+    if realm.global_this_obj != NULL {
+        object_set(ctx, rec_o, ctx_intern_atom(ctx, (char*)"global", 6),
+                   zjs_cell_from_ptr((void*)realm.global_this_obj));
+    }
+    // evalScript — stamp it with `realm` so the call enters that realm.
+    let es_ptr: void* = NULL; raw { es_ptr = (void*)host_eval_stub; }
+    let saved = ctx.realm;
+    ctx.realm = realm;
+    let es = ctx_make_host_function_arity(ctx, (char*)"evalScript", es_ptr, 1);
+    ctx.realm = saved;
+    object_set(ctx, rec_o, ctx_intern_atom(ctx, (char*)"evalScript", 10), es);
+    // createRealm — recurses into a brand-new realm each call.
+    let cr_ptr: void* = NULL; raw { cr_ptr = (void*)host_create_realm; }
+    let cr = ctx_make_host_function_arity(ctx, (char*)"createRealm", cr_ptr, 0);
+    object_set(ctx, rec_o, ctx_intern_atom(ctx, (char*)"createRealm", 11), cr);
+    ctx_pop_temp_root(ctx);
+    return rec;
+}
+
+// $262.createRealm(): build a fresh realm and return its $262 record.
+fn host_create_realm(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let nr = runtime_new_realm(ctx);
+    return build_realm_record(ctx, nr);
+}
+
 fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // --- Function.prototype.{call, apply} cached helpers (Phase 3.8d)
     let fcall_ptr:  void* = NULL; raw { fcall_ptr  = (void*)host_function_call; }
@@ -28684,9 +28745,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
             }
         }
     }
-    // $262 — test262's per-context helper object. We don't implement
-    // any of its methods; register as a plain empty object.
-    let t262_v = ctx_new_object(ctx);
+    // $262 — test262's per-realm host hook. Provides { global, evalScript,
+    // createRealm } for THIS realm (Runtime/Realm split, P4). Each realm
+    // gets its own $262 keyed to its own globalThis, so cross-realm tests
+    // that call $262.createRealm()/$262.evalScript() resolve correctly.
+    let t262_v = build_realm_record(ctx, ctx.realm);
     let t262_slot = ctx_intern_global(ctx, (char*)"$262", 4);
     ctx.realm.globals[t262_slot].value = t262_v;
     ctx.realm.globals[t262_slot].defined = true;

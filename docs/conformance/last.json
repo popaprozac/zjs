@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-05 04:00 UTC",
+    "when": "2026-06-05 04:19 UTC",
     "total": 27491,
-    "passed": 23282,
-    "failed": 3489,
+    "passed": 23283,
+    "failed": 3488,
     "skipped": 720,
     "platform": "macOS"
   },
@@ -102,7 +102,7 @@
     },
     {
       "path": "test/built-ins/Array/from/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
     },
     {
       "path": "test/built-ins/Array/from/source-object-constructor.js",
@@ -198,7 +198,7 @@
     },
     {
       "path": "test/built-ins/Array/length/define-own-prop-length-overflow-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): array.length = 4294967296 throws a RangeError exception Expected a RangeError to be thrown but no"
     },
     {
       "path": "test/built-ins/Array/length.js",
@@ -210,7 +210,7 @@
     },
     {
       "path": "test/built-ins/Array/of/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
     },
     {
       "path": "test/built-ins/Array/of/return-a-custom-instance.js",
@@ -254,15 +254,15 @@
     },
     {
       "path": "test/built-ins/Array/proto-from-ctor-realm-one.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Array/proto-from-ctor-realm-two.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Array/proto-from-ctor-realm-zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Array/prototype/Symbol.iterator.js",
@@ -358,11 +358,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/create-proto-from-ctor-realm-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/create-proto-from-ctor-realm-non-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Object.getPrototypeOf(array.concat()) returns CustomCtor.prototype Expected SameValue(\u00ab\u00bb, \u00ab[objec"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/create-proxy.js",
@@ -446,7 +446,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/entries/resizable-buffer-shrink-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0,0, 1,2, 2,4] should have the same contents. TestIterationAndResize: lis"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/entries/resizable-buffer.js",
@@ -622,11 +622,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/filter/create-proto-from-ctor-realm-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Array/prototype/filter/create-proto-from-ctor-realm-non-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\u00bb"
     },
     {
       "path": "test/built-ins/Array/prototype/filter/create-proxy.js",
@@ -1258,11 +1258,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-proto-from-ctor-realm-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-proto-from-ctor-realm-non-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\u00bb"
     },
     {
       "path": "test/built-ins/Array/prototype/map/create-proxy.js",
@@ -1742,11 +1742,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/slice/create-proto-from-ctor-realm-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Array/prototype/slice/create-proto-from-ctor-realm-non-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\u00bb"
     },
     {
       "path": "test/built-ins/Array/prototype/slice/create-proxied-array-invalid-len.js",
@@ -2074,11 +2074,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/splice/create-proto-from-ctor-realm-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperty called on non-object\nzjs: throw: TypeError: Object.defineProperty called on"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/create-proto-from-ctor-realm-non-array.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\u00bb, \u00ab[object Object]\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\u00bb"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/create-proxy.js",
@@ -2338,7 +2338,7 @@
     },
     {
       "path": "test/built-ins/Boolean/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Boolean/prototype/S15.6.3.1_A1.js",
@@ -2506,15 +2506,15 @@
     },
     {
       "path": "test/built-ins/Date/proto-from-ctor-realm-one.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Date/proto-from-ctor-realm-two.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Date/proto-from-ctor-realm-zero.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Date/prototype/S15.9.5_A17_T1.js",
@@ -2986,7 +2986,7 @@
     },
     {
       "path": "test/built-ins/Error/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Error/prototype/S15.11.3.1_A1_T1.js",
@@ -3098,7 +3098,7 @@
     },
     {
       "path": "test/built-ins/Function/call-bind-this-realm-undef.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
       "path": "test/built-ins/Function/call-bind-this-realm-value.js",
@@ -3110,7 +3110,7 @@
     },
     {
       "path": "test/built-ins/Function/internals/Construct/base-ctor-revoked-proxy-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'revocable')\nzjs: throw: TypeError: Cannot read prop"
     },
     {
       "path": "test/built-ins/Function/internals/Construct/base-ctor-revoked-proxy.js",
@@ -3150,11 +3150,11 @@
     },
     {
       "path": "test/built-ins/Function/proto-from-ctor-realm-prototype.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct target is not a constructor\nzjs: throw: TypeError: Reflect.construct target is "
     },
     {
       "path": "test/built-ins/Function/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Function/prototype/S15.3.3.1_A1.js",
@@ -3254,7 +3254,7 @@
     },
     {
       "path": "test/built-ins/Function/prototype/apply/argarray-not-object-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'name')\nzjs: throw: TypeError: Cannot read propertie"
     },
     {
       "path": "test/built-ins/Function/prototype/apply/argarray-not-object.js",
@@ -3278,7 +3278,7 @@
     },
     {
       "path": "test/built-ins/Function/prototype/apply/this-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
     },
     {
       "path": "test/built-ins/Function/prototype/apply/this-not-callable.js",
@@ -3326,11 +3326,11 @@
     },
     {
       "path": "test/built-ins/Function/prototype/bind/get-fn-realm-recursive.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
     },
     {
       "path": "test/built-ins/Function/prototype/bind/get-fn-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
     },
     {
       "path": "test/built-ins/Function/prototype/bind/instance-length-default-value.js",
@@ -3366,7 +3366,7 @@
     },
     {
       "path": "test/built-ins/Function/prototype/bind/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Function/prototype/call/S15.3.4.4_A13.js",
@@ -3486,7 +3486,7 @@
     },
     {
       "path": "test/built-ins/JSON/stringify/replacer-array-proxy-revoked-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'revocable')\nzjs: throw: TypeError: Cannot read prop"
     },
     {
       "path": "test/built-ins/JSON/stringify/replacer-array-proxy-revoked.js",
@@ -3590,7 +3590,7 @@
     },
     {
       "path": "test/built-ins/Map/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Map/prototype/Symbol.iterator.js",
@@ -3834,7 +3834,7 @@
     },
     {
       "path": "test/built-ins/Number/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Number/prototype/S15.7.3.1_A2_T1.js",
@@ -5018,7 +5018,7 @@
     },
     {
       "path": "test/built-ins/Object/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Object/prototype/S15.2.3.1_A3.js",
@@ -5754,7 +5754,7 @@
     },
     {
       "path": "test/built-ins/Promise/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Promise/prototype/Symbol.toStringTag.js",
@@ -5974,7 +5974,7 @@
     },
     {
       "path": "test/built-ins/Proxy/apply/null-handler-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'revocable')\nzjs: throw: TypeError: Cannot read prop"
     },
     {
       "path": "test/built-ins/Proxy/apply/return-abrupt.js",
@@ -5983,10 +5983,6 @@
     {
       "path": "test/built-ins/Proxy/apply/trap-is-missing-target-is-proxy.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got undefined\nzjs: throw: (unknown): Expected true but got undefined"
-    },
-    {
-      "path": "test/built-ins/Proxy/apply/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
     },
     {
       "path": "test/built-ins/Proxy/apply/trap-is-null-target-is-proxy.js",
@@ -6014,43 +6010,43 @@
     },
     {
       "path": "test/built-ins/Proxy/construct/null-handler-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'revocable')\nzjs: throw: TypeError: Cannot read prop"
     },
     {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-boolean-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-null-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-number-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-string-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-symbol-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/construct/return-not-object-throws-undefined-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-undefined-proto-from-cross-realm-newtarget.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Proxy/construct/trap-is-undefined-proto-from-newtarget-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Proxy/create-target-is-not-a-constructor.js",
@@ -6062,23 +6058,23 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/desc-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert null or undefined to object\u0000\nzjs: throw: TypeError: Cannot convert null or undefin"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/null-handler-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'revocable')\nzjs: throw: TypeError: Cannot read prop"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-configurable-desc-not-configurable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-not-compatible-descriptor-not-configurable-target-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-not-compatible-descriptor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-not-configurable-writable-desc-not-writable.js",
@@ -6086,11 +6082,11 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-undefined-not-configurable-descriptor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/targetdesc-undefined-target-is-not-extensible-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-missing-target-is-proxy.js",
@@ -6098,7 +6094,7 @@
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-null-target-is-proxy.js",
@@ -6110,7 +6106,7 @@
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/trap-is-null-target-is-proxy.js",
@@ -6142,7 +6138,7 @@
     },
     {
       "path": "test/built-ins/Proxy/get/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/get/trap-is-not-callable.js",
@@ -6158,11 +6154,11 @@
     },
     {
       "path": "test/built-ins/Proxy/get-fn-realm-recursive.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct target is not a constructor\nzjs: throw: TypeError: Reflect.construct target is "
     },
     {
       "path": "test/built-ins/Proxy/get-fn-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct target is not a constructor\nzjs: throw: TypeError: Reflect.construct target is "
     },
     {
       "path": "test/built-ins/Proxy/getOwnPropertyDescriptor/null-handler.js",
@@ -6170,7 +6166,7 @@
     },
     {
       "path": "test/built-ins/Proxy/getOwnPropertyDescriptor/result-type-is-not-object-nor-undefined-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/getOwnPropertyDescriptor/resultdesc-is-invalid-descriptor.js",
@@ -6182,7 +6178,7 @@
     },
     {
       "path": "test/built-ins/Proxy/getOwnPropertyDescriptor/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/getOwnPropertyDescriptor/trap-is-null-target-is-proxy.js",
@@ -6206,7 +6202,7 @@
     },
     {
       "path": "test/built-ins/Proxy/getPrototypeOf/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/has/call-in.js",
@@ -6262,7 +6258,7 @@
     },
     {
       "path": "test/built-ins/Proxy/has/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/has/trap-is-not-callable-using-with.js",
@@ -6286,7 +6282,7 @@
     },
     {
       "path": "test/built-ins/Proxy/isExtensible/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/call-parameters-object-getownpropertysymbols.js",
@@ -6294,7 +6290,7 @@
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/return-not-list-object-throws-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/trap-is-missing-target-is-proxy.js",
@@ -6302,7 +6298,7 @@
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/ownKeys/trap-is-undefined-target-is-proxy.js",
@@ -6310,7 +6306,7 @@
     },
     {
       "path": "test/built-ins/Proxy/preventExtensions/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/proxy-undefined-newtarget.js",
@@ -6366,7 +6362,7 @@
     },
     {
       "path": "test/built-ins/Proxy/set/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/set/trap-is-not-callable.js",
@@ -6402,7 +6398,7 @@
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/trap-is-not-callable-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Proxy/setPrototypeOf/trap-is-undefined-target-is-proxy.js",
@@ -6590,7 +6586,7 @@
     },
     {
       "path": "test/built-ins/Set/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/Set/prototype/Symbol.iterator.js",
@@ -6782,7 +6778,7 @@
     },
     {
       "path": "test/built-ins/String/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/String/prototype/S15.5.3.1_A1.js",
@@ -7374,7 +7370,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/toString/non-generic-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
     },
     {
       "path": "test/built-ins/String/prototype/toString/non-generic.js",
@@ -7614,7 +7610,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/valueOf/non-generic-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'prototype')\nzjs: throw: TypeError: Cannot read prop"
     },
     {
       "path": "test/built-ins/String/prototype/valueOf/non-generic.js",
@@ -7654,7 +7650,7 @@
     },
     {
       "path": "test/built-ins/Symbol/asyncDispose/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'asyncDispose')\nzjs: throw: TypeError: Cannot read p"
     },
     {
       "path": "test/built-ins/Symbol/asyncDispose/no-key.js",
@@ -7682,7 +7678,7 @@
     },
     {
       "path": "test/built-ins/Symbol/dispose/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'dispose')\nzjs: throw: TypeError: Cannot read proper"
     },
     {
       "path": "test/built-ins/Symbol/dispose/no-key.js",
@@ -7694,7 +7690,7 @@
     },
     {
       "path": "test/built-ins/Symbol/for/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'for')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Symbol/for/to-string-err.js",
@@ -7702,7 +7698,7 @@
     },
     {
       "path": "test/built-ins/Symbol/hasInstance/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'hasInstance')\nzjs: throw: TypeError: Cannot read pr"
     },
     {
       "path": "test/built-ins/Symbol/hasInstance/prop-desc.js",
@@ -7714,7 +7710,7 @@
     },
     {
       "path": "test/built-ins/Symbol/isConcatSpreadable/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'isConcatSpreadable')\nzjs: throw: TypeError: Cannot "
     },
     {
       "path": "test/built-ins/Symbol/isConcatSpreadable/prop-desc.js",
@@ -7722,7 +7718,7 @@
     },
     {
       "path": "test/built-ins/Symbol/iterator/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'iterator')\nzjs: throw: TypeError: Cannot read prope"
     },
     {
       "path": "test/built-ins/Symbol/iterator/prop-desc.js",
@@ -7734,11 +7730,11 @@
     },
     {
       "path": "test/built-ins/Symbol/keyFor/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'for')\nzjs: throw: TypeError: Cannot read properties"
     },
     {
       "path": "test/built-ins/Symbol/match/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'match')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/built-ins/Symbol/match/prop-desc.js",
@@ -7746,7 +7742,7 @@
     },
     {
       "path": "test/built-ins/Symbol/matchAll/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'matchAll')\nzjs: throw: TypeError: Cannot read prope"
     },
     {
       "path": "test/built-ins/Symbol/matchAll/prop-desc.js",
@@ -7822,7 +7818,7 @@
     },
     {
       "path": "test/built-ins/Symbol/replace/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'replace')\nzjs: throw: TypeError: Cannot read proper"
     },
     {
       "path": "test/built-ins/Symbol/replace/prop-desc.js",
@@ -7830,7 +7826,7 @@
     },
     {
       "path": "test/built-ins/Symbol/search/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'search')\nzjs: throw: TypeError: Cannot read propert"
     },
     {
       "path": "test/built-ins/Symbol/search/prop-desc.js",
@@ -7842,7 +7838,7 @@
     },
     {
       "path": "test/built-ins/Symbol/species/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'species')\nzjs: throw: TypeError: Cannot read proper"
     },
     {
       "path": "test/built-ins/Symbol/species/subclassing.js",
@@ -7850,7 +7846,7 @@
     },
     {
       "path": "test/built-ins/Symbol/split/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'split')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/built-ins/Symbol/split/prop-desc.js",
@@ -7862,7 +7858,7 @@
     },
     {
       "path": "test/built-ins/Symbol/toPrimitive/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'split')\nzjs: throw: TypeError: Cannot read properti"
     },
     {
       "path": "test/built-ins/Symbol/toPrimitive/prop-desc.js",
@@ -7870,7 +7866,7 @@
     },
     {
       "path": "test/built-ins/Symbol/toStringTag/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'toStringTag')\nzjs: throw: TypeError: Cannot read pr"
     },
     {
       "path": "test/built-ins/Symbol/toStringTag/prop-desc.js",
@@ -7878,7 +7874,7 @@
     },
     {
       "path": "test/built-ins/Symbol/unscopables/cross-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'unscopables')\nzjs: throw: TypeError: Cannot read pr"
     },
     {
       "path": "test/built-ins/Symbol/unscopables/prop-desc.js",
@@ -7906,7 +7902,7 @@
     },
     {
       "path": "test/built-ins/WeakMap/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/WeakMap/prototype/Symbol.toStringTag.js",
@@ -7982,7 +7978,7 @@
     },
     {
       "path": "test/built-ins/WeakSet/proto-from-ctor-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: Reflect.construct newTarget is not a constructor\nzjs: throw: TypeError: Reflect.construct newTarg"
     },
     {
       "path": "test/built-ins/WeakSet/prototype/Symbol.toStringTag.js",
@@ -9322,11 +9318,11 @@
     },
     {
       "path": "test/language/expressions/class/private-getter-brand-check-multiple-evaluations-of-class-realm-function-ctor.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
       "path": "test/language/expressions/class/private-getter-brand-check-multiple-evaluations-of-class-realm.js",
-      "reason": "zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
       "path": "test/language/expressions/class/private-method-brand-check-multiple-evaluations-of-class-eval-indirect.js",
@@ -9346,11 +9342,11 @@
     },
     {
       "path": "test/language/expressions/class/private-method-brand-check-multiple-evaluations-of-class-realm-function-ctor.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
       "path": "test/language/expressions/class/private-method-brand-check-multiple-evaluations-of-class-realm.js",
-      "reason": "zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
       "path": "test/language/expressions/class/private-setter-brand-check-multiple-evaluations-of-class-eval-indirect.js",
@@ -9370,11 +9366,11 @@
     },
     {
       "path": "test/language/expressions/class/private-setter-brand-check-multiple-evaluations-of-class-realm-function-ctor.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
       "path": "test/language/expressions/class/private-setter-brand-check-multiple-evaluations-of-class-realm.js",
-      "reason": "zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "zjs: throw: TypeError: value is not a function\nzjs: throw: TypeError: value is not a function"
     },
     {
       "path": "test/language/expressions/class/private-static-field-multiple-evaluations-of-class-direct-eval.js",
@@ -9394,7 +9390,7 @@
     },
     {
       "path": "test/language/expressions/class/private-static-field-multiple-evaluations-of-class-realm.js",
-      "reason": "zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'access')\nzjs: throw: TypeError: Cannot read propert"
     },
     {
       "path": "test/language/expressions/class/private-static-getter-multiple-evaluations-of-class-direct-eval.js",
@@ -9414,7 +9410,7 @@
     },
     {
       "path": "test/language/expressions/class/private-static-getter-multiple-evaluations-of-class-realm.js",
-      "reason": "zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'access')\nzjs: throw: TypeError: Cannot read propert"
     },
     {
       "path": "test/language/expressions/class/private-static-method-brand-check-multiple-evaluations-of-class-direct-eval.js",
@@ -9434,7 +9430,7 @@
     },
     {
       "path": "test/language/expressions/class/private-static-method-brand-check-multiple-evaluations-of-class-realm.js",
-      "reason": "zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'access')\nzjs: throw: TypeError: Cannot read propert"
     },
     {
       "path": "test/language/expressions/class/private-static-setter-multiple-evaluations-of-class-direct-eval.js",
@@ -9454,7 +9450,7 @@
     },
     {
       "path": "test/language/expressions/class/private-static-setter-multiple-evaluations-of-class-realm.js",
-      "reason": "zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "zjs: throw: TypeError: Cannot read properties of undefined (reading 'access')\nzjs: throw: TypeError: Cannot read propert"
     },
     {
       "path": "test/language/expressions/class/restricted-properties.js",
@@ -10478,7 +10474,7 @@
     },
     {
       "path": "test/language/expressions/new/non-ctor-err-realm.js",
-      "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefined\"\u00bb, \u00ab\"function\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
     },
     {
       "path": "test/language/expressions/new/spread-err-sngl-err-itr-get-value.js",
