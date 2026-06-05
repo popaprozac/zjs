@@ -320,11 +320,25 @@ JIT_STENCIL_OBJ := $(BUILD_DIR)/jit_stencils-$(JIT_ARCH).o
 JIT_STENCIL_CFLAGS := -O3 -c -fno-asynchronous-unwind-tables -fomit-frame-pointer \
                       -fno-stack-protector -fno-pic
 
+JIT_STENCIL_HDR := $(BUILD_DIR)/jit_stencils_$(JIT_ARCH).h
+
 .PHONY: jit-stencils
 jit-stencils: $(JIT_STENCIL_OBJ)
 $(JIT_STENCIL_OBJ): $(JIT_STENCIL_SRC) | $(BUILD_DIR)
 	$(CLANG) $(JIT_STENCIL_CFLAGS) $(JIT_STENCIL_SRC) -o $@
 	@echo "[jit] compiled stencils -> $@ (arch=$(JIT_ARCH))"
+
+# J2: extract machine-code bytes + hole relocations into a generated header.
+.PHONY: jit-stencils-header
+jit-stencils-header: $(JIT_STENCIL_HDR)
+$(JIT_STENCIL_HDR): $(JIT_STENCIL_OBJ) tools/jit/extract_stencils.py
+	python3 tools/jit/extract_stencils.py $(JIT_STENCIL_OBJ) $@
+
+# J2 validation: stitch an EXTRACTED stencil under W^X (synthetic GOT) and run.
+.PHONY: jit-stitch-test
+jit-stitch-test: $(JIT_STENCIL_HDR) tools/jit/stitch_test.c
+	$(CLANG) -O2 -I$(BUILD_DIR) -o $(BUILD_DIR)/jit_stitch_test tools/jit/stitch_test.c
+	@$(BUILD_DIR)/jit_stitch_test
 
 smoke: $(SMOKE)
 $(SMOKE): $(SMOKE_SRC) include/zjs.h $(LIB) | $(BUILD_DIR)

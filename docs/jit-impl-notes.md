@@ -58,11 +58,37 @@ Relocation kinds observed (otool `-rv` shorthand → Mach-O):
 `UNSIGND` = `ARM64_RELOC_UNSIGNED` (in `__compact_unwind`, ignorable once
 `-fno-asynchronous-unwind-tables` strips the rest).
 
-## Next (J2)
+## J2 — extractor + GOT-aware stitch validation (done)
 
-`tools/jit/extract_stencils.py`: parse the Mach-O `.o` (symbols, `__text`
-bytes per `_zjs_stencil_*` function, relocation records), pair the GOT
-page/pageoff relocs by symbol, emit `build/jit_stencils_<arch>.h` with the
-stencil bytes + a `Hole[]` table (offset, kind, symbol). Validate by stitching
-an extracted `LoadConst`/`Mov` with a `jit_poc`-style W^X harness + synthetic
-GOT and confirming it writes the patched value to the right frame slot.
+- `tools/jit/extract_stencils.py`: hand-rolled Mach-O parser (no deps). Reads
+  `__text` bytes per `_zjs_stencil_*` symbol (sizes derived from sorted symbol
+  offsets), parses the `relocation_info` table, and emits
+  `build/jit_stencils_<arch>.h` — `STENCIL_<op>_code[]` + `STENCIL_<op>_holes[]`
+  ({offset, kind, sym}) + a `JIT_STENCILS[]` table. Cross-checks against
+  `otool -rv` (10 holes = 5 LoadConst + 5 Mov). Makefile: `jit-stencils-header`.
+- `tools/jit/stitch_test.c` (Makefile: `jit-stitch-test`): the pipeline
+  GO/NO-GO. Stitches the EXTRACTED `LoadConst` under W^X with a **synthetic
+  GOT** — lays out `[code][RET]…[GOT slots]`, writes the hole values into the
+  slots (`__JIT_RA`→2, `__JIT_IMM64`→sentinel), patches each `adrp@GOTPAGE`
+  (immlo/immhi = page delta) + `ldr@GOTPAGEOFF` (imm12 = slot&0xFFF>>3) pair to
+  address its slot, patches `BRANCH26` to the RET, runs on a real frame.
+  Result: `regs[2].bits == 0x123456789abcdef0` → **PASS**. The whole
+  compile→extract→stitch→execute path is proven on real extracted stencils.
+
+GOT patch encodings (arm64), for reference:
+- `ADRP Xd, page`: imm21 = (page(slot) − page(pc)) >> 12; immlo = imm21 & 3
+  (bits 30:29), immhi = (imm21 >> 2) & 0x7FFFF (bits 23:5).
+- `LDR Xt, [Xn, #imm12]`: imm12 = (slot & 0xFFF) >> 3 (bits 21:10; /8 for x-reg).
+- `B`: imm26 = (target − pc) >> 2 (bits 25:0); opcode 0x14000000.
+
+## Next (J3)
+
+Move the stitcher into the engine behind `ZJS_JIT`: an `src/jit/*.zc` runtime
+that, given a hot `Function*`'s bytecode, allocates a MAP_JIT region, copies the
+right stencil per instruction, builds the per-function GOT, patches operand
+holes from the real `Inst` operands (`inst.a`/`inst.b`/immediates → GOT slots)
+and chains the `BRANCH26` continuations, then runs it sharing the interpreter's
+`reg_stack` frame (design study §4 — free deopt/GC). Grow the stencil set to the
+§A.2 easy ops (Add/Sub/Mul/CmpLt*/Jmp/JmpIfFalse) and stand up one real loop
+(J4) measured vs the spike's 4–6× model. Add a `Return`/epilogue stencil so the
+last op returns to the interpreter instead of a hand-appended RET.
