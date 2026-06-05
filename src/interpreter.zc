@@ -4519,7 +4519,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
                     typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
                     HostFn fp = (HostFn)hf->fn_ptr;
-                    r = fp(ctx, argv_ptr, argc);
+                    ZjsRealm* _sr_realm = ctx->realm;
+                    if (hf->realm) ctx->realm = hf->realm;
+                    r = fp(ctx, argv_ptr, argc); ctx->realm = _sr_realm;
                 }
                 ctx.current_host_fn = saved_host_fn;
                 ctx.host_this = saved_this;
@@ -4652,7 +4654,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
                     typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
                     HostFn fp = (HostFn)hf->fn_ptr;
-                    r = fp(ctx, argv_ptr, argc);
+                    ZjsRealm* _sr_realm = ctx->realm;
+                    if (hf->realm) ctx->realm = hf->realm;
+                    r = fp(ctx, argv_ptr, argc); ctx->realm = _sr_realm;
                 }
                 ctx.current_host_fn = saved_host_fn;
                 ctx.host_this = saved_this;
@@ -4753,7 +4757,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
                     typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
                     HostFn fp = (HostFn)hf->fn_ptr;
-                    r = fp(ctx, argv_ptr, argc);
+                    ZjsRealm* _sr_realm = ctx->realm;
+                    if (hf->realm) ctx->realm = hf->realm;
+                    r = fp(ctx, argv_ptr, argc); ctx->realm = _sr_realm;
                 }
                 ctx.current_host_fn = saved_host_fn;
                 ctx.host_this = saved_this;
@@ -4874,7 +4880,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
                     typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
                     HostFn fp = (HostFn)hf->fn_ptr;
-                    r = fp(ctx, argv_ptr, argc);
+                    ZjsRealm* _sr_realm = ctx->realm;
+                    if (hf->realm) ctx->realm = hf->realm;
+                    r = fp(ctx, argv_ptr, argc); ctx->realm = _sr_realm;
                 }
                 ctx.current_host_fn = saved_host_fn;
                 ctx.host_this = saved_host;
@@ -6353,7 +6361,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
                     typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
                     HostFn fp = (HostFn)hf->fn_ptr;
-                    call_result = fp(ctx, argv_ptr, argc);
+                    ZjsRealm* _sr_realm = ctx->realm;
+                    if (hf->realm) ctx->realm = hf->realm;
+                    call_result = fp(ctx, argv_ptr, argc); ctx->realm = _sr_realm;
                 }
                 ctx.current_host_fn = saved_host_fn;
                 if ctx.pending_throw_active {
@@ -6614,7 +6624,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
                     typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
                     HostFn fp = (HostFn)hf->fn_ptr;
-                    call_result = fp(ctx, argv_ptr, argc);
+                    ZjsRealm* _sr_realm = ctx->realm;
+                    if (hf->realm) ctx->realm = hf->realm;
+                    call_result = fp(ctx, argv_ptr, argc); ctx->realm = _sr_realm;
                 }
                 ctx.current_host_fn = saved_host_fn;
                 if ctx.pending_throw_active {
@@ -7663,7 +7675,9 @@ fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsVal
             ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
             typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
             HostFn fp = (HostFn)hf->fn_ptr;
-            r = fp(ctx, args, argc);
+            ZjsRealm* _sr_realm = ctx->realm;
+            if (hf->realm) ctx->realm = hf->realm;
+            r = fp(ctx, args, argc); ctx->realm = _sr_realm;
         }
         ctx.current_host_fn = saved_host_fn;
     }
@@ -7717,7 +7731,9 @@ fn zjs_call_value(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, argc: u32
             ZjsHostFunction* hf = (ZjsHostFunction*)hf_ptr;
             typedef ZjsValue (*HostFn)(ZjsContext*, ZjsValue*, uint32_t);
             HostFn fp = (HostFn)hf->fn_ptr;
-            r = fp(ctx, args, argc);
+            ZjsRealm* _sr_realm = ctx->realm;
+            if (hf->realm) ctx->realm = hf->realm;
+            r = fp(ctx, args, argc); ctx->realm = _sr_realm;
         }
         ctx.host_this = saved_this;
         return r;
