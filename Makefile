@@ -293,6 +293,39 @@ cli: $(CLI)
 $(CLI): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) $(STDLIB_GEN) | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(CLI_SRC) $(ZC_LINK) -o $@
 
+# === JIT — opt-in copy-and-patch baseline (second-class; OFF by default) =====
+# docs/jit-design-study.md + docs/jit-spike-phase1.md. Enable with `ZJS_JIT=1`.
+# NEVER built for iOS / sandboxed targets — those stay pure interpreter (the
+# founding jitless-first thesis). The iOS targets below do not set ZJS_JIT.
+#
+# Stencil pipeline (CPython Tools/jit model): compile tools/jit/stencils.c (one
+# fn per opcode, holes = extern symbols) to a relocatable .o, then
+# extract_stencils.py (J2) reads its machine code + relocations into a generated
+# header the JIT runtime stitches at execution time.
+UNAME_M := $(shell uname -m)
+ifeq ($(UNAME_M),arm64)
+  JIT_ARCH := arm64
+else ifeq ($(UNAME_M),aarch64)
+  JIT_ARCH := arm64
+else ifeq ($(UNAME_M),x86_64)
+  JIT_ARCH := x86_64
+else
+  JIT_ARCH := unknown
+endif
+ZJS_JIT ?=
+JIT_STENCIL_SRC := tools/jit/stencils.c
+JIT_STENCIL_OBJ := $(BUILD_DIR)/jit_stencils-$(JIT_ARCH).o
+# Relocation-clean stencil flags: no unwind tables / frame pointer / stack
+# protector / PIC noise, so the only relocations in the .o are the real holes.
+JIT_STENCIL_CFLAGS := -O3 -c -fno-asynchronous-unwind-tables -fomit-frame-pointer \
+                      -fno-stack-protector -fno-pic
+
+.PHONY: jit-stencils
+jit-stencils: $(JIT_STENCIL_OBJ)
+$(JIT_STENCIL_OBJ): $(JIT_STENCIL_SRC) | $(BUILD_DIR)
+	$(CLANG) $(JIT_STENCIL_CFLAGS) $(JIT_STENCIL_SRC) -o $@
+	@echo "[jit] compiled stencils -> $@ (arch=$(JIT_ARCH))"
+
 smoke: $(SMOKE)
 $(SMOKE): $(SMOKE_SRC) include/zjs.h $(LIB) | $(BUILD_DIR)
 	$(CLANG) -O0 -g -Wall -Iinclude $(SMOKE_SRC) -L$(BUILD_DIR) -lzjs $(RPATH_FLAG) -o $@
