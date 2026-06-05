@@ -888,8 +888,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             let slot_g = class_find_slot(o.cls, name);
             if slot_g < 0 {
                 let gslot = ctx_find_global(ctx, name.data, name.length);
-                if gslot >= 0 && ctx.globals[(u32)gslot].defined {
-                    return ctx.globals[(u32)gslot].value;
+                if gslot >= 0 && ctx.realm.globals[(u32)gslot].defined {
+                    return ctx.realm.globals[(u32)gslot].value;
                 }
             }
         }
@@ -1554,19 +1554,19 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         if zjs_is_bool(obj) != 0 {
             let bool_g = ctx_find_global(ctx, (char*)"Boolean", 7);
             if bool_g >= 0 {
-                let bv = ctx.globals[bool_g].value;
+                let bv = ctx.realm.globals[bool_g].value;
                 if zjs_is_host_function(bv) != 0 { proto = zjs_as_host_function(bv).prototype; }
             }
         } else if zjs_is_int32(obj) != 0 || zjs_is_double(obj) != 0 {
             let num_g = ctx_find_global(ctx, (char*)"Number", 6);
             if num_g >= 0 {
-                let nv = ctx.globals[num_g].value;
+                let nv = ctx.realm.globals[num_g].value;
                 if zjs_is_host_function(nv) != 0 { proto = zjs_as_host_function(nv).prototype; }
             }
         } else if zjs_is_bigint(obj) != 0 {
             let big_g = ctx_find_global(ctx, (char*)"BigInt", 6);
             if big_g >= 0 {
-                let gv = ctx.globals[big_g].value;
+                let gv = ctx.realm.globals[big_g].value;
                 if zjs_is_host_function(gv) != 0 { proto = zjs_as_host_function(gv).prototype; }
             }
         }
@@ -2704,16 +2704,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
         // --- globals --------------------------------------------
         } else if op == Op::DefineGlobal {
             let slot = inst_bc_u16(inst);
-            ctx.globals[slot].value = regs[inst.a];
-            ctx.globals[slot].defined = true;
+            ctx.realm.globals[slot].value = regs[inst.a];
+            ctx.realm.globals[slot].defined = true;
         } else if op == Op::LoadGlobal {
             let slot = inst_bc_u16(inst);
-            if !ctx.globals[slot].defined {
+            if !ctx.realm.globals[slot].defined {
                 // ECMA-262 §9.1.1.4 GetBindingValue: when the
                 // DeclarativeRecord has no binding, fall through to
                 // the ObjectRecord (= globalThis own/inherited).
-                let nm = ctx.globals[slot].name;
-                let nl = ctx.globals[slot].name_len;
+                let nm = ctx.realm.globals[slot].name;
+                let nl = ctx.realm.globals[slot].name_len;
                 let found_v: ZjsValue = zjs_undefined();
                 let found: bool = false;
                 if ctx.realm.global_this_obj != NULL {
@@ -2737,15 +2737,15 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
                 regs[inst.a] = found_v;
             } else {
-                regs[inst.a] = ctx.globals[slot].value;
+                regs[inst.a] = ctx.realm.globals[slot].value;
             }
         } else if op == Op::LoadGlobalOrUndefined {
             let slot = inst_bc_u16(inst);
-            if !ctx.globals[slot].defined {
+            if !ctx.realm.globals[slot].defined {
                 // typeof variant — same fallback, but absence is
                 // silently `undefined` rather than ReferenceError.
-                let nm = ctx.globals[slot].name;
-                let nl = ctx.globals[slot].name_len;
+                let nm = ctx.realm.globals[slot].name;
+                let nl = ctx.realm.globals[slot].name_len;
                 let found_v: ZjsValue = zjs_undefined();
                 if ctx.realm.global_this_obj != NULL {
                     let key_str = ctx_intern_atom(ctx, nm, nl);
@@ -2763,12 +2763,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
                 regs[inst.a] = found_v;
             } else {
-                regs[inst.a] = ctx.globals[slot].value;
+                regs[inst.a] = ctx.realm.globals[slot].value;
             }
         } else if op == Op::StoreGlobal {
             let slot = inst_bc_u16(inst);
-            ctx.globals[slot].value = regs[inst.a];
-            ctx.globals[slot].defined = true;
+            ctx.realm.globals[slot].value = regs[inst.a];
+            ctx.realm.globals[slot].defined = true;
         } else if op == Op::WithEnter {
             // ToObject(regs[a]) — null/undefined throw a TypeError — then
             // push onto the with-stack (§14.11.7 step 2 / §9.4.x).

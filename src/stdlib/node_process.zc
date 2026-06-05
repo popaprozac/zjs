@@ -253,8 +253,8 @@ fn zjs_register_node_process(ctx: ZjsContext*) -> void {
     let p = get_or_build_process_object(ctx);
     let proc_v = zjs_cell_from_ptr((void*)p);
     let slot = ctx_intern_global(ctx, (char*)"process", 7);
-    ctx.globals[slot].value = proc_v;
-    ctx.globals[slot].defined = true;
+    ctx.realm.globals[slot].value = proc_v;
+    ctx.realm.globals[slot].defined = true;
     if ctx.realm.global_this_obj != NULL {
         object_set(ctx, ctx.realm.global_this_obj,
                    ctx_intern_atom(ctx, (char*)"process", 7), proc_v);

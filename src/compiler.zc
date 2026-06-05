@@ -7509,7 +7509,7 @@ fn hoist_pattern_globals(c: Compiler*, pat: AstNode*) -> void {
     if pat.kind == NodeKind::IdentExpr {
         if pat.name_length > 0 {
             let slot = ctx_intern_global(c.ctx, c.source + pat.name_start, pat.name_length);
-            c.ctx.globals[slot].defined = true;
+            c.ctx.realm.globals[slot].defined = true;
         }
         return;
     }
@@ -7532,7 +7532,7 @@ fn hoist_program_decls(c: Compiler*, node: AstNode*) -> void {
         let nm = c.source + node.name_start;
         let nl = node.name_length;
         let slot = ctx_intern_global(c.ctx, nm, nl);
-        c.ctx.globals[slot].defined = true;
+        c.ctx.realm.globals[slot].defined = true;
         return;
     }
     if k == NodeKind::FunctionExpr || k == NodeKind::ArrowFunc { return; }
@@ -7540,7 +7540,7 @@ fn hoist_program_decls(c: Compiler*, node: AstNode*) -> void {
         let nm = c.source + node.name_start;
         let nl = node.name_length;
         let slot = ctx_intern_global(c.ctx, nm, nl);
-        c.ctx.globals[slot].defined = true;
+        c.ctx.realm.globals[slot].defined = true;
         return;   // class body is not hoisted
     }
     if k == NodeKind::ClassExpr { return; }
@@ -7558,7 +7558,7 @@ fn hoist_program_decls(c: Compiler*, node: AstNode*) -> void {
                     let nm = c.source + decl.name_start;
                     let nl = decl.name_length;
                     let slot = ctx_intern_global(c.ctx, nm, nl);
-                    c.ctx.globals[slot].defined = true;
+                    c.ctx.realm.globals[slot].defined = true;
                 } else if decl.third != NULL {
                     // Destructuring declarator at module scope —
                     // hoist every contained binding name.

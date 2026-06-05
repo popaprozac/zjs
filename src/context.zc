@@ -194,6 +194,15 @@ struct AtomEntry {
 // Per-realm intrinsics (Runtime/Realm split, docs/realm-refactor-design.md).
 // One realm per ZjsContext today (ctx.realm); multi-realm is a later phase.
 struct ZjsRealm {
+    // Per-realm global bindings table (the DeclarativeRecord half of the
+    // global environment: `var`/`let`/`const`/function/class + every
+    // builtin name). LoadGlobal/StoreGlobal index this by compile-time
+    // slot; misses fall through to global_this_obj (the ObjectRecord).
+    // Per-realm so each createRealm gets its own `Array`, `Object`, … and
+    // its own top-level vars.
+    globals:        GlobalEntry*;
+    global_count:   u32;
+    global_cap:     u32;
     array_proto: ZjsObject*;
     string_proto: ZjsObject*;
     object_proto: ZjsObject*;
@@ -250,10 +259,6 @@ struct ZjsContext {
     realm_cap: u32;
     // Root empty hidden class — every fresh {} starts here.
     empty_class:    ZjsHiddenClass*;
-
-    globals:        GlobalEntry*;
-    global_count:   u32;
-    global_cap:     u32;
 
     // All heap-allocated cells owned by the context (Functions,
     // Strings, Objects, Arrays, HostFunctions). Each cell starts with
@@ -675,8 +680,8 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
     // real win.
     result.atoms = alloc_n<AtomEntry>(512);
     result.atom_cap = 512;
-    result.globals = alloc_n<GlobalEntry>(128);
-    result.global_cap = 128;
+    result.realm.globals = alloc_n<GlobalEntry>(128);
+    result.realm.global_cap = 128;
 
     // Root empty class — registered as a cell, kept alive via the
     // context pointer itself (we mark it during gc_mark_roots).
@@ -716,22 +721,27 @@ fn zjs_new_minimal_context() -> ZjsContext* {
 
 fn zjs_free_context(ctx: ZjsContext*) -> void {
     if ctx == NULL { return; }
-    // Free every realm registered on this runtime, then the registry array.
+    // Free every realm registered on this runtime: its interned global
+    // names + global table, then the realm struct. Must release the
+    // realm-owned globals BEFORE the realm struct itself (the table lives
+    // on the realm now). Then free the registry array.
     let rfi: u32 = 0;
     while rfi < ctx.realm_count {
-        if ctx.realms[rfi] != NULL { dealloc(ctx.realms[rfi]); }
+        let r = ctx.realms[rfi];
+        if r != NULL {
+            let gi: u32 = 0;
+            while gi < r.global_count {
+                dealloc(r.globals[gi].name);
+                gi = gi + 1;
+            }
+            if r.globals != NULL { dealloc(r.globals); }
+            dealloc(r);
+        }
         rfi = rfi + 1;
     }
     if ctx.realms != NULL { dealloc(ctx.realms); }
     dealloc(ctx.root_frames);
     dealloc(ctx.atoms);
-    // Free every interned global name.
-    let i: u32 = 0;
-    while i < ctx.global_count {
-        dealloc(ctx.globals[i].name);
-        i = i + 1;
-    }
-    dealloc(ctx.globals);
 
     // Free every heap cell — both generations. The dispatch by tag
     // is shared with gc_sweep_old via gc_free_one so adding a new
@@ -1861,6 +1871,12 @@ fn ctx_register_realm(ctx: ZjsContext*, r: ZjsRealm*) -> void {
 // VM stacks, microtask queue, etc. are marked directly in gc_mark_roots).
 fn gc_mark_realm(realm: ZjsRealm*) -> void {
     if realm == NULL { return; }
+    // Global binding table (the realm's DeclarativeRecord values).
+    let gi: u32 = 0;
+    while gi < realm.global_count {
+        gc_mark_value(realm.globals[gi].value);
+        gi = gi + 1;
+    }
     if realm.array_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.array_proto)); }
     if realm.string_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.string_proto)); }
     if realm.object_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.object_proto)); }
@@ -1957,12 +1973,8 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     // triggered by allocation during compile of a sibling function
     // would sweep earlier siblings' inner Function*s.
     if ctx.active_compiler != NULL { compiler_mark_chain(ctx); }
-    // Globals
-    let i: u32 = 0;
-    while i < ctx.global_count {
-        gc_mark_value(ctx.globals[i].value);
-        i = i + 1;
-    }
+    // (Per-realm global binding tables are marked in gc_mark_realm, once
+    // per registered realm, alongside that realm's intrinsics.)
     // Last uncaught error (so the C consumer can still inspect it)
     gc_mark_value(ctx.last_error);
     // Each active call frame (current recursive model)
@@ -2947,8 +2959,8 @@ fn ctx_register_host_function(ctx: ZjsContext*, name: char*, fn_ptr: void*) -> Z
 
     // Stash in a global slot.
     let slot = ctx_intern_global(ctx, name, (u32)name_len);
-    ctx.globals[slot].value = val;
-    ctx.globals[slot].defined = true;
+    ctx.realm.globals[slot].value = val;
+    ctx.realm.globals[slot].defined = true;
     return val;
 }
 
@@ -6321,7 +6333,7 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
     if zjs_is_bool(v) != 0 {
         let bool_g = ctx_find_global(ctx, (char*)"Boolean", 7);
         if bool_g >= 0 {
-            let bv = ctx.globals[bool_g].value;
+            let bv = ctx.realm.globals[bool_g].value;
             if zjs_is_host_function(bv) != 0 {
                 let proto = zjs_as_host_function(bv).prototype;
                 if proto != NULL { return zjs_cell_from_ptr((void*)proto); }
@@ -6332,7 +6344,7 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
     if zjs_is_number(v) != 0 {
         let num_g = ctx_find_global(ctx, (char*)"Number", 6);
         if num_g >= 0 {
-            let nv = ctx.globals[num_g].value;
+            let nv = ctx.realm.globals[num_g].value;
             if zjs_is_host_function(nv) != 0 {
                 let proto = zjs_as_host_function(nv).prototype;
                 if proto != NULL { return zjs_cell_from_ptr((void*)proto); }
@@ -21502,7 +21514,7 @@ fn build_typed_error(ctx: ZjsContext*, type_name: char*, type_len: u32, msg: cha
     let obj = zjs_as_object(obj_v);
     // Set proto from the matching global error constructor's prototype.
     let ctor_slot = ctx_intern_global(ctx, type_name, type_len);
-    let ctor_v = ctx.globals[ctor_slot].value;
+    let ctor_v = ctx.realm.globals[ctor_slot].value;
     if zjs_is_host_function(ctor_v) != 0 {
         let hf = zjs_as_host_function(ctor_v);
         if hf.prototype == NULL {
@@ -22593,7 +22605,7 @@ fn ctx_to_object(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
         // Boolean.prototype via the Boolean host function's .prototype.
         let bool_g = ctx_find_global(ctx, (char*)"Boolean", 7);
         if bool_g >= 0 {
-            let bv = ctx.globals[bool_g].value;
+            let bv = ctx.realm.globals[bool_g].value;
             if zjs_is_host_function(bv) != 0 {
                 proto = zjs_as_host_function(bv).prototype;
             }
@@ -22601,7 +22613,7 @@ fn ctx_to_object(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
     } else if zjs_is_int32(v) != 0 || zjs_is_double(v) != 0 {
         let num_g = ctx_find_global(ctx, (char*)"Number", 6);
         if num_g >= 0 {
-            let nv = ctx.globals[num_g].value;
+            let nv = ctx.realm.globals[num_g].value;
             if zjs_is_host_function(nv) != 0 {
                 proto = zjs_as_host_function(nv).prototype;
             }
@@ -23593,7 +23605,7 @@ fn make_named_error(ctx: ZjsContext*, name: char*, name_len: u32, args: ZjsValue
         obj_v = ctx_new_object(ctx);
         let ctor_slot = ctx_find_global(ctx, name, name_len);
         if ctor_slot >= 0 {
-            let ctor_v = ctx.globals[ctor_slot].value;
+            let ctor_v = ctx.realm.globals[ctor_slot].value;
             if zjs_is_host_function(ctor_v) != 0 {
                 let hf = zjs_as_host_function(ctor_v);
                 if hf.prototype != NULL {
@@ -23658,7 +23670,7 @@ fn build_aggregate_error(ctx: ZjsContext*, errors_v: ZjsValue, msg: char*, msg_l
         }
         return agg;
     }
-    let agg_ctor = ctx.globals[slot].value;
+    let agg_ctor = ctx.realm.globals[slot].value;
     let obj_v = ctx_new_object(ctx);
     let obj = zjs_as_object(obj_v);
     if zjs_is_host_function(agg_ctor) != 0 {
@@ -27236,8 +27248,8 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     object_set(ctx, temporal_o, ctx_intern_atom(ctx, (char*)"Now", 3), now_v);
 
     let temporal_slot = ctx_intern_global(ctx, (char*)"Temporal", 8);
-    ctx.globals[temporal_slot].value = temporal_v;
-    ctx.globals[temporal_slot].defined = true;
+    ctx.realm.globals[temporal_slot].value = temporal_v;
+    ctx.realm.globals[temporal_slot].defined = true;
 }
 
 fn ctx_init_builtins(ctx: ZjsContext*) -> void {
@@ -27335,8 +27347,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let global_this_v = ctx_new_object(ctx);
     ctx.realm.global_this_obj = zjs_as_object(global_this_v);
     let gt_slot = ctx_intern_global(ctx, (char*)"globalThis", 10);
-    ctx.globals[gt_slot].value = global_this_v;
-    ctx.globals[gt_slot].defined = true;
+    ctx.realm.globals[gt_slot].value = global_this_v;
+    ctx.realm.globals[gt_slot].defined = true;
 
     // --- Error ---
     let err_ptr: void* = NULL;
@@ -27347,16 +27359,16 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let nan_d: f64 = 0.0;
     raw { nan_d = (double)NAN; }
     let nan_slot = ctx_intern_global(ctx, (char*)"NaN", 3);
-    ctx.globals[nan_slot].value = zjs_double(nan_d);
-    ctx.globals[nan_slot].defined = true;
+    ctx.realm.globals[nan_slot].value = zjs_double(nan_d);
+    ctx.realm.globals[nan_slot].defined = true;
     let inf_d: f64 = 0.0;
     raw { inf_d = (double)INFINITY; }
     let inf_slot = ctx_intern_global(ctx, (char*)"Infinity", 8);
-    ctx.globals[inf_slot].value = zjs_double(inf_d);
-    ctx.globals[inf_slot].defined = true;
+    ctx.realm.globals[inf_slot].value = zjs_double(inf_d);
+    ctx.realm.globals[inf_slot].defined = true;
     let undef_slot = ctx_intern_global(ctx, (char*)"undefined", 9);
-    ctx.globals[undef_slot].value = zjs_undefined();
-    ctx.globals[undef_slot].defined = true;
+    ctx.realm.globals[undef_slot].value = zjs_undefined();
+    ctx.realm.globals[undef_slot].defined = true;
 
     // --- Global Number-coercion functions ---
     let isnan_ptr:   void* = NULL; raw { isnan_ptr   = (void*)host_is_nan; }
@@ -27504,12 +27516,12 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let gpf_slot = ctx_find_global(ctx, (char*)"parseFloat", 10);
     if gpf_slot >= 0 {
         object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"parseFloat", 10),
-                   ctx.globals[gpf_slot].value);
+                   ctx.realm.globals[gpf_slot].value);
     }
     let gpi_slot = ctx_find_global(ctx, (char*)"parseInt", 8);
     if gpi_slot >= 0 {
         object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"parseInt", 8),
-                   ctx.globals[gpi_slot].value);
+                   ctx.realm.globals[gpi_slot].value);
     }
     // String.prototype (existing one — keep its methods, add valueOf/toString)
     if strv_hf.prototype == NULL {
@@ -27528,7 +27540,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Lazily create each prototype, then set its proto.
     let err_slot = ctx_find_global(ctx, (char*)"Error", 5);
     if err_slot >= 0 {
-        let err_v = ctx.globals[err_slot].value;
+        let err_v = ctx.realm.globals[err_slot].value;
         if zjs_is_host_function(err_v) != 0 {
             let err_hf = zjs_as_host_function(err_v);
             if err_hf.prototype == NULL {
@@ -27881,8 +27893,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, reflect_o, ctx_intern_atom(ctx, (char*)"construct", 9),
                ctx_make_host_function_arity(ctx, (char*)"construct", rcon_ptr, 2));
     let reflect_slot = ctx_intern_global(ctx, (char*)"Reflect", 7);
-    ctx.globals[reflect_slot].value = reflect_v;
-    ctx.globals[reflect_slot].defined = true;
+    ctx.realm.globals[reflect_slot].value = reflect_v;
+    ctx.realm.globals[reflect_slot].defined = true;
 
     // Phase 3.10 — real Promise constructor.
     let promise_ptr: void* = NULL; raw { promise_ptr = (void*)host_promise_ctor; }
@@ -27976,7 +27988,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // "@@iterator" shim path.
     let sym_slot = ctx_find_global(ctx, (char*)"Symbol", 6);
     if sym_slot >= 0 {
-        let sym_v = ctx.globals[sym_slot].value;
+        let sym_v = ctx.realm.globals[sym_slot].value;
         if zjs_is_host_function(sym_v) != 0 {
             let sym_hf = zjs_as_host_function(sym_v);
             if sym_hf.props == NULL {
@@ -28151,8 +28163,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_define_property_slot(ctx, ctx.realm.weakmap_proto, tag_atom,
                                 ctx_intern_string(ctx, (char*)"WeakMap", 7), PROP_CONFIGURABLE);
     let wm_slot = ctx_intern_global(ctx, (char*)"WeakMap", 7);
-    ctx.globals[wm_slot].value = wm_v;
-    ctx.globals[wm_slot].defined = true;
+    ctx.realm.globals[wm_slot].value = wm_v;
+    ctx.realm.globals[wm_slot].defined = true;
 
     let ws_v = ctx_make_host_function_arity(ctx, (char*)"WeakSet", wset_ctor_ptr, 0);
     let wset_proto_v = ctx_new_object(ctx);
@@ -28173,8 +28185,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_define_property_slot(ctx, ctx.realm.weakset_proto, tag_atom,
                                 ctx_intern_string(ctx, (char*)"WeakSet", 7), PROP_CONFIGURABLE);
     let ws_slot = ctx_intern_global(ctx, (char*)"WeakSet", 7);
-    ctx.globals[ws_slot].value = ws_v;
-    ctx.globals[ws_slot].defined = true;
+    ctx.realm.globals[ws_slot].value = ws_v;
+    ctx.realm.globals[ws_slot].defined = true;
 
     // (Proxy is now a real ctor — see Phase 4.6 registration above.)
 
@@ -28622,7 +28634,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Chain these *Error.prototype → Error.prototype as well.
     let err_slot2 = ctx_find_global(ctx, (char*)"Error", 5);
     if err_slot2 >= 0 {
-        let err_v2 = ctx.globals[err_slot2].value;
+        let err_v2 = ctx.realm.globals[err_slot2].value;
         if zjs_is_host_function(err_v2) != 0 {
             let err_hf2 = zjs_as_host_function(err_v2);
             if err_hf2.prototype != NULL {
@@ -28655,8 +28667,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // any of its methods; register as a plain empty object.
     let t262_v = ctx_new_object(ctx);
     let t262_slot = ctx_intern_global(ctx, (char*)"$262", 4);
-    ctx.globals[t262_slot].value = t262_v;
-    ctx.globals[t262_slot].defined = true;
+    ctx.realm.globals[t262_slot].value = t262_v;
+    ctx.realm.globals[t262_slot].defined = true;
 
     // --- Math object with several method properties ---
     let math_v = ctx_new_object(ctx);
@@ -28776,8 +28788,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, math, ctx_intern_atom(ctx, (char*)"SQRT1_2", 7),  zjs_double(sqrt1_2_d));
 
     let math_slot = ctx_intern_global(ctx, (char*)"Math", 4);
-    ctx.globals[math_slot].value = math_v;
-    ctx.globals[math_slot].defined = true;
+    ctx.realm.globals[math_slot].value = math_v;
+    ctx.realm.globals[math_slot].defined = true;
 
     // --- Object as a host-function constructor (Phase 3.8d) ---
     // Was a plain namespace object before; now a host function so
@@ -29160,8 +29172,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, json_o, ctx_intern_atom(ctx, (char*)"parse", 5),
                ctx_make_host_function_arity(ctx, (char*)"parse", parse_ptr, 2));
     let json_slot = ctx_intern_global(ctx, (char*)"JSON", 4);
-    ctx.globals[json_slot].value = json_v;
-    ctx.globals[json_slot].defined = true;
+    ctx.realm.globals[json_slot].value = json_v;
+    ctx.realm.globals[json_slot].defined = true;
 
     // --- Temporal namespace (behind ZJS_NO_TEMPORAL) ---
     raw {
@@ -29206,8 +29218,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, console_o, ctx_intern_atom(ctx, (char*)"assert", 6),
                ctx_make_host_function(ctx, (char*)"assert", asrt_ptr));
     let console_slot = ctx_intern_global(ctx, (char*)"console", 7);
-    ctx.globals[console_slot].value = console_v;
-    ctx.globals[console_slot].defined = true;
+    ctx.realm.globals[console_slot].value = console_v;
+    ctx.realm.globals[console_slot].defined = true;
 
     // queueMicrotask(fn) — web-platform global.
     let qmt_ptr: void* = NULL; raw { qmt_ptr = (void*)host_queue_microtask; }
@@ -29228,8 +29240,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, zjs_as_object(perf_v), ctx_intern_atom(ctx, (char*)"timeOrigin", 10),
                zjs_double(origin_ms));
     let perf_slot = ctx_intern_global(ctx, (char*)"performance", 11);
-    ctx.globals[perf_slot].value = perf_v;
-    ctx.globals[perf_slot].defined = true;
+    ctx.realm.globals[perf_slot].value = perf_v;
+    ctx.realm.globals[perf_slot].defined = true;
 
     // User Timing Level 3 — pure-JS layer on top of performance.now().
     // Adds mark / measure / clearMarks / clearMeasures / getEntries /
@@ -29363,13 +29375,13 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"deriveKey", cdk_ptr, 5));
     object_set(ctx, crypto_o, ctx_intern_atom(ctx, (char*)"subtle", 6), subtle_v);
     let crypto_slot = ctx_intern_global(ctx, (char*)"crypto", 6);
-    ctx.globals[crypto_slot].value = crypto_v;
-    ctx.globals[crypto_slot].defined = true;
+    ctx.realm.globals[crypto_slot].value = crypto_v;
+    ctx.realm.globals[crypto_slot].defined = true;
     // Internal zlib codec backing node:zlib + CompressionStream.
     let zlib_ptr: void* = NULL; raw { zlib_ptr = (void*)host_zlib_codec; }
     let zlib_slot = ctx_intern_global(ctx, (char*)"__zjs_zlib", 10);
-    ctx.globals[zlib_slot].value = ctx_make_host_function_arity(ctx, (char*)"__zjs_zlib", zlib_ptr, 4);
-    ctx.globals[zlib_slot].defined = true;
+    ctx.realm.globals[zlib_slot].value = ctx_make_host_function_arity(ctx, (char*)"__zjs_zlib", zlib_ptr, 4);
+    ctx.realm.globals[zlib_slot].defined = true;
 
     // Mark every property on every built-in prototype as
     // non-enumerable. Per spec, ALL methods on Object.prototype,
@@ -29426,7 +29438,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         let nl: u32 = 0; raw { nl = (uint32_t)strlen(nm); }
         let g = ctx_find_global(ctx, nm, nl);
         if g >= 0 {
-            let gv = ctx.globals[g].value;
+            let gv = ctx.realm.globals[g].value;
             if zjs_is_host_function(gv) != 0 {
                 proto_mark_nonenum(zjs_as_host_function(gv).prototype);
             }
@@ -29451,7 +29463,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // global. Walk via the global table.
     let num_g = ctx_find_global(ctx, (char*)"Number", 6);
     if num_g >= 0 {
-        let nv = ctx.globals[num_g].value;
+        let nv = ctx.realm.globals[num_g].value;
         if zjs_is_host_function(nv) != 0 {
             proto_mark_nonenum(zjs_as_host_function(nv).prototype);
             mark_proto_methods_non_constructor(ctx, zjs_as_host_function(nv).prototype);
@@ -29459,7 +29471,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     }
     let bool_g = ctx_find_global(ctx, (char*)"Boolean", 7);
     if bool_g >= 0 {
-        let bv = ctx.globals[bool_g].value;
+        let bv = ctx.realm.globals[bool_g].value;
         if zjs_is_host_function(bv) != 0 {
             proto_mark_nonenum(zjs_as_host_function(bv).prototype);
             mark_proto_methods_non_constructor(ctx, zjs_as_host_function(bv).prototype);
@@ -29467,7 +29479,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     }
     let math_g = ctx_find_global(ctx, (char*)"Math", 4);
     if math_g >= 0 {
-        let mv = ctx.globals[math_g].value;
+        let mv = ctx.realm.globals[math_g].value;
         if zjs_is_object(mv) != 0 {
             proto_mark_nonenum(zjs_as_object(mv));
             mark_proto_methods_non_constructor(ctx, zjs_as_object(mv));
@@ -29475,7 +29487,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     }
     let json_g = ctx_find_global(ctx, (char*)"JSON", 4);
     if json_g >= 0 {
-        let jv = ctx.globals[json_g].value;
+        let jv = ctx.realm.globals[json_g].value;
         if zjs_is_object(jv) != 0 {
             proto_mark_nonenum(zjs_as_object(jv));
             mark_proto_methods_non_constructor(ctx, zjs_as_object(jv));
@@ -29490,8 +29502,8 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // enumerable bit on its statics. (Runs at builtin-init, before any user
     // code, so every host-function global here is a built-in.)
     let gi: u32 = 0;
-    while gi < ctx.global_count {
-        let gv = ctx.globals[gi].value;
+    while gi < ctx.realm.global_count {
+        let gv = ctx.realm.globals[gi].value;
         if zjs_is_host_function(gv) != 0 {
             let hf = zjs_as_host_function(gv);
             if hf.props != NULL {
@@ -29870,9 +29882,9 @@ fn zjs_string_concat(ctx: ZjsContext*, a: ZjsValue, b: ZjsValue) -> ZjsValue {
 // can use a sentinel).
 fn ctx_find_global(ctx: ZjsContext*, name: char*, name_len: u32) -> i32 {
     let i: u32 = 0;
-    while i < ctx.global_count {
-        if ctx.globals[i].name_len == name_len {
-            let ent_name = ctx.globals[i].name;
+    while i < ctx.realm.global_count {
+        if ctx.realm.globals[i].name_len == name_len {
+            let ent_name = ctx.realm.globals[i].name;
             let eq: int = 0;
             raw { eq = (memcmp(ent_name, name, name_len) == 0) ? 1 : 0; }
             if eq != 0 { return (i32)i; }
@@ -29899,16 +29911,16 @@ fn ctx_intern_global(ctx: ZjsContext*, name: char*, name_len: u32) -> u32 {
         buf[dec_len] = (char)0;
         let existing = ctx_find_global(ctx, buf, dec_len);
         if existing >= 0 { dealloc(buf); return (u32)existing; }
-        if ctx.global_count >= ctx.global_cap {
-            let new_cap: u32 = if ctx.global_cap == 0 { 16 } else { ctx.global_cap * 2 };
-            ctx.globals = realloc_n<GlobalEntry>(ctx.globals, (usize)ctx.global_cap, (usize)new_cap);
-            ctx.global_cap = new_cap;
+        if ctx.realm.global_count >= ctx.realm.global_cap {
+            let new_cap: u32 = if ctx.realm.global_cap == 0 { 16 } else { ctx.realm.global_cap * 2 };
+            ctx.realm.globals = realloc_n<GlobalEntry>(ctx.realm.globals, (usize)ctx.realm.global_cap, (usize)new_cap);
+            ctx.realm.global_cap = new_cap;
         }
-        let idx = ctx.global_count;
-        ctx.globals[idx].name = buf;
-        ctx.globals[idx].name_len = dec_len;
-        ctx.globals[idx].value = zjs_undefined();
-        ctx.global_count = ctx.global_count + 1;
+        let idx = ctx.realm.global_count;
+        ctx.realm.globals[idx].name = buf;
+        ctx.realm.globals[idx].name_len = dec_len;
+        ctx.realm.globals[idx].value = zjs_undefined();
+        ctx.realm.global_count = ctx.realm.global_count + 1;
         return idx;
     }
     let existing = ctx_find_global(ctx, name, name_len);
@@ -29916,10 +29928,10 @@ fn ctx_intern_global(ctx: ZjsContext*, name: char*, name_len: u32) -> u32 {
 
     // Grow the table if needed. realloc_n already zero-inits the new
     // bytes, so we don't need a separate memset for the new tail.
-    if ctx.global_count >= ctx.global_cap {
-        let new_cap: u32 = if ctx.global_cap == 0 { 16 } else { ctx.global_cap * 2 };
-        ctx.globals = realloc_n<GlobalEntry>(ctx.globals, (usize)ctx.global_cap, (usize)new_cap);
-        ctx.global_cap = new_cap;
+    if ctx.realm.global_count >= ctx.realm.global_cap {
+        let new_cap: u32 = if ctx.realm.global_cap == 0 { 16 } else { ctx.realm.global_cap * 2 };
+        ctx.realm.globals = realloc_n<GlobalEntry>(ctx.realm.globals, (usize)ctx.realm.global_cap, (usize)new_cap);
+        ctx.realm.global_cap = new_cap;
     }
 
     // Allocate + copy the name (it's a slice of caller's source).
@@ -29927,11 +29939,11 @@ fn ctx_intern_global(ctx: ZjsContext*, name: char*, name_len: u32) -> u32 {
     mem_copy<char>(name_copy, name, (usize)name_len);
     name_copy[name_len] = (char)0;
 
-    let idx = ctx.global_count;
-    ctx.globals[idx].name = name_copy;
-    ctx.globals[idx].name_len = name_len;
-    ctx.globals[idx].value = zjs_undefined();
-    ctx.global_count = ctx.global_count + 1;
+    let idx = ctx.realm.global_count;
+    ctx.realm.globals[idx].name = name_copy;
+    ctx.realm.globals[idx].name_len = name_len;
+    ctx.realm.globals[idx].value = zjs_undefined();
+    ctx.realm.global_count = ctx.realm.global_count + 1;
     return idx;
 }
 

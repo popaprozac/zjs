@@ -301,7 +301,7 @@ fn aot_read_value(r: AotReader*, ctx: ZjsContext*) -> ZjsValue {
 // Function block.
 //
 // Global-slot remapping. Bytecode emitted at compile time references
-// globals by NUMERIC SLOT INDEX (the position in ctx.globals at the
+// globals by NUMERIC SLOT INDEX (the position in ctx.realm.globals at the
 // moment the compiler called ctx_intern_global). Those slot numbers
 // are NOT stable across contexts — a fresh context's user globals
 // land in different slots depending on the order in which the loaded
@@ -448,8 +448,8 @@ fn aot_write_function(w: AotWriter*, ctx: ZjsContext*, f: Function*) -> bool {
     aot_w_u32(w, globals_count);
     let gi: u32 = 0;
     while gi < globals_count {
-        let name = ctx.globals[gi].name;
-        let name_len = ctx.globals[gi].name_len;
+        let name = ctx.realm.globals[gi].name;
+        let name_len = ctx.realm.globals[gi].name_len;
         // Slots without a registered name (won't normally happen for
         // referenced slots, but we tolerate it) get written as empty.
         if name == NULL || name_len == 0 {
@@ -469,7 +469,7 @@ fn aot_write_function(w: AotWriter*, ctx: ZjsContext*, f: Function*) -> bool {
         // flag as OR (only set true, never unset) keeps both cases
         // working without false positives on undeclared refs (which
         // stay defined=false at compile time and must throw under AOT).
-        aot_w_u8(w, if ctx.globals[gi].defined { 1 } else { 0 });
+        aot_w_u8(w, if ctx.realm.globals[gi].defined { 1 } else { 0 });
         gi = gi + 1;
     }
 
@@ -596,7 +596,7 @@ fn aot_read_function(r: AotReader*, ctx: ZjsContext*) -> Function* {
                 // stays defined=false and throws ReferenceError on read.
                 let def_flag = aot_r_u8(r);
                 if def_flag != 0 {
-                    ctx.globals[new_slot].defined = true;
+                    ctx.realm.globals[new_slot].defined = true;
                 }
             }
             gi = gi + 1;

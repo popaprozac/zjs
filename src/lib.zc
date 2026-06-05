@@ -195,8 +195,8 @@ fn zjs_get_global(ctx: ZjsContext*, name: char*) -> ZjsValue {
     raw { nlen = strlen(name); }
     let slot = ctx_find_global(ctx, name, (u32)nlen);
     if slot < 0 { return zjs_undefined(); }
-    if !ctx.globals[(u32)slot].defined { return zjs_undefined(); }
-    return ctx.globals[(u32)slot].value;
+    if !ctx.realm.globals[(u32)slot].defined { return zjs_undefined(); }
+    return ctx.realm.globals[(u32)slot].value;
 }
 
 fn zjs_set_global(ctx: ZjsContext*, name: char*, value: ZjsValue) -> void {
@@ -204,8 +204,8 @@ fn zjs_set_global(ctx: ZjsContext*, name: char*, value: ZjsValue) -> void {
     let nlen: usize = 0;
     raw { nlen = strlen(name); }
     let slot = ctx_intern_global(ctx, name, (u32)nlen);
-    ctx.globals[slot].value = value;
-    ctx.globals[slot].defined = true;
+    ctx.realm.globals[slot].value = value;
+    ctx.realm.globals[slot].defined = true;
 }
 
 // --- Host functions ----------------------------------------------------
