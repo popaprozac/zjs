@@ -4238,9 +4238,23 @@ fn iter_step(ctx: ZjsContext*, iter: ZjsValue) -> IterStep {
             ai.index = ai.index + 1;
             return IterStep{ value: piece, done: false };
         }
-        // TypedArray: load via ta_load (per-kind reinterpretation).
+        // Uint8Array is a DISTINCT cell (ZjsUint8Array: raw `bytes`/`length`),
+        // NOT a ZjsTypedArray — casting it via zjs_as_typed_array and calling
+        // ta_load reads a mismatched struct layout and segfaults (the
+        // TAG_UINT8_ARRAY-isn't-a-typed-array trap). Read the byte directly.
         let src_tag = zjs_cell_tag(ai.src);
-        if src_tag == TAG_UINT8_ARRAY || src_tag == TAG_TYPED_ARRAY {
+        if src_tag == TAG_UINT8_ARRAY {
+            let u8 = zjs_as_uint8_array(ai.src);
+            if ai.index >= u8.length {
+                ai.done = true;
+                return IterStep{ value: zjs_undefined(), done: true };
+            }
+            let bv = zjs_int32((i32)u8.bytes[ai.index]);
+            ai.index = ai.index + 1;
+            return IterStep{ value: bv, done: false };
+        }
+        // Other TypedArrays: load via ta_load (per-kind reinterpretation).
+        if src_tag == TAG_TYPED_ARRAY {
             let ta = zjs_as_typed_array(ai.src);
             if ai.index >= ta.length {
                 ai.done = true;
@@ -19268,6 +19282,9 @@ fn host_symbol_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 fn host_symbol_for(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let kv = if argc > 0 { args[0] } else { zjs_undefined() };
     if zjs_is_string(kv) == 0 { kv = zjs_to_string(ctx, kv); }
+    // ToString can throw (a Symbol key, or a throwing toString/valueOf):
+    // propagate instead of dereferencing the boxed undefined in zjs_as_string.
+    if ctx.pending_throw_active { return zjs_undefined(); }
     let key_str = zjs_as_string(kv);
     let i: u32 = 0;
     while i < ctx.symbol_for_count {
@@ -19792,6 +19809,7 @@ fn host_reflect_delete_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
     if zjs_is_object(t) != 0 {
         let o = zjs_as_object(t);
         let ks = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+        if ctx.pending_throw_active { return zjs_undefined(); }
         let name = zjs_as_string(ks);
         let slot = class_find_slot(o.cls, name);
         if slot >= 0 && zjs_is_deleted(o.slots[(u32)slot]) == 0 {
