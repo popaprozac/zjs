@@ -5010,6 +5010,10 @@ fn host_object_define_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
     // produce "Symbol(toPrimitive)" — a different key entirely.
     key_v = symbol_key_coerce(key_v);
     if zjs_is_string(key_v) == 0 { key_v = zjs_to_string(ctx, key_v); }
+    // ToPropertyKey can throw (a non-symbol key with a throwing toString/
+    // valueOf): zjs_to_string then returns the boxed undefined, and the
+    // zjs_as_string below would deref it and segfault. Propagate instead.
+    if ctx.pending_throw_active { return zjs_undefined(); }
     let key_str = zjs_as_string(key_v);
     let key_atom = ctx_intern_atom(ctx, key_str.data, key_str.length);
 
@@ -21595,8 +21599,13 @@ fn build_type_error(ctx: ZjsContext*, msg: char*) -> ZjsValue {
 fn host_property_is_enumerable(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 { return zjs_bool(0); }
     let this_val = ctx.host_this;
-    let key = args[0];
+    // ToPropertyKey: a Symbol normalizes to its interned `.key` string;
+    // anything else stringifies. Skipping the symbol coercion sends a Symbol
+    // into zjs_to_string, which throws (Symbol→String TypeError) and returns
+    // the boxed undefined → zjs_as_string then segfaults. Guard the throw too.
+    let key = symbol_key_coerce(args[0]);
     if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
     let name = zjs_as_string(key);
     if zjs_is_object(this_val) != 0 {
         let o = zjs_as_object(this_val);
@@ -21824,11 +21833,15 @@ fn host_object_proto_set(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
 fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 { return zjs_bool(0); }
     let this_val = ctx.host_this;
-    let key = args[0];
+    // ToPropertyKey: normalize a Symbol to its interned `.key` string up front
+    // so the string-keyed branches below match and zjs_to_string is never
+    // handed a Symbol (which throws → boxed undefined → zjs_as_string segfault).
+    let key = symbol_key_coerce(args[0]);
     if zjs_is_object(this_val) != 0 {
         let o = zjs_as_object(this_val);
-        let name = if zjs_is_string(key) != 0 { zjs_as_string(key) }
-                   else                       { zjs_as_string(zjs_to_string(ctx, key)) };
+        let key_str = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        let name = zjs_as_string(key_str);
         let slot = class_find_slot(o.cls, name);
         if slot >= 0 && zjs_is_deleted(o.slots[(u32)slot]) == 0 { return zjs_bool(1); }
         // String-exotic own index (§10.4.3): new String(s) owns 0..len-1
