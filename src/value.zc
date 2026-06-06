@@ -3505,6 +3505,61 @@ fn jit_global_set(slot: u64, val_bits: u64, ok: int*) -> void {
     }
 }
 
+// JIT Div / Mod fast paths (J12d). Both operands must be plain JS numbers
+// (int32 or double) — then the engine's own zjs_arith_div/_mod gives the exact
+// result (incl. /0 → ±Infinity, 0/0 → NaN, fmod semantics). Any non-number
+// operand (object / string / bigint / symbol / bool) → *ok=0 deopt, so the
+// interpreter performs the ToPrimitive / coercion / throw.
+fn jit_arith_div_fast(a_bits: u64, b_bits: u64, ok: int*) -> u64 {
+    *ok = 0;
+    let a = ZjsValue{ bits: a_bits };
+    let b = ZjsValue{ bits: b_bits };
+    if (zjs_is_int32(a) == 0 && zjs_is_double(a) == 0) { return 0; }
+    if (zjs_is_int32(b) == 0 && zjs_is_double(b) == 0) { return 0; }
+    *ok = 1;
+    return zjs_arith_div(a, b).bits;
+}
+fn jit_arith_mod_fast(a_bits: u64, b_bits: u64, ok: int*) -> u64 {
+    *ok = 0;
+    let a = ZjsValue{ bits: a_bits };
+    let b = ZjsValue{ bits: b_bits };
+    if (zjs_is_int32(a) == 0 && zjs_is_double(a) == 0) { return 0; }
+    if (zjs_is_int32(b) == 0 && zjs_is_double(b) == 0) { return 0; }
+    *ok = 1;
+    return zjs_arith_mod(a, b).bits;
+}
+// JIT Math.sqrt/abs/floor/ceil fast path (J12d). which: 0=sqrt,1=abs,2=floor,
+// 3=ceil. Mirrors the interpreter's specialized op EXACTLY: ToNumber on a plain
+// number only (else deopt), libm call, and the same result boxing — abs/floor/
+// ceil of an int32 stays int32 when representable; sqrt is always a double.
+fn jit_math_op_fast(v_bits: u64, which: u32, ok: int*) -> u64 {
+    *ok = 0;
+    let v = ZjsValue{ bits: v_bits };
+    let is_i: int = if zjs_is_int32(v) != 0 { 1 } else { 0 };
+    let d: f64 = 0.0;
+    if is_i != 0 {
+        d = (f64)zjs_as_int32(v);
+    } else if zjs_is_double(v) != 0 {
+        d = zjs_as_double(v);
+    } else {
+        return 0;
+    }
+    let r: f64 = 0.0;
+    raw {
+        if (which == 0) r = sqrt(d);
+        else if (which == 1) r = fabs(d);
+        else if (which == 2) r = floor(d);
+        else r = ceil(d);
+    }
+    *ok = 1;
+    if which != 0 && is_i != 0 {
+        let iv: i32 = (i32)r;
+        if (f64)iv == r { return zjs_int32(iv).bits; }
+        return zjs_double(r).bits;
+    }
+    return zjs_double(r).bits;
+}
+
 // True if `idx` is in range and the slot is not a hole. Used by
 // Array.prototype methods that follow the spec's HasProperty step
 // (forEach / map / indexOf / etc. skip absent indices entirely).

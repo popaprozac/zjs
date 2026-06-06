@@ -2355,6 +2355,18 @@ fn jit_map_insn(f: Function*, i: u32, descs: JitFnDesc*, n: u32) -> i32 {
         descs[i].op = (char*)"Sub";
     } else if inst.op == Op::Mul {
         descs[i].op = (char*)"Mul";
+    } else if inst.op == Op::Div {
+        descs[i].op = (char*)"Div";
+    } else if inst.op == Op::Mod {
+        descs[i].op = (char*)"Mod";
+    } else if inst.op == Op::MathSqrt {
+        descs[i].op = (char*)"MathOp"; descs[i].imm = 0;
+    } else if inst.op == Op::MathAbs {
+        descs[i].op = (char*)"MathOp"; descs[i].imm = 1;
+    } else if inst.op == Op::MathFloor {
+        descs[i].op = (char*)"MathOp"; descs[i].imm = 2;
+    } else if inst.op == Op::MathCeil {
+        descs[i].op = (char*)"MathOp"; descs[i].imm = 3;
     } else if inst.op == Op::LoadElem {
         descs[i].op = (char*)"LoadElem";
     } else if inst.op == Op::StoreElem {
@@ -2390,6 +2402,13 @@ fn jit_map_insn(f: Function*, i: u32, descs: JitFnDesc*, n: u32) -> i32 {
         descs[i].op = (char*)"SubImm"; descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
     } else if inst.op == Op::Jmp {
         descs[i].op = (char*)"Jmp";
+        descs[i].target = (i32)i + inst_bc_i16(inst) + 1;
+    } else if inst.op == Op::JmpIfFalse {
+        // a=cond reg, i16 offset in this slot (single-slot conditional jump).
+        descs[i].op = (char*)"JmpIfFalse";
+        descs[i].target = (i32)i + inst_bc_i16(inst) + 1;
+    } else if inst.op == Op::JmpIfTrue {
+        descs[i].op = (char*)"JmpIfTrue";
         descs[i].target = (i32)i + inst_bc_i16(inst) + 1;
     } else if inst.op == Op::JmpIfNotLt || inst.op == Op::JmpIfNotLe
            || inst.op == Op::JmpIfNotGt || inst.op == Op::JmpIfNotGe {

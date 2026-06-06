@@ -34,6 +34,9 @@ extern void    *jit_invoke_fast(void *regs, uint32_t base, uint32_t argc,
                                 uint32_t dst, int *st);
 extern void    *jit_method_invoke_fast(void *regs, uint32_t base, uint32_t argc,
                                        uint32_t dst, int *st);
+extern uint64_t jit_arith_div_fast(uint64_t a, uint64_t b, int *ok);
+extern uint64_t jit_arith_mod_fast(uint64_t a, uint64_t b, int *ok);
+extern uint64_t jit_math_op_fast(uint64_t v, uint32_t which, int *ok);
 
 static const JitStencil *jit_find_stencil(const char *name) {
     for (int i = 0; i < JIT_STENCIL_COUNT; i++)
@@ -147,7 +150,10 @@ static void *jit_stitch(const JitInsn *prog, int n) {
                     !strcmp(hole->sym, "__JIT_HELP_gget")    ? (uint64_t)&jit_global_get     :
                     !strcmp(hole->sym, "__JIT_HELP_gset")    ? (uint64_t)&jit_global_set     :
                     !strcmp(hole->sym, "__JIT_HELP_invoke")  ? (uint64_t)&jit_invoke_fast    :
-                    !strcmp(hole->sym, "__JIT_HELP_minvoke") ? (uint64_t)&jit_method_invoke_fast : 0;
+                    !strcmp(hole->sym, "__JIT_HELP_minvoke") ? (uint64_t)&jit_method_invoke_fast :
+                    !strcmp(hole->sym, "__JIT_HELP_div")     ? (uint64_t)&jit_arith_div_fast  :
+                    !strcmp(hole->sym, "__JIT_HELP_mod")     ? (uint64_t)&jit_arith_mod_fast  :
+                    !strcmp(hole->sym, "__JIT_HELP_mathop")  ? (uint64_t)&jit_math_op_fast    : 0;
             }
             uint64_t slot = (uint64_t)slot_addr[si];
             if (hole->kind == JIT_HOLE_GOT_PAGE21)         jit_patch_adrp(insn, pc, slot);

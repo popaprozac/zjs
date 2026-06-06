@@ -69,6 +69,9 @@ extern uint64_t _JIT_HELP_gget;    // GOT slot holds &jit_global_get      (J10)
 extern uint64_t _JIT_HELP_gset;    // GOT slot holds &jit_global_set      (J10)
 extern uint64_t _JIT_HELP_invoke;  // GOT slot holds &jit_invoke_fast     (J11)
 extern uint64_t _JIT_HELP_minvoke; // GOT slot holds &jit_method_invoke_fast (J12b)
+extern uint64_t _JIT_HELP_div;     // GOT slot holds &jit_arith_div_fast    (J12d)
+extern uint64_t _JIT_HELP_mod;     // GOT slot holds &jit_arith_mod_fast    (J12d)
+extern uint64_t _JIT_HELP_mathop;  // GOT slot holds &jit_math_op_fast      (J12d)
 extern void     _JIT_CONTINUE(ZjsValue *regs, int *deopt);  // fall-through
 extern void     _JIT_TARGET(ZjsValue *regs, int *deopt);    // branch destination
 
@@ -383,6 +386,51 @@ void zjs_stencil_DeoptExit(ZjsValue *regs, int *deopt) {
     *deopt = (int)(intptr_t)&_JIT_IMM64;
 }
 
+// Div: regs[RA] = regs[RB] / regs[RC] (J12d). Both-number fast path via the
+// engine's exact division (jit_arith_div_fast); non-number → OSR deopt.
+void zjs_stencil_Div(ZjsValue *regs, int *deopt) {
+    typedef uint64_t (*arith_fn)(uint64_t a, uint64_t b, int *ok);
+    uintptr_t haddr = (uintptr_t)&_JIT_HELP_div;
+    arith_fn helper;
+    __asm__("" : "=r"(helper) : "0"(haddr));
+    int ok = 0;
+    uint64_t r = helper(regs[(uintptr_t)&_JIT_RB].bits,
+                        regs[(uintptr_t)&_JIT_RC].bits, &ok);
+    if (!ok) { JIT_DEOPT(deopt); }
+    regs[(uintptr_t)&_JIT_RA].bits = r;
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
+// Mod: regs[RA] = regs[RB] % regs[RC] (J12d), the JS remainder.
+void zjs_stencil_Mod(ZjsValue *regs, int *deopt) {
+    typedef uint64_t (*arith_fn)(uint64_t a, uint64_t b, int *ok);
+    uintptr_t haddr = (uintptr_t)&_JIT_HELP_mod;
+    arith_fn helper;
+    __asm__("" : "=r"(helper) : "0"(haddr));
+    int ok = 0;
+    uint64_t r = helper(regs[(uintptr_t)&_JIT_RB].bits,
+                        regs[(uintptr_t)&_JIT_RC].bits, &ok);
+    if (!ok) { JIT_DEOPT(deopt); }
+    regs[(uintptr_t)&_JIT_RA].bits = r;
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
+// MathOp: regs[RA] = Math.<f>(regs[RB]) where IMM64 selects f (0=sqrt, 1=abs,
+// 2=floor, 3=ceil) — the compiler's specialized 1-arg Math ops (J12d). Number
+// operand only; else OSR deopt.
+void zjs_stencil_MathOp(ZjsValue *regs, int *deopt) {
+    typedef uint64_t (*math_fn)(uint64_t v, uint32_t which, int *ok);
+    uintptr_t haddr = (uintptr_t)&_JIT_HELP_mathop;
+    math_fn helper;
+    __asm__("" : "=r"(helper) : "0"(haddr));
+    int ok = 0;
+    uint64_t r = helper(regs[(uintptr_t)&_JIT_RB].bits,
+                        (uint32_t)(uintptr_t)&_JIT_IMM64, &ok);
+    if (!ok) { JIT_DEOPT(deopt); }
+    regs[(uintptr_t)&_JIT_RA].bits = r;
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
 // Jmp: unconditional branch to TARGET.
 void zjs_stencil_Jmp(ZjsValue *regs, int *deopt) {
     __attribute__((musttail)) return _JIT_TARGET(regs, deopt);
@@ -482,6 +530,28 @@ void zjs_stencil_JmpIfFalse(ZjsValue *regs, int *deopt) {
         JIT_DEOPT(deopt);
     }
     if (falsy) __attribute__((musttail)) return _JIT_TARGET(regs, deopt);
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
+}
+
+// JmpIfTrue: branch to TARGET when ToBoolean(regs[RA]) is true (J12d) — the
+// inverse of JmpIfFalse, same inline bool/null/undefined/numeric fast paths;
+// strings/objects deopt.
+void zjs_stencil_JmpIfTrue(ZjsValue *regs, int *deopt) {
+    uint64_t v = regs[(uintptr_t)&_JIT_RA].bits;
+    int truthy;
+    if (v == JIT_VAL_TRUE) {
+        truthy = 1;
+    } else if (v == JIT_VAL_FALSE || v == JIT_VAL_NULL || v == JIT_VAL_UNDEF) {
+        truthy = 0;
+    } else if (jv_is_int32(v)) {
+        truthy = ((int32_t)(uint32_t)v != 0);
+    } else if (jv_is_number(v)) {
+        double d = jv_to_double(v);
+        truthy = (d != 0.0) && (d == d);          // not +0/-0/NaN
+    } else {
+        JIT_DEOPT(deopt);
+    }
+    if (truthy) __attribute__((musttail)) return _JIT_TARGET(regs, deopt);
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
 }
 

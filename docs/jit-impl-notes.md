@@ -538,10 +538,30 @@ eligibility: guard-style early returns are everywhere in real code. test262
 `THRESHOLD=1` (every multi-return fn JIT'd) + default build byte-identical to
 baseline.
 
-## Next — J12d+
+## J12d — Div/Mod, Math.sqrt/abs/floor/ceil, JmpIfFalse/JmpIfTrue (DONE)
 
-0. **`JmpIfFalse`/`JmpIfTrue` + `Div`/`Mod` + non-fused `Cmp*`** — lets `if`/
-   `while` *inside* a loop/function body fit the region (many benches bail here).
+Diagnosed empirically (a temp `ZJSOSRMISS` trace on the OSR bail): `mandelbrot`
+bailed on `Div`, `nbody` on `MathSqrt` (the compiler emits dedicated
+`MathSqrt/Abs/Floor/Ceil` ops, not `MethodInvoke`). Added, all faithfully:
+- `Div`/`Mod` via `jit_arith_div_fast`/`_mod_fast` — both operands plain numbers
+  → the engine's own `zjs_arith_div`/`_mod` (exact incl. `/0`→±Inf, fmod); any
+  non-number → deopt.
+- `MathOp` (one stencil, IMM64 selects sqrt=0/abs=1/floor=2/ceil=3) via
+  `jit_math_op_fast` — mirrors the interpreter's ToNumber + libm + int32-result
+  boxing exactly.
+- `JmpIfTrue`/`JmpIfFalse` — the inline `JmpIfFalse` stencil already existed but
+  was **never mapped**; mapped it + added the `JmpIfTrue` inverse (bool/null/
+  undef/numeric inline; string/object deopt). Single-slot conditional jump,
+  target rebased like `Jmp` (in-region branch / out-of-region DeoptExit).
+
+`nbody` 0.99→**1.35×**. `mandelbrot` still ~1.0× — its `&&` condition lowers to a
+non-fused `CmpLt` (a bool-producing compare) the subset still lacks; that's the
+next op. test262 `THRESHOLD=1` + default both byte-identical to baseline.
+
+## Next — J12e+
+
+0. **Non-fused `Cmp*`** (CmpLt/Le/Gt/Ge/Eq/Ne producing a bool reg) — `mandelbrot`
+   and any `a < b && c` / ternary condition.
 3. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`
    (`while`/`if` bodies); also lets more loop *bodies* fit the OSR region.
 4. **OSR polish:** reusable scratch desc buffer (avoid the per-attempt 256-desc
