@@ -7329,6 +7329,13 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     exit_reason = 3; break;
                 }
             }
+            // Normalize a Symbol key to its interned property-key string, exactly
+            // as property_get/property_set do (the Proxy trap above keeps the raw
+            // symbol). Without this the ordinary-object / function / host-fn paths
+            // below hit `zjs_to_string` on the symbol, which throws (Symbol→String
+            // is a TypeError) and returns undefined → `zjs_as_string` then derefs
+            // the boxed `undefined` and segfaults. (delete obj[Symbol.x]).
+            key = symbol_key_coerce(key);
             // Resolve the .props expando for function / closure / host-fn
             // receivers — they route property storage through that bag.
             let props_o: ZjsObject* = NULL;
