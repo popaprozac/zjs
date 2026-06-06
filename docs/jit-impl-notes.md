@@ -558,10 +558,36 @@ bailed on `Div`, `nbody` on `MathSqrt` (the compiler emits dedicated
 non-fused `CmpLt` (a bool-producing compare) the subset still lacks; that's the
 next op. test262 `THRESHOLD=1` + default both byte-identical to baseline.
 
-## Next — J12e+
+## J12e — non-fused Cmp* (bool-producing comparisons) (DONE)
 
-0. **Non-fused `Cmp*`** (CmpLt/Le/Gt/Ge/Eq/Ne producing a bool reg) — `mandelbrot`
-   and any `a < b && c` / ternary condition.
+`CmpLe/Gt/Ge` (reg) + `CmpLtImm/LeImm/GtImm/GeImm` + `CmpEq/Ne/StrictEq/StrictNe`,
+all macro-generated next to the existing `CmpLt`. Faithfulness shortcut: for
+**number** operands, loose `==` and strict `===` are identical and C's double
+compare already gives JS semantics (NaN→false / NaN!=NaN / +0==-0), so every one
+reduces to "both-number → op → bool; else deopt" — `CmpEq`/`CmpStrictEq` share
+one `==` stencil (a non-number operand deopts → the interpreter applies the real
+loose-vs-strict rules). `result ? JIT_VAL_TRUE : JIT_VAL_FALSE`.
+
+`property_poly` 1.04→**~1.8×** (its `CmpStrictEq` was the blocker). Both gates
+byte-identical to baseline.
+
+**But this exposed OSR eagerness as the real bottleneck, not op coverage.**
+Tracing the OSR run/deopt (`ZJSOSRRUN`): `property_poly` = one long loop, OSR
+wins. `quicksort` = the partition loop OSR-runs **58 273×** (once per call) — each
+a *short* loop, so the per-entry overhead (run + re-derive `regs` + `continue`)
+makes it a **net 0.91×**. `sieve` compiles then deopts on its first run — the
+compile (mmap + stitch) is wasted (0.93×). `mandelbrot` never even OSR-runs (a
+nested-loop / region issue) — its ~0.96× is the pre-existing JIT-build per-back-
+edge overhead. So adding ops now mostly grows the set of loops that *compile but
+don't pay off*; the next lever is **OSR cost/eagerness**, not more ops.
+
+## Next — J12f (OSR cost / eagerness) + the hard levers
+
+0. **OSR eagerness/overhead** (the bench-mover now): (a) reusable scratch desc
+   buffer + skip the per-attempt mmap when a region is tiny; (b) a "did this
+   region actually pay off" guard — disable OSR for a region that's re-entered
+   many times but runs few iterations per entry (quicksort), or that deopts on
+   its first run (sieve, already partly done); (c) cheaper per-back-edge gate.
 3. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`
    (`while`/`if` bodies); also lets more loop *bodies* fit the OSR region.
 4. **OSR polish:** reusable scratch desc buffer (avoid the per-attempt 256-desc

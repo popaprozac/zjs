@@ -971,6 +971,24 @@ fn jit_try_run(ctx: ZjsContext*, f: Function*) -> JitResult {
             descs[i].imm = (i64)inst_bc_u16(inst);
         } else if inst.op == Op::CmpLt {
             descs[i].op = (char*)"CmpLt";
+        } else if inst.op == Op::CmpLe {
+            descs[i].op = (char*)"CmpLe";
+        } else if inst.op == Op::CmpGt {
+            descs[i].op = (char*)"CmpGt";
+        } else if inst.op == Op::CmpGe {
+            descs[i].op = (char*)"CmpGe";
+        } else if inst.op == Op::CmpEq || inst.op == Op::CmpStrictEq {
+            descs[i].op = (char*)"CmpEq";
+        } else if inst.op == Op::CmpNe || inst.op == Op::CmpStrictNe {
+            descs[i].op = (char*)"CmpNe";
+        } else if inst.op == Op::CmpLtImm {
+            descs[i].op = (char*)"CmpLtImm"; descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
+        } else if inst.op == Op::CmpLeImm {
+            descs[i].op = (char*)"CmpLeImm"; descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
+        } else if inst.op == Op::CmpGtImm {
+            descs[i].op = (char*)"CmpGtImm"; descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
+        } else if inst.op == Op::CmpGeImm {
+            descs[i].op = (char*)"CmpGeImm"; descs[i].imm = (i64)zjs_int32((i32)(i8)inst.c).bits;
         } else if inst.op == Op::AddImm {
             descs[i].op = (char*)"AddImm";
             // imm is an i8 in inst.c; the stencil consumes a BOXED int32.

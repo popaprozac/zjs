@@ -231,6 +231,49 @@ void zjs_stencil_CmpLt(ZjsValue *regs, int *deopt) {
     __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);
 }
 
+// Bool-producing comparisons (J12e): regs[RA] = (regs[RB] OP rhs) as a JS bool.
+// Number operands only (int32 fast path + double; double C-compare already gives
+// JS semantics: NaN-anything → false for relational, NaN!=NaN, +0==-0). Any
+// non-number → deopt. For NUMBER operands loose `==` and strict `===` are
+// identical, so CmpEq/CmpStrictEq share the `==` stencil (the bridge routes both
+// to it) and CmpNe/CmpStrictNe share `!=`; a non-number operand deopts and the
+// interpreter applies the (differing) loose-vs-strict coercion rules.
+#define JIT_CMP_REG(NAME, OP)                                                 \
+void zjs_stencil_##NAME(ZjsValue *regs, int *deopt) {                         \
+    uint64_t a = regs[(uintptr_t)&_JIT_RB].bits;                              \
+    uint64_t b = regs[(uintptr_t)&_JIT_RC].bits;                             \
+    int res;                                                                  \
+    if (jv_is_int32(a) && jv_is_int32(b)) {                                   \
+        res = (int32_t)(uint32_t)a OP (int32_t)(uint32_t)b;                   \
+    } else if (jv_is_number(a) && jv_is_number(b)) {                          \
+        res = jv_to_double(a) OP jv_to_double(b);                             \
+    } else { JIT_DEOPT(deopt); }                                             \
+    regs[(uintptr_t)&_JIT_RA].bits = res ? JIT_VAL_TRUE : JIT_VAL_FALSE;     \
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);             \
+}
+#define JIT_CMP_IMM(NAME, OP)                                                 \
+void zjs_stencil_##NAME(ZjsValue *regs, int *deopt) {                         \
+    uint64_t a = regs[(uintptr_t)&_JIT_RB].bits;                              \
+    uint64_t b = (uint64_t)(uintptr_t)&_JIT_IMM64;  /* boxed int32 imm */     \
+    int res;                                                                  \
+    if (jv_is_int32(a) && jv_is_int32(b)) {                                   \
+        res = (int32_t)(uint32_t)a OP (int32_t)(uint32_t)b;                   \
+    } else if (jv_is_number(a) && jv_is_number(b)) {                          \
+        res = jv_to_double(a) OP jv_to_double(b);                             \
+    } else { JIT_DEOPT(deopt); }                                             \
+    regs[(uintptr_t)&_JIT_RA].bits = res ? JIT_VAL_TRUE : JIT_VAL_FALSE;     \
+    __attribute__((musttail)) return _JIT_CONTINUE(regs, deopt);             \
+}
+JIT_CMP_REG(CmpLe, <=)
+JIT_CMP_REG(CmpGt, >)
+JIT_CMP_REG(CmpGe, >=)
+JIT_CMP_REG(CmpEq, ==)
+JIT_CMP_REG(CmpNe, !=)
+JIT_CMP_IMM(CmpLtImm, <)
+JIT_CMP_IMM(CmpLeImm, <=)
+JIT_CMP_IMM(CmpGtImm, >)
+JIT_CMP_IMM(CmpGeImm, >=)
+
 // LoadElem: regs[RA] = regs[RB][regs[RC]] for the array fast path (J8). Calls
 // the ctx-free engine helper jit_array_get_fast through the GOT-held address
 // (asm-laundered so clang emits an indirect blr — no branch-range limit). The
