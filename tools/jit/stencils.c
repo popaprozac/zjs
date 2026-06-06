@@ -68,6 +68,7 @@ extern uint64_t _JIT_HELP_propset; // GOT slot holds &jit_prop_set_fast  (J9b)
 extern uint64_t _JIT_HELP_gget;    // GOT slot holds &jit_global_get      (J10)
 extern uint64_t _JIT_HELP_gset;    // GOT slot holds &jit_global_set      (J10)
 extern uint64_t _JIT_HELP_invoke;  // GOT slot holds &jit_invoke_fast     (J11)
+extern uint64_t _JIT_HELP_minvoke; // GOT slot holds &jit_method_invoke_fast (J12b)
 extern void     _JIT_CONTINUE(ZjsValue *regs, int *deopt);  // fall-through
 extern void     _JIT_TARGET(ZjsValue *regs, int *deopt);    // branch destination
 
@@ -340,6 +341,27 @@ void zjs_stencil_Invoke(ZjsValue *regs, int *deopt) {
                                    uint32_t argc, uint32_t dst, int *st);
     uintptr_t haddr = (uintptr_t)&_JIT_HELP_invoke;
     invoke_fn helper;
+    __asm__("" : "=r"(helper) : "0"(haddr));   // opaque → indirect call
+    int st = 0;
+    ZjsValue *nr = helper(regs,
+                          (uint32_t)(uintptr_t)&_JIT_RB,
+                          (uint32_t)(uintptr_t)&_JIT_IMM64,
+                          (uint32_t)(uintptr_t)&_JIT_RA, &st);
+    if (st == 1) { JIT_DEOPT(deopt); }
+    if (st == 2) { *deopt = (int)(intptr_t)&_JIT_BCIDX; return; }
+    __attribute__((musttail)) return _JIT_CONTINUE(nr, deopt);
+}
+
+// MethodInvoke: regs[RA] = regs[RB].call(regs[RB+1] /*this*/, regs[RB+2..]) —
+// method call (J12b). Same shape + status protocol as Invoke, but the receiver
+// lives at regs[base+1] and the args start at base+2; jit_method_invoke_fast
+// passes the receiver as `this`. Throw / pre-call bail / relocated-base all
+// handled identically to the plain-call path.
+void zjs_stencil_MethodInvoke(ZjsValue *regs, int *deopt) {
+    typedef ZjsValue *(*minvoke_fn)(ZjsValue *regs, uint32_t base,
+                                    uint32_t argc, uint32_t dst, int *st);
+    uintptr_t haddr = (uintptr_t)&_JIT_HELP_minvoke;
+    minvoke_fn helper;
     __asm__("" : "=r"(helper) : "0"(haddr));   // opaque → indirect call
     int st = 0;
     ZjsValue *nr = helper(regs,

@@ -500,13 +500,28 @@ default build both byte-identical to baseline. Correctness spot-checked on
 loop+`console.log`, call-in-loop, array loops, in-region `if`/`else`, `break`
 (→ DeoptExit), and `while`.
 
-## Next — J12b+
+## J12b — method calls (MethodInvoke) (DONE)
 
-1. **`MethodInvoke`** (`obj.m(args)`) — unlocks `method_call`, `richards`, and
-   most OO code (and a *lot* more loops now that OSR lets them live anywhere).
-   Receiver binding (this = regs[base+1]) + the same reg_stack/throw discipline
-   as Invoke. (`jit_method_invoke_fast` sketch lives in the J11 notes.)
-2. **Multi-`Return`** via a unified exit channel (Return reports its index too) —
+`Op::MethodInvoke` (`obj.m(args)`; a=dst, b=base, callee at `regs[base]`,
+**receiver at `regs[base+1]`**, args at `regs[base+2..]`, c=argc) via
+`jit_method_invoke_fast` — the exact twin of `jit_invoke_fast` but it passes the
+receiver as `this` and reads args from base+2. Same reg_stack-realloc
+re-derivation, callee-throw routing, and generator/async/class-ctor bail. Added
+once to the shared `jit_map_insn`, so **both whole-fn and OSR pick it up** — a
+loop calling `obj.m()` / `arr.push()` / `Math.max()` now JITs anywhere (the OSR
+payoff). Correct on user-method, host-method (`Math.max`), and array-method
+(`a.push`) loops; ~1.46× on an obj-method loop.
+
+**Honest ceiling:** `method_call` (tiny class method `inc(){this.n++}`) only hit
+1.24× and `richards` 1.06×. The dispatch JITs and the callee whole-fn-JITs, but
+the **per-call frame machinery** (`push_call_frame` → `interpret` entry → pop)
+dominates for a 3-op callee — only *inlining* (out of baseline-JIT scope) closes
+that. `richards` is also polymorphic (IC misses → LoadProp deopts → OSR
+disabled). test262 `THRESHOLD=1` + default build both byte-identical to baseline.
+
+## Next — J12c+
+
+1. **Multi-`Return`** via a unified exit channel (Return reports its index too) —
    drops the single-Return restriction, so `fib` (`if(n<2)return n; …`) and most
    real functions become eligible. Pairs naturally with `JmpIfFalse`/`JmpIfTrue`.
 3. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`

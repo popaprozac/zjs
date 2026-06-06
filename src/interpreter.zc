@@ -2372,6 +2372,10 @@ fn jit_map_insn(f: Function*, i: u32, descs: JitFnDesc*, n: u32) -> i32 {
     } else if inst.op == Op::Invoke {
         descs[i].op = (char*)"Invoke";
         descs[i].imm = (i64)(u32)inst.c;
+    } else if inst.op == Op::MethodInvoke {
+        // a=dst, b=base (callee), receiver at base+1, args at base+2..; c=argc.
+        descs[i].op = (char*)"MethodInvoke";
+        descs[i].imm = (i64)(u32)inst.c;
     } else if inst.op == Op::LoadGlobal {
         descs[i].op = (char*)"LoadGlobal";
         descs[i].imm = (i64)inst_bc_u16(inst);
@@ -8206,6 +8210,50 @@ fn jit_invoke_fast(regs: ZjsValue*, base: u32, argc: u32, dst: u32, status: int*
         for (uint32_t i = 0; i < argc; i++) argbuf[i] = regs[base + 1u + i];
         ZjsValue undef = zjs_undefined();
         result = zjs_call_value_with_this(ctx, callee, undef, argbuf, argc);
+        nr = &ctx->reg_stack[ctx->frames[ctx->frame_count - 1].regs_base];
+    }
+    if ctx.pending_throw_active {
+        *status = 2;
+        return nr;
+    }
+    raw { nr[dst] = result; }
+    *status = 0;
+    return nr;
+}
+
+// JIT method-call helper (J12b). Twin of jit_invoke_fast for Op::MethodInvoke
+// (`obj.m(args)`): callee at regs[base], RECEIVER (`this`) at regs[base+1],
+// explicit args at regs[base+2..]. Same status protocol + reg_stack-realloc
+// re-derivation + generator/async/class-ctor bail as the plain-call path. The
+// receiver is passed as `this_val` (zjs_call_value_with_this only coerces a
+// null/undefined this to global, matching sloppy-mode method dispatch).
+fn jit_method_invoke_fast(regs: ZjsValue*, base: u32, argc: u32, dst: u32, status: int*) -> ZjsValue* {
+    *status = 1;
+    let ctx: ZjsContext* = NULL;
+    raw { extern ZjsContext* g_active_ctx; ctx = g_active_ctx; }
+    if ctx == NULL || argc > 16 { return regs; }
+    let callee = regs[base];
+    let tgt: Function* = NULL;
+    if zjs_is_function(callee) != 0 {
+        raw { tgt = (Function*)zjs_cell_as_ptr(callee); }
+    } else if zjs_is_closure(callee) != 0 {
+        let cl = zjs_as_closure(callee);
+        raw { tgt = (Function*)cl->function; }
+    } else if zjs_is_host_function(callee) == 0 {
+        return regs;
+    }
+    if tgt != NULL {
+        if tgt.is_generator || tgt.is_async || tgt.is_class_constructor {
+            return regs;
+        }
+    }
+    let result: ZjsValue = zjs_undefined();
+    let nr: ZjsValue* = regs;
+    raw {
+        ZjsValue this_val = regs[base + 1u];
+        ZjsValue argbuf[16];
+        for (uint32_t i = 0; i < argc; i++) argbuf[i] = regs[base + 2u + i];
+        result = zjs_call_value_with_this(ctx, callee, this_val, argbuf, argc);
         nr = &ctx->reg_stack[ctx->frames[ctx->frame_count - 1].regs_base];
     }
     if ctx.pending_throw_active {

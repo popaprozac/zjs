@@ -948,6 +948,9 @@ fn jit_try_run(ctx: ZjsContext*, f: Function*) -> JitResult {
         } else if inst.op == Op::Invoke {
             descs[i].op = (char*)"Invoke";
             descs[i].imm = (i64)(u32)inst.c;
+        } else if inst.op == Op::MethodInvoke {
+            descs[i].op = (char*)"MethodInvoke";
+            descs[i].imm = (i64)(u32)inst.c;
         } else if inst.op == Op::LoadGlobal {
             descs[i].op = (char*)"LoadGlobal";
             descs[i].imm = (i64)inst_bc_u16(inst);
