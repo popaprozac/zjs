@@ -2254,6 +2254,7 @@ raw {
     // Lazy, process-wide. -1 = uninit.
     static int g_jit_enabled = -1;     // 0 = off (ZJS_JIT_OFF set), 1 = on
     static int g_jit_threshold = -1;   // frame-entries before compile
+    static int g_jit_osr_work = -1;    // J12f: burst-len × region-span gate
 }
 
 // Compile-time gate: 1 only in a ZJS_JIT build. clang folds this to a
@@ -2294,6 +2295,28 @@ fn jit_hot_threshold() -> u32 {
             if (g_jit_threshold < 0) g_jit_threshold = 0;
         }
         t = (unsigned)g_jit_threshold;
+    }
+    return t;
+}
+
+// J12f OSR-entry gate: the minimum "work per run" (burst length × region
+// instruction span) before a hot loop is OSR-compiled. OSR pays a fixed
+// entry/exit spill-fill cost per loop entry; a loop only beats the interpreter
+// if it executes enough ops per entry to amortize that. Counting *ops*
+// (burst × span) rather than raw iterations is what separates nbody's force
+// kernel (≈4 iters but ~90-instruction body → wins) from quicksort's pivot
+// scan (≈2 iters, ~4-instruction body → loses on entry overhead). Tunable via
+// ZJS_JIT_OSR_WORK; default chosen so quicksort's tiny scans stay under it and
+// every measured OSR winner clears it. 0 disables the gate (compile any loop).
+fn jit_osr_work_threshold() -> u32 {
+    let t: u32 = 160;
+    raw {
+        if (g_jit_osr_work < 0) {
+            const char* s = getenv("ZJS_JIT_OSR_WORK");
+            g_jit_osr_work = (s && s[0]) ? atoi(s) : 160;
+            if (g_jit_osr_work < 0) g_jit_osr_work = 0;
+        }
+        t = (unsigned)g_jit_osr_work;
     }
     return t;
 }
@@ -4868,9 +4891,28 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 // per-back-edge work entirely (no runtime-enabled call).
                 if f.jit_osr_state != 2 && jit_build_enabled() != 0 && jit_runtime_enabled() != 0 {
                     let header: u32 = (u32)(ip + 1);
-                    if f.jit_osr_state == 0 {
-                        f.jit_osr_calls = f.jit_osr_calls + 1;
-                        if f.jit_osr_calls >= jit_hot_threshold() {
+                    // A header that already deopted (skip_hdr) will never compile;
+                    // short-circuit it so a re-armed function doesn't pay the
+                    // burst-tracking cost on every iteration of a known-hostile
+                    // loop (e.g. array_iterate's append-then-for-of pattern).
+                    if f.jit_osr_state == 0 && f.jit_osr_skip_hdr != (i32)header {
+                        // J12f: burst-length × region-span gate. jit_osr_calls is
+                        // reset whenever the back-edge target changes (a nested
+                        // loop's back-edge, or re-entering this loop after leaving
+                        // it), so it counts iterations within ONE entry. A loop
+                        // is only worth OSR-compiling if it executes enough ops in
+                        // a single run to amortize the entry/exit spill-fill —
+                        // approximated by burst × the region's instruction span.
+                        if f.jit_osr_burst_hdr == (i32)header {
+                            f.jit_osr_calls = f.jit_osr_calls + 1;
+                        } else {
+                            f.jit_osr_burst_hdr = (i32)header;
+                            f.jit_osr_calls = 1;
+                        }
+                        let span: i64 = (i64)prev_ip - (i64)header + 1;
+                        if span < 1 { span = 1; }
+                        let work: i64 = (i64)f.jit_osr_calls * span;
+                        if work >= (i64)jit_osr_work_threshold() {
                             jit_compile_osr(ctx, f, header, (u32)prev_ip);
                         }
                     }
@@ -4894,11 +4936,25 @@ fn interpret_inner_full(ctx: ZjsContext*,
                             break;
                         }
                         ip = (usize)jdeopt;
-                        // jdeopt inside the region = a fast-path miss (polymorphic
-                        // loop) → stop OSR for this fn. Outside = the normal loop
-                        // exit → keep the region for the next time the loop runs.
+                        // jdeopt inside the region = a fast-path miss (a value-type
+                        // miss in a polymorphic loop, or an append/grow StoreElem).
+                        // Don't kill OSR for the whole function: skip just this
+                        // region and re-arm so a DIFFERENT loop can still compile
+                        // (J12f). Bound the retries so a function of all-hostile
+                        // loops eventually stops paying compile cost. Outside the
+                        // region = the normal loop exit → keep the region.
                         if jdeopt >= (int)header && jdeopt <= (int)prev_ip {
-                            f.jit_osr_state = 2;
+                            f.jit_osr_retries = f.jit_osr_retries + 1;
+                            if f.jit_osr_retries >= 3 {
+                                f.jit_osr_state = 2;
+                            } else {
+                                f.jit_osr_skip_hdr = (i32)header;
+                                f.jit_osr_code = NULL;
+                                f.jit_osr_header = -1;
+                                f.jit_osr_burst_hdr = 0;
+                                f.jit_osr_calls = 0;
+                                f.jit_osr_state = 0;
+                            }
                         }
                         continue;
                     }

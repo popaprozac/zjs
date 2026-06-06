@@ -737,7 +737,24 @@ struct Function {
     jit_osr_code:   void*;   // entry: void (*)(ZjsValue *regs, int *deopt)
     jit_osr_header: i32;     // loop-header bc index this region was compiled for
     jit_osr_state:  i32;     // 0=untried, 1=compiled, 2=disabled
-    jit_osr_calls:  u32;     // back-edge hotness counter
+    jit_osr_calls:  u32;     // back-edge hotness counter (per-entry burst length)
+    // J12f: the loop header whose consecutive back-edges jit_osr_calls is
+    // currently counting. A back-edge to a DIFFERENT header (a nested loop, or
+    // re-entering this loop after leaving it) resets the burst — so jit_osr_calls
+    // measures iterations within ONE loop entry, not cumulative across entries.
+    // The OSR compile gate is burst-length × region-span (≈ ops executed per
+    // run): this skips short tiny-bodied loops (quicksort's pivot scans) while
+    // still compiling short-but-fat loops (nbody's force kernel). 0 = no burst
+    // (real loop headers are always ≥ 1).
+    jit_osr_burst_hdr: i32;
+    // J12f: bounded multi-region retry. A region whose JIT run deopts INSIDE the
+    // region (a value-type miss, or an append/grow StoreElem the fast path can't
+    // do) is recorded here and skipped, but OSR is re-armed (state→0) so a
+    // DIFFERENT loop in the same function can still compile — e.g. sieve's first
+    // build loop appends (deopts) yet its later in-bounds sieve loops JIT
+    // cleanly. After jit_osr_retries failures the function latches state=2.
+    jit_osr_skip_hdr: i32;   // a header that deopted; don't recompile it (0 = none)
+    jit_osr_retries:  u32;   // in-region deopts so far; cap before giving up
 }
 
 fn function_new() -> Function* {

@@ -581,17 +581,74 @@ nested-loop / region issue) — its ~0.96× is the pre-existing JIT-build per-ba
 edge overhead. So adding ops now mostly grows the set of loops that *compile but
 don't pay off*; the next lever is **OSR cost/eagerness**, not more ops.
 
-## Next — J12f (OSR cost / eagerness) + the hard levers
+## J12f — OSR eagerness: burst×span gate + multi-region retry (DONE)
 
-0. **OSR eagerness/overhead** (the bench-mover now): (a) reusable scratch desc
-   buffer + skip the per-attempt mmap when a region is tiny; (b) a "did this
-   region actually pay off" guard — disable OSR for a region that's re-entered
-   many times but runs few iterations per entry (quicksort), or that deopts on
-   its first run (sieve, already partly done); (c) cheaper per-back-edge gate.
-3. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`
-   (`while`/`if` bodies); also lets more loop *bodies* fit the OSR region.
+The J12e diagnosis ("which loops compile" matters more than "which ops") drove
+two changes to the **OSR compile trigger** (the interpreter's back-edge handler)
+— no new stencils, no codegen change. Both shipped together; both gates
+byte-identical to baseline (23338/3433, 0 new failing paths, with the JIT forced
+suite-wide via `ZJS_JIT_THRESHOLD=1 ZJS_JIT_OSR_WORK=1`).
+
+**1. Burst × region-span gate (replaces the cumulative hot-count).** The old
+trigger compiled a loop after `jit_osr_calls` (cumulative back-edges across *all*
+entries) hit a flat threshold (8). That compiled whichever loop accrued
+back-edges fastest — usually the innermost, most-frequent *tiny* loop — and
+since there's one OSR region per function, that choice latched. The fix:
+`jit_osr_calls` is now a **per-entry burst** — reset whenever the back-edge
+target changes (a nested loop's back-edge, or re-entering this loop after leaving
+it), so it counts iterations within ONE loop entry. A region compiles only when
+`burst × region-span ≥ ZJS_JIT_OSR_WORK` (default **160**) — i.e. it must execute
+enough *ops per run* to amortize the entry/exit spill-fill. This is the key
+separator: nbody's force kernel (~4 iters/entry but a ~107-instruction body →
+work 214) compiles; quicksort's pivot scans (~2 iters, ~4-instruction body) and
+the middle `while` never clear the bar. The same reset naturally selects the
+**innermost hot loop** (its back-edges run consecutively; an outer loop's are
+interrupted by the inner's) — which is what flipped `mandelbrot` from a loss to a
+big win (it now compiles its escape loop, not an outer pixel loop).
+
+**2. Bounded multi-region retry (replaces permanent disable on deopt).** An
+in-region deopt used to set `jit_osr_state = 2`, killing OSR for the *whole*
+function forever. That poisoned `sieve`: its first loop `primes[i] = true` is a
+pure array **append** (the barrier-free `StoreElem` can't grow), so it deopts at
+`i=0` and the later in-bounds sieve loops (which JIT cleanly) never got a chance.
+Now an in-region deopt records the bad header (`jit_osr_skip_hdr`), re-arms
+(`state → 0`), and lets a *different* loop compile; a skipped header is
+short-circuited so a re-armed function pays no burst-tracking cost on a known-
+hostile loop. After `jit_osr_retries ≥ 3` the function latches `state = 2`.
+
+**Result (interp vs JIT, default build).** The two prior OSR *losses* became
+*wins* and several others improved; nothing regressed beyond noise:
+
+| bench | J12e | J12f | | bench | J12e | J12f |
+|---|---|---|---|---|---|---|
+| **mandelbrot** | 0.93× | **2.46×** | | int_loop_big | 1.47× | 1.59× |
+| **quicksort** | 0.89× | **1.24×** | | double_loop | 1.68× | 1.75× |
+| **sieve** | 0.95× | **1.02×** | | func_loop | 1.42× | 1.48× |
+| obj_field | 2.96× | 2.92× | | nbody | 1.25× | 1.26× |
+| property_poly | 4.0× | 3.9× | | json_roundtrip | 0.98× | 1.05× |
+
+Outputs verified identical interp-vs-JIT on every bench. The remaining sub-1.0×
+benches (`richards` polymorphic OOP, `splay` tree+alloc, `regex` C-lib,
+`array_iterate` iterator protocol, `object_alloc`/`hash_count` alloc-bound,
+`string_concat` rope, `try_overhead`) are workloads outside the JIT's reach, not
+eagerness — the JIT stays ≈neutral on them (the small <1.0 is the fixed per-
+process build overhead). `ZJS_JIT_OSR_WORK` is env-tunable; the gate dance now
+sets it to 1 alongside `THRESHOLD=1` to force OSR suite-wide for the correctness
+gate.
+
+## Next — the hard levers
+
+1. **Float type-specialization** (the biggest remaining prize): the JIT reboxes
+   doubles every op, so float-heavy loops (`nbody` 1.26×, `mandelbrot` still
+   bounded) win far less than int loops. Keeping doubles unboxed in registers
+   across a region (typed stencils / a small register-type lattice) is the lever.
+2. **Array append/grow in JIT** (`StoreElem` fast path): would turn `sieve`'s
+   build loop and `array_iterate` from deopt-and-skip into wins — needs an
+   alloc-and-barrier path inside the region.
+3. **Inlining tiny callees** (`fib`/`method_call`/`quicksort` call-overhead-bound)
+   and **polymorphic IC** (`richards`/`splay`).
 4. **OSR polish:** reusable scratch desc buffer (avoid the per-attempt 256-desc
-   alloc), multiple OSR regions per function, do-while (`JmpIfTrue` back-edge).
+   alloc), >1 live OSR region per function, do-while (`JmpIfTrue` back-edge).
 5. **Platform-gate finalize + lifetime:** the `ZJS_JIT` Makefile gate already
    excludes iOS — lock it in + document, and free cached regions on
    `Function`/GC teardown (today they leak for the process lifetime).
