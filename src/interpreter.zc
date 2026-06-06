@@ -2455,9 +2455,15 @@ fn jit_compile_fn(ctx: ZjsContext*, f: Function*) -> void {
             i = i + 1;
         }
     }
-    // Require a fully-mapped body with exactly one Return (so the cached
-    // return register is unambiguous).
-    if !ok_all || ret_count != 1 || ret_reg < 0 {
+    // Require a fully-mapped body with at least one Return (J12c: multiple
+    // Returns are fine — each Return stencil reports its own result register
+    // through the deopt channel, so the cached jit_ret_reg is only a legacy
+    // fallback). The LAST instruction must be a Return so JIT control flow can
+    // never run off the end of the stencil array (a continue-type op there
+    // would musttail past the last stencil). Real function bodies always end in
+    // the compiler's implicit `return undefined`.
+    let last_is_ret: bool = (f.code[n - 1].op == Op::Return);
+    if !ok_all || ret_count < 1 || ret_reg < 0 || !last_is_ret {
         dealloc(descs);
         f.jit_state = 2;
         return;
@@ -2940,9 +2946,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     #endif
                 }
                 if jdeopt < 0 {
-                    // Ran to the Return — finish exactly as Op::Return.
+                    // Returned — finish exactly as Op::Return. J12c: a Return
+                    // encodes its own result register as -(2+reg); the legacy
+                    // -1 (single cached jit_ret_reg) is kept as a fallback.
                     ctx_maybe_gc(ctx);
-                    let rv = regs[(u32)f.jit_ret_reg];
+                    let rreg: u32 = if jdeopt == -1 { (u32)f.jit_ret_reg } else { (u32)((0 - jdeopt) - 2) };
+                    let rv = regs[rreg];
                     let ret_dst = pop_call_frame(ctx);
                     if ctx.frame_count <= entry_frame {
                         final_result = rv;

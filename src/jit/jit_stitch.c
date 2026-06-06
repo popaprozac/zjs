@@ -197,7 +197,7 @@ int jit_selftest_loop(void) {
         { "Add", ACC, ACC, I, 0, -1 },
         { "AddImm", I, I, -1, (int64_t)jit_box_int32(1), -1 },
         { "Jmp", -1, -1, -1, 0, LOOP },
-        { "Return", -1, -1, -1, 0, -1 },
+        { "Return", ACC, -1, -1, 0, -1 },   /* J12c: Return reports reg ACC via deopt=-(2+ACC) */
     };
     void *code = jit_stitch(prog, (int)(sizeof(prog) / sizeof(prog[0])));
     if (!code) return 0;

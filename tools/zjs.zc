@@ -1012,7 +1012,10 @@ fn jit_try_run(ctx: ZjsContext*, f: Function*) -> JitResult {
         }
         i = i + 1;
     }
-    if !ok_all || ret_reg < 0 {
+    // J12c: multiple Returns OK (each encodes its result reg via deopt); require
+    // a trailing Return so JIT control flow can't run off the end of the stencils.
+    let last_is_ret: bool = (f.code[n - 1].op == Op::Return);
+    if !ok_all || ret_reg < 0 || !last_is_ret {
         dealloc(descs);
         return res;
     }
@@ -1040,8 +1043,10 @@ fn jit_try_run(ctx: ZjsContext*, f: Function*) -> JitResult {
             // A deopt (>=0) means an op met an operand outside its fast domain;
             // the CLI path just reports the interpreter result instead. reg_stack
             // may have relocated during a nested call → re-derive via the index.
+            // deopt < 0 = returned; J12c encodes the result reg as -(2+reg).
             if (deopt < 0) {
-                res.val = ctx->reg_stack[fbase + (uint32_t)ret_reg];
+                int rreg = (deopt == -1) ? ret_reg : (-deopt - 2);
+                res.val = ctx->reg_stack[fbase + (uint32_t)rreg];
                 did = 1;
             }
         }

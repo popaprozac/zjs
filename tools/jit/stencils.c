@@ -486,6 +486,11 @@ void zjs_stencil_JmpIfFalse(ZjsValue *regs, int *deopt) {
 }
 
 // Return: leave the JIT'd region (back to the bridge / interpreter).
+// Return: terminal — stop the JIT and tell the engine which register holds the
+// result (J12c multi-Return). Encoded in the deopt channel as -(2 + RA), i.e.
+// <= -2, distinct from -1 (legacy "ran to the single Return") and from a >= 0
+// deopt index. The engine hook decodes RA = -deopt - 2 and finishes the frame.
 void zjs_stencil_Return(ZjsValue *regs, int *deopt) {
-    (void)regs; (void)deopt;
+    (void)regs;
+    *deopt = -(2 + (int)(intptr_t)&_JIT_RA);
 }

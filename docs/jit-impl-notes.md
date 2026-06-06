@@ -519,11 +519,29 @@ dominates for a 3-op callee — only *inlining* (out of baseline-JIT scope) clos
 that. `richards` is also polymorphic (IC misses → LoadProp deopts → OSR
 disabled). test262 `THRESHOLD=1` + default build both byte-identical to baseline.
 
-## Next — J12c+
+## J12c — multi-Return (DONE)
 
-1. **Multi-`Return`** via a unified exit channel (Return reports its index too) —
-   drops the single-Return restriction, so `fib` (`if(n<2)return n; …`) and most
-   real functions become eligible. Pairs naturally with `JmpIfFalse`/`JmpIfTrue`.
+Drops the single-Return restriction. The `Return` stencil was a terminal no-op
+(the engine read one cached `jit_ret_reg`); now it **encodes its own result
+register** in the deopt channel as `-(2 + RA)` (≤ -2, distinct from -1 = legacy
+single-Return and from a ≥ 0 deopt index). The hook decodes `RA = -deopt - 2`.
+`jit_compile_fn` now accepts any number of Returns; it only requires the **last**
+instruction to be a Return so JIT control flow can't musttail past the end of the
+stencil array (real bodies always end in the compiler's implicit `return
+undefined`). OSR is unaffected (its regions bail on Return).
+
+So `fib` (`if(n<2)return n; return fib(n-1)+fib(n-2)`) and any function with
+early-return guards now JIT. fib JITs correctly (832040) but only **1.10×** —
+like `method_call`, it's **call-overhead-bound** (recursive `Invoke` with a tiny
+body; the per-call `push_call_frame`→`interpret`→pop dominates). The real win is
+eligibility: guard-style early returns are everywhere in real code. test262
+`THRESHOLD=1` (every multi-return fn JIT'd) + default build byte-identical to
+baseline.
+
+## Next — J12d+
+
+0. **`JmpIfFalse`/`JmpIfTrue` + `Div`/`Mod` + non-fused `Cmp*`** — lets `if`/
+   `while` *inside* a loop/function body fit the region (many benches bail here).
 3. **More arith/branch:** `Div`/`Mod`, non-fused `Cmp*`, `JmpIfFalse`/`JmpIfTrue`
    (`while`/`if` bodies); also lets more loop *bodies* fit the OSR region.
 4. **OSR polish:** reusable scratch desc buffer (avoid the per-attempt 256-desc
