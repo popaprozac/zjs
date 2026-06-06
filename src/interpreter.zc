@@ -5591,12 +5591,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     object_define_property_slot(ctx, target_f.props, name_atom, name_v, PROP_CONFIGURABLE);
                 }
             }
-        } else if op == Op::SuperCall {
+        } else if op == Op::SuperCall || op == Op::SpreadSuperCall {
             // super(...): call parent ctor with the in-flight `this`
-            // and new_target_active preserved.
+            // and new_target_active preserved. SpreadSuperCall handles
+            // `super(...args)` — the args were materialized into an array
+            // at regs[base+1] (esbuild emits this when lowering a subclass
+            // with instance fields to `constructor(...e){ super(...e); … }`).
             let dst = inst.a;
             let base = inst.b;
-            let argc = (u32)inst.c;
             let parent = regs[base];
             // Spec: a derived-class constructor must call super exactly
             // once. The second call throws ReferenceError ("Super
@@ -5607,8 +5609,26 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 throwing = true; thrown = err; exit_reason = 3;
                 ctx.frames[cur_idx].ip = ip; break;
             }
+            let argc: u32 = 0;
             let argv_ptr: ZjsValue* = NULL;
-            if argc > 0 { raw { argv_ptr = &regs[base + 1]; } }
+            if op == Op::SuperCall {
+                argc = (u32)inst.c;
+                if argc > 0 { raw { argv_ptr = &regs[base + 1]; } }
+            } else {
+                // SpreadSuperCall: args in the dense array at regs[base+1];
+                // its contiguous backing store IS the argv (cap mirrors
+                // SpreadNewInvoke's 32-arg limit).
+                let arr_v = regs[base + 1];
+                if zjs_is_array(arr_v) == 0 {
+                    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                                (char*)"Spread arguments must resolve to an array", 41);
+                    throwing = true; thrown = err; exit_reason = 3;
+                    ctx.frames[cur_idx].ip = ip; break;
+                }
+                let arr_s = zjs_as_array(arr_v);
+                argc = arr_s.length;
+                if argc > 0 { raw { argv_ptr = arr_s->elements; } }
+            }
             // Some host ctors (Promise, RegExp, ...) allocate a special
             // cell rather than reusing host_this — model this as `new
             // parent(...)` so the result is treated as the freshly

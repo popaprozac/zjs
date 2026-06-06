@@ -4983,6 +4983,41 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
             c.had_error = true;
             return alloc_reg(c);
         }
+        // super(...args): materialize the args into an array (like the
+        // SpreadInvoke path) and emit SpreadSuperCall — esbuild produces
+        // this when lowering a subclass with instance fields.
+        if has_spread_arg {
+            let s_base = c.next_reg;
+            alloc_reg(c);                 // base   = parent ctor
+            let args_slot = alloc_reg(c); // base+1 = args array
+            let saved_pd_ss = c.preferred_dst;
+            c.preferred_dst = (i32)s_base;
+            let parent_rs = compile_expr(c, c.enclosing_class_parent);
+            c.preferred_dst = saved_pd_ss;
+            if parent_rs != s_base {
+                emit(c, make_inst_ab(Op::Mov, s_base, parent_rs));
+                if parent_rs + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            }
+            emit(c, make_inst_abc(Op::NewArray, args_slot, 0, 0));
+            let sj: u32 = 0;
+            while sj < node.children_count {
+                let sch = node.children[sj];
+                if sch.kind == NodeKind::Spread {
+                    let src_rs = compile_expr(c, sch.left);
+                    emit(c, make_inst_ab(Op::ArraySpread, args_slot, src_rs));
+                    if src_rs + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                } else {
+                    let val_rs = compile_expr(c, sch);
+                    emit(c, make_inst_ab(Op::ArrayPush, args_slot, val_rs));
+                    if val_rs + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                }
+                sj = sj + 1;
+            }
+            emit(c, make_inst_abc(Op::SpreadSuperCall, s_base, s_base, 0));
+            c.next_reg = s_base + 1;
+            if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+            return s_base;
+        }
         let base = c.next_reg;
         let slots_needed: u8 = 1 + arg_count;
         let r: u8 = 0;

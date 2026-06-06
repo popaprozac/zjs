@@ -449,6 +449,14 @@ enum Op {
     //   data property and must NOT invoke an inherited setter (e.g. the
     //   Object.prototype `__proto__` accessor). a=obj, b=key, c=val.
     InitObjData,      // a=obj, b=key_reg, c=val_reg.
+    // SpreadSuperCall: super(...args). Same as SuperCall but the args are
+    //   materialized into an array at regs[base+1] (NewArray + ArrayPush /
+    //   ArraySpread); argc = the array length at runtime. Shares the
+    //   SuperCall interpreter handler. Emitted for `super(...e)` — esbuild
+    //   produces this when lowering a subclass with instance fields.
+    //   Appended at the END of the enum so no existing op renumbers (AOT
+    //   bytecode + the op-name table are positional).
+    SpreadSuperCall,  // a=dst, b=base (parent); args-array at base+1.
 }
 
 struct Inst {
