@@ -4206,6 +4206,17 @@ fn iter_get_async(ctx: ZjsContext*, src: ZjsValue) -> ZjsValue {
         }
         return iter;
     }
+    // GetMethod(obj, @@asyncIterator) semantics: a present-but-non-callable
+    // @@asyncIterator is a TypeError — it must NOT fall back to the sync
+    // @@iterator (so `{ [Symbol.asyncIterator]: false }` throws without ever
+    // touching Symbol.iterator). Only undefined/null falls through.
+    if zjs_is_undefined(getter) == 0 && zjs_is_null(getter) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Symbol.asyncIterator is not a function", 38);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
     // Fall back to sync @@iterator. The for-await loop awaits every
     // next() result via Op::Await, so a sync iter's plain {value,
     // done} return is awaited (no-op for non-Promise values).
