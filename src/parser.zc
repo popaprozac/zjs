@@ -4446,10 +4446,15 @@ fn parse_object(p: Parser*) -> AstNode* {
             }
             if (g_match != 0 || s_match != 0) {
                 let after = peek_kind2(p);
+                // Accessor name is a PropertyName (IdentifierName), which
+                // INCLUDES reserved words: `get return(){}`, `get if(){}`,
+                // `set delete(v){}` are all valid. Keyword tokens must be
+                // accepted here or they parse-error.
                 if after == TokenKind::Identifier
                     || after == TokenKind::StringLit
                     || after == TokenKind::NumberLit
-                    || after == TokenKind::LBracket {
+                    || after == TokenKind::LBracket
+                    || is_keyword_token(after) {
                     is_accessor = true;
                     is_setter = s_match != 0;
                 }
