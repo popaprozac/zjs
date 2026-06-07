@@ -1466,6 +1466,13 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     // Promise cell — read through Promise.prototype (then / catch).
     if tag == TAG_PROMISE && zjs_is_string(key) != 0 {
         let pcell = zjs_as_promise(obj);
+        // Own instance props first (e.g. an overridden `p.then = fn`, or
+        // library tags `p.foo = 1`). NULL for nearly all promises → the proto
+        // walk below is unchanged for the common case.
+        if pcell.props != NULL {
+            let ownv = read_from_props_bag(ctx, pcell.props, key);
+            if zjs_is_deleted(ownv) == 0 { return ownv; }
+        }
         let cur = if pcell.proto != NULL { pcell.proto } else { ctx.realm.promise_ctor_proto };
         if cur != NULL {
             let ks = zjs_as_string(key);
@@ -2157,6 +2164,20 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
             r.props = zjs_as_object(pv);
         }
         object_set(ctx, r.props, ks, value);
+        return;
+    }
+    if tag == TAG_PROMISE {
+        // Promises are ordinary objects: own-prop writes (incl. an overridden
+        // `p.then = fn`) land in the lazy expando bag. property_get checks it
+        // before the Promise.prototype chain.
+        if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
+        if ctx.pending_throw_active { return; }
+        let pr = zjs_as_promise(obj);
+        if pr.props == NULL {
+            let pv = ctx_new_object(ctx);
+            pr.props = zjs_as_object(pv);
+        }
+        object_set(ctx, pr.props, zjs_as_string(key), value);
         return;
     }
     // Primitives: silently ignored (real JS throws in strict mode).

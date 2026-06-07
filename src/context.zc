@@ -1484,6 +1484,9 @@ fn gc_mark_cell_children(p: void*) -> void {
         if pr.proto != NULL {
             gc_mark_value(zjs_cell_from_ptr((void*)pr.proto));
         }
+        if pr.props != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)pr.props));
+        }
         return;
     }
 
@@ -4686,6 +4689,14 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
             d.props = zjs_as_object(pv);
         }
         return d.props;
+    }
+    if zjs_is_promise(obj_v) != 0 {
+        let pr = zjs_as_promise(obj_v);
+        if pr.props == NULL {
+            let pv = ctx_new_object(ctx);
+            pr.props = zjs_as_object(pv);
+        }
+        return pr.props;
     }
     if zjs_is_map(obj_v) != 0 {
         let m = zjs_as_map(obj_v);
@@ -20414,6 +20425,41 @@ fn promise_resolve_call(ctx: ZjsContext*, resolve_fn: ZjsValue, ctor_v: ZjsValue
     return r;
 }
 
+// Spec PerformPromise{Race,AllSettled,…} inner step: result be
+// Invoke(nextPromise, "then", «onFulfilled, onRejected»). Used for a PENDING
+// input promise (the settled fast paths short-circuit via microtask_enqueue).
+// Unlike a direct internal reaction attach, this runs the input's OBSERVABLE
+// `then` (which a test/userland may override) — and, critically, an abrupt
+// completion here breaks the combinator loop and IteratorCloses, so a hostile
+// iterator that never reports `done` (whose promise's `then` throws) can't spin
+// forever attaching reactions → unbounded growth → GC heap corruption.
+//
+// Returns true on an abrupt completion: the iterator has been closed and the
+// engine's pending-throw is LEFT SET (the original error, not any error from
+// .return) for the caller to consume and reject the capability with. Returns
+// false on success (the reactions were attached via .then).
+fn promise_combinator_then(ctx: ZjsContext*, p: ZjsValue, onf: ZjsValue,
+                           onr: ZjsValue, iter: ZjsValue) -> bool {
+    let then_key = zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"then", 4));
+    let then_v = property_get(ctx, p, then_key);
+    if !ctx.pending_throw_active {
+        let ta: ZjsValue[2]; ta[0] = onf; ta[1] = onr;
+        let tap: ZjsValue* = NULL; raw { tap = &ta[0]; }
+        // Non-callable `then` sets a TypeError here (Call requires callable),
+        // which we treat as the abrupt completion below.
+        raw { zjs_call_value_with_this(ctx, then_v, p, tap, 2); }
+    }
+    if ctx.pending_throw_active {
+        let saved = consume_pending_throw(ctx);
+        iter_close(ctx, iter);                       // IteratorClose(iter)
+        if ctx.pending_throw_active { let _ = consume_pending_throw(ctx); }
+        ctx.pending_throw_active = true;             // original error wins
+        ctx.pending_throw_value = saved;
+        return true;
+    }
+    return false;
+}
+
 fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_promise_constructor_this(ctx, (char*)"all", 3) { return zjs_undefined(); }
     let ctor_v = ctx.host_this;
@@ -20599,8 +20645,12 @@ fn host_promise_race(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             microtask_enqueue(ctx, cap_resolve, ip.value, zjs_undefined(), true);
         } else if ip.state == PROMISE_REJECTED {
             microtask_enqueue(ctx, cap_reject, ip.value, zjs_undefined(), false);
-        } else {
-            promise_attach_reaction(ctx, ip, cap_resolve, cap_reject, zjs_undefined());
+        } else if promise_combinator_then(ctx, item_pv, cap_resolve, cap_reject, iter) {
+            // abrupt from Invoke(nextPromise,"then",…) → IteratorClose + reject
+            // (already done inside the helper); return the settled capability.
+            let err = consume_pending_throw(ctx);
+            capability_call_reject(ctx, cap, err);
+            return rp;
         }
     }
     return rp;
@@ -20739,8 +20789,11 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
             microtask_enqueue(ctx, onf, ip.value, zjs_undefined(), true);
         } else if ip.state == PROMISE_REJECTED {
             microtask_enqueue(ctx, onr, ip.value, zjs_undefined(), false);
-        } else {
-            promise_attach_reaction(ctx, ip, onf, onr, zjs_undefined());
+        } else if promise_combinator_then(ctx, item_pv, onf, onr, iter) {
+            // abrupt from Invoke(nextPromise,"then",…) → iterator already closed.
+            let err = consume_pending_throw(ctx);
+            capability_call_reject(ctx, cap, err);
+            return rp;
         }
         i = i + 1;
     }
@@ -20899,8 +20952,11 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             microtask_enqueue(ctx, onf, ip.value, zjs_undefined(), true);
         } else if ip.state == PROMISE_REJECTED {
             microtask_enqueue(ctx, onr, ip.value, zjs_undefined(), false);
-        } else {
-            promise_attach_reaction(ctx, ip, onf, onr, zjs_undefined());
+        } else if promise_combinator_then(ctx, item_pv, onf, onr, iter) {
+            // abrupt from Invoke(nextPromise,"then",…) → iterator already closed.
+            let err = consume_pending_throw(ctx);
+            capability_call_reject(ctx, cap, err);
+            return rp;
         }
         i = i + 1;
     }

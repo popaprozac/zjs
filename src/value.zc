@@ -1103,6 +1103,10 @@ struct ZjsPromise {
     // `class Sub extends Promise {}`. NULL falls back to
     // ctx.realm.promise_ctor_proto.
     proto:         ZjsObject*;
+    // Own-property expando bag (lazy). Promises are ordinary objects that can
+    // hold own props (`p.foo = 1`, or an overridden `p.then = fn` — which
+    // Promise combinators must observe per spec). NULL until first write.
+    props:         ZjsObject*;
 }
 
 fn zjs_is_promise(v: ZjsValue) -> int {
@@ -2753,6 +2757,7 @@ fn zjs_promise_new() -> ZjsPromise* {
     p.state = PROMISE_PENDING;
     p.value = zjs_undefined();
     p.proto = NULL;
+    p.props = NULL;
     return p;
 }
 
