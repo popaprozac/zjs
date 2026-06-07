@@ -20953,12 +20953,14 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             promise_resolve_with(ctx, ppv, item_pv);
             item_pv = ppv;
         }
-        let ip = zjs_as_promise(item_pv);
-        if ip.state == PROMISE_FULFILLED {
-            microtask_enqueue(ctx, onf, ip.value, zjs_undefined(), true);
-        } else if ip.state == PROMISE_REJECTED {
-            microtask_enqueue(ctx, onr, ip.value, zjs_undefined(), false);
-        } else if promise_combinator_then(ctx, item_pv, onf, onr, iter) {
+        // Spec PerformPromiseAny step r: Invoke(nextPromise,"then",«onf,onr»)
+        // runs UNCONDITIONALLY — even for an already-settled input — so a
+        // userland `then` override is observed once per iterated value, and a
+        // throwing one closes the iterator. (zjs short-circuits settled inputs
+        // to a direct microtask in the other combinators, but every Promise.any
+        // invoke-then test uses Promise.resolve() inputs, so `any` must take the
+        // observable path for all states.)
+        if promise_combinator_then(ctx, item_pv, onf, onr, iter) {
             // abrupt from Invoke(nextPromise,"then",…) → iterator already closed.
             let err = consume_pending_throw(ctx);
             capability_call_reject(ctx, cap, err);
