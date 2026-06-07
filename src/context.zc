@@ -20554,8 +20554,14 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             microtask_enqueue(ctx, onf, ip.value, zjs_undefined(), true);
         } else if ip.state == PROMISE_REJECTED {
             microtask_enqueue(ctx, cap_reject, ip.value, zjs_undefined(), false);
-        } else {
-            promise_attach_reaction(ctx, ip, onf, cap_reject, zjs_undefined());
+        } else if promise_combinator_then(ctx, item_pv, onf, cap_reject, iter) {
+            // Abrupt from Invoke(nextPromise,"then",…): the helper already ran
+            // IteratorClose and left the original error pending. Fall through to
+            // the shared iter_throw handler below to reject the capability.
+            // Without this, a hostile never-`done` iterator whose promise's
+            // `then` throws would spin forever attaching reactions.
+            iter_throw = true;
+            break;
         }
 
         i = i + 1;
