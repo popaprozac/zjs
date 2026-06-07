@@ -20215,10 +20215,17 @@ fn new_promise_capability(ctx: ZjsContext*, ctor_v: ZjsValue) -> PromiseCapabili
         let pv = zjs_cell_from_ptr((void*)p);
         let resolve_ptr: void* = NULL; raw { resolve_ptr = (void*)host_promise_resolve_fn; }
         let reject_ptr:  void* = NULL; raw { reject_ptr  = (void*)host_promise_reject_fn; }
-        let resolve_v = ctx_make_host_function(ctx, (char*)"resolve", resolve_ptr);
-        let reject_v  = ctx_make_host_function(ctx, (char*)"reject",  reject_ptr);
+        // ECMA-262 27.2.1.3: the resolving functions are anonymous (name ""),
+        // length 1, and not constructors — matching the Promise-constructor
+        // executor path. A userland `then` observing the capability's
+        // resolve/reject (Promise.{race,all,allSettled,any}/invoke-then) checks
+        // exactly this shape.
+        let resolve_v = ctx_make_host_function_arity(ctx, (char*)"", resolve_ptr, 1);
+        let reject_v  = ctx_make_host_function_arity(ctx, (char*)"", reject_ptr,  1);
         zjs_as_host_function(resolve_v).bound = pv;
         zjs_as_host_function(reject_v).bound  = pv;
+        zjs_as_host_function(resolve_v).is_constructor = false;
+        zjs_as_host_function(reject_v).is_constructor  = false;
         return PromiseCapability{ promise: pv, resolve: resolve_v, reject: reject_v, ok: true };
     }
 
