@@ -1225,6 +1225,14 @@ struct ZjsGenerator {
     // either runs more body and settles this with the next iter-result,
     // or the body awaits again and leaves this pending.
     pending_next_promise:   ZjsValue;
+    // Try-frame snapshot (mirrors ZjsAsyncCont). When the body suspends at
+    // `yield`/`await` inside a `try`, the frame's active catch handlers are
+    // lost when the call frame is popped. Save catch_ip/catch_reg here and
+    // re-push on resume so a `.throw()` (or yield* throw-forwarding, or a
+    // rejected async-gen await) unwinds into the body's try/catch. Owned.
+    saved_try_ip:           usize*;
+    saved_try_reg:          u8*;
+    saved_try_count:        u32;
 }
 
 fn zjs_is_generator(v: ZjsValue) -> int {
@@ -1252,6 +1260,9 @@ fn zjs_generator_new() -> ZjsGenerator* {
     g.state = GEN_INITIAL;
     g.self_iter_obj = NULL;
     g.pending_next_promise = zjs_undefined();
+    g.saved_try_ip = NULL;
+    g.saved_try_reg = NULL;
+    g.saved_try_count = 0;
     return g;
 }
 

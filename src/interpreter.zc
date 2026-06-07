@@ -2735,6 +2735,29 @@ fn interpret_with_outer_promise(ctx: ZjsContext*, entry_f: Function*,
 // Resume a suspended generator. Hands off to interpret_inner_full
 // with the gen parameter set; the dispatch loop then yields-or-
 // returns its iter-result up via final_result.
+// Snapshot the catch handlers active in the generator's frame (those above
+// try_depth_at_entry) onto the generator, so a resume can re-push them and a
+// `.throw()` / rejected-await / yield*-forwarded throw unwinds into the body's
+// try/catch. Frees any prior snapshot first (generators suspend repeatedly).
+fn gen_save_try_handlers(ctx: ZjsContext*, gen: ZjsGenerator*, frame_idx: u32) -> void {
+    if gen.saved_try_ip  != NULL { dealloc(gen.saved_try_ip);  gen.saved_try_ip  = NULL; }
+    if gen.saved_try_reg != NULL { dealloc(gen.saved_try_reg); gen.saved_try_reg = NULL; }
+    gen.saved_try_count = 0;
+    let try_at_entry = ctx.frames[frame_idx].try_depth_at_entry;
+    let try_n = if ctx.ctx_try_depth > try_at_entry { ctx.ctx_try_depth - try_at_entry } else { 0 };
+    if try_n > 0 {
+        gen.saved_try_count = try_n;
+        gen.saved_try_ip  = alloc_n<usize>((usize)try_n);
+        gen.saved_try_reg = alloc_n<u8>((usize)try_n);
+        let ti: u32 = 0;
+        while ti < try_n {
+            gen.saved_try_ip[ti]  = ctx.ctx_try_stack[try_at_entry + ti].catch_ip;
+            gen.saved_try_reg[ti] = ctx.ctx_try_stack[try_at_entry + ti].catch_reg;
+            ti = ti + 1;
+        }
+    }
+}
+
 fn interpret_resume_generator(ctx: ZjsContext*, gen: ZjsGenerator*,
                               resume_value: ZjsValue, is_throw: bool) -> InterpretResult {
     if gen == NULL || gen.function == NULL {
@@ -2857,6 +2880,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
         // dst — write the settled Promise value there.
         if (gen.state == GEN_YIELDED || gen.state == GEN_AWAITING) && !resume_is_throw {
             ctx.reg_stack[r_base + (u32)gen.resume_dst] = resume_value;
+        }
+        // Re-push the catch handlers active when the body suspended (rebound to
+        // this fresh frame), so a `.throw()`/rejected-await resume unwinds into
+        // the body's try/catch instead of escaping it.
+        let gtj: u32 = 0;
+        while gtj < gen.saved_try_count {
+            let _ = ctx_try_push(ctx, gen.saved_try_ip[gtj], gen.saved_try_reg[gtj]);
+            gtj = gtj + 1;
         }
         gen.state = GEN_RUNNING;
     }
@@ -4108,6 +4139,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             gen.saved_host_this = ctx.host_this;
             gen.saved_current_closure = ctx.current_closure;
             gen.state = GEN_YIELDED;
+            gen_save_try_handlers(ctx, gen, cur_idx);
 
             let yielded_value = regs[inst.b];
             let iter_result = build_iter_result(ctx, yielded_value, false);
@@ -4229,6 +4261,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         g.saved_host_this = ctx.host_this;
                         g.saved_current_closure = ctx.current_closure;
                         g.state = GEN_AWAITING;
+                        gen_save_try_handlers(ctx, g, cur_idx);
 
                         // Build resume host-fns carrying the generator.
                         let on_f_ptr: void* = NULL;

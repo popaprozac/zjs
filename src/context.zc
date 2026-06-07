@@ -2179,6 +2179,8 @@ fn gc_free_one(ctx: ZjsContext*, p: void*) -> void {
           let g: ZjsGenerator* = NULL;
           raw { g = (ZjsGenerator*)p; }
           if g.saved_regs != NULL { dealloc(g.saved_regs); }
+          if g.saved_try_ip != NULL { dealloc(g.saved_try_ip); }
+          if g.saved_try_reg != NULL { dealloc(g.saved_try_reg); }
           dealloc(g);
       }
       else if tag == TAG_MAP           {
