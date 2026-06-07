@@ -303,6 +303,15 @@ function $DONE(error) {
     print('Test262:AsyncTestComplete');
   }
 }
+// A conformant host installs $DONE / print AS GLOBAL-OBJECT PROPERTIES (per
+// INTERPRETING.md the async test harness must be able to find $DONE on the
+// global). asyncHelpers.js gates `asyncTest` on
+// `Object.prototype.hasOwnProperty.call(globalThis, "$DONE")`, so the bare
+// function declarations above (which zjs does not currently expose as own
+// globalThis properties — a separate engine conformance gap) are not enough.
+// Bind them explicitly.
+globalThis.$DONE = $DONE;
+globalThis.print = print;
 """
 
 def execution_modes(meta):

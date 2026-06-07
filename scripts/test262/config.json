@@ -97,6 +97,9 @@
     "WeakRef",
     "FinalizationRegistry",
     "decorators",
+    "Array.fromAsync",
+    "await-dictionary",
+    "explicit-resource-management",
     "json-modules",
     "import-assertions",
     "dynamic-import",
@@ -124,8 +127,6 @@
     "tcoHelper.js",
     "proxyTrapsHelper.js",
     "nativeFunctionMatcher.js",
-    "Compiler.js",
-    "asyncHelpers.js",
-    "doneprintHandle.js"
+    "Compiler.js"
   ]
 }
