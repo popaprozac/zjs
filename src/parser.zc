@@ -3116,18 +3116,30 @@ fn parse_assignment(p: Parser*) -> AstNode* {
     // of test262's yield-as-identifier-reference family.
     if peek_kind(p) == TokenKind::KwYield && p.in_generator {
         let kw_t = advance(p);
+        let kw_end = kw_t.start + kw_t.length;
+        // YieldExpression: `yield [no LineTerminator here] * AssignmentExpr`
+        // and `yield [no LineTerminator here] AssignmentExpr`. A newline
+        // before `*` means this is a bare `yield`, not `yield*` (and the
+        // stray `*` then fails as a statement) — §15.5.
         let is_delegate: bool = false;
-        if peek_kind(p) == TokenKind::Star {
+        let star_t = peek(p);
+        if star_t.kind == TokenKind::Star && !has_newline_between(p, kw_end, star_t.start) {
             advance(p);
             is_delegate = true;
         }
-        let node = new_node(&p.tracker, NodeKind::YieldExpr, kw_t.start, kw_t.start + kw_t.length);
+        let node = new_node(&p.tracker, NodeKind::YieldExpr, kw_t.start, kw_end);
         node.bool_value = is_delegate;
         node.left = NULL;
-        let next = peek_kind(p);
-        if next != TokenKind::Comma && next != TokenKind::Semicolon
+        let next_t = peek(p);
+        let next = next_t.kind;
+        // The operand also has [no LineTerminator here] before it: a newline
+        // after a bare `yield` ends the expression (no operand).
+        let operand_allowed = is_delegate || !has_newline_between(p, kw_end, next_t.start);
+        if operand_allowed
+           && next != TokenKind::Comma && next != TokenKind::Semicolon
            && next != TokenKind::RParen && next != TokenKind::RBracket
            && next != TokenKind::RBrace && next != TokenKind::Colon
+           && next != TokenKind::Star
            && next != TokenKind::Eof {
             let arg = parse_assignment(p);
             if arg != NULL {
