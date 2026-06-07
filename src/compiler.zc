@@ -1036,7 +1036,15 @@ fn emit_jump_back_if(c: Compiler*, op_: Op, src: u8, target_idx: u32) -> void {
 fn compile_yield_star(c: Compiler*, operand: AstNode*) -> u8 {
     let src_r = compile_expr(c, operand);
     let iter_r = alloc_reg(c);
-    emit(c, make_inst_ab(Op::IterGet, iter_r, src_r));
+    // In an async generator, `yield* x` delegates via the ASYNC iterator
+    // protocol (GetIterator(x, async): @@asyncIterator, sync fallback wrapped
+    // by iter_get_async) — it must NOT touch x's @@iterator. Plain generators
+    // use the sync protocol.
+    if c.is_async {
+        emit(c, make_inst_ab(Op::IterGetAsync, iter_r, src_r));
+    } else {
+        emit(c, make_inst_ab(Op::IterGet, iter_r, src_r));
+    }
     if src_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
 
     let value_r = alloc_reg(c);

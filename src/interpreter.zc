@@ -269,9 +269,15 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     if tag == TAG_GENERATOR && ctx.realm.generator_proto != NULL {
         if zjs_is_string(key) == 0 { key = zjs_to_string(ctx, key); }
         let name = zjs_as_string(key);
-        let slot = class_find_slot(ctx.realm.generator_proto.cls, name);
+        // async generators resolve on %AsyncGeneratorPrototype% (@@asyncIterator,
+        // no @@iterator); sync ones on %GeneratorPrototype%.
+        let gproto = ctx.realm.generator_proto;
+        if zjs_as_generator(obj).is_async && ctx.realm.async_generator_proto != NULL {
+            gproto = ctx.realm.async_generator_proto;
+        }
+        let slot = class_find_slot(gproto.cls, name);
         if slot >= 0 {
-            let v = ctx.realm.generator_proto.slots[(u32)slot];
+            let v = gproto.slots[(u32)slot];
             if zjs_is_deleted(v) == 0 { return v; }
         }
         return zjs_undefined();

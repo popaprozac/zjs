@@ -93,7 +93,6 @@
   "skip_features": [
     "Atomics",
     "SharedArrayBuffer",
-    "Symbol.asyncIterator",
     "WeakRef",
     "FinalizationRegistry",
     "decorators",

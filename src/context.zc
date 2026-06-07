@@ -218,6 +218,7 @@ struct ZjsRealm {
     promise_ctor_proto: ZjsObject*;
     regexp_proto: ZjsObject*;
     generator_proto: ZjsObject*;
+    async_generator_proto: ZjsObject*;
     map_proto: ZjsObject*;
     set_proto: ZjsObject*;
     weakmap_proto: ZjsObject*;
@@ -1917,6 +1918,7 @@ fn gc_mark_realm(realm: ZjsRealm*) -> void {
     if realm.promise_ctor_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.promise_ctor_proto)); }
     if realm.regexp_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.regexp_proto)); }
     if realm.generator_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.generator_proto)); }
+    if realm.async_generator_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.async_generator_proto)); }
     if realm.map_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.map_proto)); }
     if realm.set_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.set_proto)); }
     if realm.weakmap_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.weakmap_proto)); }
@@ -6375,8 +6377,13 @@ fn host_object_get_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
             return zjs_cell_from_ptr((void*)ctx.realm.promise_ctor_proto);
         }
     }
-    if zjs_is_generator(v) != 0 && ctx.realm.generator_proto != NULL {
-        return zjs_cell_from_ptr((void*)ctx.realm.generator_proto);
+    if zjs_is_generator(v) != 0 {
+        if zjs_as_generator(v).is_async && ctx.realm.async_generator_proto != NULL {
+            return zjs_cell_from_ptr((void*)ctx.realm.async_generator_proto);
+        }
+        if ctx.realm.generator_proto != NULL {
+            return zjs_cell_from_ptr((void*)ctx.realm.generator_proto);
+        }
     }
     if zjs_is_uint8_array(v) != 0 && ctx.realm.uint8_array_proto != NULL {
         return zjs_cell_from_ptr((void*)ctx.realm.uint8_array_proto);
@@ -28316,6 +28323,27 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         ctx_intern_atom(ctx, (char*)"@@toStringTag", 13),
         ctx_intern_string(ctx, (char*)"Generator", 9), PROP_CONFIGURABLE);
 
+    // %AsyncGeneratorPrototype% (2026-06-07). `async function*` instances
+    // resolve methods here, NOT %GeneratorPrototype%: they expose
+    // @@asyncIterator (returning self) and MUST NOT expose @@iterator, so
+    // for-await-of takes the async path and never touches Symbol.iterator.
+    // next/return/throw reuse the generator host fns — those already wrap the
+    // iter-result in a Promise when the underlying generator is_async.
+    let agen_proto_v = ctx_new_object(ctx);
+    ctx.realm.async_generator_proto = zjs_as_object(agen_proto_v);
+    object_set(ctx, ctx.realm.async_generator_proto, ctx_intern_atom(ctx, (char*)"next", 4),
+               ctx_make_host_function_arity(ctx, (char*)"next", gen_next_ptr, 1));
+    object_set(ctx, ctx.realm.async_generator_proto, ctx_intern_atom(ctx, (char*)"return", 6),
+               ctx_make_host_function_arity(ctx, (char*)"return", gen_return_ptr, 1));
+    object_set(ctx, ctx.realm.async_generator_proto, ctx_intern_atom(ctx, (char*)"throw", 5),
+               ctx_make_host_function_arity(ctx, (char*)"throw", gen_throw_ptr, 1));
+    let async_self_iter_v = ctx_make_host_function_arity(ctx, (char*)"[Symbol.asyncIterator]", gen_self_ptr, 0);
+    object_set(ctx, ctx.realm.async_generator_proto,
+               ctx_intern_atom(ctx, (char*)"@@asyncIterator", 15), async_self_iter_v);
+    object_define_property_slot(ctx, ctx.realm.async_generator_proto,
+        ctx_intern_atom(ctx, (char*)"@@toStringTag", 13),
+        ctx_intern_string(ctx, (char*)"AsyncGenerator", 14), PROP_CONFIGURABLE);
+
     // Well-known symbols. Each is a TAG_SYMBOL whose internal `key`
     // string matches the "@@xxx" sentinel the rest of the engine uses
     // for these property keys — so installing user methods via
@@ -29748,6 +29776,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     proto_mark_nonenum(ctx.realm.weakset_proto);
     proto_mark_nonenum(ctx.realm.symbol_proto);
     proto_mark_nonenum(ctx.realm.generator_proto);
+    proto_mark_nonenum(ctx.realm.async_generator_proto);
     proto_mark_nonenum(ctx.realm.array_buffer_proto);
     proto_mark_nonenum(ctx.realm.data_view_proto);
     // Per-kind TypedArray prototypes carry only `constructor` (+ the
@@ -29791,6 +29820,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     mark_proto_methods_non_constructor(ctx, ctx.realm.regexp_proto);
     mark_proto_methods_non_constructor(ctx, ctx.realm.promise_ctor_proto);
     mark_proto_methods_non_constructor(ctx, ctx.realm.generator_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.realm.async_generator_proto);
     mark_proto_methods_non_constructor(ctx, ctx.realm.map_proto);
     mark_proto_methods_non_constructor(ctx, ctx.realm.set_proto);
     mark_proto_methods_non_constructor(ctx, ctx.realm.date_proto);
