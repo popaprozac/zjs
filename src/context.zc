@@ -117,6 +117,11 @@ struct GlobalEntry {
     // ReferenceError if false; `typeof` uses a separate opcode that
     // returns "undefined" without throwing.
     defined:  bool;
+    // #368: true for a global created by a top-level `var`/`function`
+    // declaration (CreateGlobalVarBinding) — these are global-object own
+    // properties with {writable, enumerable, !configurable}. Builtins
+    // (default false) are {writable, !enumerable, configurable}.
+    is_var_binding: bool;
 }
 
 struct GcRootFrame {
@@ -5893,7 +5898,30 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
     let key_atom = ctx_intern_atom(ctx, key_str.data, key_str.length);
 
     let slot = class_find_slot(o.cls, key_atom);
-    if slot < 0 { return zjs_undefined(); }
+    if slot < 0 {
+        // globalThis: a var/function/builtin binding (globals table, no own
+        // slot) is a global-object own property (#368). Builtins:
+        // {writable, !enumerable, configurable}; var/function:
+        // {writable, enumerable, !configurable}.
+        let gthr_d = realm_of_global_this(ctx, o);
+        if gthr_d != NULL {
+            let gs_d = realm_find_global(gthr_d, key_str.data, key_str.length);
+            if gs_d >= 0 && gthr_d.globals[(u32)gs_d].defined {
+                let is_var = gthr_d.globals[(u32)gs_d].is_var_binding;
+                let gdesc_v = ctx_new_object(ctx);
+                let gdesc = zjs_as_object(gdesc_v);
+                object_set(ctx, gdesc, ctx_intern_atom(ctx, (char*)"value", 5),
+                           gthr_d.globals[(u32)gs_d].value);
+                object_set(ctx, gdesc, ctx_intern_atom(ctx, (char*)"writable", 8), zjs_bool(1));
+                object_set(ctx, gdesc, ctx_intern_atom(ctx, (char*)"enumerable", 10),
+                           zjs_bool(if is_var { 1 } else { 0 }));
+                object_set(ctx, gdesc, ctx_intern_atom(ctx, (char*)"configurable", 12),
+                           zjs_bool(if is_var { 0 } else { 1 }));
+                return gdesc_v;
+            }
+        }
+        return zjs_undefined();
+    }
     let raw_v = o.slots[(u32)slot];
 
     let result_v = ctx_new_object(ctx);
@@ -22007,6 +22035,13 @@ fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
             let is_len_h: int = 0;
             raw { is_len_h = (name->length == 6 && memcmp(name->data, "length", 6) == 0) ? 1 : 0; }
             if is_len_h != 0 { return zjs_bool(1); }
+        }
+        // globalThis: var/function/builtin bindings live in the globals
+        // table but ARE own properties of the global object (#368).
+        let gthr_h = realm_of_global_this(ctx, o);
+        if gthr_h != NULL {
+            let gs_h = realm_find_global(gthr_h, name.data, name.length);
+            if gs_h >= 0 && gthr_h.globals[(u32)gs_h].defined { return zjs_bool(1); }
         }
         return zjs_bool(0);
     }

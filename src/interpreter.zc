@@ -3229,6 +3229,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let slot = inst_bc_u16(inst);
             ctx.realm.globals[slot].value = regs[inst.a];
             ctx.realm.globals[slot].defined = true;
+            // Top-level var/function → global-object own property (#368),
+            // distinct from a builtin (non-enumerable, configurable).
+            ctx.realm.globals[slot].is_var_binding = true;
         } else if op == Op::LoadGlobal {
             let slot = inst_bc_u16(inst);
             if !ctx.realm.globals[slot].defined {
@@ -7400,6 +7403,23 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         ok = false;
                     } else {
                         o.slots[(u32)slot] = zjs_deleted();
+                    }
+                }
+                // globalThis (#368): a var/function/builtin binding lives in
+                // the globals table, not as an own slot. `delete globalThis.X`
+                // must remove a configurable (builtin) binding so it's truly
+                // gone; a var/function binding is non-configurable → false.
+                if ok {
+                    let gthr_x = realm_of_global_this(ctx, o);
+                    if gthr_x != NULL {
+                        let gs_x = realm_find_global(gthr_x, name.data, name.length);
+                        if gs_x >= 0 && gthr_x.globals[(u32)gs_x].defined {
+                            if gthr_x.globals[(u32)gs_x].is_var_binding {
+                                ok = false;
+                            } else {
+                                gthr_x.globals[(u32)gs_x].defined = false;
+                            }
+                        }
                     }
                 }
                 // Property not present → spec returns true.
