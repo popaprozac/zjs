@@ -2,6 +2,7 @@
   "_comment": "Configuration for the test262 conformance runner. Paths are relative to the test262 checkout (vendor/test262 by default).",
   "include": [
     "test/built-ins/Array",
+    "test/built-ins/BigInt",
     "test/built-ins/Boolean",
     "test/built-ins/Date",
     "test/built-ins/Error",

@@ -23061,28 +23061,64 @@ fn bigint_try_shift(ctx: ZjsContext*, is_left: bool, a: ZjsValue, b: ZjsValue, h
     return zjs_cell_from_ptr((void*)r);
 }
 
-// BigInt.asIntN(bits, bigint) / asUintN(bits, bigint). `bits` is a
-// regular Number index (ToIndex); the value must be a BigInt.
+// ECMA-262 §7.1.13 ToBigInt(argument). Unlike the BigInt() constructor, a
+// Number argument THROWS a TypeError — only Boolean / String / BigInt (and
+// objects via ToPrimitive) coerce. Returns undefined with pending throw on
+// failure.
+fn to_bigint(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
+    let prim = zjs_to_primitive(ctx, v, false);   // ToPrimitive(v, number)
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if zjs_is_bigint(prim) != 0 { return prim; }
+    if zjs_is_bool(prim) != 0 {
+        let b = zjs_bigint_from_i64(if zjs_as_bool(prim) != 0 { 1 } else { 0 });
+        ctx_register_cell(ctx, (void*)b);
+        return zjs_cell_from_ptr((void*)b);
+    }
+    if zjs_is_string(prim) != 0 {
+        let s = zjs_as_string(prim);
+        let ok: int = 1;
+        let b = zjs_bigint_from_string(s.data, s.length, &ok);
+        if ok == 0 {
+            let err = build_typed_error(ctx, (char*)"SyntaxError", 11,
+                (char*)"Cannot convert string to a BigInt", 33);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        ctx_register_cell(ctx, (void*)b);
+        return zjs_cell_from_ptr((void*)b);
+    }
+    // Number / null / undefined / Symbol → TypeError
+    let err = build_typed_error(ctx, (char*)"TypeError", 9,
+        (char*)"Cannot convert value to a BigInt", 32);
+    ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+    return zjs_undefined();
+}
+
+// BigInt.asIntN(bits, bigint) / asUintN(bits, bigint). Spec §21.2.2.1/.2:
+// bits = ? ToIndex(bits) THEN bigint = ? ToBigInt(bigint) — in that order.
 fn host_bigint_as_n(ctx: ZjsContext*, args: ZjsValue*, argc: u32, signed_form: bool) -> ZjsValue {
     let bits_v = if argc >= 1 { args[0] } else { zjs_undefined() };
     let val_v  = if argc >= 2 { args[1] } else { zjs_undefined() };
+    // ToIndex(bits): ToNumber → ToIntegerOrInfinity (truncate toward 0,
+    // NaN→0) → RangeError if < 0 or > 2^53-1.
     let bd = zjs_to_double(bits_v);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let idx: f64 = 0.0;
     let bad: int = 0;
-    raw { bad = (!isfinite(bd) || bd < 0 || bd != trunc(bd)) ? 1 : 0; }
+    raw {
+        idx = isnan(bd) ? 0.0 : trunc(bd);
+        bad = (idx < 0.0 || idx > 9007199254740991.0) ? 1 : 0;
+    }
     if bad != 0 {
         let err = build_typed_error(ctx, (char*)"RangeError", 10,
             (char*)"Invalid bits argument", 21);
         ctx.pending_throw_active = true; ctx.pending_throw_value = err;
         return zjs_undefined();
     }
-    if zjs_is_bigint(val_v) == 0 {
-        let err = build_typed_error(ctx, (char*)"TypeError", 9,
-            (char*)"Cannot convert value to a BigInt", 32);
-        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
-        return zjs_undefined();
-    }
-    let bits: u64 = (u64)bd;
-    let x = zjs_as_bigint(val_v);
+    let bival = to_bigint(ctx, val_v);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    let bits: u64 = (u64)idx;
+    let x = zjs_as_bigint(bival);
     let r = if signed_form { bigint_asintn(bits, x) } else { bigint_asuintn(bits, x) };
     ctx_register_cell(ctx, (void*)r);
     return zjs_cell_from_ptr((void*)r);
