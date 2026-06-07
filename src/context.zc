@@ -8753,6 +8753,8 @@ fn host_string_replace_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsV
                 raw { cb_r = zjs_call_value_with_this(ctx, repl_v, zjs_undefined(), cb_argp, 3); }
                 if ctx.pending_throw_active { dealloc(out_buf); return zjs_undefined(); }
                 if zjs_is_string(cb_r) == 0 { cb_r = zjs_to_string(ctx, cb_r); }
+                // ToString(callback result) can throw (Symbol / abrupt toString).
+                if ctx.pending_throw_active { dealloc(out_buf); return zjs_undefined(); }
                 let rep_data = zjs_as_string(cb_r).data;
                 let rep_len  = zjs_as_string(cb_r).length;
                 while out_len + rep_len + 64 > out_cap {
@@ -9374,6 +9376,13 @@ fn concat_append_item(ctx: ZjsContext*, out: ZjsArray*, e: ZjsValue, n: u32) -> 
             let ev = property_get(ctx, e, key_v);
             if ctx.pending_throw_active { return n; }
             array_set(out, n + k, ev);
+        } else {
+            // Absent index → a hole in the result (spec leaves it absent).
+            // Must still write the sentinel so the result's dense buffer is
+            // initialized up to `length`; otherwise the skipped slots hold
+            // uninitialized memory and the GC mark walk derefs garbage
+            // (sparse @@isConcatSpreadable source → heap corruption).
+            array_set(out, n + k, zjs_deleted());
         }
         k = k + 1;
     }
@@ -23111,8 +23120,21 @@ fn host_wrapper_value_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     return this_val;
 }
 
+// Shared wrapper toString (Boolean.prototype.toString + String.prototype.
+// toString). host_wrapper_value_of unwraps a primitive-wrapper `this` to its
+// primitive; if it comes back an OBJECT, `this` wasn't a wrapper (e.g.
+// `o.toString = Boolean.prototype.toString; o.toString()`), and falling
+// through to zjs_to_string(object) would call o.toString again → infinite
+// recursion → stack overflow. Throw instead. Primitives (string/bool/…)
+// stringify normally, so String/Boolean wrappers are unaffected.
 fn host_wrapper_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let v = host_wrapper_value_of(ctx, args, argc);
+    if value_is_object_type(v) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"toString requires that 'this' be a primitive wrapper", 53);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
     if zjs_is_string(v) != 0 { return v; }
     return zjs_to_string(ctx, v);
 }
@@ -23122,6 +23144,17 @@ fn host_wrapper_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
 // shortest-roundtrip / scientific formatting carries through.
 fn host_number_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let v = host_wrapper_value_of(ctx, args, argc);
+    // §21.1.3.6 thisNumberValue: `this` must be a Number primitive or a Number
+    // wrapper object. Otherwise throw — NOT fall through to zjs_to_string(v),
+    // which on a plain object calls its .toString (which may BE this function,
+    // e.g. `o.toString = Number.prototype.toString`) → infinite recursion →
+    // stack overflow. (Number.prototype.toString.call(non-number).)
+    if zjs_is_int32(v) == 0 && zjs_is_double(v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"Number.prototype.toString requires that 'this' be a Number", 58);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
     let radix: i32 = 10;
     if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
         radix = (i32)zjs_to_double(args[0]);
