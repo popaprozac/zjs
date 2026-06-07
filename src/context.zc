@@ -1469,8 +1469,15 @@ fn gc_mark_cell_children(p: void*) -> void {
         let pr: ZjsPromise* = NULL;
         raw { pr = (ZjsPromise*)p; }
         gc_mark_value(pr.value);
+        // reaction_count is the number of USED SLOTS (3 per reaction —
+        // attach does `reaction_count += 3`, settle loops `i < reaction_count`
+        // stepping by 3). Marking `reaction_count * 3` over-read 3x past the
+        // live entries — past the allocation — marking uninitialized/OOB
+        // memory as live, stomping mark bits / following dangling pointers and
+        // corrupting the heap once a GC actually walks a promise with reactions
+        // (silent on short CLI runs; fatal under worker GC pressure).
         let i: u32 = 0;
-        while i < pr.reaction_count * 3 {
+        while i < pr.reaction_count {
             gc_mark_value(pr.reactions[i]);
             i = i + 1;
         }
@@ -11875,6 +11882,17 @@ fn promise_attach_reaction(ctx: ZjsContext*, p: ZjsPromise*,
     p.reactions[p.reaction_count + 1] = on_rejected;
     p.reactions[p.reaction_count + 2] = result_promise;
     p.reaction_count = p.reaction_count + 3;
+    // Write barrier: an OLD promise (one that survived GCs while pending — e.g.
+    // a fetch promise awaiting the network) storing YOUNG reaction values (the
+    // handler closures + the chained result promise) must be added to the
+    // remembered set, or the next minor GC won't re-scan its reactions and the
+    // young values are collected → the reaction later fires on a freed result
+    // promise → the continuation silently never runs (`.then` chain stalls
+    // under GC pressure). promise_settle already barriers p.value; this is the
+    // matching barrier for the reactions buffer.
+    gc_write_barrier(ctx, (void*)p, on_fulfilled);
+    gc_write_barrier(ctx, (void*)p, on_rejected);
+    gc_write_barrier(ctx, (void*)p, result_promise);
 }
 
 fn microtask_enqueue(ctx: ZjsContext*,
@@ -12043,6 +12061,18 @@ fn drain_microtasks(ctx: ZjsContext*) -> void {
         }
         ctx.microtask_count = n;
 
+        // The entry has been shifted OUT of the queue, so `handler`/`arg`/`rp`
+        // are now only bare C locals — not GC roots. The handler call below
+        // allocates (and can trigger a GC); without rooting, `rp` (the chained
+        // result promise, which nothing else references once its source settled
+        // and cleared its reactions) is collected mid-call, and the following
+        // promise_resolve_with(rp, …) operates on freed memory → the next
+        // `.then` silently never runs. This is the GC-pressure `.then`-chain
+        // stall (a flat chain survives because its result promise is unused).
+        ctx_push_temp_root(ctx, handler);
+        ctx_push_temp_root(ctx, arg);
+        ctx_push_temp_root(ctx, rp);
+
         let callable: bool = zjs_is_function(handler) != 0
             || zjs_is_closure(handler) != 0
             || zjs_is_host_function(handler) != 0;
@@ -12086,6 +12116,9 @@ fn drain_microtasks(ctx: ZjsContext*) -> void {
                 }
             }
         }
+        ctx_pop_temp_root(ctx);   // rp
+        ctx_pop_temp_root(ctx);   // arg
+        ctx_pop_temp_root(ctx);   // handler
         safety = safety + 1;
     }
 }
