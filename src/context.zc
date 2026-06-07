@@ -3166,8 +3166,13 @@ fn host_error_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     let msg_v  = property_get(ctx, this_val, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"message", 7)));
     if zjs_is_undefined(name_v) != 0 { name_v = ctx_intern_string(ctx, (char*)"Error", 5); }
     else if zjs_is_string(name_v) == 0 { name_v = zjs_to_string(ctx, name_v); }
+    // ToString(name)/ToString(message) can throw (a Symbol, or a throwing
+    // toString/valueOf) — propagate instead of dereferencing the boxed
+    // undefined in the zjs_as_string calls below (e.g. err.message = Symbol()).
+    if ctx.pending_throw_active { return zjs_undefined(); }
     let has_msg: bool = !zjs_is_undefined(msg_v);
     if has_msg && zjs_is_string(msg_v) == 0 { msg_v = zjs_to_string(ctx, msg_v); }
+    if ctx.pending_throw_active { return zjs_undefined(); }
 
     if !has_msg { return name_v; }
     let name_s = zjs_as_string(name_v);
@@ -8380,6 +8385,9 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     let repl_str_v: ZjsValue = if !repl_is_fn {
         if zjs_is_string(repl_v) != 0 { repl_v } else { zjs_to_string(ctx, repl_v) }
     } else { zjs_undefined() };
+    // ToString(replaceValue) can throw (Symbol / throwing toString) → boxed
+    // undefined; bail before it's dereferenced as a string below.
+    if ctx.pending_throw_active { return zjs_undefined(); }
 
     // Builder: simple growing char buffer.
     let out_cap: u32 = s.length + 16;
@@ -8475,7 +8483,9 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
                 raw { cb_argp = cb_args; }
                 let cb_r: ZjsValue = zjs_undefined();
                 raw { cb_r = zjs_call_value_with_this(ctx, repl_v, zjs_undefined(), cb_argp, cb_argc); }
+                if ctx.pending_throw_active { return zjs_undefined(); }
                 if zjs_is_string(cb_r) == 0 { cb_r = zjs_to_string(ctx, cb_r); }
+                if ctx.pending_throw_active { return zjs_undefined(); }
                 rep_str_holder = cb_r;
                 rep_data = zjs_as_string(cb_r).data;
                 rep_len  = zjs_as_string(cb_r).length;
@@ -8559,6 +8569,7 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
 
     // String search: replace first occurrence only.
     let search_str_v = if zjs_is_string(search_v) != 0 { search_v } else { zjs_to_string(ctx, search_v) };
+    if ctx.pending_throw_active { return zjs_undefined(); }
     let nee = zjs_as_string(search_str_v);
     let nee_d = nee.data;
     let nee_n = nee.length;
@@ -8599,7 +8610,9 @@ fn host_string_replace(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         raw { cb_argp = &cb_args[0]; }
         let cb_r: ZjsValue = zjs_undefined();
         raw { cb_r = zjs_call_value_with_this(ctx, repl_v, zjs_undefined(), cb_argp, 3); }
+        if ctx.pending_throw_active { return zjs_undefined(); }
         if zjs_is_string(cb_r) == 0 { cb_r = zjs_to_string(ctx, cb_r); }
+        if ctx.pending_throw_active { return zjs_undefined(); }
         rep_data = zjs_as_string(cb_r).data;
         rep_len  = zjs_as_string(cb_r).length;
     } else {
@@ -8686,6 +8699,9 @@ fn host_string_replace_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsV
     let repl_str_v: ZjsValue = if !repl_is_fn {
         if zjs_is_string(repl_v) != 0 { repl_v } else { zjs_to_string(ctx, repl_v) }
     } else { zjs_undefined() };
+    // ToString(replaceValue) can throw (Symbol / throwing toString) → boxed
+    // undefined; bail before it's dereferenced as a string below.
+    if ctx.pending_throw_active { return zjs_undefined(); }
     if ctx.pending_throw_active { return zjs_undefined(); }
 
     let out_cap: u32 = hay_n + 16;
