@@ -9382,6 +9382,126 @@ raw {
     extern ZjsValue zjs_call_value(ZjsContext* ctx, ZjsValue callee, ZjsValue* args, uint32_t argc);
 }
 
+// CreateDataProperty(O, name, value) on a plain object, returning whether
+// CreateDataPropertyOrThrow(target, idx, value) via the full
+// [[DefineOwnProperty]] machinery — used on the slow path where `target`
+// is a custom-species object or an array carrying per-element attrs in its
+// props sidecar. Builds the all-true data descriptor {value, writable,
+// enumerable, configurable} the Array methods specify and reuses
+// host_object_define_property (which throws on an incompatible redefine of
+// a non-configurable slot / a new property on a non-extensible object —
+// exactly the *OrThrow* behaviour).
+fn species_def_slow(ctx: ZjsContext*, target_v: ZjsValue, idx: u32, value: ZjsValue) -> void {
+    let desc = ctx_new_object(ctx);
+    ctx_push_temp_root(ctx, desc);
+    ctx_push_temp_root(ctx, value);
+    ctx_push_temp_root(ctx, target_v);
+    property_set(ctx, desc, ctx_intern_string(ctx, (char*)"value", 5), value);
+    property_set(ctx, desc, ctx_intern_string(ctx, (char*)"writable", 8), zjs_bool(1));
+    property_set(ctx, desc, ctx_intern_string(ctx, (char*)"enumerable", 10), zjs_bool(1));
+    property_set(ctx, desc, ctx_intern_string(ctx, (char*)"configurable", 12), zjs_bool(1));
+    let kbuf: char[16];
+    let klen: int = 0;
+    raw { klen = snprintf(kbuf, 16, "%u", (unsigned)idx); }
+    let key_v = ctx_intern_string(ctx, (char*)&kbuf[0], (u32)klen);
+    let dargs: ZjsValue[3];
+    dargs[0] = target_v; dargs[1] = key_v; dargs[2] = desc;
+    let dp: ZjsValue* = NULL; raw { dp = &dargs[0]; }
+    host_object_define_property(ctx, dp, 3);
+    ctx_pop_temp_root(ctx);
+    ctx_pop_temp_root(ctx);
+    ctx_pop_temp_root(ctx);
+}
+
+// ArraySpeciesCreate(originalArray, length) — ECMA-262 §10.4.2.3. Array
+// methods that build a fresh result (map/filter/slice/splice/concat/
+// flatMap) route allocation through here so a subclass or an explicit
+// `arr.constructor[Symbol.species]` controls the result's constructor.
+// Returns a plain Array when there is no species override. A throwing
+// constructor- or species-getter, or a non-constructor species, sets
+// pending_throw and returns undefined — callers must check it.
+//
+// NOTE: the result may be a NON-array object (a custom species ctor). The
+// fill loops therefore route element writes through array_species_def so
+// the object case uses CreateDataProperty rather than array_set.
+fn array_species_create(ctx: ZjsContext*, original: ZjsValue, length: u32) -> ZjsValue {
+    // Step 2: a non-array original yields a plain Array.
+    if zjs_is_array(original) == 0 {
+        return ctx_new_array(ctx, length);
+    }
+    // Step 3: C = Get(O, "constructor").
+    let ctor_atom = ctx_intern_atom(ctx, (char*)"constructor", 11);
+    let c = property_get(ctx, original, zjs_cell_from_ptr((void*)ctor_atom));
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    // Step 4: a constructor that is the %Array% intrinsic of a *foreign*
+    // realm is treated as no-species — the result is a plain Array in the
+    // current realm and the species getter is never consulted. We identify
+    // the foreign %Array% by C.prototype === thatRealm.array_proto (the
+    // realm doesn't store the ctor itself). Reading C.prototype is a plain
+    // data read (no getter on a built-in ctor), so it stays unobservable.
+    if value_is_constructor(c) {
+        let cr = get_function_realm(ctx, c);
+        if cr != NULL && cr != ctx.realm && cr.array_proto != NULL {
+            let cproto = property_get(ctx, c, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"prototype", 9)));
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if zjs_is_object(cproto) != 0 && zjs_as_object(cproto) == cr.array_proto {
+                c = zjs_undefined();
+            }
+        }
+    }
+    // Step 5: if Type(C) is Object, C = Get(C, @@species); null -> undefined.
+    if zjs_is_object(c) != 0 || zjs_is_function(c) != 0 || zjs_is_closure(c) != 0
+       || zjs_is_host_function(c) != 0 || zjs_is_proxy(c) != 0 {
+        let sp_atom = ctx_intern_atom(ctx, (char*)"@@species", 9);
+        let sp = property_get(ctx, c, zjs_cell_from_ptr((void*)sp_atom));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        if zjs_is_null(sp) != 0 { c = zjs_undefined(); }
+        else { c = sp; }
+    }
+    // Step 6: undefined species -> plain Array.
+    if zjs_is_undefined(c) != 0 {
+        return ctx_new_array(ctx, length);
+    }
+    // Step 7: a non-constructor species throws.
+    if !value_is_constructor(c) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Symbol.species value is not a constructor", 41);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    // Step 8: Construct(C, [length]).
+    let argbuf: ZjsValue[1];
+    argbuf[0] = zjs_double((f64)length);
+    let argp: ZjsValue* = NULL; raw { argp = &argbuf[0]; }
+    let result: ZjsValue = zjs_undefined();
+    raw { result = zjs_construct_value(ctx, c, argp, 1); }
+    return result;
+}
+
+// Write result[idx] = value during a species-aware Array method
+// (CreateDataPropertyOrThrow). A plain dense array with no per-element
+// attrs takes the fast array_set path; everything else — a custom-species
+// object, or an array carrying per-element attrs / frozen / non-extensible
+// state in its props sidecar — goes through species_def_slow so the full
+// [[DefineOwnProperty]] redefine + throw semantics apply.
+fn array_species_def(ctx: ZjsContext*, result_v: ZjsValue, idx: u32, value: ZjsValue) -> void {
+    if zjs_is_array(result_v) != 0 {
+        let arr = zjs_as_array(result_v);
+        if arr.props == NULL && !arr.frozen && !arr.non_extensible {
+            array_set(arr, idx, value);
+            return;
+        }
+        species_def_slow(ctx, result_v, idx, value);
+        return;
+    }
+    if zjs_is_object(result_v) != 0 {
+        species_def_slow(ctx, result_v, idx, value);
+        return;
+    }
+    // Other (primitive) species results: fall back to ordinary set.
+    property_set(ctx, result_v, zjs_int32((i32)idx), value);
+}
+
 fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_array_coercible_this(ctx) { return zjs_undefined(); }
     let this_val = ctx.host_this;
@@ -9425,10 +9545,10 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let cb = args[0];
     let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
 
-    let result_v = ctx_new_array(ctx, len);
+    let result_v = array_species_create(ctx, this_val, len);
+    if ctx.pending_throw_active { return zjs_undefined(); }
     ctx_push_temp_root(ctx, result_v);
     defer ctx_pop_temp_root(ctx);
-    let result = zjs_as_array(result_v);
 
     let i: u32 = 0;
     while i < len {
@@ -9467,11 +9587,12 @@ fn host_array_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             let mapped: ZjsValue = zjs_undefined();
             raw { mapped = zjs_call_value_with_this(ctx, cb, this_arg, cb_args_ptr, 3); }
             if ctx.pending_throw_active { return result_v; }
-            array_set(result, i, mapped);
+            array_species_def(ctx, result_v, i, mapped);
+            if ctx.pending_throw_active { return result_v; }
         }
         i = i + 1;
     }
-    result.length = len;
+    if zjs_is_array(result_v) != 0 { zjs_as_array(result_v).length = len; }
     return result_v;
 }
 
@@ -9561,21 +9682,37 @@ fn host_array_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     }
     if end < start { end = start; }
     let count = (u32)(end - start);
-    let out_v = ctx_new_array(ctx, count);
-    let out = zjs_as_array(out_v);
+    // ArraySpeciesCreate(O, count): the result may be a subclass / custom
+    // species object, so element writes route through array_species_def
+    // rather than a direct backing-store poke (which assumed capacity).
+    let out_v = array_species_create(ctx, this_val, count);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    ctx_push_temp_root(ctx, out_v);
+    defer ctx_pop_temp_root(ctx);
     let arr: ZjsArray* = NULL;
     if zjs_is_array(this_val) != 0 { arr = zjs_as_array(this_val); }
     let i: u32 = 0;
     while i < count {
         let src_idx = (u32)(start) + i;
+        let present: bool = false;
+        let elem: ZjsValue = zjs_undefined();
         if arr != NULL {
-            if src_idx < arr.length { out.elements[i] = arr.elements[src_idx]; }
+            if src_idx < arr.length && src_idx < arr.cap {
+                let raw_v = arr.elements[src_idx];
+                if zjs_is_deleted(raw_v) == 0 { present = true; elem = raw_v; }
+            }
         } else if zjs_is_object(this_val) != 0 {
-            out.elements[i] = obj_get_indexed(ctx, zjs_as_object(this_val), src_idx);
+            present = true;
+            elem = obj_get_indexed(ctx, zjs_as_object(this_val), src_idx);
+            if ctx.pending_throw_active { return out_v; }
+        }
+        if present {
+            array_species_def(ctx, out_v, i, elem);
+            if ctx.pending_throw_active { return out_v; }
         }
         i = i + 1;
     }
-    out.length = count;
+    if zjs_is_array(out_v) != 0 { zjs_as_array(out_v).length = count; }
     return out_v;
 }
 
@@ -9602,11 +9739,11 @@ fn is_concat_spreadable(ctx: ZjsContext*, v: ZjsValue) -> i32 {
 // the new n. Spreadable items (IsConcatSpreadable) contribute their
 // 0..len elements (holes preserved by leaving the output slot unset);
 // everything else is appended as a single element. §23.1.3.1 steps 5.b–c.
-fn concat_append_item(ctx: ZjsContext*, out: ZjsArray*, e: ZjsValue, n: u32) -> u32 {
+fn concat_append_item(ctx: ZjsContext*, out_v: ZjsValue, e: ZjsValue, n: u32) -> u32 {
     let spread = is_concat_spreadable(ctx, e);
     if ctx.pending_throw_active { return n; }
     if spread != 1 {
-        array_set(out, n, e);
+        array_species_def(ctx, out_v, n, e);
         return n + 1;
     }
     let len = read_length_u32(ctx, e);
@@ -9640,14 +9777,17 @@ fn concat_append_item(ctx: ZjsContext*, out: ZjsArray*, e: ZjsValue, n: u32) -> 
             // getter (and propagates a throw).
             let ev = property_get(ctx, e, key_v);
             if ctx.pending_throw_active { return n; }
-            array_set(out, n + k, ev);
-        } else {
+            array_species_def(ctx, out_v, n + k, ev);
+            if ctx.pending_throw_active { return n; }
+        } else if zjs_is_array(out_v) != 0 {
             // Absent index → a hole in the result (spec leaves it absent).
-            // Must still write the sentinel so the result's dense buffer is
-            // initialized up to `length`; otherwise the skipped slots hold
-            // uninitialized memory and the GC mark walk derefs garbage
-            // (sparse @@isConcatSpreadable source → heap corruption).
-            array_set(out, n + k, zjs_deleted());
+            // For an array result we still write the sentinel so the dense
+            // buffer is initialized up to `length`; otherwise the skipped
+            // slots hold uninitialized memory and the GC mark walk derefs
+            // garbage (sparse @@isConcatSpreadable source → heap corruption).
+            // A custom-species *object* result leaves absent indices truly
+            // absent (no CreateDataProperty for holes).
+            array_set(zjs_as_array(out_v), n + k, zjs_deleted());
         }
         k = k + 1;
     }
@@ -9657,26 +9797,33 @@ fn concat_append_item(ctx: ZjsContext*, out: ZjsArray*, e: ZjsValue, n: u32) -> 
 fn host_array_concat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_array_coercible_this(ctx) { return zjs_undefined(); }
     // §23.1.3.1 step 1: O = ToObject(this). A = ArraySpeciesCreate(O, 0)
-    // — we use a plain array (no @@species support yet).
+    // — a subclass / custom-species ctor controls the result's shape.
     let this_obj = ctx_to_object(ctx, ctx.host_this);
     if ctx.pending_throw_active { return zjs_undefined(); }
-    let out_v = ctx_new_array(ctx, 0);
+    let out_v = array_species_create(ctx, this_obj, 0);
+    if ctx.pending_throw_active { return zjs_undefined(); }
     ctx_push_temp_root(ctx, out_v);
     defer ctx_pop_temp_root(ctx);
-    let out = zjs_as_array(out_v);
     let n: u32 = 0;
     // The list of items to concat is [O, ...args], each tested for
     // spreadability independently (so `this` honors @@isConcatSpreadable
     // and array-likes too).
-    n = concat_append_item(ctx, out, this_obj, n);
+    n = concat_append_item(ctx, out_v, this_obj, n);
     if ctx.pending_throw_active { return zjs_undefined(); }
     let i: u32 = 0;
     while i < argc {
-        n = concat_append_item(ctx, out, args[i], n);
+        n = concat_append_item(ctx, out_v, args[i], n);
         if ctx.pending_throw_active { return zjs_undefined(); }
         i = i + 1;
     }
-    out.length = n;
+    // §23.1.3.1 step 5: Perform Set(A, "length", n). For an array result
+    // this fixes up trailing holes; for an object result it's an ordinary
+    // [[Set]] of "length".
+    if zjs_is_array(out_v) != 0 { zjs_as_array(out_v).length = n; }
+    else if zjs_is_object(out_v) != 0 {
+        property_set(ctx, out_v, ctx_intern_string(ctx, (char*)"length", 6), zjs_double((f64)n));
+        if ctx.pending_throw_active { return out_v; }
+    }
     return out_v;
 }
 
@@ -9901,10 +10048,10 @@ fn host_array_filter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !array_method_prelude(ctx, args, argc, true, &this_val, &len) { return zjs_undefined(); }
     let cb = args[0];
     let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
-    let result_v = ctx_new_array(ctx, 0);
+    let result_v = array_species_create(ctx, this_val, 0);
+    if ctx.pending_throw_active { return zjs_undefined(); }
     ctx_push_temp_root(ctx, result_v);
     defer ctx_pop_temp_root(ctx);
-    let result = zjs_as_array(result_v);
     let out_i: u32 = 0;
     let i: u32 = 0;
     while i < len {
@@ -9914,7 +10061,8 @@ fn host_array_filter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             let r = array_method_call_cb(ctx, cb, this_arg, v, i, this_val);
             if ctx.pending_throw_active { return result_v; }
             if zjs_to_bool_coerce(r) {
-                array_set(result, out_i, v);
+                array_species_def(ctx, result_v, out_i, v);
+                if ctx.pending_throw_active { return result_v; }
                 out_i = out_i + 1;
             }
         } else if ctx.pending_throw_active { return result_v; }
@@ -10147,10 +10295,14 @@ fn host_array_flat_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     if !array_method_prelude(ctx, args, argc, true, &this_val, &len) { return zjs_undefined(); }
     let cb = args[0];
     let this_arg: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
-    let out_v = ctx_new_array(ctx, 0);
+    // FlatMap: A = ArraySpeciesCreate(O, 0) — the result length grows as
+    // mapped elements are appended (§23.1.3.11 step 4 passes 0, NOT
+    // sourceLen; using sourceLen would leave trailing holes). Element
+    // writes use CreateDataPropertyOrThrow via array_species_def.
+    let out_v = array_species_create(ctx, this_val, 0);
+    if ctx.pending_throw_active { return zjs_undefined(); }
     ctx_push_temp_root(ctx, out_v);
     defer ctx_pop_temp_root(ctx);
-    let out = zjs_as_array(out_v);
     let oi: u32 = 0;
     let i: u32 = 0;
     while i < len {
@@ -10167,12 +10319,16 @@ fn host_array_flat_map(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
                     let mv: ZjsValue = zjs_undefined();
                     if array_method_get(ctx, mapped, mi, &mv) {
                         if ctx.pending_throw_active { return out_v; }
-                        array_set(out, oi, mv); oi = oi + 1;
+                        array_species_def(ctx, out_v, oi, mv);
+                        if ctx.pending_throw_active { return out_v; }
+                        oi = oi + 1;
                     } else if ctx.pending_throw_active { return out_v; }
                     mi = mi + 1;
                 }
             } else {
-                array_set(out, oi, mapped); oi = oi + 1;
+                array_species_def(ctx, out_v, oi, mapped);
+                if ctx.pending_throw_active { return out_v; }
+                oi = oi + 1;
             }
         } else if ctx.pending_throw_active { return out_v; }
         i = i + 1;
@@ -10550,21 +10706,25 @@ fn host_array_splice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if dc < 0 { dc = 0; }
     if dc > (i32)len - start { dc = (i32)len - start; }
     let n_ins: u32 = if argc > 2 { argc - 2 } else { 0 };
-    // Build the removed array first (per spec).
-    let removed_v = ctx_new_array(ctx, (u32)dc);
+    // Build the removed array first (per spec). ArraySpeciesCreate(O, dc)
+    // so a subclass / custom-species ctor controls its shape; element
+    // writes go through array_species_def (CreateDataProperty for the
+    // object-species case, array_set fast path otherwise).
+    let removed_v = array_species_create(ctx, this_val, (u32)dc);
+    if ctx.pending_throw_active { return zjs_undefined(); }
     ctx_push_temp_root(ctx, removed_v);
     defer ctx_pop_temp_root(ctx);
-    let removed = zjs_as_array(removed_v);
     let k: u32 = 0;
     while k < (u32)dc {
         let v: ZjsValue = zjs_undefined();
         if array_method_get(ctx, this_val, (u32)start + k, &v) {
             if ctx.pending_throw_active { return removed_v; }
-            array_set(removed, k, v);
+            array_species_def(ctx, removed_v, k, v);
+            if ctx.pending_throw_active { return removed_v; }
         } else if ctx.pending_throw_active { return removed_v; }
         k = k + 1;
     }
-    removed.length = (u32)dc;
+    if zjs_is_array(removed_v) != 0 { zjs_as_array(removed_v).length = (u32)dc; }
     // Dense fast path — shift in place. Cache old length first:
     // array_set's grow side-effect bumps arr.length, which would
     // throw off the shift-source range.
@@ -22262,6 +22422,19 @@ fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
         let idx = zjs_to_array_index(key);
         // Holes report as absent (HasOwnProperty is false for them).
         if idx >= 0 && array_has_index(a, (u32)idx) != 0 { return zjs_bool(1); }
+        // An index defined via defineProperty / a non-default per-element
+        // attr lives in the arr.props sidecar, keyed by the stringified
+        // index — NOT the dense store. A numeric key (e.g.
+        // hasOwnProperty(arr, 0)) arrives as an int32, so the string
+        // branch below never fires for it; check props here too.
+        if idx >= 0 && a.props != NULL {
+            let kb: char[16];
+            let kl: int = 0;
+            raw { kl = snprintf(&kb[0], 16, "%u", (unsigned)idx); }
+            let katom = ctx_intern_atom(ctx, (char*)&kb[0], (u32)kl);
+            let psl = class_find_slot(a.props.cls, katom);
+            if psl >= 0 && zjs_is_deleted(a.props.slots[(u32)psl]) == 0 { return zjs_bool(1); }
+        }
         if zjs_is_string(key) != 0 {
             let ks = zjs_as_string(key);
             let kd = ks.data;
