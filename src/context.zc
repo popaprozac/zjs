@@ -2729,6 +2729,27 @@ fn ctx_new_object(ctx: ZjsContext*) -> ZjsValue {
     return zjs_cell_from_ptr((void*)o);
 }
 
+// Allocate an expando ("props") bag — the side object that holds named /
+// non-default-attr properties for arrays, functions, Dates, and other
+// non-plain cells. Identical shape to ctx_new_object, but registered
+// DIRECTLY in the old generation (age=1). A bag hangs off a possibly-old
+// holder; making the bag old means the holder->bag edge is never
+// old->young, so no write barrier is needed at the ~46 attach sites in
+// property_set (see docs/gc-barrier-audit.md). The bag's OWN slot writes
+// (property values, possibly young) ARE barriered via object_set /
+// object_define_property_slot. Behaviour-neutral under the current
+// major-only collector (the `age` field is only consulted by the minor
+// path); the bag is freed by a major like any other unreachable old cell.
+fn ctx_new_props_bag(ctx: ZjsContext*) -> ZjsValue {
+    let o = zjs_object_new();
+    o.cls = ctx.empty_class;
+    if ctx.realm.object_proto != NULL && o != ctx.realm.object_proto {
+        o.proto = ctx.realm.object_proto;
+    }
+    ctx_register_cell_old(ctx, (void*)o);
+    return zjs_cell_from_ptr((void*)o);
+}
+
 // The pooled slot-array size: the capacity a small object's slots/attrs
 // arrays get on their first allocation. Objects with up to this many own
 // properties recycle their arrays through the freelist; larger ones use the
@@ -4858,7 +4879,7 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
     if zjs_is_array(obj_v) != 0 {
         let arr = zjs_as_array(obj_v);
         if arr.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             arr.props = zjs_as_object(pv);
         }
         return arr.props;
@@ -4868,7 +4889,7 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
         let f: Function* = NULL;
         raw { f = (Function*)fp; }
         if f.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             f.props = zjs_as_object(pv);
         }
         return f.props;
@@ -4885,7 +4906,7 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
     if zjs_is_closure(obj_v) != 0 {
         let cl = zjs_as_closure(obj_v);
         if cl.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             cl.props = zjs_as_object(pv);
         }
         return cl.props;
@@ -4893,7 +4914,7 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
     if zjs_is_host_function(obj_v) != 0 {
         let hf = zjs_as_host_function(obj_v);
         if hf.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             hf.props = zjs_as_object(pv);
         }
         return hf.props;
@@ -4901,7 +4922,7 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
     if zjs_is_regexp(obj_v) != 0 {
         let r = zjs_as_regexp(obj_v);
         if r.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             r.props = zjs_as_object(pv);
         }
         return r.props;
@@ -4909,7 +4930,7 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
     if zjs_is_date(obj_v) != 0 {
         let d = zjs_as_date(obj_v);
         if d.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             d.props = zjs_as_object(pv);
         }
         return d.props;
@@ -4917,7 +4938,7 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
     if zjs_is_promise(obj_v) != 0 {
         let pr = zjs_as_promise(obj_v);
         if pr.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             pr.props = zjs_as_object(pv);
         }
         return pr.props;
@@ -4925,7 +4946,7 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
     if zjs_is_map(obj_v) != 0 {
         let m = zjs_as_map(obj_v);
         if m.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             m.props = zjs_as_object(pv);
         }
         return m.props;
@@ -4933,7 +4954,7 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
     if zjs_is_set(obj_v) != 0 {
         let s = zjs_as_set(obj_v);
         if s.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             s.props = zjs_as_object(pv);
         }
         return s.props;
@@ -4941,7 +4962,7 @@ fn resolve_define_receiver(ctx: ZjsContext*, obj_v: ZjsValue) -> ZjsObject* {
     if zjs_is_symbol(obj_v) != 0 {
         let sym = zjs_as_symbol(obj_v);
         if sym.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             sym.props = zjs_as_object(pv);
         }
         return sym.props;
@@ -6379,7 +6400,7 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         let f_p: Function* = NULL;
         raw { f_p = (Function*)fp_p; }
         if f_p.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             f_p.props = zjs_as_object(pv);
         }
         proto_v = zjs_cell_from_ptr((void*)f_p.props);
@@ -6388,14 +6409,14 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
         let f_p: Function* = NULL;
         raw { f_p = (Function*)fp_p; }
         if f_p.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             f_p.props = zjs_as_object(pv);
         }
         proto_v = zjs_cell_from_ptr((void*)f_p.props);
     } else if zjs_is_host_function(proto_v) != 0 {
         let hf_p = zjs_as_host_function(proto_v);
         if hf_p.props == NULL {
-            let pv = ctx_new_object(ctx);
+            let pv = ctx_new_props_bag(ctx);
             hf_p.props = zjs_as_object(pv);
         }
         proto_v = zjs_cell_from_ptr((void*)hf_p.props);
@@ -6424,6 +6445,9 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
                 }
             }
             o.proto = new_proto;
+            // Generational barrier: an existing (maybe-old) object's proto
+            // reassigned to a maybe-young object (see docs/gc-barrier-audit.md).
+            gc_write_barrier(ctx, (void*)o, proto_v);
         }
     } else if zjs_is_closure(obj_v) != 0 {
         // Closure path (#287). chalk and many class-polyfill bundles do
@@ -12193,7 +12217,7 @@ fn host_regexp_exec(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
     // .index, .input, .groups via the expando bag.
     if result.props == NULL {
-        let pv = ctx_new_object(ctx);
+        let pv = ctx_new_props_bag(ctx);
         result.props = zjs_as_object(pv);
     }
     object_set(ctx, result.props, ctx_intern_atom(ctx, (char*)"index", 5), zjs_int32((i32)abs_mstart));
@@ -12599,6 +12623,8 @@ fn host_generator_next(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         ctx_register_cell(ctx, (void*)rp);
         result_promise_v = zjs_cell_from_ptr((void*)rp);
         g.pending_next_promise = result_promise_v;
+        // Generational barrier: a promoted async generator ← young promise.
+        gc_write_barrier(ctx, (void*)g, result_promise_v);
     }
     let r: ZjsValue = zjs_undefined();
     let threw: bool = false;
@@ -20465,7 +20491,7 @@ fn install_species_getter(ctx: ZjsContext*, ctor: ZjsValue) -> void {
     if zjs_is_host_function(ctor) == 0 { return; }
     let hf = zjs_as_host_function(ctor);
     if hf.props == NULL {
-        let pv = ctx_new_object(ctx);
+        let pv = ctx_new_props_bag(ctx);
         hf.props = zjs_as_object(pv);
     }
     let sp_ptr: void* = NULL; raw { sp_ptr = (void*)host_symbol_species_getter; }
@@ -28220,7 +28246,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     let fcc_ptr: void* = NULL; raw { fcc_ptr = (void*)host_string_from_char_code; }
     let fcc_v = ctx_make_host_function(ctx, (char*)"fromCharCode", fcc_ptr);
     if strv_hf.props == NULL {
-        let pv = ctx_new_object(ctx);
+        let pv = ctx_new_props_bag(ctx);
         strv_hf.props = zjs_as_object(pv);
     }
     object_set(ctx, strv_hf.props,
@@ -28281,7 +28307,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                ctx_make_host_function_arity(ctx, (char*)"toPrecision", ntp_ptr, 1));
     // Number.* static constants (ECMA-262 §21.1.2).
     if num_hf.props == NULL {
-        let pv = ctx_new_object(ctx);
+        let pv = ctx_new_props_bag(ctx);
         num_hf.props = zjs_as_object(pv);
     }
     object_set(ctx, num_hf.props, ctx_intern_atom(ctx, (char*)"MAX_VALUE",         9),
@@ -28411,7 +28437,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     date_hf.arity = 7;
     // Statics on Date itself (Date.now / Date.parse / Date.UTC).
     if date_hf.props == NULL {
-        let pv = ctx_new_object(ctx);
+        let pv = ctx_new_props_bag(ctx);
         date_hf.props = zjs_as_object(pv);
     }
     object_set(ctx, date_hf.props, ctx_intern_atom(ctx, (char*)"now", 3),
@@ -28509,7 +28535,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     zjs_as_host_function(sym_ctor_v).is_constructor = false;  // Symbol() only, not `new Symbol`
     let sym_hf2 = zjs_as_host_function(sym_ctor_v);
     if sym_hf2.props == NULL {
-        let pv = ctx_new_object(ctx);
+        let pv = ctx_new_props_bag(ctx);
         sym_hf2.props = zjs_as_object(pv);
     }
     object_set(ctx, sym_hf2.props, ctx_intern_atom(ctx, (char*)"for", 3),
@@ -28646,7 +28672,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     // Proxy.revocable static method.
     let prevoc_ptr: void* = NULL; raw { prevoc_ptr = (void*)host_proxy_revocable; }
     if proxy_hf.props == NULL {
-        let pv = ctx_new_object(ctx);
+        let pv = ctx_new_props_bag(ctx);
         proxy_hf.props = zjs_as_object(pv);
     }
     object_set(ctx, proxy_hf.props, ctx_intern_atom(ctx, (char*)"revocable", 9),
@@ -28835,7 +28861,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         if zjs_is_host_function(sym_v) != 0 {
             let sym_hf = zjs_as_host_function(sym_v);
             if sym_hf.props == NULL {
-                let pv = ctx_new_object(ctx);
+                let pv = ctx_new_props_bag(ctx);
                 sym_hf.props = zjs_as_object(pv);
             }
             let wk_iter = ctx_alloc_symbol(ctx,

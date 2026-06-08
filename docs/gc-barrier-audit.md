@@ -56,11 +56,18 @@ Status: ☑ done · ☐ todo
 - ☐ spread-into-array / Op::AppendSpread direct writes (interpreter.zc ~6308/7759), arguments-object fill (~7554/7570) — verify holder age (often young).
 
 ### Prototype pointer (old object ← young proto)
-- ☐ `setPrototypeOf` / `__proto__` set (interpreter.zc ~5675; context.zc ~4782/6421).
+- ☑ `object_set_prototype_of` store (`o.proto = new_proto`) barriered.
+- ☐ interpreter.zc setPrototypeOf path (~5675) + object_set `__proto__` (~4782) — verify/cover next batch.
 - ☐ subclass proto wiring on existing ctors (context.zc ~28368/29491 — bootstrap, likely safe).
 
 ### Expando bag `.props` (old cell ← young bag object)
-- ☐ every `<cell>.props = zjs_as_object(pv)` for a possibly-old holder (interpreter.zc property_set ~1856–7516; context.zc ~4857–20464). The bag is freshly created (young) and attached to a possibly-old array/fn/closure/hostfn/Date/Map/Set/Symbol/RegExp/Promise. **MANY.** Centralize via a helper at the property_set expando path.
+- ☑ SOLVED structurally, not per-site: `ctx_new_props_bag` allocates the bag
+  directly in **old-gen** (age=1), so the holder→bag edge is never
+  old→young and needs no barrier. Converted all 46 runtime `property_set`
+  attach sites (interpreter.zc 25 + context.zc 21) from `ctx_new_object`.
+  The 3 compiler.zc sites stay young (compile-time holders are young, re-
+  scanned at promotion). The bag's own slot writes are barriered via
+  object_set / object_define_property_slot.
 
 ### Host-function binding (`.bound`, `.prototype`)
 - ☐ `hf.bound = state_v` (Promise/Proxy/bound-fn machinery; interpreter.zc ~4282; context.zc ~12439–24600) — host-fn may be old, state young.
@@ -68,7 +75,7 @@ Status: ☑ done · ☐ todo
 
 ### Promise / async / generator
 - ☑ `promise.reactions` / `promise.value` (context.zc ~12311–12340) — barriered.
-- ☐ generator `pending_next_promise` on a promoted generator (context.zc ~12596).
+- ☑ generator `pending_next_promise` (async-generator resume) barriered.
 - ☐ async-continuation saved state if the cont cell can be old (interpreter.zc ~4313–4319) — usually young; verify.
 
 ### Map / Set
@@ -76,8 +83,8 @@ Status: ☑ done · ☐ todo
 - ☐ Map/Set entry-array realloc keeps pointers; the add path barrier covers new edges — verify WeakMap/WeakSet add paths.
 
 ## Execution
-1. ☐ Choke-point barriers: object_define_property_slot, StoreProp IC, StoreElem (this commit).
-2. ☐ `.props` expando attach (centralized helper).
-3. ☐ proto / bound / prototype / generator-pending sweep.
-4. ☐ `ZJS_GEN_GC` flag in `ctx_maybe_gc` → `gc_run_minor` on young fill.
+1. ☑ Choke-point barriers: object_define_property_slot, StoreProp IC, StoreElem (eab0ee3).
+2. ☑ `.props` expando attach → `ctx_new_props_bag` (old-gen alloc) + proto (setPrototypeOf) + generator-pending.
+3. ☐ Remaining sweep: host-fn `.bound` (mostly young-holder — verify), user `.prototype` writes (property_set), interpreter setPrototypeOf/`__proto__` paths, splice-insert, WeakMap/WeakSet add.
+4. ☐ `ZJS_GEN_GC` flag in `ctx_maybe_gc` → `gc_run_minor` on young fill (default OFF).
 5. ☐ Soak: splay no-hang, full test262, alloc-churn, Promise/embedded-worker; tune nursery threshold.
