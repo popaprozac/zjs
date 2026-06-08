@@ -84,7 +84,13 @@ Status: ☑ done · ☐ todo
 
 ## Execution
 1. ☑ Choke-point barriers: object_define_property_slot, StoreProp IC, StoreElem (eab0ee3).
-2. ☑ `.props` expando attach → `ctx_new_props_bag` (old-gen alloc) + proto (setPrototypeOf) + generator-pending.
-3. ☐ Remaining sweep: host-fn `.bound` (mostly young-holder — verify), user `.prototype` writes (property_set), interpreter setPrototypeOf/`__proto__` paths, splice-insert, WeakMap/WeakSet add.
-4. ☐ `ZJS_GEN_GC` flag in `ctx_maybe_gc` → `gc_run_minor` on young fill (default OFF).
-5. ☐ Soak: splay no-hang, full test262, alloc-churn, Promise/embedded-worker; tune nursery threshold.
+2. ☑ `.props` expando attach → `ctx_new_props_bag` (old-gen alloc) + proto (setPrototypeOf) + generator-pending (5f46a57).
+3. ☑ `ZJS_GEN_GC` flag (+ `ZJS_GEN_GC_YOUNG` threshold override) in `ctx_maybe_gc` → `gc_run_minor` on young fill; **default OFF**.
+4. ◐ First soak (ZJS_GEN_GC=1, aggressive minors `YOUNG=64..256`):
+   - ☑ **splay no longer HANGS** (the Session-3 blocker — fixed by the object-slot + proto barriers). exit 0.
+   - ☑ all 24 microbenches run clean under aggressive minors.
+   - ☐ full test262 under the flag: **202 NEW failures** vs default (default itself unchanged: 88.1%, 0 reg). Remaining barrier gaps, clustered: `Object.defineProperty` / `defineProperties` (~120), `Object.create` (~5), `Array.from` / `Array.prototype.with`. These store a young value into an old (often exotic: `arguments`, array-index) holder via a define path that bypasses object_define_property_slot. NOT yet root-caused per-cluster (only repro under the full harness).
+5. ☐ Close the 202: trace the defineProperty data/exotic-apply + Array.from element-define + Object.create proto paths; add barriers; re-soak to 0-new. THEN consider default-on + measure splay max-pause.
+
+**Status: the flag is EXPERIMENTAL / opt-in. Default behavior is untouched
+(major-only, 88.1%, 0 reg). Do not flip default-on until the 202 are closed.**

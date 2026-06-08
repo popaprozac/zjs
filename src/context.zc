@@ -293,6 +293,11 @@ struct ZjsContext {
     young_cap:      u32;
     young_threshold: u32;
     cells_since_minor: u32;
+    // Generational minor collector. OFF unless ZJS_GEN_GC is set (the
+    // write-barrier coverage is being completed on this branch). When on,
+    // ctx_maybe_gc fires gc_run_minor on young fill instead of waiting for
+    // a full major. See docs/gc-barrier-audit.md / docs/gc-experiment.md.
+    gen_gc_enabled: bool;
 
     // Freelist for OBJECT_INLINE_SLOTS-sized property slot/attr arrays.
     // Short-lived small objects (the dominant allocation pattern) recycle
@@ -658,6 +663,16 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
     // overhead doesn't dominate.
     result.young_threshold   = 1024;
     result.cells_since_minor = 0;
+    // Opt-in generational minor collector (write-barrier coverage WIP).
+    // ZJS_GEN_GC=1 enables it; ZJS_GEN_GC_YOUNG overrides the young fill
+    // threshold (low value = aggressive minors, surfaces barrier gaps).
+    result.gen_gc_enabled = false;
+    raw {
+        const char* gg = getenv("ZJS_GEN_GC");
+        if (gg != NULL && gg[0] != '0' && gg[0] != '\0') result->gen_gc_enabled = true;
+        const char* gy = getenv("ZJS_GEN_GC_YOUNG");
+        if (gy != NULL) { int v = atoi(gy); if (v > 0) result->young_threshold = (uint32_t)v; }
+    }
     // Slot-array freelist starts empty; the index arrays are allocated
     // lazily on the first object free (slotpair_free).
     result.slot_pool         = NULL;
@@ -2419,10 +2434,23 @@ fn ctx_maybe_gc(ctx: ZjsContext*) -> void {
     // The young/old split + sweep_young + sweep_old + rem-set
     // infrastructure remain in tree as scaffolding (see
     // docs/gc-experiment.md for the design); flipping the trigger
-    // back on requires finishing the audit. Until then, every minor
-    // attempt was producing infinite GC loops on splay-shape
-    // workloads, and Session 2 measurements showed no win without
-    // the barrier anyway.
+    // back on requires finishing the audit (in progress on
+    // perf/gc-alloc-path — see docs/gc-barrier-audit.md). It is now
+    // OPT-IN behind ZJS_GEN_GC so the barrier coverage can be soaked
+    // without changing default behavior.
+    //
+    // Generational path: a minor fires on young fill (cheap — sweeps only
+    // the nursery + re-scans roots + rem-set). A major still fires on
+    // total-cell pressure to reclaim promoted garbage.
+    if ctx.gen_gc_enabled {
+        if ctx.cells_since_minor >= ctx.young_threshold {
+            gc_run_minor(ctx);
+        }
+        if ctx.cells_since_gc >= ctx.gc_threshold {
+            gc_run_major(ctx);
+        }
+        return;
+    }
     if ctx.cells_since_gc >= ctx.gc_threshold {
         gc_run_major(ctx);
     }
