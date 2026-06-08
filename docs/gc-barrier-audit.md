@@ -125,7 +125,35 @@ Generational is a clear win where garbage dominates (object_alloc); modest on
 splay, which is live-set-bound (a major still must mark the 1.4M-cell tree —
 generational can't make a live set smaller). Minor is now genuinely O(young).
 
-**Status: correct + perf-positive for churn, behind ZJS_GEN_GC (default OFF).
-Default untouched (88.1%, 0 reg); GEN_GC soak 0-new; ASan clean.** Remaining
-before default-on: broader real-app soak (Promise/embedded-worker) + decide
-whether the splay total-pause overhead is acceptable / tune young_threshold.
+## Broader real-app soak (2026-06-08) — found 2 MORE async/suspend gaps
+
+A sustained self-checking stress (`/tmp/realapp_soak.js`: tree/class/Map/Set/
+closure/defineProperty/JSON/array-species/generator churn + a deep async
+Promise pipeline) under ZJS_GEN_GC + ASan surfaced gaps test262's short tests
+miss. Synchronous half: GEN_GC == default, all pass. Async half exposed UAFs:
+
+1. ☑ **FIXED — generator / async-cont saved_regs.** On a *re*-suspend (later
+   yield/await), a generator/continuation already promoted to old re-saves
+   young regs (e.g. a freshly-awaited Promise) into saved_regs with no barrier
+   → minor frees the awaited Promise → UAF. Fix: `gc_barrier_cell(holder)` (adds
+   an old holder to the rem-set once, re-scanning all its slots) at every
+   suspend save site — Op::Yield (start + yield), async-gen await, async-fn
+   await. ASan-clean now on dp_repro / gcstress / the defineProperty cluster.
+
+2. ☐ **OPEN — async/promise object graph.** The async *pipeline* still ASan-
+   UAFs: a young Promise (from `Promise.resolve` in an `await` loop) is freed by
+   a minor while still referenced by an OLD cell 3 hops from a root
+   (object → … → promise → freed promise). Suspects (deferred edges from the
+   audit's "verify" list): host-fn **`.bound`** stores in the Promise machinery
+   (~20 sites: resolve/reject/job/combinator fns bound to young state), and
+   Promise.all/race **state objects** holding young element promises. These are
+   old→young edges with no barrier. NOT yet root-caused (only repros under the
+   sustained pipeline; test262 async tests are too short to promote+free).
+
+**Status: correct for sync + test262 (incl. all async tests, 0-new) + ASan-clean
+on non-pipeline workloads; one OPEN async-pipeline UAF remains. Behind
+ZJS_GEN_GC (default OFF) — NOT real-app-safe for sustained async until #2 is
+closed. Default untouched (88.1%, 0 reg). Perf: object_alloc −68%/−79%, splay
+max −27%.** Next: barrier the host-fn `.bound` + Promise-combinator-state edges
+(or a targeted "scan promise/cont graph" approach), re-soak the pipeline under
+ASan to 0-UAF, then the broader soak + default-on decision.

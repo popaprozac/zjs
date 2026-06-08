@@ -999,6 +999,22 @@ fn rem_set_add(ctx: ZjsContext*, holder: void*) -> void {
     ctx.rem_count = ctx.rem_count + 1;
 }
 
+// Suspend-point barrier: a generator / async continuation that has already
+// been promoted to old can have fresh (young) values written into its
+// saved_regs when it re-suspends on a later yield/await. Those are old->young
+// edges, but there are many of them (the whole register file), so instead of
+// barriering each we add the holder to the remembered set once — the next
+// minor re-scans all its slots via gc_mark_cell_children. No-op for a young
+// holder (re-scanned at promotion anyway). Without this a minor frees a young
+// awaited Promise still referenced by an old continuation's saved_regs (ASan
+// heap-use-after-free in the async pipeline soak).
+fn gc_barrier_cell(ctx: ZjsContext*, holder: void*) -> void {
+    if holder == NULL || ctx == NULL { return; }
+    let h: CellHeader* = NULL;
+    raw { h = (CellHeader*)holder; }
+    if h.age != 0 { rem_set_add(ctx, holder); }
+}
+
 // The write barrier itself. Call this on every store of a ZjsValue
 // into a heap-resident slot — the helper extracts the cell pointer
 // (if any) from `value` and records the old→young edge.

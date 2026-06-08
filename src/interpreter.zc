@@ -4035,6 +4035,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 i = i + 1;
             }
             gen.saved_ip = ip + 1;
+            // Suspend barrier: if this generator was already promoted to old,
+            // its saved_regs now hold young values (re-scan it next minor).
+            gc_barrier_cell(ctx, (void*)gen);
             // First .next() resumes the body; no value is delivered to
             // a yield's dst register (there is none yet). Mark as
             // GEN_INITIAL so the resume path skips the resume_value
@@ -4135,6 +4138,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 i = i + 1;
             }
             gen.saved_ip = ip + 1;
+            // Suspend barrier: a promoted (old) generator re-saving young regs.
+            gc_barrier_cell(ctx, (void*)gen);
             gen.resume_dst = inst.a;
             gen.saved_host_this = ctx.host_this;
             gen.saved_current_closure = ctx.current_closure;
@@ -4260,6 +4265,8 @@ fn interpret_inner_full(ctx: ZjsContext*,
                             si = si + 1;
                         }
                         g.saved_ip = ip + 1;
+                        // Suspend barrier: promoted async generator re-saving young regs.
+                        gc_barrier_cell(ctx, (void*)g);
                         // resume_dst doubles as await_dst — they're
                         // never both active (generator either yielded
                         // or awaiting).
@@ -4314,6 +4321,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         ri = ri + 1;
                     }
                     cont.saved_ip = ip + 1;
+                    // Suspend barrier: a promoted (old) async continuation
+                    // re-saving young regs (e.g. a freshly-awaited Promise) on a
+                    // later await — re-scan it next minor so the awaited value
+                    // isn't swept. (The async-pipeline-soak ASan UAF.)
+                    gc_barrier_cell(ctx, (void*)cont);
                     cont.await_dst = inst.a;
                     cont.saved_host_this = ctx.host_this;
                     cont.saved_current_closure = ctx.current_closure;
