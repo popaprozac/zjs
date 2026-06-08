@@ -224,6 +224,7 @@ struct ZjsRealm {
     regexp_proto: ZjsObject*;
     generator_proto: ZjsObject*;
     async_generator_proto: ZjsObject*;
+    async_from_sync_iter_proto: ZjsObject*;
     map_proto: ZjsObject*;
     set_proto: ZjsObject*;
     weakmap_proto: ZjsObject*;
@@ -1924,6 +1925,7 @@ fn gc_mark_realm(realm: ZjsRealm*) -> void {
     if realm.regexp_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.regexp_proto)); }
     if realm.generator_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.generator_proto)); }
     if realm.async_generator_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.async_generator_proto)); }
+    if realm.async_from_sync_iter_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.async_from_sync_iter_proto)); }
     if realm.map_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.map_proto)); }
     if realm.set_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.set_proto)); }
     if realm.weakmap_proto != NULL { gc_mark_value(zjs_cell_from_ptr((void*)realm.weakmap_proto)); }
@@ -4175,10 +4177,193 @@ fn iter_get(ctx: ZjsContext*, src: ZjsValue) -> ZjsValue {
     return zjs_undefined();
 }
 
+// ===================================================================
+// CreateAsyncFromSyncIterator (§27.1.4.1). Wraps a SYNC iterator in an
+// async iterator whose next/return/throw drive the sync iterator and
+// promisify each result (AsyncFromSyncIteratorContinuation). Used by
+// GetIterator(obj, async) when obj has no @@asyncIterator — so both
+// for-await-of and async yield* see a proper async iterator with a real
+// property-accessible `.next` (the fast-path sync iterator CELL has none).
+// ===================================================================
+def AFS_ITER_KEY: char* = (char*)"__zjs_afs_iter__";
+def AFS_DONE_KEY: char* = (char*)"__zjs_afs_done__";
+
+// A promise rejected with the engine's current pending throw (consumed).
+fn afs_reject_pending(ctx: ZjsContext*) -> ZjsValue {
+    let err = consume_pending_throw(ctx);
+    let p = zjs_promise_new(); ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    promise_settle(ctx, pv, err, false);
+    return pv;
+}
+fn afs_reject_value(ctx: ZjsContext*, err: ZjsValue) -> ZjsValue {
+    let p = zjs_promise_new(); ctx_register_cell(ctx, (void*)p);
+    let pv = zjs_cell_from_ptr((void*)p);
+    promise_settle(ctx, pv, err, false);
+    return pv;
+}
+
+// unwrap(v) => CreateIterResultObject(v, done); `done` is stashed on .bound.
+fn host_afs_unwrap(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let done: bool = false;
+    if ctx.current_host_fn != NULL {
+        let hf: ZjsHostFunction* = NULL; raw { hf = (ZjsHostFunction*)ctx->current_host_fn; }
+        let st_v = hf.bound;
+        if zjs_is_object(st_v) != 0 {
+            let dv = object_get(zjs_as_object(st_v), ctx_intern_atom(ctx, AFS_DONE_KEY, 16));
+            done = zjs_to_bool_coerce(dv) != 0;
+        }
+    }
+    let value = if argc >= 1 { args[0] } else { zjs_undefined() };
+    return build_iter_result_helper(ctx, value, done);
+}
+
+// AsyncFromSyncIteratorContinuation(result, done):
+//   valueWrapper = PromiseResolve(value); return valueWrapper.then(unwrap)
+fn afs_continuation(ctx: ZjsContext*, value: ZjsValue, done: bool) -> ZjsValue {
+    ctx_push_temp_root(ctx, value);
+    defer ctx_pop_temp_root(ctx);
+    let vwp = zjs_promise_new(); ctx_register_cell(ctx, (void*)vwp);
+    let vw = zjs_cell_from_ptr((void*)vwp);
+    ctx_push_temp_root(ctx, vw);
+    defer ctx_pop_temp_root(ctx);
+    promise_resolve_with(ctx, vw, value);
+    let st_v = ctx_new_object(ctx);
+    object_set(ctx, zjs_as_object(st_v), ctx_intern_atom(ctx, AFS_DONE_KEY, 16), zjs_bool(done));
+    let unwrap_ptr: void* = NULL; raw { unwrap_ptr = (void*)host_afs_unwrap; }
+    let unwrap = ctx_make_host_function_arity(ctx, (char*)"", unwrap_ptr, 1);
+    zjs_as_host_function(unwrap).bound = st_v;
+    let result = zjs_promise_new(); ctx_register_cell(ctx, (void*)result);
+    let rp = zjs_cell_from_ptr((void*)result);
+    let vwpp = zjs_as_promise(vw);
+    if vwpp.state == PROMISE_FULFILLED {
+        microtask_enqueue(ctx, unwrap, vwpp.value, rp, true);
+    } else if vwpp.state == PROMISE_REJECTED {
+        microtask_enqueue(ctx, zjs_undefined(), vwpp.value, rp, false);
+    } else {
+        promise_attach_reaction(ctx, vwpp, unwrap, zjs_undefined(), rp);
+    }
+    return rp;
+}
+
+fn afs_sync_iter_of(ctx: ZjsContext*, this_v: ZjsValue) -> ZjsValue {
+    if zjs_is_object(this_v) == 0 { return zjs_undefined(); }
+    return object_get(zjs_as_object(this_v), ctx_intern_atom(ctx, AFS_ITER_KEY, 16));
+}
+
+fn host_afs_next(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let sync_iter = afs_sync_iter_of(ctx, ctx.host_this);
+    let arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let value: ZjsValue = zjs_undefined();
+    let done: bool = false;
+    if zjs_is_array_iter(sync_iter) != 0 {
+        // Fast-path sync iterator cell — no property `.next`; step directly.
+        let step = iter_step(ctx, sync_iter);
+        if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+        value = step.value; done = step.done;
+    } else {
+        let nm = property_get(ctx, sync_iter, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"next", 4)));
+        if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+        let ab: ZjsValue[1]; ab[0] = arg;
+        let abp: ZjsValue* = NULL; raw { abp = &ab[0]; }
+        let res: ZjsValue = zjs_undefined();
+        raw { res = zjs_call_value_with_this(ctx, nm, sync_iter, abp, 1); }
+        if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+        if !value_is_js_object(res) {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                        (char*)"iterator result is not an object", 32);
+            return afs_reject_value(ctx, err);
+        }
+        done = zjs_to_bool_coerce(property_get(ctx, res, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"done", 4)))) != 0;
+        if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+        value = property_get(ctx, res, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"value", 5)));
+        if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+    }
+    return afs_continuation(ctx, value, done);
+}
+
+fn host_afs_return(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let sync_iter = afs_sync_iter_of(ctx, ctx.host_this);
+    let arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let rm = property_get(ctx, sync_iter, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"return", 6)));
+    if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+    let callable: bool = zjs_is_function(rm) != 0 || zjs_is_closure(rm) != 0 || zjs_is_host_function(rm) != 0;
+    if !callable {
+        // No return method → resolved promise of { value: arg, done: true }.
+        let ir = build_iter_result_helper(ctx, arg, true);
+        let p = zjs_promise_new(); ctx_register_cell(ctx, (void*)p);
+        let pv = zjs_cell_from_ptr((void*)p);
+        promise_settle(ctx, pv, ir, true);
+        return pv;
+    }
+    let ab: ZjsValue[1]; ab[0] = arg;
+    let abp: ZjsValue* = NULL; raw { abp = &ab[0]; }
+    let res: ZjsValue = zjs_undefined();
+    raw { res = zjs_call_value_with_this(ctx, rm, sync_iter, abp, 1); }
+    if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+    if !value_is_js_object(res) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"iterator result is not an object", 32);
+        return afs_reject_value(ctx, err);
+    }
+    let done = zjs_to_bool_coerce(property_get(ctx, res, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"done", 4)))) != 0;
+    if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+    let value = property_get(ctx, res, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"value", 5)));
+    if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+    return afs_continuation(ctx, value, done);
+}
+
+fn host_afs_throw(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let sync_iter = afs_sync_iter_of(ctx, ctx.host_this);
+    let arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    let tm = property_get(ctx, sync_iter, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"throw", 5)));
+    if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+    let callable: bool = zjs_is_function(tm) != 0 || zjs_is_closure(tm) != 0 || zjs_is_host_function(tm) != 0;
+    if !callable {
+        // No throw method → reject with a TypeError (the sync iterator can't
+        // handle a throw completion).
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"The iterator does not provide a throw method", 44);
+        return afs_reject_value(ctx, err);
+    }
+    let ab: ZjsValue[1]; ab[0] = arg;
+    let abp: ZjsValue* = NULL; raw { abp = &ab[0]; }
+    let res: ZjsValue = zjs_undefined();
+    raw { res = zjs_call_value_with_this(ctx, tm, sync_iter, abp, 1); }
+    if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+    if !value_is_js_object(res) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"iterator result is not an object", 32);
+        return afs_reject_value(ctx, err);
+    }
+    let done = zjs_to_bool_coerce(property_get(ctx, res, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"done", 4)))) != 0;
+    if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+    let value = property_get(ctx, res, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"value", 5)));
+    if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+    return afs_continuation(ctx, value, done);
+}
+
+fn host_afs_self(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return ctx.host_this;
+}
+
+// Wrap a sync iterator (whatever iter_get returned: a fast-path cell OR a
+// real iterator object) into an async-from-sync iterator instance.
+fn create_async_from_sync_iterator(ctx: ZjsContext*, sync_iter: ZjsValue) -> ZjsValue {
+    ctx_push_temp_root(ctx, sync_iter);
+    defer ctx_pop_temp_root(ctx);
+    let w_v = ctx_new_object(ctx);
+    let w = zjs_as_object(w_v);
+    if ctx.realm.async_from_sync_iter_proto != NULL {
+        w.proto = ctx.realm.async_from_sync_iter_proto;
+    }
+    object_set(ctx, w, ctx_intern_atom(ctx, AFS_ITER_KEY, 16), sync_iter);
+    return w_v;
+}
+
 // Async-aware GetIterator. Spec §7.4.5: prefer `@@asyncIterator`;
-// fall back to `@@iterator` (sync) — the caller (for-await loop)
-// awaits each result so a sync iter yielding plain {value, done}
-// works fine here.
+// fall back to GetIterator(obj, sync) + CreateAsyncFromSyncIterator so the
+// returned async iterator has a real `.next` and promisified results.
 fn iter_get_async(ctx: ZjsContext*, src: ZjsValue) -> ZjsValue {
     if zjs_is_undefined(src) != 0 || zjs_is_null(src) != 0 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
@@ -4219,10 +4404,13 @@ fn iter_get_async(ctx: ZjsContext*, src: ZjsValue) -> ZjsValue {
         ctx.pending_throw_value = err;
         return zjs_undefined();
     }
-    // Fall back to sync @@iterator. The for-await loop awaits every
-    // next() result via Op::Await, so a sync iter's plain {value,
-    // done} return is awaited (no-op for non-Promise values).
-    return iter_get(ctx, src);
+    // Fall back to GetIterator(obj, sync) wrapped in an async-from-sync
+    // iterator (§7.4.5 step 3 / §27.1.4.1) — gives the result a real
+    // property-accessible `.next` whose results are promisified, which both
+    // for-await-of and async yield* need.
+    let sync_iter = iter_get(ctx, src);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    return create_async_from_sync_iterator(ctx, sync_iter);
 }
 
 // Spec IteratorStep: calls iter.next(); returns {value, done}. On
@@ -28428,6 +28616,25 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
         ctx_intern_atom(ctx, (char*)"@@toStringTag", 13),
         ctx_intern_string(ctx, (char*)"AsyncGenerator", 14), PROP_CONFIGURABLE);
 
+    // %AsyncFromSyncIteratorPrototype% (§27.1.4.2) — instances created by
+    // CreateAsyncFromSyncIterator resolve next/return/throw here; @@asyncIterator
+    // returns self. No @@iterator (it is an ASYNC iterator).
+    let afs_proto_v = ctx_new_object(ctx);
+    ctx.realm.async_from_sync_iter_proto = zjs_as_object(afs_proto_v);
+    let afs_next_ptr:   void* = NULL; raw { afs_next_ptr   = (void*)host_afs_next; }
+    let afs_return_ptr: void* = NULL; raw { afs_return_ptr = (void*)host_afs_return; }
+    let afs_throw_ptr:  void* = NULL; raw { afs_throw_ptr  = (void*)host_afs_throw; }
+    let afs_self_ptr:   void* = NULL; raw { afs_self_ptr   = (void*)host_afs_self; }
+    object_set(ctx, ctx.realm.async_from_sync_iter_proto, ctx_intern_atom(ctx, (char*)"next", 4),
+               ctx_make_host_function_arity(ctx, (char*)"next", afs_next_ptr, 1));
+    object_set(ctx, ctx.realm.async_from_sync_iter_proto, ctx_intern_atom(ctx, (char*)"return", 6),
+               ctx_make_host_function_arity(ctx, (char*)"return", afs_return_ptr, 1));
+    object_set(ctx, ctx.realm.async_from_sync_iter_proto, ctx_intern_atom(ctx, (char*)"throw", 5),
+               ctx_make_host_function_arity(ctx, (char*)"throw", afs_throw_ptr, 1));
+    object_set(ctx, ctx.realm.async_from_sync_iter_proto,
+               ctx_intern_atom(ctx, (char*)"@@asyncIterator", 15),
+               ctx_make_host_function_arity(ctx, (char*)"[Symbol.asyncIterator]", afs_self_ptr, 0));
+
     // Well-known symbols. Each is a TAG_SYMBOL whose internal `key`
     // string matches the "@@xxx" sentinel the rest of the engine uses
     // for these property keys — so installing user methods via
@@ -29861,6 +30068,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     proto_mark_nonenum(ctx.realm.symbol_proto);
     proto_mark_nonenum(ctx.realm.generator_proto);
     proto_mark_nonenum(ctx.realm.async_generator_proto);
+    proto_mark_nonenum(ctx.realm.async_from_sync_iter_proto);
     proto_mark_nonenum(ctx.realm.array_buffer_proto);
     proto_mark_nonenum(ctx.realm.data_view_proto);
     // Per-kind TypedArray prototypes carry only `constructor` (+ the
@@ -29905,6 +30113,7 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     mark_proto_methods_non_constructor(ctx, ctx.realm.promise_ctor_proto);
     mark_proto_methods_non_constructor(ctx, ctx.realm.generator_proto);
     mark_proto_methods_non_constructor(ctx, ctx.realm.async_generator_proto);
+    mark_proto_methods_non_constructor(ctx, ctx.realm.async_from_sync_iter_proto);
     mark_proto_methods_non_constructor(ctx, ctx.realm.map_proto);
     mark_proto_methods_non_constructor(ctx, ctx.realm.set_proto);
     mark_proto_methods_non_constructor(ctx, ctx.realm.date_proto);
