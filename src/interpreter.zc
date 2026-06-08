@@ -4202,7 +4202,13 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let fo_a = ctx.frames[cur_idx].outer_promise;
                 let is_afn_a: bool = zjs_is_promise(fo_a) != 0;
                 let is_agen_a: bool = ctx.frames[cur_idx].generator != NULL && f.is_async;
-                if is_afn_a && !is_agen_a {
+                // PromiseResolve(v) for BOTH async functions AND async
+                // generators — this adopts thenables (a thenable becomes a
+                // PENDING promise resolved by its .then, routing through the
+                // suspend path below). A primitive / non-thenable object yields
+                // an immediately-fulfilled promise (synchronous resume, as the
+                // legacy async-gen path did), so only thenables change.
+                if is_afn_a || is_agen_a {
                     let np = zjs_promise_new();
                     ctx_register_cell(ctx, (void*)np);
                     let np_v = zjs_cell_from_ptr((void*)np);
