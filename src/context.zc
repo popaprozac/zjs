@@ -1549,8 +1549,15 @@ fn gc_mark_cell_children(p: void*) -> void {
         if ac.saved_current_closure != NULL {
             gc_mark_value(zjs_cell_from_ptr((void*)ac.saved_current_closure));
         }
-        // function is owned by the context's function registry — no
-        // separate mark needed.
+        // Mark the Function being resumed. (The old "owned by a function
+        // registry — no mark needed" assumption is false: a runtime-compiled
+        // function value — e.g. an `async function` expression — is a young GC
+        // cell referenced only via this continuation. Without this mark a minor
+        // frees it and push_call_frame reads freed memory on resume. The
+        // closure branch already marks cl.function for the same reason.)
+        if ac.function != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)ac.function));
+        }
         return;
     }
 
@@ -1574,6 +1581,12 @@ fn gc_mark_cell_children(p: void*) -> void {
         // result-promise between the .next() return and the await
         // resume — and then the resume tries to settle a dead pointer.
         gc_mark_value(g.pending_next_promise);
+        // Mark the generator body Function — a runtime-compiled function value
+        // is a young GC cell referenced only here; without this a minor frees
+        // it and the resume reads freed memory (same fix as the async-cont).
+        if g.function != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)g.function));
+        }
         return;
     }
 

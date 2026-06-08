@@ -140,15 +140,24 @@ miss. Synchronous half: GEN_GC == default, all pass. Async half exposed UAFs:
    suspend save site — Op::Yield (start + yield), async-gen await, async-fn
    await. ASan-clean now on dp_repro / gcstress / the defineProperty cluster.
 
-2. ☐ **OPEN — async/promise object graph.** The async *pipeline* still ASan-
-   UAFs: a young Promise (from `Promise.resolve` in an `await` loop) is freed by
-   a minor while still referenced by an OLD cell 3 hops from a root
-   (object → … → promise → freed promise). Suspects (deferred edges from the
-   audit's "verify" list): host-fn **`.bound`** stores in the Promise machinery
-   (~20 sites: resolve/reject/job/combinator fns bound to young state), and
-   Promise.all/race **state objects** holding young element promises. These are
-   old→young edges with no barrier. NOT yet root-caused (only repros under the
-   sustained pipeline; test262 async tests are too short to promote+free).
+2. ☑ **FIXED — async-cont / generator `.function` was never marked.** Both the
+   TAG_ASYNC_CONT and TAG_GENERATOR mark branches skipped `.function` with a
+   stale comment ("owned by the context's function registry — no mark needed").
+   That's false under generational GC: a runtime-compiled function value (an
+   `async function` expression) is a young GC cell referenced only via the
+   cont/gen, so a minor frees it and `push_call_frame` reads freed memory on
+   resume. Fix: mark `.function` in both branches (the closure branch already
+   does for `cl.function`). ASan-clean now on async_a (await-Promise.resolve
+   pipeline) AND async_b (Promise.all/race churn) in isolation.
+3. ☐ **OPEN — one interleaved-async Promise edge.** The *combined* soak
+   (`realapp_soak.js`: sync churn growing old-gen + interleaved pipeline +
+   combos) still ASan-UAFs a young `Promise.resolve` promise held by an OLD
+   promise via a reactions/value edge (major-mark chain root→…→promise→freed P).
+   Does NOT repro in async_a/async_b alone — needs the interleaved heap state.
+   Needs instrumentation (the holder is 3 hops from a root; atos gave no line
+   info). Suspect: a promise-reactions / await-capability / microtask linkage
+   that stores a young promise into an old promise without re-adding it to the
+   rem-set. Next-session debugging job.
 
 **Status: correct for sync + test262 (incl. all async tests, 0-new) + ASan-clean
 on non-pipeline workloads; one OPEN async-pipeline UAF remains. Behind
