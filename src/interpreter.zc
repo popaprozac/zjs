@@ -2763,7 +2763,15 @@ fn interpret_resume_generator(ctx: ZjsContext*, gen: ZjsGenerator*,
     if gen == NULL || gen.function == NULL {
         return InterpretResult{ is_throw: false, value: zjs_undefined() };
     }
-    return interpret_inner_full(ctx, gen.function, NULL, 0, NULL, gen, resume_value, is_throw);
+    // Set the active ctx for the duration of the resume so the param-less
+    // write barrier (gc_barrier in value.zc array_set etc., which reads
+    // g_active_ctx) actually fires. Without this, generator/async resume runs
+    // with a stale/NULL g_active_ctx and array writes during resumed code
+    // silently skip the rem-set → minor GC frees live young cells (UAF).
+    let saved_ctx = gc_set_active_ctx(ctx);
+    let r = interpret_inner_full(ctx, gen.function, NULL, 0, NULL, gen, resume_value, is_throw);
+    gc_set_active_ctx(saved_ctx);
+    return r;
 }
 
 // Resume a suspended async-function frame. The continuation owns the
@@ -2784,7 +2792,12 @@ fn interpret_resume(ctx: ZjsContext*, cont: ZjsAsyncCont*,
 
 fn interpret_inner_resume(ctx: ZjsContext*, cont: ZjsAsyncCont*,
                           resolved_value: ZjsValue, is_throw_in: bool) -> InterpretResult {
-    return interpret_inner_full(ctx, cont.function, NULL, 0, cont, NULL, resolved_value, is_throw_in);
+    // See interpret_resume_generator: set g_active_ctx so the param-less write
+    // barrier fires during resumed async-function code.
+    let saved_ctx = gc_set_active_ctx(ctx);
+    let r = interpret_inner_full(ctx, cont.function, NULL, 0, cont, NULL, resolved_value, is_throw_in);
+    gc_set_active_ctx(saved_ctx);
+    return r;
 }
 
 fn interpret_inner(ctx: ZjsContext*, entry_f: Function*, args: ZjsValue*, arg_count: u32, cont: ZjsAsyncCont*) -> InterpretResult {

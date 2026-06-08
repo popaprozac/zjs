@@ -149,20 +149,36 @@ miss. Synchronous half: GEN_GC == default, all pass. Async half exposed UAFs:
    resume. Fix: mark `.function` in both branches (the closure branch already
    does for `cl.function`). ASan-clean now on async_a (await-Promise.resolve
    pipeline) AND async_b (Promise.all/race churn) in isolation.
-3. ☐ **OPEN — one interleaved-async Promise edge.** The *combined* soak
-   (`realapp_soak.js`: sync churn growing old-gen + interleaved pipeline +
-   combos) still ASan-UAFs a young `Promise.resolve` promise held by an OLD
-   promise via a reactions/value edge (major-mark chain root→…→promise→freed P).
-   Does NOT repro in async_a/async_b alone — needs the interleaved heap state.
-   Needs instrumentation (the holder is 3 hops from a root; atos gave no line
-   info). Suspect: a promise-reactions / await-capability / microtask linkage
-   that stores a young promise into an old promise without re-adding it to the
-   rem-set. Next-session debugging job.
+3. ☑ **FIXED — `g_active_ctx` was not set during async/generator RESUME.**
+   The "interleaved-async Promise UAF" was NOT a missing barrier on a promise
+   edge — it was the *barrier itself silently no-op'ing*. The param-less write
+   barrier (`gc_barrier(holder, value)` in `value.zc` `array_set` etc.) reads
+   the **global `g_active_ctx`** to find the rem-set. `interpret`/`interpret_inner`
+   set it via `gc_set_active_ctx`, but the resume entry points
+   `interpret_resume_generator` and `interpret_inner_resume` called
+   `interpret_inner_full` **directly without setting it**. So every array/object
+   write executed *inside resumed async/generator code* ran with a stale/NULL
+   `g_active_ctx` → the barrier returned early → an old holder that gained a
+   young child during resume was never added to the rem-set → the next minor
+   freed the live young cell (UAF). Only reproduced in the combined soak because
+   it needs (a) a holder already promoted old and (b) a young store happening
+   *during resume*, not the initial run. Instrumentation (a save/restore'd
+   "current holder" fingerprint in `gc_mark_value`) pinned the freed cell's
+   holder to an old ARRAY mutated inside the awaited pipeline — confirming the
+   write path, not the mark path, was at fault. **Fix: wrap both resume entry
+   points with `let s = gc_set_active_ctx(ctx); … gc_set_active_ctx(s);`** so the
+   param-less barrier fires during resumed code. This is a genuine latent
+   correctness landmine — harmless under default major-only GC (no rem-set
+   consulted), fatal under minor GC. ASan-clean now on **all** repros
+   (realapp_soak / async_a / async_b / dp_repro / gcstress) under
+   `ZJS_GEN_GC=1 ZJS_GEN_GC_YOUNG=48`.
 
-**Status: correct for sync + test262 (incl. all async tests, 0-new) + ASan-clean
-on non-pipeline workloads; one OPEN async-pipeline UAF remains. Behind
-ZJS_GEN_GC (default OFF) — NOT real-app-safe for sustained async until #2 is
-closed. Default untouched (88.1%, 0 reg). Perf: object_alloc −68%/−79%, splay
-max −27%.** Next: barrier the host-fn `.bound` + Promise-combinator-state edges
-(or a targeted "scan promise/cont graph" approach), re-soak the pipeline under
-ASan to 0-UAF, then the broader soak + default-on decision.
+**Status: CORRECT + real-app-safe under ZJS_GEN_GC.** Sync + full test262
+(incl. all async tests) byte-identical failure set vs default (0-new under the
+flag); ASan-clean across every soak repro under aggressive minors; default
+untouched (88.1%, 0 reg). Perf: object_alloc −68%/−79% total/max pause, splay
+max −28% (14.9→10.7 ms — the iOS-relevant latency metric), at the cost of higher
+total minor overhead on live-set-bound workloads (splay 22→36 ms). Remaining
+before a **default-on / merge** decision: `young_threshold` tuning (the −28%
+splay win is at an aggressive threshold; pick a default that balances pause vs
+throughput) + a final broad ASan soak on a real zapp workload.
