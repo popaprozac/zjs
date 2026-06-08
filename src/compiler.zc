@@ -1047,46 +1047,68 @@ fn compile_yield_star(c: Compiler*, operand: AstNode*) -> u8 {
     }
     if src_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
 
+    if c.is_async {
+        // Async yield* (§27.6.3.8 / §15.5.5). IterGetAsync wraps a sync inner
+        // in an async-from-sync iterator (ee3ec97), so the iterator always has
+        // a real property `.next`. Cache nextMethod ONCE, then loop:
+        // Call(nextMethod, iter, received) -> await -> read done/value -> yield,
+        // forwarding the value sent to outer.next(v) into inner.next(v).
+        // (Throw/return completion forwarding is a follow-up.)
+        //
+        // Register hygiene (the trap from the earlier reverted attempts):
+        // a DEDICATED result reg holds the awaited iter-result, distinct from
+        // the transient MethodInvoke call frame, and the call frame is freed
+        // after the loop so it doesn't bloat the saved-register window across
+        // the in-loop Await/Yield suspends.
+        let next_m_r   = alloc_reg(c);
+        let next_atom  = ctx_intern_atom(c.ctx, (char*)"next", 4);
+        emit_load_prop_atom(c, next_m_r, iter_r, next_atom);
+        let received_r = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadUndefined, received_r));
+        let result_r   = alloc_reg(c);
+        let done_r     = alloc_reg(c);
+        let value_r    = alloc_reg(c);
+        let dst        = alloc_reg(c);
+        emit(c, make_inst_a(Op::LoadUndefined, dst));
+        let done_atom  = ctx_intern_atom(c.ctx, (char*)"done", 4);
+        let value_atom = ctx_intern_atom(c.ctx, (char*)"value", 5);
+        let call_base  = c.next_reg;
+        alloc_reg(c); alloc_reg(c); alloc_reg(c);
+
+        let loop_top_a = (u32)c.code_count;
+        emit(c, make_inst_ab(Op::Mov, call_base,     next_m_r));
+        emit(c, make_inst_ab(Op::Mov, call_base + 1, iter_r));
+        emit(c, make_inst_ab(Op::Mov, call_base + 2, received_r));
+        emit(c, make_inst_abc(Op::MethodInvoke, result_r, call_base, 1));
+        emit(c, make_inst_ab(Op::Await, result_r, result_r));
+        emit_load_prop_atom(c, done_r,  result_r, done_atom);
+        emit_load_prop_atom(c, value_r, result_r, value_atom);
+        let jmp_exit_a = emit(c, make_inst_a_i16(Op::JmpIfTrue, done_r, 0));
+        // AsyncGeneratorYield (§27.6.3.5 step 5) awaits the value before
+        // yielding it out — so a rejecting yielded value surfaces. (The done
+        // path below returns innerResult.value un-awaited, per spec.)
+        emit(c, make_inst_ab(Op::Await, value_r, value_r));
+        emit(c, make_inst_ab(Op::Yield, received_r, value_r));
+        emit_jump_back(c, Op::Jmp, loop_top_a);
+        patch_jump(c, jmp_exit_a);
+        emit(c, make_inst_ab(Op::Mov, dst, value_r));   // yield* result = inner return value
+        c.next_reg = call_base;                          // free the transient call frame
+        return dst;
+    }
+
+    // ---- sync yield* (simplified loop; resume value not yet forwarded) ----
     let value_r = alloc_reg(c);
     let done_r  = alloc_reg(c);
     let dst     = alloc_reg(c);
     emit(c, make_inst_a(Op::LoadUndefined, dst));
 
     let loop_top = (u32)c.code_count;
-    let jmp_exit: u32 = 0;
-    if c.is_async {
-        // Async delegation: await the next() result, then read .done /
-        // .value off the awaited object (mirrors the for-await sequence).
-        emit(c, make_inst_ab(Op::IterNextRaw, value_r, iter_r));
-        emit(c, make_inst_ab(Op::Await, value_r, value_r));
-        let done_atom  = ctx_intern_atom(c.ctx, (char*)"done", 4);
-        let value_atom = ctx_intern_atom(c.ctx, (char*)"value", 5);
-        emit_load_prop_atom(c, done_r, value_r, done_atom);
-        jmp_exit = emit(c, make_inst_a_i16(Op::JmpIfTrue, done_r, 0));
-        emit_load_prop_atom(c, value_r, value_r, value_atom);
-        emit(c, make_inst_ab(Op::Await, value_r, value_r));
-    } else {
-        emit(c, make_inst_abc(Op::IterStep, value_r, iter_r, done_r));
-        jmp_exit = emit(c, make_inst_a_i16(Op::JmpIfTrue, done_r, 0));
-    }
-    // Yield the current step's value out of our generator. The
-    // resumed value lands in dst but is ignored (forwarding it back
-    // into the inner iter's .next(v) is the missing piece).
+    emit(c, make_inst_abc(Op::IterStep, value_r, iter_r, done_r));
+    let jmp_exit = emit(c, make_inst_a_i16(Op::JmpIfTrue, done_r, 0));
     emit(c, make_inst_ab(Op::Yield, dst, value_r));
     emit_jump_back(c, Op::Jmp, loop_top);
 
     patch_jump(c, jmp_exit);
-    // On exit, dst gets the inner iterator's final value (read from
-    // the result object whose .done was true). For async we already
-    // have the awaited result in value_r; for sync we still need to
-    // pull .value from the IterStep result. The Op::IterStep variant
-    // discards the final result object, so we approximate with
-    // undefined — most tests assert on the LAST yielded value, not on
-    // the iterator's return value.
-    if c.is_async {
-        let value_atom = ctx_intern_atom(c.ctx, (char*)"value", 5);
-        emit_load_prop_atom(c, dst, value_r, value_atom);
-    }
     release_reg(c, done_r);
     release_reg(c, value_r);
     release_reg(c, iter_r);

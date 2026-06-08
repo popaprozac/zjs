@@ -4186,6 +4186,7 @@ fn iter_get(ctx: ZjsContext*, src: ZjsValue) -> ZjsValue {
 // property-accessible `.next` (the fast-path sync iterator CELL has none).
 // ===================================================================
 def AFS_ITER_KEY: char* = (char*)"__zjs_afs_iter__";
+def AFS_NEXT_KEY: char* = (char*)"__zjs_afs_next__";
 def AFS_DONE_KEY: char* = (char*)"__zjs_afs_done__";
 
 // A promise rejected with the engine's current pending throw (consumed).
@@ -4262,8 +4263,9 @@ fn host_afs_next(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         if ctx.pending_throw_active { return afs_reject_pending(ctx); }
         value = step.value; done = step.done;
     } else {
-        let nm = property_get(ctx, sync_iter, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"next", 4)));
-        if ctx.pending_throw_active { return afs_reject_pending(ctx); }
+        // Use the nextMethod cached at GetIterator(sync) time — the spec
+        // reads `.next` ONCE, so a userland `get next` spy fires once.
+        let nm = object_get(zjs_as_object(ctx.host_this), ctx_intern_atom(ctx, AFS_NEXT_KEY, 16));
         let ab: ZjsValue[1]; ab[0] = arg;
         let abp: ZjsValue* = NULL; raw { abp = &ab[0]; }
         let res: ZjsValue = zjs_undefined();
@@ -4358,6 +4360,15 @@ fn create_async_from_sync_iterator(ctx: ZjsContext*, sync_iter: ZjsValue) -> Zjs
         w.proto = ctx.realm.async_from_sync_iter_proto;
     }
     object_set(ctx, w, ctx_intern_atom(ctx, AFS_ITER_KEY, 16), sync_iter);
+    // GetIterator(sync) caches [[NextMethod]] once. Mirror that: read `.next`
+    // here so per-call host_afs_next uses the cached method (no repeated
+    // `get next`). Fast-path iterator cells have no property `.next` — they
+    // are driven via iter_step instead, so skip caching for them.
+    if zjs_is_array_iter(sync_iter) == 0 {
+        let nm = property_get(ctx, sync_iter, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"next", 4)));
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        object_set(ctx, w, ctx_intern_atom(ctx, AFS_NEXT_KEY, 16), nm);
+    }
     return w_v;
 }
 
