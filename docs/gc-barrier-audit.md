@@ -101,19 +101,31 @@ Status: ☑ done · ☐ todo
    Re-soak under ZJS_GEN_GC: **202 → 0 NEW** failures; default still 88.1% / 0 reg;
    splay + all benches clean.
 
-## CORRECTNESS DONE — remaining work is minor EFFICIENCY (perf)
+## CORRECTNESS DONE + minor made O(young) (perf)
 
-Measured splay (`--gc-stats`):
-| | runs | pause_total | pause_max |
-|---|---|---|---|
-| default (major-only) | 6 | 19 ms | 13.9 ms |
-| ZJS_GEN_GC | 1665 | **2118 ms** | 9.99 ms |
+Minor-efficiency fix (the O(old)-per-minor mark-clear): in minor mode neither
+`gc_mark_value` nor `gc_mark_hidden_class` marks old cells (short-circuit BEFORE
+setting the bit — old cells are never swept by a minor); `gc_sweep_young` clears
+the mark on each promoted cell; the O(old) clear loop + the redundant rem-set
+`rh.mark=1` + the minor's `gc_nullify_dead_ics` (classes are old-pinned → never
+die in a minor) are all removed. ASan-verified clean (dp_repro / churn / splay).
+**Gotcha that bit once:** removing the clear loop requires reordering BOTH mark
+functions — leaving `gc_mark_hidden_class` marking old classes left stale marks
+a later major misread as visited → freed live classes (bootstrap UAF).
 
-The minor is correct but **not yet O(young)**: `gc_run_minor` clears marks over
-the WHOLE old gen each cycle (`while oi < cell_count` ≈ O(1.4M) per minor) →
-total pause regresses 19→2118 ms; max only 13.9→10 ms. **Next: make the minor
-truly incremental** — in minor mode don't set/clear marks on old cells at all
-(they're never swept by a minor), so the O(old) clear loop disappears and a
-minor becomes O(young + rem_set). Then re-measure (expect splay max-pause ≪ 1 ms,
-total pause ≪ default) and re-soak before any default-on. The flag stays
-EXPERIMENTAL / opt-in until then; default behavior is untouched.
+Measured (`--gc-stats`), default vs ZJS_GEN_GC:
+| bench | metric | default | gen | |
+|---|---|---|---|---|
+| object_alloc (churn) | total pause | 1.93 ms | **0.62 ms** | −68% |
+| object_alloc | max pause | 0.14 ms | **0.03 ms** | −79% |
+| splay (huge live set) | max pause | 13.6 ms | **9.95 ms** | −27% |
+| splay | total pause | 20 ms | 34 ms | (minor overhead) |
+
+Generational is a clear win where garbage dominates (object_alloc); modest on
+splay, which is live-set-bound (a major still must mark the 1.4M-cell tree —
+generational can't make a live set smaller). Minor is now genuinely O(young).
+
+**Status: correct + perf-positive for churn, behind ZJS_GEN_GC (default OFF).
+Default untouched (88.1%, 0 reg); GEN_GC soak 0-new; ASan clean.** Remaining
+before default-on: broader real-app soak (Promise/embedded-worker) + decide
+whether the splay total-pause overhead is acceptable / tune young_threshold.

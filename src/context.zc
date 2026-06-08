@@ -1799,8 +1799,13 @@ fn gc_mark_value(v: ZjsValue) -> void {
     let h: CellHeader* = NULL;
     raw { h = (CellHeader*)p; }
     if h.mark != 0 { return; }
-    h.mark = 1;
+    // Minor mode: an old cell is never swept by a minor, so don't mark it
+    // (and don't recurse). Marking old cells here only forced an O(old)
+    // mark-clear pass after every minor. Old->young edges are found via the
+    // remembered set (gc_run_minor re-scans barriered holders), not by
+    // recursing through old cells. Result: a minor's mark set is young-only.
     if g_gc_minor_mode != 0 && h.age != 0 { return; }
+    h.mark = 1;
     gc_mark_cell_children(p);
 }
 
@@ -1887,8 +1892,15 @@ fn gc_nullify_dead_ics(ctx: ZjsContext*) -> void {
 fn gc_mark_hidden_class(c: ZjsHiddenClass*) -> void {
     if c == NULL { return; }
     if c.header.mark != 0 { return; }
-    c.header.mark = 1;
+    // Minor mode: an old class is never swept by a minor, so don't mark it
+    // (skip BEFORE setting the bit). Marking it would leave a stale mark the
+    // minor no longer clears, which a later major would misread as
+    // already-visited and skip — failing to mark its parent / transition
+    // children and freeing live classes (the bootstrap UAF). Mirrors
+    // gc_mark_value. Classes are old-pinned, so in a minor this always
+    // short-circuits here.
     if g_gc_minor_mode != 0 && c.header.age != 0 { return; }
+    c.header.mark = 1;
     // Names are atoms; they're already pinned via the atom-table root.
     if c.parent != NULL { gc_mark_hidden_class(c.parent); }
     let i: u32 = 0;
@@ -2256,6 +2268,11 @@ fn gc_sweep_young(ctx: ZjsContext*) -> u32 {
         raw { h = (CellHeader*)p; }
         if h.mark != 0 {
             ctx_register_cell_old(ctx, p);
+            // Minor: clear the mark so the promoted cell enters the old gen
+            // clean (a minor no longer mark-clears the old gen). Major: leave
+            // it marked — gc_sweep_old runs right after and relies on the
+            // mark to keep it, clearing during its own compaction.
+            if g_gc_minor_mode != 0 { h.mark = 0; }
             promoted = promoted + 1;
         } else if h.type_tag == TAG_OBJECT {
             // Dead young plain object — recycle the whole cell for reuse.
@@ -2330,27 +2347,25 @@ fn gc_run_minor(ctx: ZjsContext*) -> void {
     while ri < ctx.rem_count {
         let rp = ctx.rem_set[ri];
         if rp != NULL {
-            let rh: CellHeader* = NULL;
-            raw { rh = (CellHeader*)rp; }
-            rh.mark = 1;   // holder survives by virtue of being in the rem set
+            // The holder is old — never freed by a minor — so we don't mark
+            // it (that would just need clearing). We only re-scan its slots
+            // so any young cell it references gets marked + promoted.
             gc_mark_cell_children(rp);
         }
         ri = ri + 1;
     }
-    gc_nullify_dead_ics(ctx);
+    // No gc_nullify_dead_ics here: inline caches cache (hidden class, slot),
+    // and hidden classes are pinned in old-gen — a minor never frees one, so
+    // no IC entry can dangle after a minor. (Running it would also be wrong
+    // now: in minor mode old classes are unmarked, which the nullify pass
+    // would misread as "dead" and wipe live ICs.) The major path still runs it.
     let promoted = gc_sweep_young(ctx);
     g_gc_minor_mode = 0;
-    // Clear marks on the old generation — they got set by the mark
-    // walk above. Without this the next minor would see them already
-    // "marked" and skip nothing.
-    let oi: u32 = 0;
-    while oi < ctx.cell_count {
-        let op = ctx.cells[oi];
-        let oh: CellHeader* = NULL;
-        raw { oh = (CellHeader*)op; }
-        oh.mark = 0;
-        oi = oi + 1;
-    }
+    // No old-generation mark-clear pass: a minor never marks old cells now
+    // (gc_mark_value short-circuits old cells BEFORE marking in minor mode),
+    // and gc_sweep_young clears the mark on each promoted cell. So the old
+    // gen is already mark-clean. This is what makes a minor O(young + rem),
+    // not O(old) — the difference between a perf win and a regression.
     // Reset the remembered set. After a minor every reachable young
     // cell has been promoted, so no old→young edges remain. New
     // edges that arise after this minor are captured by the write
