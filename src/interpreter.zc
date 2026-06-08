@@ -6445,7 +6445,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
                 let ks = zjs_as_string(key_val);
-                let katom = ctx_intern_atom(ctx, ks.data, ks.length);
+                // Static object-literal keys are interned once at compile
+                // time (emit_load_name_string), so the loaded string already
+                // IS the canonical atom — skip the per-construction
+                // hash+memcmp re-intern. Only a non-interned key (a computed
+                // key whose ToString produced a fresh string) needs the
+                // atom-table lookup. Mirrors the object_set fast path.
+                let katom: ZjsString* = ks;
+                if !ks.interned { katom = ctx_intern_atom(ctx, ks.data, ks.length); }
                 object_define_property_slot(ctx, o, katom, value, PROP_DEFAULT);
             } else {
                 // Non-object receiver shouldn't occur for object literals;
