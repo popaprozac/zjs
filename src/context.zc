@@ -2948,6 +2948,9 @@ fn object_define_property_slot(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsStrin
     if existing >= 0 {
         obj.slots[(u32)existing] = value;
         if obj.attrs != NULL { obj.attrs[(u32)existing] = attrs; }
+        // Generational write barrier: an old object gaining a young value
+        // must be re-scanned by the next minor GC (see docs/gc-barrier-audit.md).
+        gc_write_barrier(ctx, (void*)obj, value);
         return;
     }
     // New property: same transition logic as object_set's new-prop path.
@@ -2964,6 +2967,8 @@ fn object_define_property_slot(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsStrin
     obj.slots[child.transition_slot] = value;
     obj.attrs[child.transition_slot] = attrs;
     obj.cls = child;
+    gc_write_barrier(ctx, (void*)obj, value);
+    gc_write_barrier(ctx, (void*)obj, zjs_cell_from_ptr((void*)child));
 }
 
 // Allocate a fresh array with `length` slots, all undefined.

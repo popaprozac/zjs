@@ -6190,6 +6190,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     let raw_v = o.slots[slot_n];
                     if zjs_is_accessor(raw_v) == 0 && zjs_is_deleted(raw_v) == 0 {
                         o.slots[slot_n] = value;
+                        // Generational write barrier: old object ← young value
+                        // (see docs/gc-barrier-audit.md).
+                        gc_write_barrier(ctx, (void*)o, value);
                         took_fast = true;
                     }
                 }
@@ -6402,10 +6405,13 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         let u = (u32)i;
                         if u < arr.length {
                             arr.elements[u] = value;
+                            // Generational write barrier: old array ← young value.
+                            gc_write_barrier(ctx, (void*)arr, value);
                             took_fast = true;
                         } else if u < arr.cap {
                             arr.elements[u] = value;
                             arr.length = u + 1;
+                            gc_write_barrier(ctx, (void*)arr, value);
                             took_fast = true;
                         }
                     }
