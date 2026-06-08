@@ -2947,7 +2947,14 @@ fn object_set(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsVal
         child = zjs_hidden_class_new(parent_cls, name,
                                       parent_cls.prop_count,
                                       parent_cls.prop_count + 1);
-        ctx_register_cell(ctx, (void*)child);
+        // Shape-graph classes are pinned in old-gen. A transition class is
+        // referenced by its parent's transition map (`class_add_transition`)
+        // — an old->young pointer edge that is NOT a ZjsValue, so no
+        // write-barrier covers it — and by obj.cls. Registering it old keeps
+        // a minor GC from freeing a live transition class out from under its
+        // parent (the defineProperty/Object.create heap-use-after-free found
+        // by ASan; see docs/gc-barrier-audit.md).
+        ctx_register_cell_old(ctx, (void*)child);
         class_add_transition(parent_cls, name, child);
     }
 
@@ -3009,7 +3016,14 @@ fn object_define_property_slot(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsStrin
         child = zjs_hidden_class_new(parent_cls, name,
                                       parent_cls.prop_count,
                                       parent_cls.prop_count + 1);
-        ctx_register_cell(ctx, (void*)child);
+        // Shape-graph classes are pinned in old-gen. A transition class is
+        // referenced by its parent's transition map (`class_add_transition`)
+        // — an old->young pointer edge that is NOT a ZjsValue, so no
+        // write-barrier covers it — and by obj.cls. Registering it old keeps
+        // a minor GC from freeing a live transition class out from under its
+        // parent (the defineProperty/Object.create heap-use-after-free found
+        // by ASan; see docs/gc-barrier-audit.md).
+        ctx_register_cell_old(ctx, (void*)child);
         class_add_transition(parent_cls, name, child);
     }
     object_grow_slots(ctx, obj, child.prop_count);

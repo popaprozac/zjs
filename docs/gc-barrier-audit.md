@@ -90,7 +90,30 @@ Status: ☑ done · ☐ todo
    - ☑ **splay no longer HANGS** (the Session-3 blocker — fixed by the object-slot + proto barriers). exit 0.
    - ☑ all 24 microbenches run clean under aggressive minors.
    - ☐ full test262 under the flag: **202 NEW failures** vs default (default itself unchanged: 88.1%, 0 reg). Remaining barrier gaps, clustered: `Object.defineProperty` / `defineProperties` (~120), `Object.create` (~5), `Array.from` / `Array.prototype.with`. These store a young value into an old (often exotic: `arguments`, array-index) holder via a define path that bypasses object_define_property_slot. NOT yet root-caused per-cluster (only repro under the full harness).
-5. ☐ Close the 202: trace the defineProperty data/exotic-apply + Array.from element-define + Object.create proto paths; add barriers; re-soak to 0-new. THEN consider default-on + measure splay max-pause.
+5. ☑ **Closed all 202 — single root cause (ASan).** The freed cell was a
+   `ZjsHiddenClass`: the shape-graph **transition tree** (`class_add_transition`
+   stores child→parent.transitions) is an old→young pointer edge that is NOT a
+   ZjsValue, so no barrier covered it and the audit missed it. A minor freed a
+   live transition class out from under its parent → heap-use-after-free in
+   `object_set`/`getOwnPropertyDescriptor`. **Fix: pin the shape graph in old-gen**
+   (`ctx_register_cell_old` for transition classes, the 2 sites in
+   object_set / object_define_property_slot) — mirrors atoms + props-bags.
+   Re-soak under ZJS_GEN_GC: **202 → 0 NEW** failures; default still 88.1% / 0 reg;
+   splay + all benches clean.
 
-**Status: the flag is EXPERIMENTAL / opt-in. Default behavior is untouched
-(major-only, 88.1%, 0 reg). Do not flip default-on until the 202 are closed.**
+## CORRECTNESS DONE — remaining work is minor EFFICIENCY (perf)
+
+Measured splay (`--gc-stats`):
+| | runs | pause_total | pause_max |
+|---|---|---|---|
+| default (major-only) | 6 | 19 ms | 13.9 ms |
+| ZJS_GEN_GC | 1665 | **2118 ms** | 9.99 ms |
+
+The minor is correct but **not yet O(young)**: `gc_run_minor` clears marks over
+the WHOLE old gen each cycle (`while oi < cell_count` ≈ O(1.4M) per minor) →
+total pause regresses 19→2118 ms; max only 13.9→10 ms. **Next: make the minor
+truly incremental** — in minor mode don't set/clear marks on old cells at all
+(they're never swept by a minor), so the O(old) clear loop disappears and a
+minor becomes O(young + rem_set). Then re-measure (expect splay max-pause ≪ 1 ms,
+total pause ≪ default) and re-soak before any default-on. The flag stays
+EXPERIMENTAL / opt-in until then; default behavior is untouched.
