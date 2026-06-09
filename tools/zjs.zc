@@ -621,16 +621,22 @@ fn run_file_with_argv(path: char*, gc_stats: bool,
         let mx  = zjs_gc_pause_ns_max(ctx);
         let fr  = zjs_gc_cells_freed(ctx);
         let live = zjs_cell_count(ctx);
+        let mn  = zjs_gc_minors(ctx);
+        let mj  = zjs_gc_majors(ctx);
+        let pr  = zjs_gc_promoted(ctx);
         raw {
             uint64_t rss_bytes = zjs_peak_rss_bytes();
             double rss_mb = (double)rss_bytes / (1024.0 * 1024.0);
             fprintf(stderr,
-                "[gc] runs=%u  pause_total=%.2fms  pause_max=%.2fms"
-                "  freed=%u  live=%u  peak_rss=%.1fMB\n",
+                "[gc] runs=%u (minor=%u major=%u)  pause_total=%.2fms  pause_max=%.2fms"
+                "  freed=%u  promoted=%u  live=%u  peak_rss=%.1fMB\n",
                 (unsigned)n,
+                (unsigned)mn,
+                (unsigned)mj,
                 (double)tot / 1e6,
                 (double)mx  / 1e6,
                 (unsigned)fr,
+                (unsigned)pr,
                 (unsigned)live,
                 rss_mb);
         }

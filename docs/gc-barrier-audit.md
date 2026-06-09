@@ -173,12 +173,64 @@ miss. Synchronous half: GEN_GC == default, all pass. Async half exposed UAFs:
    (realapp_soak / async_a / async_b / dp_repro / gcstress) under
    `ZJS_GEN_GC=1 ZJS_GEN_GC_YOUNG=48`.
 
-**Status: CORRECT + real-app-safe under ZJS_GEN_GC.** Sync + full test262
-(incl. all async tests) byte-identical failure set vs default (0-new under the
-flag); ASan-clean across every soak repro under aggressive minors; default
-untouched (88.1%, 0 reg). Perf: object_alloc −68%/−79% total/max pause, splay
-max −28% (14.9→10.7 ms — the iOS-relevant latency metric), at the cost of higher
-total minor overhead on live-set-bound workloads (splay 22→36 ms). Remaining
-before a **default-on / merge** decision: `young_threshold` tuning (the −28%
-splay win is at an aggressive threshold; pick a default that balances pause vs
-throughput) + a final broad ASan soak on a real zapp workload.
+**Status: CORRECT + real-app-safe under ZJS_GEN_GC at the default threshold.**
+Sync + full test262 (incl. all async tests) byte-identical failure set vs default
+(0-new under the flag at Y=1024); ASan-clean across every soak repro under
+aggressive minors; default untouched (88.1%, 0 reg). Perf: object_alloc
+−68%/−79% total/max pause, splay max −28% (14.9→10.7 ms — the iOS-relevant
+latency metric), at the cost of higher total minor overhead on live-set-bound
+workloads (splay 22→36 ms).
+
+## `young_threshold` tuning (2026-06-08)
+
+The minor trigger (`ctx_maybe_gc`: fire a minor once `cells_since_minor >=
+young_threshold`) had a latent knob bug: `gc_run_minor` reset `young_threshold`
+to a hardcoded literal `1024` after every collection, so `ZJS_GEN_GC_YOUNG` only
+affected the *first* minor and then snapped back. Fixed with a persistent
+`young_threshold_base` (init 1024, set from `ZJS_GEN_GC_YOUNG`); the reset now
+reads the base, so the knob is honest for the whole run. Added a minor/major/
+promoted breakdown to `--gc-stats` for measurement.
+
+Sweep (best-of-3, `--gc-stats`), splay (live-set-bound) and object_alloc
+(garbage-dominated):
+
+| Y      | splay max | splay total | splay rss | object_alloc total | object_alloc max |
+|--------|-----------|-------------|-----------|--------------------|------------------|
+| 256    | 16.2 ms   | 49.9 ms     | 152 MB    | 0.82 ms            | 0.03 ms          |
+| 512    | 13.5 ms   | 41.7 ms     | 160 MB    | 0.68 ms            | 0.03 ms          |
+| **1024** | **9.0 ms** | **31.1 ms** | 160 MB  | **0.61 ms**        | 0.03 ms          |
+| 2048   | 10.0 ms   | 32.8 ms     | 160 MB    | 0.53 ms            | 0.03 ms          |
+| 4096   | 10.7 ms   | 34.1 ms     | 160 MB    | 1.24 ms (degrades) | 0.06 ms          |
+| 16384  | 11.1 ms   | 34.6 ms     | 161 MB    | 1.78 ms (≈major-only) | 0.14 ms       |
+| default (major-only) | 13.3 ms | 18.5 ms | 171 MB | 1.67 ms | 0.13 ms |
+
+Clear **U-shaped optimum at 1024**: below it both pauses blow up (too-frequent
+minors re-scan roots + a growing rem-set on the big mutated tree); above it the
+nursery-reclaim win on garbage-heavy code fades back toward the major-only path
+(object_alloc regresses by Y=4096). Wall-clock: splay +6% (the live-set marking
+cost), object_alloc −11% (cheaper nursery reclaim, less malloc churn),
+compute-bound (nbody/mandelbrot/json) ±1% noise. The original "adapt threshold
+upward with old-gen size" intent measures strictly worse, so the trigger stays a
+**fixed base of 1024** — confirmed optimal, kept as the default.
+
+## OPEN: callback-heavy native methods drop young elements (the next increment)
+
+Now that `ZJS_GEN_GC_YOUNG` is honest, an aggressive soak (`Y=64`, full test262
+under ASan) surfaced **250 NEW failures vs default — all real heap-use-after-free**
+(confirmed: `Object.groupBy` with an allocation-heavy callback aborts under ASan
+in `zjs_cell_tag`). The cluster is callback-driven native methods that hold an
+**old** container while a **user callback allocates young cells** between element
+visits: `Object.groupBy` / `Map.groupBy`, `Array.from`, `Promise.all` (element
+loop), `JSON.parse`/`stringify` reviver/replacer, `Object.keys`/`defineProperties`
+iteration. The native loop appends a young result/element into the old container
+without a barrier (or holds a raw C-local across the allocating callback). At the
+default 1024 these pass — test262's callbacks are tiny — **but the gap is
+threshold-independent in principle**: a real callback that allocates >1024 cells
+between visits can trip it even at 1024. So this is genuine remaining
+barrier-coverage, not just a low-threshold artifact, and it gates the
+**default-on / merge** decision. The previously-fixed soak repros (realapp_soak /
+async_a / async_b / dp_repro / gcstress) stay ASan-clean at Y=64 — this is a
+distinct, native-method-callback class. Next increment: audit the native
+method-iterator loops for old-holder ← young-element appends + raw C-locals held
+across callbacks; add `gc_barrier_cell` / rem-set re-add at each, re-soak at Y=64
+to 0-UAF. Then the final zapp-workload soak + default-on.

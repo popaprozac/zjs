@@ -292,6 +292,11 @@ struct ZjsContext {
     young_count:    u32;
     young_cap:      u32;
     young_threshold: u32;
+    // The configured minor-trigger threshold the adaptive logic resets to
+    // after each minor. Set from ZJS_GEN_GC_YOUNG (default below). Without a
+    // persistent base, a minor would clobber the env override back to a
+    // hardcoded constant after the first collection.
+    young_threshold_base: u32;
     cells_since_minor: u32;
     // Generational minor collector. OFF unless ZJS_GEN_GC is set (the
     // write-barrier coverage is being completed on this branch). When on,
@@ -661,7 +666,8 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
     // young allocations until tuning says otherwise; small enough
     // to keep pauses tight, large enough that the per-minor
     // overhead doesn't dominate.
-    result.young_threshold   = 1024;
+    result.young_threshold      = 1024;
+    result.young_threshold_base = 1024;
     result.cells_since_minor = 0;
     // Opt-in generational minor collector (write-barrier coverage WIP).
     // ZJS_GEN_GC=1 enables it; ZJS_GEN_GC_YOUNG overrides the young fill
@@ -671,7 +677,10 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
         const char* gg = getenv("ZJS_GEN_GC");
         if (gg != NULL && gg[0] != '0' && gg[0] != '\0') result->gen_gc_enabled = true;
         const char* gy = getenv("ZJS_GEN_GC_YOUNG");
-        if (gy != NULL) { int v = atoi(gy); if (v > 0) result->young_threshold = (uint32_t)v; }
+        if (gy != NULL) { int v = atoi(gy); if (v > 0) {
+            result->young_threshold = (uint32_t)v;
+            result->young_threshold_base = (uint32_t)v;
+        } }
     }
     // Slot-array freelist starts empty; the index arrays are allocated
     // lazily on the first object free (slotpair_free).
@@ -2344,13 +2353,18 @@ fn gc_sweep_old(ctx: ZjsContext*) -> void {
 // the cycle so the next minor's mark walk starts with mark=0
 // everywhere.
 //
-// Caveat: without the Session-3 write barrier, the mark walk costs
-// O(live), not O(young). On benches with a large persistent live
-// set (e.g. splay) this makes minors *more* expensive than the
-// pre-experiment single-collector path if they fire too often. We
-// adapt `young_threshold` upward as old gen grows so minor frequency
-// stays bounded — see the threshold update at the bottom of this
-// function.
+// On a large persistent live set (e.g. splay) firing minors *too*
+// often is a net loss: each minor re-scans roots + the remembered set,
+// and with a big mutated tree the rem-set grows, so very small
+// thresholds inflate both total and max pause. A 2026-06-08 threshold
+// sweep (splay + object_alloc, see docs/gc-barrier-audit.md) found a
+// clear U-shaped optimum at the default 1024: below it both pauses blow
+// up (splay max 9.0→16.2 ms at 256), above it they degrade gently and
+// the nursery-reclaim win on garbage-heavy code fades (object_alloc
+// regresses toward the major-only path by 4096). So the trigger is a
+// FIXED base (young_threshold_base, default 1024, override via
+// ZJS_GEN_GC_YOUNG) — adapting it upward with old-gen size was the
+// original intent but measures strictly worse, so we don't.
 fn gc_run_minor(ctx: ZjsContext*) -> void {
     let before = ctx.young_count;
     let t0: u64 = 0;
@@ -2414,11 +2428,12 @@ fn gc_run_minor(ctx: ZjsContext*) -> void {
     ctx.gc_cells_freed    = ctx.gc_cells_freed + freed;
     ctx.gc_cells_kept     = ctx.cell_count;
     ctx.gc_promoted       = ctx.gc_promoted + promoted;
-    // Session-3 trigger: with the write barrier in place, a minor
-    // walks roots + rem_set, NOT the full old gen. Stay aggressive —
-    // a small fixed threshold means short-lived garbage gets freed
-    // quickly and minors are cheap.
-    ctx.young_threshold = 1024;
+    // Reset the trigger to the configured base (default 1024, or
+    // ZJS_GEN_GC_YOUNG). A minor walks roots + rem_set, NOT the full old
+    // gen, so a small fixed threshold keeps short-lived garbage cheap to
+    // reclaim. Reading the base (not a literal) keeps the env override
+    // live across every minor — the tuning knob.
+    ctx.young_threshold = ctx.young_threshold_base;
 }
 
 // Major: full mark + sweep of both generations. Resets the major
@@ -2531,6 +2546,18 @@ fn zjs_gc_pause_ns_max(ctx: ZjsContext*) -> u64 {
 fn zjs_gc_cells_freed(ctx: ZjsContext*) -> u32 {
     if ctx == NULL { return 0; }
     return ctx.gc_cells_freed;
+}
+fn zjs_gc_minors(ctx: ZjsContext*) -> u32 {
+    if ctx == NULL { return 0; }
+    return ctx.gc_minors;
+}
+fn zjs_gc_majors(ctx: ZjsContext*) -> u32 {
+    if ctx == NULL { return 0; }
+    return ctx.gc_majors;
+}
+fn zjs_gc_promoted(ctx: ZjsContext*) -> u32 {
+    if ctx == NULL { return 0; }
+    return ctx.gc_promoted;
 }
 
 // Intern a string by copying the input bytes. The returned ZjsValue
