@@ -195,6 +195,42 @@ Try it:
 ./build/zjs parse "function add(a, b) { return a + b; }"
 ```
 
+## Runtime flags (opt-in)
+
+Environment variables that toggle experimental, off-by-default subsystems. The
+defaults are the shipped, fully-tested paths; these are opt-in for specific
+workloads.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `ZJS_GEN_GC=1` | off | Enable the **generational minor collector** (see below). |
+| `ZJS_GEN_GC_YOUNG=N` | 1024 | Minor-GC trigger: collect after `N` young allocations. Lower = more aggressive (used for UAF-hunting under ASan); the sweep in `docs/gc-barrier-audit.md` found 1024 optimal. |
+| `ZJS_JIT*` | off | Opt-in copy-and-patch JIT (a `ZJS_JIT` build only; **never iOS**). See `docs/jit-impl-notes.md`. |
+
+Add `--gc-stats` to `zjs run` for a per-run GC report
+(`minor`/`major` counts, total/max pause, promoted, peak RSS).
+
+### Generational GC (`ZJS_GEN_GC`) — experimental
+
+The default collector is a stop-the-world mark-sweep keyed off allocation count —
+simple, correct, and what every default build uses. `ZJS_GEN_GC=1` adds a
+**young/old generational split with a minor collector** that sweeps only the
+nursery. It's a **latency + memory** win, not a throughput win:
+
+- splay **max** GC pause 14.9 → 10.7 ms (−28%; the iOS-relevant metric),
+  peak RSS 170 → 160 MB; garbage-heavy churn (`object_alloc`) total/max pause
+  −68% / −79% and −11% wall-clock.
+- Cost: ~+6% wall-clock on workloads with a large persistent live set (a minor
+  re-marks the live tree); compute-bound workloads are neutral (±1%).
+
+**Status: experimental, opt-in only.** The default (major-only) GC is unaffected
+and safe. Aggressive minors surfaced a class of latent use-after-free bugs
+(unrooted C-locals held across calls into user JS); 250 → 48 cleared so far, 0
+default-test262 regressions. A residual ~48 remain at aggressive thresholds —
+tracked in `docs/gc-barrier-audit.md`. Default-on is gated on closing those + a
+sustained real-app soak; until then, treat `ZJS_GEN_GC` as a latency-mode flag
+for embedders who want shorter pauses and can stay near the default threshold.
+
 ## test262 conformance
 
 The TC39 test262 suite isn't bundled (large repo). Clone it once into `vendor/`:
