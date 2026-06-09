@@ -3662,6 +3662,16 @@ fn zjs_to_array_index(v: ZjsValue) -> i32 {
 // Atoms (interned strings) hit the pointer-identity fast path.
 fn zjs_string_equals(a: ZjsString*, b: ZjsString*) -> int {
     if a == b { return 1; }                // atom or aliased fast path
+    // Interned strings are canonical: `interned = true` is written ONLY by
+    // atom_table_insert_unchecked, every intern entry point is lookup-before-
+    // insert into the per-context table, and rope-flatten / concat / loader
+    // paths leave fresh strings non-interned. So two DISTINCT pointers that
+    // are BOTH interned can never hold equal bytes — answer without touching
+    // the data. This kills the memcmp call on every class_find_slot /
+    // class_find_transition chain-step miss between same-length atoms (~5%
+    // of the alloc-path profile). A non-interned operand (computed key from
+    // zjs_to_string) still falls through to the byte compare below.
+    if a.interned && b.interned { return 0; }
     if a.length != b.length { return 0; }
     let len = a.length;
     let ad = a.data;
