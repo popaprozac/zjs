@@ -125,6 +125,22 @@ naturally with the bytecode-opt tier. ALSO: measure perf ONLY interleaved on
 this machine — a thermally-contaminated baseline produced a fake 8.3× before
 the discipline caught it.
 
+### Bytecode-opt tier — EXPLORED 2026-06-09, loop rotation is the lever (#379)
+
+ZJS_PROFILE_OPS evidence: tight loops execute 4 dispatches/iteration — Add,
+AddImm (fused), JmpIfNotLt (fused), and an unconditional back-edge Jmp that is
+25% of ALL dispatches in func_loop/int_loop-shaped code. The widest Hermes gaps
+(int_loop_big 4.8×, mandelbrot 4.2×) are exactly this shape; Hermes -O rotates
+loops (test at bottom), we emit head-test + back-jump. **B1 loop rotation =
+up to −25% dispatches on every tight loop — the single biggest interpreter
+lever identified by this review.** Scoped in task #379: inverse-polarity fused
+jump ops (append at enum end for AOT compat), GC poll on taken-backward fused
+conditionals, JIT OSR-hook replication (OSR keys off backward Op::Jmp today),
+continue retargeting. Compiler-side, so it avoids #378's dispatch-codegen trap.
+Secondary (low value): top-level `x = x + y` emits Add-to-temp + Mov
+(copy-prop gap; function-local already writes direct). Also: fib pays a
+LoadGlobal per recursive call — a callee-IC idea for later.
+
 ### Tier 3 — structural GC/alloc (own project, parked)
 
 From the GC review, in descending value:
