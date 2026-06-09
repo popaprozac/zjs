@@ -31,7 +31,8 @@ These are NOT gaps — don't re-litigate them without a profile saying otherwise
 
 ### Tier 1 — surgical, this branch
 
-**T1.1 — interned-atom pointer equality in `zjs_string_equals`** (#376)
+**T1.1 — interned-atom pointer equality in `zjs_string_equals`** (#376) —
+SHIPPED `88c3463`. Measured: memcmp 419→26 samples, mixed driver ~−6%.
 
 `class_find_slot` / `class_find_transition` call `zjs_string_equals` per chain
 step; same-length misses fall through the `a == b` check to a `memcmp` CALL
@@ -68,7 +69,9 @@ profile shows property_get's dispatch head (not its lookup body) hot.
 
 ### Tier 2 — the architectural gap (the Hermes/QuickJS divider)
 
-**T2.1 — per-shape property table** (#377)
+**T2.1 — per-shape property table** (#377) — SHIPPED `745d412`. Measured:
+megamorphic deep-shape reads 33-prop −17%, 128-prop −56% (lookup now
+depth-independent); suite no-reg; small-shape workloads neutral.
 
 THE structural gap vs BOTH engines. `class_find_slot` (value.zc:3278) is a
 linear parent-chain walk — O(prop_count) per lookup with a string compare per
@@ -121,9 +124,9 @@ From the GC review, in descending value:
 
 ## Sequencing
 
-1. T1.1 (this branch, now) → 2. T1.4 (same session if green) → 3. T2.1 (the
-headline; next focused push) → 4. measure → T2.2 only if still needed → 5. T3.x
-as a dedicated future project alongside the ZJS_GEN_GC default-on decision.
+1. ☑ T1.1 (88c3463) → 2. ☑ T2.1 (745d412) → 3. T1.4 profile-gated → 4. measure
+→ T2.2 only if property_poly still lags → 5. T3.x as a dedicated future project
+alongside the ZJS_GEN_GC default-on decision.
 
 Validation gate for every step (unchanged): build, targeted microbench BEFORE
 committing (null-win discipline), bench suite compare, default test262 0 new
