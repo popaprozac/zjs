@@ -106,6 +106,25 @@ the slow path itself gets much cheaper, so measure AFTER T2.1 — a separate
 megamorphic cache may become unnecessary. Only build if property_poly still
 lags.
 
+### Call path — VALIDATED NET-NEGATIVE without restructuring (2026-06-09)
+
+The fib profile shows push_call_frame_inplace at 12% and the call trampoline
+(exit_reason=2 break + outer-loop re-entry per call AND return) as the
+structural delta vs QuickJS (native recursion) / Hermes (in-loop frame switch).
+Implemented inline frame-switching at the 4 hot call sites + sync Return, two
+ways (mid-body `continue`; Jmp-style ip=target-1 fall-through). INTERLEAVED A/B
+verdict: fib −5..11% but func_loop +12% REPRODUCIBLE — the inline blocks mutate
+regs/f/code at 5 more points in the single giant dispatch function, killing
+clang's reg-relative address hoisting for function-local loops. Net negative;
+REVERTED (task #378 has the full data). Lesson: in a one-function if/else
+interpreter, threaded calls and dispatch-loop codegen fight over the same
+register allocation. The call-path win needs the STRUCTURAL door: per-op
+musttail/computed-goto handler functions (Hermes/wasm3-style) where a frame
+switch doesn't perturb a shared allocation — a much larger redesign, paired
+naturally with the bytecode-opt tier. ALSO: measure perf ONLY interleaved on
+this machine — a thermally-contaminated baseline produced a fake 8.3× before
+the discipline caught it.
+
 ### Tier 3 — structural GC/alloc (own project, parked)
 
 From the GC review, in descending value:
