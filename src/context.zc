@@ -1574,10 +1574,17 @@ fn gc_mark_cell_children(p: void*) -> void {
         let g: ZjsGenerator* = NULL;
         raw { g = (ZjsGenerator*)p; }
         gc_mark_value(g.saved_host_this);
-        let gi: u32 = 0;
-        while gi < g.reg_count {
-            gc_mark_value(g.saved_regs[gi]);
-            gi = gi + 1;
+        // saved_regs is NULL while a generator is mid-PROLOGUE (GEN_STARTING:
+        // reg_count is set at creation but the register snapshot isn't captured
+        // until Op::GeneratorStart). Its live registers are in the active call
+        // frame, already a root — so skip until captured. Marking now would
+        // walk a NULL array (reg_count>0, saved_regs==NULL) and segfault. (#375.)
+        if g.saved_regs != NULL {
+            let gi: u32 = 0;
+            while gi < g.reg_count {
+                gc_mark_value(g.saved_regs[gi]);
+                gi = gi + 1;
+            }
         }
         if g.saved_current_closure != NULL {
             gc_mark_value(zjs_cell_from_ptr((void*)g.saved_current_closure));
@@ -2130,6 +2137,17 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
         if ctx.frames[fi].saved_current_closure != NULL {
             let cv = zjs_cell_from_ptr((void*)ctx.frames[fi].saved_current_closure);
             gc_mark_value(cv);
+        }
+        // The in-flight generator/async-generator a frame is running the
+        // PROLOGUE for (Op::*Invoke set frame.generator before running the
+        // param-default + destructuring prologue, which can execute user code
+        // — e.g. a computed-default expression or a custom-iterator
+        // [Symbol.iterator]()). That young generator cell is reachable ONLY via
+        // this field until GeneratorStart captures it, so a minor during the
+        // prologue would otherwise free it. NULL on non-generator frames
+        // (push_call_frame[_inplace] clears it). (#375.)
+        if ctx.frames[fi].generator != NULL {
+            gc_mark_value(zjs_cell_from_ptr((void*)ctx.frames[fi].generator));
         }
         fi = fi + 1;
     }
@@ -3071,6 +3089,16 @@ fn object_set_attrs(obj: ZjsObject*, slot: u32, attrs: u8) -> void {
 // that explicitly changes attributes. Plain assignment goes through
 // object_set, which DOES honor writable.
 fn object_define_property_slot(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsString*, value: ZjsValue, attrs: u8) -> void {
+    // The hidden-class transition_name must be a pinned atom: it's stored
+    // raw into the shape graph (zjs_hidden_class_new / class_add_transition
+    // below) and gc_mark_hidden_class deliberately does NOT mark it. A
+    // computed-key define (`class { [x||1](){} }`, `{ [k]: v }`, computed
+    // get/set, computed fields) arrives here with a fresh young, NON-interned
+    // string from zjs_to_string; without atomizing it a minor GC frees the
+    // key out from under the class -> heap-use-after-free in class_find_slot.
+    // Mirrors object_set; the interned-flag guard skips the hot already-atom
+    // case. (#375 — surfaced by aggressive ZJS_GEN_GC minors.)
+    if name != NULL && name.interned == false { name = ctx_intern_atom_no_decode(ctx, name.data, name.length); }
     let existing = class_find_slot(obj.cls, name);
     if existing >= 0 {
         obj.slots[(u32)existing] = value;
@@ -11041,12 +11069,22 @@ fn host_array_from_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
     if getter_callable {
         let iter = iter_get(ctx, src);
         if ctx.pending_throw_active { return out_v; }
+        // Root the iterator + the current yielded value across the mapFn
+        // callback: a generic iterator's value is young and only reachable
+        // here, so a minor during the callback would free it (out_v is
+        // already rooted above). The element slot stays at the top and is
+        // refreshed each iteration.
+        ctx_push_temp_root(ctx, iter);
+        defer ctx_pop_temp_root(ctx);
+        ctx_push_temp_root(ctx, zjs_undefined());
+        defer ctx_pop_temp_root(ctx);
         let oi: u32 = 0;
         let safety: u32 = 0;
         while safety < 100000000 {
             let step = iter_step(ctx, iter);
             if ctx.pending_throw_active { return out_v; }
             if step.done { break; }
+            ctx_replace_top_temp_root(ctx, step.value);
             let v: ZjsValue = step.value;
             if has_map {
                 v = array_method_call_cb(ctx, map_fn, this_arg, step.value, oi, src);
@@ -13573,11 +13611,28 @@ fn group_by_walk(ctx: ZjsContext*, items: ZjsValue, cb: ZjsValue,
                  bucket_set_into_map: bool) -> bool {
     let iter = iter_get(ctx, items);
     if ctx.pending_throw_active { return false; }
+    // Root the iterator AND the accumulator across the loop: the user
+    // callback (zjs_call_value_with_this below) can allocate, and under
+    // generational GC a minor during the callback would otherwise free
+    // these young cells out from under us (they're only reachable via
+    // these C-locals, not the VM register file). The bucket is a cell
+    // (ZjsMap* or ZjsObject*), so box it back into a ZjsValue to mark it.
+    ctx_push_temp_root(ctx, iter);
+    defer ctx_pop_temp_root(ctx);
+    ctx_push_temp_root(ctx, zjs_cell_from_ptr(bucket));
+    defer ctx_pop_temp_root(ctx);
+    // A third slot (kept at the top) roots the current element across the
+    // callback — for a generic iterator source the yielded value is young
+    // and only reachable here until it lands in the bucket. Updated per
+    // iteration via ctx_replace_top_temp_root.
+    ctx_push_temp_root(ctx, zjs_undefined());
+    defer ctx_pop_temp_root(ctx);
     let k: u32 = 0;
     while true {
         let step = iter_step(ctx, iter);
         if ctx.pending_throw_active { return false; }
         if step.done { break; }
+        ctx_replace_top_temp_root(ctx, step.value);
         let cb_args: ZjsValue[2];
         cb_args[0] = step.value;
         cb_args[1] = zjs_int32((i32)k);
@@ -21046,6 +21101,10 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         capability_call_reject(ctx, cap, err);
         return rp;
     }
+    // resolve_fn (C.resolve) is invoked every iteration; for a subclassed C
+    // it can be a young cell. Root it for the whole walk.
+    ctx_push_temp_root(ctx, resolve_fn);
+    defer ctx_pop_temp_root(ctx);
 
     let iter_arg = if argc >= 1 { args[0] } else { zjs_undefined() };
     let iter = iter_get(ctx, iter_arg);
@@ -21063,6 +21122,12 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
     let state_v = ctx_new_object(ctx);
     let state = zjs_as_object(state_v);
+    // The shared state object lives for the whole walk and is referenced by
+    // every per-element state (PA_REM_KEY -> state_v); a minor mid-loop would
+    // otherwise free it out from under those back-references and the
+    // end-of-iteration decrement below.
+    ctx_push_temp_root(ctx, state_v);
+    defer ctx_pop_temp_root(ctx);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), cap_resolve);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(1));

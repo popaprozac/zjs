@@ -213,24 +213,56 @@ compute-bound (nbody/mandelbrot/json) ±1% noise. The original "adapt threshold
 upward with old-gen size" intent measures strictly worse, so the trigger stays a
 **fixed base of 1024** — confirmed optimal, kept as the default.
 
-## OPEN: callback-heavy native methods drop young elements (the next increment)
+## Aggressive-minor UAF sweep (#375) — root unrooted C-locals across user code
 
 Now that `ZJS_GEN_GC_YOUNG` is honest, an aggressive soak (`Y=64`, full test262
-under ASan) surfaced **250 NEW failures vs default — all real heap-use-after-free**
-(confirmed: `Object.groupBy` with an allocation-heavy callback aborts under ASan
-in `zjs_cell_tag`). The cluster is callback-driven native methods that hold an
-**old** container while a **user callback allocates young cells** between element
-visits: `Object.groupBy` / `Map.groupBy`, `Array.from`, `Promise.all` (element
-loop), `JSON.parse`/`stringify` reviver/replacer, `Object.keys`/`defineProperties`
-iteration. The native loop appends a young result/element into the old container
-without a barrier (or holds a raw C-local across the allocating callback). At the
-default 1024 these pass — test262's callbacks are tiny — **but the gap is
-threshold-independent in principle**: a real callback that allocates >1024 cells
-between visits can trip it even at 1024. So this is genuine remaining
-barrier-coverage, not just a low-threshold artifact, and it gates the
-**default-on / merge** decision. The previously-fixed soak repros (realapp_soak /
-async_a / async_b / dp_repro / gcstress) stay ASan-clean at Y=64 — this is a
-distinct, native-method-callback class. Next increment: audit the native
-method-iterator loops for old-holder ← young-element appends + raw C-locals held
-across callbacks; add `gc_barrier_cell` / rem-set re-add at each, re-soak at Y=64
-to 0-UAF. Then the final zapp-workload soak + default-on.
+under ASan) surfaced **250 NEW failures vs default — all real heap-use-after-free**.
+The unifying root cause was NOT "missing write barriers" but **unrooted C-locals /
+fields held live across a call into user JS** (or an allocating helper): the
+interpreter's register file + `temp_roots` + frame fields are the GC roots, and
+anything a native/interpreter routine holds only in a C-local while a minor can
+fire is freed. Five fixes took 250 → 55 (78%), 0 default regressions:
+
+1. **`group_by_walk` (Object/Map.groupBy)** — root the iterator + accumulator +
+   current element across the callback (`ctx_push_temp_root` + per-iteration
+   `ctx_replace_top_temp_root`). The freed cell was the `ZjsArrayIter`.
+2. **`object_define_property_slot` intern choke-point** — a computed-key define
+   (`class { [x||1](){} }`, `{ [k]: v }`, computed get/set, computed fields)
+   stored a fresh young, non-interned key as the hidden-class transition_name,
+   which `gc_mark_hidden_class` deliberately doesn't mark → minor frees the key →
+   UAF in `class_find_slot`. Fix: intern to a pinned atom at entry (mirrors
+   `object_set`; the interned-flag guard keeps the already-atom hot path free).
+   Cleared the whole `cpn-class` / computed-property cluster.
+3. **`host_array_from_static` (Array.from)** iterable branch — root iterator +
+   current yielded value across the mapFn callback.
+4. **`Op::IterRestCollect`** (array-destructuring rest `[...r] = iter`) — the rest
+   array was a C-local written to a register only AFTER the collection loop;
+   `iter_step` resumes a generator (→ minor) → the in-progress rest array is
+   freed. Root it + the current element (explicit push/pop — `defer` is
+   function-scoped and the interpreter is one big function).
+5. **`gc_mark_roots` missed `frame.generator`** + **TAG_GENERATOR mark walked a
+   NULL `saved_regs`.** A generator-function call sets `frame.generator = gen`
+   then runs the param-default + destructuring PROLOGUE, which can execute user
+   code (a computed default, or a custom-iterator `[Symbol.iterator]()`); the
+   young generator is reachable ONLY via `frame.generator` until
+   `Op::GeneratorStart` captures it → a minor frees it. Fix: mark
+   `frame.generator` (NULL on non-generator frames). That exposed that a
+   `GEN_STARTING` generator has `reg_count` set but `saved_regs == NULL` (regs
+   still in the active frame), so the TAG_GENERATOR mark walk segfaulted — guard
+   it with `saved_regs != NULL`. Cleared the ENTIRE `language/.../dstr` cluster
+   (generator/class/object param destructuring).
+
+**Method that worked every time:** aggressive `Y=64` ASan soak → minimal repro
+churning the construct → read the ASan free/alloc/use stacks (the freed cell's
+allocator pins the exact unrooted local) → root it. The previously-fixed soak
+repros stay ASan-clean throughout. At the default 1024 these all pass (test262's
+allocations are small), **but the gaps are threshold-independent in principle** —
+allocation-heavy user code can trip them even at 1024 — so closing them is real
+robustness, and gates the **default-on** decision.
+
+**REMAINING ~55 at Y=64 (the long tail, smaller scattered clusters):** Promise
+combinators (`all`/`allSettled`/`any`/`race`/`try` — the per-iteration
+`item`/`per_state_v`/element rooting deferred from fix 3's sibling),
+`Set.prototype` set-ops (`difference`/`intersection`/… iterator rooting), plus
+scattered `Object.defineProperties`/`keys`, `JSON.stringify` array-replacer,
+`Proxy.ownKeys`, `Function.prototype`. Same method applies; next increment.

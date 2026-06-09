@@ -7733,6 +7733,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
         } else if op == Op::IterRestCollect {
             let iter = regs[inst.b];
             let arr_v = ctx_new_array(ctx, 0);
+            // arr_v is only written to a register AFTER the loop, but iter_step
+            // resumes the source (a generator → a minor GC can fire) and
+            // array_set can grow + collect. Without rooting, a minor frees the
+            // in-progress rest array (and the just-yielded element) out from
+            // under us. defer is function-scoped here (the interpreter is one
+            // big function), so push/pop explicitly and balanced. The top slot
+            // holds the current element across array_set's grow.
+            // (#375 — surfaced by aggressive ZJS_GEN_GC minors.)
+            ctx_push_temp_root(ctx, arr_v);
+            ctx_push_temp_root(ctx, zjs_undefined());
             let arr = zjs_as_array(arr_v);
             let safety: u32 = 0;
             let aborted: bool = false;
@@ -7743,9 +7753,12 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     break;
                 }
                 if step.done { break; }
+                ctx_replace_top_temp_root(ctx, step.value);
                 array_set(arr, arr.length, step.value);
                 safety = safety + 1;
             }
+            ctx_pop_temp_root(ctx);
+            ctx_pop_temp_root(ctx);
             regs[inst.a] = arr_v;
             regs[inst.c] = zjs_bool(true);
             if aborted {
