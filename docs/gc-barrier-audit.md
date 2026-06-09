@@ -260,9 +260,22 @@ allocations are small), **but the gaps are threshold-independent in principle** 
 allocation-heavy user code can trip them even at 1024 — so closing them is real
 robustness, and gates the **default-on** decision.
 
-**REMAINING ~55 at Y=64 (the long tail, smaller scattered clusters):** Promise
-combinators (`all`/`allSettled`/`any`/`race`/`try` — the per-iteration
-`item`/`per_state_v`/element rooting deferred from fix 3's sibling),
-`Set.prototype` set-ops (`difference`/`intersection`/… iterator rooting), plus
-scattered `Object.defineProperties`/`keys`, `JSON.stringify` array-replacer,
-`Proxy.ownKeys`, `Function.prototype`. Same method applies; next increment.
+### Promise combinators (fix 6) — 55 → 48
+
+`host_promise_all` / `host_promise_all_settled` / `host_promise_any` hold the
+per-element `item` / `per_state` / `onf`(+`onr`) host fns across
+`promise_resolve_call` — which runs `C.resolve` (user code for a subclassed C),
+so a minor frees them. allSettled/any additionally never rooted `state_v` /
+`ctor_resolve_fn` (only `all` got that earlier). Fixed with per-iteration roots +
+a new `ctx_truncate_temp_roots(ctx, n)` helper: capture `temp_root_count` once
+before the loop, truncate back to it at every exit (break / then-throw-return /
+end-of-iteration) — robust against miscounting individual `pop()`s and uniform
+across the onf-only vs onf+onr variants. Cleared the built-in combinator cases.
+
+**REMAINING ~48 at Y=64 (the long tail):** Promise `all`/`allSettled`/`any`
+`-of-custom` (1 each) + `Promise.try` (4) — these hit a SEPARATE gap in
+`new_promise_capability` running a user **constructor executor** (the residual
+`pall_sub` UAF), not the loop. `Set.prototype` set-ops (8,
+`difference`/`intersection` custom set-like iter rooting), scattered
+`Object.defineProperties`/`keys`, `JSON.stringify` array-replacer, `Proxy.ownKeys`,
+`Function.prototype`. Same method applies; next increment.

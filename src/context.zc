@@ -864,6 +864,15 @@ fn ctx_pop_temp_root(ctx: ZjsContext*) -> void {
     }
 }
 
+// Drop every temp root pushed since the count was `n` (a saved
+// ctx.temp_root_count). For loop bodies that push a variable number of
+// per-iteration roots and have several exit paths: capture the count once
+// before the loop, then truncate back to it at every break / end-of-iteration
+// — robust against miscounting individual pop()s. Never grows the stack.
+fn ctx_truncate_temp_roots(ctx: ZjsContext*, n: u32) -> void {
+    if n < ctx.temp_root_count { ctx.temp_root_count = n; }
+}
+
 // Overwrite the top temp_root slot in place. Pairs cleanly with
 // `push + defer pop` for code that loops, allocating a fresh value
 // each iteration that supersedes the previous one (string concat,
@@ -21135,6 +21144,10 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let onf_ptr: void* = NULL; raw { onf_ptr = (void*)host_promise_all_on_fulfill; }
     let i: u32 = 0;
     let iter_throw: bool = false;
+    // Per-iteration roots (item / per_state / onf) live across promise_resolve_call
+    // (C.resolve = user code for a subclassed C -> a minor can free them); capture
+    // the baseline + truncate back to it at every loop exit. (#375.)
+    let tr_base = ctx.temp_root_count;
     while true {
         let step = iter_step(ctx, iter);
         if ctx.pending_throw_active {
@@ -21143,6 +21156,7 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         }
         if step.done { break; }
         let item = step.value;
+        ctx_push_temp_root(ctx, item);
 
         let rem_v = object_get(state, ctx_intern_atom(ctx, PA_REM_KEY, 12));
         object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12),
@@ -21150,6 +21164,7 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
         let per_state_v = ctx_new_object(ctx);
         let per_state = zjs_as_object(per_state_v);
+        ctx_push_temp_root(ctx, per_state_v);
         // PA_PROMISE_KEY now holds cap.resolve (the function we call
         // when the per-elem counter hits zero), NOT the result promise.
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), cap_resolve);
@@ -21159,9 +21174,11 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
         let onf = ctx_make_host_function_arity(ctx, (char*)"", onf_ptr, 1);
         zjs_as_host_function(onf).bound = per_state_v;
+        ctx_push_temp_root(ctx, onf);
 
         let item_pv = promise_resolve_call(ctx, resolve_fn, ctor_v, item);
         if ctx.pending_throw_active {
+            ctx_truncate_temp_roots(ctx, tr_base);
             iter_throw = true;
             break;
         }
@@ -21183,10 +21200,12 @@ fn host_promise_all(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             // the shared iter_throw handler below to reject the capability.
             // Without this, a hostile never-`done` iterator whose promise's
             // `then` throws would spin forever attaching reactions.
+            ctx_truncate_temp_roots(ctx, tr_base);
             iter_throw = true;
             break;
         }
 
+        ctx_truncate_temp_roots(ctx, tr_base);
         i = i + 1;
     }
     if iter_throw {
@@ -21358,6 +21377,8 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
         capability_call_reject(ctx, cap, err);
         return rp;
     }
+    ctx_push_temp_root(ctx, ctor_resolve_fn);
+    defer ctx_pop_temp_root(ctx);
 
     let iter_arg = if argc >= 1 { args[0] } else { zjs_undefined() };
     let iter = iter_get(ctx, iter_arg);
@@ -21375,6 +21396,8 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
 
     let state_v = ctx_new_object(ctx);
     let state = zjs_as_object(state_v);
+    ctx_push_temp_root(ctx, state_v);
+    defer ctx_pop_temp_root(ctx);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), cap_resolve);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
     object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12), zjs_int32(1));
@@ -21383,11 +21406,16 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
     let onr_ptr: void* = NULL; raw { onr_ptr = (void*)host_promise_all_settled_on_reject; }
     let i: u32 = 0;
     let iter_throw: bool = false;
+    // Per-iteration roots (item/per_state/onf/onr) live across
+    // promise_resolve_call (C.resolve = user code for a subclassed C); capture
+    // the baseline + truncate to it at every exit. (#375.)
+    let tr_base = ctx.temp_root_count;
     while true {
         let step = iter_step(ctx, iter);
         if ctx.pending_throw_active { iter_throw = true; break; }
         if step.done { break; }
         let item = step.value;
+        ctx_push_temp_root(ctx, item);
 
         let rem_v = object_get(state, ctx_intern_atom(ctx, PA_REM_KEY, 12));
         object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12),
@@ -21395,6 +21423,7 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
 
         let per_state_v = ctx_new_object(ctx);
         let per_state = zjs_as_object(per_state_v);
+        ctx_push_temp_root(ctx, per_state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), cap_resolve);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), results_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_REM_KEY, 12), state_v);
@@ -21403,9 +21432,11 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
         let onr = ctx_make_host_function_arity(ctx, (char*)"", onr_ptr, 1);
         zjs_as_host_function(onf).bound = per_state_v;
         zjs_as_host_function(onr).bound = per_state_v;
+        ctx_push_temp_root(ctx, onf);
+        ctx_push_temp_root(ctx, onr);
 
         let item_pv = promise_resolve_call(ctx, ctor_resolve_fn, ctor_v, item);
-        if ctx.pending_throw_active { iter_throw = true; break; }
+        if ctx.pending_throw_active { ctx_truncate_temp_roots(ctx, tr_base); iter_throw = true; break; }
         if zjs_is_promise(item_pv) == 0 {
             let pp = zjs_promise_new();
             ctx_register_cell(ctx, (void*)pp);
@@ -21420,10 +21451,12 @@ fn host_promise_all_settled(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
             microtask_enqueue(ctx, onr, ip.value, zjs_undefined(), false);
         } else if promise_combinator_then(ctx, item_pv, onf, onr, iter) {
             // abrupt from Invoke(nextPromise,"then",…) → iterator already closed.
+            ctx_truncate_temp_roots(ctx, tr_base);
             let err = consume_pending_throw(ctx);
             capability_call_reject(ctx, cap, err);
             return rp;
         }
+        ctx_truncate_temp_roots(ctx, tr_base);
         i = i + 1;
     }
     if iter_throw {
@@ -21516,6 +21549,8 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         capability_call_reject(ctx, cap, err);
         return rp;
     }
+    ctx_push_temp_root(ctx, ctor_resolve_fn);
+    defer ctx_pop_temp_root(ctx);
 
     let iter_arg = if argc >= 1 { args[0] } else { zjs_undefined() };
     let iter = iter_get(ctx, iter_arg);
@@ -21533,6 +21568,8 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
     let state_v = ctx_new_object(ctx);
     let state = zjs_as_object(state_v);
+    ctx_push_temp_root(ctx, state_v);
+    defer ctx_pop_temp_root(ctx);
     // The on-reject helper consults the shared state for cap.reject
     // (used when every input has rejected and we need to build the
     // AggregateError); PA_PROMISE_KEY carries cap.resolve to the
@@ -21546,11 +21583,16 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let onr_ptr: void* = NULL; raw { onr_ptr = (void*)host_promise_any_on_reject; }
     let i: u32 = 0;
     let iter_throw: bool = false;
+    // Per-iteration roots (item/per_state/onf/onr) live across
+    // promise_resolve_call (C.resolve = user code for a subclassed C); capture
+    // the baseline + truncate to it at every exit. (#375.)
+    let tr_base = ctx.temp_root_count;
     while true {
         let step = iter_step(ctx, iter);
         if ctx.pending_throw_active { iter_throw = true; break; }
         if step.done { break; }
         let item = step.value;
+        ctx_push_temp_root(ctx, item);
 
         let rem_v = object_get(state, ctx_intern_atom(ctx, PA_REM_KEY, 12));
         object_set(ctx, state, ctx_intern_atom(ctx, PA_REM_KEY, 12),
@@ -21558,6 +21600,7 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 
         let per_state_v = ctx_new_object(ctx);
         let per_state = zjs_as_object(per_state_v);
+        ctx_push_temp_root(ctx, per_state_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_PROMISE_KEY, 12), cap_resolve);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_RESULTS_KEY, 12), errs_v);
         object_set(ctx, per_state, ctx_intern_atom(ctx, PA_REM_KEY, 12), state_v);
@@ -21566,9 +21609,11 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         let onr = ctx_make_host_function_arity(ctx, (char*)"", onr_ptr, 1);
         zjs_as_host_function(onf).bound = per_state_v;
         zjs_as_host_function(onr).bound = per_state_v;
+        ctx_push_temp_root(ctx, onf);
+        ctx_push_temp_root(ctx, onr);
 
         let item_pv = promise_resolve_call(ctx, ctor_resolve_fn, ctor_v, item);
-        if ctx.pending_throw_active { iter_throw = true; break; }
+        if ctx.pending_throw_active { ctx_truncate_temp_roots(ctx, tr_base); iter_throw = true; break; }
         if zjs_is_promise(item_pv) == 0 {
             let pp = zjs_promise_new();
             ctx_register_cell(ctx, (void*)pp);
@@ -21585,10 +21630,12 @@ fn host_promise_any(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         // observable path for all states.)
         if promise_combinator_then(ctx, item_pv, onf, onr, iter) {
             // abrupt from Invoke(nextPromise,"then",…) → iterator already closed.
+            ctx_truncate_temp_roots(ctx, tr_base);
             let err = consume_pending_throw(ctx);
             capability_call_reject(ctx, cap, err);
             return rp;
         }
+        ctx_truncate_temp_roots(ctx, tr_base);
         i = i + 1;
     }
     if iter_throw {
