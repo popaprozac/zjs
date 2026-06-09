@@ -911,6 +911,13 @@ struct ZjsString {
     data:   char*;     // null-terminated, owned (freed in string_free_void)
 }
 
+// One entry of a hidden class's per-shape property table (T2.1).
+// name == NULL marks an empty probe slot.
+struct PropSlotEntry {
+    name: ZjsString*;   // pinned atom (same invariant as transition_name)
+    slot: u32;
+}
+
 // Hidden class — the transition-tree shape model from the design
 // study (Phase 1 Decision 6). Every object holds a HiddenClass*; two
 // objects with the same property-add sequence share the same class.
@@ -932,6 +939,18 @@ struct ZjsHiddenClass {
     trans_children:  ZjsHiddenClass**;
     trans_count:     u32;
     trans_cap:       u32;
+
+    // T2.1 — lazily-built per-shape property table (Hermes DictPropertyMap /
+    // QuickJS shape-hash equivalent). Open-addressed, atom-POINTER keyed
+    // (sound because interned strings are canonical — see zjs_string_equals),
+    // power-of-2 capacity, linear probing, load factor <= 0.5. Built on the
+    // first class_find_slot at prop_count >= PROP_TABLE_MIN_PROPS; classes
+    // are immutable after creation (transitions create children), so the
+    // table never needs invalidation. NULL until built (alloc<> = calloc).
+    // Owned by the class; freed in hidden_class_free_void. Keys are pinned
+    // atoms — deliberately NOT GC-marked, same as transition_name.
+    prop_table:      PropSlotEntry*;
+    prop_table_mask: u32;                // capacity - 1
 }
 
 struct ZjsObject {
@@ -3203,6 +3222,7 @@ fn hidden_class_free_void(p: void*) -> void {
     if c == NULL { return; }
     dealloc(c.trans_names);
     dealloc(c.trans_children);
+    dealloc(c.prop_table);
     dealloc(c);
 }
 
@@ -3271,11 +3291,80 @@ fn closure_free_void(p: void*) -> void {
 // don't need ZjsContext — pure operations on the cells.
 // =====================================================================
 
-// Walk the parent chain looking for `name`. Returns -1 if not found.
-// Atom-pointer compare is the hot path; if both names are atoms (the
-// usual case for property names), this is one pointer compare per
-// link in the chain.
+// Shapes below this size keep the plain chain walk: with atom keys the walk
+// is pure pointer compares (T1.1), which beats a hash probe at small depths
+// and costs no table memory.
+def PROP_TABLE_MIN_PROPS: u32 = 8;
+
+// Hash an atom pointer into a table of capacity mask+1. Drop the low
+// alignment bits, then a Knuth multiplicative mix. MUST be the single
+// hash used by both build and probe.
+fn prop_table_hash(name: ZjsString*, mask: u32) -> u32 {
+    let idx: u32 = 0;
+    raw { idx = (uint32_t)(((uintptr_t)name >> 4) * 2654435761u) & mask; }
+    return idx;
+}
+
+// Build cls's property table: walk the parent chain once, inserting each
+// (transition_name -> transition_slot). First-wins on a duplicate name
+// walking leaf->root mirrors the linear walk's nearest-match semantics
+// (chains shouldn't contain duplicates — a transition is only created for
+// an absent name — but be defensive, it's free). Capacity = smallest power
+// of two >= 2 * prop_count, so probes terminate (load <= 0.5 guarantees
+// empty slots) and miss chains stay short.
+fn class_build_prop_table(cls: ZjsHiddenClass*) -> void {
+    let cap: u32 = 16;
+    while cap < cls.prop_count * 2 { cap = cap * 2; }
+    let tbl = alloc_n<PropSlotEntry>((usize)cap);   // calloc: names start NULL
+    let mask = cap - 1;
+    let c = cls;
+    while c != NULL && c.parent != NULL {
+        let nm = c.transition_name;
+        if nm != NULL {
+            let idx = prop_table_hash(nm, mask);
+            while tbl[idx].name != NULL && tbl[idx].name != nm {
+                idx = (idx + 1) & mask;
+            }
+            if tbl[idx].name == NULL {
+                tbl[idx].name = nm;
+                tbl[idx].slot = c.transition_slot;
+            }
+        }
+        c = c.parent;
+    }
+    cls.prop_table_mask = mask;
+    cls.prop_table = tbl;
+}
+
+// Find the slot for `name` on shape `cls`. Returns -1 if not present.
+//
+// Fast path (T2.1): shapes with >= PROP_TABLE_MIN_PROPS properties get a
+// lazily-built per-shape hash table — O(1) hits AND misses, vs the O(depth)
+// chain walk (a 128-prop shape walked 128 links per lookup; reading the
+// FIRST-added property is the worst case). The table path requires an
+// interned key: transition_names are always pinned atoms, and interned
+// strings are canonical (equal bytes => same pointer), so a pointer-probe
+// miss is definitive. A non-interned key (computed key from zjs_to_string)
+// takes the byte-comparing chain walk below, unchanged.
 fn class_find_slot(cls: ZjsHiddenClass*, name: ZjsString*) -> i32 {
+    if cls == NULL { return -1; }
+    if name.interned {
+        if cls.prop_table == NULL && cls.prop_count >= PROP_TABLE_MIN_PROPS {
+            class_build_prop_table(cls);
+        }
+        let tbl = cls.prop_table;
+        if tbl != NULL {
+            let mask = cls.prop_table_mask;
+            let idx = prop_table_hash(name, mask);
+            while tbl[idx].name != NULL {
+                if tbl[idx].name == name { return (i32)tbl[idx].slot; }
+                idx = (idx + 1) & mask;
+            }
+            return -1;
+        }
+    }
+    // Small shape or non-interned key: linear chain walk. Atom-vs-atom
+    // compares are single pointer compares (zjs_string_equals fast paths).
     let c = cls;
     while c != NULL && c.parent != NULL {
         if zjs_string_equals(c.transition_name, name) != 0 {
