@@ -3108,6 +3108,27 @@ fn object_define_property_slot(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsStrin
     // Mirrors object_set; the interned-flag guard skips the hot already-atom
     // case. (#375 — surfaced by aggressive ZJS_GEN_GC minors.)
     if name != NULL && name.interned == false { name = ctx_intern_atom_no_decode(ctx, name.data, name.length); }
+    // Fast path: a cached transition edge from obj.cls on `name` PROVES `name`
+    // is a NEW property of this object — you only transition to ADD an absent
+    // property, so a shape that has an out-edge on `name` does not itself
+    // contain `name`. So we can skip the O(depth) class_find_slot existence
+    // scan entirely (the dominant object-construction cost in the alloc-path
+    // profile: building an n-prop literal walked the growing hidden-class chain
+    // O(n^2), with a memcmp per same-length-name miss). class_find_transition
+    // is MTF'd so the hot shape's edge sits at index 0 ~ O(1).
+    let fast_child = class_find_transition(obj.cls, name);
+    if fast_child != NULL {
+        object_grow_slots(ctx, obj, fast_child.prop_count);
+        obj.slots[fast_child.transition_slot] = value;
+        obj.attrs[fast_child.transition_slot] = attrs;
+        obj.cls = fast_child;
+        gc_write_barrier(ctx, (void*)obj, value);
+        gc_write_barrier(ctx, (void*)obj, zjs_cell_from_ptr((void*)fast_child));
+        return;
+    }
+    // No cached transition: either re-defining an existing property
+    // (defineProperty on a present key — the existence scan finds it) or this
+    // (shape, name) pair is seen for the first time (a brand-new shape).
     let existing = class_find_slot(obj.cls, name);
     if existing >= 0 {
         obj.slots[(u32)existing] = value;
@@ -3117,23 +3138,20 @@ fn object_define_property_slot(ctx: ZjsContext*, obj: ZjsObject*, name: ZjsStrin
         gc_write_barrier(ctx, (void*)obj, value);
         return;
     }
-    // New property: same transition logic as object_set's new-prop path.
+    // Brand-new shape: create the transition class + edge.
     let parent_cls = obj.cls;
-    let child = class_find_transition(parent_cls, name);
-    if child == NULL {
-        child = zjs_hidden_class_new(parent_cls, name,
+    let child = zjs_hidden_class_new(parent_cls, name,
                                       parent_cls.prop_count,
                                       parent_cls.prop_count + 1);
-        // Shape-graph classes are pinned in old-gen. A transition class is
-        // referenced by its parent's transition map (`class_add_transition`)
-        // — an old->young pointer edge that is NOT a ZjsValue, so no
-        // write-barrier covers it — and by obj.cls. Registering it old keeps
-        // a minor GC from freeing a live transition class out from under its
-        // parent (the defineProperty/Object.create heap-use-after-free found
-        // by ASan; see docs/gc-barrier-audit.md).
-        ctx_register_cell_old(ctx, (void*)child);
-        class_add_transition(parent_cls, name, child);
-    }
+    // Shape-graph classes are pinned in old-gen. A transition class is
+    // referenced by its parent's transition map (`class_add_transition`)
+    // — an old->young pointer edge that is NOT a ZjsValue, so no
+    // write-barrier covers it — and by obj.cls. Registering it old keeps
+    // a minor GC from freeing a live transition class out from under its
+    // parent (the defineProperty/Object.create heap-use-after-free found
+    // by ASan; see docs/gc-barrier-audit.md).
+    ctx_register_cell_old(ctx, (void*)child);
+    class_add_transition(parent_cls, name, child);
     object_grow_slots(ctx, obj, child.prop_count);
     obj.slots[child.transition_slot] = value;
     obj.attrs[child.transition_slot] = attrs;
