@@ -698,9 +698,6 @@ fn aot_read_function(r: AotReader*, ctx: ZjsContext*) -> Function* {
     f.expected_arg_count = aot_r_u32(r);
 
     aot_unpack_flags(f, aot_r_u16(r));
-    // gen-GC: widen frame-init bounds at load (the .zbc carries the
-    // compile-time values) — see gen_gc_widen_frame_init in context.zc.
-    gen_gc_widen_frame_init(ctx, f);
     f.env_reg = aot_r_u8(r);
     f.this_reg = (i32)(u32)aot_r_u32(r);
 

@@ -280,13 +280,19 @@ struct AtomEntry {
 struct NurseryChunk {
     next_all:  NurseryChunk*;   // every chunk ever allocated (teardown walk)
     next_free: NurseryChunk*;   // fully-reset chunks awaiting reuse
-    bump:      u32;             // next free slot index (1..NURSERY_SLOTS)
+    bump:      u32;             // next free slot index (FIRST_SLOT..NURSERY_SLOTS)
     live:      u32;             // allocated-and-not-released cells
+    // Per-slot allocation bitmap (#389): bit set while the slot holds a
+    // live-or-promoted cell. Lets the validated-conservative register
+    // scan reject stale pointers into released (ASan-poisoned) slots
+    // WITHOUT dereferencing them. 1024 bits; alloc sets, release clears.
+    bitmap:    u64[16];
 }
 
 def NURSERY_CHUNK_SIZE: u32 = 65536;
 def NURSERY_SLOT_SIZE:  u32 = 64;
-def NURSERY_SLOTS:      u32 = 1024;   // slot indices 1..1023 usable; 0 = header
+def NURSERY_SLOTS:      u32 = 1024;   // slot indices FIRST_SLOT..1023 usable
+def NURSERY_FIRST_SLOT: u32 = 3;      // header + bitmap occupy slots 0-2
 
 // Per-realm intrinsics (Runtime/Realm split, docs/realm-refactor-design.md).
 // One realm per ZjsContext today (ctx.realm); multi-realm is a later phase.
@@ -415,6 +421,14 @@ struct ZjsContext {
     nursery_cur:  NurseryChunk*;
     nursery_all:  NurseryChunk*;
     nursery_free: NurseryChunk*;
+    // O(1) chunk-base membership set (#389): the validated register scan
+    // must decide "is this 64KB-aligned address one of OUR chunks?" per
+    // candidate — a list walk is O(chunks) and splay pins ~1000 chunks
+    // (promote-in-place), which measured +169% on splay. Open-addressed,
+    // insert-only (chunks live until teardown), grown by rebuild.
+    chunk_hash:       void**;
+    chunk_hash_mask:  u32;
+    chunk_hash_count: u32;
 
     // Size-class freelists for array element buffers (#386 S3). Element
     // capacities are always 4·2^k (start 4, double on grow), so classes
@@ -423,6 +437,27 @@ struct ZjsContext {
     // allocated lazily on the first free. Both GC modes use it.
     elem_pool:       void**;
     elem_pool_count: u32[4];
+
+    // Per-minor scratch (#389): open-addressed pointer set of the YOUNG
+    // MALLOC cells (non-chunk young_cells entries), rebuilt at the start
+    // of every minor. The validated-conservative register scan uses it
+    // to accept live young pointers without dereferencing candidates.
+    // Power-of-2 capacity, linear probing; grown on demand, reused
+    // across collections.
+    young_hash:      void**;
+    young_hash_mask: u32;
+
+    // Quarantine (#389): young MALLOC cells (non-chunk, non-obj-pool)
+    // that a MINOR found dead are NOT freed immediately — a stale
+    // register slot may still point at them, and a later major's root
+    // scan would dereference freed memory. Instead they're stamped
+    // mark=1 (so any spurious touch early-returns without walking
+    // children) and the actual gc_free_one is deferred to the end of
+    // the next MAJOR — the same lifetime these cells had under the
+    // major-only collector.
+    pending_free:       void**;
+    pending_free_count: u32;
+    pending_free_cap:   u32;
 
     // Remembered set — old cells that hold a pointer to a young cell.
     // Populated by gc_write_barrier on every old.slot=young store and
@@ -810,11 +845,19 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
     result.nursery_cur       = NULL;
     result.nursery_all       = NULL;
     result.nursery_free      = NULL;
+    result.chunk_hash        = NULL;
+    result.chunk_hash_mask   = 0;
+    result.chunk_hash_count  = 0;
     result.elem_pool         = NULL;
     result.elem_pool_count[0] = 0;
     result.elem_pool_count[1] = 0;
     result.elem_pool_count[2] = 0;
     result.elem_pool_count[3] = 0;
+    result.young_hash        = NULL;
+    result.young_hash_mask   = 0;
+    result.pending_free       = NULL;
+    result.pending_free_count = 0;
+    result.pending_free_cap   = 0;
     // calloc gave us {bits: 0}; explicitly initialize the implicit
     // host receiver to JS `undefined`.
     result.host_this = zjs_undefined();
@@ -941,6 +984,11 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     if ctx.obj_pool != NULL { dealloc(ctx.obj_pool); ctx.obj_pool = NULL; }
     // Drain the element-buffer size-class pools (#386 S3) — cells freed
     // above may have recycled their buffers here, so run after the loops.
+    if ctx.young_hash != NULL { dealloc(ctx.young_hash); ctx.young_hash = NULL; }
+    if ctx.chunk_hash != NULL { dealloc(ctx.chunk_hash); ctx.chunk_hash = NULL; }
+    // Free any still-quarantined cells (#389) before the pool drains.
+    gc_flush_quarantine(ctx);
+    if ctx.pending_free != NULL { dealloc(ctx.pending_free); ctx.pending_free = NULL; }
     if ctx.elem_pool != NULL {
         let ec: u32 = 0;
         while ec < 4 {
@@ -1472,11 +1520,13 @@ fn reg_stack_release(ctx: ZjsContext*, n: u32) -> void {
 // makes the args region always receive (valid) caller values. Runtime
 // behavior is otherwise unchanged — both fields' only runtime readers
 // are the frame-setup functions.
-fn gen_gc_widen_frame_init(ctx: ZjsContext*, f: Function*) -> void {
-    if !ctx.gen_gc_enabled { return; }
-    f.fixed_regs = f.register_count;
-    f.uses_arguments = true;
-}
+// gen_gc_widen_frame_init is GONE (#389): it forced full frame-window
+// initialization on every call under gen GC (fixed_regs :=
+// register_count, uses_arguments := true) so minors never marked stale
+// register slots — at fib +8.5% / method_call +5%. The validated-
+// conservative register scan (gc_mark_reg_validated) now rejects stale
+// values at GC time instead, so frames keep the watermark fast path in
+// both GC modes.
 
 // NOTE (#391): do NOT force-inline this into the interpreter. It was
 // auto-inlined for most of the engine's life and fell out of clang's
@@ -1533,11 +1583,11 @@ fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc
         ctx.reg_stack[regs_base + j] = undef;
         j = j + 1;
     }
-    // (Under gen-GC, fixed_regs was widened to register_count and
-    // uses_arguments forced on at function finalize — see
-    // gen_gc_widen_frame_init — so the loops above leave NO stale
-    // slots for the GC to scan. The default build keeps the cheap
-    // watermark; see the comment there for the latent-risk tradeoff.)
+    // (Slots above the fixed_regs watermark — and the args region when
+    // uses_arguments is off — stay STALE. That's safe in both GC modes
+    // since #389: the root scan validates register-file values before
+    // trusting them (gc_mark_reg_validated), so the call path keeps the
+    // cheap watermark fill everywhere.)
 
     let idx = ctx.frame_count;
     ctx.frames[idx].f = f;
@@ -1769,6 +1819,141 @@ fn gc_cell_is_poisoned(p: void*) -> i32 {
     return r;
 }
 
+// =====================================================================
+// Validated-conservative register-root scanning (#389).
+//
+// Register windows are no longer force-initialized on every call
+// (gen_gc_widen_frame_init is gone — it cost fib +8.5% under gen GC).
+// Instead, slots between a frame's init watermark and register_count
+// can hold STALE once-valid values from popped frames, and the root
+// scan VALIDATES candidates before trusting them:
+//
+//   - chunk-resident candidates: per-slot allocation bitmap in the
+//     chunk header — checked WITHOUT dereferencing the candidate
+//     (released slots are ASan-poisoned; a stale deref would both
+//     corrupt and trip the sanitizer).
+//   - young MALLOC cells: membership in a per-minor pointer set built
+//     from young_cells.
+//   - everything else in MINOR mode: skipped. Exact, because a minor
+//     never collects old cells (marking them is already a no-op) and
+//     stale values are precisely what must be dropped.
+//   - everything else in MAJOR mode: marked, exactly as the major-only
+//     collector always has. The residual stale-pointer-into-freed-
+//     MALLOC-memory exposure is the long-standing default-mode class,
+//     unchanged by this scheme.
+// =====================================================================
+
+// Quarantine a dead young MALLOC cell (see the ZjsContext field
+// comment): stamp mark=1 so any stale-pointer touch early-returns in
+// gc_mark_value without walking (still-intact) children, and defer the
+// real free to the next major's flush.
+fn gc_quarantine_cell(ctx: ZjsContext*, p: void*) -> void {
+    let h: CellHeader* = NULL;
+    raw { h = (CellHeader*)p; }
+    h.mark = 1;
+    if ctx.pending_free_count >= ctx.pending_free_cap {
+        let new_cap: u32 = if ctx.pending_free_cap == 0 { 64 } else { ctx.pending_free_cap * 2 };
+        ctx.pending_free = realloc_n<void*>(ctx.pending_free, (usize)ctx.pending_free_cap, (usize)new_cap);
+        ctx.pending_free_cap = new_cap;
+    }
+    ctx.pending_free[ctx.pending_free_count] = p;
+    ctx.pending_free_count = ctx.pending_free_count + 1;
+}
+
+// Free everything in the quarantine. Runs at the END of a major (after
+// the sweeps — no live reference can remain by then) and at teardown.
+fn gc_flush_quarantine(ctx: ZjsContext*) -> void {
+    let i: u32 = 0;
+    while i < ctx.pending_free_count {
+        gc_free_one(ctx, ctx.pending_free[i]);
+        i = i + 1;
+    }
+    ctx.pending_free_count = 0;
+}
+
+fn gc_young_hash_build(ctx: ZjsContext*) -> void {
+    // Capacity: pow2 >= 2x count, min 64.
+    let need: u32 = 64;
+    while need < ctx.young_count * 2 { need = need * 2; }
+    if ctx.young_hash == NULL || need > ctx.young_hash_mask + 1 {
+        if ctx.young_hash != NULL { dealloc(ctx.young_hash); }
+        ctx.young_hash = alloc_n<void*>((usize)need);
+        ctx.young_hash_mask = need - 1;
+    }
+    let cap = ctx.young_hash_mask + 1;
+    let z: u32 = 0;
+    while z < cap { ctx.young_hash[z] = NULL; z = z + 1; }
+    let i: u32 = 0;
+    while i < ctx.young_count {
+        let p = ctx.young_cells[i];
+        let h: CellHeader* = NULL;
+        raw { h = (CellHeader*)p; }
+        // Chunk-resident cells validate via the chunk bitmap instead.
+        if (h.age & AGE_IN_CHUNK) == 0 {
+            let idx: u32 = 0;
+            raw { idx = (uint32_t)(((uintptr_t)p >> 4) * 2654435761u); }
+            idx = idx & ctx.young_hash_mask;
+            while ctx.young_hash[idx] != NULL { idx = (idx + 1) & ctx.young_hash_mask; }
+            ctx.young_hash[idx] = p;
+        }
+        i = i + 1;
+    }
+}
+
+fn gc_young_hash_contains(ctx: ZjsContext*, p: void*) -> bool {
+    if ctx.young_hash == NULL { return false; }
+    let idx: u32 = 0;
+    raw { idx = (uint32_t)(((uintptr_t)p >> 4) * 2654435761u); }
+    idx = idx & ctx.young_hash_mask;
+    while ctx.young_hash[idx] != NULL {
+        if ctx.young_hash[idx] == p { return true; }
+        idx = (idx + 1) & ctx.young_hash_mask;
+    }
+    return false;
+}
+
+// Mark a value read from a REGISTER-FILE slot (interpreter reg stack or
+// a generator/async-cont saved_regs snapshot). See the block comment
+// above for the validation contract. ctx == NULL (no active context —
+// shouldn't happen for these roots, but stay safe) falls back to the
+// unvalidated mark.
+fn gc_mark_reg_validated(ctx: ZjsContext*, v: ZjsValue) -> void {
+    if zjs_is_cell(v) == 0 { return; }
+    let p = zjs_cell_as_ptr(v);
+    if p == NULL { return; }
+    if ctx == NULL { gc_mark_value(v); return; }
+    // Chunk-resident candidate? O(1) base-address probe — splay pins
+    // ~1000 chunks via promote-in-place, so a list walk here measured
+    // +169% on splay.
+    let cand: NurseryChunk* = NULL;
+    let base: void* = NULL;
+    raw {
+        base = (void*)((uintptr_t)p & ~(uintptr_t)65535);
+        cand = (NurseryChunk*)base;
+    }
+    if chunk_hash_contains(ctx, base) {
+        let off: u32 = 0;
+        raw { off = (uint32_t)((uintptr_t)p - (uintptr_t)base); }
+        if (off & 63) != 0 { return; }               // not slot-aligned: stale garbage
+        let slot = off >> 6;
+        if slot < NURSERY_FIRST_SLOT { return; }      // points into the header
+        if (cand.bitmap[slot >> 6] & ((u64)1 << (slot & 63))) == 0 { return; } // released
+        gc_mark_value(v);
+        return;
+    }
+    if gc_young_hash_contains(ctx, p) { gc_mark_value(v); return; }
+    // Not provably young: a minor drops it (old cells are minor no-ops,
+    // stale values must be dropped); a major marks it as always.
+    if gc_minor_mode() != 0 { return; }
+    gc_mark_value(v);
+}
+
+// Ambient-context variant for callsites inside gc_mark_cell_children
+// (no ctx parameter): the collecting thread's active context.
+fn gc_mark_reg_validated_ambient(v: ZjsValue) -> void {
+    gc_mark_reg_validated(gc_active_ctx(), v);
+}
+
 // Recurse through every child reference of `p`, calling
 // gc_mark_value on each. Used directly by rem-set processing in
 // gc_run_minor to walk old holders without tripping the early-return
@@ -1926,9 +2111,11 @@ fn gc_mark_cell_children(p: void*) -> void {
         raw { ac = (ZjsAsyncCont*)p; }
         gc_mark_value(ac.saved_host_this);
         gc_mark_value(ac.outer_promise);
+        // saved_regs is a frame-window snapshot — same stale-slot
+        // exposure as the live reg stack (#389), so validate.
         let i: u32 = 0;
         while i < ac.reg_count {
-            gc_mark_value(ac.saved_regs[i]);
+            gc_mark_reg_validated_ambient(ac.saved_regs[i]);
             i = i + 1;
         }
         if ac.saved_current_closure != NULL {
@@ -1956,9 +2143,10 @@ fn gc_mark_cell_children(p: void*) -> void {
         // frame, already a root — so skip until captured. Marking now would
         // walk a NULL array (reg_count>0, saved_regs==NULL) and segfault. (#375.)
         if g.saved_regs != NULL {
+            // Frame-window snapshot — validate like the live reg stack (#389).
             let gi: u32 = 0;
             while gi < g.reg_count {
-                gc_mark_value(g.saved_regs[gi]);
+                gc_mark_reg_validated_ambient(g.saved_regs[gi]);
                 gi = gi + 1;
             }
         }
@@ -2508,10 +2696,14 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     }
     // Phase 3.9h: shared reg_stack + per-frame saved host_this /
     // current_closure. Covers everything any active CallFrame might
-    // reference (args + regs are contiguous on reg_stack).
+    // reference (args + regs are contiguous on reg_stack). VALIDATED
+    // (#389): frame windows are no longer force-initialized, so slots
+    // above each frame's init watermark may hold stale values — the
+    // validated mark drops anything not provably live-young and (in
+    // minors) skips everything else outright.
     let r: u32 = 0;
     while r < ctx.reg_stack_top {
-        gc_mark_value(ctx.reg_stack[r]);
+        gc_mark_reg_validated(ctx, ctx.reg_stack[r]);
         r = r + 1;
     }
     let fi: u32 = 0;
@@ -2757,7 +2949,17 @@ fn gc_sweep_young(ctx: ZjsContext*) -> u32 {
             promoted = promoted + 1;
         } else if h.type_tag == TAG_OBJECT {
             // Dead young plain object — recycle the whole cell for reuse.
+            // (Safe against stale register pointers in both modes: chunk
+            // slots are bitmap-validated, and obj_pool cells get reused as
+            // NEW young cells at the same address — a stale match is then a
+            // live cell, so a spurious mark is harmless.)
             object_recycle_young(ctx, p);
+        } else if gc_minor_mode() != 0 && (h.age & AGE_IN_CHUNK) == 0 {
+            // Dead young MALLOC cell found by a MINOR — quarantine (#389):
+            // a stale register slot may still reference it, and freeing now
+            // would let a later major's root scan walk freed memory. The
+            // real free happens at the next major's flush.
+            gc_quarantine_cell(ctx, p);
         } else {
             gc_free_one(ctx, p);
         }
@@ -2817,6 +3019,9 @@ fn gc_run_minor(ctx: ZjsContext*) -> void {
         clock_gettime(CLOCK_MONOTONIC, &_ts0);
         t0 = (uint64_t)_ts0.tv_sec * 1000000000ULL + (uint64_t)_ts0.tv_nsec;
     }
+    // Build the young-malloc membership set for the validated register
+    // scan (#389) BEFORE marking — O(young), reused scratch buffer.
+    gc_young_hash_build(ctx);
     // Switch the mark walker into minor mode: old cells are marked
     // but their slots aren't re-walked. The remembered set bridges
     // the gap by enumerating each old cell that ever stored a young
@@ -2912,6 +3117,11 @@ fn gc_run_major(ctx: ZjsContext*) -> void {
     // mark walk at them — their children get swept while live.)
     let promoted = gc_sweep_young(ctx);
     gc_sweep_old(ctx);
+    // Flush the minor-free quarantine AFTER the sweeps (#389): by now no
+    // live reference can remain, and the stale register slots that kept
+    // these cells unfreeable were just re-validated against the post-
+    // sweep heap.
+    gc_flush_quarantine(ctx);
     ctx.cells_since_gc = 0;
     let target: u32 = ctx.cell_count * 2;
     if target < 256 { target = 256; }
@@ -3329,6 +3539,57 @@ def OBJ_POOL_MAX:    u32 = 2048;
 // these.
 // =====================================================================
 
+// Insert a chunk base address into the O(1) membership set (#389).
+// Insert-only — chunks live until teardown. Grows by rebuild at 50%.
+fn chunk_hash_insert(ctx: ZjsContext*, base: void*) -> void {
+    if ctx.chunk_hash == NULL || (ctx.chunk_hash_count + 1) * 2 > ctx.chunk_hash_mask + 1 {
+        let new_cap: u32 = if ctx.chunk_hash == NULL { 64 } else { (ctx.chunk_hash_mask + 1) * 2 };
+        let nh = alloc_n<void*>((usize)new_cap);
+        let z: u32 = 0;
+        while z < new_cap { nh[z] = NULL; z = z + 1; }
+        // Re-insert existing entries.
+        if ctx.chunk_hash != NULL {
+            let old_cap = ctx.chunk_hash_mask + 1;
+            let i: u32 = 0;
+            while i < old_cap {
+                let e = ctx.chunk_hash[i];
+                if e != NULL {
+                    let idx: u32 = 0;
+                    raw { idx = (uint32_t)(((uintptr_t)e >> 16) * 2654435761u); }
+                    idx = idx & (new_cap - 1);
+                    while nh[idx] != NULL { idx = (idx + 1) & (new_cap - 1); }
+                    nh[idx] = e;
+                }
+                i = i + 1;
+            }
+            dealloc(ctx.chunk_hash);
+        }
+        ctx.chunk_hash = nh;
+        ctx.chunk_hash_mask = new_cap - 1;
+    }
+    let idx: u32 = 0;
+    raw { idx = (uint32_t)(((uintptr_t)base >> 16) * 2654435761u); }
+    idx = idx & ctx.chunk_hash_mask;
+    while ctx.chunk_hash[idx] != NULL {
+        if ctx.chunk_hash[idx] == base { return; }
+        idx = (idx + 1) & ctx.chunk_hash_mask;
+    }
+    ctx.chunk_hash[idx] = base;
+    ctx.chunk_hash_count = ctx.chunk_hash_count + 1;
+}
+
+fn chunk_hash_contains(ctx: ZjsContext*, base: void*) -> bool {
+    if ctx.chunk_hash == NULL { return false; }
+    let idx: u32 = 0;
+    raw { idx = (uint32_t)(((uintptr_t)base >> 16) * 2654435761u); }
+    idx = idx & ctx.chunk_hash_mask;
+    while ctx.chunk_hash[idx] != NULL {
+        if ctx.chunk_hash[idx] == base { return true; }
+        idx = (idx + 1) & ctx.chunk_hash_mask;
+    }
+    return false;
+}
+
 // Acquire a bump-ready chunk: pop the free list, or allocate + link a
 // fresh 64KB-aligned chunk. Returns NULL on allocation failure (the
 // caller falls back to the malloc path).
@@ -3350,14 +3611,18 @@ fn nursery_acquire_chunk(ctx: ZjsContext*) -> NurseryChunk* {
     raw { c = (NurseryChunk*)mem; }
     c.next_all = ctx.nursery_all;
     ctx.nursery_all = c;
+    chunk_hash_insert(ctx, mem);
     c.next_free = NULL;
-    c.bump = 1;
+    c.bump = NURSERY_FIRST_SLOT;
     c.live = 0;
+    // Fresh aligned memory is NOT zeroed — clear the slot bitmap.
+    let bi: u32 = 0;
+    while bi < 16 { c.bitmap[bi] = 0; bi = bi + 1; }
     // Poison the whole slot region up front. The invariant from here on:
     // a slot is unpoisoned exactly while it holds a live (allocated, not
     // yet released) cell — alloc unpoisons, release re-poisons, so a
     // chunk reset needs no re-poison sweep.
-    raw { zjs_asan_poison((void*)((char*)mem + 64), (size_t)(65536 - 64)); }
+    raw { zjs_asan_poison((void*)((char*)mem + 3 * 64), (size_t)(65536 - 3 * 64)); }
     return c;
 }
 
@@ -3376,6 +3641,7 @@ fn nursery_alloc_cell(ctx: ZjsContext*) -> void* {
     let slot = c.bump;
     c.bump = slot + 1;
     c.live = c.live + 1;
+    c.bitmap[slot >> 6] = c.bitmap[slot >> 6] | ((u64)1 << (slot & 63));
     let p: void* = NULL;
     raw {
         p = (void*)((char*)c + (size_t)slot * 64);
@@ -3394,13 +3660,16 @@ fn nursery_alloc_cell(ctx: ZjsContext*) -> void* {
 // unrelated heap memory).
 fn nursery_release(ctx: ZjsContext*, p: void*) -> void {
     let ch: NurseryChunk* = NULL;
+    let slot: u32 = 0;
     raw {
         ch = (NurseryChunk*)((uintptr_t)p & ~(uintptr_t)65535);
+        slot = (uint32_t)(((uintptr_t)p - (uintptr_t)ch) >> 6);
         zjs_asan_poison(p, (size_t)64);
     }
+    ch.bitmap[slot >> 6] = ch.bitmap[slot >> 6] & ~((u64)1 << (slot & 63));
     ch.live = ch.live - 1;
     if ch.live == 0 {
-        ch.bump = 1;
+        ch.bump = NURSERY_FIRST_SLOT;
         // The current bump chunk just becomes empty in place; any other
         // chunk goes on the free list for reuse. A chunk can't be freed
         // twice into the list: releases are only possible while live > 0.

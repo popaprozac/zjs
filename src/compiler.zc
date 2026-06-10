@@ -4008,11 +4008,8 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     }
     f.uses_arguments = c.arguments_reg >= 0;
     f.has_rest_param = has_rest;
-    // gen-GC: widen frame-init bounds (fixed_regs + uses_arguments) so
-    // frame setup leaves no stale reg_stack slots for the minor's root
-    // scan (#375). No-op otherwise. Must run AFTER the two fields'
-    // normal assignments above.
-    gen_gc_widen_frame_init(c.ctx, f);
+    // (#389: the gen-GC frame-init widening that used to live here is
+    // gone — stale reg slots are filtered by the validated root scan.)
     // Repurposing the otherwise-unset Function.needs_env to mean "this
     // function body references at least one outer-scope name." Drives
     // the wrap-or-not decision at the FunctionDecl/FunctionExpr emit
@@ -8158,8 +8155,6 @@ fn compile_program(ctx: ZjsContext*, source: char*, root: AstNode*) -> Function*
     // hot leaf functions, not the one-shot top-level.
     f.fixed_regs = (u32)c.fixed_regs;
     if f.fixed_regs > f.register_count { f.fixed_regs = f.register_count; }
-    // gen-GC: widen frame-init bounds — see gen_gc_widen_frame_init.
-    gen_gc_widen_frame_init(c.ctx, f);
     f.param_count = 0;
     f.strict = c.strict;
     f.ics = c.ics;
