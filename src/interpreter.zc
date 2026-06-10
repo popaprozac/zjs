@@ -8772,7 +8772,7 @@ fn zjs_call_value_with_this(ctx: ZjsContext*, callee: ZjsValue, this_val: ZjsVal
 fn jit_invoke_fast(regs: ZjsValue*, base: u32, argc: u32, dst: u32, status: int*) -> ZjsValue* {
     *status = 1;
     let ctx: ZjsContext* = NULL;
-    raw { extern ZjsContext* g_active_ctx; ctx = g_active_ctx; }
+    raw { extern _Thread_local ZjsContext* g_active_ctx; ctx = g_active_ctx; }
     if ctx == NULL || argc > 16 { return regs; }
     let callee = regs[base];
     // Only plain sync function/closure/host-fn callees take the fast call.
@@ -8823,7 +8823,7 @@ fn jit_invoke_fast(regs: ZjsValue*, base: u32, argc: u32, dst: u32, status: int*
 fn jit_method_invoke_fast(regs: ZjsValue*, base: u32, argc: u32, dst: u32, status: int*) -> ZjsValue* {
     *status = 1;
     let ctx: ZjsContext* = NULL;
-    raw { extern ZjsContext* g_active_ctx; ctx = g_active_ctx; }
+    raw { extern _Thread_local ZjsContext* g_active_ctx; ctx = g_active_ctx; }
     if ctx == NULL || argc > 16 { return regs; }
     let callee = regs[base];
     let tgt: Function* = NULL;

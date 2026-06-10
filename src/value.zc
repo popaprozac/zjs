@@ -3013,7 +3013,7 @@ raw {
     // forward-declare as an opaque struct so the extern signatures
     // match. clang-merge at C-emit time resolves to the real type.
     typedef struct ZjsContext ZjsContext;
-    extern ZjsContext* g_active_ctx;
+    extern _Thread_local ZjsContext* g_active_ctx;
     extern void ctx_register_cell(ZjsContext* ctx, void* p);
 }
 
@@ -3606,7 +3606,7 @@ fn jit_global_get(slot: u64, ok: int*) -> u64 {
     *ok = 0;
     let v: u64 = 0;
     raw {
-        extern ZjsContext* g_active_ctx;
+        extern _Thread_local ZjsContext* g_active_ctx;
         if (g_active_ctx != NULL) {
             ZjsRealm* rm = g_active_ctx->realm;
             if (rm != NULL && (uint32_t)slot < rm->global_count
@@ -3627,7 +3627,7 @@ fn jit_global_set(slot: u64, val_bits: u64, ok: int*) -> void {
     let vv = ZjsValue{ bits: val_bits };
     if zjs_is_cell(vv) != 0 { return; }
     raw {
-        extern ZjsContext* g_active_ctx;
+        extern _Thread_local ZjsContext* g_active_ctx;
         if (g_active_ctx != NULL) {
             ZjsRealm* rm = g_active_ctx->realm;
             if (rm != NULL && (uint32_t)slot < rm->global_count) {

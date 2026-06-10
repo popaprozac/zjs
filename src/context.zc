@@ -150,6 +150,19 @@ raw {
     typedef struct ZjsValue ZjsValue;
     typedef struct ZjsContext ZjsContext;
     ZjsValue zjs_eval(ZjsContext* ctx, char* source);
+
+    /* Thread-local engine state. Embedders (zapp) run one zjs context
+       per WORKER THREAD in a single process; these were process globals,
+       which made the param-less helpers (write barrier, nursery cell
+       allocation, element pools) read ANOTHER thread's context — with
+       the #386 nursery that meant cross-thread bump allocation and
+       instant heap corruption (object_set segfault in the embedded
+       app; invisible to the single-threaded CLI). One context per
+       thread is the supported model; the engine is not re-entrant
+       across threads for a single context. */
+    _Thread_local ZjsContext* g_active_ctx     = NULL;
+    _Thread_local uint8_t     g_gc_minor_mode  = 0;
+    _Thread_local void*       g_gc_mark_holder = NULL;
 }
 
 struct GlobalEntry {
@@ -1106,18 +1119,24 @@ fn zjs_root_get(ctx: ZjsContext*, handle: u32) -> ZjsValue {
 // Append a heap cell to the context's owned-cells list. Called whenever
 // a new Function / String / etc. is allocated by the compiler or
 // interpreter.
-// Module-level "active context" pointer. The write barrier and other
-// helpers that don't naturally receive `ctx` (e.g. array_set in
-// value.zc) read this to find the rem_set. Single-threaded engine —
-// no contention. NULL during bootstrap (before any interpret() runs)
-// is a normal state and means "no barrier needed yet" — bootstrap
-// cells are allocated young and either die or get promoted on the
-// first real GC.
-let g_active_ctx: ZjsContext* = NULL;
+// "Active context" pointer — THREAD-LOCAL (defined in the raw block up
+// top; one zjs context per thread is the supported embedding model).
+// The write barrier and other helpers that don't naturally receive
+// `ctx` (e.g. array_set in value.zc, the nursery cell allocator) read
+// this to find their context. NULL during bootstrap (before any
+// interpret() runs on this thread) is a normal state and means "no
+// barrier / nursery yet" — bootstrap cells are allocated young and
+// either die or get promoted on the first real GC.
+
+fn gc_active_ctx() -> ZjsContext* {
+    let c: ZjsContext* = NULL;
+    raw { c = g_active_ctx; }
+    return c;
+}
 
 fn gc_set_active_ctx(ctx: ZjsContext*) -> ZjsContext* {
-    let saved = g_active_ctx;
-    g_active_ctx = ctx;
+    let saved: ZjsContext* = NULL;
+    raw { saved = g_active_ctx; g_active_ctx = ctx; }
     return saved;
 }
 
@@ -1125,7 +1144,18 @@ fn gc_set_active_ctx(ctx: ZjsContext*) -> ZjsContext* {
 // cells (their pointers to YOUNG cells are tracked separately via
 // the remembered set). Toggled by gc_run_minor; gc_run_major sets it
 // back to 0 so a major behaves as a full reachability walk.
-let g_gc_minor_mode: u8 = 0;
+// THREAD-LOCAL (defined in the raw block up top) — each worker
+// thread's collection must not flip another thread's mark mode.
+
+fn gc_minor_mode() -> u8 {
+    let m: u8 = 0;
+    raw { m = g_gc_minor_mode; }
+    return m;
+}
+
+fn gc_set_minor_mode(m: u8) -> void {
+    raw { g_gc_minor_mode = m; }
+}
 
 // Append `p` to the old-generation cell list. Used for cells that
 // should bypass the nursery — atoms (pinned for the context's
@@ -1241,7 +1271,7 @@ fn gc_write_barrier(ctx: ZjsContext*, holder: void*, value: ZjsValue) -> void {
 // g_active_ctx means we're outside the interpreter — typically
 // during bootstrap or test setup — and the barrier safely no-ops.
 fn gc_barrier(holder: void*, value: ZjsValue) -> void {
-    gc_write_barrier(g_active_ctx, holder, value);
+    gc_write_barrier(gc_active_ctx(), holder, value);
 }
 
 // Param-less nursery allocation hook for the cell constructors in
@@ -1253,7 +1283,7 @@ fn gc_barrier(holder: void*, value: ZjsValue) -> void {
 // EXCLUSIVELY via gc_free_one's chunk-aware branches; the *_free_void
 // helpers never see them.
 fn gc_nursery_cell(tag: u8) -> void* {
-    let ctx = g_active_ctx;
+    let ctx = gc_active_ctx();
     if ctx == NULL { return NULL; }
     if !ctx.gen_gc_enabled { return NULL; }
     let p = nursery_alloc_cell(ctx);
@@ -1290,7 +1320,7 @@ fn elem_class_of(cap: u32) -> i32 {
 // Param-less (g_active_ctx) — called from zjs_array_new in value.zc.
 // Returns an UNINITIALIZED buffer of >= cap values; caller fills.
 fn gc_elem_alloc(cap: u32) -> ZjsValue* {
-    let ctx = g_active_ctx;
+    let ctx = gc_active_ctx();
     let cls = elem_class_of(cap);
     if ctx != NULL && cls >= 0 && ctx.elem_pool != NULL {
         let n = ctx.elem_pool_count[(u32)cls];
@@ -1324,7 +1354,7 @@ fn gc_elem_grow(old: ZjsValue*, old_cap: u32, new_cap: u32) -> ZjsValue* {
 
 fn gc_elem_free(buf: ZjsValue*, cap: u32) -> void {
     if buf == NULL { return; }
-    let ctx = g_active_ctx;
+    let ctx = gc_active_ctx();
     let cls = elem_class_of(cap);
     if ctx != NULL && cls >= 0 {
         if ctx.elem_pool == NULL {
@@ -1708,10 +1738,16 @@ fn ctx_try_pop(ctx: ZjsContext*) -> void {
 
 // The cell whose children the innermost gc_mark_cell_children is
 // currently walking — ASan-build UAF diagnostics only (see below).
-let g_gc_mark_holder: void* = NULL;
+// THREAD-LOCAL (defined in the raw block up top).
+
+fn gc_mark_holder_get() -> void* {
+    let p: void* = NULL;
+    raw { p = g_gc_mark_holder; }
+    return p;
+}
 
 fn gc_mark_holder_restore(p: void*) -> void {
-    g_gc_mark_holder = p;
+    raw { g_gc_mark_holder = p; }
 }
 
 // Under ASan: is this address inside a manually-poisoned region (i.e. a
@@ -1739,8 +1775,8 @@ fn gc_mark_cell_children(p: void*) -> void {
     // can name the holder of a dangling (released-chunk-cell) edge.
     // Recursion-safe via save/restore; compiles to two dead stores that
     // the optimizer drops in non-ASan builds (g_gc_mark_holder unused).
-    let prev_holder = g_gc_mark_holder;
-    g_gc_mark_holder = p;
+    let prev_holder = gc_mark_holder_get();
+    gc_mark_holder_restore(p);
     defer gc_mark_holder_restore(prev_holder);
     let h: CellHeader* = NULL;
     raw { h = (CellHeader*)p; }
@@ -2186,8 +2222,8 @@ fn gc_mark_value(v: ZjsValue) -> void {
     // slot is exactly the write-barrier-gap shape (#375). Name the
     // holder before ASan's own use-after-poison report fires.
     if gc_cell_is_poisoned(p) != 0 {
-        let holder = g_gc_mark_holder;
-        let minor  = g_gc_minor_mode;
+        let holder = gc_mark_holder_get();
+        let minor  = gc_minor_mode();
         let htag: i32 = -1;
         if holder != NULL && gc_cell_is_poisoned(holder) == 0 {
             let hh: CellHeader* = NULL;
@@ -2207,7 +2243,7 @@ fn gc_mark_value(v: ZjsValue) -> void {
     // mark-clear pass after every minor. Old->young edges are found via the
     // remembered set (gc_run_minor re-scans barriered holders), not by
     // recursing through old cells. Result: a minor's mark set is young-only.
-    if g_gc_minor_mode != 0 && (h.age & AGE_OLD) != 0 { return; }
+    if gc_minor_mode() != 0 && (h.age & AGE_OLD) != 0 { return; }
     h.mark = 1;
     gc_mark_cell_children(p);
 }
@@ -2302,7 +2338,7 @@ fn gc_mark_hidden_class(c: ZjsHiddenClass*) -> void {
     // children and freeing live classes (the bootstrap UAF). Mirrors
     // gc_mark_value. Classes are old-pinned, so in a minor this always
     // short-circuits here.
-    if g_gc_minor_mode != 0 && (c.header.age & AGE_OLD) != 0 { return; }
+    if gc_minor_mode() != 0 && (c.header.age & AGE_OLD) != 0 { return; }
     c.header.mark = 1;
     // Names are atoms; they're already pinned via the atom-table root.
     if c.parent != NULL { gc_mark_hidden_class(c.parent); }
@@ -2711,7 +2747,7 @@ fn gc_sweep_young(ctx: ZjsContext*) -> u32 {
             // clean (a minor no longer mark-clears the old gen). Major: leave
             // it marked — gc_sweep_old runs right after and relies on the
             // mark to keep it, clearing during its own compaction.
-            if g_gc_minor_mode != 0 { h.mark = 0; }
+            if gc_minor_mode() != 0 { h.mark = 0; }
             promoted = promoted + 1;
         } else if h.type_tag == TAG_OBJECT {
             // Dead young plain object — recycle the whole cell for reuse.
@@ -2780,7 +2816,7 @@ fn gc_run_minor(ctx: ZjsContext*) -> void {
     // the gap by enumerating each old cell that ever stored a young
     // pointer; we re-scan those cells' slots so descendants in the
     // nursery get found.
-    g_gc_minor_mode = 1;
+    gc_set_minor_mode(1);
     gc_mark_roots(ctx);
     // Process remembered set: walk each old holder's child slots
     // directly via gc_mark_cell_children, bypassing the early-return
@@ -2804,7 +2840,7 @@ fn gc_run_minor(ctx: ZjsContext*) -> void {
     // now: in minor mode old classes are unmarked, which the nullify pass
     // would misread as "dead" and wipe live ICs.) The major path still runs it.
     let promoted = gc_sweep_young(ctx);
-    g_gc_minor_mode = 0;
+    gc_set_minor_mode(0);
     // No old-generation mark-clear pass: a minor never marks old cells now
     // (gc_mark_value short-circuits old cells BEFORE marking in minor mode),
     // and gc_sweep_young clears the mark on each promoted cell. So the old
@@ -2852,7 +2888,7 @@ fn gc_run_major(ctx: ZjsContext*) -> void {
     // Force full-reachability semantics for the mark walk — a major
     // collection sweeps both gens, so old cells need their full slot
     // graph traversed (no short-circuit on age).
-    g_gc_minor_mode = 0;
+    gc_set_minor_mode(0);
     gc_mark_roots(ctx);
     gc_nullify_dead_ics(ctx);
     // Reset the remembered set BEFORE the sweeps: a major's sweep_old
