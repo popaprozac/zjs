@@ -239,6 +239,14 @@ struct AstNode {
 
     name_start:     u32;
     name_length:    u32;
+
+    // Lexical scope id assigned by the compiler's collect_locals pass
+    // (0 = none/unassigned). BlockStmt and ForStmt nodes that open a
+    // scope get their id recorded HERE so every later walk
+    // (analyze_captures, compile_stmt) — and every RE-compile of the
+    // same node (inlined finally bodies) — re-enters the identical id
+    // instead of relying on fragile lockstep counter re-issue.
+    scope_id:       u32;
 }
 
 // --- Allocation tracking --------------------------------------------

@@ -444,6 +444,14 @@ fn inline_finallies_above(c: Compiler*, min_depth: u32) -> void {
     while i > min_depth {
         i = i - 1;
         if saved_stack[i] != NULL {
+            // KNOWN IMPRECISION: the body compiles under the inline
+            // SITE's scope stack, so a name the finally uses that a
+            // block between the try and the site shadows resolves to
+            // the shadow, not the finally's lexical binding. Fixing
+            // this needs a lexical-stack snapshot here PLUS shadow-
+            // aware capture marking in scan_inner_for_captures (its
+            // name-based gate misses outer captures once any same-
+            // named local exists in the function) — see task #382.
             compile_stmt(c, saved_stack[i]);
         }
     }
@@ -688,15 +696,44 @@ fn exit_scope(c: Compiler*) -> void {
     }
 }
 
-// Reset scope tracking before re-walking the AST. Both the collect_locals
-// and compile_stmt passes call enter_scope/exit_scope deterministically;
-// resetting between them re-issues the same ids so locals registered in
-// the first pass can be looked up by name in the second.
+// Collect-pass scope entry: issue a fresh id AND record it on the AST
+// node. Later walks (analyze_captures, compile_stmt) — and every
+// RE-compile of the same node (finally bodies inlined at break /
+// continue / return sites) — re-enter via enter_scope_reuse, so all
+// walks see identical ids by construction instead of relying on
+// fragile lockstep counter re-issue (which silently diverged when one
+// pass skipped a construct the other visited, or when a body compiled
+// more than once: tasks #380/#381).
+fn enter_scope_assign(c: Compiler*, node: AstNode*) -> void {
+    enter_scope(c);
+    if node != NULL { node.scope_id = c.cur_scope_id; }
+}
+
+// Re-enter the scope id assigned at collect time. Falls back to a
+// fresh id for nodes the collect pass never reached — next_scope_id
+// stays monotonic across passes (see reset_scope_walk), so a fallback
+// id can never collide with a stored one.
+fn enter_scope_reuse(c: Compiler*, node: AstNode*) -> void {
+    if node == NULL || node.scope_id == 0 { enter_scope(c); return; }
+    if c.scope_top >= c.scope_cap {
+        let new_cap: u32 = if c.scope_cap == 0 { 8 } else { c.scope_cap * 2 };
+        c.scope_stack = realloc_n<u32>(c.scope_stack, (usize)c.scope_cap, (usize)new_cap);
+        c.scope_cap = new_cap;
+    }
+    c.scope_stack[c.scope_top] = node.scope_id;
+    c.scope_top = c.scope_top + 1;
+    c.cur_scope_id = node.scope_id;
+}
+
+// Reset the scope STACK before re-walking the AST. Ids themselves are
+// assigned once by collect_locals (stored on the nodes) and re-entered
+// by id in later walks; next_scope_id deliberately stays monotonic so
+// any fresh id issued after the reset (enter_scope_reuse fallback)
+// can't collide with a collect-assigned id.
 fn reset_scope_walk(c: Compiler*) -> void {
     c.scope_top = 1;
     c.scope_stack[0] = 0;
     c.cur_scope_id = 0;
-    c.next_scope_id = 1;
 }
 
 // True if `scope_id` is currently visible — i.e. somewhere on the active
@@ -5652,11 +5689,31 @@ fn analyze_captures(c: Compiler*, node: AstNode*) -> void {
         // definition site. Without this, a closure declared inside a block
         // that captures a block-scoped local would miss the binding and
         // get an unrooted/empty reference.
-        enter_scope(c);
+        enter_scope_reuse(c, node);
         let i: u32 = 0;
         while i < node.children_count {
             analyze_captures(c, node.children[i]);
             i = i + 1;
+        }
+        exit_scope(c);
+        return;
+    }
+
+    if k == NodeKind::ForStmt {
+        // collect_locals opens a scope for the for-statement (its
+        // let/const init bindings live there); mirror it (#381 — this
+        // walk previously fell through to the generic descent WITHOUT
+        // entering the scope, so before node-stored ids every for-loop
+        // desynced this pass's ids from collect's and every later
+        // block's captures were checked against the wrong scope).
+        enter_scope_reuse(c, node);
+        if node.left  != NULL { analyze_captures(c, node.left); }
+        if node.right != NULL { analyze_captures(c, node.right); }
+        if node.third != NULL { analyze_captures(c, node.third); }
+        let fi: u32 = 0;
+        while fi < node.children_count {
+            analyze_captures(c, node.children[fi]);
+            fi = fi + 1;
         }
         exit_scope(c);
         return;
@@ -6115,9 +6172,10 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
 
     if k == NodeKind::BlockStmt {
         // Block introduces a fresh lexical scope; let/const inside this
-        // body bind to the block, var still hoists. compile_stmt walks
-        // the same node and enters a scope in lockstep so the ids match.
-        enter_scope(c);
+        // body bind to the block, var still hoists. The id is recorded
+        // on the node — analyze_captures and compile_stmt re-enter it
+        // by id (enter_scope_reuse).
+        enter_scope_assign(c, node);
         let i: u32 = 0;
         while i < node.children_count {
             collect_locals(c, node.children[i]);
@@ -6146,6 +6204,11 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
         }
         if node.left  != NULL { collect_locals(c, node.left); }
         if node.right != NULL { collect_locals(c, node.right); }
+        // The finally block (#380): compile_stmt compiles it (once
+        // straight-line + once per break/continue/return inline site),
+        // so its locals must be registered and its block must carry a
+        // collect-assigned scope id like any other.
+        if node.third != NULL { collect_locals(c, node.third); }
         return;
     }
 
@@ -6157,7 +6220,7 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
         // a fresh scope around the for-statement is a no-op for var
         // bindings while correctly isolating let/const inits and any
         // let/const declared in the body block.
-        enter_scope(c);
+        enter_scope_assign(c, node);
         if node.left  != NULL { collect_locals(c, node.left); }
         if node.right != NULL { collect_locals(c, node.right); }
         if node.third != NULL { collect_locals(c, node.third); }
@@ -6324,10 +6387,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
     if k == NodeKind::BlockStmt {
         // Early error: no duplicate lexically-declared names in this block.
         check_scope_redeclaration(c, node);
-        // Mirrors collect_locals — both passes enter+exit a scope in
-        // lockstep so the ids assigned to the block agree, which is
-        // what makes find_local_index filter correctly.
-        enter_scope(c);
+        // Re-enter the scope id collect_locals assigned to this block
+        // (stable across re-compiles — inlined finally bodies).
+        enter_scope_reuse(c, node);
         // #330 TDZ: seed this block's let/const regs with the hole so a
         // read BEFORE the declaration throws ReferenceError. Re-holed on
         // every block entry (correct per-iteration semantics for a block
@@ -6999,10 +7061,11 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         return;
     }
     if k == NodeKind::ForStmt {
-        // Enter a fresh scope so the init's let/const (and any
-        // let/const inside the body) doesn't leak past the loop. See
-        // collect_locals's matching enter_scope for the rationale.
-        enter_scope(c);
+        // Re-enter the for-statement's collect-assigned scope so the
+        // init's let/const (and any let/const inside the body) doesn't
+        // leak past the loop. See collect_locals's matching
+        // enter_scope_assign for the rationale.
+        enter_scope_reuse(c, node);
         // init
         if node.left != NULL { compile_stmt_or_expr(c, node.left); }
         // Reset AFTER init: ECMA-262 ForBodyEvaluation step 1 sets
