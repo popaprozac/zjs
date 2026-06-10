@@ -402,6 +402,14 @@ struct ZjsContext {
     nursery_all:  NurseryChunk*;
     nursery_free: NurseryChunk*;
 
+    // Size-class freelists for array element buffers (#386 S3). Element
+    // capacities are always 4·2^k (start 4, double on grow), so classes
+    // map exactly: cap 4/8/16/32 → class 0..3; larger buffers stay raw
+    // malloc. One flat backing array indexed class*ELEM_POOL_MAX+i,
+    // allocated lazily on the first free. Both GC modes use it.
+    elem_pool:       void**;
+    elem_pool_count: u32[4];
+
     // Remembered set — old cells that hold a pointer to a young cell.
     // Populated by gc_write_barrier on every old.slot=young store and
     // at promotion time (walking the new-old cell's slots). Each entry
@@ -784,6 +792,11 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
     result.nursery_cur       = NULL;
     result.nursery_all       = NULL;
     result.nursery_free      = NULL;
+    result.elem_pool         = NULL;
+    result.elem_pool_count[0] = 0;
+    result.elem_pool_count[1] = 0;
+    result.elem_pool_count[2] = 0;
+    result.elem_pool_count[3] = 0;
     // calloc gave us {bits: 0}; explicitly initialize the implicit
     // host receiver to JS `undefined`.
     result.host_this = zjs_undefined();
@@ -908,6 +921,22 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     }
     ctx.obj_pool_count = 0;
     if ctx.obj_pool != NULL { dealloc(ctx.obj_pool); ctx.obj_pool = NULL; }
+    // Drain the element-buffer size-class pools (#386 S3) — cells freed
+    // above may have recycled their buffers here, so run after the loops.
+    if ctx.elem_pool != NULL {
+        let ec: u32 = 0;
+        while ec < 4 {
+            let en: u32 = 0;
+            while en < ctx.elem_pool_count[ec] {
+                dealloc(ctx.elem_pool[ec * ELEM_POOL_MAX + en]);
+                en = en + 1;
+            }
+            ctx.elem_pool_count[ec] = 0;
+            ec = ec + 1;
+        }
+        dealloc(ctx.elem_pool);
+        ctx.elem_pool = NULL;
+    }
     // Free the nursery chunks. Must run AFTER the cell-free loops —
     // chunk-resident cells release through nursery_release, which pokes
     // the chunk header. Unpoison before free: ASan rejects freeing a
@@ -1229,6 +1258,81 @@ fn gc_nursery_cell(tag: u8) -> void* {
     h.type_tag = tag;
     h.age = AGE_IN_CHUNK;
     return p;
+}
+
+// =====================================================================
+// Array element-buffer size-class pools (#386 S3).
+//
+// Every element buffer is malloc'd at EXACTLY cap*sizeof(ZjsValue)
+// bytes with cap in {4, 8, 16, 32, ...doubling}, so the four small
+// classes recycle without any rounding bookkeeping. Buffers above
+// cap 32 stay on the raw heap (rare; one realloc'd buffer per big
+// array, churn negligible). Invariant: a pooled block was malloc'd at
+// its class size, so handing it back out for the same class is safe
+// and realloc on it remains legal.
+// =====================================================================
+
+def ELEM_POOL_MAX: u32 = 1024;   // per class; worst-case retention ~480KB
+
+fn elem_class_of(cap: u32) -> i32 {
+    if cap == 4  { return 0; }
+    if cap == 8  { return 1; }
+    if cap == 16 { return 2; }
+    if cap == 32 { return 3; }
+    return -1;
+}
+
+// Param-less (g_active_ctx) — called from zjs_array_new in value.zc.
+// Returns an UNINITIALIZED buffer of >= cap values; caller fills.
+fn gc_elem_alloc(cap: u32) -> ZjsValue* {
+    let ctx = g_active_ctx;
+    let cls = elem_class_of(cap);
+    if ctx != NULL && cls >= 0 && ctx.elem_pool != NULL {
+        let n = ctx.elem_pool_count[(u32)cls];
+        if n > 0 {
+            ctx.elem_pool_count[(u32)cls] = n - 1;
+            let p = ctx.elem_pool[(u32)cls * ELEM_POOL_MAX + (n - 1)];
+            let r: ZjsValue* = NULL;
+            raw { r = (ZjsValue*)p; }
+            return r;
+        }
+    }
+    return alloc_n<ZjsValue>((usize)cap);
+}
+
+// Param-less — called from array_set's grow path in value.zc. Returns
+// a buffer of >= new_cap values with the first old_cap values copied;
+// the old buffer is recycled. Falls back to realloc for big buffers.
+fn gc_elem_grow(old: ZjsValue*, old_cap: u32, new_cap: u32) -> ZjsValue* {
+    let new_cls = elem_class_of(new_cap);
+    if new_cls >= 0 || elem_class_of(old_cap) >= 0 {
+        let nb = gc_elem_alloc(new_cap);
+        let i: u32 = 0;
+        while i < old_cap { nb[i] = old[i]; i = i + 1; }
+        gc_elem_free(old, old_cap);
+        return nb;
+    }
+    let r: ZjsValue* = NULL;
+    raw { r = (ZjsValue*)realloc(old, (size_t)new_cap * sizeof(ZjsValue)); }
+    return r;
+}
+
+fn gc_elem_free(buf: ZjsValue*, cap: u32) -> void {
+    if buf == NULL { return; }
+    let ctx = g_active_ctx;
+    let cls = elem_class_of(cap);
+    if ctx != NULL && cls >= 0 {
+        if ctx.elem_pool == NULL {
+            ctx.elem_pool = alloc_n<void*>((usize)(4 * ELEM_POOL_MAX));
+        }
+        let n = ctx.elem_pool_count[(u32)cls];
+        if n < ELEM_POOL_MAX {
+            ctx.elem_pool[(u32)cls * ELEM_POOL_MAX + n] = (void*)buf;
+            ctx.elem_pool_count[(u32)cls] = n + 1;
+            return;
+        }
+    }
+    dealloc(buf);
 }
 
 // New cells from program execution land here. We bump
@@ -2513,12 +2617,13 @@ fn gc_free_one(ctx: ZjsContext*, p: void*) -> void {
     }
       else if tag == TAG_OBJECT        { object_free_pooled(ctx, p); }
       else if tag == TAG_ARRAY         {
-        if (h.age & AGE_IN_CHUNK) != 0 {
-            let a: ZjsArray* = NULL;
-            raw { a = (ZjsArray*)p; }
-            dealloc(a.elements);
-            nursery_release(ctx, p);
-        } else { array_free_void(p); }
+        // Elements recycle through the size-class pool (#386 S3); the
+        // cell goes back to its chunk or the heap.
+        let a: ZjsArray* = NULL;
+        raw { a = (ZjsArray*)p; }
+        gc_elem_free(a.elements, a.cap);
+        if (h.age & AGE_IN_CHUNK) != 0 { nursery_release(ctx, p); }
+        else { dealloc(a); }
     }
       else if tag == TAG_HOST_FUNCTION { host_function_free_void(p); }
       else if tag == TAG_CLOSURE       { closure_free_void(p); }

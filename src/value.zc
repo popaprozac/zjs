@@ -3266,7 +3266,9 @@ fn zjs_array_new(length: u32) -> ZjsArray* {
     a.proto = NULL;
     let cap: u32 = if length < 4 { 4 } else { length };
     a.cap = cap;
-    let buf = alloc_n<ZjsValue>((usize)cap);
+    // Element buffer from the size-class pool (#386 S3) — falls through
+    // to a plain allocation for non-class sizes / no active context.
+    let buf = gc_elem_alloc(cap);
     let hole: ZjsValue = zjs_deleted();
     let i: u32 = 0;
     while i < cap {
@@ -3718,9 +3720,9 @@ fn array_set(arr: ZjsArray*, idx: u32, value: ZjsValue) -> void {
     if idx >= arr.cap {
         let new_cap: u32 = if arr.cap == 0 { 4 } else { arr.cap };
         while new_cap <= idx { new_cap = new_cap * 2; }
-        let old = arr.elements;
-        let new_buf: ZjsValue* = NULL;
-        raw { new_buf = (ZjsValue*)realloc(old, new_cap * sizeof(ZjsValue)); }
+        // Grow via the size-class pool (#386 S3) — recycles the old
+        // buffer; realloc fallback for big (non-class) capacities.
+        let new_buf = gc_elem_grow(arr.elements, arr.cap, new_cap);
         // New slots are holes (zjs_deleted()) — not undefined. Sparse
         // arrays (`a[100] = 1`) leave 0..99 as holes, which forEach
         // and friends must skip.
