@@ -31,43 +31,30 @@ raw {
     // Keep in sync when ops are added. Unknown indices print as
     // "Op<N>" so the dump is still readable.
     static const char *zjs_op_names[] = {
-        "Halt",
-        "LoadConst", "LoadInt", "LoadUndefined", "LoadHole", "ThrowIfHole", "LoadNull",
-        "LoadTrue", "LoadFalse", "Mov",
-        "DefineGlobal", "LoadGlobal", "StoreGlobal", "LoadGlobalOrUndefined",
-        "WithEnter", "WithLeave", "WithLookup",
-        "Add", "Sub", "Mul", "Div", "Mod", "Pow",
-        "AddImm", "SubImm",
-        "CmpLtImm", "CmpLeImm", "CmpGtImm", "CmpGeImm",
-        "BitAnd", "BitOr", "BitXor",
-        "Shl", "Shr", "UShr",
-        "CmpEq", "CmpNe", "CmpStrictEq", "CmpStrictNe",
-        "CmpLt", "CmpLe", "CmpGt", "CmpGe",
-        "Neg", "BitNot", "LogicalNot",
-        "Jmp", "JmpIfTrue", "JmpIfFalse", "JmpIfNotNullish", "JmpIfNullish",
-        "JmpIfNotLt", "JmpIfNotLe", "JmpIfNotGt", "JmpIfNotGe",
-        "JmpIfNotLtImm", "JmpIfNotLeImm", "JmpIfNotGtImm", "JmpIfNotGeImm",
-        "JmpIfNotEq", "JmpIfNotNe", "JmpIfNotStrictEq", "JmpIfNotStrictNe",
-        "Return", "Invoke", "TailInvoke",
-        "LoadProp", "StoreProp",
-        "IterPrepare", "ArrayLength",
-        "DeleteElem", "BuildArguments", "BuildRestArgs",
-        "ImportBind", "ExportBind", "DynamicImport", "ImportMeta",
-        "Await", "Yield", "GeneratorStart", "TemplateObject",
-        "ArrayPush", "ArraySpread", "ObjectSpread",
-        "ArrayRestFrom", "AssertCoercible",
+        "Halt", "LoadConst", "LoadInt", "LoadUndefined", "LoadHole", "ThrowIfHole",
+        "LoadNull", "LoadTrue", "LoadFalse", "Mov", "DefineGlobal", "LoadGlobal",
+        "StoreGlobal", "LoadGlobalOrUndefined", "WithEnter", "WithLeave", "WithLookup", "Add",
+        "Sub", "Mul", "Div", "Mod", "Pow", "AddImm",
+        "SubImm", "CmpLtImm", "CmpLeImm", "CmpGtImm", "CmpGeImm", "BitAnd",
+        "BitOr", "BitXor", "Shl", "Shr", "UShr", "CmpEq",
+        "CmpNe", "CmpStrictEq", "CmpStrictNe", "CmpLt", "CmpLe", "CmpGt",
+        "CmpGe", "Neg", "BitNot", "LogicalNot", "Jmp", "JmpIfTrue",
+        "JmpIfFalse", "JmpIfNotNullish", "JmpIfNullish", "JmpIfNotLt", "JmpIfNotLe", "JmpIfNotGt",
+        "JmpIfNotGe", "JmpIfNotLtImm", "JmpIfNotLeImm", "JmpIfNotGtImm", "JmpIfNotGeImm", "JmpIfNotEq",
+        "JmpIfNotNe", "JmpIfNotStrictEq", "JmpIfNotStrictNe", "Return", "Invoke", "TailInvoke",
+        "LoadProp", "StoreProp", "MathSqrt", "MathAbs", "MathFloor", "MathCeil",
+        "IterPrepare", "ArrayLength", "DeleteElem", "BuildArguments", "BuildRestArgs", "ImportBind",
+        "ExportBind", "DynamicImport", "ImportMeta", "Await", "Yield", "GeneratorStart",
+        "TemplateObject", "ArrayPush", "ArraySpread", "ObjectSpread", "ArrayRestFrom", "AssertCoercible",
         "IterGet", "IterGetAsync", "IterStep", "IterRestCollect", "IterClose", "IterNextRaw",
-        "SpreadInvoke", "SpreadMethodInvoke", "SpreadNewInvoke",
-        "MethodInvoke", "TailMethodInvoke",
-        "DefineGetter", "DefineSetter", "DefineMethodGetter", "DefineMethodSetter",
-        "MakeClosure", "LoadEnv",
-        "NewRegex", "NewObject", "NewArray",
-        "LoadElem", "StoreElem",
-        "Throw", "EnterTry", "LeaveTry",
-        "In", "Instanceof", "LoadThis", "LoadNewTarget",
-        "NewInvoke", "Typeof", "SetProto", "SuperCall",
-        "DefineMethod", "DefineMethodComputed", "SetParentCtor", "SetFunctionName",
-        "InitObjData",
+        "SpreadInvoke", "SpreadMethodInvoke", "SpreadNewInvoke", "MethodInvoke", "TailMethodInvoke", "DefineGetter",
+        "DefineSetter", "DefineMethodGetter", "DefineMethodSetter", "MakeClosure", "LoadEnv", "LoadCallee",
+        "NewRegex", "NewRegexR", "NewObject", "NewArray", "LoadElem", "StoreElem",
+        "Throw", "EnterTry", "LeaveTry", "In", "Instanceof", "LoadThis",
+        "LoadNewTarget", "NewInvoke", "Typeof", "SetProto", "SuperCall", "DefineMethod",
+        "DefineMethodComputed", "SetParentCtor", "SetFunctionName", "InitObjData", "SpreadSuperCall", "JmpIfLt",
+        "JmpIfLe", "JmpIfGt", "JmpIfGe", "JmpIfLtImm", "JmpIfLeImm", "JmpIfGtImm",
+        "JmpIfGeImm",
         NULL,
     };
     static const char *zjs_op_name_lookup(int op) {
@@ -2348,6 +2335,25 @@ fn jit_osr_work_threshold() -> u32 {
     return t;
 }
 
+// Fused 2-slot compare-branch ops: operands live in slot J, the i16
+// offset in the carrier slot J+1 (emitted as an Op::Jmp placeholder).
+// Keep in sync with compiler.zc is_fused_branch_op.
+fn op_is_fused_cmp_branch(op_: Op) -> bool {
+    if op_ == Op::JmpIfNotLt  || op_ == Op::JmpIfNotLe
+    || op_ == Op::JmpIfNotGt  || op_ == Op::JmpIfNotGe
+    || op_ == Op::JmpIfNotLtImm || op_ == Op::JmpIfNotLeImm
+    || op_ == Op::JmpIfNotGtImm || op_ == Op::JmpIfNotGeImm
+    || op_ == Op::JmpIfNotEq   || op_ == Op::JmpIfNotNe
+    || op_ == Op::JmpIfNotStrictEq || op_ == Op::JmpIfNotStrictNe
+    || op_ == Op::JmpIfLt  || op_ == Op::JmpIfLe
+    || op_ == Op::JmpIfGt  || op_ == Op::JmpIfGe
+    || op_ == Op::JmpIfLtImm || op_ == Op::JmpIfLeImm
+    || op_ == Op::JmpIfGtImm || op_ == Op::JmpIfGeImm {
+        return true;
+    }
+    return false;
+}
+
 // Does f contain a back-edge (a backward branch)? Such a function is a loop:
 // its body dominates runtime independent of how often the function is *called*.
 // A top-level script with a `for` loop is entered once but iterates millions
@@ -2363,6 +2369,12 @@ fn jit_fn_has_backedge(f: Function*) -> bool {
            || inst.op == Op::JmpIfFalse || inst.op == Op::JmpIfNotNullish
            || inst.op == Op::JmpIfNullish {
             if inst_bc_i16(inst) < 0 { return true; }
+        } else if op_is_fused_cmp_branch(inst.op) {
+            // Offset lives in the carrier slot; read it there and skip
+            // the carrier so its Jmp placeholder bytes aren't double-
+            // read as a separate (phantom) jump.
+            if i + 1 < n && inst_bc_i16(f.code[i + 1]) < 0 { return true; }
+            i = i + 1;
         }
         i = i + 1;
     }
@@ -3969,6 +3981,269 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             if !ne_true {
                 let off = inst_bc_i16(code[ip + 1]);
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+
+        // --- Inverse-polarity fused compare-and-branch (#379) -------
+        // Branch when the comparison is TRUE. Emitted only as the
+        // backward bottom-test of a ROTATED loop, so the taken path is
+        // the loop back-edge: GC-poll there (guarded off<0 like the
+        // backward-JmpIfTrue precedent), replacing the poll the old
+        // unconditional back-edge Jmp provided. Mirrors the JmpIfNot*
+        // family exactly: same cond_true computation (Gt/Ge slow paths
+        // operand-swap zjs_cmp_lt/zjs_cmp_le), same ToPrimitive/symbol
+        // bails (frame ip stored pre-increment), same 2-slot ip dance
+        // (taken: ip = ip+1+off; not-taken: ip+1 skips the carrier).
+        } else if op == Op::JmpIfLt {
+            let av = regs[inst.a]; let bv = regs[inst.b];
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 && zjs_is_int32(bv) != 0 {
+                cond_true = zjs_as_int32(av) < zjs_as_int32(bv);
+            } else {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                cond_true = zjs_cmp_lt(av, bv);
+            }
+            if cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                if off < 0 { ctx_maybe_gc(ctx); }
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfLe {
+            let av = regs[inst.a]; let bv = regs[inst.b];
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 && zjs_is_int32(bv) != 0 {
+                cond_true = zjs_as_int32(av) <= zjs_as_int32(bv);
+            } else {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                cond_true = zjs_cmp_le(av, bv);
+            }
+            if cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                if off < 0 { ctx_maybe_gc(ctx); }
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfGt {
+            let av = regs[inst.a]; let bv = regs[inst.b];
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 && zjs_is_int32(bv) != 0 {
+                cond_true = zjs_as_int32(av) > zjs_as_int32(bv);
+            } else {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                cond_true = zjs_cmp_lt(bv, av);
+            }
+            if cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                if off < 0 { ctx_maybe_gc(ctx); }
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfGe {
+            let av = regs[inst.a]; let bv = regs[inst.b];
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 && zjs_is_int32(bv) != 0 {
+                cond_true = zjs_as_int32(av) >= zjs_as_int32(bv);
+            } else {
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if is_object_like(bv) != 0 {
+                    bv = zjs_to_primitive(ctx, bv, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if zjs_is_symbol(av) != 0 || zjs_is_symbol(bv) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                cond_true = zjs_cmp_le(bv, av);
+            }
+            if cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                if off < 0 { ctx_maybe_gc(ctx); }
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfLtImm {
+            let av = regs[inst.a];
+            let imm: i32 = (i32)(i8)inst.b;
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 {
+                cond_true = zjs_as_int32(av) < imm;
+            } else {
+                let bv = zjs_int32(imm);
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                cond_true = zjs_cmp_lt(av, bv);
+            }
+            if cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                if off < 0 { ctx_maybe_gc(ctx); }
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfLeImm {
+            let av = regs[inst.a];
+            let imm: i32 = (i32)(i8)inst.b;
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 {
+                cond_true = zjs_as_int32(av) <= imm;
+            } else {
+                let bv = zjs_int32(imm);
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                cond_true = zjs_cmp_le(av, bv);
+            }
+            if cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                if off < 0 { ctx_maybe_gc(ctx); }
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfGtImm {
+            let av = regs[inst.a];
+            let imm: i32 = (i32)(i8)inst.b;
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 {
+                cond_true = zjs_as_int32(av) > imm;
+            } else {
+                let bv = zjs_int32(imm);
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                cond_true = zjs_cmp_lt(bv, av);
+            }
+            if cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                if off < 0 { ctx_maybe_gc(ctx); }
+                ip = (u32)((i32)ip + 1 + off);
+            } else {
+                ip = ip + 1;
+            }
+        } else if op == Op::JmpIfGeImm {
+            let av = regs[inst.a];
+            let imm: i32 = (i32)(i8)inst.b;
+            let cond_true: bool = false;
+            if zjs_is_int32(av) != 0 {
+                cond_true = zjs_as_int32(av) >= imm;
+            } else {
+                let bv = zjs_int32(imm);
+                if is_object_like(av) != 0 {
+                    av = zjs_to_primitive(ctx, av, false);
+                    if ctx.pending_throw_active {
+                        throwing = true; thrown = consume_pending_throw(ctx);
+                        exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                    }
+                }
+                if zjs_is_symbol(av) != 0 {
+                    raise_symbol_to_number(ctx);
+                    throwing = true; thrown = consume_pending_throw(ctx);
+                    exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
+                }
+                cond_true = zjs_cmp_le(bv, av);
+            }
+            if cond_true {
+                let off = inst_bc_i16(code[ip + 1]);
+                if off < 0 { ctx_maybe_gc(ctx); }
                 ip = (u32)((i32)ip + 1 + off);
             } else {
                 ip = ip + 1;

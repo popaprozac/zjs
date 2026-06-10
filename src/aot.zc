@@ -21,7 +21,13 @@ def ZJS_AOT_MAGIC0: u8 = 'Z' as u8;
 def ZJS_AOT_MAGIC1: u8 = 'J' as u8;
 def ZJS_AOT_MAGIC2: u8 = 'S' as u8;
 def ZJS_AOT_MAGIC3: u8 = 'b' as u8;
-def ZJS_AOT_VERSION: u32 = 6;
+// v7: loop rotation (#379) added the JmpIfLt..JmpIfGeImm fused-branch ops.
+// An OLD (v6) binary loading bytecode containing them would silently SKIP
+// the unknown op (the interpreter's unknown-opcode fall-through) and then
+// dispatch the offset-carrier slot as an unconditional backward Jmp — an
+// infinite loop with zero diagnostics. The bump turns that into a clean
+// version-mismatch load error.
+def ZJS_AOT_VERSION: u32 = 7;
 
 def ZJS_AOT_TAG_INT32:    u8 = 0;
 def ZJS_AOT_TAG_DOUBLE:   u8 = 1;

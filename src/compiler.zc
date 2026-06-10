@@ -885,7 +885,11 @@ fn is_fused_branch_op(op: Op) -> bool {
     || op == Op::JmpIfNotLtImm || op == Op::JmpIfNotLeImm
     || op == Op::JmpIfNotGtImm || op == Op::JmpIfNotGeImm
     || op == Op::JmpIfNotEq   || op == Op::JmpIfNotNe
-    || op == Op::JmpIfNotStrictEq || op == Op::JmpIfNotStrictNe {
+    || op == Op::JmpIfNotStrictEq || op == Op::JmpIfNotStrictNe
+    || op == Op::JmpIfLt  || op == Op::JmpIfLe
+    || op == Op::JmpIfGt  || op == Op::JmpIfGe
+    || op == Op::JmpIfLtImm || op == Op::JmpIfLeImm
+    || op == Op::JmpIfGtImm || op == Op::JmpIfGeImm {
         return true;
     }
     return false;
@@ -1005,6 +1009,99 @@ fn try_emit_cmp_branch_if_false(c: Compiler*, cond: AstNode*) -> i32 {
     release_reg(c, r);
     release_reg(c, l);
     return (i32)idx;
+}
+
+// --- Loop rotation (test-at-bottom) ----------------------------------
+//
+// Tight loops compiled head-test-style spend 1 of 4 dispatches per
+// iteration on the unconditional back-edge Jmp (~25% of loop dispatch,
+// measured via ZJS_PROFILE_OPS on int_loop/func_loop). Rotating the
+// loop — entry Jmp to a bottom test that branches *back* when true —
+// removes it. Only relational conditions rotate (the JmpIf* family has
+// branch-if-TRUE encodings only for <, <=, >, >=); everything else
+// keeps the proven head-test shape.
+
+// Compile-time gate mirroring interpreter.zc jit_build_enabled():
+// rotation is OFF in ZJS_JIT builds because OSR-entry keys off the
+// backward Op::Jmp handler and the JIT doesn't map the JmpIf* family.
+// clang folds this to a constant, so the rotated emitters are dead-
+// eliminated in JIT builds.
+fn loop_rotation_enabled() -> bool {
+    let v: bool = true;
+    raw {
+        #ifdef ZJS_JIT
+        v = false;
+        #endif
+    }
+    return v;
+}
+
+// Pure predicate: would the rotated bottom test fuse? Mirrors the
+// relational arm of try_emit_cmp_branch_if_false (which decides-AND-
+// emits, so it can't be probed). Equality/nullish deliberately
+// excluded — no branch-if-true encodings for those (rare in loop
+// conditions; documented deferral).
+fn cond_is_relational_fusible(cond: AstNode*) -> bool {
+    if cond == NULL || cond.kind != NodeKind::Binary { return false; }
+    let op_kind = binary_op(cond.op);
+    if op_kind == Op::CmpLt || op_kind == Op::CmpLe
+    || op_kind == Op::CmpGt || op_kind == Op::CmpGe {
+        return true;
+    }
+    return false;
+}
+
+// Emit the rotated loop's bottom test: a fused compare that branches
+// BACK to body_head when true. Mirrors try_emit_cmp_branch_if_false's
+// operand/imm selection with inverted polarity. The offset is known at
+// emit time and is baked into the carrier directly — base is J+2 (the
+// instruction after the carrier), NOT emit_jump_back's J+1: the
+// interpreter dispatches the fused op at J, reads the offset from
+// J+1's bc bytes, and the bottom-of-loop increment lands ip at
+// J + 2 + off. Caller guarantees cond_is_relational_fusible(cond).
+fn emit_cmp_branch_back_if_true(c: Compiler*, cond: AstNode*, body_head: u32) -> void {
+    let op_kind = binary_op(cond.op);
+    // RHS small-int literal → JmpIf*Imm.
+    if cond.right != NULL && cond.right.kind == NodeKind::NumberExpr {
+        let v = cond.right.num;
+        let iv = (i32)v;
+        let is_int: bool = false;
+        raw { is_int = ((double)iv == v) ? true : false; }
+        if is_int && iv >= -128 && iv <= 127 {
+            // RHS is a literal — LHS is safe to borrow.
+            let saved_borrow_a = c.borrow_local_ok;
+            c.borrow_local_ok = true;
+            let src = compile_expr(c, cond.left);
+            c.borrow_local_ok = saved_borrow_a;
+            let imm_byte: u8 = (u8)(i8)iv;
+            let fused_op = Op::Halt;
+            if      op_kind == Op::CmpLt { fused_op = Op::JmpIfLtImm; }
+            else if op_kind == Op::CmpLe { fused_op = Op::JmpIfLeImm; }
+            else if op_kind == Op::CmpGt { fused_op = Op::JmpIfGtImm; }
+            else                         { fused_op = Op::JmpIfGeImm; }
+            let j = emit(c, make_inst_abc(fused_op, src, imm_byte, 0));
+            let off: i32 = (i32)body_head - ((i32)j + 2);
+            emit(c, make_inst_i16(Op::Jmp, off));
+            release_reg(c, src);
+            return;
+        }
+    }
+    // Reg-reg form — both operands read before branching, borrow safe.
+    let saved_borrow_b = c.borrow_local_ok;
+    c.borrow_local_ok = true;
+    let l = compile_expr(c, cond.left);
+    let r = compile_expr(c, cond.right);
+    c.borrow_local_ok = saved_borrow_b;
+    let fused_op = Op::Halt;
+    if      op_kind == Op::CmpLt { fused_op = Op::JmpIfLt; }
+    else if op_kind == Op::CmpLe { fused_op = Op::JmpIfLe; }
+    else if op_kind == Op::CmpGt { fused_op = Op::JmpIfGt; }
+    else                         { fused_op = Op::JmpIfGe; }
+    let j = emit(c, make_inst_abc(fused_op, l, r, 0));
+    let off: i32 = (i32)body_head - ((i32)j + 2);
+    emit(c, make_inst_i16(Op::Jmp, off));
+    release_reg(c, r);
+    release_reg(c, l);
 }
 
 fn emit_jump_back(c: Compiler*, op_: Op, target_idx: u32) -> void {
@@ -6568,6 +6665,40 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         if c.parent == NULL && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
+        if loop_rotation_enabled() && cond_is_relational_fusible(node.left) {
+            // Rotated (test-at-bottom) shape — kills the unconditional
+            // back-edge Jmp:
+            //     Jmp →test
+            //   body_head:
+            //     <body>
+            //   test:                 ; entry + continue target
+            //     <cond operand evaluation>
+            //     JmpIf* →body_head   ; fused; fall-through = exit
+            let entry_jmp = emit(c, make_inst_i16(Op::Jmp, 0));
+            let body_head = (u32)c.code_count;
+            loop_push(c);
+            // No loop_set_continue yet: `continue` must run the bottom
+            // test, whose position isn't known until after the body.
+            // Continues queue placeholders (the ForStmt deferred
+            // pattern); publishing body_head here would skip the test
+            // → infinite loop.
+            compile_stmt(c, node.right);    // body
+            // test: = start of cond OPERAND EVALUATION (per-iteration
+            // property loads / calls in the condition re-run here).
+            patch_jump(c, entry_jmp);
+            loop_set_continue(c, (u32)c.code_count);
+            emit_cmp_branch_back_if_true(c, node.left, body_head);
+            reset_temps(c);
+            // Breaks patched after the fused pair → true exit.
+            let frame_r = c.loop_stack[c.loop_depth - 1];
+            let bi_r: u32 = 0;
+            while bi_r < frame_r.break_count {
+                patch_jump(c, frame_r.break_patches[bi_r]);
+                bi_r = bi_r + 1;
+            }
+            loop_pop(c);
+            return;
+        }
         let loop_top = (u32)c.code_count;
         loop_push(c);
         loop_set_continue(c, loop_top);
@@ -6879,6 +7010,49 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // into the loop's completion.
         if c.parent == NULL && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
+        }
+        if node.right != NULL && loop_rotation_enabled()
+           && cond_is_relational_fusible(node.right) {
+            // Rotated (test-at-bottom) for-loop — see the WhileStmt
+            // rotated emitter for the shape rationale. Entry Jmp skips
+            // body AND update on the first iteration:
+            //     init
+            //     Jmp →test
+            //   body_head:
+            //     <body>
+            //   update_at:            ; continue target
+            //     <update>
+            //   test:
+            //     <cond operand evaluation>
+            //     JmpIf* →body_head   ; fused; fall-through = exit
+            let entry_jmp_f = emit(c, make_inst_i16(Op::Jmp, 0));
+            let body_head_f = (u32)c.code_count;
+            loop_push(c);
+            // body (continues queue placeholders until update_at)
+            if node.children_count > 0 {
+                compile_stmt(c, node.children[0]);
+            }
+            // update step — `continue` jumps here
+            let update_at_f = (u32)c.code_count;
+            loop_set_continue(c, update_at_f);
+            if node.third != NULL {
+                let r_f = compile_expr(c, node.third);
+                release_reg(c, r_f);
+                reset_temps(c);
+            }
+            // test:
+            patch_jump(c, entry_jmp_f);
+            emit_cmp_branch_back_if_true(c, node.right, body_head_f);
+            reset_temps(c);
+            let frame_rf = c.loop_stack[c.loop_depth - 1];
+            let bi_rf: u32 = 0;
+            while bi_rf < frame_rf.break_count {
+                patch_jump(c, frame_rf.break_patches[bi_rf]);
+                bi_rf = bi_rf + 1;
+            }
+            loop_pop(c);
+            exit_scope(c);
+            return;
         }
         let loop_top = (u32)c.code_count;
         // Pushed with continue_target = loop_top; we update to the

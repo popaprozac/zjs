@@ -457,6 +457,30 @@ enum Op {
     //   Appended at the END of the enum so no existing op renumbers (AOT
     //   bytecode + the op-name table are positional).
     SpreadSuperCall,  // a=dst, b=base (parent); args-array at base+1.
+
+    // Inverse-polarity fused compare-and-branch — branches when the
+    // comparison is *TRUE*. Same two-instruction encoding as the
+    // JmpIfNot* family above (operands in slot J, i16 offset in slot
+    // J+1's bc bytes, offset base J+2). Emitted ONLY as the backward
+    // bottom-test of a ROTATED loop (#379: while/for with a relational
+    // condition compile to entry-Jmp → body → bottom test that branches
+    // back while true — eliminating the per-iteration unconditional
+    // back-edge Jmp, ~25% of tight-loop dispatches). The taken
+    // (backward) path is the loop back-edge, so the handler GC-polls
+    // there, replacing the poll the old backward Jmp provided.
+    // Appended at the END of the enum so no existing op renumbers
+    // (AOT bytecode is positional; ZJS_AOT_VERSION bumped to 7 since
+    // OLD binaries would silently skip these unknown ops and then
+    // execute the offset-carrier slot as an unconditional backward
+    // Jmp — an infinite loop, not a clean error).
+    JmpIfLt,          // a=lhs_reg, b=rhs_reg ; next.bc = i16 offset
+    JmpIfLe,
+    JmpIfGt,
+    JmpIfGe,
+    JmpIfLtImm,       // a=lhs_reg, b=imm_i8 ; next.bc = i16 offset
+    JmpIfLeImm,
+    JmpIfGtImm,
+    JmpIfGeImm,
 }
 
 struct Inst {
