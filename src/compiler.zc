@@ -1141,6 +1141,74 @@ fn emit_cmp_branch_back_if_true(c: Compiler*, cond: AstNode*, body_head: u32) ->
     release_reg(c, l);
 }
 
+// --- &&-compound rotation (increment 2) ------------------------------
+//
+// `while (A && B && C<D)` rotates when the LAST conjunct is relational:
+// leading conjuncts emit branch-if-FALSE → exit (the existing JmpIfNot*
+// family fuses relational leads; anything else compiles to a register +
+// JmpIfFalse), only the tail needs a branch-if-true back-edge. Short-
+// circuit order and ToBoolean coercions are identical to the head-test
+// shape. Leading-exit jump indices accumulate in a caller-provided
+// array, patched to the loop exit right after the fused pair.
+
+// Total conjunct leaves of an && chain (both associativity shapes).
+fn cond_and_leaf_count(cond: AstNode*) -> u32 {
+    if cond != NULL && cond.kind == NodeKind::Logical && cond.op == TokenKind::AmpAmp {
+        return cond_and_leaf_count(cond.left) + cond_and_leaf_count(cond.right);
+    }
+    return 1;
+}
+
+// Would the rotated bottom test work for this condition? Either a bare
+// relational, or an && chain whose right-spine tail is relational
+// (leading conjuncts can be ANY expression). Bounded at 8 leaves so
+// the emitters' exit-patch array stays fixed-size.
+fn cond_is_rotatable(cond: AstNode*) -> bool {
+    if cond_is_relational_fusible(cond) { return true; }
+    if cond == NULL || cond.kind != NodeKind::Logical || cond.op != TokenKind::AmpAmp {
+        return false;
+    }
+    if cond_and_leaf_count(cond) > 8 { return false; }
+    return cond_is_rotatable(cond.right);
+}
+
+// Emit branch-if-false → exit for every leaf of a leading-conjunct
+// subtree, in evaluation order. Returns the new patch count.
+fn emit_rotated_leading_tests(c: Compiler*, cond: AstNode*, patches: u32*, count: u32) -> u32 {
+    if cond.kind == NodeKind::Logical && cond.op == TokenKind::AmpAmp {
+        count = emit_rotated_leading_tests(c, cond.left, patches, count);
+        count = emit_rotated_leading_tests(c, cond.right, patches, count);
+        return count;
+    }
+    let idx = try_emit_cmp_branch_if_false(c, cond);
+    if idx < 0 {
+        // JmpIfFalse only reads the register — borrow is safe.
+        let saved_borrow = c.borrow_local_ok;
+        c.borrow_local_ok = true;
+        let r = compile_expr(c, cond);
+        c.borrow_local_ok = saved_borrow;
+        idx = (i32)emit(c, make_inst_a_i16(Op::JmpIfFalse, r, 0));
+        release_reg(c, r);
+    }
+    patches[count] = (u32)idx;
+    return count + 1;
+}
+
+// Rotated bottom test driver: leading conjuncts exit forward, the
+// relational tail branches back to body_head. Caller guarantees
+// cond_is_rotatable(cond); patches must hold ≥ 8 entries. Returns the
+// number of exit patches to patch_jump AFTER the fused pair.
+fn emit_rotated_bottom_test(c: Compiler*, cond: AstNode*, body_head: u32, patches: u32*) -> u32 {
+    let count: u32 = 0;
+    let tail = cond;
+    while tail.kind == NodeKind::Logical && tail.op == TokenKind::AmpAmp {
+        count = emit_rotated_leading_tests(c, tail.left, patches, count);
+        tail = tail.right;
+    }
+    emit_cmp_branch_back_if_true(c, tail, body_head);
+    return count;
+}
+
 fn emit_jump_back(c: Compiler*, op_: Op, target_idx: u32) -> void {
     // Backward jump to a known target. Offset = target - (here + 1).
     let here: i32 = (i32)c.code_count;
@@ -6727,14 +6795,15 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         if c.parent == NULL && c.last_expr_reg >= 0 {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
-        if loop_rotation_enabled() && cond_is_relational_fusible(node.left) {
+        if loop_rotation_enabled() && cond_is_rotatable(node.left) {
             // Rotated (test-at-bottom) shape — kills the unconditional
             // back-edge Jmp:
             //     Jmp →test
             //   body_head:
             //     <body>
             //   test:                 ; entry + continue target
-            //     <cond operand evaluation>
+            //     <leading && conjuncts: branch-if-false →exit>
+            //     <tail cond operand evaluation>
             //     JmpIf* →body_head   ; fused; fall-through = exit
             let entry_jmp = emit(c, make_inst_i16(Op::Jmp, 0));
             let body_head = (u32)c.code_count;
@@ -6749,9 +6818,16 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             // property loads / calls in the condition re-run here).
             patch_jump(c, entry_jmp);
             loop_set_continue(c, (u32)c.code_count);
-            emit_cmp_branch_back_if_true(c, node.left, body_head);
+            let exit_patches_w: u32[8];
+            let exit_count_w = emit_rotated_bottom_test(c, node.left, body_head, &exit_patches_w[0]);
             reset_temps(c);
-            // Breaks patched after the fused pair → true exit.
+            // Leading-conjunct exits + breaks patched after the fused
+            // pair → true exit.
+            let pi_w: u32 = 0;
+            while pi_w < exit_count_w {
+                patch_jump(c, exit_patches_w[pi_w]);
+                pi_w = pi_w + 1;
+            }
             let frame_r = c.loop_stack[c.loop_depth - 1];
             let bi_r: u32 = 0;
             while bi_r < frame_r.break_count {
@@ -7075,7 +7151,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
         }
         if node.right != NULL && loop_rotation_enabled()
-           && cond_is_relational_fusible(node.right) {
+           && cond_is_rotatable(node.right) {
             // Rotated (test-at-bottom) for-loop — see the WhileStmt
             // rotated emitter for the shape rationale. Entry Jmp skips
             // body AND update on the first iteration:
@@ -7105,8 +7181,14 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             }
             // test:
             patch_jump(c, entry_jmp_f);
-            emit_cmp_branch_back_if_true(c, node.right, body_head_f);
+            let exit_patches_f: u32[8];
+            let exit_count_f = emit_rotated_bottom_test(c, node.right, body_head_f, &exit_patches_f[0]);
             reset_temps(c);
+            let pi_f: u32 = 0;
+            while pi_f < exit_count_f {
+                patch_jump(c, exit_patches_f[pi_f]);
+                pi_f = pi_f + 1;
+            }
             let frame_rf = c.loop_stack[c.loop_depth - 1];
             let bi_rf: u32 = 0;
             while bi_rf < frame_rf.break_count {
