@@ -1762,8 +1762,15 @@ fn gc_mark_cell_children(p: void*) -> void {
     if tag == TAG_ARRAY {
         let a: ZjsArray* = NULL;
         raw { a = (ZjsArray*)p; }
+        // length > cap is a SUPPORTED sparse state (array_set_length
+        // grows length without the buffer; array_get guards idx >= cap;
+        // the tail lives in a.props) — bound the walk by the BUFFER,
+        // not the JS length, or `Object.defineProperty(arr, 10000, …)`
+        // makes the mark loop read 10k slots past the allocation (#375,
+        // heap-buffer-overflow under ASan; silent garbage marks
+        // otherwise).
         let i: u32 = 0;
-        while i < a.length {
+        while i < a.length && i < a.cap {
             gc_mark_value(a.elements[i]);
             i = i + 1;
         }
@@ -11775,6 +11782,13 @@ fn host_json_stringify(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
             // the inner loop in json_stringify_value clean.
             let src = zjs_as_array(r);
             let out_v = ctx_new_array(ctx, 0);
+            // Root the PropertyList for the build loop (wrapper
+            // coercions can run user toString) AND the whole
+            // serialization walk below — jc is a C struct, so
+            // jc.replacer_arr alone is invisible to the GC while
+            // toJSON / getters run user code (#375).
+            ctx_push_temp_root(ctx, out_v);
+            defer ctx_pop_temp_root(ctx);
             let out = zjs_as_array(out_v);
             let i: u32 = 0;
             while i < src.length {
@@ -12211,9 +12225,13 @@ fn host_json_parse(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         ctx_push_temp_root(ctx, result);
         let holder = ctx_new_object(ctx);
         ctx_push_temp_root(ctx, holder);
+        // empty_key is a fresh (non-deduplicated) string cell passed to
+        // every reviver invocation — root it across the walk (#375).
         let empty_key = ctx_intern_string(ctx, (char*)"", 0);
+        ctx_push_temp_root(ctx, empty_key);
         property_set(ctx, holder, empty_key, result);
         let revived = json_internalize(ctx, holder, empty_key, args[1]);
+        ctx_pop_temp_root(ctx);
         ctx_pop_temp_root(ctx);
         ctx_pop_temp_root(ctx);
         if ctx.pending_throw_active { return zjs_undefined(); }
@@ -20236,6 +20254,10 @@ fn host_promise_try(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let p = zjs_promise_new();
     ctx_register_cell(ctx, (void*)p);
     let pv = zjs_cell_from_ptr((void*)p);
+    // Root the fresh promise across the user callback below — it has
+    // no other reference until we return it (#375).
+    ctx_push_temp_root(ctx, pv);
+    defer ctx_pop_temp_root(ctx);
     let is_callable = zjs_is_function(cb) != 0
                      || zjs_is_closure(cb) != 0
                      || zjs_is_host_function(cb) != 0;
@@ -25039,11 +25061,23 @@ fn host_function_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
             if ctx.pending_throw_active { return zjs_undefined(); }
         }
     }
-    let body_s = zjs_as_string(body_v);
+    // Root the intermediates: each param's ToString below can run USER
+    // code (`Function({toString(){...}}, body)`), and a collection
+    // there must not free the coerced body, the comma cell
+    // (ctx_intern_string is NOT deduplicated — it's a fresh young
+    // cell), or the accumulating params string (#375). params_v is
+    // reassigned per concat, so its slot is the TOP and gets
+    // replace-top'd each round.
+    ctx_push_temp_root(ctx, body_v);
+    defer ctx_pop_temp_root(ctx);
 
     // Build parameter list (concat by ",").
     let comma = ctx_intern_string(ctx, (char*)",", 1);
+    ctx_push_temp_root(ctx, comma);
+    defer ctx_pop_temp_root(ctx);
     let params_v: ZjsValue = ctx_intern_string(ctx, (char*)"", 0);
+    ctx_push_temp_root(ctx, params_v);
+    defer ctx_pop_temp_root(ctx);
     let i: u32 = 0;
     let pn: u32 = if argc > 0 { argc - 1 } else { 0 };
     while i < pn {
@@ -25056,8 +25090,11 @@ fn host_function_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
             params_v = zjs_string_concat(ctx, params_v, comma);
         }
         params_v = zjs_string_concat(ctx, params_v, av);
+        ctx_replace_top_temp_root(ctx, params_v);
         i = i + 1;
     }
+    // Raw string pointers taken only AFTER the last user-JS call above.
+    let body_s = zjs_as_string(body_v);
     let params_s = zjs_as_string(params_v);
 
     // Build the source. Total: "(function anonymous(" + params + "){\n" + body + "\n})\0"
