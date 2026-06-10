@@ -372,10 +372,11 @@ struct ZjsContext {
     // hardcoded constant after the first collection.
     young_threshold_base: u32;
     cells_since_minor: u32;
-    // Generational minor collector. OFF unless ZJS_GEN_GC is set (the
-    // write-barrier coverage is being completed on this branch). When on,
-    // ctx_maybe_gc fires gc_run_minor on young fill instead of waiting for
-    // a full major. See docs/gc-barrier-audit.md / docs/gc-experiment.md.
+    // Generational minor collector. ON by default (#386); ZJS_GEN_GC=0
+    // opts out to the major-only collector. When on, ctx_maybe_gc fires
+    // gc_run_minor on young fill instead of waiting for a full major,
+    // and cells allocate out of the chunked nursery. See
+    // docs/gc-barrier-audit.md / docs/gc-experiment.md.
     gen_gc_enabled: bool;
 
     // Freelist for OBJECT_INLINE_SLOTS-sized property slot/attr arrays.
@@ -769,13 +770,17 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
     result.young_threshold      = 1024;
     result.young_threshold_base = 1024;
     result.cells_since_minor = 0;
-    // Opt-in generational minor collector (write-barrier coverage WIP).
-    // ZJS_GEN_GC=1 enables it; ZJS_GEN_GC_YOUNG overrides the young fill
-    // threshold (low value = aggressive minors, surfaces barrier gaps).
-    result.gen_gc_enabled = false;
+    // Generational minor collector — DEFAULT ON since #386 (the chunked
+    // nursery + size-class pools made gen mode geomean-faster than the
+    // major-only path: alloc-heavy −20%, splay/RSS at parity or better,
+    // test262 byte-identical, call-heavy code ~+5-8% pending the
+    // frame-precise root scan). ZJS_GEN_GC=0 opts back out to
+    // major-only; ZJS_GEN_GC_YOUNG overrides the young fill threshold
+    // (low value = aggressive minors, surfaces barrier gaps in testing).
+    result.gen_gc_enabled = true;
     raw {
         const char* gg = getenv("ZJS_GEN_GC");
-        if (gg != NULL && gg[0] != '0' && gg[0] != '\0') result->gen_gc_enabled = true;
+        if (gg != NULL && gg[0] == '0') result->gen_gc_enabled = false;
         const char* gy = getenv("ZJS_GEN_GC_YOUNG");
         if (gy != NULL) { int v = atoi(gy); if (v > 0) {
             result->young_threshold = (uint32_t)v;
