@@ -1,3 +1,43 @@
+# Perf snapshot — 2026-06-10 (`41e915d`)
+
+Measured on Apple M4 Max, macOS. Startup-corrected body medians (5 iters),
+`python3 scripts/bench/run.py --compare`. Engine versions as in the 06-09
+snapshot below. **zjs now runs the generational GC + chunked nursery by
+default** (#386, `ZJS_GEN_GC=0` opts out); GC globals are thread-local
+(multi-worker embedding fix, `41e915d`).
+
+## Headlines
+
+| Comparison | Geomean | Wins | 06-09 |
+|---|---|---|---|
+| **zjs vs QuickJS-ng** | **1.49× faster** | 19/23 | 1.32×, 17/23 |
+| zjs vs Hermes `-O` | **1.98× slower (0.50×)** | 3/17 | 2.2× slower |
+
+- **The #386 nursery moved the alloc-shaped column hard**: object_alloc
+  5.35ms (was 8.11, −34%) → 3.9× faster than QuickJS (was 2.6×);
+  json_roundtrip 10.40 (−12%) → 2.7×; splay flipped from loss-adjacent to a
+  1.39× win. Loop rotation (#379/#384) shows in mandelbrot 45.5ms (was
+  57.96, −21%) and the int loops.
+- **Hermes gap crossed under 2× for the first time.** Gap #1 (alloc
+  throughput) is largely addressed; the remaining tail is bytecode-level
+  optimization (-O CSE/licm/inlining) and call sequence (fib 2.4×,
+  method_call 3.3×, partially the #389 frame-fill tax).
+- **Open item:** splay body-median 179.95 vs 155.06 on 06-09 (+16%).
+  Session A/Bs bracket the nursery + TLS changes at splay parity, so the
+  regression sits in the 06-09→06-10 pre-nursery window (rotation / #375
+  hardening / TDZ). Bisect filed (task #391). Still a QuickJS win.
+
+## Standalone (zjs interpreter, ms, 2026-06-10)
+
+array_iterate 1.13 · closure_call 5.90 · double_loop 3.68 · fib 141.6 ·
+func_loop 356.3 · hash_count 1.91 · int_loop 6.83 · int_loop_big 70.0 ·
+json_roundtrip 10.40 · mandelbrot 45.50 · method_call 6.65 · nbody 94.4 ·
+obj_field 272.8 · object_alloc 5.35 · property_mono 6.52 · property_poly 5.89 ·
+quicksort 12.38 · regex_match 114.5 · richards 154.5 · sieve 8.70 ·
+splay 180.0 · string_concat 0.09 · try_overhead 2.49
+
+---
+
 # Perf snapshot — 2026-06-09 (`d2b81bc`)
 
 Measured on Apple M4 Max, macOS. All numbers are startup-corrected body medians
