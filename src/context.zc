@@ -1478,6 +1478,12 @@ fn gen_gc_widen_frame_init(ctx: ZjsContext*, f: Function*) -> void {
     f.uses_arguments = true;
 }
 
+// NOTE (#391): do NOT force-inline this into the interpreter. It was
+// auto-inlined for most of the engine's life and fell out of clang's
+// cost model as the TU grew; an always_inline probe measured WORSE
+// (splay +8.5%, fib +8.0% — interpret_inner_full bloat beats the call
+// overhead). The ~6% interpreter accretion cost is code-layout drift,
+// recoverable only by PGO/BOLT-class layout work, not attributes.
 fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc: u32, ret_dst: u8) -> u32 {
     if ctx.frame_count >= ctx.frame_cap {
         let new_cap: u32 = if ctx.frame_cap == 0 { 64 } else { ctx.frame_cap * 2 };
