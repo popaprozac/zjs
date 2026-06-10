@@ -6129,6 +6129,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if ctx.frame_count > 0 {
                     ctx.frames[ctx.frame_count - 1].saved_host_this = r;
                 }
+                // Host-initiated constructs can't see the host_this
+                // rebind (zjs_call_value_with_this restores it on
+                // return) — record the real instance for
+                // zjs_construct_value_nt's result selection (#375).
+                ctx.last_super_this = r;
             }
             // Mark `this` as initialized for the spec's "must-call-super"
             // check at Op::Return.
@@ -8569,6 +8574,10 @@ fn zjs_construct_value_nt(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, a
     let saved_this = ctx.host_this;
     let saved_nt = ctx.new_target_active;
     let saved_ntv = ctx.new_target_value;
+    // Save + clear the SuperCall rebind channel so a nested construct
+    // inside the ctor can't leak its record into ours (and vice versa).
+    let saved_lst = ctx.last_super_this;
+    ctx.last_super_this = zjs_undefined();
     ctx.host_this = new_obj_v;
     ctx.new_target_active = true;
     ctx.new_target_value = new_target;
@@ -8576,6 +8585,19 @@ fn zjs_construct_value_nt(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, a
     let r = zjs_call_value_with_this(ctx, callee, new_obj_v, args, argc);
 
     let final_this = ctx.host_this;
+    // A derived ctor whose super() produced a fresh special cell
+    // (Promise / RegExp): zjs_call_value_with_this restored host_this,
+    // so the rebind is only visible through the side channel. Without
+    // this, the construct returned the pre-created plain object — an
+    // imposter wearing the right prototype whose cell is ALSO garbage
+    // by now (nothing roots it after the rebind), i.e. both wrong and
+    // a use-after-free under GC pressure (#375).
+    let super_this = ctx.last_super_this;
+    ctx.last_super_this = saved_lst;
+    // Only Promise/RegExp cells ever flow through the channel.
+    if zjs_is_undefined(super_this) == 0 {
+        final_this = super_this;
+    }
     ctx.host_this = saved_this;
     ctx.new_target_active = saved_nt;
     ctx.new_target_value = saved_ntv;

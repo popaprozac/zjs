@@ -345,6 +345,17 @@ struct ZjsContext {
     // Set by Op::MethodInvoke before dispatch and restored after. Host
     // builtins like Array.prototype.push read it via zjs_get_host_this().
     host_this: ZjsValue;
+    // Side-channel from Op::SuperCall to zjs_construct_value_nt: when a
+    // derived ctor's super() lands on a builtin that allocates a fresh
+    // special cell (Promise / RegExp), SuperCall records it here. The
+    // host-initiated construct path can't observe the host_this rebind
+    // (zjs_call_value_with_this restores host_this on return), so
+    // without this it returned the dead pre-created plain object — an
+    // imposter that inherits .then via the proto chain (identity checks
+    // pass!) but never settles, and whose cell the GC rightfully
+    // collects mid-ctor (#375). Saved/cleared/restored around each
+    // construct so nested constructs don't clobber the outer record.
+    last_super_this: ZjsValue;
     // Op::NewInvoke sets this to true before calling the constructor;
     // plain Invoke / MethodInvoke leave it false. Host functions can
     // read it to distinguish `new F(...)` from `F(...)` / `F.call(...)`
@@ -692,6 +703,7 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
     // calloc gave us {bits: 0}; explicitly initialize the implicit
     // host receiver to JS `undefined`.
     result.host_this = zjs_undefined();
+    result.last_super_this = zjs_undefined();
     result.async_outer_seed = zjs_undefined();
     // `with` scope stack starts empty (calloc already zeroed it).
     result.with_count = 0;
@@ -2124,6 +2136,8 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     // ctx_maybe_gc poll on an error path) must not free it. Often a
     // freshly allocated Error object with no other reference.
     gc_mark_value(ctx.pending_throw_value);
+    // SuperCall→construct rebind side-channel (see last_super_this).
+    gc_mark_value(ctx.last_super_this);
     // Each active call frame (current recursive model)
     let j: u32 = 0;
     while j < ctx.root_depth {
@@ -2507,6 +2521,12 @@ fn gc_run_major(ctx: ZjsContext*) -> void {
     g_gc_minor_mode = 0;
     gc_mark_roots(ctx);
     gc_nullify_dead_ics(ctx);
+    // ORDER CONTRACT: sweep_young FIRST. In major mode it promotes
+    // marked young cells into ctx.cells with the mark LEFT SET;
+    // sweep_old then keeps them and clears the mark during its own
+    // compaction. (Swapping this order leaves promoted cells marked
+    // into the next cycle, which silently truncates the NEXT major's
+    // mark walk at them — their children get swept while live.)
     let promoted = gc_sweep_young(ctx);
     gc_sweep_old(ctx);
     ctx.cells_since_gc = 0;
