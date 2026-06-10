@@ -1019,6 +1019,10 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                     object_define_property_slot(ctx, f.prototype,
                         ctx_intern_atom(ctx, (char*)"constructor", 11),
                         obj, PROP_WRITABLE | PROP_CONFIGURABLE);
+                    // F can already be old (lazy creation on first READ) —
+                    // without this barrier a minor frees the young proto
+                    // and f.prototype dangles (zapp-soak UAF, #386).
+                    gc_barrier_cell(ctx, fp);
                 }
                 return zjs_cell_from_ptr((void*)f.prototype);
             }
@@ -1199,6 +1203,8 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
                     object_define_property_slot(ctx, f_p.prototype,
                         ctx_intern_atom(ctx, (char*)"constructor", 11),
                         obj, PROP_WRITABLE | PROP_CONFIGURABLE);
+                    // Lazy creation — the wrapped Function* may be old.
+                    gc_barrier_cell(ctx, fp_p);
                 }
                 return zjs_cell_from_ptr((void*)f_p.prototype);
             }
@@ -1919,6 +1925,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
             if zjs_is_object(value) != 0 {
                 f.prototype = zjs_as_object(value);
                 f.proto_nonobj_set = false;   // back to an object prototype
+                gc_barrier_cell(ctx, fp);     // F may be old, value young
                 if f.props != NULL { object_clear_exotic_proto(ctx, f.props); }
                 return;
             }
@@ -1938,6 +1945,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
             // "not an object" (ctor_prototype_object returns NULL).
             f.proto_nonobj = value;
             f.proto_nonobj_set = true;
+            gc_barrier_cell(ctx, fp);         // value can be a young string/symbol cell
             return;
         }
         if f.props == NULL {
@@ -1970,6 +1978,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
                 if zjs_is_object(value) != 0 {
                     f2.prototype = zjs_as_object(value);
                     f2.proto_nonobj_set = false;
+                    gc_barrier_cell(ctx, fp2);   // shared template may be old
                     if f2.props != NULL { object_clear_exotic_proto(ctx, f2.props); }
                     return;
                 }
@@ -1986,6 +1995,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
                 // setter for the rationale; the wrapped Function* carries it).
                 f2.proto_nonobj = value;
                 f2.proto_nonobj_set = true;
+                gc_barrier_cell(ctx, fp2);
                 return;
             }
             if f2.props == NULL {
@@ -2047,6 +2057,7 @@ fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue)
         if is_proto != 0 {
             if zjs_is_object(value) != 0 {
                 hf.prototype = zjs_as_object(value);
+                gc_barrier_cell(ctx, (void*)hf);   // built-ins are old by construction
                 if hf.props != NULL { object_clear_exotic_proto(ctx, hf.props); }
                 return;
             }
@@ -4398,6 +4409,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 raw_arr.frozen = true;
                 if cooked.props != NULL { cooked.props.frozen = true; }
                 f.template_cache[site] = cooked;
+                // Site caches populate lazily — by the time an old function
+                // first reaches a tagged template, the cooked array is young.
+                gc_barrier_cell(ctx, (void*)f);
                 regs[inst.a] = cooked_v;
             }
         } else if op == Op::Yield {
@@ -6011,12 +6025,16 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 let ff: Function* = NULL;
                 raw { ff = (Function*)fp; }
                 ff.parent_ctor = parent_v;
+                // Class templates are shared across re-executions of the
+                // declaration — the template can be old, the parent young.
+                gc_barrier_cell(ctx, fp);
             } else if zjs_is_closure(ctor_v) != 0 {
                 let cl = zjs_as_closure(ctor_v);
                 let fp2 = cl.function;
                 let ff2: Function* = NULL;
                 raw { ff2 = (Function*)fp2; }
                 ff2.parent_ctor = parent_v;
+                gc_barrier_cell(ctx, fp2);
             }
         } else if op == Op::SetFunctionName {
             // ECMA-262 SetFunctionName: install `name` on the function
@@ -7251,6 +7269,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         object_define_property_slot(ctx, f2.prototype,
                             ctx_intern_atom(ctx, (char*)"constructor", 11),
                             callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+                        gc_barrier_cell(ctx, fp);   // lazy create — F may be old
                     }
                     proto_obj = f2.prototype;
                 }
@@ -7268,6 +7287,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                         object_define_property_slot(ctx, f3.prototype,
                             ctx_intern_atom(ctx, (char*)"constructor", 11),
                             callee, PROP_WRITABLE | PROP_CONFIGURABLE);
+                        gc_barrier_cell(ctx, fp2);  // lazy create — template may be old
                     }
                     proto_obj = f3.prototype;
                 }

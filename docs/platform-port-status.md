@@ -96,6 +96,12 @@ ws_stub.c            "Not configured" returns (no live build uses it now)
 portability.h        Cross-platform shims (realpath, gmtime_r, random, peak RSS)
 ```
 
+One exception lives inline in `src/context.zc`: the nursery-chunk
+allocator (`zjs_aligned_chunk_alloc/free`, gen-GC #386) needs
+size-aligned 64KB blocks — `posix_memalign`/`free` on POSIX,
+`_aligned_malloc`/`_aligned_free` on Windows. The `#ifdef _WIN32` is
+contained in one raw block next to the ASan poisoning shim.
+
 The engine code (`src/context.zc` etc.) only ever calls the `*_native.h`
 entry points + the `zjs_*` shims from `portability.h` — never touches a
 platform-specific header directly.

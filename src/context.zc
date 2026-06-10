@@ -15,6 +15,50 @@ raw {
     #include "../src/platform/portability.h"
 }
 
+// ASan manual-poisoning shim for the nursery chunks (#386). Chunk slots
+// are recycled without malloc/free, which would otherwise make every
+// use-after-free inside a chunk invisible to AddressSanitizer — exactly
+// the bug class the #375 sweeps relied on ASan to catch. Poison each
+// cell slot on release, unpoison on (re)allocation, so the detection
+// capability survives the move off the system allocator. Compiles to
+// no-ops in non-ASan builds.
+raw {
+    #if defined(__has_feature)
+    #  if __has_feature(address_sanitizer)
+    #    define ZJS_ASAN 1
+    #  endif
+    #endif
+    #if !defined(ZJS_ASAN) && defined(__SANITIZE_ADDRESS__)
+    #  define ZJS_ASAN 1
+    #endif
+    #ifdef ZJS_ASAN
+       void __asan_poison_memory_region(void const volatile *addr, size_t size);
+       void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
+    #  define zjs_asan_poison(p, n)   __asan_poison_memory_region((p), (n))
+    #  define zjs_asan_unpoison(p, n) __asan_unpoison_memory_region((p), (n))
+    #else
+    #  define zjs_asan_poison(p, n)   ((void)0)
+    #  define zjs_asan_unpoison(p, n) ((void)0)
+    #endif
+
+    /* Aligned chunk alloc/free for the nursery (size == alignment, both
+       64KB). POSIX posix_memalign / Windows _aligned_malloc — keep the
+       #ifdef here so the .zc code stays platform-agnostic
+       (docs/platform-port-status.md). */
+    #ifdef _WIN32
+    #  include <malloc.h>
+       static void* zjs_aligned_chunk_alloc(size_t size) { return _aligned_malloc(size, size); }
+       static void  zjs_aligned_chunk_free(void* p)      { _aligned_free(p); }
+    #else
+       static void* zjs_aligned_chunk_alloc(size_t size) {
+           void* p = NULL;
+           if (posix_memalign(&p, size, size) != 0) return NULL;
+           return p;
+       }
+       static void  zjs_aligned_chunk_free(void* p)      { free(p); }
+    #endif
+}
+
 // Platform-native HTTP backend — see src/platform/http_native.h
 // and src/platform/http_apple.m. Declared as raw C extern so we
 // don't depend on zen-c's header-import resolution.
@@ -201,6 +245,36 @@ struct AtomEntry {
     hash: u32;
 }
 
+// =====================================================================
+// Nursery chunks (#386, gen-GC only) — non-moving chunked young space.
+//
+// Young ZjsObject cells bump-allocate out of 64KB-aligned chunks in
+// fixed 64-byte slots (sizeof(ZjsObject) ≈ 48 fits with headroom).
+// Alignment makes cell→chunk lookup a mask: chunk = ptr & ~(CHUNK-1).
+// Cells are NOT moved at promotion — a survivor stays in its chunk and
+// just gets its age OLD bit set (no pointer fixup anywhere; the whole
+// engine holds raw cell pointers). The chunk tracks a live counter;
+// when the last cell dies — minor sweep, major sweep, or teardown —
+// the chunk resets to bump mode in O(1), which is what kills the
+// dominant per-cell free() cost (frees measured ~22% of the
+// alloc-heavy profile). Chunk residency is recorded in the cell
+// header's age byte (bit 1), so the free paths know dealloc() must not
+// be called on these cells.
+//
+// The header lives in slot 0 of the chunk itself; slots 1..1022 hold
+// cells. ctx.young_cells remains the young-generation enumeration —
+// chunks replace only the malloc/free of the cell memory.
+struct NurseryChunk {
+    next_all:  NurseryChunk*;   // every chunk ever allocated (teardown walk)
+    next_free: NurseryChunk*;   // fully-reset chunks awaiting reuse
+    bump:      u32;             // next free slot index (1..NURSERY_SLOTS)
+    live:      u32;             // allocated-and-not-released cells
+}
+
+def NURSERY_CHUNK_SIZE: u32 = 65536;
+def NURSERY_SLOT_SIZE:  u32 = 64;
+def NURSERY_SLOTS:      u32 = 1024;   // slot indices 1..1023 usable; 0 = header
+
 // Per-realm intrinsics (Runtime/Realm split, docs/realm-refactor-design.md).
 // One realm per ZjsContext today (ctx.realm); multi-realm is a later phase.
 struct ZjsRealm {
@@ -320,6 +394,13 @@ struct ZjsContext {
     // Capped at OBJ_POOL_MAX; drained at teardown.
     obj_pool:        ZjsObject**;
     obj_pool_count:  u32;
+
+    // Nursery chunk lists (#386, gen-GC only — NULL/inactive otherwise).
+    // cur = the chunk being bump-allocated; all = every chunk (teardown);
+    // free = fully-reset chunks ready to become cur again.
+    nursery_cur:  NurseryChunk*;
+    nursery_all:  NurseryChunk*;
+    nursery_free: NurseryChunk*;
 
     // Remembered set — old cells that hold a pointer to a young cell.
     // Populated by gc_write_barrier on every old.slot=young store and
@@ -700,6 +781,9 @@ fn ctx_bootstrap_core(result: ZjsContext*) -> void {
     result.slot_pool_count   = 0;
     result.obj_pool          = NULL;
     result.obj_pool_count    = 0;
+    result.nursery_cur       = NULL;
+    result.nursery_all       = NULL;
+    result.nursery_free      = NULL;
     // calloc gave us {bits: 0}; explicitly initialize the implicit
     // host receiver to JS `undefined`.
     result.host_this = zjs_undefined();
@@ -824,6 +908,22 @@ fn zjs_free_context(ctx: ZjsContext*) -> void {
     }
     ctx.obj_pool_count = 0;
     if ctx.obj_pool != NULL { dealloc(ctx.obj_pool); ctx.obj_pool = NULL; }
+    // Free the nursery chunks. Must run AFTER the cell-free loops —
+    // chunk-resident cells release through nursery_release, which pokes
+    // the chunk header. Unpoison before free: ASan rejects freeing a
+    // region that still carries manual poison.
+    let nch = ctx.nursery_all;
+    while nch != NULL {
+        let nnext = nch.next_all;
+        raw {
+            zjs_asan_unpoison((void*)nch, (size_t)NURSERY_CHUNK_SIZE);
+            zjs_aligned_chunk_free((void*)nch);
+        }
+        nch = nnext;
+    }
+    ctx.nursery_cur = NULL;
+    ctx.nursery_all = NULL;
+    ctx.nursery_free = NULL;
     // Free per-timer args buffers (the timer array itself is freed
     // below with the rest of the ctx-owned buffers).
     let ti: u32 = 0;
@@ -1012,7 +1112,8 @@ fn ctx_register_cell_old(ctx: ZjsContext*, p: void*) -> void {
     ctx.cells_since_gc = ctx.cells_since_gc + 1;
     let h: CellHeader* = NULL;
     raw { h = (CellHeader*)p; }
-    h.age = 1;
+    // OR, not assign — a chunk-resident survivor keeps AGE_IN_CHUNK.
+    h.age = h.age | AGE_OLD;
 }
 
 // Append `holder` to the remembered set. Caller has already determined
@@ -1067,7 +1168,7 @@ fn gc_barrier_cell(ctx: ZjsContext*, holder: void*) -> void {
     if holder == NULL || ctx == NULL { return; }
     let h: CellHeader* = NULL;
     raw { h = (CellHeader*)holder; }
-    if h.age != 0 { rem_set_add(ctx, holder); }
+    if (h.age & AGE_OLD) != 0 { rem_set_add(ctx, holder); }
 }
 
 // The write barrier itself. Call this on every store of a ZjsValue
@@ -1091,12 +1192,12 @@ fn gc_write_barrier(ctx: ZjsContext*, holder: void*, value: ZjsValue) -> void {
     if holder == NULL || ctx == NULL { return; }
     let h: CellHeader* = NULL;
     raw { h = (CellHeader*)holder; }
-    if h.age == 0 { return; }   // holder is young — slot can be re-scanned at promotion time
+    if (h.age & AGE_OLD) == 0 { return; }   // holder is young — slot can be re-scanned at promotion time
     let v_ptr = zjs_cell_as_ptr(value);
     if v_ptr == NULL { return; }
     let vh: CellHeader* = NULL;
     raw { vh = (CellHeader*)v_ptr; }
-    if vh.age != 0 { return; }  // value is also old → no inter-gen edge
+    if (vh.age & AGE_OLD) != 0 { return; }  // value is also old → no inter-gen edge
     rem_set_add(ctx, holder);
 }
 
@@ -1475,6 +1576,27 @@ fn ctx_try_pop(ctx: ZjsContext*) -> void {
     }
 }
 
+// The cell whose children the innermost gc_mark_cell_children is
+// currently walking — ASan-build UAF diagnostics only (see below).
+let g_gc_mark_holder: void* = NULL;
+
+fn gc_mark_holder_restore(p: void*) -> void {
+    g_gc_mark_holder = p;
+}
+
+// Under ASan: is this address inside a manually-poisoned region (i.e. a
+// released nursery slot)? Always 0 in normal builds.
+fn gc_cell_is_poisoned(p: void*) -> i32 {
+    let r: i32 = 0;
+    raw {
+        #ifdef ZJS_ASAN
+        extern int __asan_address_is_poisoned(void const volatile *addr);
+        r = __asan_address_is_poisoned(p);
+        #endif
+    }
+    return r;
+}
+
 // Recurse through every child reference of `p`, calling
 // gc_mark_value on each. Used directly by rem-set processing in
 // gc_run_minor to walk old holders without tripping the early-return
@@ -1483,6 +1605,13 @@ fn ctx_try_pop(ctx: ZjsContext*) -> void {
 // short-circuit — that's the whole point: we want to walk THIS
 // old cell's slots, but stop again at any further old descendants.
 fn gc_mark_cell_children(p: void*) -> void {
+    // ASan-build diagnostic: remember who we're walking so gc_mark_value
+    // can name the holder of a dangling (released-chunk-cell) edge.
+    // Recursion-safe via save/restore; compiles to two dead stores that
+    // the optimizer drops in non-ASan builds (g_gc_mark_holder unused).
+    let prev_holder = g_gc_mark_holder;
+    g_gc_mark_holder = p;
+    defer gc_mark_holder_restore(prev_holder);
     let h: CellHeader* = NULL;
     raw { h = (CellHeader*)p; }
     let tag = h.type_tag;
@@ -1923,6 +2052,23 @@ fn gc_mark_value(v: ZjsValue) -> void {
     if zjs_is_cell(v) == 0 { return; }
     let p = zjs_cell_as_ptr(v);
     if p == NULL { return; }
+    // ASan builds only: a live holder pointing at a released nursery
+    // slot is exactly the write-barrier-gap shape (#375). Name the
+    // holder before ASan's own use-after-poison report fires.
+    if gc_cell_is_poisoned(p) != 0 {
+        let holder = g_gc_mark_holder;
+        let minor  = g_gc_minor_mode;
+        let htag: i32 = -1;
+        if holder != NULL && gc_cell_is_poisoned(holder) == 0 {
+            let hh: CellHeader* = NULL;
+            raw { hh = (CellHeader*)holder; }
+            htag = (i32)hh.type_tag;
+        }
+        raw {
+            fprintf(stderr, "[gc-uap] dangling edge: holder=%p (tag %d) -> released child=%p (minor=%d)\n",
+                    holder, (int)htag, p, (int)minor);
+        }
+    }
     let h: CellHeader* = NULL;
     raw { h = (CellHeader*)p; }
     if h.mark != 0 { return; }
@@ -1931,7 +2077,7 @@ fn gc_mark_value(v: ZjsValue) -> void {
     // mark-clear pass after every minor. Old->young edges are found via the
     // remembered set (gc_run_minor re-scans barriered holders), not by
     // recursing through old cells. Result: a minor's mark set is young-only.
-    if g_gc_minor_mode != 0 && h.age != 0 { return; }
+    if g_gc_minor_mode != 0 && (h.age & AGE_OLD) != 0 { return; }
     h.mark = 1;
     gc_mark_cell_children(p);
 }
@@ -2026,7 +2172,7 @@ fn gc_mark_hidden_class(c: ZjsHiddenClass*) -> void {
     // children and freeing live classes (the bootstrap UAF). Mirrors
     // gc_mark_value. Classes are old-pinned, so in a minor this always
     // short-circuits here.
-    if g_gc_minor_mode != 0 && c.header.age != 0 { return; }
+    if g_gc_minor_mode != 0 && (c.header.age & AGE_OLD) != 0 { return; }
     c.header.mark = 1;
     // Names are atoms; they're already pinned via the atom-table root.
     if c.parent != NULL { gc_mark_hidden_class(c.parent); }
@@ -2925,15 +3071,27 @@ fn ctx_intern_atom_take(ctx: ZjsContext*, data: char*, length: u32) -> ZjsString
 // Initializes with the root empty class — fresh property additions
 // will spawn transitions on first write.
 fn ctx_new_object(ctx: ZjsContext*) -> ZjsValue {
+    let o: ZjsObject* = NULL;
+    // Gen-GC mode: bump-allocate the cell out of a nursery chunk (#386).
+    // Dead cells return via nursery_release in the sweep paths, never via
+    // the obj_pool, so the pool below stays malloc-backed-only.
+    if ctx.gen_gc_enabled {
+        let np = nursery_alloc_cell(ctx);
+        if np != NULL {
+            raw { o = (ZjsObject*)np; }
+            o.header.type_tag = TAG_OBJECT;
+            o.header.age = AGE_IN_CHUNK;
+        }
+    }
     // Reuse a recycled cell from the object pool when available — zero it
     // back to the fresh-zalloc state (mark/age/slots/flags all 0) + retag.
-    let o: ZjsObject* = NULL;
-    if ctx.obj_pool_count > 0 {
+    if o == NULL && ctx.obj_pool_count > 0 {
         ctx.obj_pool_count = ctx.obj_pool_count - 1;
         o = ctx.obj_pool[ctx.obj_pool_count];
         raw { memset((void*)o, 0, sizeof(ZjsObject)); }
         o.header.type_tag = TAG_OBJECT;
-    } else {
+    }
+    if o == NULL {
         o = zjs_object_new();
     }
     o.cls = ctx.empty_class;
@@ -2974,6 +3132,92 @@ fn ctx_new_props_bag(ctx: ZjsContext*) -> ZjsValue {
 def SLOT_POOL_SLOTS: u32 = 4;
 def SLOT_POOL_MAX:   u32 = 2048;
 def OBJ_POOL_MAX:    u32 = 2048;
+
+// =====================================================================
+// Nursery allocation (#386) — see the NurseryChunk comment up top.
+// Active only under ctx.gen_gc_enabled; the default build never calls
+// these.
+// =====================================================================
+
+// Acquire a bump-ready chunk: pop the free list, or allocate + link a
+// fresh 64KB-aligned chunk. Returns NULL on allocation failure (the
+// caller falls back to the malloc path).
+fn nursery_acquire_chunk(ctx: ZjsContext*) -> NurseryChunk* {
+    let c = ctx.nursery_free;
+    if c != NULL {
+        ctx.nursery_free = c.next_free;
+        c.next_free = NULL;
+        return c;
+    }
+    let mem: void* = NULL;
+    raw {
+        _Static_assert(sizeof(ZjsObject) <= 64, "nursery slot (64B) must fit ZjsObject");
+        mem = zjs_aligned_chunk_alloc((size_t)65536);
+    }
+    if mem == NULL { return NULL; }
+    raw { c = (NurseryChunk*)mem; }
+    c.next_all = ctx.nursery_all;
+    ctx.nursery_all = c;
+    c.next_free = NULL;
+    c.bump = 1;
+    c.live = 0;
+    // Poison the whole slot region up front. The invariant from here on:
+    // a slot is unpoisoned exactly while it holds a live (allocated, not
+    // yet released) cell — alloc unpoisons, release re-poisons, so a
+    // chunk reset needs no re-poison sweep.
+    raw { zjs_asan_poison((void*)((char*)mem + 64), (size_t)(65536 - 64)); }
+    return c;
+}
+
+// Bump-allocate one 64-byte cell slot, zeroed (zalloc-equivalent). The
+// caller sets type_tag and stamps age = AGE_IN_CHUNK. NULL when no
+// chunk can be acquired — caller falls back to the malloc path.
+fn nursery_alloc_cell(ctx: ZjsContext*) -> void* {
+    let c = ctx.nursery_cur;
+    if c == NULL || c.bump >= NURSERY_SLOTS {
+        // Current chunk full (it stays linked in nursery_all; its last
+        // release pushes it onto the free list) — grab a fresh one.
+        c = nursery_acquire_chunk(ctx);
+        if c == NULL { return NULL; }
+        ctx.nursery_cur = c;
+    }
+    let slot = c.bump;
+    c.bump = slot + 1;
+    c.live = c.live + 1;
+    let p: void* = NULL;
+    raw {
+        p = (void*)((char*)c + (size_t)slot * 64);
+        zjs_asan_unpoison(p, (size_t)64);
+        memset(p, 0, (size_t)64);
+    }
+    return p;
+}
+
+// Release a chunk-resident cell (header age has AGE_IN_CHUNK set).
+// Poison the slot, decrement the owning chunk's live count, and when
+// the last cell dies reset the whole chunk to bump mode — the O(1)
+// wholesale free that replaces per-cell free() for young object churn.
+// The 64KB alignment makes cell→chunk a mask, exact because only
+// chunk-allocated cells carry the age bit (no magic-number probing of
+// unrelated heap memory).
+fn nursery_release(ctx: ZjsContext*, p: void*) -> void {
+    let ch: NurseryChunk* = NULL;
+    raw {
+        ch = (NurseryChunk*)((uintptr_t)p & ~(uintptr_t)65535);
+        zjs_asan_poison(p, (size_t)64);
+    }
+    ch.live = ch.live - 1;
+    if ch.live == 0 {
+        ch.bump = 1;
+        // The current bump chunk just becomes empty in place; any other
+        // chunk goes on the free list for reuse. A chunk can't be freed
+        // twice into the list: releases are only possible while live > 0.
+        if ch != ctx.nursery_cur {
+            ch.next_free = ctx.nursery_free;
+            ctx.nursery_free = ch;
+        }
+    }
+}
 
 // Pop a SLOT_POOL_SLOTS-sized (slots, attrs) pair from the freelist, or
 // allocate fresh when empty. Contents are stale — the caller initializes.
@@ -3066,6 +3310,9 @@ fn object_free_pooled(ctx: ZjsContext*, p: void*) -> void {
     raw { o = (ZjsObject*)p; }
     if o == NULL { return; }
     object_release_slots(ctx, o);
+    // Chunk-resident cells (gen-GC nursery) are NOT individually heap
+    // allocations — return the slot to its chunk instead of dealloc.
+    if (o.header.age & AGE_IN_CHUNK) != 0 { nursery_release(ctx, (void*)o); return; }
     dealloc(o);
 }
 
@@ -3077,6 +3324,10 @@ fn object_recycle_young(ctx: ZjsContext*, p: void*) -> void {
     raw { o = (ZjsObject*)p; }
     if o == NULL { return; }
     object_release_slots(ctx, o);
+    // Chunk-resident cells go back to their chunk, NOT the obj_pool —
+    // keeping the pool malloc-only means ctx_new_object's pool path can
+    // keep its unconditional memset/dealloc assumptions.
+    if (o.header.age & AGE_IN_CHUNK) != 0 { nursery_release(ctx, (void*)o); return; }
     if ctx.obj_pool == NULL {
         ctx.obj_pool = alloc_n<ZjsObject*>((usize)OBJ_POOL_MAX);
         ctx.obj_pool_count = 0;
@@ -6720,6 +6971,7 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
             cl.proto_override = NULL;
         } else {
             cl.proto_override = zjs_as_object(proto_v);
+            gc_barrier_cell(ctx, (void*)cl);   // closure may be old, proto young
         }
     } else if zjs_is_function(obj_v) != 0 {
         // Bare Function path — same idea as closure but on Function*.
@@ -6734,6 +6986,7 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
             f.proto_override = NULL;
         } else {
             f.proto_override = zjs_as_object(proto_v);
+            gc_barrier_cell(ctx, fp);
         }
     } else if zjs_is_host_function(obj_v) != 0 {
         // Host-fn path. proto_override here is a ZjsValue (the field
@@ -6744,6 +6997,7 @@ fn host_object_set_prototype_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
             hf.proto_override = zjs_undefined();
         } else {
             hf.proto_override = proto_v;
+            gc_barrier_cell(ctx, (void*)hf);
         }
     } else if zjs_is_uint8_array(obj_v) != 0 {
         // Uint8Array per-instance proto (node:buffer's Buffer.prototype).
@@ -22517,6 +22771,7 @@ fn build_typed_error(ctx: ZjsContext*, type_name: char*, type_len: u32, msg: cha
         if hf.prototype == NULL {
             let pv = ctx_new_object(ctx);
             hf.prototype = zjs_as_object(pv);
+            gc_barrier_cell(ctx, (void*)hf);   // lazy create — ctor is old
         }
         obj.proto = hf.prototype;
     }
@@ -23425,6 +23680,7 @@ fn ctor_prototype_object(ctx: ZjsContext*, c: ZjsValue) -> ZjsObject* {
             object_define_property_slot(ctx, f.prototype,
                 ctx_intern_atom(ctx, (char*)"constructor", 11),
                 c, PROP_WRITABLE | PROP_CONFIGURABLE);
+            gc_barrier_cell(ctx, fp);   // lazy create — F may be old
         }
         return f.prototype;
     }
@@ -23439,6 +23695,7 @@ fn ctor_prototype_object(ctx: ZjsContext*, c: ZjsValue) -> ZjsObject* {
             object_define_property_slot(ctx, f2.prototype,
                 ctx_intern_atom(ctx, (char*)"constructor", 11),
                 c, PROP_WRITABLE | PROP_CONFIGURABLE);
+            gc_barrier_cell(ctx, fp2);  // lazy create — template may be old
         }
         return f2.prototype;
     }

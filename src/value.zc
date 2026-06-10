@@ -891,13 +891,21 @@ def PROMISE_PENDING:   u8 = 0;
 def PROMISE_FULFILLED: u8 = 1;
 def PROMISE_REJECTED:  u8 = 2;
 
+// CellHeader.age bits — see the field comment below.
+def AGE_OLD:      u8 = 0x01;
+def AGE_IN_CHUNK: u8 = 0x02;
+
 struct CellHeader {
     type_tag: u8;
     mark:     u8;       // GC mark bit; 0 = white (unreachable), 1 = grey/black (reachable)
-    age:      u8;       // 0 = young (nursery), 1 = old (promoted). Set to 1 by
-                        // ctx_register_cell_old at promotion time. The write
-                        // barrier (gc_write_barrier) checks age==1 to decide
-                        // whether a store needs a remembered-set entry.
+    age:      u8;       // Bitmask. AGE_OLD (bit 0): old generation — set by
+                        // ctx_register_cell_old at promotion time; the write
+                        // barrier and the minor mark walk test this bit.
+                        // AGE_IN_CHUNK (bit 1): the cell's memory lives in a
+                        // nursery chunk (#386) — survives promotion (cells
+                        // don't move), tells the free paths to route through
+                        // nursery_release instead of dealloc. 0 = young,
+                        // malloc-backed.
     in_rem:   u8;       // 1 while this (old) cell sits in the remembered set —
                         // rem_set_add's O(1) dedup. Without it, a hot store
                         // loop into one promoted holder (pts[i] = {…} × 20k)
