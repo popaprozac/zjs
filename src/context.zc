@@ -1156,6 +1156,23 @@ fn reg_stack_release(ctx: ZjsContext*, n: u32) -> void {
 // BEFORE the reserve (i.e. the source is in an already-allocated
 // frame); since we always APPEND a new frame above, src and dst
 // regions never overlap.
+// gen-GC frame-init widening: under the minor's aggressive free(), a
+// stale pointer in any reg_stack slot the GC scans is a routine UAF —
+// and the fast frame-setup path deliberately skips the unread args
+// region and the scratch regs above fixed_regs (#375). Rather than
+// branch in the hot push path (measured: inlining of the push into the
+// Invoke handler breaks, fib −3%), widen the per-FUNCTION init bounds
+// once at finalize/load: fixed_regs := register_count makes the
+// existing fill loop cover the whole window, and uses_arguments := true
+// makes the args region always receive (valid) caller values. Runtime
+// behavior is otherwise unchanged — both fields' only runtime readers
+// are the frame-setup functions.
+fn gen_gc_widen_frame_init(ctx: ZjsContext*, f: Function*) -> void {
+    if !ctx.gen_gc_enabled { return; }
+    f.fixed_regs = f.register_count;
+    f.uses_arguments = true;
+}
+
 fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc: u32, ret_dst: u8) -> u32 {
     if ctx.frame_count >= ctx.frame_cap {
         let new_cap: u32 = if ctx.frame_cap == 0 { 64 } else { ctx.frame_cap * 2 };
@@ -1196,7 +1213,7 @@ fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc
     // Init only up to fixed_regs: params + locals + persistent temps.
     // Scratch temps above the watermark are guaranteed written-before-
     // read by the compiler, so leaving stale stack data there is safe
-    // and saves a per-call write per scratch slot.
+    // for EXECUTION and saves a per-call write per scratch slot.
     let undef: ZjsValue = zjs_undefined();
     let init_to: u32 = f.fixed_regs;
     if init_to > reg_count { init_to = reg_count; }
@@ -1205,6 +1222,11 @@ fn push_call_frame_inplace(ctx: ZjsContext*, f: Function*, src_offset: u32, argc
         ctx.reg_stack[regs_base + j] = undef;
         j = j + 1;
     }
+    // (Under gen-GC, fixed_regs was widened to register_count and
+    // uses_arguments forced on at function finalize — see
+    // gen_gc_widen_frame_init — so the loops above leave NO stale
+    // slots for the GC to scan. The default build keeps the cheap
+    // watermark; see the comment there for the latent-risk tradeoff.)
 
     let idx = ctx.frame_count;
     ctx.frames[idx].f = f;
@@ -2097,6 +2119,11 @@ fn gc_mark_roots(ctx: ZjsContext*) -> void {
     // per registered realm, alongside that realm's intrinsics.)
     // Last uncaught error (so the C consumer can still inspect it)
     gc_mark_value(ctx.last_error);
+    // In-flight throw value (#375): set by host fns / interpreter ops
+    // and consumed later by the unwind path — a minor in between (any
+    // ctx_maybe_gc poll on an error path) must not free it. Often a
+    // freshly allocated Error object with no other reference.
+    gc_mark_value(ctx.pending_throw_value);
     // Each active call frame (current recursive model)
     let j: u32 = 0;
     while j < ctx.root_depth {
@@ -13040,6 +13067,13 @@ fn host_map_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // Optional iterable arg — each entry must itself be an iterable of
     // [key, value].
     if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
+        // Root the fresh map FIRST: the adder property_get below can run
+        // a subclass getter, and iter_get can run a user
+        // [Symbol.iterator]() — either can trigger a minor while m_v has
+        // no other reference (#375). adder + iter are likewise young
+        // user values held only in C locals across the loop's calls.
+        ctx_push_temp_root(ctx, m_v);
+        defer ctx_pop_temp_root(ctx);
         // ECMA-262 §24.1.1.1: adder = Get(map, "set"); if not callable,
         // throw TypeError BEFORE iterating. Each iterated item must be an
         // Object, and the adder is invoked (honoring a subclass override).
@@ -13051,13 +13085,16 @@ fn host_map_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             ctx.pending_throw_active = true; ctx.pending_throw_value = err;
             return zjs_undefined();
         }
+        ctx_push_temp_root(ctx, adder);
+        defer ctx_pop_temp_root(ctx);
         let iter = iter_get(ctx, args[0]);
         if ctx.pending_throw_active { return zjs_undefined(); }
-        ctx_push_temp_root(ctx, m_v);
+        ctx_push_temp_root(ctx, iter);
+        defer ctx_pop_temp_root(ctx);
         let safety: u32 = 0;
         while safety < 100000000 {
             let step = iter_step(ctx, iter);
-            if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if ctx.pending_throw_active { return zjs_undefined(); }
             if step.done { break; }
             // Each entry must be an Object (spec throws + closes iterator
             // otherwise). reflect_is_object excludes the primitives.
@@ -13066,18 +13103,21 @@ fn host_map_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
                                             (char*)"Map iterator value is not an object", 35);
                 ctx.pending_throw_active = true; ctx.pending_throw_value = err;
                 iter_close(ctx, iter);
-                ctx_pop_temp_root(ctx); return zjs_undefined();
+                return zjs_undefined();
             }
             let k = property_get(ctx, step.value, zjs_int32(0));
-            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if ctx.pending_throw_active { iter_close(ctx, iter); return zjs_undefined(); }
+            // k is only in this C local while the v-get may run a user
+            // getter — root it across that call.
+            ctx_push_temp_root(ctx, k);
             let v = property_get(ctx, step.value, zjs_int32(1));
-            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            ctx_pop_temp_root(ctx);
+            if ctx.pending_throw_active { iter_close(ctx, iter); return zjs_undefined(); }
             let ab: ZjsValue[2]; ab[0] = k; ab[1] = v;
             let _ = zjs_call_value_with_this(ctx, adder, m_v, &ab[0], 2);
-            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if ctx.pending_throw_active { iter_close(ctx, iter); return zjs_undefined(); }
             safety = safety + 1;
         }
-        ctx_pop_temp_root(ctx);
     }
     return m_v;
 }
@@ -13363,6 +13403,9 @@ fn host_set_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if nt_proto_s != NULL { s.proto = nt_proto_s; }
     let s_v = zjs_cell_from_ptr((void*)s);
     if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
+        // Root s_v / adder / iter for the whole loop — see host_map_ctor.
+        ctx_push_temp_root(ctx, s_v);
+        defer ctx_pop_temp_root(ctx);
         // ECMA-262 §24.2.1.1: adder = Get(set, "add"); throw TypeError if
         // not callable BEFORE iterating; invoke the adder per element
         // (honoring a subclass override).
@@ -13374,20 +13417,22 @@ fn host_set_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             ctx.pending_throw_active = true; ctx.pending_throw_value = err;
             return zjs_undefined();
         }
+        ctx_push_temp_root(ctx, adder);
+        defer ctx_pop_temp_root(ctx);
         let iter = iter_get(ctx, args[0]);
         if ctx.pending_throw_active { return zjs_undefined(); }
-        ctx_push_temp_root(ctx, s_v);
+        ctx_push_temp_root(ctx, iter);
+        defer ctx_pop_temp_root(ctx);
         let safety: u32 = 0;
         while safety < 100000000 {
             let step = iter_step(ctx, iter);
-            if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if ctx.pending_throw_active { return zjs_undefined(); }
             if step.done { break; }
             let ab: ZjsValue[1]; ab[0] = step.value;
             let _ = zjs_call_value_with_this(ctx, adder, s_v, &ab[0], 1);
-            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if ctx.pending_throw_active { iter_close(ctx, iter); return zjs_undefined(); }
             safety = safety + 1;
         }
-        ctx_pop_temp_root(ctx);
     }
     return s_v;
 }
@@ -13418,6 +13463,9 @@ fn host_weakmap_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     m.proto = if nt != NULL { nt } else { ctx.realm.weakmap_proto };
     let m_v = zjs_cell_from_ptr((void*)m);
     if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
+        // Root m_v / adder / iter for the whole loop — see host_map_ctor.
+        ctx_push_temp_root(ctx, m_v);
+        defer ctx_pop_temp_root(ctx);
         let adder = property_get(ctx, m_v, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"set", 3)));
         if ctx.pending_throw_active { return zjs_undefined(); }
         if zjs_is_callable(adder) == 0 {
@@ -13426,30 +13474,34 @@ fn host_weakmap_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             ctx.pending_throw_active = true; ctx.pending_throw_value = err;
             return zjs_undefined();
         }
+        ctx_push_temp_root(ctx, adder);
+        defer ctx_pop_temp_root(ctx);
         let iter = iter_get(ctx, args[0]);
         if ctx.pending_throw_active { return zjs_undefined(); }
-        ctx_push_temp_root(ctx, m_v);
+        ctx_push_temp_root(ctx, iter);
+        defer ctx_pop_temp_root(ctx);
         let safety: u32 = 0;
         while safety < 100000000 {
             let step = iter_step(ctx, iter);
-            if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if ctx.pending_throw_active { return zjs_undefined(); }
             if step.done { break; }
             if !reflect_is_object(step.value) {
                 let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                             (char*)"WeakMap iterator value is not an object", 39);
                 ctx.pending_throw_active = true; ctx.pending_throw_value = err;
-                iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined();
+                iter_close(ctx, iter); return zjs_undefined();
             }
             let k = property_get(ctx, step.value, zjs_int32(0));
-            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if ctx.pending_throw_active { iter_close(ctx, iter); return zjs_undefined(); }
+            ctx_push_temp_root(ctx, k);
             let v = property_get(ctx, step.value, zjs_int32(1));
-            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            ctx_pop_temp_root(ctx);
+            if ctx.pending_throw_active { iter_close(ctx, iter); return zjs_undefined(); }
             let ab: ZjsValue[2]; ab[0] = k; ab[1] = v;
             let _ = zjs_call_value_with_this(ctx, adder, m_v, &ab[0], 2);
-            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if ctx.pending_throw_active { iter_close(ctx, iter); return zjs_undefined(); }
             safety = safety + 1;
         }
-        ctx_pop_temp_root(ctx);
     }
     return m_v;
 }
@@ -13463,6 +13515,9 @@ fn host_weakset_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     s.proto = if nt != NULL { nt } else { ctx.realm.weakset_proto };
     let s_v = zjs_cell_from_ptr((void*)s);
     if argc > 0 && zjs_is_undefined(args[0]) == 0 && zjs_is_null(args[0]) == 0 {
+        // Root s_v / adder / iter for the whole loop — see host_map_ctor.
+        ctx_push_temp_root(ctx, s_v);
+        defer ctx_pop_temp_root(ctx);
         let adder = property_get(ctx, s_v, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"add", 3)));
         if ctx.pending_throw_active { return zjs_undefined(); }
         if zjs_is_callable(adder) == 0 {
@@ -13471,20 +13526,22 @@ fn host_weakset_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             ctx.pending_throw_active = true; ctx.pending_throw_value = err;
             return zjs_undefined();
         }
+        ctx_push_temp_root(ctx, adder);
+        defer ctx_pop_temp_root(ctx);
         let iter = iter_get(ctx, args[0]);
         if ctx.pending_throw_active { return zjs_undefined(); }
-        ctx_push_temp_root(ctx, s_v);
+        ctx_push_temp_root(ctx, iter);
+        defer ctx_pop_temp_root(ctx);
         let safety: u32 = 0;
         while safety < 100000000 {
             let step = iter_step(ctx, iter);
-            if ctx.pending_throw_active { ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if ctx.pending_throw_active { return zjs_undefined(); }
             if step.done { break; }
             let ab: ZjsValue[1]; ab[0] = step.value;
             let _ = zjs_call_value_with_this(ctx, adder, s_v, &ab[0], 1);
-            if ctx.pending_throw_active { iter_close(ctx, iter); ctx_pop_temp_root(ctx); return zjs_undefined(); }
+            if ctx.pending_throw_active { iter_close(ctx, iter); return zjs_undefined(); }
             safety = safety + 1;
         }
-        ctx_pop_temp_root(ctx);
     }
     return s_v;
 }

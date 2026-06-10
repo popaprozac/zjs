@@ -5811,6 +5811,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 break;
             } else if zjs_is_host_function(callee) != 0 {
                 // Synchronous host call, then act like Op::Return with r.
+                // GC safe-point BEFORE the call (args still live in regs):
+                // after the call the result exists ONLY in the C local `r`
+                // until it's written to the caller's reg / final_result —
+                // a poll in that window let a minor free a freshly built
+                // host return value (#375: `return arr.values()` tail-
+                // called build_array_iterator, then the post-call poll
+                // swept the iterator before the store).
+                ctx_maybe_gc(ctx);
                 let hf_ptr = zjs_cell_as_ptr(callee);
                 let argv_ptr: ZjsValue* = NULL;
                 raw { argv_ptr = &regs[base + arg_offset]; }
@@ -5832,17 +5840,17 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 if ctx.pending_throw_active {
                     // Tail callee threw — pop our frame (we're already
                     // semantically "returned") and surface the throw in
-                    // the caller.
+                    // the caller. NO poll here: thrown_v lives only in
+                    // this C local until the outer loop roots it.
                     let thrown_v = consume_pending_throw(ctx);
-                    ctx_maybe_gc(ctx);
                     let _ = pop_call_frame(ctx);
                     throwing = true;
                     thrown = thrown_v;
                     exit_reason = 3;
                     break;
                 }
-                // Pop and write result like an implicit Return.
-                ctx_maybe_gc(ctx);
+                // Pop and write result like an implicit Return. NO poll
+                // between the call and the store (see above).
                 let ret_dst = pop_call_frame(ctx);
                 if ctx.frame_count <= entry_frame {
                     final_result = r;
