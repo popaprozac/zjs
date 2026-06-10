@@ -1210,6 +1210,27 @@ fn gc_barrier(holder: void*, value: ZjsValue) -> void {
     gc_write_barrier(g_active_ctx, holder, value);
 }
 
+// Param-less nursery allocation hook for the cell constructors in
+// value.zc (#386 S2 — same g_active_ctx pattern as gc_barrier).
+// Returns a zeroed 64-byte chunk slot tagged + stamped AGE_IN_CHUNK,
+// or NULL when the nursery is inactive (default GC, bootstrap outside
+// the interpreter, or chunk-allocation failure) — the caller falls
+// back to its normal calloc path. Cells handed out here are freed
+// EXCLUSIVELY via gc_free_one's chunk-aware branches; the *_free_void
+// helpers never see them.
+fn gc_nursery_cell(tag: u8) -> void* {
+    let ctx = g_active_ctx;
+    if ctx == NULL { return NULL; }
+    if !ctx.gen_gc_enabled { return NULL; }
+    let p = nursery_alloc_cell(ctx);
+    if p == NULL { return NULL; }
+    let h: CellHeader* = NULL;
+    raw { h = (CellHeader*)p; }
+    h.type_tag = tag;
+    h.age = AGE_IN_CHUNK;
+    return p;
+}
+
 // New cells from program execution land here. We bump
 // `cells_since_minor` and let `ctx_maybe_gc` decide when to collect
 // — that check fires from the interpreter loop, not from inside the
@@ -2479,9 +2500,26 @@ fn gc_free_one(ctx: ZjsContext*, p: void*) -> void {
     let tag = h.type_tag;
     if tag == TAG_FUNCTION      {
         raw { extern void function_free_void(void* f); function_free_void(p); }
-    } else if tag == TAG_STRING        { string_free_void(p); }
+    } else if tag == TAG_STRING        {
+        // Chunk-resident string cell (#386 S2): free the owned data
+        // buffer, return the slot to its chunk. Malloc cells take the
+        // normal path.
+        if (h.age & AGE_IN_CHUNK) != 0 {
+            let s: ZjsString* = NULL;
+            raw { s = (ZjsString*)p; }
+            dealloc(s.data);
+            nursery_release(ctx, p);
+        } else { string_free_void(p); }
+    }
       else if tag == TAG_OBJECT        { object_free_pooled(ctx, p); }
-      else if tag == TAG_ARRAY         { array_free_void(p); }
+      else if tag == TAG_ARRAY         {
+        if (h.age & AGE_IN_CHUNK) != 0 {
+            let a: ZjsArray* = NULL;
+            raw { a = (ZjsArray*)p; }
+            dealloc(a.elements);
+            nursery_release(ctx, p);
+        } else { array_free_void(p); }
+    }
       else if tag == TAG_HOST_FUNCTION { host_function_free_void(p); }
       else if tag == TAG_CLOSURE       { closure_free_void(p); }
       else if tag == TAG_ACCESSOR      { accessor_free_void(p); }
@@ -3152,6 +3190,8 @@ fn nursery_acquire_chunk(ctx: ZjsContext*) -> NurseryChunk* {
     let mem: void* = NULL;
     raw {
         _Static_assert(sizeof(ZjsObject) <= 64, "nursery slot (64B) must fit ZjsObject");
+        _Static_assert(sizeof(ZjsString) <= 64, "nursery slot (64B) must fit ZjsString");
+        _Static_assert(sizeof(ZjsArray)  <= 64, "nursery slot (64B) must fit ZjsArray");
         mem = zjs_aligned_chunk_alloc((size_t)65536);
     }
     if mem == NULL { return NULL; }

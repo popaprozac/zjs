@@ -3173,8 +3173,15 @@ fn zjs_as_host_function(v: ZjsValue) -> ZjsHostFunction* {
 // (the caller in context.zc handles that).
 
 fn zjs_string_new_take(data: char*, length: u32) -> ZjsString* {
-    let s = alloc<ZjsString>();
-    s.header.type_tag = TAG_STRING;
+    // Gen-GC mode: cell from the nursery (#386 S2). NULL → calloc path.
+    let s: ZjsString* = NULL;
+    let np = gc_nursery_cell(TAG_STRING);
+    if np != NULL {
+        raw { s = (ZjsString*)np; }
+    } else {
+        s = alloc<ZjsString>();
+        s.header.type_tag = TAG_STRING;
+    }
     s.length = length;
     s.interned = false;
     s.data = data;
@@ -3246,8 +3253,15 @@ fn hidden_class_free_void(p: void*) -> void {
 // values. forEach / map / etc. skip holes; reads through array_get
 // coerce holes to undefined transparently.
 fn zjs_array_new(length: u32) -> ZjsArray* {
-    let a = alloc<ZjsArray>();
-    a.header.type_tag = TAG_ARRAY;
+    // Gen-GC mode: cell from the nursery (#386 S2). NULL → calloc path.
+    let a: ZjsArray* = NULL;
+    let np = gc_nursery_cell(TAG_ARRAY);
+    if np != NULL {
+        raw { a = (ZjsArray*)np; }
+    } else {
+        a = alloc<ZjsArray>();
+        a.header.type_tag = TAG_ARRAY;
+    }
     a.length = length;
     a.proto = NULL;
     let cap: u32 = if length < 4 { 4 } else { length };
