@@ -898,9 +898,14 @@ struct CellHeader {
                         // ctx_register_cell_old at promotion time. The write
                         // barrier (gc_write_barrier) checks age==1 to decide
                         // whether a store needs a remembered-set entry.
-    _pad:     u8;       // explicit padding so the header stays a clean 4 bytes
-                        // and existing memcpy-of-cells (none today, but possible
-                        // for stop-and-copy nursery later) stays predictable.
+    in_rem:   u8;       // 1 while this (old) cell sits in the remembered set —
+                        // rem_set_add's O(1) dedup. Without it, a hot store
+                        // loop into one promoted holder (pts[i] = {…} × 20k)
+                        // appends thousands of duplicates and every minor
+                        // re-scans the holder once PER DUPLICATE (#373:
+                        // obj_field setup measured +140ms). Cleared when the
+                        // remembered set resets after each collection.
+                        // (Was explicit padding; header stays 4 bytes.)
 }
 
 struct ZjsString {

@@ -1020,6 +1020,13 @@ fn ctx_register_cell_old(ctx: ZjsContext*, p: void*) -> void {
 // stored into one of its slots). The list dedups lazily — duplicates
 // are fine because mark walks early-return on already-marked cells.
 fn rem_set_add(ctx: ZjsContext*, holder: void*) -> void {
+    // O(1) dedup via the header flag — repeated stores into the same
+    // promoted holder (the hottest barrier shape) add it exactly once
+    // per collection cycle. rem_set_reset clears the flags.
+    let h: CellHeader* = NULL;
+    raw { h = (CellHeader*)holder; }
+    if h.in_rem != 0 { return; }
+    h.in_rem = 1;
     if ctx.rem_count >= ctx.rem_cap {
         let new_cap: u32 = if ctx.rem_cap == 0 { 32 } else { ctx.rem_cap * 2 };
         ctx.rem_set = realloc_n<void*>(ctx.rem_set, (usize)ctx.rem_cap, (usize)new_cap);
@@ -1027,6 +1034,24 @@ fn rem_set_add(ctx: ZjsContext*, holder: void*) -> void {
     }
     ctx.rem_set[ctx.rem_count] = holder;
     ctx.rem_count = ctx.rem_count + 1;
+}
+
+// Clear the dedup flags + empty the remembered set. MUST run before
+// any sweep that could free a member (a major's sweep_old can free
+// rem-set holders — clearing flags afterwards would touch freed
+// memory).
+fn rem_set_reset(ctx: ZjsContext*) -> void {
+    let i: u32 = 0;
+    while i < ctx.rem_count {
+        let p = ctx.rem_set[i];
+        if p != NULL {
+            let h: CellHeader* = NULL;
+            raw { h = (CellHeader*)p; }
+            h.in_rem = 0;
+        }
+        i = i + 1;
+    }
+    ctx.rem_count = 0;
 }
 
 // Suspend-point barrier: a generator / async continuation that has already
@@ -1055,11 +1080,18 @@ fn gc_barrier_cell(ctx: ZjsContext*, holder: void*) -> void {
 // state captures freshly-allocated data — which is exactly the
 // case we need to track for minor correctness.
 fn gc_write_barrier(ctx: ZjsContext*, holder: void*, value: ZjsValue) -> void {
+    // CHECK ORDER MATTERS: the value tag test is a register-only
+    // NaN-box check, while h.age is a memory load on the holder's
+    // header. Numeric stores into promoted long-lived objects are the
+    // hottest barrier shape there is (obj_field: 60M int stores into
+    // one old object — header-load-first measured +44% on the whole
+    // bench under ZJS_GEN_GC), so kill primitives before touching
+    // memory.
+    if zjs_is_cell(value) == 0 { return; }
     if holder == NULL || ctx == NULL { return; }
     let h: CellHeader* = NULL;
     raw { h = (CellHeader*)holder; }
     if h.age == 0 { return; }   // holder is young — slot can be re-scanned at promotion time
-    if zjs_is_cell(value) == 0 { return; }
     let v_ptr = zjs_cell_as_ptr(value);
     if v_ptr == NULL { return; }
     let vh: CellHeader* = NULL;
@@ -2484,11 +2516,12 @@ fn gc_run_minor(ctx: ZjsContext*) -> void {
     // and gc_sweep_young clears the mark on each promoted cell. So the old
     // gen is already mark-clean. This is what makes a minor O(young + rem),
     // not O(old) — the difference between a perf win and a regression.
-    // Reset the remembered set. After a minor every reachable young
-    // cell has been promoted, so no old→young edges remain. New
-    // edges that arise after this minor are captured by the write
-    // barrier on the next store.
-    ctx.rem_count = 0;
+    // Reset the remembered set (+ dedup flags). After a minor every
+    // reachable young cell has been promoted, so no old→young edges
+    // remain. New edges that arise after this minor are captured by
+    // the write barrier on the next store. (Minor sweeps never free
+    // old cells, so clearing the member flags here is safe.)
+    rem_set_reset(ctx);
     raw {
         struct timespec _ts1;
         clock_gettime(CLOCK_MONOTONIC, &_ts1);
@@ -2528,6 +2561,13 @@ fn gc_run_major(ctx: ZjsContext*) -> void {
     g_gc_minor_mode = 0;
     gc_mark_roots(ctx);
     gc_nullify_dead_ics(ctx);
+    // Reset the remembered set BEFORE the sweeps: a major's sweep_old
+    // can FREE rem-set members, and rem_set_reset clears each member's
+    // in_rem header flag — touching freed cells if run after. The
+    // major's mark phase is a full walk that never consults the rem
+    // set, so resetting here is safe. (After a major, every reachable
+    // cell is old and the old→young edge set is moot anyway.)
+    rem_set_reset(ctx);
     // ORDER CONTRACT: sweep_young FIRST. In major mode it promotes
     // marked young cells into ctx.cells with the mark LEFT SET;
     // sweep_old then keeps them and clears the mark during its own
@@ -2537,9 +2577,6 @@ fn gc_run_major(ctx: ZjsContext*) -> void {
     let promoted = gc_sweep_young(ctx);
     gc_sweep_old(ctx);
     ctx.cells_since_gc = 0;
-    // After a major, every reachable cell is in old gen and rem_set
-    // (which tracked old→young edges) is moot.
-    ctx.rem_count = 0;
     let target: u32 = ctx.cell_count * 2;
     if target < 256 { target = 256; }
     ctx.gc_threshold = target;
