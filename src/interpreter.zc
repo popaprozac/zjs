@@ -7959,7 +7959,19 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 i = i + 1;
             }
             arr.length = frame_argc;
+            // Root in the destination reg BEFORE allocating the brand
+            // bag below — a minor during ctx_new_object would otherwise
+            // free the fresh array.
             regs[inst.a] = arr_v;
+            // #399 inc5: Arguments brand — Object.prototype.toString
+            // must report [object Arguments]. The tag lives in the
+            // props bag (non-enumerable internal key).
+            let bag_v = ctx_new_object(ctx);
+            arr.props = zjs_as_object(bag_v);
+            gc_barrier_cell(ctx, zjs_cell_as_ptr(arr_v));
+            object_define_property_slot(ctx, arr.props,
+                ctx_intern_atom(ctx, TAG_NAME_KEY, TAG_NAME_KEY_LEN),
+                ctx_intern_string(ctx, (char*)"Arguments", 9), 0);
         } else if op == Op::BuildRestArgs {
             // ...rest at the end of a param list. Build an array from
             // args_base[skip..argc]; empty when argc <= skip.

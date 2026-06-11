@@ -23572,6 +23572,10 @@ fn build_typed_error(ctx: ZjsContext*, type_name: char*, type_len: u32, msg: cha
     object_set(ctx, obj, name_atom, zjs_cell_from_ptr((void*)name_val_str));
     let msg_str = ctx_intern_string(ctx, msg, msg_len);
     object_set(ctx, obj, msg_atom, msg_str);
+    // #399 inc5: [[ErrorData]] brand (see make_named_error).
+    object_define_property_slot(ctx, obj,
+        ctx_intern_atom(ctx, TAG_NAME_KEY, TAG_NAME_KEY_LEN),
+        ctx_intern_string(ctx, (char*)"Error", 5), 0);
     return obj_v;
 }
 
@@ -24379,9 +24383,30 @@ fn host_object_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     let this_val = ctx.host_this;
     let label: char* = (char*)"[object Object]";
     let label_len: u32 = 15;
+    let internal_tag: ZjsString* = NULL;   // Math/JSON/Error brand (see below)
     if zjs_is_undefined(this_val) != 0 { label = (char*)"[object Undefined]"; label_len = 18; }
     else if zjs_is_null(this_val) != 0 { label = (char*)"[object Null]";      label_len = 13; }
-    else if zjs_is_array(this_val) != 0 { label = (char*)"[object Array]";    label_len = 14; }
+    else if zjs_is_array(this_val) != 0 {
+        label = (char*)"[object Array]"; label_len = 14;
+        // #399 inc5: `arguments` objects are arrays carrying the
+        // internal tag in their props bag — report [object Arguments].
+        let abr = zjs_as_array(this_val);
+        if abr.props != NULL {
+            let ta = ctx_intern_atom(ctx, TAG_NAME_KEY, TAG_NAME_KEY_LEN);
+            let ts2 = class_find_slot(abr.props.cls, ta);
+            if ts2 >= 0 {
+                let tv2 = abr.props.slots[(u32)ts2];
+                if zjs_is_string(tv2) != 0 {
+                    let is_args: bool = false;
+                    let tstr = zjs_as_string(tv2);
+                    raw {
+                        is_args = (tstr->length == 9 && memcmp(tstr->data, "Arguments", 9) == 0) ? true : false;
+                    }
+                    if is_args { label = (char*)"[object Arguments]"; label_len = 18; }
+                }
+            }
+        }
+    }
     else if zjs_is_string(this_val) != 0 { label = (char*)"[object String]";  label_len = 15; }
     else if zjs_is_regexp(this_val) != 0 { label = (char*)"[object RegExp]";  label_len = 15; }
     else if zjs_is_date(this_val) != 0   { label = (char*)"[object Date]";    label_len = 13; }
@@ -24393,28 +24418,31 @@ fn host_object_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
         label = (char*)"[object Function]"; label_len = 17;
     }
     else if zjs_is_object(this_val) != 0 {
-        // Check for our internal tag (Math/JSON/Arguments) — gives
-        // `[object Math]` etc. Look up own prop only; the tag is
-        // never inherited so a fast own-slot check is enough.
+        // #399 inc5: wrapper objects (ToObject'd primitives / new
+        // Boolean(true)) report their primitive's builtin tag.
+        let ow = zjs_as_object(this_val);
+        let wkey_ts = ctx_intern_atom(ctx, WRAPPER_VALUE_KEY, WRAPPER_VALUE_KEY_LEN);
+        let wslot_ts = class_find_slot(ow.cls, wkey_ts);
+        if wslot_ts >= 0 {
+            let wv_ts = ow.slots[(u32)wslot_ts];
+            if zjs_is_bool(wv_ts) != 0        { label = (char*)"[object Boolean]"; label_len = 16; }
+            else if zjs_is_string(wv_ts) != 0 { label = (char*)"[object String]";  label_len = 15; }
+            else if zjs_is_int32(wv_ts) != 0 || zjs_is_double(wv_ts) != 0 { label = (char*)"[object Number]"; label_len = 15; }
+        }
+        // Check for our internal tag (Math/JSON/Arguments/Error brand)
+        // — gives `[object Math]` etc. Look up own prop only; the tag
+        // is never inherited so a fast own-slot check is enough.
         let o = zjs_as_object(this_val);
         let tag_atom = ctx_intern_atom(ctx, TAG_NAME_KEY, TAG_NAME_KEY_LEN);
         let s = class_find_slot(o.cls, tag_atom);
         if s >= 0 {
             let tv = o.slots[(u32)s];
             if zjs_is_string(tv) != 0 {
-                let tag_str = zjs_as_string(tv);
-                let prefix = (char*)"[object ";
-                let prefix_len: u32 = 8;
-                let suffix_len: u32 = 1;
-                let total = prefix_len + tag_str.length + suffix_len;
-                let buf = alloc_n<char>((usize)(total + 1));
-                mem_copy<char>(buf, prefix, (usize)prefix_len);
-                let tail: char* = NULL;
-                raw { tail = &buf[prefix_len]; }
-                mem_copy<char>(tail, tag_str.data, (usize)tag_str.length);
-                buf[prefix_len + tag_str.length] = ']';
-                buf[total] = (char)0;
-                return ctx_intern_string_take(ctx, buf, total);
+                // #399 inc5: do NOT return here — a user-set
+                // @@toStringTag must still override the internal tag.
+                // Stash it; the tail uses it only when no
+                // string-valued @@toStringTag was found via Get.
+                internal_tag = zjs_as_string(tv);
             }
         }
     }
@@ -24423,9 +24451,12 @@ fn host_object_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     // Object receiver — gives `[object Promise]`, `[object WeakMap]`,
     // `[object Generator]`, and honors a user `{ [Symbol.toStringTag]: x }`.
     // Skipped for primitive receivers (they keep their builtin label).
-    let is_prim = zjs_is_int32(this_val) != 0 || zjs_is_double(this_val) != 0
-               || zjs_is_string(this_val) != 0 || zjs_is_bool(this_val) != 0
-               || zjs_is_symbol(this_val) != 0 || zjs_is_bigint(this_val) != 0;
+    // #399 inc5: the tag Get runs for EVERY non-null/undefined receiver
+    // — §20.1.3.6 does ToObject(this) first, so a primitive's wrapper
+    // prototype chain supplies the tag (Symbol.prototype/@@toStringTag =
+    // "Symbol", BigInt.prototype = "BigInt"). property_get already
+    // dispatches primitive receivers through their wrapper protos.
+    let is_prim = zjs_is_undefined(this_val) != 0 || zjs_is_null(this_val) != 0;
     if !is_prim {
         let tt_atom = ctx_intern_atom(ctx, (char*)"@@toStringTag", 13);
         let tag_v = property_get(ctx, this_val, zjs_cell_from_ptr((void*)tt_atom));
@@ -24444,6 +24475,18 @@ fn host_object_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
             buf[total] = (char)0;
             return ctx_intern_string_take(ctx, buf, total);
         }
+    }
+    if internal_tag != NULL {
+        let prefix2 = (char*)"[object ";
+        let total2 = 8 + internal_tag.length + 1;
+        let buf2 = alloc_n<char>((usize)(total2 + 1));
+        mem_copy<char>(buf2, prefix2, 8);
+        let tail2: char* = NULL;
+        raw { tail2 = &buf2[8]; }
+        mem_copy<char>(tail2, internal_tag.data, (usize)internal_tag.length);
+        buf2[8 + internal_tag.length] = ']';
+        buf2[total2] = (char)0;
+        return ctx_intern_string_take(ctx, buf2, total2);
     }
     return ctx_intern_string(ctx, label, label_len);
 }
@@ -25816,6 +25859,12 @@ fn make_named_error(ctx: ZjsContext*, name: char*, name_len: u32, args: ZjsValue
     ctx_push_temp_root(ctx, obj_v);
     defer ctx_pop_temp_root(ctx);
     let obj = zjs_as_object(obj_v);
+    // #399 inc5: [[ErrorData]] brand — Object.prototype.toString
+    // reports [object Error] for constructor-made error INSTANCES
+    // (not Error.prototype / Object.create(Error.prototype)).
+    object_define_property_slot(ctx, obj,
+        ctx_intern_atom(ctx, TAG_NAME_KEY, TAG_NAME_KEY_LEN),
+        ctx_intern_string(ctx, (char*)"Error", 5), 0);
     // Spec: only set `message` when explicitly provided. An omitted
     // message stays inherited (Error.prototype.message = "" by spec,
     // which our toString defaults sensibly).
@@ -29993,6 +30042,11 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
     object_set(ctx, ctx.realm.symbol_proto, ctx_intern_atom(ctx, (char*)"valueOf", 7),
                ctx_make_host_function_arity(ctx, (char*)"valueOf", sym_valof_ptr, 0));
     object_set(ctx, ctx.realm.symbol_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), sym_ctor_v);
+    // Symbol.prototype[Symbol.toStringTag] = "Symbol" (#399 inc5) —
+    // Object.prototype.toString.call(Symbol()) -> [object Symbol].
+    object_define_property_slot(ctx, ctx.realm.symbol_proto,
+        ctx_intern_atom(ctx, (char*)"@@toStringTag", 13),
+        ctx_intern_string(ctx, (char*)"Symbol", 6), PROP_CONFIGURABLE);
 
     // === URL (2026-05-18) — WHATWG URL parser at v0.1 coverage. ===
     let url_ctor_ptr: void* = NULL; raw { url_ctor_ptr = (void*)host_url_ctor; }
@@ -30797,6 +30851,10 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
                    ctx_make_host_function(ctx, (char*)"valueOf", bvo_ptr));
         // toLocaleString — no Intl yet; alias to toString (decimal).
         object_set(ctx, bproto, ctx_intern_atom(ctx, (char*)"toLocaleString", 14), bts_fn);
+        // BigInt.prototype[Symbol.toStringTag] = "BigInt" (#399 inc5).
+        object_define_property_slot(ctx, bproto,
+            ctx_intern_atom(ctx, (char*)"@@toStringTag", 13),
+            ctx_intern_string(ctx, (char*)"BigInt", 6), PROP_CONFIGURABLE);
         big_hf.prototype = bproto;
     }
     // BigInt64Array / BigUint64Array are placeholder stubs (not a real

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-11 16:05 UTC",
+    "when": "2026-06-11 17:13 UTC",
     "total": 27568,
-    "passed": 24142,
-    "failed": 3088,
+    "passed": 24180,
+    "failed": 3050,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -353,10 +353,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents. \nzjs: throw: (unknown): Actual"
     },
     {
-      "path": "test/built-ins/Array/prototype/every/15.4.4.16-1-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.every.call(obj, callbackfn) Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: t"
-    },
-    {
       "path": "test/built-ins/Array/prototype/every/15.4.4.16-2-17.js",
       "reason": "[sloppy] zjs: throw: (unknown): func(12, 11) !== true\nzjs: throw: (unknown): func(12, 11) !== true"
     },
@@ -419,10 +415,6 @@
     {
       "path": "test/built-ins/Array/prototype/fill/typed-array-resize.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 0] should have the same contents. \nzjs: throw: (unknown): Actual [] an"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/filter/15.4.4.20-1-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): newArr[0] Expected SameValue(\u00abundefined\u00bb, \u00ab\"a\"\u00bb) to be true\nzjs: throw: (unknown): newArr[0] Expe"
     },
     {
       "path": "test/built-ins/Array/prototype/filter/15.4.4.20-10-3.js",
@@ -591,10 +583,6 @@
     {
       "path": "test/built-ins/Array/prototype/flatMap/thisArg-argument.js",
       "reason": "zjs: throw: (unknown): Actual [[object Object]] and expected [null] should have the same contents. The value of actual i"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-1-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): result !== true\nzjs: throw: (unknown): result !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-2-17.js",
@@ -793,10 +781,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
     },
     {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-1-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult[1] Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): testResult[1]"
-    },
-    {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-5-1-s.js",
       "reason": "zjs: throw: (unknown): innerThisCorrect !== true\nzjs: throw: (unknown): innerThisCorrect !== true"
     },
@@ -957,10 +941,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.push.call('') Expected a TypeError to be thrown but no exception was thrown at al"
     },
     {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-1-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.reduce.call(obj, callbackfn, 1) !== true\nzjs: throw: (unknown): Array.prototype.r"
-    },
-    {
       "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-10-3.js",
       "reason": "[sloppy] zjs: throw: TypeError: Reduce of empty array with no initial value\nzjs: throw: TypeError: Reduce of empty array with no "
     },
@@ -999,10 +979,6 @@
     {
       "path": "test/built-ins/Array/prototype/reduce/resizable-buffer.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents. \nzjs: throw: (unknown): Actual"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-1-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.reduceRight.call(obj, callbackfn, \"a\") !== true\nzjs: throw: (unknown): Array.prot"
     },
     {
       "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-10-3.js",
@@ -1159,10 +1135,6 @@
     {
       "path": "test/built-ins/Array/prototype/slice/target-array-non-extensible.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/some/15.4.4.17-1-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.some.call(obj, callbackfn) !== true\nzjs: throw: (unknown): Array.prototype.some.c"
     },
     {
       "path": "test/built-ins/Array/prototype/some/15.4.4.17-2-17.js",
@@ -1505,10 +1477,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError but got a TypeError\nzjs: throw: (unknown): Expected a RangeError but got a "
     },
     {
-      "path": "test/built-ins/BigInt/prototype/Symbol.toStringTag.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Symbol(Symbol.toStringTag) should be an own property\nzjs: throw: (unknown): Symbol(Symbol.toStrin"
-    },
-    {
       "path": "test/built-ins/BigInt/prototype/constructor.js",
       "reason": "[sloppy] zjs: throw: (unknown): constructor should be an own property\nzjs: throw: (unknown): constructor should be an own propert"
     },
@@ -1553,10 +1521,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
     },
     {
-      "path": "test/built-ins/Boolean/S15.6.2.1_A4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.toString() must return \"[object Boolean]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object B"
-    },
-    {
       "path": "test/built-ins/Boolean/S15.6.3_A1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Boolean.hasOwnProperty(\"prototype\") must return true\nzjs: throw: (unknown): Boolean.hasOwnPropert"
     },
@@ -1567,10 +1531,6 @@
     {
       "path": "test/built-ins/Boolean/proto-from-ctor-realm.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameVal"
-    },
-    {
-      "path": "test/built-ins/Boolean/prototype/S15.6.3.1_A1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Boolean.prototype.toString() must return \"[object Boolean]\" Expected SameValue(\u00ab\"[object Object]\""
     },
     {
       "path": "test/built-ins/Boolean/prototype/S15.6.3.1_A3.js",
@@ -2201,10 +2161,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a Test262Error\nzjs: throw: (unknown): Expected a TypeError but got a"
     },
     {
-      "path": "test/built-ins/Error/prototype/constructor/S15.11.4.1_A1_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): err.toString() must return \"[object Error]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Err"
-    },
-    {
       "path": "test/built-ins/Error/prototype/message/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): message should be an own property\nzjs: throw: (unknown): message should be an own property"
     },
@@ -2223,14 +2179,6 @@
     {
       "path": "test/built-ins/Error/prototype/toString/tostring-message-throws-toprimitive.js",
       "reason": "[sloppy] zjs: throw: (unknown): ToPrimitive(msg) called by ToString(msg) throws TypeError Expected a TypeError to be thrown but n"
-    },
-    {
-      "path": "test/built-ins/Error/tostring-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): new Error.toString() returns \"[object Error]\" (Object.prototype.toString) Expected SameValue(\u00ab\"[o"
-    },
-    {
-      "path": "test/built-ins/Error/tostring-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Error().toString() returns \"[object Error]\" (Object.prototype.toString) Expected SameValue(\u00ab\"[obj"
     },
     {
       "path": "test/built-ins/Function/15.3.2.1-10-6gs.js",
@@ -2889,10 +2837,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abNaN\u00bb, \u00ab0.30000000000000004\u00bb) to be true\nzjs: throw: (unknown): Expected SameV"
     },
     {
-      "path": "test/built-ins/Number/15.7.4-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): s Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Number]\"\u00bb) to be true\nzjs: throw: (unknown): "
-    },
-    {
       "path": "test/built-ins/Number/EPSILON.js",
       "reason": "[sloppy] zjs: throw: (unknown): EPSILON descriptor should not be writable; EPSILON descriptor should not be configurable\nzjs: thr"
     },
@@ -2939,10 +2883,6 @@
     {
       "path": "test/built-ins/Number/POSITIVE_INFINITY/prop-desc.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected obj[POSITIVE_INFINITY] to have writable:false.\nzjs: throw: (unknown): Expected obj[POSIT"
-    },
-    {
-      "path": "test/built-ins/Number/S15.7.2.1_A4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.toString() must return \"[object Number]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object Nu"
     },
     {
       "path": "test/built-ins/Number/S15.7.3_A1.js",
@@ -2999,18 +2939,6 @@
     {
       "path": "test/built-ins/Number/proto-from-ctor-realm.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab[object Object]\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/S15.7.3.1_A2_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString() must return \"[object Number]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb,"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/S15.7.3.1_A2_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString() must return \"[object Number]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb,"
-    },
-    {
-      "path": "test/built-ins/Number/prototype/S15.7.4_A1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Number.prototype.toString() must return \"[object Number]\" Expected SameValue(\u00ab\"[object Object]\"\u00bb,"
     },
     {
       "path": "test/built-ins/Number/prototype/S15.7.4_A3.3.js",
@@ -3177,10 +3105,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): result !== true\nzjs: throw: (unknown): result !== true"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-171.js",
       "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
     },
@@ -3218,10 +3142,6 @@
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-2-12.js",
-      "reason": "[sloppy] zjs: throw: (unknown): result !== true\nzjs: throw: (unknown): result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-2-16.js",
       "reason": "[sloppy] zjs: throw: (unknown): result !== true\nzjs: throw: (unknown): result !== true"
     },
     {
@@ -3381,10 +3301,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): obj.property Expected SameValue(\u00abundefined\u00bb, \u00ab\"RegExp\"\u00bb) to be true\nzjs: throw: (unknown): obj.pr"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-149-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.property Expected SameValue(\u00abundefined\u00bb, \u00ab\"arguments\"\u00bb) to be true\nzjs: throw: (unknown): obj"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-165-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): afterWrite Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): afterWrite Expec"
     },
@@ -3398,10 +3314,6 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-172-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): afterWrite Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): afterWrite Expec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-175-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): afterWrite Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): afterWrite Expec"
     },
     {
@@ -3421,10 +3333,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): obj.property Expected SameValue(\u00abundefined\u00bb, \u00ab\"regExpGetProperty\"\u00bb) to be true\nzjs: throw: (unkno"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-228-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): obj.property Expected SameValue(\u00abundefined\u00bb, \u00ab\"argumentGetProperty\"\u00bb) to be true\nzjs: throw: (unk"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-248-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): data Expected SameValue(\u00ab\"data\"\u00bb, \u00ab\"overrideData\"\u00bb) to be true\nzjs: throw: (unknown): data Expect"
     },
@@ -3438,10 +3346,6 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-255-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): data Expected SameValue(\u00ab\"data\"\u00bb, \u00ab\"overrideData\"\u00bb) to be true\nzjs: throw: (unknown): data Expect"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-258-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): data Expected SameValue(\u00ab\"data\"\u00bb, \u00ab\"overrideData\"\u00bb) to be true\nzjs: throw: (unknown): data Expect"
     },
     {
@@ -3461,10 +3365,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): accessed !== true\nzjs: throw: (unknown): accessed !== true"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-43-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): accessed !== true\nzjs: throw: (unknown): accessed !== true"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-86-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): afterDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): afterDeleted E"
     },
@@ -3478,10 +3378,6 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-93-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): afterDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): afterDeleted E"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-96-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): afterDeleted Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): afterDeleted E"
     },
     {
@@ -4241,28 +4137,8 @@
       "reason": "zjs: throw: TypeError: toString is not a function\nzjs: throw: TypeError: toString is not a function"
     },
     {
-      "path": "test/built-ins/Object/prototype/toString/Object.prototype.toString.call-arguments.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(function() { return arguments; }()) returns [object Arguments] Exp"
-    },
-    {
       "path": "test/built-ins/Object/prototype/toString/Object.prototype.toString.call-bigint.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object BigInt]\"\u00bb) to be true\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/Object/prototype/toString/Object.prototype.toString.call-boolean.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(Object(true)) returns [object Boolean] Expected SameValue(\u00ab\"[objec"
-    },
-    {
-      "path": "test/built-ins/Object/prototype/toString/Object.prototype.toString.call-error.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(Error()) returns [object Error] Expected SameValue(\u00ab\"[object Objec"
-    },
-    {
-      "path": "test/built-ins/Object/prototype/toString/Object.prototype.toString.call-number.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(Object(9)) returns [object Number] Expected SameValue(\u00ab\"[object Ob"
-    },
-    {
-      "path": "test/built-ins/Object/prototype/toString/Object.prototype.toString.call-string.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Object.prototype.toString.call(Object(\"\")) returns [object String] Expected SameValue(\u00ab\"[object O"
     },
     {
       "path": "test/built-ins/Object/prototype/toString/proxy-array.js",
@@ -4293,10 +4169,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Map]\"\u00bb, \u00ab\"[object Object]\"\u00bb) to be true\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/built-ins/Object/prototype/toString/symbol-tag-non-str-bigint.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot redefine property\nzjs: throw: TypeError: Cannot redefine property"
-    },
-    {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-non-str-builtin.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Math]\"\u00bb, \u00ab\"[object Object]\"\u00bb) to be true\nzjs: throw: (unknown): Expe"
     },
@@ -4307,10 +4179,6 @@
     {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-override-bigint.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Object]\"\u00bb, \u00ab\"[object test262]\"\u00bb) to be true\nzjs: throw: (unknown): E"
-    },
-    {
-      "path": "test/built-ins/Object/prototype/toString/symbol-tag-override-primitives.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"[object Boolean]\"\u00bb, \u00ab\"[object test262]\"\u00bb) to be true\nzjs: throw: (unknown): "
     },
     {
       "path": "test/built-ins/Object/prototype/toString/symbol-tag-set-builtin.js",
@@ -5441,10 +5309,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): #2: Function.prototype.toString=function(){return \"SHIFTED\"}; __str = new String(function(){}); _"
     },
     {
-      "path": "test/built-ins/String/S15.5.2.1_A3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1: var __str__obj = new String(\"seamaid\"); __str__obj.toString = Object.prototype.toString; __st"
-    },
-    {
       "path": "test/built-ins/String/S15.5.3_A1.js",
       "reason": "[sloppy] zjs: throw: (unknown): String has length property whose value is 1. Actual: String.length===0\nzjs: throw: (unknown): Str"
     },
@@ -5549,14 +5413,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): #1: String.hasOwnProperty('prototype') return true. Actual: false\nzjs: throw: (unknown): #1: Stri"
     },
     {
-      "path": "test/built-ins/String/prototype/S15.5.4_A1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1: delete String.prototype.toString; String.prototype.toString() === \"[object \"+\"String\"+\"]\". Ac"
-    },
-    {
-      "path": "test/built-ins/String/prototype/S15.5.4_A3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #2: delete String.prototype.toString; String.prototype.toString() == \"[object \"+\"String\"+\"]\". Act"
-    },
-    {
       "path": "test/built-ins/String/prototype/Symbol.iterator/this-val-non-obj-coercible.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -5583,10 +5439,6 @@
     {
       "path": "test/built-ins/String/prototype/codePointAt/return-utf16-decode.js",
       "reason": "[sloppy] zjs: throw: (unknown): U+10000 Expected SameValue(\u00ab237\u00bb, \u00ab65536\u00bb) to be true\nzjs: throw: (unknown): U+10000 Expected Sam"
-    },
-    {
-      "path": "test/built-ins/String/prototype/constructor/S15.5.4.1_A1_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #3: __constr = String.prototype.constructor; __instance = new __constr(\"choosing one\"); delete St"
     },
     {
       "path": "test/built-ins/String/prototype/endsWith/return-abrupt-from-searchstring-regexp-test.js",
@@ -6491,10 +6343,6 @@
     {
       "path": "test/built-ins/Symbol/prototype/Symbol.toPrimitive/this-val-symbol.js",
       "reason": "[sloppy] zjs: throw: TypeError: property is not a function\nzjs: throw: TypeError: property is not a function"
-    },
-    {
-      "path": "test/built-ins/Symbol/prototype/Symbol.toStringTag.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Symbol\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue("
     },
     {
       "path": "test/built-ins/Symbol/prototype/description/descriptor.js",
