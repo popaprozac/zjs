@@ -141,6 +141,15 @@ struct Compiler {
     // scope resolution. Zero everywhere else, so non-with code is
     // byte-identical.
     with_depth:    u32;
+    // The Call AST node a ReturnStmt is about to tail-rewrite (#394).
+    // The tail-call optimizer matches `last emitted op == Op::Invoke`
+    // and flips it to TailInvoke IN PLACE — a fused InvokeGlobal there
+    // would silently lose TCO (stack overflow on deep tail recursion).
+    // ReturnStmt points this at the candidate Call node before
+    // compiling it; compile_call skips fusion when `node` matches.
+    // Nested calls inside the return expression compare unequal and
+    // still fuse.
+    tail_call_node: AstNode*;
     // `has_outer_refs` is set on the inner compiler whenever its body
     // references a name resolved in a parent scope. Drives whether
     // the outer needs to wrap the resulting function in MakeClosure.
@@ -322,6 +331,7 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.last_expr_reg = -1;
     c.active_try_count = 0;
     c.with_depth = 0;
+    c.tail_call_node = NULL;
     c.arguments_reg = -1;
     c.this_reg = -1;
     c.cached_outer_env_reg = -1;
@@ -1071,6 +1081,95 @@ fn loop_rotation_enabled() -> bool {
         #endif
     }
     return v;
+}
+
+// --- InvokeGlobal fusion (#394) ---------------------------------------
+//
+// A plain call whose callee is a global (`fib(n - 1)`, `f(x)`) compiled
+// to LoadGlobal + Invoke — the callee re-resolved from the globals
+// table on EVERY call, 18.2% of all dispatches in call-heavy code.
+// compile_call pops the just-emitted callee LoadGlobal and emits the
+// 2-slot Op::InvokeGlobal (+ u16-slot carrier) after the args instead,
+// folding the resolve into the call dispatch.
+//
+// Moving the load AFTER argument evaluation reorders it against the
+// spec (EvaluateCall: GetValue(ref) precedes ArgumentListEvaluation),
+// so fusion is gated on every argument being side-effect-free — the
+// reorder is then unobservable. fusion_arg_is_pure is a strict
+// whitelist. Residual (accepted, documented): an OBJECT value flowing
+// through a pure-shaped arg (`f(o - 1)` where o's valueOf mutates f's
+// binding, or a TDZ-arg throw racing a globalThis-accessor callee)
+// still observes the deferred load. No known test262 coverage; the
+// zero-regression gauntlet is the arbiter.
+
+// Compile-time gate mirroring loop_rotation_enabled(): OFF in ZJS_JIT
+// builds — the JIT's desc mapper doesn't map InvokeGlobal, and the
+// stencil set keys off plain Invoke.
+fn invoke_fusion_enabled() -> bool {
+    let v: bool = true;
+    raw {
+        #ifdef ZJS_JIT
+        v = false;
+        #endif
+    }
+    return v;
+}
+
+// Whitelist: literals, `this`, idents that resolve to a local /
+// captured / outer-env binding (env slots are data properties — no
+// user code; a GLOBAL ident arg is excluded because its ObjectRecord
+// fallback can invoke a globalThis accessor), and Paren / sign-not
+// Unary / arithmetic-comparison-bitwise Binary over pure operands.
+// Everything else — calls, member reads (getters), assignments,
+// updates, templates, spreads — is impure. Unknown kinds default to
+// impure.
+fn fusion_arg_is_pure(c: Compiler*, node: AstNode*) -> bool {
+    if node == NULL { return false; }
+    let k = node.kind;
+    if k == NodeKind::NumberExpr || k == NodeKind::StringExpr
+    || k == NodeKind::BigIntExpr || k == NodeKind::BoolExpr
+    || k == NodeKind::NullExpr   || k == NodeKind::UndefinedExpr
+    || k == NodeKind::ThisExpr {
+        return true;
+    }
+    if k == NodeKind::IdentExpr {
+        // Inside `with`, ident resolution is dynamic (with-object
+        // lookups can hit user code via Proxy/getter) — but fusion is
+        // unreachable there anyway: the callee compiles through
+        // compile_ident_read_with, never a bare terminal LoadGlobal.
+        if c.with_depth > 0 { return false; }
+        let name = c.source + node.start;
+        let name_len = node.end - node.start;
+        if find_local_index(c, name, name_len) >= 0 { return true; }
+        if outer_capture_depth(c, name, name_len) > 0 { return true; }
+        return false;
+    }
+    if k == NodeKind::Paren { return fusion_arg_is_pure(c, node.left); }
+    if k == NodeKind::Unary {
+        if node.op == TokenKind::Minus || node.op == TokenKind::Plus
+        || node.op == TokenKind::Bang  || node.op == TokenKind::Tilde {
+            return fusion_arg_is_pure(c, node.left);
+        }
+        return false;
+    }
+    if k == NodeKind::Binary {
+        // binary_op maps arithmetic/comparison/bitwise tokens only;
+        // `in` / `instanceof` (which can run @@hasInstance / Proxy
+        // traps) return the Op::Halt sentinel and are rejected.
+        if binary_op(node.op) == Op::Halt { return false; }
+        return fusion_arg_is_pure(c, node.left)
+            && fusion_arg_is_pure(c, node.right);
+    }
+    return false;
+}
+
+fn call_args_fusion_pure(c: Compiler*, node: AstNode*, arg_count: u8) -> bool {
+    let i: u8 = 0;
+    while i < arg_count {
+        if !fusion_arg_is_pure(c, node.children[i]) { return false; }
+        i = i + 1;
+    }
+    return true;
 }
 
 // Pure predicate: would the rotated bottom test fuse? Mirrors the
@@ -5458,6 +5557,29 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
     c.preferred_dst = (i32)base;
     let r = compile_expr(c, node.left);
     c.preferred_dst = -1;
+
+    // #394 InvokeGlobal fusion. The callee just compiled to a single
+    // terminal `LoadGlobal base, slot` — exactly the global-function
+    // call shape. Pop it (pure append buffer, nothing can reference
+    // the slot yet; a loop-head label at this index now points at the
+    // first arg op, which is still the start of the call) and remember
+    // the slot; the fused pair is emitted after the args below. Gated
+    // on pure args (evaluation-order, see fusion_arg_is_pure) and on
+    // NOT being the ReturnStmt tail-rewrite candidate (the TCO
+    // rewriter matches `last op == Op::Invoke` in place — fusing there
+    // would silently drop TCO).
+    let fuse_slot: i32 = -1;
+    if invoke_fusion_enabled()
+       && node != c.tail_call_node
+       && r == base
+       && c.code_count > 0
+       && c.code[c.code_count - 1].op == Op::LoadGlobal
+       && c.code[c.code_count - 1].a == base
+       && call_args_fusion_pure(c, node, arg_count) {
+        fuse_slot = (i32)inst_bc_u16(c.code[c.code_count - 1]);
+        c.code_count = c.code_count - 1;
+    }
+
     if r != base {
         emit(c, make_inst_ab(Op::Mov, base, r));
         if r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
@@ -5476,7 +5598,15 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
         j = j + 1;
     }
 
-    emit(c, make_inst_abc(Op::Invoke, base, base, arg_count));
+    if fuse_slot >= 0 {
+        emit(c, make_inst_abc(Op::InvokeGlobal, base, base, arg_count));
+        // Carrier: u16 global slot in an Op::Jmp placeholder (the
+        // JmpIf* convention). Never dispatched — the handler
+        // pre-increments ip past it.
+        emit(c, make_inst_u16(Op::Jmp, (u16)fuse_slot));
+    } else {
+        emit(c, make_inst_abc(Op::Invoke, base, base, arg_count));
+    }
 
     c.next_reg = base + 1;
     if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
@@ -7328,10 +7458,22 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // Mov→Return = 2.1% of dispatches on richards.)
         let r: u8 = 0;
         if node.left != NULL {
+            // #394: if this return is a tail-call rewrite candidate
+            // (the gate below), flag the Call node so compile_call
+            // skips InvokeGlobal fusion for it — the TCO rewriter
+            // matches `last op == Op::Invoke` in place, and a fused
+            // call there would silently lose TCO. Nested calls inside
+            // the return expression compare unequal and still fuse.
+            if c.is_function && c.active_finally_count == 0
+               && c.active_try_count == 0
+               && node.left.kind == NodeKind::Call {
+                c.tail_call_node = node.left;
+            }
             let saved_borrow = c.borrow_local_ok;
             c.borrow_local_ok = true;
             r = compile_expr(c, node.left);
             c.borrow_local_ok = saved_borrow;
+            c.tail_call_node = NULL;
         } else {
             r = alloc_reg(c);
             emit(c, make_inst_a(Op::LoadUndefined, r));

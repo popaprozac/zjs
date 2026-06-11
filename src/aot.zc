@@ -27,7 +27,13 @@ def ZJS_AOT_MAGIC3: u8 = 'b' as u8;
 // dispatch the offset-carrier slot as an unconditional backward Jmp — an
 // infinite loop with zero diagnostics. The bump turns that into a clean
 // version-mismatch load error.
-def ZJS_AOT_VERSION: u32 = 7;
+// v8: InvokeGlobal fusion (#394) — same hazard class as v7 (a v7 reader
+// would skip the unknown InvokeGlobal and dispatch its slot-carrier as a
+// real Jmp). The carrier's u16 is a GLOBAL SLOT, so the loader's remap
+// pass must rewrite it positionally (see the prev-op tracking in
+// aot_read_function) — slot-in-carrier is invisible to the op-keyed
+// aot_inst_is_global_ref walk.
+def ZJS_AOT_VERSION: u32 = 8;
 
 def ZJS_AOT_TAG_INT32:    u8 = 0;
 def ZJS_AOT_TAG_DOUBLE:   u8 = 1;
@@ -407,6 +413,16 @@ fn aot_max_global_slot(f: Function*) -> i32 {
         if aot_inst_is_global_ref(inst.op) {
             let s: i32 = (i32)inst_bc_u16(inst);
             if s > m { m = s; }
+        } else if inst.op == Op::InvokeGlobal {
+            // #394: the fused call's global slot lives in the CARRIER
+            // at i+1 (an Op::Jmp placeholder — invisible to the
+            // op-keyed check above). Count it, then skip the carrier
+            // so its bytes aren't misread as a real instruction.
+            if i + 1 < (u32)f.code_len {
+                let cs: i32 = (i32)inst_bc_u16(f.code[i + 1]);
+                if cs > m { m = cs; }
+            }
+            i = i + 1;
         }
         i = i + 1;
     }
@@ -618,6 +634,10 @@ fn aot_read_function(r: AotReader*, ctx: ZjsContext*) -> Function* {
         }
         f.code = alloc_n<Inst>((usize)code_len);
         let ci: u32 = 0;
+        // #394: an InvokeGlobal's slot lives in the NEXT instruction
+        // (the Op::Jmp carrier), so the op-keyed remap below misses it.
+        // Track "previous op" and remap the carrier positionally.
+        let prev_invoke_global: bool = false;
         while ci < code_len {
             let op_b = aot_r_u8(r);
             let a_b  = aot_r_u8(r);
@@ -633,7 +653,8 @@ fn aot_read_function(r: AotReader*, ctx: ZjsContext*) -> Function* {
                 inst.c  = c_b;
             }
             // Remap global-op slot operands to the current context.
-            if remap != NULL && aot_inst_is_global_ref(inst.op) {
+            if remap != NULL
+               && (aot_inst_is_global_ref(inst.op) || prev_invoke_global) {
                 let orig: u32 = (u32)b_b | ((u32)c_b << 8);
                 if orig < globals_count {
                     let mapped = remap[orig];
@@ -643,6 +664,7 @@ fn aot_read_function(r: AotReader*, ctx: ZjsContext*) -> Function* {
                     }
                 }
             }
+            prev_invoke_global = inst.op == Op::InvokeGlobal;
             f.code[ci] = inst;
             ci = ci + 1;
         }
