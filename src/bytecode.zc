@@ -502,6 +502,15 @@ enum Op {
     // positional; ZJS_AOT_VERSION bumped to 8 — an old binary would
     // dispatch the carrier as a real Jmp).
     InvokeGlobal,     // a=dst, b=base, c=argc ; next.bc = u16 global slot
+
+    // Private-element brand check (#400). Emitted before every private
+    // member access (read / write / call): regs[a] must carry the
+    // class's hidden own brand property (installed by NewInvoke /
+    // SuperCall at construction; statics handled separately) or the
+    // access throws TypeError per §13.3.7.1 PrivateElementFind. bc =
+    // const-pool index of the brand atom. 1-slot (no carrier).
+    // Appended at the END (AOT positional; ZJS_AOT_VERSION -> 9).
+    PrivateCheck,     // a=obj_reg ; bc = u16 const idx of brand atom
 }
 
 struct Inst {
@@ -623,6 +632,14 @@ struct Function {
     // with a default initializer or rest binding (or = param_count if
     // none). Read by Function.length / host-func length getters.
     expected_arg_count: u32;
+
+    // #400: the class's instance-brand atom (__zjs_brand_<classId>),
+    // set on the CONSTRUCTOR Function when its class declares any
+    // non-static private element. NewInvoke installs it as a hidden
+    // own prop on fresh instances; SuperCall installs the parent's.
+    // NULL for everything else. Interned atom — rooted by the atom
+    // table, no extra GC mark needed.
+    brand_atom:     ZjsString*;
 
     // [[Realm]] — the realm this function was compiled in (its intrinsics
     // + globals). Stamped = ctx.realm at compile time. The call boundary

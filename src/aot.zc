@@ -33,7 +33,10 @@ def ZJS_AOT_MAGIC3: u8 = 'b' as u8;
 // pass must rewrite it positionally (see the prev-op tracking in
 // aot_read_function) — slot-in-carrier is invisible to the op-keyed
 // aot_inst_is_global_ref walk.
-def ZJS_AOT_VERSION: u32 = 8;
+// v9: #400 added Op::PrivateCheck (1-slot) at the enum end, plus the
+// Function brand_atom field (serialized as a name; see the function
+// writer/reader). Same mismatch hazard class as v7/v8.
+def ZJS_AOT_VERSION: u32 = 9;
 
 def ZJS_AOT_TAG_INT32:    u8 = 0;
 def ZJS_AOT_TAG_DOUBLE:   u8 = 1;
@@ -535,6 +538,14 @@ fn aot_write_function(w: AotWriter*, ctx: ZjsContext*, f: Function*) -> bool {
     aot_w_u32(w, f.expected_arg_count);
 
     aot_w_u16(w, aot_pack_flags(f));
+    // #400: instance-brand atom (v9) — length-prefixed name bytes,
+    // 0 = none. NewInvoke/SuperCall install it at construction.
+    if f.brand_atom != NULL {
+        aot_w_u32(w, f.brand_atom.length);
+        aot_w_bytes(w, (u8*)f.brand_atom.data, (usize)f.brand_atom.length);
+    } else {
+        aot_w_u32(w, 0);
+    }
     aot_w_u8(w, f.env_reg);
     // this_reg is the slot the interpreter seeds with ctx.host_this on
     // first entry to the frame (cheaper than emitting Op::LoadThis per
@@ -720,6 +731,16 @@ fn aot_read_function(r: AotReader*, ctx: ZjsContext*) -> Function* {
     f.expected_arg_count = aot_r_u32(r);
 
     aot_unpack_flags(f, aot_r_u16(r));
+    // #400 (v9): instance-brand atom.
+    let brand_len = aot_r_u32(r);
+    if r.err { function_free(f); return NULL; }
+    if brand_len > 0 {
+        if !aot_r_ensure(r, (usize)brand_len) { function_free(f); return NULL; }
+        let bptr: char* = NULL;
+        raw { bptr = (char*)&(r->buf[r->pos]); }
+        f.brand_atom = ctx_intern_atom(ctx, bptr, brand_len);
+        r.pos = r.pos + (usize)brand_len;
+    }
     f.env_reg = aot_r_u8(r);
     f.this_reg = (i32)(u32)aot_r_u32(r);
 

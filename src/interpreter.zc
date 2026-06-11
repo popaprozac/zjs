@@ -54,7 +54,7 @@ raw {
         "LoadNewTarget", "NewInvoke", "Typeof", "SetProto", "SuperCall", "DefineMethod",
         "DefineMethodComputed", "SetParentCtor", "SetFunctionName", "InitObjData", "SpreadSuperCall", "JmpIfLt",
         "JmpIfLe", "JmpIfGt", "JmpIfGe", "JmpIfLtImm", "JmpIfLeImm", "JmpIfGtImm",
-        "JmpIfGeImm", "InvokeGlobal",
+        "JmpIfGeImm", "InvokeGlobal", "PrivateCheck",
         NULL,
     };
     static const char *zjs_op_name_lookup(int op) {
@@ -208,6 +208,24 @@ fn read_from_props_bag(ctx: ZjsContext*, props: ZjsObject*, key: ZjsValue, recei
         return zjs_undefined();
     }
     return v;
+}
+
+// #400: install the constructor's instance brand (hidden own prop) on
+// a freshly constructed object. Resolves Function / Closure callees;
+// no-op when the class declares no private elements (brand_atom NULL).
+fn install_brand_from_callee(ctx: ZjsContext*, callee: ZjsValue, obj_v: ZjsValue) -> void {
+    let bf: Function* = NULL;
+    if zjs_is_function(callee) != 0 {
+        let fp = zjs_cell_as_ptr(callee);
+        raw { bf = (Function*)fp; }
+    } else if zjs_is_closure(callee) != 0 {
+        let cl = zjs_as_closure(callee);
+        let fp2 = cl.function;
+        raw { bf = (Function*)fp2; }
+    }
+    if bf == NULL || bf.brand_atom == NULL { return; }
+    if zjs_is_object(obj_v) == 0 { return; }
+    object_define_property_slot(ctx, zjs_as_object(obj_v), bf.brand_atom, zjs_bool(1), 0);
 }
 
 // #399: [[Get]] on a real array whose dense slot is a HOLE (or out of
@@ -6154,6 +6172,10 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let dst = inst.a;
             let base = inst.b;
             let parent = regs[base];
+            // #400: the parent class's instance brand installs on `this`
+            // when super() runs — BEFORE the parent ctor body, so its
+            // private accesses pass their brand checks.
+            install_brand_from_callee(ctx, ctor_skip_default_forwarders(parent), ctx.host_this);
             // Spec: a derived-class constructor must call super exactly
             // once. The second call throws ReferenceError ("Super
             // constructor may only be called once").
@@ -7369,6 +7391,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let new_obj_v = ctx_new_object(ctx);
             let new_obj = zjs_as_object(new_obj_v);
             new_obj.proto = proto_obj;
+            install_brand_from_callee(ctx, callee, new_obj_v);   // #400
             let saved_this = ctx.host_this;
             let saved_nt = ctx.new_target_active;
             let saved_ntv = ctx.new_target_value;
@@ -7386,6 +7409,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 raw { target = (Function*)fp; }
                 if target.is_default_derived_ctor {
                     let parent = ctor_skip_default_forwarders(target.parent_ctor);
+                    install_brand_from_callee(ctx, parent, ctx.host_this);   // #400
                     let r: ZjsValue = zjs_undefined();
                     raw { r = zjs_call_value_with_this(ctx, parent, ctx->host_this, argv_ptr, argc); }
                     if ctx.pending_throw_active {
@@ -7412,6 +7436,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     // the empty synth body (which would fail the
                     // super-called gate at Op::Return).
                     let parent = ctor_skip_default_forwarders(target2.parent_ctor);
+                    install_brand_from_callee(ctx, parent, ctx.host_this);   // #400
                     let saved_cl = ctx.current_closure;
                     ctx.current_closure = cl;
                     let r: ZjsValue = zjs_undefined();
@@ -7615,6 +7640,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
             } else {
                 new_obj.proto = proto_obj;
             }
+            install_brand_from_callee(ctx, callee, new_obj_v);   // #400
 
             let saved_this = ctx.host_this;
             let saved_nt = ctx.new_target_active;
@@ -7634,6 +7660,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 // interpreting an empty body.
                 if target.is_default_derived_ctor {
                     let parent = ctor_skip_default_forwarders(target.parent_ctor);
+                    install_brand_from_callee(ctx, parent, ctx.host_this);   // #400
                     let argv_ptr: ZjsValue* = NULL;
                     raw { argv_ptr = &regs[base + 1]; }
                     let r: ZjsValue = zjs_undefined();
@@ -7672,6 +7699,7 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 // super-called gate at Op::Return.
                 if target2.is_default_derived_ctor {
                     let parent = ctor_skip_default_forwarders(target2.parent_ctor);
+                    install_brand_from_callee(ctx, parent, ctx.host_this);   // #400
                     let saved_cl = ctx.current_closure;
                     ctx.current_closure = cl;
                     let r: ZjsValue = zjs_undefined();
@@ -8190,6 +8218,26 @@ fn interpret_inner_full(ctx: ZjsContext*,
             } else {
                 regs[inst.a] = ctx_new_array(ctx, 0);
             }
+        } else if op == Op::PrivateCheck {
+            // #400: §13.3.7.1 PrivateElementFind — the receiver must
+            // carry the class's hidden own brand (installed by
+            // NewInvoke / SuperCall at construction). Foreign objects
+            // throw TypeError BEFORE the mangled-name access runs.
+            let pc_obj = regs[inst.a];
+            let pc_ci = inst_bc_u16(inst);
+            let pc_ok: bool = false;
+            if (u32)pc_ci < f.const_count {
+                let pc_atom_v = f.constants[pc_ci];
+                if zjs_is_string(pc_atom_v) != 0 {
+                    pc_ok = value_has_own_atom(ctx, pc_obj, zjs_as_string(pc_atom_v));
+                }
+            }
+            if !pc_ok {
+                let pc_err = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"Cannot access private member on an object whose class did not declare it", 73);
+                throwing = true; thrown = pc_err; exit_reason = 3;
+                ctx.frames[cur_idx].ip = ip; break;
+            }
         } else if op == Op::IterPrepare {
             regs[inst.a] = iter_prepare(ctx, regs[inst.b], (u32)inst.c);
             if ctx.pending_throw_active {
@@ -8664,6 +8712,7 @@ fn zjs_construct_value_nt(ctx: ZjsContext*, callee: ZjsValue, args: ZjsValue*, a
     } else {
         new_obj.proto = proto_obj;
     }
+    install_brand_from_callee(ctx, callee, new_obj_v);   // #400
 
     let saved_this = ctx.host_this;
     let saved_nt = ctx.new_target_active;

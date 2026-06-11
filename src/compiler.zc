@@ -2694,10 +2694,12 @@ fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
     } else {
         name_atom = ctx_intern_atom(c.ctx, c.source + node.name_start, node.name_length);
     }
+    let was_private_rd = is_private_name(c, node.name_start, node.name_length);
     let ic = alloc_ic_slot(c, name_atom);
     if ic > 255 {
         let obj_r = compile_expr(c, node.left);
         c.borrow_local_ok = saved_borrow;
+        if was_private_rd { emit_private_check(c, obj_r); }   // #400
         // Use the already-interned (possibly mangled) atom so the
         // fallback honors private-name mangling too.
         let key_r = emit_load_atom(c, name_atom);
@@ -2713,6 +2715,7 @@ fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
     let obj_r = compile_expr(c, node.left);
     c.borrow_local_ok = saved_borrow;
     c.preferred_dst = saved_pd;
+    if was_private_rd { emit_private_check(c, obj_r); }   // #400
     let dst = alloc_dst(c);
     emit(c, make_inst_abc(Op::LoadProp, dst, obj_r, (u8)ic));
     release_reg(c, obj_r);
@@ -2904,6 +2907,7 @@ fn compile_property_target(c: Compiler*, target: AstNode*) -> PropTarget {
     let key_r: u8 = 0;
     if target.kind == NodeKind::Member {
         if is_private_name(c, target.name_start, target.name_length) {
+            emit_private_check(c, obj_r);   // #400
             let atom = mangle_private_name(c, target.name_start, target.name_length);
             if atom == NULL {
                 // SyntaxError armed. Return dummy regs; outer error gate
@@ -2950,6 +2954,9 @@ fn compile_assignment_to_property(c: Compiler*, target: AstNode*, op_tok: TokenK
                                   && target.left.kind == NodeKind::ThisExpr;
             if rhs_pure || obj_is_this { c.borrow_local_ok = true; }
             let obj_r = compile_expr(c, target.left);
+            if is_private_name(c, target.name_start, target.name_length) {
+                emit_private_check(c, obj_r);   // #400
+            }
             if lhs_pure { c.borrow_local_ok = true; }
             else        { c.borrow_local_ok = saved_borrow; }
             let v = compile_expr(c, rhs);
@@ -4671,6 +4678,23 @@ fn mangle_private_name(c: Compiler*, name_start: u32, name_length: u32) -> ZjsSt
     return ctx_intern_atom(c.ctx, bp, (u32)n);
 }
 
+// #400: emit the private-element brand check (§13.3.7.1
+// PrivateElementFind). regs[obj_reg] must carry the class's hidden own
+// brand (__zjs_brand_<classId>, installed at construction) or the
+// access throws TypeError. Emitted before every private member read /
+// write / call. No-op outside class bodies (the mangler already armed
+// the SyntaxError in that case).
+fn emit_private_check(c: Compiler*, obj_reg: u8) -> void {
+    if c.enclosing_class_id < 0 { return; }
+    let buf: char[40];
+    let bp: char* = NULL; raw { bp = &buf[0]; }
+    let n: int = 0;
+    raw { n = snprintf(bp, 40, "__zjs_brand_%u", (unsigned)c->enclosing_class_id); }
+    let atom = ctx_intern_atom(c.ctx, bp, (u32)n);
+    let idx = add_const(c, zjs_cell_from_ptr((void*)atom));
+    emit(c, make_inst_a_u16(Op::PrivateCheck, obj_reg, idx));
+}
+
 fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     // Find the constructor MethodDef among the children. The parser
     // may have synthesized one (num == 2.0) when fields exist without
@@ -4808,6 +4832,24 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
         emit(c, make_inst_abc(Op::MakeClosure, cls_reg, ctor_reg, env_reg));
         release_reg(c, ctor_reg);
         ctor_reg = cls_reg;
+    }
+
+    // #400: when the class declares ANY private element, stamp the
+    // constructor Function with the class brand atom — NewInvoke /
+    // SuperCall install it on instances; the compile-time install on
+    // ctor_fn.props covers static-private receivers (the ctor itself).
+    if pname_count > 0 {
+        let bbuf: char[40];
+        let bbp: char* = NULL; raw { bbp = &bbuf[0]; }
+        let bn: int = 0;
+        raw { bn = snprintf(bbp, 40, "__zjs_brand_%u", (unsigned)c->enclosing_class_id); }
+        let brand = ctx_intern_atom(c.ctx, bbp, (u32)bn);
+        ctor_fn.brand_atom = brand;
+        if ctor_fn.props == NULL {
+            let bpv = ctx_new_object(c.ctx);
+            ctor_fn.props = zjs_as_object(bpv);
+        }
+        object_define_property_slot(c.ctx, ctor_fn.props, brand, zjs_bool(1), 0);
     }
 
     // Load `<ctor>.prototype` into a register once for all methods.
@@ -5603,6 +5645,7 @@ fn compile_call_inner(c: Compiler*, node: AstNode*, ret_hint: i32) -> u8 {
             if callee.kind == NodeKind::Member {
                 let name_atom: ZjsString* = NULL;
                 if is_private_name(c, callee.name_start, callee.name_length) {
+                    emit_private_check(c, base + 1);   // #400: receiver brand
                     name_atom = mangle_private_name(c, callee.name_start, callee.name_length);
                     if name_atom == NULL { return 0; }
                 } else {
