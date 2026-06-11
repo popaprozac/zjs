@@ -8770,8 +8770,11 @@ fn host_array_pop(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if !require_array_coercible_this(ctx) { return zjs_undefined(); }
     let this_val = ctx.host_this;
-    if argc == 0 { return zjs_int32(-1); }
-    let needle = args[0];
+    // #399: absent searchElement is `undefined`, NOT an early -1 —
+    // `[undefined].indexOf()` must find index 0 (§23.1.3.17 takes the
+    // missing arg as undefined and runs the normal HasProperty+strict-eq
+    // ladder; holes still never match).
+    let needle: ZjsValue = if argc >= 1 { args[0] } else { zjs_undefined() };
 
     // ECMA-262 §22.1.3.14 step 2: `O = ToObject(this)`. For primitive
     // receivers (`indexOf.call("abc", "b")`, `.call(true, target)`,
@@ -8820,14 +8823,20 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
                 slot = v_pg;
                 present = true;
             } else {
-                // Defensive: sparse arrays from defineProperty can have
-                // length > cap; treat those slots as absent.
                 if i < arr.cap {
                     let raw_v = arr.elements[i];
                     if zjs_is_deleted(raw_v) == 0 {
                         slot = raw_v;
                         present = true;
                     }
+                }
+                // #399 inc2: holes (and length>cap slots) fall through
+                // to the inherited-index check — Array.prototype may
+                // carry the index (HasProperty semantics).
+                if !present && value_has_index(ctx, this_val, i) {
+                    slot = property_get(ctx, this_val, zjs_int32((i32)i));
+                    if ctx.pending_throw_active { return zjs_int32(-1); }
+                    present = true;
                 }
             }
             if present {
@@ -8850,8 +8859,12 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     }
     let len_d = zjs_to_double(lkv);
     raw {
-        if (!isfinite(len_d) || len_d <= 0.0) len_d = 0.0;
-        else len_d = floor(len_d);   // ToLength truncates to integer
+        // ToLength (§7.1.20): NaN/negative -> 0, +Infinity clamps to
+        // 2^53-1 (NOT 0 — `indexOf.call({length: Infinity}, ...)` with
+        // a fromIndex near the top must still search), else truncate.
+        if (isnan(len_d) || len_d <= 0.0) len_d = 0.0;
+        else if (len_d > 9007199254740991.0) len_d = 9007199254740991.0;
+        else len_d = floor(len_d);
     }
     let from_d: f64 = 0.0;
     if argc >= 2 {
@@ -8861,7 +8874,7 @@ fn host_array_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
             if ctx.pending_throw_active { return zjs_int32(-1); }
         }
         from_d = zjs_to_double(pos);
-        raw { if (isnan(from_d)) from_d = 0; }
+        raw { if (isnan(from_d)) from_d = 0; else from_d = trunc(from_d); }
         if from_d < 0.0 {
             from_d = len_d + from_d;
             if from_d < 0.0 { from_d = 0.0; }
@@ -10952,7 +10965,10 @@ fn array_method_get(ctx: ZjsContext*, this_val: ZjsValue, i: u32, out: ZjsValue*
             let v = arr.elements[i];
             if zjs_is_deleted(v) == 0 { out[0] = v; return true; }
         }
-        return false;
+        // #399 inc2: a HOLE is not the end of the story — HasProperty
+        // walks the proto chain, and test262 plants inherited (often
+        // accessor) indices on Array.prototype. Fall through to the
+        // generic path; the dense non-hole case above is unchanged.
     }
     if value_has_index(ctx, this_val, i) {
         out[0] = property_get(ctx, this_val, zjs_int32((i32)i));
@@ -11248,28 +11264,100 @@ fn host_array_includes(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     return zjs_bool(0);
 }
 
+// §23.1.3.20 Array.prototype.lastIndexOf — full spec ladder (#399 inc2):
+// f64 lengths (ToLength clamps at 2^53-1; lengths above u32 must work —
+// the suite probes index 4294967295 in a {length: 2^32} array-like),
+// ToIntegerOrInfinity fromIndex (string/object coercion, ±Infinity),
+// absent searchElement = undefined, HasProperty-gated strict equality.
 fn host_array_last_index_of(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val: ZjsValue = zjs_undefined();
-    let len: u32 = 0;
-    if !array_method_prelude(ctx, args, argc, false, &this_val, &len) { return zjs_undefined(); }
-    if argc == 0 || len == 0 { return zjs_int32(-1); }
-    let target = args[0];
-    let from: i32 = (i32)len - 1;
-    if argc >= 2 {
-        let raw_from: i32 = if zjs_is_int32(args[1]) != 0 { zjs_as_int32(args[1]) }
-                            else if zjs_is_double(args[1]) != 0 { (i32)zjs_as_double(args[1]) }
-                            else { 0 };
-        if raw_from < 0 { from = (i32)len + raw_from; }
-        else if raw_from < (i32)len { from = raw_from; }
-    }
-    let i: i32 = from;
-    while i >= 0 {
-        let v: ZjsValue = zjs_undefined();
-        if array_method_get(ctx, this_val, (u32)i, &v) {
+    let len_u32: u32 = 0;
+    if !array_method_prelude(ctx, args, argc, false, &this_val, &len_u32) { return zjs_undefined(); }
+    // Re-read length as f64 through the same observable Get (the
+    // prelude already fired the getter; for the >u32 cases re-deriving
+    // from the same property is unobservable for data properties and
+    // matches getter-count expectations because we only re-read when
+    // the u32 read saturated).
+    let len_d: f64 = (f64)len_u32;
+    if len_u32 == 4294967295 {
+        let len_atom = ctx_intern_atom(ctx, (char*)"length", 6);
+        let lv = property_get(ctx, this_val, zjs_cell_from_ptr((void*)len_atom));
+        if zjs_is_object(lv) != 0 || zjs_is_array(lv) != 0 {
+            lv = zjs_to_primitive(ctx, lv, false);
             if ctx.pending_throw_active { return zjs_undefined(); }
-            if zjs_strict_eq(v, target) != 0 { return zjs_int32(i); }
-        } else if ctx.pending_throw_active { return zjs_undefined(); }
-        i = i - 1;
+        }
+        let d = zjs_to_double(lv);
+        raw {
+            if (isnan(d) || d <= 0.0) d = 0.0;
+            else if (d > 9007199254740991.0) d = 9007199254740991.0;
+            else d = floor(d);
+        }
+        len_d = d;
+    }
+    let target: ZjsValue = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if len_d <= 0.0 { return zjs_int32(-1); }
+    // fromIndex: ToIntegerOrInfinity with full coercion.
+    let k: f64 = len_d - 1.0;
+    if argc >= 2 {
+        let fi_v = args[1];
+        if zjs_is_object(fi_v) != 0 || zjs_is_array(fi_v) != 0 {
+            fi_v = zjs_to_primitive(ctx, fi_v, false);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+        }
+        let n = zjs_to_double(fi_v);
+        let neg_inf: bool = false;
+        raw {
+            if (isnan(n)) n = 0.0;
+            else if (isinf(n)) { if (n < 0) neg_inf = true; }
+            else n = trunc(n);
+        }
+        if neg_inf { return zjs_int32(-1); }
+        let is_pos_inf: bool = false;
+        raw { is_pos_inf = (isinf(n) && n > 0) ? true : false; }
+        if !is_pos_inf {
+            if n >= 0.0 {
+                if n < len_d - 1.0 { k = n; }
+            } else {
+                k = len_d + n;
+                if k < 0.0 { return zjs_int32(-1); }
+            }
+        }
+    }
+    while k >= 0.0 {
+        let present: bool = false;
+        if k <= 4294967295.0 {
+            present = value_has_index(ctx, this_val, (u32)k);
+        } else {
+            // Index above u32 range: probe by exact string key on the
+            // object's class chain (plain array-likes only up here).
+            let buf: char[32];
+            let n2: int = 0;
+            raw { n2 = snprintf(&buf[0], 32, "%.0f", k); }
+            let kp: char* = NULL;
+            raw { kp = &buf[0]; }
+            let key_atom = ctx_intern_atom(ctx, kp, (u32)n2);
+            if zjs_is_object(this_val) != 0 {
+                let cur: ZjsObject* = zjs_as_object(this_val);
+                while cur != NULL {
+                    let slot = class_find_slot(cur.cls, key_atom);
+                    if slot >= 0 && zjs_is_deleted(cur.slots[(u32)slot]) == 0 { present = true; cur = NULL; }
+                    else { cur = cur.proto; }
+                }
+            }
+        }
+        if present {
+            // int32 key while it fits — the wrapper/char-read and array
+            // fast paths key off int32; double keys only above i32 max.
+            let kv: ZjsValue = if k <= 2147483647.0 { zjs_int32((i32)k) } else { zjs_double(k) };
+            let v = property_get(ctx, this_val, kv);
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if zjs_strict_eq(v, target) != 0 {
+                if k <= 2147483647.0 { return zjs_int32((i32)k); }
+                return zjs_double(k);
+            }
+        }
+        if ctx.pending_throw_active { return zjs_undefined(); }
+        k = k - 1.0;
     }
     return zjs_int32(-1);
 }

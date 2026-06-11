@@ -213,6 +213,69 @@ fn read_from_props_bag(ctx: ZjsContext*, props: ZjsObject*, key: ZjsValue) -> Zj
     return v;
 }
 
+// #399: [[Get]] on a real array whose dense slot is a HOLE (or out of
+// bounds) — §10.4.2 ordinary [[Get]] falls through to the prototype
+// chain, and test262 plants inherited indices (often accessors) on
+// Array.prototype. Mirrors the named-key proto walk in property_get's
+// TAG_ARRAY branch: subclass proto first (arr.proto), else the realm
+// array proto; inherited accessors fire with this = the array.
+fn array_hole_proto_get(ctx: ZjsContext*, obj: ZjsValue, arr: ZjsArray*, key_atom: ZjsString*) -> ZjsValue {
+    let cur = if arr.proto != NULL { arr.proto } else { ctx.realm.array_proto };
+    while cur != NULL {
+        let slot = class_find_slot(cur.cls, key_atom);
+        if slot >= 0 {
+            let av: ZjsValue = cur.slots[(u32)slot];
+            if zjs_is_deleted(av) != 0 { return zjs_undefined(); }
+            if zjs_is_accessor(av) != 0 {
+                let acc = zjs_as_accessor(av);
+                let g = acc.get;
+                if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
+                    let nullp: ZjsValue* = NULL;
+                    return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                }
+                return zjs_undefined();
+            }
+            return av;
+        }
+        cur = cur.proto;
+    }
+    return zjs_undefined();
+}
+
+// #399: complete [[Get]] for an integer index on a real array, shared
+// by every key shape (int32 / numeric string / double): the expando
+// bag's defineProperty'd slot (data or accessor — fires with this =
+// the array) takes precedence over the dense slot; a hole or
+// out-of-bounds index falls through to the proto chain via
+// array_hole_proto_get.
+fn array_indexed_get(ctx: ZjsContext*, obj: ZjsValue, arr: ZjsArray*, idx: u32) -> ZjsValue {
+    let buf: char[16];
+    let blen: int = 0;
+    raw { blen = snprintf(&buf[0], 16, "%u", (unsigned)idx); }
+    let bp: char* = NULL; raw { bp = &buf[0]; }
+    let key_atom = ctx_intern_atom(ctx, bp, (u32)blen);
+    if arr.props != NULL {
+        let slot_p = class_find_slot(arr.props.cls, key_atom);
+        if slot_p >= 0 {
+            let v = arr.props.slots[(u32)slot_p];
+            if zjs_is_deleted(v) == 0 {
+                if zjs_is_accessor(v) != 0 {
+                    let acc = zjs_as_accessor(v);
+                    let g = acc.get;
+                    if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
+                        let nullp: ZjsValue* = NULL;
+                        return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
+                    }
+                    return zjs_undefined();
+                }
+                return v;
+            }
+        }
+    }
+    if array_has_index(arr, idx) != 0 { return array_get(arr, idx); }
+    return array_hole_proto_get(ctx, obj, arr, key_atom);
+}
+
 fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
     key = symbol_key_coerce(key);
     // Hoist a single tag load so the long chain of type-specific
@@ -693,30 +756,12 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         if zjs_is_int32(key) != 0 {
             let i = zjs_as_int32(key);
             if i < 0 { return zjs_undefined(); }
-            if arr.props != NULL {
-                let buf: char[16];
-                let blen: int = 0;
-                raw { blen = snprintf(&buf[0], 16, "%u", (unsigned)(uint32_t)i); }
-                let bp: char* = NULL; raw { bp = &buf[0]; }
-                let key_atom = ctx_intern_atom(ctx, bp, (u32)blen);
-                let slot_p = class_find_slot(arr.props.cls, key_atom);
-                if slot_p >= 0 {
-                    let v = arr.props.slots[(u32)slot_p];
-                    if zjs_is_deleted(v) == 0 {
-                        if zjs_is_accessor(v) != 0 {
-                            let acc = zjs_as_accessor(v);
-                            let g = acc.get;
-                            if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
-                                let nullp: ZjsValue* = NULL;
-                                return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
-                            }
-                            return zjs_undefined();
-                        }
-                        return v;
-                    }
-                }
+            // Fast dense path: in-bounds, no expando bag — skip the
+            // shared helper's atom intern entirely.
+            if arr.props == NULL && array_has_index(arr, (u32)i) != 0 {
+                return array_get(arr, (u32)i);
             }
-            return array_get(arr, (u32)i);
+            return array_indexed_get(ctx, obj, arr, (u32)i);
         }
         // .length
         if zjs_is_string(key) != 0 {
@@ -737,25 +782,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
             // checks read via the string key.)
             let idx = zjs_to_array_index(key);
             if idx >= 0 {
-                if arr.props != NULL {
-                    let slot_pi = class_find_slot(arr.props.cls, ks);
-                    if slot_pi >= 0 {
-                        let v = arr.props.slots[(u32)slot_pi];
-                        if zjs_is_deleted(v) == 0 {
-                            if zjs_is_accessor(v) != 0 {
-                                let acc = zjs_as_accessor(v);
-                                let g = acc.get;
-                                if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
-                                    let nullp: ZjsValue* = NULL;
-                                    return zjs_call_value_with_this(ctx, g, obj, nullp, 0);
-                                }
-                                return zjs_undefined();
-                            }
-                            return v;
-                        }
-                    }
-                }
-                return array_get(arr, (u32)idx);
+                return array_indexed_get(ctx, obj, arr, (u32)idx);
             }
             // Expando bag (e.g. `let a = []; a.foo = 1;`) before
             // falling through to Array.prototype methods. Fire
@@ -808,7 +835,9 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         }
         // Anything else: try ToIndex
         let idx2 = zjs_to_array_index(key);
-        if idx2 >= 0 { return array_get(arr, (u32)idx2); }
+        if idx2 >= 0 {
+            return array_indexed_get(ctx, obj, arr, (u32)idx2);
+        }
         return zjs_undefined();
     }
 

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-11 07:12 UTC",
+    "when": "2026-06-11 07:58 UTC",
     "total": 27568,
-    "passed": 24003,
-    "failed": 3227,
+    "passed": 24101,
+    "failed": 3129,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -381,34 +381,6 @@
       "reason": "zjs: throw: (unknown): innerThisCorrect !== true\nzjs: throw: (unknown): innerThisCorrect !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/every/15.4.4.16-7-6.js",
-      "reason": "[sloppy] zjs: throw: (unknown): res Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): res Expected SameValue("
-    },
-    {
-      "path": "test/built-ins/Array/prototype/every/15.4.4.16-7-b-13.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.every(callbackfn) Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): arr.e"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/every/15.4.4.16-7-b-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.every(callbackfn) Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): arr.e"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/every/15.4.4.16-7-b-7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.every(callbackfn) Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): arr.e"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/every/15.4.4.16-7-c-i-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [, , , ].every(callbackfn) Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/every/15.4.4.16-7-c-i-22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): accessed !== true\nzjs: throw: (unknown): accessed !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/every/15.4.4.16-7-c-i-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [, , , ].every(callbackfn) Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): "
-    },
-    {
       "path": "test/built-ins/Array/prototype/every/callbackfn-resize-arraybuffer.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected argument [undefined] shouldn't be primitive. elements (shrink) (Testing with Float64Arra"
     },
@@ -469,36 +441,8 @@
       "reason": "zjs: throw: (unknown): innerThisCorrect !== true\nzjs: throw: (unknown): innerThisCorrect !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/filter/15.4.4.20-9-6.js",
-      "reason": "[sloppy] zjs: throw: (unknown): resArr.length Expected SameValue(\u00ab3\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown): resArr.length Expect"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/filter/15.4.4.20-9-b-13.js",
-      "reason": "[sloppy] zjs: throw: (unknown): newArr.length Expected SameValue(\u00ab2\u00bb, \u00ab3\u00bb) to be true\nzjs: throw: (unknown): newArr.length Expect"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/filter/15.4.4.20-9-b-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): newArr[2] Expected SameValue(\u00abundefined\u00bb, \u00ab\"prototype\"\u00bb) to be true\nzjs: throw: (unknown): newArr"
-    },
-    {
       "path": "test/built-ins/Array/prototype/filter/15.4.4.20-9-b-6.js",
       "reason": "[sloppy] zjs: throw: (unknown): Array[1] Expected SameValue(\u00ab[object]\u00bb, \u00ab6.99\u00bb) to be true\nzjs: throw: (unknown): Array[1] Expect"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/filter/15.4.4.20-9-b-7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): newArr[1] Expected SameValue(\u00abundefined\u00bb, \u00ab6.99\u00bb) to be true\nzjs: throw: (unknown): newArr[1] Exp"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/filter/15.4.4.20-9-c-i-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): newArr.length Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): newArr.length Expect"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/filter/15.4.4.20-9-c-i-22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): newArr.length Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): newArr.length Expect"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/filter/15.4.4.20-9-c-i-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): newArr.length Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): newArr.length Expect"
     },
     {
       "path": "test/built-ins/Array/prototype/filter/callbackfn-resize-arraybuffer.js",
@@ -673,18 +617,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): callCnt Expected SameValue(\u00ab4\u00bb, \u00ab5\u00bb) to be true\nzjs: throw: (unknown): callCnt Expected SameValue"
     },
     {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-13.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-b-7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/forEach/15.4.4.18-7-c-i-16.js",
       "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
     },
@@ -757,18 +689,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): func(0, true) !== true\nzjs: throw: (unknown): func(0, true) !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-14.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call(objOne, true) Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: ("
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-3-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.indexOf.call(obj, 0) Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknow"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-5-32.js",
       "reason": "[sloppy] zjs: throw: (unknown): [0, targetObj, 2].indexOf(targetObj, -1.5) Expected SameValue(\u00ab1\u00bb, \u00ab-1\u00bb) to be true\nzjs: throw: ("
     },
@@ -777,36 +697,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): a.indexOf(2,4294967290 ) Expected SameValue(\u00ab-1\u00bb, \u00ab4294967294\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-10.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(6.99) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): arr.indexOf(6.9"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(1) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): arr.indexOf(1) Exp"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-18.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(\"prototype\") Expected SameValue(\u00ab-1\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): arr.inde"
-    },
-    {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
       "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [, , , ].indexOf(10) Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): [, , , ].ind"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-21.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [, ].indexOf(undefined) Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): [, ].inde"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-i-7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [, , , ].indexOf(true) Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): [, , , ].i"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-b-ii-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [undefined].indexOf() Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): [undefined]"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-grow.js",
@@ -877,112 +769,20 @@
       "reason": "[sloppy] zjs: throw: (unknown): func(0, targetObj) !== true\nzjs: throw: (unknown): func(0, targetObj) !== true"
     },
     {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-3-28.js",
-      "reason": "[sloppy] zjs: throw: (unknown): verify length is 4294967296 finally Expected SameValue(\u00ab-1\u00bb, \u00ab4294967295\u00bb) to be true\nzjs: throw:"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"1\" resolves to 1 Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): \"1\" resolves to"
-    },
-    {
       "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-12.js",
       "reason": "[sloppy] zjs: throw: (unknown): arr.lastIndexOf(null, Infinity) Expected SameValue(\u00ab-1\u00bb, \u00ab4294967294\u00bb) to be true\nzjs: throw: (un"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [0, \"-2\", 2].lastIndexOf(\"-2\", \"-2\") Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknow"
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-16.js",
       "reason": "[sloppy] zjs: throw: (unknown): arr.lastIndexOf(true, \"Infinity\") Expected SameValue(\u00ab-1\u00bb, \u00ab4294967294\u00bb) to be true\nzjs: throw: ("
     },
     {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-17.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [true].lastIndexOf(true, \"-Infinity\") Expected SameValue(\u00ab0\u00bb, \u00ab-1\u00bb) to be true\nzjs: throw: (unkno"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-18.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [0, NaN, targetObj, 3, false].lastIndexOf(targetObj, \"2E0\") Expected SameValue(\u00ab-1\u00bb, \u00ab2\u00bb) to be t"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-19.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [0, true, targetObj, 3, false].lastIndexOf(targetObj, \"0x0002\") Expected SameValue(\u00ab-1\u00bb, \u00ab2\u00bb) to "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-20.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [0, true, targetObj, 3, false].lastIndexOf(targetObj, \"0002.10\") Expected SameValue(\u00ab-1\u00bb, \u00ab2\u00bb) to"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-21.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [0, true, targetObj, 3, false].lastIndexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab2\u00bb) to"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [0, true, targetObj, 3, false].lastIndexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab2\u00bb) to"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-23.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [0, true].lastIndexOf(true, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unkn"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-24.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-25.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [0, true].lastIndexOf(true, child) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown)"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-26.js",
-      "reason": "[sloppy] zjs: throw: (unknown): stepFiveOccurs !== true\nzjs: throw: (unknown): stepFiveOccurs !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-27.js",
-      "reason": "[sloppy] zjs: throw: (unknown): stepFiveOccurs !== true\nzjs: throw: (unknown): stepFiveOccurs !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-5-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): true resolves to 1 Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): true resolves "
-    },
-    {
       "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-9.js",
       "reason": "[sloppy] zjs: throw: (unknown): a.lastIndexOf(2) Expected SameValue(\u00ab-1\u00bb, \u00ab4294967294\u00bb) to be true\nzjs: throw: (unknown): a.lastI"
     },
     {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-a-10.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.lastIndexOf(6.99) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): arr.lastInd"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-a-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.lastIndexOf(1) Expected SameValue(\u00ab-1\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): arr.lastIndexO"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-a-18.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.lastIndexOf(\"prototype\") Expected SameValue(\u00ab-1\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): arr."
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-a-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Array.prototype.lastIndexOf.call(arr, targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be t"
-    },
-    {
       "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-a-3.js",
       "reason": "[sloppy] zjs: throw: (unknown): arr.lastIndexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unkno"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-b-i-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [, , , ].lastIndexOf(10) Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): [, , , ]"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-b-i-21.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [, ].lastIndexOf(undefined) Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): [, ]."
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-b-i-7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [, , , ].lastIndexOf(true) Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): [, , ,"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-b-ii-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [undefined].lastIndexOf() Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): [undefi"
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/coerced-position-grow.js",
@@ -991,10 +791,6 @@
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/coerced-position-shrink.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab-1\u00bb, \u00ab3\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab-1\u00bb, \u00ab3\u00bb) to "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/lastIndexOf/length-near-integer-limit.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab-1\u00bb, \u00ab9007199254740988\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/resizable-buffer.js",
@@ -1015,18 +811,6 @@
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-6.js",
       "reason": "[sloppy] zjs: throw: (unknown): resArr[4] Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): resArr[4] Expect"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-13.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult[1] Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): testResult[1]"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult[2] Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): testResult[2]"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-b-7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult[1] Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): testResult[1]"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-16.js",
@@ -1205,62 +989,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): func(12, 11) Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): func(12, 11) E"
     },
     {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-8-b-iii-1-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-8-b-iii-1-22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-8-b-iii-1-8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Reduce of empty array with no initial value\nzjs: throw: TypeError: Reduce of empty array with no "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-8-c-4.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Reduce of empty array with no initial value\nzjs: throw: TypeError: Reduce of empty array with no "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-9-6.js",
-      "reason": "[sloppy] zjs: throw: (unknown): res Expected SameValue(\u00ab\"123\"\u00bb, \u00ab\"1235\"\u00bb) to be true\nzjs: throw: (unknown): res Expected SameValu"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-9-b-13.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-9-b-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-9-b-20.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-9-b-26.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-9-b-28.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-9-b-7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-9-c-i-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
       "path": "test/built-ins/Array/prototype/reduce/15.4.4.21-9-c-ii-4-s.js",
       "reason": "zjs: throw: (unknown): innerThisCorrect !== true\nzjs: throw: (unknown): innerThisCorrect !== true"
     },
@@ -1299,62 +1027,6 @@
     {
       "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-10-7.js",
       "reason": "[sloppy] zjs: throw: (unknown): f.reduceRight(cb,\"4\") Expected SameValue(\u00ab\"4\"\u00bb, \u00ab\"41\"\u00bb) to be true\nzjs: throw: (unknown): f.reduc"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-8-b-iii-1-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-8-b-iii-1-22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-8-b-iii-1-8.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Reduce of empty array with no initial value\nzjs: throw: TypeError: Reduce of empty array with no "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-8-c-4.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Reduce of empty array with no initial value\nzjs: throw: TypeError: Reduce of empty array with no "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-9-6.js",
-      "reason": "[sloppy] zjs: throw: (unknown): res Expected SameValue(\u00ab\"91\"\u00bb, \u00ab\"151\"\u00bb) to be true\nzjs: throw: (unknown): res Expected SameValue("
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-9-b-13.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-9-b-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-9-b-20.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-9-b-26.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-9-b-28.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-9-b-7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-9-c-i-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-9-c-i-22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-9-c-i-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult !== true\nzjs: throw: (unknown): testResult !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/reduceRight/15.4.4.22-9-c-ii-4-s.js",
@@ -1519,34 +1191,6 @@
     {
       "path": "test/built-ins/Array/prototype/some/15.4.4.17-5-1-s.js",
       "reason": "zjs: throw: (unknown): innerThisCorrect !== true\nzjs: throw: (unknown): innerThisCorrect !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/some/15.4.4.17-7-6.js",
-      "reason": "[sloppy] zjs: throw: (unknown): res Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): res Expected SameValue("
-    },
-    {
-      "path": "test/built-ins/Array/prototype/some/15.4.4.17-7-b-13.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.some(callbackfn) !== true\nzjs: throw: (unknown): arr.some(callbackfn) !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/some/15.4.4.17-7-b-15.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.some(callbackfn) !== true\nzjs: throw: (unknown): arr.some(callbackfn) !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/some/15.4.4.17-7-b-7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.some(callbackfn) !== true\nzjs: throw: (unknown): arr.some(callbackfn) !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/some/15.4.4.17-7-c-i-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [, , ].some(callbackfn) !== true\nzjs: throw: (unknown): [, , ].some(callbackfn) !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/some/15.4.4.17-7-c-i-22.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [, ].some(callbackfn) !== true\nzjs: throw: (unknown): [, ].some(callbackfn) !== true"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/some/15.4.4.17-7-c-i-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [, ].some(callbackfn) !== true\nzjs: throw: (unknown): [, ].some(callbackfn) !== true"
     },
     {
       "path": "test/built-ins/Array/prototype/some/callbackfn-resize-arraybuffer.js",
@@ -1742,7 +1386,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A4_T3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #2: Array.prototype[0] = -1; x = []; x.length = 1; var arr = x.splice(0,1); arr[0] === -1. Actual"
+      "reason": "[sloppy] zjs: throw: (unknown): #3: Array.prototype[0] = -1; x = []; x.length = 1; var arr = x.splice(0,1); delete arr[0]; arr[0]"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A6.1_T2.js",
@@ -1833,24 +1477,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"0,0,,\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab\""
     },
     {
-      "path": "test/built-ins/Array/prototype/toReversed/holes-not-preserved.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [4, undefined, 2, undefined, 0] and expected [4, 3, 2, undefined, 0] should have the same "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/toReversed/length-decreased-while-iterating.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [4, 3, undefined, undefined, 0] and expected [4, 3, undefined, 5, 0] should have the same "
-    },
-    {
       "path": "test/built-ins/Array/prototype/toReversed/length-exceeding-array-length-limit.js",
       "reason": "[sloppy] timeout"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/toSorted/holes-not-preserved.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [1, 3, 4, undefined, undefined] and expected [1, 2, 3, 4, undefined] should have the same "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/toSorted/length-decreased-while-iterating.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [1, 4, 5, undefined, undefined] and expected [1, 2, 4, 5, undefined] should have the same "
     },
     {
       "path": "test/built-ins/Array/prototype/toSorted/length-exceeding-array-length-limit.js",
@@ -1861,16 +1489,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [2, 0, 1] should have the same contents. \nzjs: throw: (unknown): Actual []"
     },
     {
-      "path": "test/built-ins/Array/prototype/toSpliced/holes-not-preserved.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [0, undefined, 2, undefined, 4] and expected [0, undefined, 2, 3, 4] should have the same "
-    },
-    {
       "path": "test/built-ins/Array/prototype/toSpliced/length-clamped-to-2pow53minus1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab2\u00bb) to be"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/toSpliced/length-decreased-while-iterating.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [0, 1, 2, undefined, undefined, undefined] and expected [0, 1, 2, 6, undefined, undefined]"
     },
     {
       "path": "test/built-ins/Array/prototype/toSpliced/length-exceeding-array-length-limit.js",
@@ -1957,20 +1577,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4, 6] should have the same contents. \nzjs: throw: (unknown): Actual"
     },
     {
-      "path": "test/built-ins/Array/prototype/with/holes-not-preserved.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [0, undefined, 6, undefined, 4] and expected [0, undefined, 6, 3, 4] should have the same "
-    },
-    {
       "path": "test/built-ins/Array/prototype/with/index-casted-to-number.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [3, 4, 16] and expected [0, 3, 16] should have the same contents. \nzjs: throw: (unknown): "
     },
     {
       "path": "test/built-ins/Array/prototype/with/index-throw-completion.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a MyError but got a RangeError\nzjs: throw: (unknown): Expected a MyError but got a Range"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/with/length-decreased-while-iterating.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [0, 1, 7, undefined, undefined] and expected [0, 1, 7, undefined, 5] should have the same "
     },
     {
       "path": "test/built-ins/Array/prototype/with/length-exceeding-array-length-limit.js",
@@ -3179,10 +2791,6 @@
     {
       "path": "test/built-ins/JSON/parse/reviver-array-delete-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/JSON/parse/reviver-array-get-prop-from-prototype.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
       "path": "test/built-ins/JSON/parse/reviver-array-length-coerce-err.js",
