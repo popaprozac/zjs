@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-11 17:45 UTC",
+    "when": "2026-06-11 18:30 UTC",
     "total": 27568,
-    "passed": 24193,
-    "failed": 3037,
+    "passed": 24197,
+    "failed": 3033,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -762,7 +762,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.lastIndexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unkno"
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/coerced-position-grow.js",
@@ -3125,10 +3125,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): arr.length Expected SameValue(\u00ab0\u00bb, \u00ab4294967295\u00bb) to be true\nzjs: throw: (unknown): arr.length Exp"
     },
     {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-18.js",
-      "reason": "[sloppy] zjs: throw: (unknown): prop should be an own property\nzjs: throw: (unknown): prop should be an own property"
-    },
-    {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-180.js",
       "reason": "[sloppy] zjs: throw: (unknown): arr[4294967295] Expected SameValue(\u00abundefined\u00bb, \u00ab100\u00bb) to be true\nzjs: throw: (unknown): arr[4294"
     },
@@ -3139,10 +3135,6 @@
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-182.js",
       "reason": "[sloppy] zjs: throw: (unknown): arr[4294967297] Expected SameValue(\u00abundefined\u00bb, \u00ab100\u00bb) to be true\nzjs: throw: (unknown): arr[4294"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-19.js",
-      "reason": "[sloppy] zjs: throw: (unknown): prop should be an own property\nzjs: throw: (unknown): prop should be an own property"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-194.js",
@@ -3437,10 +3429,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): property descriptor should be configurable\nzjs: throw: (unknown): property descriptor should be c"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-408.js",
-      "reason": "[sloppy] zjs: throw: (unknown): dateObj.hasOwnProperty(\"prop\") !== true\nzjs: throw: (unknown): dateObj.hasOwnProperty(\"prop\") !=="
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-409.js",
       "reason": "[sloppy] zjs: throw: (unknown): verifyEnumerable !== true\nzjs: throw: (unknown): verifyEnumerable !== true"
     },
@@ -3478,7 +3466,7 @@
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-584.js",
-      "reason": "[sloppy] zjs: throw: (unknown): data Expected SameValue(\u00ab\"data\"\u00bb, \u00ab\"myOwnProperty\"\u00bb) to be true\nzjs: throw: (unknown): data Expec"
+      "reason": "[sloppy] zjs: throw: (unknown): dateObj.hasOwnProperty(\"prop\") Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknow"
     },
     {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-4-585.js",
@@ -4735,10 +4723,6 @@
     {
       "path": "test/built-ins/Proxy/defineProperty/trap-is-missing-target-is-proxy.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Proxy/defineProperty/trap-is-null-target-is-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'writable')\nzjs: throw: TypeError: Cannot read prope"
     },
     {
       "path": "test/built-ins/Proxy/deleteProperty/trap-is-missing-target-is-proxy.js",

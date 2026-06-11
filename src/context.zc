@@ -4965,6 +4965,42 @@ fn iter_prepare(ctx: ZjsContext*, src: ZjsValue, kind: u32) -> ZjsValue {
             }
             return arr_v;
         }
+        // #399 inc7: cell-tag receivers (Date/RegExp/Map/Set/Promise/
+        // Symbol) — for-in enumerates the expando bag's own enumerable
+        // keys (builtin proto methods are spec-non-enumerable, so no
+        // proto walk needed here).
+        let fbag = cell_props_bag(src);
+        if fbag != NULL {
+            let fout_v = ctx_new_array(ctx, fbag.cls.prop_count);
+            ctx_push_temp_root(ctx, fout_v);
+            defer ctx_pop_temp_root(ctx);
+            let fout = zjs_as_array(fout_v);
+            let fcur: u32 = 0;
+            // Walk the class chain root-ward then reverse for insertion
+            // order — same convention as object_keys_impl.
+            let fcls = fbag.cls;
+            while fcls != NULL && fcls.parent != NULL {
+                let fnm = fcls.transition_name;
+                let fslot = fcls.transition_slot;
+                if !string_is_hidden_key(fnm)
+                   && zjs_is_deleted(fbag.slots[fslot]) == 0
+                   && (object_get_attrs(fbag, fslot) & PROP_ENUMERABLE) != 0 {
+                    array_set(fout, fcur, zjs_cell_from_ptr((void*)fnm));
+                    fcur = fcur + 1;
+                }
+                fcls = fcls.parent;
+            }
+            // Reverse to insertion order.
+            let lo2: u32 = 0;
+            while fcur > 0 && lo2 < fcur - 1 - lo2 {
+                let tmp2 = fout.elements[lo2];
+                fout.elements[lo2] = fout.elements[fcur - 1 - lo2];
+                fout.elements[fcur - 1 - lo2] = tmp2;
+                lo2 = lo2 + 1;
+            }
+            fout.length = fcur;
+            return fout_v;
+        }
         return ctx_new_array(ctx, 0);
     }
 
@@ -6909,6 +6945,49 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
     // each index in [0, length) as an own data property
     // { value: <1-char string>, writable:false, enumerable:true,
     //   configurable:false }.
+    // #399 inc7: non-Object cell receivers (Date/RegExp/Map/Set/
+    // Promise/Symbol) — defineProperty'd props live in their expando
+    // bag; the propertyHelper readback must see them. Functions keep
+    // their dedicated branch below (when the key isn't in the bag the
+    // special-cased .prototype/length handling still falls through);
+    // arrays/objects are untouched (cell_props_bag returns NULL).
+    let gbag = cell_props_bag(obj_v);
+    // Function-family receivers keep their dedicated branch below
+    // (lazily-created .prototype, length/name synthesis) — consulting
+    // the bag first returned a stale .prototype (S15.3.3.1_A4).
+    if zjs_is_function(obj_v) != 0 || zjs_is_closure(obj_v) != 0
+       || zjs_is_host_function(obj_v) != 0 {
+        gbag = NULL;
+    }
+    if gbag != NULL {
+        let gk = zjs_as_string(key_v);
+        let gatom = ctx_intern_atom(ctx, gk.data, gk.length);
+        let gslot = class_find_slot(gbag.cls, gatom);
+        if gslot >= 0 {
+            let graw: ZjsValue = gbag.slots[(u32)gslot];
+            if zjs_is_deleted(graw) == 0 {
+                let gat = object_get_attrs(gbag, (u32)gslot);
+                let gd_v = ctx_new_object(ctx);
+                ctx_push_temp_root(ctx, gd_v);
+                defer ctx_pop_temp_root(ctx);
+                let gd = zjs_as_object(gd_v);
+                if zjs_is_accessor(graw) != 0 {
+                    let gacc = zjs_as_accessor(graw);
+                    object_set(ctx, gd, ctx_intern_atom(ctx, (char*)"get", 3), gacc.get);
+                    object_set(ctx, gd, ctx_intern_atom(ctx, (char*)"set", 3), gacc.set);
+                } else {
+                    object_set(ctx, gd, ctx_intern_atom(ctx, (char*)"value", 5), graw);
+                    object_set(ctx, gd, ctx_intern_atom(ctx, (char*)"writable", 8),
+                               zjs_bool(if (gat & PROP_WRITABLE) != 0 { 1 } else { 0 }));
+                }
+                object_set(ctx, gd, ctx_intern_atom(ctx, (char*)"enumerable", 10),
+                           zjs_bool(if (gat & PROP_ENUMERABLE) != 0 { 1 } else { 0 }));
+                object_set(ctx, gd, ctx_intern_atom(ctx, (char*)"configurable", 12),
+                           zjs_bool(if (gat & PROP_CONFIGURABLE) != 0 { 1 } else { 0 }));
+                return gd_v;
+            }
+        }
+    }
     if zjs_is_object(obj_v) != 0 {
         let swo = object_string_wrapper(ctx, zjs_as_object(obj_v));
         if swo != NULL {
@@ -8190,13 +8269,15 @@ fn object_keys_impl(ctx: ZjsContext*, args: ZjsValue*, argc: u32, enum_only: boo
     } else if zjs_is_host_function(args[0]) != 0 {
         let hf = zjs_as_host_function(args[0]);
         receiver_obj = hf.props;
-    } else if zjs_is_regexp(args[0]) != 0 {
-        let r = zjs_as_regexp(args[0]);
-        receiver_obj = r.props;
     } else if zjs_is_object(args[0]) != 0 {
         receiver_obj = zjs_as_object(args[0]);
     } else {
-        return ctx_new_array(ctx, 0);
+        // #399 inc7: any other cell tag with an expando bag —
+        // Date/RegExp/Map/Set/Promise/Symbol own keys live there.
+        receiver_obj = cell_props_bag(args[0]);
+        if receiver_obj == NULL {
+            return ctx_new_array(ctx, 0);
+        }
     }
     if receiver_obj == NULL {
         return ctx_new_array(ctx, 0);
@@ -23986,6 +24067,15 @@ fn host_has_own_property(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
         }
         if m2 != 0 { return zjs_bool(1); }
         return zjs_bool(0);
+    }
+    // #399 inc7: non-Object cell receivers (Date/RegExp/Map/Set/
+    // Promise/Symbol) — own props live in the expando bag.
+    let hbag = cell_props_bag(this_val);
+    if hbag != NULL && zjs_is_string(key) != 0 {
+        let hks = zjs_as_string(key);
+        let hatom = ctx_intern_atom(ctx, hks.data, hks.length);
+        let hslot = class_find_slot(hbag.cls, hatom);
+        if hslot >= 0 && zjs_is_deleted(hbag.slots[(u32)hslot]) == 0 { return zjs_bool(1); }
     }
     return zjs_bool(0);
 }
