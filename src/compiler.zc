@@ -1172,6 +1172,64 @@ fn call_args_fusion_pure(c: Compiler*, node: AstNode*, arg_count: u8) -> bool {
     return true;
 }
 
+// --- Terminal simple-expression placement (#395) ----------------------
+//
+// Emit a provably-terminal simple expression directly into a
+// caller-owned register (call-window slot, local). Returns true if it
+// emitted. Covers exactly the shapes whose read needs no scratch
+// register and has no side effects: bare non-captured local idents,
+// plain `this`, numeric literals, and Paren wrappers of those.
+//
+// This exists because defensive ident/literal reads must NOT consume
+// preferred_dst themselves (an operand-position steal writes the hint
+// target before later reads of it in the same expression — the
+// `y = a + y` class). Sites that KNOW the read is terminal (call
+// receiver/args, bare assignment/decl initializers) call this instead,
+// getting the single direct Mov/LoadInt the hint would have given.
+fn try_place_simple(c: Compiler*, node: AstNode*, slot: u8) -> bool {
+    if node == NULL { return false; }
+    let k = node.kind;
+    if k == NodeKind::Paren { return try_place_simple(c, node.left, slot); }
+    if k == NodeKind::IdentExpr {
+        if c.with_depth > 0 { return false; }
+        let name = c.source + node.start;
+        let name_len = node.end - node.start;
+        let li = find_local_index(c, name, name_len);
+        if li < 0 { return false; }
+        if c.locals[(u32)li].captured { return false; }
+        // Read-side TDZ check, same as compile_ident_read's local path.
+        if c.locals[(u32)li].is_tdz && !c.locals[(u32)li].initialized {
+            emit(c, make_inst_a(Op::ThrowIfHole, c.locals[(u32)li].reg));
+        }
+        if c.locals[(u32)li].reg == slot { return true; }   // already there
+        emit(c, make_inst_ab(Op::Mov, slot, c.locals[(u32)li].reg));
+        return true;
+    }
+    if k == NodeKind::ThisExpr {
+        if node.bool_value { return false; }   // `new.target` — not hoisted
+        if c.this_reg < 0 { return false; }
+        emit(c, make_inst_ab(Op::Mov, slot, (u8)c.this_reg));
+        return true;
+    }
+    if k == NodeKind::NumberExpr {
+        let v = node.num;
+        let iv = (i32)v;
+        let fits_i16: bool = false;
+        raw { fits_i16 = ((double)iv == v && iv >= -32768 && iv <= 32767) ? true : false; }
+        if fits_i16 {
+            emit(c, make_inst_a_i16(Op::LoadInt, slot, iv));
+        } else {
+            let is_int: bool = false;
+            raw { is_int = ((double)iv == v) ? true : false; }
+            let idx = if is_int { add_const(c, zjs_int32(iv)) }
+                      else      { add_const(c, zjs_double(v)) };
+            emit(c, make_inst_a_u16(Op::LoadConst, slot, idx));
+        }
+        return true;
+    }
+    return false;
+}
+
 // Pure predicate: would the rotated bottom test fuse? Mirrors the
 // relational arm of try_emit_cmp_branch_if_false (which decides-AND-
 // emits, so it can't be probed). Equality/nullish deliberately
@@ -1421,6 +1479,11 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
     let k = node.kind;
 
     if k == NodeKind::NumberExpr {
+        // NOTE (#395): deliberately alloc_reg, NOT alloc_dst — an
+        // operand-position literal stealing a live hint writes the
+        // hint target before later reads of it in the same expression
+        // (`var x = 5 + x`). Terminal-position placement is handled by
+        // try_place_simple at the sites that know the read is terminal.
         let dst = alloc_reg(c);
         let v = node.num;
         let i = (i32)v;
@@ -1518,6 +1581,13 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
             if c.borrow_local_ok {
                 return c.locals[(u32)local_idx].reg;
             }
+            // NOTE (#395): deliberately alloc_reg, NOT alloc_dst — an
+            // operand-position defensive read stealing a live hint
+            // writes the hint target before later reads of it in the
+            // same expression see the original value (`y = a + y`).
+            // Terminal placement into call windows / locals is done by
+            // try_place_simple at the sites that know the read is
+            // terminal.
             let dst = alloc_reg(c);
             emit(c, make_inst_ab(Op::Mov, dst, c.locals[(u32)local_idx].reg));
             return dst;
@@ -2336,9 +2406,19 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         // For local target, hand the RHS a preferred-dst hint so the
         // final ALU op writes straight into local_reg — skips the
         // tail Mov on `local = expr` patterns (the assignment loop's
-        // dominant Mov source).
+        // dominant Mov source). Safe for self-referencing RHS
+        // (`y = a + y`) because ONLY terminal ops consume the hint —
+        // they read every operand before writing (see the alloc_reg
+        // NOTEs in the ident/literal reads, #395).
         let saved_pd = c.preferred_dst;
         if local_idx >= 0 && !captured_local {
+            // #395: bare-simple RHS (local ident / this / number) is a
+            // terminal read — place it directly, skipping both the
+            // defensive temp and the tail Mov.
+            if try_place_simple(c, node.right, local_reg) {
+                c.preferred_dst = saved_pd;
+                return local_reg;
+            }
             c.preferred_dst = (i32)local_reg;
         } else {
             c.preferred_dst = -1;
@@ -2863,7 +2943,12 @@ fn compile_assignment_to_property(c: Compiler*, target: AstNode*, op_tok: TokenK
             let saved_borrow = c.borrow_local_ok;
             let rhs_pure = expr_is_simple_pure(rhs);
             let lhs_pure = expr_is_simple_pure(target.left);
-            if rhs_pure { c.borrow_local_ok = true; }
+            // #395: `this.x = ANY rhs` — this_reg is written exactly
+            // once, at frame entry (ip==0); no RHS can rebind it, and
+            // StoreProp only reads obj_r. Borrow unconditionally.
+            let obj_is_this: bool = target.left != NULL
+                                  && target.left.kind == NodeKind::ThisExpr;
+            if rhs_pure || obj_is_this { c.borrow_local_ok = true; }
             let obj_r = compile_expr(c, target.left);
             if lhs_pure { c.borrow_local_ok = true; }
             else        { c.borrow_local_ok = saved_borrow; }
@@ -5190,21 +5275,30 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
     return new_reg;
 }
 
-fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8;
+fn compile_call_inner(c: Compiler*, node: AstNode*, ret_hint: i32) -> u8;
 
 fn compile_call(c: Compiler*, node: AstNode*) -> u8 {
     // Outer's preferred_dst (if any) refers to the call's RESULT
     // register — not where any internal slot (callee/recv/args)
     // should go. Save + clear at the boundary so inner compile_expr
     // calls don't see a stale hint via LoadGlobal alloc_dst.
+    // #395: the hint threads through as ret_hint — Invoke/MethodInvoke
+    // carry an explicit ret_dst operand (inst.a), so `last = c.inc()`
+    // and `f(g())` write their result straight into the target with no
+    // post-call Mov. When inner takes the hint (returns it), leave the
+    // hint consumed; otherwise restore for the caller's fallback Mov.
     let outer_pd = c.preferred_dst;
     c.preferred_dst = -1;
-    let r = compile_call_inner(c, node);
-    c.preferred_dst = outer_pd;
+    let r = compile_call_inner(c, node, outer_pd);
+    if outer_pd >= 0 && r == (u8)outer_pd {
+        c.preferred_dst = -1;
+    } else {
+        c.preferred_dst = outer_pd;
+    }
     return r;
 }
 
-fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
+fn compile_call_inner(c: Compiler*, node: AstNode*, ret_hint: i32) -> u8 {
     let callee = node.left;
     let is_method = callee != NULL && (callee.kind == NodeKind::Member || callee.kind == NodeKind::Computed);
 
@@ -5484,14 +5578,19 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
             }
             if holder_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
         } else {
-            // Compile receiver into regs[base+1] using preferred_dst so
-            // the recv expression's terminal op writes there directly.
-            c.preferred_dst = (i32)(base + 1);
-            let recv_r = compile_expr(c, callee.left);
-            c.preferred_dst = -1;
-            if recv_r != base + 1 {
-                emit(c, make_inst_ab(Op::Mov, base + 1, recv_r));
-                if recv_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+            // Compile receiver into regs[base+1]. #395: a bare-simple
+            // receiver (local ident / this / literal) places directly —
+            // one Mov, not defensive-temp + window Mov. Otherwise use
+            // preferred_dst so the recv expression's terminal op writes
+            // there directly.
+            if !try_place_simple(c, callee.left, base + 1) {
+                c.preferred_dst = (i32)(base + 1);
+                let recv_r = compile_expr(c, callee.left);
+                c.preferred_dst = -1;
+                if recv_r != base + 1 {
+                    emit(c, make_inst_ab(Op::Mov, base + 1, recv_r));
+                    if recv_r + 1 == c.next_reg { c.next_reg = c.next_reg - 1; }
+                }
             }
 
             // Load the method into regs[base].
@@ -5521,11 +5620,16 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
             }
         }
 
-        // Args into regs[base+2..]. Use preferred_dst so the
+        // Args into regs[base+2..]. #395: bare-simple args place
+        // directly; everything else uses preferred_dst so the
         // expression's final op lands directly in the call slot.
         let j: u8 = 0;
         while j < arg_count {
             let target_slot = base + 2 + j;
+            if try_place_simple(c, node.children[j], target_slot) {
+                j = j + 1;
+                continue;
+            }
             c.preferred_dst = (i32)target_slot;
             let arg_r = compile_expr(c, node.children[j]);
             c.preferred_dst = -1;
@@ -5536,6 +5640,17 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
             j = j + 1;
         }
 
+        // #395 result-targeting: a hinted result register (assignment
+        // target / outer call's arg slot) becomes the ret_dst operand —
+        // Return routes through it independently of the window base —
+        // and the whole window is handed back. ret_hint is always below
+        // base (it was allocated before the window).
+        if ret_hint >= 0 {
+            emit(c, make_inst_abc(Op::MethodInvoke, (u8)ret_hint, base, arg_count));
+            c.next_reg = base;
+            if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+            return (u8)ret_hint;
+        }
         emit(c, make_inst_abc(Op::MethodInvoke, base, base, arg_count));
 
         c.next_reg = base + 1;
@@ -5551,12 +5666,17 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
         i = i + 1;
     }
 
-    // Pass preferred_dst = base so a LoadGlobal/LoadProp/etc callee
-    // writes directly into the call slot. compile_expr clears the
-    // hint on first dst alloc.
-    c.preferred_dst = (i32)base;
-    let r = compile_expr(c, node.left);
-    c.preferred_dst = -1;
+    // #395: bare-local-ident callee (closure in a local) places
+    // directly into the call slot. Otherwise pass preferred_dst = base
+    // so a LoadGlobal/LoadProp/etc callee writes directly into the
+    // call slot (compile_expr's terminal op consumes the hint).
+    let callee_placed: bool = try_place_simple(c, node.left, base);
+    let r: u8 = base;
+    if !callee_placed {
+        c.preferred_dst = (i32)base;
+        r = compile_expr(c, node.left);
+        c.preferred_dst = -1;
+    }
 
     // #394 InvokeGlobal fusion. The callee just compiled to a single
     // terminal `LoadGlobal base, slot` — exactly the global-function
@@ -5588,6 +5708,11 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
     let j: u8 = 0;
     while j < arg_count {
         let target_slot = base + 1 + j;
+        // #395: bare-simple args place directly into the window.
+        if try_place_simple(c, node.children[j], target_slot) {
+            j = j + 1;
+            continue;
+        }
         c.preferred_dst = (i32)target_slot;
         let arg_r = compile_expr(c, node.children[j]);
         c.preferred_dst = -1;
@@ -5598,16 +5723,23 @@ fn compile_call_inner(c: Compiler*, node: AstNode*) -> u8 {
         j = j + 1;
     }
 
+    // #395 result-targeting — see the MethodInvoke twin above.
+    let ret: u8 = if ret_hint >= 0 { (u8)ret_hint } else { base };
     if fuse_slot >= 0 {
-        emit(c, make_inst_abc(Op::InvokeGlobal, base, base, arg_count));
+        emit(c, make_inst_abc(Op::InvokeGlobal, ret, base, arg_count));
         // Carrier: u16 global slot in an Op::Jmp placeholder (the
         // JmpIf* convention). Never dispatched — the handler
         // pre-increments ip past it.
         emit(c, make_inst_u16(Op::Jmp, (u16)fuse_slot));
     } else {
-        emit(c, make_inst_abc(Op::Invoke, base, base, arg_count));
+        emit(c, make_inst_abc(Op::Invoke, ret, base, arg_count));
     }
 
+    if ret_hint >= 0 {
+        c.next_reg = base;
+        if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
+        return ret;
+    }
     c.next_reg = base + 1;
     if c.next_reg > c.max_reg { c.max_reg = c.next_reg; }
     return base;
@@ -6726,18 +6858,39 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
                     // mention the name (closure reads ⇒ captured ⇒
                     // excluded path) — `let t = a*b` was paying a
                     // LoadHole dispatch per loop iteration for nothing.
-                    if is_tdz && !cap
-                       && subtree_mentions_ident(c, decl.left, decl.name_start, decl.name_length) {
+                    let holed: bool = is_tdz && !cap
+                       && subtree_mentions_ident(c, decl.left, decl.name_start, decl.name_length);
+                    if holed {
                         emit(c, make_inst_a(Op::LoadHole, lreg));
                     }
+                    // #395: bare-simple initializer (local ident / this /
+                    // number) is a terminal read — place directly into
+                    // lreg, skipping the temp + tail Mov. Not for holed
+                    // decls (`let x = x` must read the hole and throw —
+                    // try_place's ThrowIfHole covers the bare-self case,
+                    // but keep the paths orthogonal).
+                    if !cap && !holed && try_place_simple(c, decl.left, lreg) {
+                        if is_tdz { c.locals[(u32)lidx].initialized = true; }
+                        i = i + 1;
+                        continue;
+                    }
+                    // Otherwise hand the initializer a preferred-dst hint
+                    // so its terminal op writes lreg directly — kills the
+                    // tail Mov on `let x = <expr>`. Safe for
+                    // self-mentioning initializers (terminal ops read
+                    // operands before writing); holed decls keep the
+                    // temp so the hole survives until the final write.
+                    let saved_pd_vd = c.preferred_dst;
+                    if !cap && !holed { c.preferred_dst = (i32)lreg; }
                     let r = compile_expr(c, decl.left);
+                    c.preferred_dst = saved_pd_vd;
                     maybe_infer_anon_name(c, decl.left, r, name, name_len);
                     if cap {
                         // Captured locals live as properties on the env
                         // object — outer's reg slot is unused.
                         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
                         emit_store_prop_atom(c, c.env_reg, name_atom, r);
-                    } else {
+                    } else if r != lreg {
                         emit(c, make_inst_ab(Op::Mov, lreg, r));
                     }
                     release_reg(c, r);

@@ -5489,11 +5489,13 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
                 ctx.current_host_fn = saved_host_fn;
                 ctx.host_this = saved_this;
-                regs[dst] = r;
+                // #395: pending-throw check BEFORE the dst write — with
+                // result-targeting dst can be a real assignment target.
                 if ctx.pending_throw_active {
                     throwing = true; thrown = consume_pending_throw(ctx);
                     exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
+                regs[dst] = r;
             } else {
                 // Method call on a non-callable — TypeError per spec.
                 let err = build_typed_error(ctx, (char*)"TypeError", 9,
@@ -5669,11 +5671,14 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 }
                 ctx.current_host_fn = saved_host_fn;
                 ctx.host_this = saved_this;
-                regs[dst] = r;
+                // #395: pending-throw check BEFORE the dst write. With
+                // result-targeting, dst can be a real local (assignment
+                // target) — a throwing host call must not clobber it.
                 if ctx.pending_throw_active {
                     throwing = true; thrown = consume_pending_throw(ctx);
                     exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
+                regs[dst] = r;
             } else {
                 // Calling a non-callable value — TypeError per spec.
                 // Previously we silently returned undefined here, which
@@ -7244,29 +7249,25 @@ fn interpret_inner_full(ctx: ZjsContext*,
             }
             let arr = zjs_as_array(arr_v);
             let n_argc: u32 = arr.length;
-            // Stash args in invoke_arg_buffer so the NewInvoke body
-            // can read them via &regs[base+1] after we lay them out.
-            // The args were already in the array — copy into
-            // consecutive regs starting at base+1. The compiler
-            // reserved only 2 regs (callee + args_array), so push
-            // the reg watermark up if we'd overflow. Keep it simple
-            // — cap at 32 spread args for now (rare to exceed).
-            if n_argc > 32 {
-                let err = build_typed_error(ctx, (char*)"RangeError", 10,
-                                            (char*)"Too many spread args (>32) in new expression", 44);
-                throwing = true; thrown = err; exit_reason = 3;
-                ctx.frames[cur_idx].ip = ip; break;
-            }
-            let nai: u32 = 0;
-            while nai < n_argc {
-                regs[base + 1 + (u8)nai] = arr.elements[nai];
-                nai = nai + 1;
-            }
-            // Rewrite inst.c for the duplicated body below. The
-            // simplest cross-block carry is a local sentinel — set a
-            // dispatch_argc local that the NewInvoke fall-through
-            // uses. Easier still: re-enter the dispatch by directly
-            // running the NewInvoke body with an override.
+            // Args are consumed below via an argv POINTER — hand
+            // arr.elements through directly, exactly like SpreadInvoke
+            // does. The array is heap-allocated (elements stable; the
+            // GC is non-moving) and stays rooted at regs[base+1] for
+            // the whole call.
+            //
+            // #395 FIX (latent bug, exposed by tighter register
+            // allocation): this used to MATERIALIZE the runtime-length
+            // array back into regs[base+1..base+n_argc] — but the
+            // compiler reserves only TWO window slots for spread-new
+            // (callee + args-array). With enough spread args the copy
+            // wrote past the frame's register file into the reg-stack
+            // top, which then ALIASED the pushed callee's args region
+            // (overlapping forward memcpy → corrupted trailing args:
+            // test262 spread-mult-*). Baseline frames happened to
+            // carry enough scratch slack to absorb it; the Mov
+            // elimination removed that slack and surfaced the bug.
+            // Passing elements directly also drops the artificial
+            // 32-spread-arg RangeError cap this path carried.
             let callee_sp = regs[base];
             let argc_sp = n_argc;
             // Fall through into the NewInvoke logic by goto-style: we
@@ -7365,11 +7366,9 @@ fn interpret_inner_full(ctx: ZjsContext*,
             ctx.new_target_value = callee;
             let call_result: ZjsValue = zjs_undefined();
             let did_throw: bool = false;
-            // After the in-place copy above, regs[base+1..] holds the
-            // spread args contiguously — we can pass &regs[base+1]
-            // through to the user-callee path just like NewInvoke does.
-            let argv_ptr: ZjsValue* = NULL;
-            raw { argv_ptr = &regs[base + 1]; }
+            // Spread args flow from the heap array's elements — see
+            // the #395 FIX note at the top of this handler.
+            let argv_ptr: ZjsValue* = arr.elements;
             if zjs_is_function(callee) != 0 {
                 let fp = zjs_cell_as_ptr(callee);
                 let target: Function* = NULL;

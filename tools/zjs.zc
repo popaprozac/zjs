@@ -680,6 +680,165 @@ fn run_compile(in_path: char*, out_path: char*) -> int {
     return 0;
 }
 
+// --- disasm ----------------------------------------------------------
+//
+// `zjs disasm <file.js|.zbc>` — compile (or AOT-load) and dump the
+// bytecode of the top-level program plus every nested function
+// reachable through constant pools. Carrier-aware: the fused 2-slot
+// ops (the JmpIf* families and InvokeGlobal) print as ONE line that
+// consumes their J+1 carrier, so what you read is what dispatches.
+// Op names come from the interpreter's positional zjs_op_names table
+// (verified aligned with the Op enum, 140/140 — the older "drifts
+// past Mov" note on jit_op_name below predates that fix and only
+// applies to that hand-rolled subset). Built for the #395 call-shape
+// Mov analysis.
+
+fn disasm_function(ctx: ZjsContext*, f: Function*, label: char*) -> void {
+    raw {
+        fprintf(stdout, "\n=== %s  code_len=%zu regs=%u fixed=%u params=%u consts=%u ics=%u%s%s%s%s ===\n",
+                label, (size_t)f->code_len,
+                (unsigned)f->register_count, (unsigned)f->fixed_regs,
+                (unsigned)f->param_count, (unsigned)f->const_count,
+                (unsigned)f->ic_count,
+                f->is_async ? " async" : "",
+                f->is_generator ? " generator" : "",
+                f->is_arrow ? " arrow" : "",
+                f->is_class_constructor ? " class-ctor" : "");
+    }
+    let i: usize = 0;
+    while i < f.code_len {
+        let inst = f.code[i];
+        let op = inst.op;
+        raw { fprintf(stdout, "%5zu  %-20s", (size_t)i, zjs_op_name_lookup((int)op)); }
+
+        if op == Op::LoadGlobal || op == Op::LoadGlobalOrUndefined
+        || op == Op::StoreGlobal || op == Op::DefineGlobal {
+            let slot = inst_bc_u16(inst);
+            let nm = ctx.realm.globals[slot].name;
+            let nl = ctx.realm.globals[slot].name_len;
+            raw { fprintf(stdout, "r%-3u g%-4u ; %.*s", (unsigned)inst.a, (unsigned)slot, (int)nl, nm ? nm : ""); }
+        } else if op == Op::LoadConst {
+            let ci = inst_bc_u16(inst);
+            raw { fprintf(stdout, "r%-3u const#%u", (unsigned)inst.a, (unsigned)ci); }
+            if (u32)ci < f.const_count {
+                let cv = f.constants[ci];
+                raw {
+                    ZjsValue v = cv;
+                    if (zjs_is_int32(v))            fprintf(stdout, " = %d", zjs_as_int32(v));
+                    else if (zjs_is_double(v))      fprintf(stdout, " = %g", zjs_as_double(v));
+                    else if (zjs_is_string(v)) {
+                        ZjsString* s = zjs_as_string(v);
+                        fprintf(stdout, " = \"%.24s%s\"", s && s->data ? s->data : "",
+                                (s && s->length > 24) ? "..." : "");
+                    }
+                    else if (zjs_is_function(v))    fprintf(stdout, " = <function>");
+                }
+            }
+        } else if op == Op::LoadInt {
+            raw { fprintf(stdout, "r%-3u = %d", (unsigned)inst.a, (int)inst_bc_i16(inst)); }
+        } else if op == Op::Jmp {
+            let off = inst_bc_i16(inst);
+            raw { fprintf(stdout, "-> %zd", (ssize_t)((ssize_t)i + 1 + (ssize_t)off)); }
+        } else if op == Op::JmpIfTrue || op == Op::JmpIfFalse
+               || op == Op::JmpIfNullish || op == Op::JmpIfNotNullish {
+            let off2 = inst_bc_i16(inst);
+            raw { fprintf(stdout, "r%-3u -> %zd", (unsigned)inst.a, (ssize_t)((ssize_t)i + 1 + (ssize_t)off2)); }
+        } else if is_fused_branch_op(op) {
+            // 2-slot: operands here, i16 offset in the J+1 carrier,
+            // branch base J+2. *Imm forms carry an i8 immediate in b.
+            let coff = inst_bc_i16(f.code[i + 1]);
+            let target: i64 = (i64)i + 2 + (i64)coff;
+            let is_imm: bool = op == Op::JmpIfNotLtImm || op == Op::JmpIfNotLeImm
+                || op == Op::JmpIfNotGtImm || op == Op::JmpIfNotGeImm
+                || op == Op::JmpIfLtImm || op == Op::JmpIfLeImm
+                || op == Op::JmpIfGtImm || op == Op::JmpIfGeImm;
+            if is_imm {
+                raw { fprintf(stdout, "r%-3u imm=%-4d -> %lld  [carrier@%zu]", (unsigned)inst.a, (int)(int8_t)inst.b, (long long)target, (size_t)(i + 1)); }
+            } else {
+                raw { fprintf(stdout, "r%-3u r%-3u -> %lld  [carrier@%zu]", (unsigned)inst.a, (unsigned)inst.b, (long long)target, (size_t)(i + 1)); }
+            }
+            i = i + 1;
+        } else if op == Op::InvokeGlobal {
+            let gslot = inst_bc_u16(f.code[i + 1]);
+            let gnm = ctx.realm.globals[gslot].name;
+            let gnl = ctx.realm.globals[gslot].name_len;
+            raw { fprintf(stdout, "r%-3u <- g%u(base=r%u argc=%u)  [carrier@%zu] ; %.*s",
+                          (unsigned)inst.a, (unsigned)gslot, (unsigned)inst.b,
+                          (unsigned)inst.c, (size_t)(i + 1), (int)gnl, gnm ? gnm : ""); }
+            i = i + 1;
+        } else if op == Op::Invoke || op == Op::NewInvoke {
+            raw { fprintf(stdout, "r%-3u <- base=r%u argc=%u", (unsigned)inst.a, (unsigned)inst.b, (unsigned)inst.c); }
+        } else if op == Op::MethodInvoke {
+            raw { fprintf(stdout, "r%-3u <- base=r%u recv=r%u argc=%u", (unsigned)inst.a, (unsigned)inst.b, (unsigned)inst.b + 1, (unsigned)inst.c); }
+        } else if op == Op::TailInvoke || op == Op::TailMethodInvoke {
+            raw { fprintf(stdout, "base=r%u argc=%u", (unsigned)inst.b, (unsigned)inst.c); }
+        } else if op == Op::LoadProp {
+            let pn = if f.ics != NULL { f.ics[inst.c].name } else { NULL };
+            raw { fprintf(stdout, "r%-3u <- r%u.%s  ic#%u", (unsigned)inst.a, (unsigned)inst.b,
+                          pn && ((ZjsString*)pn)->data ? ((ZjsString*)pn)->data : "?", (unsigned)inst.c); }
+        } else if op == Op::StoreProp {
+            let sn = if f.ics != NULL { f.ics[inst.b].name } else { NULL };
+            raw { fprintf(stdout, "r%u.%s <- r%-3u  ic#%u", (unsigned)inst.a,
+                          sn && ((ZjsString*)sn)->data ? ((ZjsString*)sn)->data : "?", (unsigned)inst.c, (unsigned)inst.b); }
+        } else if op == Op::Mov {
+            raw { fprintf(stdout, "r%-3u <- r%u", (unsigned)inst.a, (unsigned)inst.b); }
+        } else if op == Op::AddImm || op == Op::SubImm {
+            raw { fprintf(stdout, "r%-3u <- r%u, imm=%d", (unsigned)inst.a, (unsigned)inst.b, (int)(int8_t)inst.c); }
+        } else if op == Op::CmpLtImm || op == Op::CmpLeImm
+               || op == Op::CmpGtImm || op == Op::CmpGeImm {
+            raw { fprintf(stdout, "r%-3u <- r%u, imm=%d", (unsigned)inst.a, (unsigned)inst.b, (int)(int8_t)inst.c); }
+        } else if op == Op::Return {
+            raw { fprintf(stdout, "r%u", (unsigned)inst.a); }
+        } else {
+            raw { fprintf(stdout, "a=%-3u b=%-3u c=%-3u | u16=%u i16=%d",
+                          (unsigned)inst.a, (unsigned)inst.b, (unsigned)inst.c,
+                          (unsigned)inst_bc_u16(inst), (int)inst_bc_i16(inst)); }
+        }
+        raw { fputc('\n', stdout); }
+        i = i + 1;
+    }
+
+    // Recurse into nested functions in the constant pool.
+    let k: u32 = 0;
+    while k < f.const_count {
+        let cv2 = f.constants[k];
+        if zjs_is_function(cv2) != 0 {
+            let nf: Function* = NULL;
+            raw { nf = (Function*)zjs_cell_as_ptr(cv2); }
+            let sub: char[256];
+            raw { snprintf(sub, sizeof(sub), "%s/const#%u", label, (unsigned)k); }
+            disasm_function(ctx, nf, sub);
+        }
+        k = k + 1;
+    }
+}
+
+fn run_disasm(path: char*) -> int {
+    let len: usize = 0;
+    let buf = slurp_file(path, true, &len);
+    if buf == NULL { eprintln "zjs: cannot open input"; return 2; }
+    defer dealloc(buf);
+
+    let ctx = zjs_new_context();
+    if ctx == NULL { eprintln "zjs: failed to create context"; return 2; }
+    defer zjs_free_context(ctx);
+
+    let f: Function* = NULL;
+    if buf_is_bytecode(buf, len) {
+        f = aot_deserialize_program(ctx, (u8*)buf, len);
+        if f == NULL { eprintln "zjs: invalid bytecode file"; return 1; }
+    } else {
+        f = zjs_compile(ctx, buf);
+        if f == NULL {
+            if zjs_had_error(ctx) != 0 { report_uncaught_error(ctx); }
+            return 1;
+        }
+    }
+    defer function_free(f);
+    disasm_function(ctx, f, (char*)"<program>");
+    return 0;
+}
+
 fn run_lex(source: char*) -> int {
     let len: usize = 0;
     raw { len = strlen(source); }
@@ -793,6 +952,7 @@ fn print_usage() -> int {
     eprintln "  zjs eval <source>                evaluate source";
     eprintln "  zjs run  <file>                  run a .js source or .zbc bytecode file";
     eprintln "  zjs compile <in.js> -o <out.zbc> AOT-compile source to bytecode";
+    eprintln "  zjs disasm <file.js|.zbc>        dump bytecode (all functions)";
     eprintln "  zjs lex   <source>               dump the token stream";
     eprintln "  zjs parse <source>               dump the AST";
     eprintln "  zjs module <file>                run a file as an ES module";
@@ -1277,6 +1437,10 @@ fn main(argc: int, argv: char**) -> int {
         if argc < 5 { return print_usage(); }
         if libc_str::strcmp(argv[3], "-o") != 0 { return print_usage(); }
         return run_compile(argv[2], argv[4]);
+    }
+    if libc_str::strcmp(argv[1], "disasm") == 0 {
+        if argc < 3 { return print_usage(); }
+        return run_disasm(argv[2]);
     }
 
     return print_usage();
