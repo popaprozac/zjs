@@ -150,15 +150,18 @@ struct Compiler {
     // Nested calls inside the return expression compare unequal and
     // still fuse.
     tail_call_node: AstNode*;
-    // #400 inc B: the enclosing class's private-element kind table —
-    // mangled atom -> kind bits (1=field, 2=method, 4=getter,
-    // 8=setter; 12=get+set pair). Filled by compile_class_value,
-    // inherited by method-body child compilers (like
-    // enclosing_class_id) so access sites can reject wrong-direction
-    // accessor use and method writes at compile time.
-    priv_names: ZjsString*[32];
-    priv_kinds: u8[32];
-    priv_count: u32;
+    // #400 inc C: stack of enclosing class private-element scopes —
+    // level i covers cls_stack_names[i*32 .. i*32+counts[i]) with BARE
+    // name atoms (no # or mangling) and kind bits (1=field, 2=method,
+    // 4=getter, 8=setter; pairs OR'd). Access sites resolve a #name
+    // OUTWARD through the stack (nested classes reach enclosing
+    // privates); the matched level's id drives both the mangled key
+    // and the brand check. An unmatched #name is a SyntaxError.
+    cls_stack_ids:    i32[8];
+    cls_stack_counts: u32[8];
+    cls_stack_names:  ZjsString*[256];
+    cls_stack_kinds:  u8[256];
+    cls_stack_depth:  u32;
     // `has_outer_refs` is set on the inner compiler whenever its body
     // references a name resolved in a parent scope. Drives whether
     // the outer needs to wrap the resulting function in MakeClosure.
@@ -1966,7 +1969,9 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
                && node.left.kind == NodeKind::Member
                && node.left.left == NULL
                && is_private_name(c, node.left.name_start, node.left.name_length) {
-                let mangled = mangle_private_name(c, node.left.name_start, node.left.name_length);
+                let in_id: i32 = -1;
+                let in_kind: u8 = 0;
+                let mangled = resolve_private(c, node.left.name_start, node.left.name_length, &in_id, &in_kind);
                 if mangled == NULL { return 0; }
                 let l = emit_load_atom(c, mangled);
                 let r = compile_expr(c, node.right);
@@ -2697,18 +2702,20 @@ fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
     let saved_borrow = c.borrow_local_ok;
     c.borrow_local_ok = true;
     let name_atom: ZjsString* = NULL;
-    if is_private_name(c, node.name_start, node.name_length) {
-        name_atom = mangle_private_name(c, node.name_start, node.name_length);
+    let was_private_rd = is_private_name(c, node.name_start, node.name_length);
+    let priv_id_rd: i32 = -1;
+    let priv_kind_rd: u8 = 0;
+    if was_private_rd {
+        name_atom = resolve_private(c, node.name_start, node.name_length, &priv_id_rd, &priv_kind_rd);
         if name_atom == NULL { return 0; }  // SyntaxError already armed
     } else {
         name_atom = ctx_intern_atom(c.ctx, c.source + node.name_start, node.name_length);
     }
-    let was_private_rd = is_private_name(c, node.name_start, node.name_length);
     let ic = alloc_ic_slot(c, name_atom);
     if ic > 255 {
         let obj_r = compile_expr(c, node.left);
         c.borrow_local_ok = saved_borrow;
-        if was_private_rd { emit_private_check(c, obj_r); }   // #400
+        if was_private_rd { emit_private_check(c, obj_r, priv_id_rd); }   // #400
         // Use the already-interned (possibly mangled) atom so the
         // fallback honors private-name mangling too.
         let key_r = emit_load_atom(c, name_atom);
@@ -2725,10 +2732,10 @@ fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
     c.borrow_local_ok = saved_borrow;
     c.preferred_dst = saved_pd;
     if was_private_rd {
-        emit_private_check(c, obj_r);   // #400
+        emit_private_check(c, obj_r, priv_id_rd);   // #400
         // inc B: reading a setter-only private accessor is a TypeError
         // (§13.3.7.1 — no [[Get]] in the PrivateElement).
-        if private_kind_of(c, name_atom) == 8 {
+        if priv_kind_rd == 8 {
             emit_throw_type_error(c, (char*)"'#x' was defined without a getter", 33);
         }
     }
@@ -2923,8 +2930,10 @@ fn compile_property_target(c: Compiler*, target: AstNode*) -> PropTarget {
     let key_r: u8 = 0;
     if target.kind == NodeKind::Member {
         if is_private_name(c, target.name_start, target.name_length) {
-            emit_private_check(c, obj_r);   // #400
-            let atom = mangle_private_name(c, target.name_start, target.name_length);
+            let priv_id_pt: i32 = -1;
+            let priv_kind_pt: u8 = 0;
+            let atom = resolve_private(c, target.name_start, target.name_length, &priv_id_pt, &priv_kind_pt);
+            emit_private_check(c, obj_r, priv_id_pt);   // #400
             if atom == NULL {
                 // SyntaxError armed. Return dummy regs; outer error gate
                 // handles the early exit.
@@ -2947,8 +2956,10 @@ fn compile_assignment_to_property(c: Compiler*, target: AstNode*, op_tok: TokenK
     // path.
     if target.kind == NodeKind::Member && op_tok == TokenKind::Eq {
         let name_atom: ZjsString* = NULL;
+        let priv_id_wr: i32 = -1;
+        let priv_kind_wr: u8 = 0;
         if is_private_name(c, target.name_start, target.name_length) {
-            name_atom = mangle_private_name(c, target.name_start, target.name_length);
+            name_atom = resolve_private(c, target.name_start, target.name_length, &priv_id_wr, &priv_kind_wr);
             if name_atom == NULL { return 0; }
         } else {
             name_atom = ctx_intern_atom(c.ctx,
@@ -2971,13 +2982,12 @@ fn compile_assignment_to_property(c: Compiler*, target: AstNode*, op_tok: TokenK
             if rhs_pure || obj_is_this { c.borrow_local_ok = true; }
             let obj_r = compile_expr(c, target.left);
             if is_private_name(c, target.name_start, target.name_length) {
-                emit_private_check(c, obj_r);   // #400
+                emit_private_check(c, obj_r, priv_id_wr);   // #400
                 // inc B: writing a private METHOD (non-writable per
                 // spec) or a getter-only accessor is a TypeError.
-                let wkind = private_kind_of(c, name_atom);
-                if wkind == 2 {
+                if priv_kind_wr == 2 {
                     emit_throw_type_error(c, (char*)"Private method '#x' is not writable", 35);
-                } else if wkind == 4 {
+                } else if priv_kind_wr == 4 {
                     emit_throw_type_error(c, (char*)"'#x' was defined without a setter", 33);
                 }
             }
@@ -3734,17 +3744,24 @@ fn compile_function(parent_ctx: ZjsContext*, source: char*, node: AstNode*, pare
     if parent != NULL {
         c.enclosing_class_parent = parent.enclosing_class_parent;
         c.enclosing_class_id     = parent.enclosing_class_id;
-        // #400: private-element kinds travel with the class id.
-        c.priv_count = parent.priv_count;
+        // #400: the private scope stack travels with the class id.
+        c.cls_stack_depth = parent.cls_stack_depth;
         let pv: u32 = 0;
-        while pv < parent.priv_count {
-            c.priv_names[pv] = parent.priv_names[pv];
-            c.priv_kinds[pv] = parent.priv_kinds[pv];
+        while pv < parent.cls_stack_depth {
+            c.cls_stack_ids[pv] = parent.cls_stack_ids[pv];
+            c.cls_stack_counts[pv] = parent.cls_stack_counts[pv];
             pv = pv + 1;
+        }
+        let pe2: u32 = 0;
+        let tot: u32 = parent.cls_stack_depth * 32;
+        while pe2 < tot {
+            c.cls_stack_names[pe2] = parent.cls_stack_names[pe2];
+            c.cls_stack_kinds[pe2] = parent.cls_stack_kinds[pe2];
+            pe2 = pe2 + 1;
         }
     } else {
         c.enclosing_class_id = -1;
-        c.priv_count = 0;
+        c.cls_stack_depth = 0;
     }
 
     // ECMA-262 strict-mode determination. Computed BEFORE the body
@@ -4717,17 +4734,6 @@ fn mangle_private_name(c: Compiler*, name_start: u32, name_length: u32) -> ZjsSt
 // access throws TypeError. Emitted before every private member read /
 // write / call. No-op outside class bodies (the mangler already armed
 // the SyntaxError in that case).
-// #400 inc B: kind bits for a mangled private atom in the enclosing
-// class (0 when unknown — e.g. nested-class outer access).
-fn private_kind_of(c: Compiler*, atom: ZjsString*) -> u8 {
-    let i: u32 = 0;
-    while i < c.priv_count {
-        if c.priv_names[i] == atom { return c.priv_kinds[i]; }
-        i = i + 1;
-    }
-    return 0;
-}
-
 // #400 inc B: emit ThrowTypeError with a const-pool message.
 fn emit_throw_type_error(c: Compiler*, msg: char*, msg_len: u32) -> void {
     let ms = ctx_intern_string(c.ctx, msg, msg_len);
@@ -4735,12 +4741,64 @@ fn emit_throw_type_error(c: Compiler*, msg: char*, msg_len: u32) -> void {
     emit(c, make_inst_a_u16(Op::ThrowTypeError, 0, idx));
 }
 
-fn emit_private_check(c: Compiler*, obj_reg: u8) -> void {
-    if c.enclosing_class_id < 0 { return; }
+// #400 inc C: mangle a #name body with an EXPLICIT class id —
+// declaration sites use the current class; access sites use the id
+// the resolver found.
+fn mangle_with_id(c: Compiler*, name_start: u32, name_length: u32, class_id: i32) -> ZjsString* {
+    let body_ptr: char* = NULL;
+    raw { body_ptr = c->source + name_start + 1; }
+    let body_len: u32 = name_length - 1;
+    let buf: char[64];
+    let bp: char* = NULL; raw { bp = &buf[0]; }
+    let n: int = 0;
+    raw {
+        n = snprintf(bp, 64, "__zjs_priv_%u_%.*s",
+                     (unsigned)class_id, (int)body_len, body_ptr);
+    }
+    if n < 0 || n >= 64 { n = 63; }
+    return ctx_intern_atom(c.ctx, bp, (u32)n);
+}
+
+// #400 inc C: resolve a #name ACCESS through the enclosing-class
+// scope stack (innermost outward). Returns the mangled atom for the
+// DECLARING class and writes that class's id + the element's kind
+// bits. Unmatched names are a SyntaxError (§ early error: Private
+// name must be declared in an enclosing class) — had_error armed,
+// NULL returned.
+fn resolve_private(c: Compiler*, name_start: u32, name_length: u32,
+                   out_id: i32*, out_kind: u8*) -> ZjsString* {
+    if c.cls_stack_depth == 0 {
+        c.had_error = true;
+        return NULL;
+    }
+    let bare_ptr: char* = NULL;
+    raw { bare_ptr = c->source + name_start + 1; }
+    let bare = ctx_intern_atom(c.ctx, bare_ptr, name_length - 1);
+    let lvl: i32 = (i32)c.cls_stack_depth - 1;
+    while lvl >= 0 {
+        let cnt = c.cls_stack_counts[(u32)lvl];
+        let base = (u32)lvl * 32;
+        let i: u32 = 0;
+        while i < cnt {
+            if c.cls_stack_names[base + i] == bare {
+                out_id[0] = c.cls_stack_ids[(u32)lvl];
+                out_kind[0] = c.cls_stack_kinds[base + i];
+                return mangle_with_id(c, name_start, name_length, c.cls_stack_ids[(u32)lvl]);
+            }
+            i = i + 1;
+        }
+        lvl = lvl - 1;
+    }
+    c.had_error = true;
+    return NULL;
+}
+
+fn emit_private_check(c: Compiler*, obj_reg: u8, class_id: i32) -> void {
+    if class_id < 0 { return; }
     let buf: char[40];
     let bp: char* = NULL; raw { bp = &buf[0]; }
     let n: int = 0;
-    raw { n = snprintf(bp, 40, "__zjs_brand_%u", (unsigned)c->enclosing_class_id); }
+    raw { n = snprintf(bp, 40, "__zjs_brand_%u", (unsigned)class_id); }
     let atom = ctx_intern_atom(c.ctx, bp, (u32)n);
     let idx = add_const(c, zjs_cell_from_ptr((void*)atom));
     emit(c, make_inst_a_u16(Op::PrivateCheck, obj_reg, idx));
@@ -4771,13 +4829,6 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     // accepts it directly. If absent, synthesize an empty node.
     let saved_class_parent = c.enclosing_class_parent;
     let saved_class_id     = c.enclosing_class_id;
-    // #400: each class gets a fresh private table; restore on exit.
-    let saved_priv_count = c.priv_count;
-    let saved_priv_names: ZjsString*[32];
-    let saved_priv_kinds: u8[32];
-    let spv: u32 = 0;
-    while spv < saved_priv_count { saved_priv_names[spv] = c.priv_names[spv]; saved_priv_kinds[spv] = c.priv_kinds[spv]; spv = spv + 1; }
-    c.priv_count = 0;
     c.enclosing_class_parent = cls_node.right;
     // Allocate a fresh class id so `#x` in this class gets a hidden
     // key distinct from `#x` in any other class. Counter is on ctx
@@ -4785,6 +4836,55 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     // recursion for methods).
     c.ctx.class_id_counter = c.ctx.class_id_counter + 1;
     c.enclosing_class_id = (i32)c.ctx.class_id_counter;
+    // #400 inc C: push this class's private scope BEFORE anything in
+    // the body compiles (the ctor compiles first — its field-init
+    // injections and direction checks need the table). Scan the AST
+    // for private element names (dup early-error + bare-name/kind
+    // table for access-site resolution).
+    if c.cls_stack_depth >= 8 { c.had_error = true; return alloc_reg(c); }
+    let lvl_base: u32 = c.cls_stack_depth * 32;
+    c.cls_stack_ids[c.cls_stack_depth] = c.enclosing_class_id;
+    c.cls_stack_counts[c.cls_stack_depth] = 0;
+    c.cls_stack_depth = c.cls_stack_depth + 1;
+    let pn_i: u32 = 0;
+    while pn_i < cls_node.children_count {
+        let pe = cls_node.children[pn_i];
+        if pe != NULL && is_private_name(c, pe.name_start, pe.name_length) {
+            let bare_p: char* = NULL;
+            raw { bare_p = c->source + pe->name_start + 1; }
+            let bare = ctx_intern_atom(c.ctx, bare_p, pe.name_length - 1);
+            let kind_bit: u8 = 1;
+            let dup_attr: u8 = 1;
+            if pe.kind == NodeKind::MethodDef {
+                if pe.op == TokenKind::KwGet { kind_bit = 4; dup_attr = 2; }
+                else if pe.op == TokenKind::KwSet { kind_bit = 8; dup_attr = 4; }
+                else { kind_bit = 2; }
+            }
+            let cnt = c.cls_stack_counts[c.cls_stack_depth - 1];
+            let ki: u32 = 0;
+            let kfound: i32 = -1;
+            while ki < cnt {
+                if c.cls_stack_names[lvl_base + ki] == bare { kfound = (i32)ki; ki = cnt; }
+                else { ki = ki + 1; }
+            }
+            if kfound >= 0 {
+                // Duplicate PrivateBoundName — only get+set pairs OK.
+                let prevk = c.cls_stack_kinds[lvl_base + (u32)kfound];
+                let pair_ok: bool = (prevk == 4 && kind_bit == 8) || (prevk == 8 && kind_bit == 4);
+                if !pair_ok {
+                    c.had_error = true;
+                    c.cls_stack_depth = c.cls_stack_depth - 1;
+                    return alloc_reg(c);
+                }
+                c.cls_stack_kinds[lvl_base + (u32)kfound] = prevk | kind_bit;
+            } else if cnt < 32 {
+                c.cls_stack_names[lvl_base + cnt] = bare;
+                c.cls_stack_kinds[lvl_base + cnt] = kind_bit;
+                c.cls_stack_counts[c.cls_stack_depth - 1] = cnt + 1;
+            }
+        }
+        pn_i = pn_i + 1;
+    }
     let ctor_fn: Function* = NULL;
     if ctor_node != NULL {
         ctor_fn = compile_function(c.ctx, c.source, ctor_node, c);
@@ -4828,75 +4928,6 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
                                     PROP_CONFIGURABLE);
     }
 
-    // Spec: PrivateBoundNames of ClassBody must not contain duplicates,
-    // EXCEPT a name shared by exactly one getter + one setter is OK.
-    // Walk all class elements, intern their (mangled) private keys,
-    // and reject duplicates inline. The accessor-pair exception is
-    // tracked via two parallel bitmaps keyed by atom-pointer hash.
-    let pname_atoms: ZjsString*[32];
-    let pname_attrs: u8[32];  // bit 0 = saw plain, bit 1 = get, bit 2 = set
-    let pname_count: u32 = 0;
-    let pn_i: u32 = 0;
-    while pn_i < cls_node.children_count {
-        let pe = cls_node.children[pn_i];
-        if pe != NULL && is_private_name(c, pe.name_start, pe.name_length) {
-            let atom = mangle_private_name(c, pe.name_start, pe.name_length);
-            if atom != NULL {
-                let this_attr: u8 = 1;  // plain
-                if pe.kind == NodeKind::MethodDef {
-                    if pe.op == TokenKind::KwGet { this_attr = 2; }
-                    else if pe.op == TokenKind::KwSet { this_attr = 4; }
-                }
-                // #400 inc B: record the element KIND for access-site
-                // direction checks (field 1 / method 2 / getter 4 /
-                // setter 8; accessor pairs OR together).
-                let kind_bit: u8 = 1;
-                if pe.kind == NodeKind::MethodDef {
-                    if pe.op == TokenKind::KwGet { kind_bit = 4; }
-                    else if pe.op == TokenKind::KwSet { kind_bit = 8; }
-                    else { kind_bit = 2; }
-                }
-                let ki: u32 = 0;
-                let kfound: bool = false;
-                while ki < c.priv_count {
-                    if c.priv_names[ki] == atom {
-                        c.priv_kinds[ki] = c.priv_kinds[ki] | kind_bit;
-                        kfound = true;
-                        ki = c.priv_count;
-                    } else { ki = ki + 1; }
-                }
-                if !kfound && c.priv_count < 32 {
-                    c.priv_names[c.priv_count] = atom;
-                    c.priv_kinds[c.priv_count] = kind_bit;
-                    c.priv_count = c.priv_count + 1;
-                }
-                let found: i32 = -1;
-                let ai: u32 = 0;
-                while ai < pname_count {
-                    if pname_atoms[ai] == atom { found = (i32)ai; break; }
-                    ai = ai + 1;
-                }
-                if found >= 0 {
-                    let prev = pname_attrs[(u32)found];
-                    // Only allowed combo: one get + one set (== 6).
-                    // Anything else is a duplicate.
-                    let combined: u8 = prev | this_attr;
-                    let only_accessors: bool = (prev == 2 && this_attr == 4) || (prev == 4 && this_attr == 2);
-                    if !only_accessors {
-                        c.had_error = true;
-                        return alloc_reg(c);
-                    }
-                    pname_attrs[(u32)found] = combined;
-                } else if pname_count < 32 {
-                    pname_atoms[pname_count] = atom;
-                    pname_attrs[pname_count] = this_attr;
-                    pname_count = pname_count + 1;
-                }
-            }
-        }
-        pn_i = pn_i + 1;
-    }
-
     let ctor_ptr: void* = NULL;
     raw { ctor_ptr = (void*)ctor_fn; }
     ctx_register_cell(c.ctx, ctor_ptr);
@@ -4919,7 +4950,7 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     // constructor Function with the class brand atom — NewInvoke /
     // SuperCall install it on instances; the compile-time install on
     // ctor_fn.props covers static-private receivers (the ctor itself).
-    if pname_count > 0 {
+    if c.cls_stack_depth > 0 && c.cls_stack_counts[c.cls_stack_depth - 1] > 0 {
         let bbuf: char[40];
         let bbp: char* = NULL; raw { bbp = &bbuf[0]; }
         let bn: int = 0;
@@ -5173,9 +5204,7 @@ fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     release_reg(c, proto_reg);
     c.enclosing_class_parent = saved_class_parent;
     c.enclosing_class_id     = saved_class_id;
-    c.priv_count = saved_priv_count;
-    let rpv: u32 = 0;
-    while rpv < saved_priv_count { c.priv_names[rpv] = saved_priv_names[rpv]; c.priv_kinds[rpv] = saved_priv_kinds[rpv]; rpv = rpv + 1; }
+    if c.cls_stack_depth > 0 { c.cls_stack_depth = c.cls_stack_depth - 1; }   // #400 pop
     return ctor_reg;
 }
 
@@ -5729,9 +5758,14 @@ fn compile_call_inner(c: Compiler*, node: AstNode*, ret_hint: i32) -> u8 {
             if callee.kind == NodeKind::Member {
                 let name_atom: ZjsString* = NULL;
                 if is_private_name(c, callee.name_start, callee.name_length) {
-                    emit_private_check(c, base + 1);   // #400: receiver brand
-                    name_atom = mangle_private_name(c, callee.name_start, callee.name_length);
+                    let priv_id_mc: i32 = -1;
+                    let priv_kind_mc: u8 = 0;
+                    name_atom = resolve_private(c, callee.name_start, callee.name_length, &priv_id_mc, &priv_kind_mc);
                     if name_atom == NULL { return 0; }
+                    emit_private_check(c, base + 1, priv_id_mc);   // #400: receiver brand
+                    if priv_kind_mc == 8 {
+                        emit_throw_type_error(c, (char*)"'#x' was defined without a getter", 33);
+                    }
                 } else {
                     name_atom = ctx_intern_atom(c.ctx, c.source + callee.name_start, callee.name_length);
                 }

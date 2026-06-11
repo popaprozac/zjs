@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-11 21:21 UTC",
+    "when": "2026-06-11 21:46 UTC",
     "total": 27568,
-    "passed": 24330,
-    "failed": 2900,
+    "passed": 24350,
+    "failed": 2880,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -762,7 +762,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-a-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.lastIndexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unkno"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/coerced-position-grow.js",
@@ -7333,36 +7333,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"Test262\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
     },
     {
-      "path": "test/language/expressions/class/elements/private-field-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
-      "path": "test/language/expressions/class/elements/private-getter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
       "path": "test/language/expressions/class/elements/private-indirect-eval-err-contains-newtarget.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
-      "path": "test/language/expressions/class/elements/private-method-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
       "path": "test/language/expressions/class/elements/private-method-referenced-from-static-method.js",
       "reason": "[sloppy] zjs: throw: (unknown): Accessed private method from an object which did not contain it Expected a TypeError to be thrown"
-    },
-    {
-      "path": "test/language/expressions/class/elements/private-setter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
-      "path": "test/language/expressions/class/elements/private-static-field-usage-inside-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
-      "path": "test/language/expressions/class/elements/private-static-method-usage-inside-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
     },
     {
       "path": "test/language/expressions/class/elements/prod-private-getter-before-super-return-in-constructor.js",
@@ -7413,20 +7389,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefinedtest\"\u00bb, \u00ab\"test262test\"\u00bb) to be true\nzjs: throw: (unknown): Expected"
     },
     {
-      "path": "test/language/expressions/class/elements/static-private-getter-access-on-inner-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
       "path": "test/language/expressions/class/elements/static-private-method-and-instance-method-brand-check.js",
       "reason": "[sloppy] zjs: throw: (unknown): Accessed static private method from instance of C Expected a TypeError to be thrown but no except"
     },
     {
       "path": "test/language/expressions/class/elements/static-private-method-referenced-from-instance-method.js",
       "reason": "[sloppy] zjs: throw: (unknown): Accessed static private method from an object which did not contain it Expected a TypeError to be"
-    },
-    {
-      "path": "test/language/expressions/class/elements/static-private-setter-access-on-inner-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
     },
     {
       "path": "test/language/expressions/class/elements/super-access-from-arrow-func-on-field.js",
@@ -9653,10 +9621,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): access to a not defined private field in object should throw a TypeError Expected a TypeError to "
     },
     {
-      "path": "test/language/statements/class/elements/private-field-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
       "path": "test/language/statements/class/elements/private-field-visible-to-direct-eval-on-initializer.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
@@ -9671,10 +9635,6 @@
     {
       "path": "test/language/statements/class/elements/private-getter-brand-check-multiple-evaluations-of-class.js",
       "reason": "[sloppy] zjs: throw: (unknown): invalid access of c1 private method Expected a TypeError to be thrown but no exception was thrown"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-getter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
     },
     {
       "path": "test/language/statements/class/elements/private-getter-visible-to-direct-eval-on-initializer.js",
@@ -9717,10 +9677,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): access to a private method from ordinary object Expected a TypeError to be thrown but no exceptio"
     },
     {
-      "path": "test/language/statements/class/elements/private-method-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
       "path": "test/language/statements/class/elements/private-method-referenced-from-static-method.js",
       "reason": "[sloppy] zjs: throw: (unknown): Accessed private method from an object which did not contain it Expected a TypeError to be thrown"
     },
@@ -9737,10 +9693,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): invalid access of c1 private method Expected a TypeError to be thrown but no exception was thrown"
     },
     {
-      "path": "test/language/statements/class/elements/private-setter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
       "path": "test/language/statements/class/elements/private-setter-visible-to-direct-eval-on-initializer.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
@@ -9749,20 +9701,12 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/language/statements/class/elements/private-static-field-usage-inside-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
       "path": "test/language/statements/class/elements/private-static-field-visible-to-direct-eval.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/language/statements/class/elements/private-static-getter-visible-to-direct-eval.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-method-usage-inside-nested-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
     },
     {
       "path": "test/language/statements/class/elements/private-static-method-visible-to-direct-eval.js",
@@ -9781,16 +9725,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/language/statements/class/elements/privatefieldget-success-1.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
       "path": "test/language/statements/class/elements/privatefieldget-typeerror-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/statements/class/elements/privatefieldget-typeerror-3.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
     },
     {
       "path": "test/language/statements/class/elements/privatefieldget-typeerror-4.js",
@@ -9811,10 +9747,6 @@
     {
       "path": "test/language/statements/class/elements/privatefieldset-typeerror-11.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/statements/class/elements/privatefieldset-typeerror-3.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
     },
     {
       "path": "test/language/statements/class/elements/privatefieldset-typeerror-4.js",
@@ -9842,10 +9774,6 @@
     },
     {
       "path": "test/language/statements/class/elements/privatemethods-on-proxy.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
-      "path": "test/language/statements/class/elements/privatename-valid-no-earlyerr.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
     },
     {
@@ -9905,20 +9833,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"undefinedtest\"\u00bb, \u00ab\"test262test\"\u00bb) to be true\nzjs: throw: (unknown): Expected"
     },
     {
-      "path": "test/language/statements/class/elements/static-private-getter-access-on-inner-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
       "path": "test/language/statements/class/elements/static-private-method-and-instance-method-brand-check.js",
       "reason": "[sloppy] zjs: throw: (unknown): Accessed static private method from instance of C Expected a TypeError to be thrown but no except"
     },
     {
       "path": "test/language/statements/class/elements/static-private-method-referenced-from-instance-method.js",
       "reason": "[sloppy] zjs: throw: (unknown): Accessed static private method from an object which did not contain it Expected a TypeError to be"
-    },
-    {
-      "path": "test/language/statements/class/elements/static-private-setter-access-on-inner-class.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
     },
     {
       "path": "test/language/statements/class/elements/super-access-from-arrow-func-on-field.js",
