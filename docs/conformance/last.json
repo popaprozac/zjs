@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-11 20:50 UTC",
+    "when": "2026-06-11 21:21 UTC",
     "total": 27568,
-    "passed": 24317,
-    "failed": 2913,
+    "passed": 24330,
+    "failed": 2900,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -7341,10 +7341,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
     },
     {
-      "path": "test/language/expressions/class/elements/private-getter-shadowed-by-setter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [[Get]] operation of an accessor without getter Expected a TypeError to be thrown but no exceptio"
-    },
-    {
       "path": "test/language/expressions/class/elements/private-indirect-eval-err-contains-newtarget.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
@@ -7357,16 +7353,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Accessed private method from an object which did not contain it Expected a TypeError to be thrown"
     },
     {
-      "path": "test/language/expressions/class/elements/private-method-shadowed-by-setter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [[Get]] operation of an accessor without getter Expected a TypeError to be thrown but no exceptio"
-    },
-    {
       "path": "test/language/expressions/class/elements/private-setter-on-nested-class.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
-      "path": "test/language/expressions/class/elements/private-setter-shadowed-by-method-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invalid [[Set]] operation in a private method Expected a TypeError to be thrown but no exception "
     },
     {
       "path": "test/language/expressions/class/elements/private-static-field-usage-inside-nested-class.js",
@@ -9577,18 +9565,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/language/statements/class/elements/get-access-of-missing-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): get operation on private accessor without getter should throw TypeError Expected a TypeError to b"
-    },
-    {
-      "path": "test/language/statements/class/elements/get-access-of-missing-private-static-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): get operation on private accessor without getter should throw TypeError Expected a TypeError to b"
-    },
-    {
-      "path": "test/language/statements/class/elements/get-access-of-missing-shadowed-private-getter.js",
-      "reason": "[sloppy] zjs: throw: (unknown): subclass private accessor should shadow super class private accessor Expected a TypeError to be t"
-    },
-    {
       "path": "test/language/statements/class/elements/grammar-private-field-optional-chaining.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"test262\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue"
     },
@@ -9701,10 +9677,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
     },
     {
-      "path": "test/language/statements/class/elements/private-getter-shadowed-by-setter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [[Get]] operation of an accessor without getter Expected a TypeError to be thrown but no exceptio"
-    },
-    {
       "path": "test/language/statements/class/elements/private-getter-visible-to-direct-eval-on-initializer.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
@@ -9745,20 +9717,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): access to a private method from ordinary object Expected a TypeError to be thrown but no exceptio"
     },
     {
-      "path": "test/language/statements/class/elements/private-method-not-writable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/language/statements/class/elements/private-method-on-nested-class.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
     },
     {
       "path": "test/language/statements/class/elements/private-method-referenced-from-static-method.js",
       "reason": "[sloppy] zjs: throw: (unknown): Accessed private method from an object which did not contain it Expected a TypeError to be thrown"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-method-shadowed-by-setter-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): [[Get]] operation of an accessor without getter Expected a TypeError to be thrown but no exceptio"
     },
     {
       "path": "test/language/statements/class/elements/private-method-visible-to-direct-eval-on-initializer.js",
@@ -9775,10 +9739,6 @@
     {
       "path": "test/language/statements/class/elements/private-setter-on-nested-class.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
-      "path": "test/language/statements/class/elements/private-setter-shadowed-by-method-on-nested-class.js",
-      "reason": "[sloppy] zjs: throw: (unknown): invalid [[Set]] operation in a private method Expected a TypeError to be thrown but no exception "
     },
     {
       "path": "test/language/statements/class/elements/private-setter-visible-to-direct-eval-on-initializer.js",
@@ -9799,10 +9759,6 @@
     {
       "path": "test/language/statements/class/elements/private-static-getter-visible-to-direct-eval.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/language/statements/class/elements/private-static-method-not-writable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/language/statements/class/elements/private-static-method-usage-inside-nested-class.js",
@@ -9923,14 +9879,6 @@
     {
       "path": "test/language/statements/class/elements/public-class-field-initialization-on-super-class-with-setter.js",
       "reason": "[sloppy] zjs: throw: (unknown): \nzjs: throw: (unknown):"
-    },
-    {
-      "path": "test/language/statements/class/elements/set-access-of-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): set operation on private method should throw TypeError Expected a TypeError to be thrown but no e"
-    },
-    {
-      "path": "test/language/statements/class/elements/set-access-of-shadowed-private-method.js",
-      "reason": "[sloppy] zjs: throw: (unknown): subclass private method should shadow super class private accessor Expected a TypeError to be thr"
     },
     {
       "path": "test/language/statements/class/elements/static-as-valid-static-field-assigned.js",

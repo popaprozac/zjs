@@ -36,7 +36,8 @@ def ZJS_AOT_MAGIC3: u8 = 'b' as u8;
 // v9: #400 added Op::PrivateCheck (1-slot) at the enum end, plus the
 // Function brand_atom field (serialized as a name; see the function
 // writer/reader). Same mismatch hazard class as v7/v8.
-def ZJS_AOT_VERSION: u32 = 9;
+// v10: #400 inc B added Op::ThrowTypeError (1-slot) at the enum end.
+def ZJS_AOT_VERSION: u32 = 10;
 
 def ZJS_AOT_TAG_INT32:    u8 = 0;
 def ZJS_AOT_TAG_DOUBLE:   u8 = 1;

@@ -511,6 +511,13 @@ enum Op {
     // const-pool index of the brand atom. 1-slot (no carrier).
     // Appended at the END (AOT positional; ZJS_AOT_VERSION -> 9).
     PrivateCheck,     // a=obj_reg ; bc = u16 const idx of brand atom
+
+    // Unconditional TypeError throw with a const-pool message (#400
+    // inc B). Emitted where the COMPILER can prove the access is a
+    // spec TypeError (reading a setter-only private, writing a
+    // private method). Generic — reusable for other compile-time-
+    // provable TypeError points. 1-slot.
+    ThrowTypeError,   // bc = u16 const idx of message string
 }
 
 struct Inst {

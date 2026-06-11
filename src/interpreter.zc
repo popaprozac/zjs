@@ -54,7 +54,7 @@ raw {
         "LoadNewTarget", "NewInvoke", "Typeof", "SetProto", "SuperCall", "DefineMethod",
         "DefineMethodComputed", "SetParentCtor", "SetFunctionName", "InitObjData", "SpreadSuperCall", "JmpIfLt",
         "JmpIfLe", "JmpIfGt", "JmpIfGe", "JmpIfLtImm", "JmpIfLeImm", "JmpIfGtImm",
-        "JmpIfGeImm", "InvokeGlobal", "PrivateCheck",
+        "JmpIfGeImm", "InvokeGlobal", "PrivateCheck", "ThrowTypeError",
         NULL,
     };
     static const char *zjs_op_name_lookup(int op) {
@@ -8238,6 +8238,22 @@ fn interpret_inner_full(ctx: ZjsContext*,
                 throwing = true; thrown = pc_err; exit_reason = 3;
                 ctx.frames[cur_idx].ip = ip; break;
             }
+        } else if op == Op::ThrowTypeError {
+            // #400 inc B: compile-time-provable TypeError (e.g. reading
+            // a setter-only private, writing a private method).
+            let tt_ci = inst_bc_u16(inst);
+            let tt_msg: char* = (char*)"TypeError";
+            let tt_len: u32 = 9;
+            if (u32)tt_ci < f.const_count {
+                let tt_v = f.constants[tt_ci];
+                if zjs_is_string(tt_v) != 0 {
+                    let tt_s = zjs_as_string(tt_v);
+                    tt_msg = tt_s.data; tt_len = tt_s.length;
+                }
+            }
+            let tt_err = build_typed_error(ctx, (char*)"TypeError", 9, tt_msg, tt_len);
+            throwing = true; thrown = tt_err; exit_reason = 3;
+            ctx.frames[cur_idx].ip = ip; break;
         } else if op == Op::IterPrepare {
             regs[inst.a] = iter_prepare(ctx, regs[inst.b], (u32)inst.c);
             if ctx.pending_throw_active {
