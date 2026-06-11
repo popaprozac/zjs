@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-11 07:58 UTC",
+    "when": "2026-06-11 15:29 UTC",
     "total": 27568,
-    "passed": 24101,
-    "failed": 3129,
+    "passed": 24127,
+    "failed": 3103,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -1209,22 +1209,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
-      "path": "test/built-ins/Array/prototype/sort/S15.4.4.11_A1.2_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #5: var x = new Array(2); x[0] = 1;  x.sort(myComparefn); x[0] === 1. Actual: undefined\nzjs: thro"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/S15.4.4.11_A1.4_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #2: var x = new Array(undefined, 1); x.sort(myComparefn); x[0] === 1. Actual: undefined\nzjs: thro"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/S15.4.4.11_A2.2_T3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1: Check ToString operator\nzjs: throw: (unknown): #1: Check ToString operator"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/S15.4.4.11_A3_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1: Check ToString operator\nzjs: throw: (unknown): #1: Check ToString operator"
-    },
-    {
       "path": "test/built-ins/Array/prototype/sort/S15.4.4.11_A6_T2.js",
       "reason": "[sloppy] zjs: throw: (unknown): #4: Array.prototype[1] = -1; x = [1,0]; x.length = 2; x.sort(); x.length = 0; x[1] === -1. Actual"
     },
@@ -1233,12 +1217,8 @@
       "reason": "zjs: throw: (unknown): #1: Sort leaks global\nzjs: throw: (unknown): #1: Sort leaks global"
     },
     {
-      "path": "test/built-ins/Array/prototype/sort/bug_596_2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #6: array.hasOwnProperty('0'). Actual: false\nzjs: throw: (unknown): #6: array.hasOwnProperty('0')"
-    },
-    {
       "path": "test/built-ins/Array/prototype/sort/call-with-primitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): boolean\nzjs: throw: (unknown): boolean"
+      "reason": "[sloppy] zjs: throw: (unknown): symbol\nzjs: throw: (unknown): symbol"
     },
     {
       "path": "test/built-ins/Array/prototype/sort/comparefn-grow.js",
@@ -1254,99 +1234,15 @@
     },
     {
       "path": "test/built-ins/Array/prototype/sort/precise-comparefn-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"lolwat\"\u00bb, \u00ab\"get\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\"lo"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-getter-appends-elements.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-getter-decreases-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-getter-deletes-predecessor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-getter-deletes-successor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-getter-increases-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-getter-pops-elements.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-getter-sets-predecessor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-getter-sets-successor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abfalse\u00bb,"
     },
     {
       "path": "test/built-ins/Array/prototype/sort/precise-prototype-accessors.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"get\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abun"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-prototype-element.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abundefi"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-setter-appends-elements.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-setter-decreases-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab8\u00bb, \u00ab7\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab8\u00bb, \u00ab7\u00bb) to be"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-setter-deletes-predecessor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-setter-deletes-successor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-setter-increases-length.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-setter-pops-elements.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab8\u00bb, \u00ab7\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab8\u00bb, \u00ab7\u00bb) to be"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-setter-sets-predecessor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/precise-setter-sets-successor.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abtrue\u00bb, "
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"set with 3\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameVa"
     },
     {
       "path": "test/built-ins/Array/prototype/sort/resizable-buffer-default-comparator.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'length')\nzjs: throw: TypeError: Cannot read propert"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/stability-11-elements.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"DGHFEBJKICA\"\u00bb, \u00ab\"DGBEFHACIJK\"\u00bb) to be true\nzjs: throw: (unknown): Expected S"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/stability-2048-elements.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab2048\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab2048\u00bb)"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/stability-5-elements.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"DBEAC\"\u00bb, \u00ab\"BDEAC\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab\"D"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/sort/stability-513-elements.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab513\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab513\u00bb) t"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A2.2_T5.js",

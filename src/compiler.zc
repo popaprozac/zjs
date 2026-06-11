@@ -3163,7 +3163,13 @@ fn compile_array_literal(c: Compiler*, node: AstNode*) -> u8 {
         s_i = s_i + 1;
     }
 
-    if has_spread {
+    // #399: LARGE literals must also take the dynamic path — the
+    // fixed-shape encoding below carries the element count in a u8
+    // (wrapped mod 256: a 513-element literal compiled to length 1!)
+    // and packs elements into consecutive u8-indexed registers, so big
+    // literals would also blow the register file. 32 keeps the common
+    // small-literal case on the packed fast path.
+    if has_spread || count > 32 {
         let dst = alloc_reg(c);
         emit(c, make_inst_abc(Op::NewArray, dst, 0, 0));
         let j: u32 = 0;
