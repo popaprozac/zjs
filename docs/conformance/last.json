@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-11 18:30 UTC",
+    "when": "2026-06-11 19:01 UTC",
     "total": 27568,
-    "passed": 24197,
-    "failed": 3033,
+    "passed": 24205,
+    "failed": 3025,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -3059,38 +3059,6 @@
     {
       "path": "test/built-ins/Object/assign/target-Array.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [-1, 2] and expected [1, 2] should have the same contents. array index properties must be "
-    },
-    {
-      "path": "test/built-ins/Object/assign/target-is-frozen-accessor-property-set-succeeds.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab2\u00bb) to be"
-    },
-    {
-      "path": "test/built-ins/Object/assign/target-is-frozen-data-property-set-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/assign/target-is-non-extensible-existing-accessor-property.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab2\u00bb) to be"
-    },
-    {
-      "path": "test/built-ins/Object/assign/target-is-non-extensible-existing-data-property.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab2\u00bb) to be"
-    },
-    {
-      "path": "test/built-ins/Object/assign/target-is-non-extensible-property-creation-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/Object/assign/target-is-sealed-existing-accessor-property.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab2\u00bb) to be"
-    },
-    {
-      "path": "test/built-ins/Object/assign/target-is-sealed-existing-data-property.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab2\u00bb) to be"
-    },
-    {
-      "path": "test/built-ins/Object/assign/target-is-sealed-property-creation-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Object/bigint.js",

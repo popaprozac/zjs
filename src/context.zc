@@ -7994,6 +7994,56 @@ fn host_object_assign(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
                 }
             }
         }
+        // #399 inc8: §20.1.2.1 OwnPropertyKeys includes SYMBOL keys.
+        // Under the @@-atom symbol shim, copy the source's own
+        // enumerable @@-prefixed entries with the same atom key — the
+        // target write goes through the normal Set path, so frozen /
+        // non-writable rejection fires for symbol-keyed props too.
+        if zjs_is_object(src) != 0 {
+            let so = zjs_as_object(src);
+            let scls = so.cls;
+            // Collect root-ward then replay in reverse for insertion order.
+            let scnt: u32 = scls.prop_count;
+            if scnt > 0 {
+                let snames = alloc_n<ZjsString*>((usize)scnt);
+                let sslots = alloc_n<u32>((usize)scnt);
+                let sn: u32 = 0;
+                let walk = scls;
+                while walk != NULL && walk.parent != NULL {
+                    let wn = walk.transition_name;
+                    let is_at: bool = false;
+                    raw { is_at = (wn != NULL && wn->length >= 2 && wn->data[0] == '@' && wn->data[1] == '@') ? true : false; }
+                    if is_at && sn < scnt {
+                        let watt = object_get_attrs(so, walk.transition_slot);
+                        if zjs_is_deleted(so.slots[walk.transition_slot]) == 0
+                           && (watt & PROP_ENUMERABLE) != 0 {
+                            snames[sn] = wn;
+                            sslots[sn] = walk.transition_slot;
+                            sn = sn + 1;
+                        }
+                    }
+                    walk = walk.parent;
+                }
+                let ri: u32 = sn;
+                while ri > 0 {
+                    ri = ri - 1;
+                    let kv2 = zjs_cell_from_ptr((void*)snames[ri]);
+                    let vv2 = so.slots[sslots[ri]];
+                    ctx.write_rejected = false;
+                    property_set(ctx, target, kv2, vv2);
+                    if ctx.pending_throw_active { dealloc(snames); dealloc(sslots); return zjs_undefined(); }
+                    if ctx.write_rejected {
+                        let e2 = build_typed_error(ctx, (char*)"TypeError", 9,
+                            (char*)"Cannot assign to read only property", 35);
+                        ctx.pending_throw_active = true; ctx.pending_throw_value = e2;
+                        dealloc(snames); dealloc(sslots);
+                        return zjs_undefined();
+                    }
+                }
+                dealloc(snames);
+                dealloc(sslots);
+            }
+        }
         s = s + 1;
     }
     return target;
