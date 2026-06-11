@@ -124,7 +124,7 @@ PARSER_TEST_SRC := tests/parser_test.zc
 INTERP_TEST_SRC := tests/interpreter_test.zc
 T262_RUNNER_SRC := tests/test262_runner.c
 
-.PHONY: all lib lib-static cli cli-jit cli-pgo smoke smoke-static lexer-test parser-test interp-test test test262-runner test262 test262-quick bench bench-compare clean
+.PHONY: all lib lib-static lib-pgo cli cli-jit cli-pgo smoke smoke-static lexer-test parser-test interp-test test test262-runner test262 test262-quick bench bench-compare clean
 
 all: lib lib-static cli smoke smoke-static lexer-test parser-test interp-test
 
@@ -251,6 +251,7 @@ $(LIBA_C): $(ENGINE_SRC) $(PLATFORM_SRC) include/zjs.h | $(BUILD_DIR) stdlib-lin
 $(LIBA_OBJ): $(LIBA_C)
 	$(CLANG) -O3 -fPIC -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) $(ZJS_TIER_DEFINES) -c $< -o $@
 
+
 $(BUILD_DIR)/%.o: src/platform/%.m | $(BUILD_DIR)
 	$(CLANG) -O3 -fPIC $(PLATFORM_CFLAGS) -Isrc $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(LTO_CFLAGS) -c $< -o $@
 
@@ -290,6 +291,24 @@ $(AESGCM_OBJ): $(AESGCM_DIR)/aes_gcm.c $(AESGCM_DIR)/aes_gcm.h | $(BUILD_DIR)
 $(LIBA): $(LIBA_OBJ) $(PLATFORM_OBJS) $(QJSRE_OBJS) $(AESGCM_OBJ)
 	@rm -f $@
 	ar rcs $@ $^
+
+# --- PGO static lib (#392) --------------------------------------------
+# libzjs.a compiled with the CLI training profile. The engine TU is the
+# same zc-generated code in both binaries, so clang's function-keyed
+# profile matching applies the interpreter/GC/IC profile wholesale;
+# CLI-only symbols just fall back to static heuristics (warnings
+# suppressed). Embedders (zapp) link this for the same ~-20% the PGO
+# CLI measures. Requires the profile from `make cli-pgo`.
+LIBA_PGO     := $(BUILD_DIR)/libzjs-pgo.a
+LIBA_PGO_OBJ := $(BUILD_DIR)/libzjs-pgo.o
+lib-pgo: $(LIBA_PGO)
+$(LIBA_PGO_OBJ): $(LIBA_C) $(ZJS_PGO)
+	$(CLANG) -O3 -fPIC -fprofile-use=$(PGO_DIR)/merged.profdata \
+	    -Wno-profile-instr-unprofiled -Wno-profile-instr-out-of-date \
+	    -Isrc $(ZC_STDLIB_INCS) $(ZC_C_WARNS) $(DEADSTRIP_CFLAGS) $(ZJS_TIER_DEFINES) -c $< -o $@
+$(LIBA_PGO): $(LIBA_PGO_OBJ) $(PLATFORM_OBJS) $(QJSRE_OBJS) $(AESGCM_OBJ)
+	ar rcs $@ $^
+
 
 # === JIT — opt-in copy-and-patch baseline (second-class; OFF by default) =====
 # docs/jit-design-study.md + docs/jit-spike-phase1.md. Enable with `ZJS_JIT=1`.
@@ -458,14 +477,16 @@ test262-full: cli
 # End-to-end microbenchmarks. Times each scripts/bench/*.js with
 # wall-clock around `zjs run`, records the median, appends history,
 # regenerates docs/perf/index.html.
-bench: cli
+# #392: canonical numbers come from the PGO build — bench builds it and
+# run.py auto-prefers build/zjs-pgo (ZJS_BIN env overrides).
+bench: cli cli-pgo
 	-@$(MAKE) --no-print-directory cli-jit 2>/dev/null || true
 	@python3 scripts/bench/run.py
 
 # Cross-engine comparison: also runs each bench under qjs (jitless,
 # our closest peer), node (V8), and bun (JSC). Writes docs/perf/compare.html.
 # Also builds build/zjs-jit (best-effort) so the JIT lands as its own column.
-bench-compare: cli
+bench-compare: cli cli-pgo
 	-@$(MAKE) --no-print-directory cli-jit 2>/dev/null || true
 	@python3 scripts/bench/run.py --compare
 

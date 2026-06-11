@@ -56,7 +56,12 @@ elif IS_LINUX:
 else:
     PLATFORM_TAG = None
     PLATFORM_LABEL = "macOS"
-ZJS_BIN    = REPO_ROOT / "build" / ("zjs.exe" if IS_WINDOWS else "zjs")
+# #392: canonical bench numbers come from the PGO build (`make cli-pgo`).
+# $ZJS_BIN overrides; otherwise prefer build/zjs-pgo when present, falling
+# back to the plain dev build.
+_default_bin = REPO_ROOT / "build" / ("zjs.exe" if IS_WINDOWS else "zjs")
+_pgo_bin     = REPO_ROOT / "build" / "zjs-pgo"
+ZJS_BIN    = Path(os.environ["ZJS_BIN"]) if os.environ.get("ZJS_BIN") else (_pgo_bin if _pgo_bin.exists() else _default_bin)
 # Optional second binary built WITH the copy-and-patch JIT (`make cli-jit`).
 # When present it shows up as a JIT column in the solo run and a "zjs-jit"
 # engine in --compare, so the interpreter-vs-JIT delta is visible per bench.
@@ -802,7 +807,8 @@ def main():
     when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     sha  = commit_short_sha()
     summary = {"when": when, "sha": sha, "results": results,
-               "platform": PLATFORM_LABEL}
+               "platform": PLATFORM_LABEL,
+               "bin": ZJS_BIN.name}   # zjs-pgo = canonical since #392
 
     if not args.no_record:
         OUT_DIR.mkdir(parents=True, exist_ok=True)

@@ -1,3 +1,56 @@
+# Perf snapshot — 2026-06-10 (`2fefdd4`, PGO-canonical)
+
+Measured on Apple M4 Max, macOS. Startup-corrected body medians (5 iters),
+`python3 scripts/bench/run.py --compare`. Engine versions as in the 06-09
+snapshot. **zjs is now the PGO build** (#392, `make cli-pgo`: train on the
+bench suite, rebuild `-fprofile-use`) — this is the release configuration
+going forward, and the bench harness records it (`"bin": "zjs-pgo"` in
+history.jsonl). The C1/C2 call-path work (#394 InvokeGlobal fusion, #395
+Mov elimination) also landed since 06-10a.
+
+## Headlines
+
+| Comparison | Geomean | Wins | 06-10a |
+|---|---|---|---|
+| **zjs vs QuickJS-ng** | **2.05× faster** | **23/23** | 1.49×, 19/23 |
+| zjs vs Hermes `-O` (≥5 ms set, n=12) | **1.60× slower (0.62×)** | 1/12 | 1.98× slower |
+| zjs vs Static Hermes (≥5 ms set, n=11) | **1.12× slower (0.89×)** | 3/11 | 1.7× slower |
+
+- **PGO is the story (#392): geomean −21% across the suite** from build
+  machinery alone (fib −30%, mandelbrot −31%, func_loop −27%). The profile
+  drives dispatch-loop block layout + value-profiled indirect branches —
+  the entire interpreter cost model. Held-out cross-validation confirmed it
+  generalizes (training without richards/splay/nbody keeps −8..−27% on
+  them). Outputs and `ZJS_PROFILE_OPS` dispatch counts byte-identical.
+- **Every bench now beats QuickJS-ng** — the four 06-10a losses flipped
+  (regex 1.09×, nbody 1.20×, fib 1.28×, closure_call 1.31×). Largest
+  margins: object_alloc 5.9×, func_loop 4.1×, int_loop 3.7×.
+- **Static Hermes is within reach** (0.89× geomean): zjs wins sieve/
+  quicksort-class and sits ≤1.35× on fib/func_loop/richards; the tail is
+  int_loop_big/nbody-style numeric code where shermes' AOT folding wins.
+- **#391 closed for good**: the ~6% accretion (and the ±2% noise band that
+  ate the #378/#396 measurements) was code-layout luck; PGO controls it
+  deliberately. Splay 158.1 ms — best ever recorded.
+- **JIT caveat:** `zjs-jit` is NOT PGO'd and now loses to the PGO
+  interpreter on most benches (0.5–0.96×). The JIT column is no longer
+  meaningful until the JIT build gets the same treatment (task filed).
+
+**Fairness footnote:** zjs = PGO build; competitors = their distributed
+release binaries (QuickJS-ng and Hermes do not ship PGO'd by default).
+A PGO'd QuickJS-ng would claw back some margin; the comparison is
+"our release config vs theirs", not "both engines' theoretical best".
+
+## Standalone (zjs-pgo interpreter, ms, 2026-06-10)
+
+array_iterate 0.89 · closure_call 4.02 · double_loop 2.69 · fib 83.2 ·
+func_loop 259.8 · hash_count 1.59 · int_loop 5.45 · int_loop_big 57.4 ·
+json_roundtrip 9.44 · mandelbrot 29.6 · method_call 4.29 · nbody 65.3 ·
+obj_field 178.0 · object_alloc 3.53 · property_mono 4.04 · property_poly 4.47 ·
+quicksort 9.40 · regex_match 115.4 · richards 114.5 · sieve 6.35 ·
+splay 158.1 · string_concat 0.09 · try_overhead 1.71
+
+---
+
 # Perf snapshot — 2026-06-10 (`41e915d`)
 
 Measured on Apple M4 Max, macOS. Startup-corrected body medians (5 iters),
