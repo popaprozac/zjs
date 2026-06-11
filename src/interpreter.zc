@@ -234,6 +234,26 @@ fn install_brand_from_callee(ctx: ZjsContext*, callee: ZjsValue, obj_v: ZjsValue
 // Array.prototype. Mirrors the named-key proto walk in property_get's
 // TAG_ARRAY branch: subclass proto first (arr.proto), else the realm
 // array proto; inherited accessors fire with this = the array.
+// #400 inc D: §7.1.19 ToPropertyKey for OBJECT keys — ToPrimitive
+// with the "string" hint (fires @@toPrimitive, then toString/valueOf),
+// TypeError when the result is still non-primitive, abrupt
+// completions propagate. Symbols pass through to the @@-atom shim;
+// primitives are returned for the callers' existing coercion. Wired
+// at property_get/property_set entry so every element-access path
+// inherits it; string/int keys skip it entirely.
+fn to_property_key(ctx: ZjsContext*, key: ZjsValue) -> ZjsValue {
+    let p = zjs_to_primitive(ctx, key, true);
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if is_object_like(p) != 0 || zjs_is_promise(p) != 0
+       || zjs_is_uint8_array(p) != 0 || zjs_is_typed_array(p) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Cannot convert object to primitive value", 40);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    return p;
+}
+
 fn array_hole_proto_get(ctx: ZjsContext*, obj: ZjsValue, arr: ZjsArray*, key_atom: ZjsString*) -> ZjsValue {
     let cur = if arr.proto != NULL { arr.proto } else { ctx.realm.array_proto };
     while cur != NULL {
@@ -292,6 +312,11 @@ fn array_indexed_get(ctx: ZjsContext*, obj: ZjsValue, arr: ZjsArray*, idx: u32) 
 }
 
 fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
+    // #400 inc D: object keys coerce via ToPropertyKey ONCE up front.
+    if is_object_like(key) != 0 {
+        key = to_property_key(ctx, key);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
     key = symbol_key_coerce(key);
     // Hoist a single tag load so the long chain of type-specific
     // dispatch branches below becomes cheap u8 comparisons rather
@@ -1668,6 +1693,11 @@ fn array_index_store(ctx: ZjsContext*, arr: ZjsArray*, i: u32, value: ZjsValue) 
 }
 
 fn property_set(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue, value: ZjsValue) -> void {
+    // #400 inc D: object keys coerce via ToPropertyKey ONCE up front.
+    if is_object_like(key) != 0 {
+        key = to_property_key(ctx, key);
+        if ctx.pending_throw_active { return; }
+    }
     key = symbol_key_coerce(key);
     // Same single-tag-load pattern as property_get — see comments there.
     let tag: u8 = zjs_cell_tag(obj);

@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-11 21:46 UTC",
+    "when": "2026-06-11 22:15 UTC",
     "total": 27568,
-    "passed": 24350,
-    "failed": 2880,
+    "passed": 24358,
+    "failed": 2872,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -31,22 +31,6 @@
     {
       "path": "test/built-ins/Array/S15.4_A1.1_T5.js",
       "reason": "[sloppy] zjs: throw: (unknown): The value of x[\"null\"] is expected to be 0 Expected SameValue(\u00abundefined\u00bb, \u00ab0\u00bb) to be true\nzjs: t"
-    },
-    {
-      "path": "test/built-ins/Array/S15.4_A1.1_T6.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of x[\"true\"] is expected to be 1 Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true\nzjs: t"
-    },
-    {
-      "path": "test/built-ins/Array/S15.4_A1.1_T7.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of x[0] is expected to be 0 Expected SameValue(\u00abundefined\u00bb, \u00ab0\u00bb) to be true\nzjs: throw:"
-    },
-    {
-      "path": "test/built-ins/Array/S15.4_A1.1_T8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of x[0] is expected to be 0 Expected SameValue(\u00abundefined\u00bb, \u00ab0\u00bb) to be true\nzjs: throw:"
-    },
-    {
-      "path": "test/built-ins/Array/S15.4_A1.1_T9.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of x[\"[object Object]\"] is expected to be 0 Expected SameValue(\u00abundefined\u00bb, \u00ab0\u00bb) to be "
     },
     {
       "path": "test/built-ins/Array/from/Array.from_forwards-length-for-array-likes.js",
@@ -762,7 +746,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.lastIndexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unkno"
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/coerced-position-grow.js",
@@ -7205,14 +7189,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"C\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abunde"
     },
     {
-      "path": "test/language/expressions/class/elements/computed-name-toprimitive-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \nzjs: throw: (unknown):"
-    },
-    {
-      "path": "test/language/expressions/class/elements/computed-name-toprimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \nzjs: throw: (unknown):"
-    },
-    {
       "path": "test/language/expressions/class/elements/derived-cls-direct-eval-contains-superproperty-1.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: compile error\nzjs: throw: SyntaxError: compile error"
     },
@@ -8382,7 +8358,7 @@
     },
     {
       "path": "test/language/expressions/logical-assignment/lgcl-and-assignment-operator-lhs-before-rhs.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a Test262Error\nzjs: throw: (unknown): Expected a TypeError but got a"
     },
     {
       "path": "test/language/expressions/logical-assignment/lgcl-and-assignment-operator-namedevaluation-arrow-function.js",
@@ -9463,14 +9439,6 @@
     {
       "path": "test/language/statements/class/elements/class-field-is-observable-by-proxy.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [f, 3, [object Object], g, Test262, [object Object]] should have the same "
-    },
-    {
-      "path": "test/language/statements/class/elements/computed-name-toprimitive-symbol.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \nzjs: throw: (unknown):"
-    },
-    {
-      "path": "test/language/statements/class/elements/computed-name-toprimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \nzjs: throw: (unknown):"
     },
     {
       "path": "test/language/statements/class/elements/computed-property-abrupt-completition.js",
