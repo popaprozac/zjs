@@ -8544,6 +8544,37 @@ fn obj_get_indexed(ctx: ZjsContext*, o: ZjsObject*, index: u32) -> ZjsValue {
 // methods (map / forEach / filter / find / etc.) to honor the spec's
 // "hole = skip callback" rule for BOTH real arrays AND generic
 // array-like receivers (Array.prototype.map.call(obj, ...)).
+// #399: the expando props bag for any NON-object cell tag that carries
+// one (Date/RegExp/Map/Set/Promise/Function/Closure/HostFunction/
+// Symbol/TypedArray/Uint8Array). Mirrors the per-tag .props fields the
+// GC marks and property_get reads (read_from_props_bag) — array-like
+// protocol helpers need the same coverage so
+// `Array.prototype.X.call(dateWithElements, ...)` sees the elements
+// (the TAG_UINT8_ARRAY/#264 "object-only branch" lesson generalized).
+fn cell_props_bag(v: ZjsValue) -> ZjsObject* {
+    let tag = zjs_cell_tag(v);
+    let p = zjs_cell_as_ptr(v);
+    let bag: ZjsObject* = NULL;
+    raw {
+        switch (tag) {
+            case TAG_DATE:          bag = ((ZjsDate*)p)->props; break;
+            case TAG_REGEXP:        bag = ((ZjsRegExp*)p)->props; break;
+            case TAG_MAP:           bag = ((ZjsMap*)p)->props; break;
+            case TAG_SET:           bag = ((ZjsSet*)p)->props; break;
+            case TAG_PROMISE:       bag = ((ZjsPromise*)p)->props; break;
+            case TAG_FUNCTION:      bag = ((Function*)p)->props; break;
+            case TAG_CLOSURE:       bag = ((ZjsClosure*)p)->props; break;
+            case TAG_HOST_FUNCTION: bag = ((ZjsHostFunction*)p)->props; break;
+            case TAG_SYMBOL:        bag = ((ZjsSymbol*)p)->props; break;
+            // (typed arrays / Uint8Array carry no expando bag — their
+            // indices are elements, handled by the callers' in-range
+            // checks.)
+            default: break;
+        }
+    }
+    return bag;
+}
+
 fn value_has_index(ctx: ZjsContext*, v: ZjsValue, idx: u32) -> bool {
     // Real-array fast path: dense slot present means own. If the array
     // also has an expando bag with a stringified-index property, that
@@ -8605,28 +8636,32 @@ fn value_has_index(ctx: ZjsContext*, v: ZjsValue, idx: u32) -> bool {
         }
         return false;
     }
-    // Function / closure / host-fn receivers — Array.prototype.* called
-    // generically with `this` = function. Indexed property goes into
-    // the function's .props expando.
-    let pf: ZjsObject* = NULL;
-    if zjs_is_function(v) != 0 {
-        let fp = zjs_cell_as_ptr(v);
-        let ff: Function* = NULL;
-        raw { ff = (Function*)fp; }
-        pf = ff.props;
-    } else if zjs_is_closure(v) != 0 {
+    // #399: any non-object cell with an expando props bag — Date /
+    // RegExp / Map / Set / Promise / Function / Closure / HostFunction /
+    // Symbol / typed arrays. The generic Array.prototype.* protocol must
+    // see indexed expandos on every receiver shape property_get serves
+    // (`Array.prototype.reduce.call(dateWithElements, ...)`).
+    let pf: ZjsObject* = cell_props_bag(v);
+    if pf != NULL {
+        let slot = class_find_slot(pf.cls, key_atom);
+        if slot >= 0 && zjs_is_deleted(pf.slots[(u32)slot]) == 0 { return true; }
+    }
+    // Closure: a class ctor's statics historically land on the shared
+    // Function's bag — keep that lookup too.
+    if zjs_is_closure(v) != 0 {
         let cl = zjs_as_closure(v);
         let fp2 = cl.function;
         let ff2: Function* = NULL;
         raw { ff2 = (Function*)fp2; }
-        pf = ff2.props;
-    } else if zjs_is_host_function(v) != 0 {
-        let hf = zjs_as_host_function(v);
-        pf = hf.props;
+        if ff2.props != NULL {
+            let slot2 = class_find_slot(ff2.props.cls, key_atom);
+            if slot2 >= 0 && zjs_is_deleted(ff2.props.slots[(u32)slot2]) == 0 { return true; }
+        }
     }
-    if pf != NULL {
-        let slot = class_find_slot(pf.cls, key_atom);
-        if slot >= 0 && zjs_is_deleted(pf.slots[(u32)slot]) == 0 { return true; }
+    // Typed arrays / Uint8Array: in-range indices are own elements.
+    if zjs_is_typed_array(v) != 0 || zjs_is_uint8_array(v) != 0 {
+        let ta_len = read_length_u32(ctx, v);
+        if idx < ta_len { return true; }
     }
     return false;
 }
