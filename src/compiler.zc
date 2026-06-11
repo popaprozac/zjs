@@ -2837,7 +2837,24 @@ fn compile_optional_chain(c: Compiler*, node: AstNode*) -> u8 {
         if k == NodeKind::Member || k == NodeKind::OptionalMember {
             // Save current dst as receiver for any subsequent Call.
             emit(c, make_inst_ab(Op::Mov, recv, dst));
-            let name_atom = ctx_intern_atom(c.ctx, c.source + op.name_start, op.name_length);
+            // #400: private names in optional chains resolve + brand-
+            // check like ordinary member access. The check sits AFTER
+            // the chain's nullish guard (a nullish receiver short-
+            // circuits to undefined WITHOUT a brand TypeError, per
+            // §13.3.9), which this position guarantees.
+            let name_atom: ZjsString* = NULL;
+            if is_private_name(c, op.name_start, op.name_length) {
+                let oc_id: i32 = -1;
+                let oc_kind: u8 = 0;
+                name_atom = resolve_private(c, op.name_start, op.name_length, &oc_id, &oc_kind);
+                if name_atom == NULL { return dst; }
+                emit_private_check(c, dst, oc_id);
+                if oc_kind == 8 {
+                    emit_throw_type_error(c, (char*)"'#x' was defined without a getter", 33);
+                }
+            } else {
+                name_atom = ctx_intern_atom(c.ctx, c.source + op.name_start, op.name_length);
+            }
             let ic = alloc_ic_slot(c, name_atom);
             if ic <= 255 {
                 emit(c, make_inst_abc(Op::LoadProp, dst, dst, (u8)ic));
