@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-11 15:29 UTC",
+    "when": "2026-06-11 16:05 UTC",
     "total": 27568,
-    "passed": 24127,
-    "failed": 3103,
+    "passed": 24142,
+    "failed": 3088,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -11,10 +11,6 @@
     {
       "path": "test/built-ins/Array/15.4.5.1-5-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): The value of a[4294967295] is expected to be \"not an array element\" Expected SameValue(\u00abundefined"
-    },
-    {
-      "path": "test/built-ins/Array/S15.4.5.1_A1.2_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of x[2] is expected to be -1 Expected SameValue(\u00abundefined\u00bb, \u00ab-1\u00bb) to be true\nzjs: thro"
     },
     {
       "path": "test/built-ins/Array/S15.4.5.1_A2.1_T1.js",
@@ -153,10 +149,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): The value of Array.prototype.length is expected to be 0 Expected SameValue(\u00abundefined\u00bb, \u00ab0\u00bb) to b"
     },
     {
-      "path": "test/built-ins/Array/length/S15.4.5.1_A1.2_T3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of x[2] is expected to be 2 Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw:"
-    },
-    {
       "path": "test/built-ins/Array/length/define-own-prop-length-coercion-order-set.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [default] and expected [number, number] should have the same contents. The value of hints "
     },
@@ -286,15 +278,15 @@
     },
     {
       "path": "test/built-ins/Array/prototype/concat/S15.4.4.4_A3_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of arr[1] is expected to be 1 Expected SameValue(\u00abundefined\u00bb, \u00ab1\u00bb) to be true\nzjs: thro"
+      "reason": "[sloppy] zjs: throw: (unknown): arr.hasOwnProperty(\"1\") must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: thro"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/S15.4.4.4_A3_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of a[2] is expected to be 2 Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw:"
+      "reason": "[sloppy] zjs: throw: (unknown): b.hasOwnProperty(\"2\") must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw:"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/S15.4.4.4_A3_T3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of a[2] is expected to be 2 Expected SameValue(\u00abundefined\u00bb, \u00ab2\u00bb) to be true\nzjs: throw:"
+      "reason": "[sloppy] zjs: throw: (unknown): b.hasOwnProperty(\"2\") must return true Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw:"
     },
     {
       "path": "test/built-ins/Array/prototype/concat/arg-length-exceeding-integer-limit.js",
@@ -814,7 +806,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): testResult[0] Expected SameValue(\u00abundefined\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): testResul"
+      "reason": "[sloppy] zjs: throw: (unknown): testResult[0] Expected SameValue(\u00ab\"abc\"\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): testResult[0]"
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-22.js",
@@ -822,7 +814,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/map/15.4.4.19-8-c-i-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): newArr[1] Expected SameValue(\u00abundefined\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): newArr[1] Exp"
+      "reason": "[sloppy] zjs: throw: (unknown): newArr[1] Expected SameValue(\u00ab13\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): newArr[1] Expected S"
     },
     {
       "path": "test/built-ins/Array/prototype/map/callbackfn-resize-arraybuffer.js",
@@ -878,7 +870,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/pop/S15.4.4.6_A4_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #2: Array.prototype[1] = -1; x = [0,1]; x.length = 2; x.pop(); x[1] === -1. Actual: undefined\nzjs"
+      "reason": "[sloppy] zjs: throw: (unknown): #4: Object.prototype[1] = -1; Object.prototype.length = 2; Object.prototype.pop = Array.prototype"
     },
     {
       "path": "test/built-ins/Array/prototype/pop/clamps-to-integer-limit.js",
@@ -1057,10 +1049,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): #1: Array.prototype[1] = 1; x = [0]; x.length = 2; x.reverse(); x[0] === 1. Actual: undefined\nzjs"
     },
     {
-      "path": "test/built-ins/Array/prototype/reverse/S15.4.4.8_A4_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #4: Array.prototype[1] = -1; x = [0,1]; x.length = 2; x.reverse(); x.length = 0; x[1] === -1. Act"
-    },
-    {
       "path": "test/built-ins/Array/prototype/reverse/call-with-boolean.js",
       "reason": "[sloppy] zjs: throw: (unknown): The result of `(Array.prototype.reverse.call(true) instanceof Boolean)` is true Expected SameValu"
     },
@@ -1098,7 +1086,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/shift/S15.4.4.9_A4_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #3: Array.prototype[1] = -1; x = [0,1]; x.length = 2; x.shift(); x[1] === -1. Actual: undefined\nz"
+      "reason": "[sloppy] zjs: throw: (unknown): #6: Object.prototype[1] = -1; Object.prototype.length = 2; Object.prototype.shift = Array.prototy"
     },
     {
       "path": "test/built-ins/Array/prototype/shift/set-length-array-is-frozen.js",
@@ -1134,7 +1122,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/slice/S15.4.4.10_A4_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #2: Array.prototype[1] = 1; x = [0]; x.length = 2; var arr = x.slice(); arr[1] === 1. Actual: und"
+      "reason": "[sloppy] zjs: throw: (unknown): #3: Array.prototype[1] = 1; x = [0]; x.length = 2; var arr = x.slice(); arr.hasOwnProperty('1') ="
     },
     {
       "path": "test/built-ins/Array/prototype/slice/coerced-start-end-grow.js",
@@ -1209,10 +1197,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
-      "path": "test/built-ins/Array/prototype/sort/S15.4.4.11_A6_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #4: Array.prototype[1] = -1; x = [1,0]; x.length = 2; x.sort(); x.length = 0; x[1] === -1. Actual"
-    },
-    {
       "path": "test/built-ins/Array/prototype/sort/S15.4.4.11_A8.js",
       "reason": "zjs: throw: (unknown): #1: Sort leaks global\nzjs: throw: (unknown): #1: Sort leaks global"
     },
@@ -1245,44 +1229,8 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'length')\nzjs: throw: TypeError: Cannot read propert"
     },
     {
-      "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A2.2_T5.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #2: var x = [0,1,2,3]; var arr = x.splice(0,{valueOf: function() {return 3}, toString: function()"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A2_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #6: var obj = {0:0,1:1,2:2,3:3}; obj.length = 4; obj.splice = Array.prototype.splice; var arr = o"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A2_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #2: var obj = {0:0,1:1}; obj.length = 2; obj.splice = Array.prototype.splice; var arr = obj.splic"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A2_T3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #2: var obj = {0:0,1:1}; obj.length = 2; obj.splice = Array.prototype.splice; var arr = obj.splic"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A2_T4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #6: var obj = {0:0,1:1,2:2,3:3}; obj.length = 4; obj.splice = Array.prototype.splice; var arr = o"
-    },
-    {
       "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A3_T1.js",
       "reason": "[sloppy] zjs: throw: (unknown): #1: var obj = {}; obj.splice = Array.prototype.splice; obj[0] = \"x\"; obj[4294967295] = \"y\"; obj.l"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A3_T3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #3: var obj = {}; obj.splice = Array.prototype.splice; obj[4294967294] = \"x\"; obj.length = 1; var"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A4_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #3: Array.prototype[1] = -1; x = [0,1]; var arr = x.splice(1,1); arr[1] === -1. Actual: undefined"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A4_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #3: Array.prototype[1] = -1; x = [0,1]; var arr = x.splice(1,1,2); arr[1] === -1. Actual: undefin"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A4_T3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #3: Array.prototype[0] = -1; x = []; x.length = 1; var arr = x.splice(0,1); delete arr[0]; arr[0]"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A6.1_T2.js",
@@ -1294,11 +1242,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/splice/clamps-length-to-integer-limit.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Length is 2**53 Expected SameValue(\u00ab9007199254740992\u00bb, \u00ab9007199254740991\u00bb) to be true\nzjs: throw:"
+      "reason": "[sloppy] timeout"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/create-non-array-invalid-len.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expe"
+      "reason": "[sloppy] timeout"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/create-proxy.js",
@@ -1306,7 +1254,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/splice/create-species-undef-invalid-len.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expe"
+      "reason": "[sloppy] timeout"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/length-and-deleteCount-exceeding-integer-limit.js",
@@ -1318,15 +1266,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/splice/length-near-integer-limit-grow-array.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The value of arrayLike.length is expected to be 2 ** 53 - 1 Expected SameValue(\u00ab9007199254740990\u00bb"
+      "reason": "[sloppy] zjs: throw: (unknown): The value of arrayLike.length is expected to be 2 ** 53 - 1 Expected SameValue(\u00ab0\u00bb, \u00ab900719925474"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/property-traps-order-with-species.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [defineProperty, defineProperty, set, getOwnPropertyDescriptor, defineProperty] and expect"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/splice/set_length_no_args.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Set('length') called exactly once Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): "
     },
     {
       "path": "test/built-ins/Array/prototype/splice/target-array-non-extensible.js",
@@ -1411,10 +1355,6 @@
     {
       "path": "test/built-ins/Array/prototype/toString/non-callable-join-string-tag.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\"\u00bb, \u00ab\"[object Object]\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValu"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/unshift/S15.4.4.13_A4_T1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #4: Array.prototype[0] = -1; x = [1]; x.length = 1; x.unshift(0); delete x[0]; x[0] === -1. Actua"
     },
     {
       "path": "test/built-ins/Array/prototype/unshift/S15.4.4.13_A4_T2.js",

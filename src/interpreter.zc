@@ -6751,34 +6751,19 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     // the slow path handles the rare case.
                     if arr.props == NULL {
                         let u = (u32)i;
-                        if u < arr.length {
-                            // A sparse array can have length > cap (e.g.
-                            // `a.length = 6` or a concat that left trailing
-                            // holes). Those slots aren't backed by the
-                            // elements buffer — reading them raw is an OOB.
-                            // Treat in-range-but-past-cap as a hole.
-                            if u >= arr.cap {
-                                regs[inst.a] = zjs_undefined();
-                                took_fast = true;
-                            } else {
+                        // #399 inc4: ONLY a present dense element takes
+                        // the fast path. Holes, length>cap slots, and
+                        // out-of-bounds reads fall to property_get,
+                        // whose array_indexed_get walks the proto chain
+                        // (§10.4.2 [[Get]] — inherited Array.prototype
+                        // indices must be visible). The hot in-range
+                        // present-element read is unchanged.
+                        if u < arr.length && u < arr.cap {
                             let v = arr.elements[u];
-                            // Hole → undefined inline (avoid one extra
-                            // branch in array_get).
                             if zjs_is_deleted(v) == 0 {
                                 regs[inst.a] = v;
-                            } else {
-                                regs[inst.a] = zjs_undefined();
+                                took_fast = true;
                             }
-                            took_fast = true;
-                            }
-                        } else {
-                            // Out-of-bounds read is `undefined` —
-                            // common in defensive `i < arr.length`
-                            // patterns where the compiler can't prove
-                            // it. No prototype walk on pure int index
-                            // path.
-                            regs[inst.a] = zjs_undefined();
-                            took_fast = true;
                         }
                     }
                 }

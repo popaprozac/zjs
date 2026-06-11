@@ -10958,6 +10958,84 @@ fn host_array_for_each(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
 // Shared element-read helper. Returns true + writes to `*out` when
 // index i is "present" on this_val (dense slot or HasProperty); false
 // for holes. Handles array-with-props bag + arbitrary objects.
+// §7.1.5 ToIntegerOrInfinity (#399): full coercion (ToPrimitive →
+// ToNumber), NaN → 0, ±Infinity preserved, else truncate. Returns
+// false on an abrupt completion (pending throw set).
+fn to_integer_or_infinity(ctx: ZjsContext*, v: ZjsValue, out: f64*) -> bool {
+    let p = v;
+    if zjs_is_object(p) != 0 || zjs_is_array(p) != 0 {
+        p = zjs_to_primitive(ctx, p, false);
+        if ctx.pending_throw_active { return false; }
+    }
+    if zjs_is_symbol(p) != 0 {
+        raise_symbol_to_number(ctx);
+        return false;
+    }
+    let d = zjs_to_double(p);
+    if ctx.pending_throw_active { return false; }
+    raw {
+        if (isnan(d)) d = 0.0;
+        else if (!isinf(d)) d = trunc(d);
+    }
+    out[0] = d;
+    return true;
+}
+
+// #399: does the dense array carry any holes? (length beyond cap is
+// implicit holes.) O(n) scan — used to gate in-place fast paths whose
+// shifts can't see inherited Array.prototype indices; the callers are
+// O(n) anyway.
+fn array_has_holes(arr: ZjsArray*) -> bool {
+    if arr.length > arr.cap { return true; }
+    let i: u32 = 0;
+    while i < arr.length {
+        if zjs_is_deleted(arr.elements[i]) != 0 { return true; }
+        i = i + 1;
+    }
+    return false;
+}
+
+// #399: DeleteProperty(receiver, idx) for the array-method protocol —
+// the soft form (non-configurable slots are left alone; the *OrThrow
+// precision is a later increment). Covers real arrays (hole sentinel),
+// plain objects (class-slot delete, mirroring Op::DeleteElem), and
+// non-object cells with expando bags.
+fn value_delete_index(ctx: ZjsContext*, receiver: ZjsValue, idx: u32) -> void {
+    if zjs_is_array(receiver) != 0 {
+        let a = zjs_as_array(receiver);
+        if idx < a.cap && idx < a.length { a.elements[idx] = zjs_deleted(); }
+        if a.props != NULL {
+            let buf0: char[16];
+            let n0: int = 0;
+            raw { n0 = snprintf(&buf0[0], 16, "%u", (unsigned)idx); }
+            let kp0: char* = NULL; raw { kp0 = &buf0[0]; }
+            let ka0 = ctx_intern_atom(ctx, kp0, (u32)n0);
+            let slot0 = class_find_slot(a.props.cls, ka0);
+            if slot0 >= 0 { a.props.slots[(u32)slot0] = zjs_deleted(); }
+        }
+        return;
+    }
+    let buf: char[16];
+    let n: int = 0;
+    raw { n = snprintf(&buf[0], 16, "%u", (unsigned)idx); }
+    let kp: char* = NULL; raw { kp = &buf[0]; }
+    let key_atom = ctx_intern_atom(ctx, kp, (u32)n);
+    if zjs_is_object(receiver) != 0 {
+        let o = zjs_as_object(receiver);
+        let slot = class_find_slot(o.cls, key_atom);
+        if slot >= 0 {
+            let at = object_get_attrs(o, (u32)slot);
+            if (at & PROP_CONFIGURABLE) != 0 { o.slots[(u32)slot] = zjs_deleted(); }
+        }
+        return;
+    }
+    let bag = cell_props_bag(receiver);
+    if bag != NULL {
+        let slot2 = class_find_slot(bag.cls, key_atom);
+        if slot2 >= 0 { bag.slots[(u32)slot2] = zjs_deleted(); }
+    }
+}
+
 fn array_method_get(ctx: ZjsContext*, this_val: ZjsValue, i: u32, out: ZjsValue*) -> bool {
     if zjs_is_array(this_val) != 0 && zjs_as_array(this_val).props == NULL {
         let arr = zjs_as_array(this_val);
@@ -11887,18 +11965,24 @@ fn host_array_splice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_val = ctx.host_this;
     let len = read_length_u32(ctx, this_val);
     if ctx.pending_throw_active { return zjs_undefined(); }
-    // start arg, clamped to [0, len].
-    let start: i32 = if argc >= 1 && zjs_is_int32(args[0]) != 0 { zjs_as_int32(args[0]) }
-                     else if argc >= 1 && zjs_is_double(args[0]) != 0 { (i32)zjs_as_double(args[0]) }
-                     else { 0 };
-    if start < 0 { start = (i32)len + start; if start < 0 { start = 0; } }
-    if start > (i32)len { start = (i32)len; }
-    let dc: i32 = if argc < 2 { (i32)len - start }
-                  else if zjs_is_int32(args[1]) != 0 { zjs_as_int32(args[1]) }
-                  else if zjs_is_double(args[1]) != 0 { (i32)zjs_as_double(args[1]) }
-                  else { 0 };
-    if dc < 0 { dc = 0; }
-    if dc > (i32)len - start { dc = (i32)len - start; }
+    // start: ToIntegerOrInfinity with full coercion (#399 inc4),
+    // clamped to [0, len]; -Infinity clamps to 0, +Infinity to len.
+    let start_d: f64 = 0.0;
+    if argc >= 1 {
+        if !to_integer_or_infinity(ctx, args[0], &start_d) { return zjs_undefined(); }
+    }
+    if start_d < 0.0 { start_d = (f64)len + start_d; if start_d < 0.0 { start_d = 0.0; } }
+    if start_d > (f64)len { start_d = (f64)len; }
+    let start: i32 = (i32)start_d;
+    // deleteCount: absent → len - start; present → ToIntegerOrInfinity
+    // clamped to [0, len - start].
+    let dc_d: f64 = (f64)len - start_d;
+    if argc >= 2 {
+        if !to_integer_or_infinity(ctx, args[1], &dc_d) { return zjs_undefined(); }
+        if dc_d < 0.0 { dc_d = 0.0; }
+        if dc_d > (f64)len - start_d { dc_d = (f64)len - start_d; }
+    }
+    let dc: i32 = (i32)dc_d;
     let n_ins: u32 = if argc > 2 { argc - 2 } else { 0 };
     // Build the removed array first (per spec). ArraySpeciesCreate(O, dc)
     // so a subclass / custom-species ctor controls its shape; element
@@ -11921,8 +12005,12 @@ fn host_array_splice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if zjs_is_array(removed_v) != 0 { zjs_as_array(removed_v).length = (u32)dc; }
     // Dense fast path — shift in place. Cache old length first:
     // array_set's grow side-effect bumps arr.length, which would
-    // throw off the shift-source range.
-    if zjs_is_array(this_val) != 0 && zjs_as_array(this_val).props == NULL {
+    // throw off the shift-source range. #399 inc4: HOLEY arrays take
+    // the generic path below — holes must consult inherited
+    // Array.prototype indices during the shift (HasProperty), which
+    // the in-place element moves can't see.
+    if zjs_is_array(this_val) != 0 && zjs_as_array(this_val).props == NULL
+       && !array_has_holes(zjs_as_array(this_val)) {
         let arr = zjs_as_array(this_val);
         let old_len: u32 = arr.length;
         let diff: i32 = (i32)n_ins - dc;
@@ -11949,8 +12037,59 @@ fn host_array_splice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         arr.length = (u32)((i32)old_len + diff);
         return removed_v;
     }
-    // Generic-this path is rare; not building a full mutator for now.
-    // Test262 will surface real misuse if needed.
+    // Generic-this mutator (§23.1.3.31 steps 11-20, #399 inc4): shift
+    // via the HasProperty/Get/Set/Delete protocol, write the inserted
+    // items, then Set(O, "length"). Covers `{0:0, 1:1, length: 2}`
+    // array-likes, arrays with expando bags, and inherited indices.
+    let diff_g: i32 = (i32)n_ins - dc;
+    if diff_g < 0 {
+        let kk: u32 = (u32)start;
+        while kk < len - (u32)dc {
+            let from = kk + (u32)dc;
+            let to = kk + n_ins;
+            let mv: ZjsValue = zjs_undefined();
+            if array_method_get(ctx, this_val, from, &mv) {
+                if ctx.pending_throw_active { return removed_v; }
+                property_set(ctx, this_val, zjs_int32((i32)to), mv);
+                if ctx.pending_throw_active { return removed_v; }
+            } else {
+                if ctx.pending_throw_active { return removed_v; }
+                value_delete_index(ctx, this_val, to);
+            }
+            kk = kk + 1;
+        }
+        // Delete the tail [len + diff, len).
+        let td: u32 = (u32)((i32)len + diff_g);
+        while td < len {
+            value_delete_index(ctx, this_val, td);
+            td = td + 1;
+        }
+    } else if diff_g > 0 {
+        let kk2: i32 = (i32)len - dc;
+        while kk2 > start {
+            let from2 = (u32)(kk2 + dc - 1);
+            let to2 = (u32)(kk2 + (i32)n_ins - 1);
+            let mv2: ZjsValue = zjs_undefined();
+            if array_method_get(ctx, this_val, from2, &mv2) {
+                if ctx.pending_throw_active { return removed_v; }
+                property_set(ctx, this_val, zjs_int32((i32)to2), mv2);
+                if ctx.pending_throw_active { return removed_v; }
+            } else {
+                if ctx.pending_throw_active { return removed_v; }
+                value_delete_index(ctx, this_val, to2);
+            }
+            kk2 = kk2 - 1;
+        }
+    }
+    let wi: u32 = 0;
+    while wi < n_ins {
+        property_set(ctx, this_val, zjs_int32(start + (i32)wi), args[2 + wi]);
+        if ctx.pending_throw_active { return removed_v; }
+        wi = wi + 1;
+    }
+    let len_atom_sp = ctx_intern_atom(ctx, (char*)"length", 6);
+    let new_len_sp: i32 = (i32)len + diff_g;
+    property_set(ctx, this_val, zjs_cell_from_ptr((void*)len_atom_sp), zjs_int32(new_len_sp));
     return removed_v;
 }
 
