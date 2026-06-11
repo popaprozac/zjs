@@ -20,6 +20,7 @@ PLATFORM_SRC     := src/platform/http_apple.m src/platform/ws_apple.m src/platfo
 PLATFORM_OBJS    := $(BUILD_DIR)/http_apple.o $(BUILD_DIR)/ws_apple.o $(BUILD_DIR)/socket_posix.o
 PLATFORM_LDFLAGS := -framework Foundation -framework Security -fobjc-arc -lz
 PLATFORM_CFLAGS  := -fobjc-arc
+PROFDATA         := xcrun llvm-profdata
 # Extra libs appended to `zc build` link lines. macOS zc honors neither
 # a `link:` directive nor `-l*` in cflags, so zlib (node:zlib) must be
 # passed on the command line. Linux gets -lz via lib.zc's link: directive.
@@ -31,6 +32,7 @@ PLATFORM_SRC     := src/platform/http_linux.c src/platform/http_async.c src/plat
 PLATFORM_OBJS    := $(BUILD_DIR)/http_linux.o $(BUILD_DIR)/http_async.o $(BUILD_DIR)/ws_linux.o $(BUILD_DIR)/socket_posix.o
 PLATFORM_LDFLAGS := -lpthread -lcurl -lwebsockets -lz
 PLATFORM_CFLAGS  :=
+PROFDATA         := llvm-profdata
 ZC_LINK :=
 endif
 
@@ -122,7 +124,7 @@ PARSER_TEST_SRC := tests/parser_test.zc
 INTERP_TEST_SRC := tests/interpreter_test.zc
 T262_RUNNER_SRC := tests/test262_runner.c
 
-.PHONY: all lib lib-static cli cli-jit smoke smoke-static lexer-test parser-test interp-test test test262-runner test262 test262-quick bench bench-compare clean
+.PHONY: all lib lib-static cli cli-jit cli-pgo smoke smoke-static lexer-test parser-test interp-test test test262-runner test262 test262-quick bench bench-compare clean
 
 all: lib lib-static cli smoke smoke-static lexer-test parser-test interp-test
 
@@ -341,6 +343,31 @@ ZJS_JIT_CLI := $(BUILD_DIR)/zjs-jit
 cli-jit: $(ZJS_JIT_CLI)
 $(ZJS_JIT_CLI): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_SRC) $(STDLIB_GEN) $(JIT_STENCIL_HDR) src/jit/jit_stitch.c | $(BUILD_DIR) stdlib-link
 	$(ZC) build $(ZC_FLAGS) $(CLI_SRC) $(ZC_LINK) -DZJS_JIT -I$(BUILD_DIR) src/jit/jit_stitch.c -o $@
+
+# --- PGO CLI (#392) ---------------------------------------------------
+# Profile-guided interpreter build: transpile the CLI to one C TU,
+# compile instrumented, TRAIN on the bench suite (the profile captures
+# the universal interpreter hot paths — dispatch-loop block layout +
+# value-profiled indirect branches — and generalizes: held-out benches
+# kept −8..−27%), then rebuild with the merged profile. Measured
+# 2026-06-10 (M4 Max): geomean −21% vs the zc-driven `make cli` across
+# the suite (fib −30%, mandelbrot −31%, func_loop −27%, richards −21%,
+# splay −12%), test262 + wintercg identical. Training adds ~2 compiles
+# + an instrumented bench pass (~4 min total). llvm-bolt skipped: no
+# Mach-O arm64 support.
+PGO_DIR  := $(BUILD_DIR)/pgo
+ZJS_PGO  := $(BUILD_DIR)/zjs-pgo
+PGO_CC_TAIL := $(ZC_C_WARNS) -Isrc -I$(BUILD_DIR) $(PGO_DIR)/zjs_cli.c \
+               $(QJSRE_OBJS) $(AESGCM_OBJ) $(PLATFORM_OBJS) $(PLATFORM_LDFLAGS)
+cli-pgo: $(ZJS_PGO)
+$(ZJS_PGO): $(CLI_SRC) $(ENGINE_SRC) $(PLATFORM_OBJS) $(STDLIB_GEN) $(QJSRE_OBJS) $(AESGCM_OBJ) | $(BUILD_DIR) stdlib-link
+	@mkdir -p $(PGO_DIR) && rm -f $(PGO_DIR)/*.profraw $(PGO_DIR)/merged.profdata
+	$(ZC) transpile -w --release -Isrc $(CLI_SRC) -o $(PGO_DIR)/zjs_cli.c
+	$(CLANG) -O3 -fprofile-generate=$(PGO_DIR) -mllvm -vp-counters-per-site=8 $(PGO_CC_TAIL) -o $(PGO_DIR)/zjs-instr
+	@echo "[pgo] training on scripts/bench/*.js ..."
+	@for b in scripts/bench/*.js; do $(PGO_DIR)/zjs-instr run $$b >/dev/null 2>&1 || true; done
+	$(PROFDATA) merge -output=$(PGO_DIR)/merged.profdata $(PGO_DIR)/*.profraw
+	$(CLANG) -O3 -fprofile-use=$(PGO_DIR)/merged.profdata $(PGO_CC_TAIL) -o $@
 
 .PHONY: jit-stencils
 jit-stencils: $(JIT_STENCIL_OBJ)
