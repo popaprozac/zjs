@@ -181,7 +181,7 @@ fn symbol_key_coerce(key: ZjsValue) -> ZjsValue {
 // "found, value is undefined." Fires accessor getters with `this`
 // rebound to the OUTER receiver (which is `props`'s parent host
 // instance), via the same protocol property_get's object path uses.
-fn read_from_props_bag(ctx: ZjsContext*, props: ZjsObject*, key: ZjsValue) -> ZjsValue {
+fn read_from_props_bag(ctx: ZjsContext*, props: ZjsObject*, key: ZjsValue, receiver: ZjsValue) -> ZjsValue {
     if props == NULL { return zjs_deleted(); }
     let ks: ZjsString* = NULL;
     if zjs_is_string(key) != 0 {
@@ -199,14 +199,11 @@ fn read_from_props_bag(ctx: ZjsContext*, props: ZjsObject*, key: ZjsValue) -> Zj
         let acc = zjs_as_accessor(v);
         let g = acc.get;
         if zjs_is_function(g) != 0 || zjs_is_closure(g) != 0 || zjs_is_host_function(g) != 0 {
-            // Fire with `this` = props's owner... but we don't have a
-            // back-pointer; pass the props object itself. The
-            // host-instance accessor tests pass either way because
-            // they query the host this via Object.is / similar, not
-            // through `this`. If a real-world script needs accurate
-            // `this` here we'll wire a back-pointer.
+            // #399 inc6: fire with `this` = the REAL receiver (the
+            // Date/RegExp/Map/... the bag belongs to) — test262's
+            // descriptor-source getters assert `this instanceof Date`.
             let nullp: ZjsValue* = NULL;
-            return zjs_call_value_with_this(ctx, g, zjs_cell_from_ptr((void*)props), nullp, 0);
+            return zjs_call_value_with_this(ctx, g, receiver, nullp, 0);
         }
         return zjs_undefined();
     }
@@ -343,7 +340,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         // matching the order ToObject(map).key would observe.
         let mm = zjs_as_map(obj);
         if mm.props != NULL {
-            let pv = read_from_props_bag(ctx, mm.props, key);
+            let pv = read_from_props_bag(ctx, mm.props, key, obj);
             if zjs_is_deleted(pv) == 0 { return pv; }
         }
         let kd = name.data;
@@ -368,7 +365,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let name = zjs_as_string(key);
         let ss = zjs_as_set(obj);
         if ss.props != NULL {
-            let pv = read_from_props_bag(ctx, ss.props, key);
+            let pv = read_from_props_bag(ctx, ss.props, key, obj);
             if zjs_is_deleted(pv) == 0 { return pv; }
         }
         let kd = name.data;
@@ -671,7 +668,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let name = zjs_as_string(key);
         let tm = zjs_as_temporal(obj);
         if tm.props != NULL {
-            let pv = read_from_props_bag(ctx, tm.props, key);
+            let pv = read_from_props_bag(ctx, tm.props, key, obj);
             if zjs_is_deleted(pv) == 0 { return pv; }
         }
         // Computed (accessor-style) getters: .years / .sign /
@@ -706,7 +703,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         let name = zjs_as_string(key);
         let dd = zjs_as_date(obj);
         if dd.props != NULL {
-            let pv = read_from_props_bag(ctx, dd.props, key);
+            let pv = read_from_props_bag(ctx, dd.props, key, obj);
             if zjs_is_deleted(pv) == 0 { return pv; }
         }
         let cur: ZjsObject* = ctx.realm.date_proto;
@@ -736,7 +733,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         }
         let sym = zjs_as_symbol(obj);
         if sym.props != NULL {
-            let pv = read_from_props_bag(ctx, sym.props, key);
+            let pv = read_from_props_bag(ctx, sym.props, key, obj);
             if zjs_is_deleted(pv) == 0 { return pv; }
         }
         let slot = class_find_slot(ctx.realm.symbol_proto.cls, name);
@@ -1498,7 +1495,7 @@ fn property_get(ctx: ZjsContext*, obj: ZjsValue, key: ZjsValue) -> ZjsValue {
         // library tags `p.foo = 1`). NULL for nearly all promises → the proto
         // walk below is unchanged for the common case.
         if pcell.props != NULL {
-            let ownv = read_from_props_bag(ctx, pcell.props, key);
+            let ownv = read_from_props_bag(ctx, pcell.props, key, obj);
             if zjs_is_deleted(ownv) == 0 { return ownv; }
         }
         let cur = if pcell.proto != NULL { pcell.proto } else { ctx.realm.promise_ctor_proto };

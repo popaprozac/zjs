@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-11 17:13 UTC",
+    "when": "2026-06-11 17:45 UTC",
     "total": 27568,
-    "passed": 24180,
-    "failed": 3050,
+    "passed": 24193,
+    "failed": 3037,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -762,7 +762,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-a-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.lastIndexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unkno"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/coerced-position-grow.js",
@@ -3097,30 +3097,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected true but got false\nzjs: throw: (unknown): Expected true but got false"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-11.js",
-      "reason": "[sloppy] zjs: throw: (unknown): result !== true\nzjs: throw: (unknown): result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-118.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-171.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-197.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-249.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
-    },
-    {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-285.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
-    },
-    {
       "path": "test/built-ins/Object/create/15.2.3.5-4-39.js",
       "reason": "[sloppy] zjs: throw: (unknown): tempArray[index++] !== q && newObj.hasOwnProperty(q) Expected SameValue(\u00abtrue\u00bb, \u00abfalse\u00bb) to be tr"
     },
@@ -3129,40 +3105,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a RangeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expe"
     },
     {
-      "path": "test/built-ins/Object/create/15.2.3.5-4-65.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
-    },
-    {
       "path": "test/built-ins/Object/create/properties-arg-to-object-bigint.js",
       "reason": "[sloppy] zjs: throw: TypeError: Object.create properties must be an Object\nzjs: throw: TypeError: Object.create properties must b"
     },
     {
       "path": "test/built-ins/Object/create/properties-arg-to-object.js",
       "reason": "[sloppy] zjs: throw: TypeError: Object.create properties must be an Object\nzjs: throw: TypeError: Object.create properties must b"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-2-12.js",
-      "reason": "[sloppy] zjs: throw: (unknown): result !== true\nzjs: throw: (unknown): result !== true"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-5-b-131.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-5-b-157.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-5-b-210.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-5-b-25.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
-    },
-    {
-      "path": "test/built-ins/Object/defineProperties/15.2.3.7-5-b-78.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Property descriptor must be an object\nzjs: throw: TypeError: Property descriptor must be an objec"
     },
     {
       "path": "test/built-ins/Object/defineProperties/15.2.3.7-6-a-150.js",

@@ -6716,12 +6716,16 @@ fn host_object_define_properties(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
             // non-object descriptor throws TypeError. Most commonly this
             // surfaces when the props bag holds an accessor-only entry
             // (set without get) — reading it returns undefined.
+            // #399 inc6: ANY ECMAScript Object can be a descriptor —
+            // test262 uses Date/RegExp/Function/Error/arguments objects
+            // carrying enumerable/value/get fields. is_object_like is
+            // the shared tag predicate; the tail adds the tags it
+            // (deliberately, for its hot arithmetic path) leaves out.
             let dv_objlike: bool =
-                   zjs_is_object(desc_value) != 0
-                || zjs_is_array(desc_value) != 0
-                || zjs_is_function(desc_value) != 0
-                || zjs_is_host_function(desc_value) != 0
-                || zjs_is_regexp(desc_value) != 0;
+                   is_object_like(desc_value) != 0
+                || zjs_is_promise(desc_value) != 0
+                || zjs_is_uint8_array(desc_value) != 0
+                || zjs_is_typed_array(desc_value) != 0;
             if !dv_objlike {
                 let err = build_typed_error(ctx, (char*)"TypeError", 9,
                                             (char*)"Property descriptor must be an object", 37);
