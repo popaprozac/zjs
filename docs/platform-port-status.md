@@ -199,3 +199,30 @@ recommended attack order.
 every gcc target incl. Linux), then row 1 + 3 (cheap, +39 tests), then
 Windows PGO + `lib-static` in the ps1 (closes the release-shape gap and
 unblocks zapp-on-Windows), then the runtime-layer rows opportunistically.
+
+### Web-API surface — verification depth (added after review)
+
+The "WinterCG 103/103 on both" line above is a SMOKE suite, not
+exhaustive coverage. Per-API status:
+
+| Web API | Windows impl | Suite coverage | Gap |
+|---------|-------------|----------------|-----|
+| AbortController/Signal, Blob/File/FormData, Event/EventTarget/CustomEvent/DOMException, TextEncoder/Decoder(+streams), Streams(+BYOB/tee), structuredClone, performance.*, timers, URL/URLSearchParams | pure JS/engine — same code as macOS | ✅ wintercg areas pass 103/103 both platforms | none known |
+| `crypto.subtle` (digest/HMAC/AES-GCM/PBKDF2/HKDF) | BCrypt backend | ✅ wintercg + RFC test vectors | none known |
+| `fetch` | WinHTTP async | ⚠️ suite tests SHAPES + `data:` URLs only (by design, no network in CI); live TLS/redirect/streaming verified once via the port's loopback test | thin live-path coverage — applies to every platform, but Windows's WinHTTP state machine is the newest code |
+| **WebSocket** | WinHTTP WebSocket (`ws_windows.c`, 740 lines) | ❌ **no wintercg area exists for WebSocket on ANY platform** — the only gate is zapp's `verify-zjs-worker-fetch.sh`, which is macOS-only | the single biggest web-API verification debt; a `websocket` area with a loopback echo server would gate all three backends |
+| `navigator.*` | absent everywhere | — | parked (WinterTC navigator-registry, by design) |
+
+### stdlib surface — Windows status per module
+
+| Module | Kind | Windows status |
+|--------|------|----------------|
+| `node:buffer`, `node:stream`, `node:url`, `node:dx` | pure JS | ✅ platform-neutral by construction |
+| **`node:path`** | pure JS | ❌ **POSIX personality hardcoded**: `sep='/'`, `delimiter=':'`, and `path.win32`/`path.posix` namespaces DON'T exist (despite the comment in node_path.zc). On Windows: `delimiter:':'` mangles `PATH` splitting on drive-letter colons; `isAbsolute`/`resolve`/`parse` don't understand `C:\` or UNC paths. **Top stdlib gap** — Node semantics want the win32 personality as default on Windows with both namespaces exported |
+| `node:fs`(+promises) | platform-backed | ✅ ported (CRT+shims); symlink visibility gap noted above |
+| `node:os` | platform-backed | ✅ ported (Win32); cpus() detail gap noted above |
+| `node:process` | platform-backed | ✅ MinGW CRT as-is |
+| `node:child_process` | platform-backed | ✅ sync trio (`CreateProcessA`); async `spawn()` deferred everywhere |
+| `node:net` / `node:http` | platform-backed | ✅ server-side (Winsock2); client `connect`, keep-alive, chunked TE deferred everywhere |
+| `node:zlib` + Compression/DecompressionStream | platform-backed | ✅ MinGW libz; whole-body (non-chunked) everywhere |
+| `node:tty` | platform-backed | ✅ `isatty` only (v0.1 surface everywhere); Windows VT-mode note above |
