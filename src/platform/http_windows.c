@@ -215,6 +215,142 @@ static void parse_raw_headers_crlf(const wchar_t* raw,
     resp->resp_header_count = pair_idx;
 }
 
+// ---------------------------------------------------------------------
+// data: URLs (RFC 2397). WinHTTP only speaks http/https; NSURLSession
+// decodes data: natively on Apple, so parity demands we do it here.
+//   data:[<mediatype>][;base64],<payload>
+// ---------------------------------------------------------------------
+
+static int data_url_b64_val(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;   // '=' padding and whitespace handled by the caller
+}
+
+// Decode `src` (b64, whitespace tolerated) into a malloc'd buffer.
+// Returns 0 + *out/*out_len on success, -1 on malformed input.
+static int data_url_b64_decode(const char* src, size_t n,
+                               char** out, size_t* out_len) {
+    char* buf = (char*)malloc(n ? (n / 4 + 1) * 3 : 1);
+    if (!buf) return -1;
+    size_t produced = 0;
+    int acc = 0, bits = 0;
+    for (size_t i = 0; i < n; i++) {
+        char c = src[i];
+        if (c == '=' || c == '\r' || c == '\n' || c == ' ' || c == '\t') continue;
+        int v = data_url_b64_val(c);
+        if (v < 0) { free(buf); return -1; }
+        acc = (acc << 6) | v;
+        bits += 6;
+        if (bits >= 8) {
+            bits -= 8;
+            buf[produced++] = (char)((acc >> bits) & 0xFF);
+        }
+    }
+    *out = buf;
+    *out_len = produced;
+    return 0;
+}
+
+static int data_url_hex_val(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+// Percent-decode `src` into a malloc'd buffer (never fails on
+// malformed escapes — they pass through literally, matching browsers).
+static int data_url_pct_decode(const char* src, size_t n,
+                               char** out, size_t* out_len) {
+    char* buf = (char*)malloc(n + 1);
+    if (!buf) return -1;
+    size_t produced = 0;
+    for (size_t i = 0; i < n; i++) {
+        if (src[i] == '%' && i + 2 < n) {
+            int hi = data_url_hex_val(src[i+1]);
+            int lo = data_url_hex_val(src[i+2]);
+            if (hi >= 0 && lo >= 0) {
+                buf[produced++] = (char)((hi << 4) | lo);
+                i += 2;
+                continue;
+            }
+        }
+        buf[produced++] = src[i];
+    }
+    *out = buf;
+    *out_len = produced;
+    return 0;
+}
+
+// If `url` is a data: URL, decode it into `resp` (status 200 +
+// content-type header) and return 1. Returns 0 when it's not data:
+// (caller proceeds with WinHTTP); -1 + err_out on a malformed one.
+static int try_data_url(const char* url, ZjsHttpResponse* resp, char** err_out) {
+    if (_strnicmp(url, "data:", 5) != 0) return 0;
+    const char* meta = url + 5;
+    const char* comma = strchr(meta, ',');
+    if (comma == NULL) {
+        if (err_out) *err_out = _strdup("fetch: malformed data: URL (no comma)");
+        return -1;
+    }
+    size_t meta_len = (size_t)(comma - meta);
+    int is_base64 = 0;
+    if (meta_len >= 7 && _strnicmp(comma - 7, ";base64", 7) == 0) {
+        is_base64 = 1;
+        meta_len -= 7;
+    }
+    // RFC 2397 default media type.
+    const char* default_type = "text/plain;charset=US-ASCII";
+    char* ctype;
+    if (meta_len == 0) {
+        ctype = _strdup(default_type);
+    } else if (meta[0] == ';') {
+        // "data:;charset=...,": type omitted, params present →
+        // text/plain + the given params.
+        ctype = (char*)malloc(10 + meta_len + 1);
+        if (ctype) {
+            memcpy(ctype, "text/plain", 10);
+            memcpy(ctype + 10, meta, meta_len);
+            ctype[10 + meta_len] = '\0';
+        }
+    } else {
+        ctype = (char*)malloc(meta_len + 1);
+        if (ctype) { memcpy(ctype, meta, meta_len); ctype[meta_len] = '\0'; }
+    }
+
+    const char* payload = comma + 1;
+    size_t payload_len = strlen(payload);
+    char* body = NULL;
+    size_t body_len = 0;
+    int rc = is_base64
+                 ? data_url_b64_decode(payload, payload_len, &body, &body_len)
+                 : data_url_pct_decode(payload, payload_len, &body, &body_len);
+    if (rc != 0) {
+        free(ctype);
+        if (err_out) *err_out = _strdup("fetch: malformed data: URL payload");
+        return -1;
+    }
+
+    resp->status   = 200;
+    resp->body     = body;
+    resp->body_len = body_len;
+    char** flat = (char**)calloc(2, sizeof(char*));
+    if (flat != NULL && ctype != NULL) {
+        flat[0] = _strdup("content-type");
+        flat[1] = ctype;
+        resp->resp_headers = flat;
+        resp->resp_header_count = 1;
+    } else {
+        free(flat);
+        free(ctype);
+    }
+    return 1;
+}
+
 int zjs_http_request_sync(const ZjsHttpRequest* req,
                           ZjsHttpResponse* resp,
                           char** err_out) {
@@ -231,6 +367,9 @@ int zjs_http_request_sync(const ZjsHttpRequest* req,
         if (err_out) *err_out = _strdup("fetch: missing url");
         return -1;
     }
+
+    int data_rc = try_data_url(req->url, resp, err_out);
+    if (data_rc != 0) return data_rc > 0 ? 0 : -1;
 
     int rc = -1;
     wchar_t* w_url     = NULL;
@@ -1034,6 +1173,29 @@ ZjsHttpHandle* zjs_http_request_start(const ZjsHttpRequest* req) {
         if (h->body != NULL) {
             memcpy(h->body, req->body, req->body_len);
             h->body_len = req->body_len;
+        }
+    }
+
+    // data: URLs complete inline — stash the decoded response on the
+    // handle as already-DONE; poll() hands it over, destroy() frees
+    // synchronously (no WinHTTP handles were ever opened).
+    {
+        ZjsHttpResponse dresp = {0};
+        char* derr = NULL;
+        int data_rc = try_data_url(h->url, &dresp, &derr);
+        if (data_rc > 0) {
+            h->status            = dresp.status;
+            h->resp_body         = dresp.body;
+            h->resp_body_len     = dresp.body_len;
+            h->resp_headers      = dresp.resp_headers;
+            h->resp_header_count = dresp.resp_header_count;
+            h->state = HTTP_ASYNC_DONE;
+            return h;
+        }
+        if (data_rc < 0) {
+            h->err_msg = derr;
+            h->state = HTTP_ASYNC_ERROR;
+            return h;
         }
     }
 

@@ -34,7 +34,15 @@ REPO_ROOT  = Path(__file__).resolve().parent.parent.parent
 HARNESS    = REPO_ROOT / "scripts" / "wintercg" / "zjs_harness.js"
 TESTS_DIR  = REPO_ROOT / "tests" / "wintercg"
 OUT_DIR    = REPO_ROOT / "docs" / "wintercg"
-ZJS_BIN    = REPO_ROOT / "build" / "zjs"
+
+# Same platform-tagging convention as scripts/test262/run.py and
+# scripts/bench/run.py: macOS keeps the original (un-suffixed) output
+# filenames; Windows and Linux land in `-windows` / `-linux` siblings.
+IS_WINDOWS = sys.platform == "win32"
+IS_LINUX   = sys.platform.startswith("linux")
+PLATFORM_TAG = "windows" if IS_WINDOWS else ("linux" if IS_LINUX else None)
+_suffix    = f"-{PLATFORM_TAG}" if PLATFORM_TAG else ""
+ZJS_BIN    = REPO_ROOT / "build" / ("zjs.exe" if IS_WINDOWS else "zjs")
 
 RESULT_BEGIN = "@@WINTERCG_RESULTS_BEGIN@@"
 RESULT_END   = "@@WINTERCG_RESULTS_END@@"
@@ -161,7 +169,9 @@ def main():
     args = ap.parse_args()
 
     if not ZJS_BIN.exists():
-        sys.stderr.write(f"error: {ZJS_BIN} not found. Run `make cli` first.\n")
+        build_hint = ("powershell -File scripts\\build-windows.ps1"
+                      if IS_WINDOWS else "make cli")
+        sys.stderr.write(f"error: {ZJS_BIN} not found. Run `{build_hint}` first.\n")
         return 2
     if not HARNESS.exists():
         sys.stderr.write(f"error: harness not found at {HARNESS}\n")
@@ -203,10 +213,10 @@ def main():
         "areas": areas,
     }
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    (OUT_DIR / "last.json").write_text(
+    (OUT_DIR / f"last{_suffix}.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"
     )
-    history_path = OUT_DIR / "history.jsonl"
+    history_path = OUT_DIR / f"history{_suffix}.jsonl"
     history_row = {
         "when": when,
         "totals": overall,
@@ -214,7 +224,7 @@ def main():
     }
     with history_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(history_row) + "\n")
-    (OUT_DIR / "index.html").write_text(render_html(summary), encoding="utf-8")
+    (OUT_DIR / f"index{_suffix}.html").write_text(render_html(summary), encoding="utf-8")
 
     n = sum(overall.values())
     pct = (100.0 * overall["pass"] / n) if n else 0.0
