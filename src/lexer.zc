@@ -470,13 +470,84 @@ impl Lexer {
     // unterminated input.
     fn scan_template_substitution(self) -> bool {
         let depth: u32 = 1;
+        // #403 — last significant (non-whitespace) char consumed.
+        // Decides whether a `/` starts a REGEX LITERAL (expression
+        // position: after an operator / opener / comma) or is division
+        // (value position: after an ident char, `)`, `]`, quote).
+        // Without this, the `'` inside `${s.replace(/'/g, "x")}`
+        // opened a phantom string that swallowed the closing brace —
+        // every test262 file including temporalHelpers.js (1465 of
+        // them) failed to parse on that one line.
+        let prev_sig: u8 = (u8)'{';
         while depth > 0 && !self.at_end() {
             let c = self.peek();
-            if c == (u8)'{' { self.advance(); depth = depth + 1; continue; }
-            if c == (u8)'}' { self.advance(); depth = depth - 1; continue; }
+            if c == (u8)'{' { self.advance(); depth = depth + 1; prev_sig = c; continue; }
+            if c == (u8)'}' { self.advance(); depth = depth - 1; prev_sig = c; continue; }
             if c == (u8)'\\' {
                 self.advance();
                 if !self.at_end() { self.advance(); }
+                prev_sig = c;
+                continue;
+            }
+            if c == (u8)'/' {
+                let nx = self.peek_at(1);
+                if nx == (u8)'/' {
+                    // Line comment — skip to end of line.
+                    while !self.at_end() && self.peek() != (u8)'\n' { self.advance(); }
+                    continue;
+                }
+                if nx == (u8)'*' {
+                    // Block comment — skip past the closing */.
+                    self.advance(); self.advance();
+                    while !self.at_end() {
+                        if self.peek() == (u8)'*' && self.peek_at(1) == (u8)'/' {
+                            self.advance(); self.advance();
+                            break;
+                        }
+                        self.advance();
+                    }
+                    continue;
+                }
+                let is_value_end: bool =
+                    (prev_sig >= (u8)'a' && prev_sig <= (u8)'z')
+                    || (prev_sig >= (u8)'A' && prev_sig <= (u8)'Z')
+                    || (prev_sig >= (u8)'0' && prev_sig <= (u8)'9')
+                    || prev_sig == (u8)'_' || prev_sig == (u8)'$'
+                    || prev_sig == (u8)')' || prev_sig == (u8)']'
+                    || prev_sig == (u8)'\'' || prev_sig == (u8)'"'
+                    || prev_sig == (u8)'`' || prev_sig == (u8)'}'
+                    || prev_sig == (u8)'.';
+                if !is_value_end {
+                    // Regex literal: body (a `/` inside a [...] char
+                    // class is literal), then flag letters.
+                    self.advance();   // opening /
+                    let in_class: bool = false;
+                    while !self.at_end() {
+                        let rc = self.peek();
+                        if rc == (u8)'\\' {
+                            self.advance();
+                            if !self.at_end() { self.advance(); }
+                            continue;
+                        }
+                        if rc == (u8)'\n' { return false; }
+                        if rc == (u8)'[' { in_class = true; self.advance(); continue; }
+                        if rc == (u8)']' { in_class = false; self.advance(); continue; }
+                        if rc == (u8)'/' && !in_class { self.advance(); break; }
+                        self.advance();
+                    }
+                    while !self.at_end() {
+                        let fc = self.peek();
+                        let is_flag: bool =
+                            (fc >= (u8)'a' && fc <= (u8)'z')
+                            || (fc >= (u8)'A' && fc <= (u8)'Z');
+                        if !is_flag { break; }
+                        self.advance();
+                    }
+                    prev_sig = (u8)')';   // a regex is a value
+                    continue;
+                }
+                self.advance();   // division operator
+                prev_sig = c;
                 continue;
             }
             if c == (u8)'`' {
@@ -498,6 +569,7 @@ impl Lexer {
                     self.advance();
                 }
                 if !self.at_end() { self.advance(); } // closing `
+                prev_sig = (u8)'`';
                 continue;
             }
             if c == (u8)'"' || c == (u8)'\'' {
@@ -514,7 +586,11 @@ impl Lexer {
                     }
                 }
                 if !self.at_end() { self.advance(); }
+                prev_sig = quote;
                 continue;
+            }
+            if c != (u8)' ' && c != (u8)'\t' && c != (u8)'\n' && c != (u8)'\r' {
+                prev_sig = c;
             }
             self.advance();
         }

@@ -3810,6 +3810,9 @@ fn parse_arguments(p: Parser*) -> ArgsResult {
             buf[count] = arg;
             count = count + 1;
             if !match_kind(p, TokenKind::Comma) { break; }
+            // #403 — ES2017 trailing comma in argument lists:
+            // `f(a, b,)` — a `)` right after the comma ends the list.
+            if peek_kind(p) == TokenKind::RParen { break; }
         }
     }
 

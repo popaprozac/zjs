@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-12 02:13 UTC",
+    "when": "2026-06-12 02:40 UTC",
     "total": 27568,
-    "passed": 24538,
-    "failed": 2692,
+    "passed": 24539,
+    "failed": 2691,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -2038,7 +2038,7 @@
     },
     {
       "path": "test/built-ins/Error/constructor.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [toString] and expected [toString, cause] should have the same contents. accessing own pro"
     },
     {
       "path": "test/built-ins/Error/instance-prototype.js",
@@ -2703,10 +2703,6 @@
     {
       "path": "test/built-ins/Map/prototype/getOrInsertComputed/check-callback-fn-args.js",
       "reason": "zjs: throw: (unknown): Expected SameValue(\u00ab[object]\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue("
-    },
-    {
-      "path": "test/built-ins/Map/prototype/getOrInsertComputed/check-state-after-callback-fn-throws.js",
-      "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
       "path": "test/built-ins/Map/prototype/getOrInsertComputed/different-types-function-callbackfn-does-not-throw.js",
