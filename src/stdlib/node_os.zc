@@ -9,9 +9,18 @@ raw {
     #include <stdio.h>
     #include <stdlib.h>
     #include <string.h>
-    #include <unistd.h>
-    #include <sys/utsname.h>
-    #include <pwd.h>
+
+    #if defined(_WIN32)
+        #ifndef WIN32_LEAN_AND_MEAN
+        #define WIN32_LEAN_AND_MEAN
+        #endif
+        #include <windows.h>
+        #include <lmcons.h>   /* UNLEN for GetUserNameA */
+    #else
+        #include <unistd.h>
+        #include <sys/utsname.h>
+        #include <pwd.h>
+    #endif
 
     #if defined(__APPLE__)
         #include <sys/sysctl.h>
@@ -29,10 +38,22 @@ fn os_string(ctx: ZjsContext*, s: char*) -> ZjsValue {
 }
 
 fn host_os_tmpdir(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let buf: char[1024];
     let p: char* = NULL;
     raw {
-        p = getenv("TMPDIR");
-        if (!p || !*p) p = "/tmp";
+        #if defined(_WIN32)
+            /* GetTempPathA returns "C:\Users\X\AppData\Local\Temp\" —
+               Node strips the trailing separator. */
+            DWORD n = GetTempPathA(1024, &buf[0]);
+            if (n > 0 && n < 1024) {
+                if (n > 1 && buf[n-1] == '\\') buf[n-1] = 0;
+                p = &buf[0];
+            } else p = (char*)"C:\\Windows\\Temp";
+        #else
+            (void)buf;
+            p = getenv("TMPDIR");
+            if (!p || !*p) p = "/tmp";
+        #endif
     }
     return os_string(ctx, p);
 }
@@ -40,11 +61,16 @@ fn host_os_tmpdir(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
 fn host_os_homedir(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let p: char* = NULL;
     raw {
-        p = getenv("HOME");
-        if (!p || !*p) {
-            struct passwd* pw = getpwuid(getuid());
-            p = pw ? pw->pw_dir : (char*)"/";
-        }
+        #if defined(_WIN32)
+            p = getenv("USERPROFILE");
+            if (!p || !*p) p = (char*)"C:\\";
+        #else
+            p = getenv("HOME");
+            if (!p || !*p) {
+                struct passwd* pw = getpwuid(getuid());
+                p = pw ? pw->pw_dir : (char*)"/";
+            }
+        #endif
     }
     return os_string(ctx, p);
 }
@@ -85,9 +111,14 @@ fn host_os_type(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let buf: char[256];
     let p: char* = NULL;
     raw {
-        struct utsname un;
-        if (uname(&un) == 0) { strncpy(&buf[0], un.sysname, 255); buf[255] = 0; p = &buf[0]; }
-        else p = (char*)"Unknown";
+        #if defined(_WIN32)
+            (void)buf;
+            p = (char*)"Windows_NT";
+        #else
+            struct utsname un;
+            if (uname(&un) == 0) { strncpy(&buf[0], un.sysname, 255); buf[255] = 0; p = &buf[0]; }
+            else p = (char*)"Unknown";
+        #endif
     }
     return os_string(ctx, p);
 }
@@ -96,16 +127,44 @@ fn host_os_release(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let buf: char[256];
     let p: char* = NULL;
     raw {
-        struct utsname un;
-        if (uname(&un) == 0) { strncpy(&buf[0], un.release, 255); buf[255] = 0; p = &buf[0]; }
-        else p = (char*)"";
+        #if defined(_WIN32)
+            /* GetVersionExA lies post-8.1 without a manifest; RtlGetVersion
+               (ntdll) reports the true version, matching Node's os.release(). */
+            typedef LONG (WINAPI *RtlGetVersionFn)(PRTL_OSVERSIONINFOW);
+            RTL_OSVERSIONINFOW vi;
+            memset(&vi, 0, sizeof(vi));
+            vi.dwOSVersionInfoSize = sizeof(vi);
+            HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+            RtlGetVersionFn rtl = ntdll ? (RtlGetVersionFn)(void*)GetProcAddress(ntdll, "RtlGetVersion") : NULL;
+            if (rtl && rtl(&vi) == 0) {
+                snprintf(&buf[0], 256, "%lu.%lu.%lu",
+                         (unsigned long)vi.dwMajorVersion,
+                         (unsigned long)vi.dwMinorVersion,
+                         (unsigned long)vi.dwBuildNumber);
+                p = &buf[0];
+            } else p = (char*)"";
+        #else
+            struct utsname un;
+            if (uname(&un) == 0) { strncpy(&buf[0], un.release, 255); buf[255] = 0; p = &buf[0]; }
+            else p = (char*)"";
+        #endif
     }
     return os_string(ctx, p);
 }
 
 fn host_os_hostname(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let buf: char[256];
-    raw { if (gethostname(&buf[0], 256) != 0) buf[0] = 0; buf[255] = 0; }
+    raw {
+        #if defined(_WIN32)
+            /* DnsHostname matches POSIX gethostname() (no winsock dep). */
+            DWORD len = 256;
+            if (!GetComputerNameExA(ComputerNameDnsHostname, &buf[0], &len)) buf[0] = 0;
+            buf[255] = 0;
+        #else
+            if (gethostname(&buf[0], 256) != 0) buf[0] = 0;
+            buf[255] = 0;
+        #endif
+    }
     let p: char* = NULL; raw { p = &buf[0]; }
     return os_string(ctx, p);
 }
@@ -120,6 +179,10 @@ fn host_os_totalmem(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         #elif defined(__linux__)
             struct sysinfo si;
             if (sysinfo(&si) == 0) bytes = (double)si.totalram * (double)si.mem_unit;
+        #elif defined(_WIN32)
+            MEMORYSTATUSEX ms;
+            ms.dwLength = sizeof(ms);
+            if (GlobalMemoryStatusEx(&ms)) bytes = (double)ms.ullTotalPhys;
         #endif
     }
     return zjs_double(bytes);
@@ -141,6 +204,10 @@ fn host_os_freemem(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         #elif defined(__linux__)
             struct sysinfo si;
             if (sysinfo(&si) == 0) bytes = (double)si.freeram * (double)si.mem_unit;
+        #elif defined(_WIN32)
+            MEMORYSTATUSEX ms;
+            ms.dwLength = sizeof(ms);
+            if (GlobalMemoryStatusEx(&ms)) bytes = (double)ms.ullAvailPhys;
         #endif
     }
     return zjs_double(bytes);
@@ -187,6 +254,32 @@ fn host_os_cpus(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
                 }
                 fclose(f);
             }
+        #elif defined(_WIN32)
+            SYSTEM_INFO si;
+            GetNativeSystemInfo(&si);
+            if (si.dwNumberOfProcessors > 0) count = (int)si.dwNumberOfProcessors;
+            /* Same model+speed for every core (matches the documented
+               divergence on the other platforms): registry CentralProcessor\0. */
+            HKEY key;
+            if (RegOpenKeyExA(HKEY_LOCAL_MACHINE,
+                              "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0",
+                              0, KEY_QUERY_VALUE, &key) == ERROR_SUCCESS) {
+                DWORD len = 255;
+                DWORD type = 0;
+                if (RegQueryValueExA(key, "ProcessorNameString", NULL, &type,
+                                     (LPBYTE)&model_buf[0], &len) == ERROR_SUCCESS
+                    && type == REG_SZ) {
+                    model_buf[len < 255 ? len : 255] = 0;
+                }
+                DWORD mhz = 0;
+                len = sizeof(mhz);
+                if (RegQueryValueExA(key, "~MHz", NULL, &type,
+                                     (LPBYTE)&mhz, &len) == ERROR_SUCCESS
+                    && type == REG_DWORD) {
+                    speed_mhz = (double)mhz;
+                }
+                RegCloseKey(key);
+            }
         #endif
         if (model_buf[0] == 0) strcpy(model_buf, "unknown");
         model_p = &model_buf[0];
@@ -222,14 +315,24 @@ fn host_os_user_info(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         username_buf[0] = 0;
         homedir_buf[0] = 0;
         shell_buf[0] = 0;
-        uid = (int32_t)getuid();
-        gid = (int32_t)getgid();
-        struct passwd* pw = getpwuid((uid_t)uid);
-        if (pw) {
-            strncpy(username_buf, pw->pw_name ? pw->pw_name : "", 255); username_buf[255] = 0;
-            strncpy(homedir_buf, pw->pw_dir ? pw->pw_dir : "", 1023);   homedir_buf[1023] = 0;
-            strncpy(shell_buf, pw->pw_shell ? pw->pw_shell : "", 255);   shell_buf[255] = 0;
-        }
+        #if defined(_WIN32)
+            /* Node on Windows: uid/gid are -1 and shell is null. */
+            uid = -1;
+            gid = -1;
+            DWORD ulen = 256;
+            if (!GetUserNameA(&username_buf[0], &ulen)) username_buf[0] = 0;
+            const char* hp = getenv("USERPROFILE");
+            if (hp) { strncpy(homedir_buf, hp, 1023); homedir_buf[1023] = 0; }
+        #else
+            uid = (int32_t)getuid();
+            gid = (int32_t)getgid();
+            struct passwd* pw = getpwuid((uid_t)uid);
+            if (pw) {
+                strncpy(username_buf, pw->pw_name ? pw->pw_name : "", 255); username_buf[255] = 0;
+                strncpy(homedir_buf, pw->pw_dir ? pw->pw_dir : "", 1023);   homedir_buf[1023] = 0;
+                strncpy(shell_buf, pw->pw_shell ? pw->pw_shell : "", 255);   shell_buf[255] = 0;
+            }
+        #endif
     }
     let o_v = ctx_new_object(ctx);
     let o = zjs_as_object(o_v);
@@ -240,7 +343,14 @@ fn host_os_user_info(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     object_set(ctx, o, ctx_intern_atom(ctx, (char*)"gid", 3),      zjs_int32(gid));
     object_set(ctx, o, ctx_intern_atom(ctx, (char*)"username", 8), os_string(ctx, u_p));
     object_set(ctx, o, ctx_intern_atom(ctx, (char*)"homedir", 7),  os_string(ctx, h_p));
-    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"shell", 5),    os_string(ctx, s_p));
+    // Node on Windows reports shell: null (no $SHELL equivalent).
+    let shell_v: ZjsValue = os_string(ctx, s_p);
+    raw {
+        #if defined(_WIN32)
+            shell_v = zjs_null();
+        #endif
+    }
+    object_set(ctx, o, ctx_intern_atom(ctx, (char*)"shell", 5),    shell_v);
     return o_v;
 }
 
