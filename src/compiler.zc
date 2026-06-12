@@ -337,6 +337,20 @@ struct LoopFrame {
     // enclosing for/while update, not into nothing. Default true; set
     // to false when pushing a switch frame.
     is_iter: bool;
+    // #401 inc6 — compile-time EnterTry depth when this loop was
+    // pushed. break/continue crossing try regions (incl. the for-of
+    // body's close-on-throw wrap) emit one LeaveTry per crossed region
+    // or the runtime try stack keeps stale handlers.
+    try_depth_at_entry: u32;
+    // #401 inc6 — live-iterator registers for for-of frames (-1 =
+    // none). Abrupt exits crossing this frame IteratorClose it.
+    iter_reg: i32;
+    done_reg: i32;
+    // #401 inc6 — for per-iter-env for-of frames: the register holding
+    // the env that was current when the loop was entered. Abrupt exits
+    // crossing this frame must Mov it back into env_reg or captured-
+    // local access after the jump reads the dead per-iter env.
+    env_restore_reg: i32;
 }
 
 // --- Lifecycle ------------------------------------------------------
@@ -452,7 +466,51 @@ fn loop_push(c: Compiler*) -> void {
     // while/do/for-of/for-in) work unchanged; switch flips to false
     // right after loop_push.
     c.loop_stack[c.loop_depth].is_iter = true;
+    // #401 inc6 — snapshot try depth; no live iterator by default
+    // (compile_for_of_live fills the regs in right after pushing).
+    c.loop_stack[c.loop_depth].try_depth_at_entry = c.active_try_count;
+    c.loop_stack[c.loop_depth].iter_reg = -1;
+    c.loop_stack[c.loop_depth].done_reg = -1;
+    c.loop_stack[c.loop_depth].env_restore_reg = -1;
     c.loop_depth = c.loop_depth + 1;
+}
+
+// #401 inc6 — emit the unwind sequence for a break/continue jumping
+// to loop frame `frame_idx`: walking frames innermost-first, pop every
+// try region entered since that frame (LeaveTry — without this the
+// runtime try stack keeps stale handlers, the latent try{break} bug),
+// then IteratorClose the frame's live for-of iterator. The target
+// frame itself is excluded (break lands on its IterClose site;
+// continue keeps it iterating). Compile-time state is NOT mutated —
+// code after the break statement is still inside those regions.
+fn emit_loop_exit_unwind(c: Compiler*, frame_idx: i32) -> void {
+    let cur_try: u32 = c.active_try_count;
+    let w: i32 = (i32)c.loop_depth - 1;
+    while w > frame_idx {
+        let fr_try = c.loop_stack[(u32)w].try_depth_at_entry;
+        while cur_try > fr_try {
+            emit(c, make_inst_a(Op::LeaveTry, 0));
+            cur_try = cur_try - 1;
+        }
+        if c.loop_stack[(u32)w].iter_reg >= 0 {
+            emit(c, make_inst_ab(Op::IterClose,
+                                 (u8)c.loop_stack[(u32)w].iter_reg,
+                                 (u8)c.loop_stack[(u32)w].done_reg));
+        }
+        // Per-iter-env frame: put the loop-entry env back. Walking
+        // innermost-out, the last Mov wins = the outermost crossed
+        // frame's entry env = the env at the target frame's level.
+        if c.loop_stack[(u32)w].env_restore_reg >= 0 {
+            emit(c, make_inst_ab(Op::Mov, c.env_reg,
+                                 (u8)c.loop_stack[(u32)w].env_restore_reg));
+        }
+        w = w - 1;
+    }
+    let target_try = c.loop_stack[(u32)frame_idx].try_depth_at_entry;
+    while cur_try > target_try {
+        emit(c, make_inst_a(Op::LeaveTry, 0));
+        cur_try = cur_try - 1;
+    }
 }
 
 // Inline every finally body whose nesting is above `min_depth`,
@@ -8018,6 +8076,20 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             inline_finallies_above(c, 0);     // run ALL — we're leaving the function
             c.fixed_regs = saved_fixed;
         }
+        // #401 inc6 — §14.7.5.7: returning out of for-of loops closes
+        // every live iterator, innermost first. A throwing return()
+        // wins over the return value (the IterClose op propagates).
+        // No LeaveTrys needed: frame teardown trims this frame's
+        // handlers via try_depth_at_entry.
+        let rw: i32 = (i32)c.loop_depth - 1;
+        while rw >= 0 {
+            if c.loop_stack[(u32)rw].iter_reg >= 0 {
+                emit(c, make_inst_ab(Op::IterClose,
+                                     (u8)c.loop_stack[(u32)rw].iter_reg,
+                                     (u8)c.loop_stack[(u32)rw].done_reg));
+            }
+            rw = rw - 1;
+        }
         emit(c, make_inst_a(Op::Return, r));
         c.last_expr_reg = (i32)r;
         reset_temps(c);
@@ -8037,6 +8109,12 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         if c.active_finally_count > target_depth {
             inline_finallies_above(c, target_depth);
         }
+        // #401 inc6 — unwind to the target frame: pop every try region
+        // entered since each crossed frame (stale-handler fix), and
+        // IteratorClose crossed for-of frames innermost-first. The
+        // TARGET frame's own iterator is closed by the break patch
+        // landing at its IterClose site, so it's excluded here.
+        emit_loop_exit_unwind(c, frame_idx);
         let jmp_idx = emit(c, make_inst_i16(Op::Jmp, 0));
         loop_add_break_to(c, (u32)frame_idx, (u32)jmp_idx);
         return;
@@ -8062,6 +8140,10 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         if c.active_finally_count > target_depth {
             inline_finallies_above(c, target_depth);
         }
+        // #401 inc6 — same crossing unwind as break: the target frame
+        // keeps iterating, so its own iterator stays open; frames
+        // ABOVE it close, and every crossed try region pops.
+        emit_loop_exit_unwind(c, frame_idx);
         let lp = c.loop_stack[(u32)frame_idx];
         if lp.have_continue {
             emit_jump_back(c, Op::Jmp, lp.continue_target);
@@ -8172,6 +8254,20 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             if catch_reg + 1 > c.fixed_regs { c.fixed_regs = catch_reg + 1; }
         }
 
+        // #401 inc6 — env restore on catch. A throw out of a
+        // per-iter-env for-of (or any code that retargets env_reg)
+        // reaches this handler with env_reg still pointing at the
+        // inner env; captured-local reads in the catch/after would
+        // silently miss (pre-existing latent bug). Snapshot env_reg
+        // before EnterTry and restore it at every handler entry.
+        let env_save_reg: i32 = -1;
+        if c.needs_env {
+            let esr = alloc_reg(c);
+            if esr + 1 > c.fixed_regs { c.fixed_regs = esr + 1; }
+            emit(c, make_inst_ab(Op::Mov, esr, c.env_reg));
+            env_save_reg = (i32)esr;
+        }
+
         if !has_finally {
             // Phase 3.1c shape: try { ... } catch (e) { ... } — no finally.
             let enter_idx = emit(c, make_inst_a_i16(Op::EnterTry, catch_reg, 0));
@@ -8184,6 +8280,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             emit(c, make_inst_a(Op::LeaveTry, 0));
             let skip_idx = emit(c, make_inst_i16(Op::Jmp, 0));
             patch_jump(c, enter_idx);
+            if env_save_reg >= 0 {
+                emit(c, make_inst_ab(Op::Mov, c.env_reg, (u8)env_save_reg));
+            }
             // Catch entry: reset the result register so an empty
             // catch body produces undefined (UpdateEmpty per spec).
             if c.parent == NULL && c.last_expr_reg >= 0 {
@@ -8226,6 +8325,10 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             emit(c, make_inst_a(Op::LeaveTry, 0));
             let skip_catch = emit(c, make_inst_i16(Op::Jmp, 0));
             patch_jump(c, inner_enter);
+            // #401 inc6 — restore env on catch entry (see no-finally arm).
+            if env_save_reg >= 0 {
+                emit(c, make_inst_ab(Op::Mov, c.env_reg, (u8)env_save_reg));
+            }
             // Reset result register on catch entry per UpdateEmpty.
             if c.parent == NULL && c.last_expr_reg >= 0 {
                 emit(c, make_inst_a(Op::LoadUndefined, (u8)c.last_expr_reg));
@@ -8252,6 +8355,10 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // Normal (or post-catch) exit: skip the handler entry.
         let skip_outer = emit(c, make_inst_i16(Op::Jmp, 0));
         patch_jump(c, outer_enter);
+        // #401 inc6 — restore env on the finally-via-throw entry too.
+        if env_save_reg >= 0 {
+            emit(c, make_inst_ab(Op::Mov, c.env_reg, (u8)env_save_reg));
+        }
         // Outer handler entry — pending_reg holds the thrown value.
         // Mark the flag so we re-throw after finally.
         emit(c, make_inst_a(Op::LoadTrue, flag_reg));
@@ -8435,6 +8542,14 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
     let loop_top = (u32)c.code_count;
     loop_push(c);
     loop_set_continue(c, loop_top);
+    // #401 inc6 — record the live iterator on the frame so abrupt
+    // exits crossing this loop (labeled break/continue, return) can
+    // emit its IteratorClose.
+    c.loop_stack[c.loop_depth - 1].iter_reg = (i32)iter_r;
+    c.loop_stack[c.loop_depth - 1].done_reg = (i32)done_r;
+    if need_per_iter_env {
+        c.loop_stack[c.loop_depth - 1].env_restore_reg = (i32)saved_env_r;
+    }
 
     // Fresh env per iteration — runs BEFORE IterStep so the env exists
     // even if the body's binding writeback uses c.env_reg directly.
@@ -8471,6 +8586,22 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
     } else {
         emit(c, make_inst_abc(Op::IterStep, value_r, iter_r, done_r));
         jmp_exit_idx = emit(c, make_inst_a_i16(Op::JmpIfTrue, done_r, 0));
+    }
+
+    // #401 inc6 — §14.7.5.7 ForIn/OfBodyEvaluation step 6.i: a throw
+    // from the binding store OR the body closes the iterator with the
+    // THROW completion before propagating. Sync for-of only — the
+    // for-await Await suspension across an open try region is its own
+    // arc. break/continue/return inside the body pop this handler via
+    // the loop frame's try_depth_at_entry accounting.
+    let wrap_body: bool = !node.bool_value;
+    let fo_catch_reg: u8 = 0;
+    let fo_enter_idx: u32 = 0;
+    if wrap_body {
+        fo_catch_reg = alloc_reg(c);
+        if fo_catch_reg + 1 > c.fixed_regs { c.fixed_regs = fo_catch_reg + 1; }
+        fo_enter_idx = emit(c, make_inst_a_i16(Op::EnterTry, fo_catch_reg, 0));
+        c.active_try_count = c.active_try_count + 1;
     }
 
     // Write `value_r` into the binding. Reuses the binding logic from
@@ -8564,7 +8695,20 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
         compile_stmt(c, node.children[0]);
     }
 
+    if wrap_body {
+        c.active_try_count = c.active_try_count - 1;
+        emit(c, make_inst_a(Op::LeaveTry, 0));
+    }
     emit_jump_back(c, Op::Jmp, loop_top);
+
+    // #401 inc6 — the close-on-throw handler: IteratorClose with the
+    // throw completion (return()'s own result/throws discarded), then
+    // rethrow the original error past the loop.
+    if wrap_body {
+        patch_jump(c, fo_enter_idx);
+        emit(c, make_inst_ab(Op::IterCloseQuiet, iter_r, done_r));
+        emit(c, make_inst_a(Op::Throw, fo_catch_reg));
+    }
 
     // Patch the natural exit AND any `break` patches to land at the
     // IterClose. break inside the body needs the close to run before

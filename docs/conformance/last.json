@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-12 00:06 UTC",
+    "when": "2026-06-12 00:40 UTC",
     "total": 27568,
-    "passed": 24504,
-    "failed": 2726,
+    "passed": 24523,
+    "failed": 2707,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -6345,10 +6345,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/expressions/assignment/dstr/array-elem-iter-nrml-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/array-elem-iter-rtrn-close-err.js",
       "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
     },
@@ -6371,14 +6367,6 @@
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-put-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-elision-iter-nrml-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-list-nrml-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-list-rtrn-close-err.js",
@@ -6419,14 +6407,6 @@
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-rest-thrw-close.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab11\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab11\u00bb, \u00ab1\u00bb) to "
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-elision-iter-nrml-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-empty-iter-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/language/expressions/assignment/dstr/array-rest-iter-rtrn-close-err.js",
@@ -9725,10 +9705,6 @@
       "reason": "[sloppy] zjs: throw: ReferenceError: Must call super constructor before returning from derived constructor\nzjs: throw: ReferenceE"
     },
     {
-      "path": "test/language/statements/class/subclass/derived-class-return-override-for-of.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error but got a TypeError\nzjs: throw: (unknown): Expected a Test262Error but go"
-    },
-    {
       "path": "test/language/statements/class/subclass/private-class-field-on-nonextensible-return-override.js",
       "reason": "zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
@@ -9969,20 +9945,8 @@
       "reason": "zjs: throw: (unknown): argument at index 3 Expected SameValue(\u00abNaN\u00bb, \u00abundefined\u00bb) to be true\nzjs: throw: (unknown): argu"
     },
     {
-      "path": "test/language/statements/for-of/body-dstr-assign-error.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Iterator is closed Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Iterator is clo"
-    },
-    {
-      "path": "test/language/statements/for-of/body-put-error.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Iterator is closed Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Iterator is clo"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/array-elem-init-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-iter-nrml-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-iter-rtrn-close-err.js",
@@ -10007,14 +9971,6 @@
     {
       "path": "test/language/statements/for-of/dstr/array-elem-put-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-elision-iter-nrml-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-list-nrml-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-list-rtrn-close-err.js",
@@ -10055,14 +10011,6 @@
     {
       "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-rest-thrw-close.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab11\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab11\u00bb, \u00ab1\u00bb) to "
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elision-iter-nrml-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-empty-iter-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/language/statements/for-of/dstr/array-rest-iter-rtrn-close-err.js",
@@ -10205,32 +10153,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): binding is block-scoped Expected SameValue(\u00ab\"number\"\u00bb, \u00ab\"undefined\"\u00bb) to be true\nzjs: throw: (unk"
     },
     {
-      "path": "test/language/statements/for-of/iterator-close-non-object.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/statements/for-of/iterator-close-non-throw-get-method-non-callable.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/statements/for-of/iterator-close-via-continue.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Iterator is closed after `continue` statement Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw:"
-    },
-    {
-      "path": "test/language/statements/for-of/iterator-close-via-return.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Iterator is closed after `return` statement Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: ("
-    },
-    {
-      "path": "test/language/statements/for-of/iterator-close-via-throw.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Iterator is closed after `throw` statement Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (u"
-    },
-    {
       "path": "test/language/statements/for-of/iterator-next-reference.js",
       "reason": "[sloppy] zjs: throw: (unknown): Should not access the `next` method after the iteration prologue.\nzjs: throw: (unknown): Should n"
-    },
-    {
-      "path": "test/language/statements/for-of/iterator-next-result-done-attr.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/language/statements/for-of/iterator-next-result-type.js",

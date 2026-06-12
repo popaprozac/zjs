@@ -5570,9 +5570,10 @@ fn iter_step(ctx: ZjsContext*, iter: ZjsValue) -> IterStep {
     let value_atom = ctx_intern_atom(ctx, (char*)"value", 5);
     let d_v = property_get(ctx, result_v, zjs_cell_from_ptr((void*)done_atom));
     if ctx.pending_throw_active { return IterStep{ value: zjs_undefined(), done: true }; }
-    let done: bool = false;
-    if zjs_is_bool(d_v) != 0 { done = zjs_as_bool(d_v) != 0; }
-    else if zjs_is_undefined(d_v) == 0 { done = true; }   // spec: ToBoolean
+    // §7.4.4 IteratorComplete: ToBoolean(done) — `{done: 0}` and
+    // `{done: ""}` keep iterating (#401 inc6; the old undefined-only
+    // special case treated every non-bool non-undefined as done).
+    let done: bool = zjs_to_bool_coerce(d_v) != 0;
     if done {
         return IterStep{ value: zjs_undefined(), done: true };
     }
@@ -5639,9 +5640,27 @@ fn iter_close(ctx: ZjsContext*, iter: ZjsValue) -> void {
         zjs_is_function(ret_fn) != 0
         || zjs_is_closure(ret_fn) != 0
         || zjs_is_host_function(ret_fn) != 0;
-    if !callable { return; }
-    let _result: ZjsValue = zjs_undefined();
-    raw { _result = zjs_call_value_with_this(ctx, ret_fn, iter, nullp, 0); }
+    if !callable {
+        // §7.4.6 via GetMethod: a present, non-callable `return` is a
+        // TypeError (#401 inc6). IterCloseQuiet swallows this on the
+        // throw-completion path, so only normal-completion closes see it.
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"iterator.return is not callable", 31);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+        return;
+    }
+    let result: ZjsValue = zjs_undefined();
+    raw { result = zjs_call_value_with_this(ctx, ret_fn, iter, nullp, 0); }
+    if ctx.pending_throw_active { return; }
+    // §7.4.6 step 9: innerResult must be an Object on the normal-
+    // completion path (#401 inc6).
+    if !value_is_js_object(result) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                                    (char*)"iterator.return result is not an object", 39);
+        ctx.pending_throw_active = true;
+        ctx.pending_throw_value = err;
+    }
     // Pending throw (if any) is left active so the caller propagates.
 }
 
