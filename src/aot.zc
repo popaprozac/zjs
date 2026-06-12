@@ -39,8 +39,13 @@ def ZJS_AOT_MAGIC3: u8 = 'b' as u8;
 // v10: #400 inc B added Op::ThrowTypeError (1-slot) at the enum end.
 // v11: #401 added Op::StoreGlobalStrict (1-slot, global-slot operand —
 // included in aot_inst_is_global_ref so the loader remap rewrites it)
-// at the enum end.
-def ZJS_AOT_VERSION: u32 = 11;
+// at the enum end. #401 inc6 also added Op::IterCloseQuiet (1-slot,
+// reg operands only) in the same version window.
+// v12: #402a added Op::JmpIfNotGenReturn (1-slot, i16 intra-function
+// offset — no remap) at the enum end. Old caches also predate the
+// every-Yield-is-followed-by-the-dispatch contract, so the bump is
+// load-bearing, not just hygiene.
+def ZJS_AOT_VERSION: u32 = 12;
 
 def ZJS_AOT_TAG_INT32:    u8 = 0;
 def ZJS_AOT_TAG_DOUBLE:   u8 = 1;

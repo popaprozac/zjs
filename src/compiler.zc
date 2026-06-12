@@ -513,6 +513,42 @@ fn emit_loop_exit_unwind(c: Compiler*, frame_idx: i32) -> void {
     }
 }
 
+// #401/#402a — the function-exit tail shared by ReturnStmt and the
+// generator return-completion dispatch after each Yield: inline every
+// pending finally (r protected across them), IteratorClose every live
+// for-of frame innermost-first (§14.7.5.7; a throwing return() wins
+// over the return value), then Op::Return. No LeaveTrys needed —
+// frame teardown trims this frame's handlers via try_depth_at_entry.
+fn emit_return_sequence(c: Compiler*, r: u8) -> void {
+    if c.active_finally_count > 0 {
+        let saved_fixed = c.fixed_regs;
+        if r + 1 > c.fixed_regs { c.fixed_regs = r + 1; }
+        inline_finallies_above(c, 0);     // run ALL — we're leaving the function
+        c.fixed_regs = saved_fixed;
+    }
+    let rw: i32 = (i32)c.loop_depth - 1;
+    while rw >= 0 {
+        if c.loop_stack[(u32)rw].iter_reg >= 0 {
+            emit(c, make_inst_ab(Op::IterClose,
+                                 (u8)c.loop_stack[(u32)rw].iter_reg,
+                                 (u8)c.loop_stack[(u32)rw].done_reg));
+        }
+        rw = rw - 1;
+    }
+    emit(c, make_inst_a(Op::Return, r));
+}
+
+// #402a — wrap a Yield with the return-completion dispatch. The
+// JmpIfNotGenReturn MUST be the op right after Yield (gen.saved_ip
+// lands on it); a .return(v) resume falls through into the inline
+// return path with v already in `dst`.
+fn emit_yield_with_return_dispatch(c: Compiler*, dst: u8, src: u8) -> void {
+    emit(c, make_inst_ab(Op::Yield, dst, src));
+    let skip = emit(c, make_inst_i16(Op::JmpIfNotGenReturn, 0));
+    emit_return_sequence(c, dst);
+    patch_jump(c, skip);
+}
+
 // Inline every finally body whose nesting is above `min_depth`,
 // top-down. Used by break/continue to run finallies that sit between
 // the current compile point and the target loop frame, and by Return
@@ -1523,6 +1559,13 @@ fn compile_yield_star(c: Compiler*, operand: AstNode*) -> u8 {
         // path below returns innerResult.value un-awaited, per spec.)
         emit(c, make_inst_ab(Op::Await, value_r, value_r));
         emit(c, make_inst_ab(Op::Yield, received_r, value_r));
+        // #402a — dispatch kept structurally identical to the sync
+        // sites (saved_ip contract); async-gen .return() still takes
+        // the host fabricate path, so this branch is currently dead.
+        let skip_agr = emit(c, make_inst_i16(Op::JmpIfNotGenReturn, 0));
+        emit(c, make_inst_ab(Op::IterClose, iter_r, done_r));
+        emit_return_sequence(c, received_r);
+        patch_jump(c, skip_agr);
         emit_jump_back(c, Op::Jmp, loop_top_a);
         patch_jump(c, jmp_exit_a);
         emit(c, make_inst_ab(Op::Mov, dst, value_r));   // yield* result = inner return value
@@ -1540,6 +1583,15 @@ fn compile_yield_star(c: Compiler*, operand: AstNode*) -> u8 {
     emit(c, make_inst_abc(Op::IterStep, value_r, iter_r, done_r));
     let jmp_exit = emit(c, make_inst_a_i16(Op::JmpIfTrue, done_r, 0));
     emit(c, make_inst_ab(Op::Yield, dst, value_r));
+    // #402a — .return(v) during delegation: forward the return to the
+    // inner iterator (IterClose calls its return()), then run the
+    // outer generator's exit tail with v. First-cut approximation of
+    // §27.5.3.2 step 7.c — the inner return()'s RESULT isn't yet
+    // re-examined for done:false re-suspension.
+    let skip_gr = emit(c, make_inst_i16(Op::JmpIfNotGenReturn, 0));
+    emit(c, make_inst_ab(Op::IterClose, iter_r, done_r));
+    emit_return_sequence(c, dst);
+    patch_jump(c, skip_gr);
     emit_jump_back(c, Op::Jmp, loop_top);
 
     patch_jump(c, jmp_exit);
@@ -1863,7 +1915,8 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
             emit(c, make_inst_a(Op::LoadUndefined, src));
         }
         let dst = alloc_reg(c);
-        emit(c, make_inst_ab(Op::Yield, dst, src));
+        // #402a — Yield + return-completion dispatch.
+        emit_yield_with_return_dispatch(c, dst, src);
         if src + 1 == c.next_reg && src != dst { c.next_reg = c.next_reg - 1; }
         return dst;
     }
@@ -6759,6 +6812,25 @@ fn destructure_array(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
     let enter_idx = emit(c, make_inst_a_i16(Op::EnterTry, catch_reg, 0));
     // #326 — suppress tail-call rewrites while a handler is active.
     c.active_try_count = c.active_try_count + 1;
+    // #402a — register the destructuring iterator as a pseudo loop
+    // frame so a `yield` inside the pattern (defaults/targets) that
+    // gets resumed with .return() closes it via emit_return_sequence
+    // (return completions skip the catch handler above by design —
+    // that handler is for THROW completions). Not a continue target
+    // (is_iter=false); statements can't occur mid-pattern, so only
+    // the post-Yield dispatch ever observes this frame. Labels are
+    // saved across loop_push so a pending `lbl:` isn't stolen from
+    // the statement that owns it.
+    let saved_pl_start = c.pending_label_start;
+    let saved_pl_len   = c.pending_label_length;
+    loop_push(c);
+    c.pending_label_start  = saved_pl_start;
+    c.pending_label_length = saved_pl_len;
+    c.loop_stack[c.loop_depth - 1].label_start  = 0;
+    c.loop_stack[c.loop_depth - 1].label_length = 0;
+    c.loop_stack[c.loop_depth - 1].is_iter  = false;
+    c.loop_stack[c.loop_depth - 1].iter_reg = (i32)iter_r;
+    c.loop_stack[c.loop_depth - 1].done_reg = (i32)done_r;
 
     let i: u32 = 0;
     let saw_rest: bool = false;
@@ -6791,6 +6863,7 @@ fn destructure_array(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
         i = i + 1;
     }
 
+    loop_pop(c);   // #402a — pseudo frame off before the handler block
     c.active_try_count = c.active_try_count - 1;
     emit(c, make_inst_a(Op::LeaveTry, 0));
     let skip_handler = emit(c, make_inst_i16(Op::Jmp, 0));
@@ -8067,30 +8140,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
                 return;
             }
         }
-        // Phase 3.9d: run any pending finally bodies before returning.
-        // r must survive finally execution — bump fixed_regs over it so
-        // reset_temps inside finally can't recycle the slot.
-        if c.active_finally_count > 0 {
-            let saved_fixed = c.fixed_regs;
-            if r + 1 > c.fixed_regs { c.fixed_regs = r + 1; }
-            inline_finallies_above(c, 0);     // run ALL — we're leaving the function
-            c.fixed_regs = saved_fixed;
-        }
-        // #401 inc6 — §14.7.5.7: returning out of for-of loops closes
-        // every live iterator, innermost first. A throwing return()
-        // wins over the return value (the IterClose op propagates).
-        // No LeaveTrys needed: frame teardown trims this frame's
-        // handlers via try_depth_at_entry.
-        let rw: i32 = (i32)c.loop_depth - 1;
-        while rw >= 0 {
-            if c.loop_stack[(u32)rw].iter_reg >= 0 {
-                emit(c, make_inst_ab(Op::IterClose,
-                                     (u8)c.loop_stack[(u32)rw].iter_reg,
-                                     (u8)c.loop_stack[(u32)rw].done_reg));
-            }
-            rw = rw - 1;
-        }
-        emit(c, make_inst_a(Op::Return, r));
+        // #402a — shared exit tail: finally inlining, for-of closes,
+        // Op::Return (also used by the post-Yield return dispatch).
+        emit_return_sequence(c, r);
         c.last_expr_reg = (i32)r;
         reset_temps(c);
         return;

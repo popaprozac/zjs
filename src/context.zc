@@ -611,6 +611,13 @@ struct ZjsContext {
     // throw (`throwing = true; thrown = pending_throw_value`).
     pending_throw_active: bool;
     pending_throw_value:  ZjsValue;
+    // #402a — generator return-completion channel. Set by
+    // host_generator_return right before resuming a SUSPENDED_YIELD
+    // frame; consumed (cleared) by the Op::JmpIfNotGenReturn that the
+    // compiler guarantees is the first op after every Op::Yield. The
+    // resume value rides the normal resume_dst path; this flag only
+    // selects the compiled inline-return branch at the yield site.
+    gen_resume_is_return: bool;
     // `with` statement scope stack (ECMA-262 §14.11), innermost last.
     // WithEnter pushes the ToObject'd binding object; WithLeave pops.
     // Each call frame snapshots with_count on entry and restores it on
@@ -14273,8 +14280,42 @@ fn host_generator_return(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
         return zjs_undefined();
     }
     let g = zjs_as_generator(this_v);
-    g.state = GEN_COMPLETED;
     let value = if argc >= 1 { args[0] } else { zjs_undefined() };
+    // #402a — §27.5.3.3 GeneratorResumeAbrupt(return). A frame
+    // suspended at a yield must actually RESUME with the return
+    // completion: enclosing finallys run (and may override — a yield
+    // inside one re-suspends, a throw wins, a return replaces the
+    // value), enclosing for-of iterators close, catch never fires.
+    // The resume lands on the Op::JmpIfNotGenReturn the compiler
+    // placed after the Yield; the flag selects its inline-return path
+    // and the Return op wraps {value, done:true} + sets COMPLETED.
+    // Async generators keep the fabricate path below for now (their
+    // .return() must thread the promise machinery — follow-up).
+    if g.state == GEN_YIELDED && !g.is_async {
+        ctx.gen_resume_is_return = true;
+        let r: ZjsValue = zjs_undefined();
+        let threw: bool = false;
+        raw {
+            extern InterpretResult interpret_resume_generator(ZjsContext* ctx, ZjsGenerator* gen, ZjsValue resume_value, bool is_throw);
+            InterpretResult ir = interpret_resume_generator(ctx, g, value, 0);
+            r = ir.value;
+            threw = ir.is_throw;
+        }
+        ctx.gen_resume_is_return = false;   // defensive — the dispatch op consumes it
+        if threw {
+            g.state = GEN_COMPLETED;
+            ctx.pending_throw_active = true;
+            ctx.pending_throw_value  = r;
+            return zjs_undefined();
+        }
+        // r is either {value,done:true} from the inline-return path
+        // (state already COMPLETED by Op::Return) or a fresh
+        // iter-result from a finally that yielded (state GEN_YIELDED
+        // again). Pass it through unchanged.
+        return r;
+    }
+    // SUSPENDED_START / COMPLETED / async: close without running.
+    g.state = GEN_COMPLETED;
     let obj_v = ctx_new_object(ctx);
     let obj = zjs_as_object(obj_v);
     object_set(ctx, obj, ctx_intern_atom(ctx, (char*)"value", 5), value);

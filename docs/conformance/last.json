@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-12 00:40 UTC",
+    "when": "2026-06-12 01:37 UTC",
     "total": 27568,
-    "passed": 24523,
-    "failed": 2707,
+    "passed": 24531,
+    "failed": 2699,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -738,7 +738,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-a-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): arr.lastIndexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unkno"
+      "reason": "[sloppy] "
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/coerced-position-grow.js",
@@ -6350,11 +6350,7 @@
     },
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-iter-rtrn-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-elem-iter-rtrn-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-iter-thrw-close-err.js",
@@ -6370,15 +6366,11 @@
     },
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-list-rtrn-close-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-list-rtrn-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-list-rtrn-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-list-thrw-close-err.js",
@@ -9954,11 +9946,7 @@
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-iter-rtrn-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-iter-rtrn-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-iter-thrw-close-err.js",
@@ -9974,15 +9962,11 @@
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-list-rtrn-close-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-list-rtrn-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-list-rtrn-close.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-list-thrw-close-err.js",
@@ -10107,22 +10091,6 @@
     {
       "path": "test/language/statements/for-of/escaped-of.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-of/generator-close-via-break.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Generator is closed after `break` statement Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: ("
-    },
-    {
-      "path": "test/language/statements/for-of/generator-close-via-continue.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Generator is closed after `continue` statement Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw"
-    },
-    {
-      "path": "test/language/statements/for-of/generator-close-via-return.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Generator is closed after `return` statement Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: "
-    },
-    {
-      "path": "test/language/statements/for-of/generator-close-via-throw.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Generator is closed after `throw` statement Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: ("
     },
     {
       "path": "test/language/statements/for-of/head-const-bound-names-dup.js",

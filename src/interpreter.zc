@@ -55,7 +55,7 @@ raw {
         "DefineMethodComputed", "SetParentCtor", "SetFunctionName", "InitObjData", "SpreadSuperCall", "JmpIfLt",
         "JmpIfLe", "JmpIfGt", "JmpIfGe", "JmpIfLtImm", "JmpIfLeImm", "JmpIfGtImm",
         "JmpIfGeImm", "InvokeGlobal", "PrivateCheck", "ThrowTypeError",
-        "StoreGlobalStrict", "IterCloseQuiet",
+        "StoreGlobalStrict", "IterCloseQuiet", "JmpIfNotGenReturn",
         NULL,
     };
     static const char *zjs_op_name_lookup(int op) {
@@ -5371,6 +5371,17 @@ fn interpret_inner_full(ctx: ZjsContext*,
             regs[inst.a] = zjs_bool(if b != 0 { 0 } else { 1 });
 
         // --- control flow ---------------------------------------
+        } else if op == Op::JmpIfNotGenReturn {
+            // #402a — first op after every Yield (see bytecode.zc). A
+            // .return(v) resume set the flag: consume it and fall
+            // through into the compiled inline-return path. Everything
+            // else (.next/.throw resumes) skips that path.
+            if ctx.gen_resume_is_return {
+                ctx.gen_resume_is_return = false;
+            } else {
+                let off_gr = inst_bc_i16(inst);
+                ip = (usize)((i32)ip + off_gr);
+            }
         } else if op == Op::Jmp {
             let off = inst_bc_i16(inst);
             ip = (usize)((i32)ip + off);

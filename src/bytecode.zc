@@ -534,6 +534,22 @@ enum Op {
     // catch handler that destructure_array wraps around element
     // evaluation; the rethrow of the original error follows. 1-slot.
     IterCloseQuiet,   // a=iter reg, b=done reg
+
+    // #402a — generator return-completion dispatch. The compiler
+    // emits this DIRECTLY after every Op::Yield; gen.saved_ip points
+    // here, so it is always the first op a resume executes. A normal
+    // .next()/.throw() resume leaves ctx.gen_resume_is_return false
+    // and the jump skips the compiler-emitted inline `return` path
+    // (finally inlining + for-of closes + Return — the same sequence
+    // a ReturnStmt at the yield site would emit). A .return(v) resume
+    // sets the flag; this op consumes it and falls through into that
+    // path with v already in the yield's dst register. Catch handlers
+    // never see a return completion (it is a branch, not a throw),
+    // finallys run via their compile-time inlined copies — matching
+    // zjs's inline-finally design. Appended at the END (AOT
+    // positional; ZJS_AOT_VERSION -> 12). 1-slot, intra-function
+    // offset (no slot operand — no loader remap needed).
+    JmpIfNotGenReturn, // bc = i16 jump offset
 }
 
 struct Inst {
