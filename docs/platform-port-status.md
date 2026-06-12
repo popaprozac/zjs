@@ -142,3 +142,60 @@ platform-specific header directly.
 - **Bench numbers**: same — `docs/perf/history.jsonl` is macOS;
   `history-windows.jsonl` is Windows. Different hardware so comparisons
   across columns aren't meaningful; only same-platform-over-time is.
+
+## Windows gap matrix — 2026-06-12
+
+Measured at `windows-port` HEAD: Windows test262 **24520/27629** vs
+macOS **24539/27568** (same commit, both 90.1%-class); WinterCG MCA
+**103/103 on both**; macOS verification of the branch = 0 curated
+regressions. The asymmetric diff (normalized paths): **61 tests fail
+ONLY on Windows, 10 only on macOS**. The gaps below are ordered by
+recommended attack order.
+
+### Engine / conformance gaps (the 61 Windows-only test262 failures)
+
+| # | Gap | Tests | Signature | Likely cause / fix |
+|---|-----|------:|-----------|--------------------|
+| 1 | `Error.prototype.stack` accessor not installed | ~32 | `built-ins/Error/prototype/stack/getter-*` — `gOPD(Error.prototype,'stack').get/.set` is undefined | The stack-accessor install is gated behind a POSIX-only backtrace guard that MinGW doesn't satisfy. Install the accessor pair unconditionally (the GETTER can return a minimal string; the tests exercise the *descriptor shape*, not unwind quality). |
+| 2 | ±Infinity / NaN in `f64 -> integer` casts | ~15 | `Array.prototype` flat/includes/every/slice/lastIndexOf with `Infinity` args or 2^32-class lengths; `String.prototype` siblings | `(i64)inf` is UB — clang-on-Darwin saturates, MinGW/gcc x64 produces INT64_MIN-flavored garbage. Audit `to_integer_or_infinity` + every raw f64 cast in length/index clamping; add explicit `isinf/isnan` guards BEFORE the cast (portable + spec-correct on all platforms). |
+| 3 | Parse errors on Windows only | 7 | `SyntaxError: parse error` on tests that parse fine on macOS | Almost certainly CRLF: git `autocrlf` rewrites on checkout and a lexer path mishandles `\r` (or the test bytes genuinely differ). Fix BOTH: add `vendor/test262/** -text` to `.gitattributes`, and audit the lexer for `\r\n` tolerance (real-world Windows source files will have CRLF regardless). |
+| 4 | `Date` "Invalid time value" | 2 | Date/prototype edge values | MSVCRT `localtime`/`mktime` reject years outside 1970–3000-ish ranges the POSIX functions accept. Route extreme-year math through the engine's own proleptic calendar (already present for Temporal) instead of the CRT. |
+| 5 | Harness enumeration drift | — | Windows run: 27,629 total / 367 skipped vs 27,568 / 338 | +61 totals and +29 skips means the runner discovers/skips a slightly different file set on NTFS (case sensitivity / symlinked fixtures). Worth one look so the per-platform dashboards count the same denominator. |
+
+### Runtime-layer gaps (Windows-specific behavior)
+
+| Surface | Gap | Severity |
+|---------|-----|----------|
+| `node:fs` | `lstat` shimmed to `stat` — `isSymbolicLink()` always false; NTFS junctions/symlinks invisible | Low until fs consumers need it; fix = `GetFileAttributesW` + `FILE_ATTRIBUTE_REPARSE_POINT` |
+| `node:os` | `cpus()` returns model+speed of core 0 repeated N times | Cosmetic; `GetLogicalProcessorInformationEx` when needed |
+| Temporal | Pre-Win10-1903 machines (no `icu.dll`) silently fall back to the UTC stub | Acceptable; documented. Could warn once at startup |
+| `child_process` | `execSync` quoting follows MSVCRT rules — programs that parse their own cmdline (notably `cmd.exe` builtins with carets, msys tools) may split differently | Documented; revisit if real scripts hit it |
+| Console / TTY | No VT-mode enable on legacy conhost (ANSI colors in REPL/errors); `isatty` semantics differ | Cosmetic; `SetConsoleMode(ENABLE_VIRTUAL_TERMINAL_PROCESSING)` one-liner |
+
+### Build & artifact gaps (Windows lags the macOS release shape)
+
+| Artifact / lever | macOS | Windows | Gap cost |
+|------------------|-------|---------|----------|
+| Release CLI | `make cli-pgo` (canonical: −21% runtime, −22% size vs plain) | `build-windows.ps1` plain `-O3` only | Windows ships the *slow, large* shape — PGO via MinGW gcc (`-fprofile-generate/use`) is the single biggest Windows perf+size lever; mirrors `pgo` target into the ps1 |
+| Embedder artifacts | `libzjs.a` / `libzjs.dylib` / `lib-pgo` + tier flags (`ZJS_TIER`, `ZJS_NO_*`) | none — CLI only | Blocks zapp-on-Windows embedding; ps1 needs `lib-static` mode compiling `libzjs.c` with `ZJS_TIER_DEFINES` |
+| Embed smoke (`tests/embed_smoke.c`, 399 asserts) | gates every arc | never run on Windows | Follows from the lib gap; it's the embedder ABI gate |
+| JIT (`cli-jit`, opt-in) | builds + 23k-test identical | unported (stencil pipeline assumes clang/Mach-O-or-ELF toolchain) | Fine to defer — jitless-first is the product stance and PGO comes first |
+| Toolchain | clang | MinGW-w64 only (zc doesn't emit MSVC-compatible C yet) | Acceptable; document — but it's why #2 above exists (gcc UB differences) |
+| `make bench` / cross-engine SNAPSHOT | PGO-canonical, 23/23 vs QuickJS | runner records exist but on plain build, different hardware | Re-baseline only after Windows PGO lands; until then Windows perf numbers aren't comparable to the headline |
+
+### Cross-platform debts surfaced by the port (not Windows-specific)
+
+- `Buffer.prototype.toString()` comma-joins bytes instead of UTF-8
+  decoding (`execSync().toString()` is unusable everywhere) — known
+  `TAG_UINT8_ARRAY` family, repros identically on macOS main.
+- `child_process` async `spawn()` + ChildProcess EventEmitter — deferred
+  on every platform (needs stream pipes + event-loop integration).
+- `net.connect` (client sockets), keep-alive, chunked transfer-encoding —
+  server-side-only on every platform.
+- `CompressionStream` buffers whole-body rather than chunked streaming —
+  every platform.
+
+**Recommended order:** engine row 2 (UB casts — it's a latent bug on
+every gcc target incl. Linux), then row 1 + 3 (cheap, +39 tests), then
+Windows PGO + `lib-static` in the ps1 (closes the release-shape gap and
+unblocks zapp-on-Windows), then the runtime-layer rows opportunistically.
