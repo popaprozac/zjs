@@ -12,6 +12,13 @@
 
 BUILD_DIR    := build
 
+# The recipes below are POSIX-only (symlinks, uname branches, POSIX
+# shell). Windows builds go through scripts/build-windows.ps1 instead
+# — fail loud rather than falling into the Linux branch.
+ifeq ($(OS),Windows_NT)
+$(error This Makefile is POSIX-only. On Windows run: powershell -File scripts/build-windows.ps1)
+endif
+
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 SHLIB_EXT := dylib
