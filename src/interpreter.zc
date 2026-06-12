@@ -55,6 +55,7 @@ raw {
         "DefineMethodComputed", "SetParentCtor", "SetFunctionName", "InitObjData", "SpreadSuperCall", "JmpIfLt",
         "JmpIfLe", "JmpIfGt", "JmpIfGe", "JmpIfLtImm", "JmpIfLeImm", "JmpIfGtImm",
         "JmpIfGeImm", "InvokeGlobal", "PrivateCheck", "ThrowTypeError",
+        "StoreGlobalStrict", "IterCloseQuiet",
         NULL,
     };
     static const char *zjs_op_name_lookup(int op) {
@@ -3443,6 +3444,42 @@ fn interpret_inner_full(ctx: ZjsContext*,
             let slot = inst_bc_u16(inst);
             ctx.realm.globals[slot].value = regs[inst.a];
             ctx.realm.globals[slot].defined = true;
+        } else if op == Op::StoreGlobalStrict {
+            // #401 — §6.2.5.6 PutValue in strict code: assigning to an
+            // unresolvable name throws ReferenceError. The name still
+            // resolves if globalThis carries it (own or inherited) —
+            // mirror Op::LoadGlobal's ObjectRecord fallback.
+            let slot = inst_bc_u16(inst);
+            if ctx.realm.globals[slot].defined {
+                ctx.realm.globals[slot].value = regs[inst.a];
+            } else {
+                let nm = ctx.realm.globals[slot].name;
+                let nl = ctx.realm.globals[slot].name_len;
+                let found: bool = false;
+                if ctx.realm.global_this_obj != NULL {
+                    let key_str = ctx_intern_atom(ctx, nm, nl);
+                    let cur = ctx.realm.global_this_obj;
+                    while cur != NULL {
+                        if class_find_slot(cur.cls, key_str) >= 0 {
+                            let obj_v = zjs_cell_from_ptr((void*)ctx.realm.global_this_obj);
+                            let key_v = zjs_cell_from_ptr((void*)key_str);
+                            property_set(ctx, obj_v, key_v, regs[inst.a]);
+                            found = true;
+                            cur = NULL;
+                        } else {
+                            cur = cur.proto;
+                        }
+                    }
+                }
+                if !found {
+                    let err = build_reference_error(ctx, nm, nl);
+                    throwing = true; thrown = err; exit_reason = 3; break;
+                }
+                if ctx.pending_throw_active {
+                    throwing = true; thrown = ctx.pending_throw_value;
+                    ctx.pending_throw_active = false; exit_reason = 3; break;
+                }
+            }
         } else if op == Op::WithEnter {
             // ToObject(regs[a]) — null/undefined throw a TypeError — then
             // push onto the with-stack (§14.11.7 step 2 / §9.4.x).
@@ -8161,6 +8198,11 @@ fn interpret_inner_full(ctx: ZjsContext*,
             regs[inst.a] = step.value;
             regs[inst.c] = zjs_bool(step.done);
             if ctx.pending_throw_active {
+                // #401 — §7.4.3: when next() itself throws, the
+                // iterator record's [[Done]] is set true, so an
+                // enclosing abrupt-completion handler must NOT call
+                // return() (IteratorClose is skipped on step-throws).
+                regs[inst.c] = zjs_bool(true);
                 throwing = true; thrown = consume_pending_throw(ctx);
                 exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
             }
@@ -8215,6 +8257,17 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     throwing = true; thrown = consume_pending_throw(ctx);
                     exit_reason = 3; ctx.frames[cur_idx].ip = ip; break;
                 }
+            }
+        } else if op == Op::IterCloseQuiet {
+            // #401 — IteratorClose with a THROW completion (§7.4.6):
+            // anything return() raises (or returns) is discarded; the
+            // caller rethrows the original error right after.
+            let done_v = regs[inst.b];
+            let already_done: bool = false;
+            if zjs_is_bool(done_v) != 0 { already_done = zjs_as_bool(done_v) != 0; }
+            if !already_done {
+                iter_close(ctx, regs[inst.a]);
+                ctx.pending_throw_active = false;
             }
         } else if op == Op::AssertCoercible {
             let v = regs[inst.a];
@@ -8421,7 +8474,10 @@ fn is_object_like(v: ZjsValue) -> int {
        || tag == TAG_DATE
        || tag == TAG_REGEXP
        || tag == TAG_MAP
-       || tag == TAG_SET {
+       || tag == TAG_SET
+       // #401 — Uint8Array/Buffer must coerce via its inherited
+       // toString, not pass through as if primitive (#328 family).
+       || tag == TAG_UINT8_ARRAY {
         return 1;
     }
     return 0;
@@ -8519,6 +8575,10 @@ fn zjs_to_primitive(ctx: ZjsContext*, v: ZjsValue, prefer_string: bool) -> ZjsVa
     let argv: ZjsValue* = NULL;
 
     let m1 = property_get(ctx, v, zjs_cell_from_ptr((void*)first_atom));
+    // §7.1.1 step 5.a — `? Get(O, name)`: a throwing accessor on
+    // toString/valueOf propagates (#401; was swallowed into the
+    // generic TypeError below).
+    if ctx.pending_throw_active { return zjs_undefined(); }
     if zjs_is_function(m1) != 0 || zjs_is_closure(m1) != 0 || zjs_is_host_function(m1) != 0 {
         let r1 = zjs_call_value_with_this(ctx, m1, v, argv, 0);
         if ctx.pending_throw_active { return zjs_undefined(); }
@@ -8529,6 +8589,7 @@ fn zjs_to_primitive(ctx: ZjsContext*, v: ZjsValue, prefer_string: bool) -> ZjsVa
         if r1_objy == 0 { return r1; }
     }
     let m2 = property_get(ctx, v, zjs_cell_from_ptr((void*)second_atom));
+    if ctx.pending_throw_active { return zjs_undefined(); }
     if zjs_is_function(m2) != 0 || zjs_is_closure(m2) != 0 || zjs_is_host_function(m2) != 0 {
         let r2 = zjs_call_value_with_this(ctx, m2, v, argv, 0);
         if ctx.pending_throw_active { return zjs_undefined(); }

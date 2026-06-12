@@ -50,6 +50,11 @@ struct Local {
     // `let x = …; use x` path free of overhead).
     is_tdz:        bool;
     initialized:   bool;
+    // #401 — const binding (SetMutableBinding §9.1.1.1.5 step 3a):
+    // any assignment after initialization is a runtime TypeError, in
+    // sloppy and strict code alike. Detected at compile time and
+    // lowered to Op::ThrowTypeError at the store site.
+    is_const:      bool;
 }
 
 struct Compiler {
@@ -2416,6 +2421,15 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         if outer_depth > 0 { c.has_outer_refs = true; }
     }
 
+    // #401 — does this store need a PutValue guard (const TypeError /
+    // TDZ ReferenceError)? Computed up front so the preferred-dst fast
+    // path can't overwrite the hole before the check runs.
+    let store_guarded: bool =
+        (local_idx >= 0 && (c.locals[(u32)local_idx].is_const
+                            || (c.locals[(u32)local_idx].is_tdz
+                                && !c.locals[(u32)local_idx].initialized)))
+        || (outer_depth > 0 && outer_local_is_const(c, name, name_len));
+
     if op_tok == TokenKind::Eq {
         // For local target, hand the RHS a preferred-dst hint so the
         // final ALU op writes straight into local_reg — skips the
@@ -2425,7 +2439,7 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         // they read every operand before writing (see the alloc_reg
         // NOTEs in the ident/literal reads, #395).
         let saved_pd = c.preferred_dst;
-        if local_idx >= 0 && !captured_local {
+        if local_idx >= 0 && !captured_local && !store_guarded {
             // #395: bare-simple RHS (local ident / this / number) is a
             // terminal read — place it directly, skipping both the
             // defensive temp and the tail Mov.
@@ -2439,6 +2453,10 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         }
         let r = compile_expr(c, node.right);
         c.preferred_dst = saved_pd;
+        if store_guarded
+           && emit_ident_store_guard(c, local_idx, outer_depth, name, name_len) {
+            return r;
+        }
         if local_idx >= 0 {
             if captured_local {
                 let name_atom = ctx_intern_atom(c.ctx, name, name_len);
@@ -2453,6 +2471,11 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
             emit_store_prop_atom(c, env_r, name_atom, r);
             release_reg(c, env_r);
+        } else if c.strict {
+            // §6.2.5.6 PutValue: strict + unresolvable → ReferenceError
+            // (unless globalThis already has the property — runtime check).
+            let slot = ctx_intern_global(c.ctx, name, name_len);
+            emit(c, make_inst_a_u16(Op::StoreGlobalStrict, r, (u16)slot));
         } else {
             let slot = ctx_intern_global(c.ctx, name, name_len);
             emit(c, make_inst_a_u16(Op::StoreGlobal, r, (u16)slot));
@@ -2468,6 +2491,11 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
             emit_load_prop_atom(c, cur, c.env_reg, name_atom);
         } else {
+            // #401 — GetValue on a TDZ-uninit binding throws first
+            // (§13.15.2 step 1 runs before the RHS evaluates).
+            if c.locals[(u32)local_idx].is_tdz && !c.locals[(u32)local_idx].initialized {
+                emit(c, make_inst_a(Op::ThrowIfHole, local_reg));
+            }
             emit(c, make_inst_ab(Op::Mov, cur, local_reg));
         }
     } else if outer_depth > 0 {
@@ -2497,7 +2525,12 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         let skip_idx = emit(c, make_inst_a_i16(jmp_op, dst, 0));
         let rhs_r = compile_expr(c, node.right);
         emit(c, make_inst_ab(Op::Mov, dst, rhs_r));
-        if local_idx >= 0 {
+        // #401 — PutValue checks fire only on the assign branch (the
+        // short-circuit path returns the old value, even for const).
+        if store_guarded
+           && emit_ident_store_guard(c, local_idx, outer_depth, name, name_len) {
+            // const target: the throw above replaces the store.
+        } else if local_idx >= 0 {
             if captured_local {
                 let name_atom = ctx_intern_atom(c.ctx, name, name_len);
                 emit_store_prop_atom(c, c.env_reg, name_atom, dst);
@@ -2509,6 +2542,9 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
             emit_store_prop_atom(c, env_r, name_atom, dst);
             release_reg(c, env_r);
+        } else if c.strict {
+            let slot = ctx_intern_global(c.ctx, name, name_len);
+            emit(c, make_inst_a_u16(Op::StoreGlobalStrict, dst, (u16)slot));
         } else {
             let slot = ctx_intern_global(c.ctx, name, name_len);
             emit(c, make_inst_a_u16(Op::StoreGlobal, dst, (u16)slot));
@@ -2541,7 +2577,12 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     }
     let dst = alloc_reg(c);
     emit(c, make_inst_abc(op, dst, cur, rhs));
-    if local_idx >= 0 {
+    // #401 — PutValue check after the operation (§13.15.3 step 7 order:
+    // GetValue → RHS → op → PutValue-throws).
+    if store_guarded
+       && emit_ident_store_guard(c, local_idx, outer_depth, name, name_len) {
+        // const target: the throw above replaces the store.
+    } else if local_idx >= 0 {
         if captured_local {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
             emit_store_prop_atom(c, c.env_reg, name_atom, dst);
@@ -2553,6 +2594,9 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
         emit_store_prop_atom(c, env_r, name_atom, dst);
         release_reg(c, env_r);
+    } else if c.strict {
+        let slot = ctx_intern_global(c.ctx, name, name_len);
+        emit(c, make_inst_a_u16(Op::StoreGlobalStrict, dst, (u16)slot));
     } else {
         let slot = ctx_intern_global(c.ctx, name, name_len);
         emit(c, make_inst_a_u16(Op::StoreGlobal, dst, (u16)slot));
@@ -2715,7 +2759,7 @@ fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
     if ic > 255 {
         let obj_r = compile_expr(c, node.left);
         c.borrow_local_ok = saved_borrow;
-        if was_private_rd { emit_private_check(c, obj_r, priv_id_rd); }   // #400
+        if was_private_rd { emit_private_access_check(c, obj_r, priv_id_rd, priv_kind_rd, name_atom); }   // #400/#401
         // Use the already-interned (possibly mangled) atom so the
         // fallback honors private-name mangling too.
         let key_r = emit_load_atom(c, name_atom);
@@ -2732,7 +2776,7 @@ fn compile_member(c: Compiler*, node: AstNode*) -> u8 {
     c.borrow_local_ok = saved_borrow;
     c.preferred_dst = saved_pd;
     if was_private_rd {
-        emit_private_check(c, obj_r, priv_id_rd);   // #400
+        emit_private_access_check(c, obj_r, priv_id_rd, priv_kind_rd, name_atom);   // #400/#401
         // inc B: reading a setter-only private accessor is a TypeError
         // (§13.3.7.1 — no [[Get]] in the PrivateElement).
         if priv_kind_rd == 8 {
@@ -2848,7 +2892,7 @@ fn compile_optional_chain(c: Compiler*, node: AstNode*) -> u8 {
                 let oc_kind: u8 = 0;
                 name_atom = resolve_private(c, op.name_start, op.name_length, &oc_id, &oc_kind);
                 if name_atom == NULL { return dst; }
-                emit_private_check(c, dst, oc_id);
+                emit_private_access_check(c, dst, oc_id, oc_kind, name_atom);   // #400/#401
                 if oc_kind == 8 {
                     emit_throw_type_error(c, (char*)"'#x' was defined without a getter", 33);
                 }
@@ -2950,7 +2994,7 @@ fn compile_property_target(c: Compiler*, target: AstNode*) -> PropTarget {
             let priv_id_pt: i32 = -1;
             let priv_kind_pt: u8 = 0;
             let atom = resolve_private(c, target.name_start, target.name_length, &priv_id_pt, &priv_kind_pt);
-            emit_private_check(c, obj_r, priv_id_pt);   // #400
+            emit_private_access_check(c, obj_r, priv_id_pt, priv_kind_pt, atom);   // #400/#401
             if atom == NULL {
                 // SyntaxError armed. Return dummy regs; outer error gate
                 // handles the early exit.
@@ -2998,8 +3042,21 @@ fn compile_assignment_to_property(c: Compiler*, target: AstNode*, op_tok: TokenK
                                   && target.left.kind == NodeKind::ThisExpr;
             if rhs_pure || obj_is_this { c.borrow_local_ok = true; }
             let obj_r = compile_expr(c, target.left);
-            if is_private_name(c, target.name_start, target.name_length) {
-                emit_private_check(c, obj_r, priv_id_wr);   // #400
+            if lhs_pure { c.borrow_local_ok = true; }
+            else        { c.borrow_local_ok = saved_borrow; }
+            let v = compile_expr(c, rhs);
+            c.borrow_local_ok = saved_borrow;
+            // #400/#401 — PrivateSet's checks run at PutValue time,
+            // AFTER the RHS evaluates (§13.15.2 step order; the
+            // evaluation-order tests observe RHS side effects before
+            // the TypeError). target.num==1.0 marks the parser-
+            // synthesized DefineField assignment: it CREATES the
+            // mangled own prop, so the presence check must not run.
+            // (obj_r can't be stale here: it's borrowed only when the
+            // RHS is simple-pure or the receiver is `this`.)
+            if is_private_name(c, target.name_start, target.name_length)
+               && target.num != 1.0 {
+                emit_private_access_check(c, obj_r, priv_id_wr, priv_kind_wr, name_atom);
                 // inc B: writing a private METHOD (non-writable per
                 // spec) or a getter-only accessor is a TypeError.
                 if priv_kind_wr == 2 {
@@ -3008,10 +3065,6 @@ fn compile_assignment_to_property(c: Compiler*, target: AstNode*, op_tok: TokenK
                     emit_throw_type_error(c, (char*)"'#x' was defined without a setter", 33);
                 }
             }
-            if lhs_pure { c.borrow_local_ok = true; }
-            else        { c.borrow_local_ok = saved_borrow; }
-            let v = compile_expr(c, rhs);
-            c.borrow_local_ok = saved_borrow;
             emit(c, make_inst_abc(Op::StoreProp, obj_r, (u8)ic, v));
             return v;
         }
@@ -4821,6 +4874,23 @@ fn emit_private_check(c: Compiler*, obj_reg: u8, class_id: i32) -> void {
     emit(c, make_inst_a_u16(Op::PrivateCheck, obj_reg, idx));
 }
 
+// #401 inc4 — §7.3.30/31 PrivateGet/PrivateSet precision. A private
+// FIELD (kind==1) lives as a mangled own property that DefineField
+// installs one at a time in textual order, so the presence check must
+// target the FIELD's own atom: `y = this.#x = 1; #x;` throws because
+// #x's DefineField hasn't run yet, even though the instance already
+// carries the class brand. Methods/accessors keep the brand check
+// (they're installed all-at-once when the brand is).
+fn emit_private_access_check(c: Compiler*, obj_reg: u8, class_id: i32,
+                             kind: u8, mangled: ZjsString*) -> void {
+    if kind == 1 && mangled != NULL {
+        let idx = add_const(c, zjs_cell_from_ptr((void*)mangled));
+        emit(c, make_inst_a_u16(Op::PrivateCheck, obj_reg, idx));
+        return;
+    }
+    emit_private_check(c, obj_reg, class_id);
+}
+
 fn compile_class_value(c: Compiler*, cls_node: AstNode*) -> u8 {
     // Find the constructor MethodDef among the children. The parser
     // may have synthesized one (num == 2.0) when fields exist without
@@ -5410,6 +5480,10 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
             emit_load_prop_atom(c, cur, c.env_reg, name_atom);
         } else {
+            // #401 — GetValue on a TDZ-uninit binding throws first.
+            if c.locals[(u32)local_idx].is_tdz && !c.locals[(u32)local_idx].initialized {
+                emit(c, make_inst_a(Op::ThrowIfHole, local_reg));
+            }
             emit(c, make_inst_ab(Op::Mov, cur, local_reg));
         }
     } else if outer_depth > 0 {
@@ -5428,7 +5502,10 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
     let op_ = if is_inc { Op::AddImm } else { Op::SubImm };
     emit(c, make_inst_abc(op_, new_reg, cur, (u8)1));
 
-    if local_idx >= 0 {
+    // #401 — PutValue check after ToNumeric/op (§13.4 order).
+    if emit_ident_store_guard(c, local_idx, outer_depth, name, name_len) {
+        // const target: the throw above replaces the store.
+    } else if local_idx >= 0 {
         if captured_local {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
             emit_store_prop_atom(c, c.env_reg, name_atom, new_reg);
@@ -5440,6 +5517,9 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
         emit_store_prop_atom(c, env_r, name_atom, new_reg);
         release_reg(c, env_r);
+    } else if c.strict {
+        let slot = ctx_intern_global(c.ctx, name, name_len);
+        emit(c, make_inst_a_u16(Op::StoreGlobalStrict, new_reg, (u16)slot));
     } else {
         let slot = ctx_intern_global(c.ctx, name, name_len);
         emit(c, make_inst_a_u16(Op::StoreGlobal, new_reg, (u16)slot));
@@ -5779,7 +5859,7 @@ fn compile_call_inner(c: Compiler*, node: AstNode*, ret_hint: i32) -> u8 {
                     let priv_kind_mc: u8 = 0;
                     name_atom = resolve_private(c, callee.name_start, callee.name_length, &priv_id_mc, &priv_kind_mc);
                     if name_atom == NULL { return 0; }
-                    emit_private_check(c, base + 1, priv_id_mc);   // #400: receiver brand
+                    emit_private_access_check(c, base + 1, priv_id_mc, priv_kind_mc, name_atom);   // #400/#401
                     if priv_kind_mc == 8 {
                         emit_throw_type_error(c, (char*)"'#x' was defined without a getter", 33);
                     }
@@ -6040,6 +6120,48 @@ fn outer_capture_depth(c: Compiler*, name: char*, name_len: u32) -> u32 {
         anc = anc.parent;
     }
     return 0;
+}
+
+// #401 — const-ness of the outer captured binding `name` resolves to.
+// Mirrors outer_capture_depth's resolution walk (first ancestor whose
+// CAPTURED local matches wins).
+fn outer_local_is_const(c: Compiler*, name: char*, name_len: u32) -> bool {
+    let anc: Compiler* = c.parent;
+    while anc != NULL {
+        let oi = find_local_index(anc, name, name_len);
+        if oi >= 0 && anc.locals[(u32)oi].captured {
+            return anc.locals[(u32)oi].is_const;
+        }
+        anc = anc.parent;
+    }
+    return false;
+}
+
+// #401 — checked PutValue (§6.2.5.6 / SetMutableBinding §9.1.1.1.5).
+// Emitted at an ident-store site AFTER the RHS has been evaluated:
+//   const binding    → unconditional TypeError (sloppy and strict)
+//   TDZ-uninit local → ThrowIfHole (ReferenceError while still the hole)
+// Returns true when the binding is const — the caller's store becomes
+// dead code (the throw always fires), so it may skip emitting it.
+// Captured-TDZ stays unchecked, matching the read side's #333 gating.
+fn emit_ident_store_guard(c: Compiler*, local_idx: i32, outer_depth: u32,
+                          name: char*, name_len: u32) -> bool {
+    if local_idx >= 0 {
+        let li = (u32)local_idx;
+        if c.locals[li].is_const {
+            emit_throw_type_error(c, (char*)"Assignment to constant variable.", 32);
+            return true;
+        }
+        if c.locals[li].is_tdz && !c.locals[li].initialized && !c.locals[li].captured {
+            emit(c, make_inst_a(Op::ThrowIfHole, c.locals[li].reg));
+        }
+        return false;
+    }
+    if outer_depth > 0 && outer_local_is_const(c, name, name_len) {
+        emit_throw_type_error(c, (char*)"Assignment to constant variable.", 32);
+        return true;
+    }
+    return false;
 }
 
 // Emit a register holding the env at `depth` levels up the chain.
@@ -6351,6 +6473,8 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
         let nl = target.name_length;
         let lidx = find_local_index(c, nm, nl);
         if lidx >= 0 {
+            // #401 — PutValue checks (const TypeError / TDZ).
+            if emit_ident_store_guard(c, lidx, 0, nm, nl) { return; }
             if c.locals[(u32)lidx].captured {
                 let name_atom = ctx_intern_atom(c.ctx, nm, nl);
                 emit_store_prop_atom(c, c.env_reg, name_atom, val_reg);
@@ -6362,6 +6486,7 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
         let outer_depth = outer_capture_depth(c, nm, nl);
         if outer_depth > 0 {
             c.has_outer_refs = true;
+            if emit_ident_store_guard(c, -1, outer_depth, nm, nl) { return; }
             let env_r = emit_env_chain_walk(c, outer_depth);
             let name_atom = ctx_intern_atom(c.ctx, nm, nl);
             emit_store_prop_atom(c, env_r, name_atom, val_reg);
@@ -6369,7 +6494,11 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
             return;
         }
         let slot = ctx_intern_global(c.ctx, nm, nl);
-        emit(c, make_inst_a_u16(Op::StoreGlobal, val_reg, (u16)slot));
+        if c.strict {
+            emit(c, make_inst_a_u16(Op::StoreGlobalStrict, val_reg, (u16)slot));
+        } else {
+            emit(c, make_inst_a_u16(Op::StoreGlobal, val_reg, (u16)slot));
+        }
         return;
     }
     if k != NodeKind::IdentExpr {
@@ -6560,6 +6689,19 @@ fn destructure_array(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
     let done_r = alloc_reg(c);
     emit(c, make_inst_a(Op::LoadFalse, done_r));
 
+    // #401 — abrupt completions during element evaluation (a throwing
+    // setter/getter, a poisoned default, a nested-pattern TypeError)
+    // must IteratorClose with the THROW completion (§13.15.5.5 /
+    // §8.6.2): call return(), swallow its result, rethrow the original
+    // error. IterStep's own throws set done_r first, so a step-throw
+    // skips the close per §7.4.3. The handler reg must sit below
+    // fixed_regs so loop temps can't clobber the caught value.
+    let catch_reg = alloc_reg(c);
+    if catch_reg + 1 > c.fixed_regs { c.fixed_regs = catch_reg + 1; }
+    let enter_idx = emit(c, make_inst_a_i16(Op::EnterTry, catch_reg, 0));
+    // #326 — suppress tail-call rewrites while a handler is active.
+    c.active_try_count = c.active_try_count + 1;
+
     let i: u32 = 0;
     let saw_rest: bool = false;
     while i < pat.children_count {
@@ -6591,6 +6733,14 @@ fn destructure_array(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
         i = i + 1;
     }
 
+    c.active_try_count = c.active_try_count - 1;
+    emit(c, make_inst_a(Op::LeaveTry, 0));
+    let skip_handler = emit(c, make_inst_i16(Op::Jmp, 0));
+    patch_jump(c, enter_idx);
+    emit(c, make_inst_ab(Op::IterCloseQuiet, iter_r, done_r));
+    emit(c, make_inst_a(Op::Throw, catch_reg));
+    patch_jump(c, skip_handler);
+
     // Spec IteratorClose with NormalCompletion: when destructuring
     // finishes without consuming the whole iterator, call iter.return().
     // A rest binding always drains, so IterClose is a no-op there;
@@ -6598,6 +6748,7 @@ fn destructure_array(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
     if !saw_rest {
         emit(c, make_inst_ab(Op::IterClose, iter_r, done_r));
     }
+    release_reg(c, catch_reg);
     release_reg(c, done_r);
     release_reg(c, iter_r);
 }
@@ -6645,6 +6796,8 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
                 alloc_and_add_local_scoped(c, decl.name_start, decl.name_length, scope_id);
                 // #330 — let/const are TDZ bindings; var is not.
                 if !is_var_kind { c.locals[c.local_count - 1].is_tdz = true; }
+                // #401 — const bindings reject all later assignments.
+                if node.op == TokenKind::KwConst { c.locals[c.local_count - 1].is_const = true; }
             } else if decl.third != NULL {
                 // #330 — mark every binding the pattern introduces as TDZ
                 // for let/const (a destructuring `let [a=b, b]` must throw
@@ -6656,6 +6809,8 @@ fn collect_locals(c: Compiler*, node: AstNode*) -> void {
                     let pli = before;
                     while pli < c.local_count {
                         c.locals[pli].is_tdz = true;
+                        // #401 — pattern-introduced const bindings too.
+                        if node.op == TokenKind::KwConst { c.locals[pli].is_const = true; }
                         pli = pli + 1;
                     }
                 }
@@ -8374,17 +8529,24 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
             release_reg(c, value_r);
         }
     } else if binding.kind == NodeKind::IdentExpr {
+        // Assignment-form head (`for (x of …)`) — PutValue on an
+        // existing binding, so the #401 const/TDZ/strict checks apply.
         let bname = c.source + binding.start;
         let bname_len = binding.end - binding.start;
         if c.is_function {
             let lidx = find_local_index(c, bname, bname_len);
             if lidx >= 0 {
-                if c.locals[(u32)lidx].captured {
+                if emit_ident_store_guard(c, lidx, 0, bname, bname_len) {
+                    // const target: the throw replaces the store.
+                } else if c.locals[(u32)lidx].captured {
                     let name_atom = ctx_intern_atom(c.ctx, bname, bname_len);
                     emit_store_prop_atom(c, c.env_reg, name_atom, value_r);
                 } else {
                     emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, value_r));
                 }
+            } else if c.strict {
+                let slot = ctx_intern_global(c.ctx, bname, bname_len);
+                emit(c, make_inst_a_u16(Op::StoreGlobalStrict, value_r, (u16)slot));
             } else {
                 let slot = ctx_intern_global(c.ctx, bname, bname_len);
                 emit(c, make_inst_a_u16(Op::StoreGlobal, value_r, (u16)slot));

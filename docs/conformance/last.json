@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-11 22:43 UTC",
+    "when": "2026-06-12 00:06 UTC",
     "total": 27568,
-    "passed": 24362,
-    "failed": 2868,
+    "passed": 24504,
+    "failed": 2726,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -662,7 +662,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/15.4.4.14-9-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.indexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unknown):"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-grow.js",
@@ -687,14 +687,6 @@
     {
       "path": "test/built-ins/Array/prototype/indexOf/resizable-buffer.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab-1\u00bb, \u00ab0\u00bb) to "
-    },
-    {
-      "path": "test/built-ins/Array/prototype/join/S15.4.4.5_A3.1_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The result of evaluating (e instanceof TypeError) is expected to be true Expected SameValue(\u00abfals"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/join/S15.4.4.5_A3.2_T2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): The result of evaluating (e instanceof TypeError) is expected to be true Expected SameValue(\u00abfals"
     },
     {
       "path": "test/built-ins/Array/prototype/join/S15.4.4.5_A5_T1.js",
@@ -1295,10 +1287,6 @@
     {
       "path": "test/built-ins/Array/prototype/toSpliced/start-and-deleteCount-missing.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [first, second, third] should have the same contents. \nzjs: throw: (unknow"
-    },
-    {
-      "path": "test/built-ins/Array/prototype/toString/S15.4.4.2_A1_T4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Array/prototype/toString/S15.4.4.2_A3_T1.js",
@@ -2053,10 +2041,6 @@
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
     {
-      "path": "test/built-ins/Error/error-message-tostring-toprimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Error should throw a TypeError in its ToPrimitive step Expected a TypeError to be thrown but no e"
-    },
-    {
       "path": "test/built-ins/Error/instance-prototype.js",
       "reason": "[sloppy] zjs: throw: (unknown): prototype should be an own property\nzjs: throw: (unknown): prototype should be an own property"
     },
@@ -2159,10 +2143,6 @@
     {
       "path": "test/built-ins/Error/prototype/toString/invalid-receiver.js",
       "reason": "[sloppy] zjs: throw: (unknown): Error.prototype.toString.call(undefined) Expected a TypeError to be thrown but no exception was t"
-    },
-    {
-      "path": "test/built-ins/Error/prototype/toString/tostring-message-throws-toprimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToPrimitive(msg) called by ToString(msg) throws TypeError Expected a TypeError to be thrown but n"
     },
     {
       "path": "test/built-ins/Function/15.3.2.1-10-6gs.js",
@@ -3173,10 +3153,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Object.defineProperties called on non-object\nzjs: throw: TypeError: Object.defineProperties calle"
     },
     {
-      "path": "test/built-ins/Object/defineProperty/15.2.3.6-2-47.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/Object/defineProperty/15.2.3.6-3-139-1.js",
       "reason": "[sloppy] zjs: throw: (unknown): obj.property Expected SameValue(\u00abundefined\u00bb, \u00ab\"Function\"\u00bb) to be true\nzjs: throw: (unknown): obj."
     },
@@ -3597,20 +3573,12 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot convert a Symbol value to a string\nzjs: throw: TypeError: Cannot convert a Symbol value to"
     },
     {
-      "path": "test/built-ins/Object/fromEntries/to-property-key.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"value\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab"
-    },
-    {
       "path": "test/built-ins/Object/fromEntries/uses-keys-not-iterator.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00ab\"first value\"\u00bb) to be true\nzjs: throw: (unknown): Expected SameV"
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-33.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'value')\nzjs: throw: TypeError: Cannot read properti"
-    },
-    {
-      "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-2-46.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-131.js",
@@ -3806,7 +3774,7 @@
     },
     {
       "path": "test/built-ins/Object/hasOwn/symbol_property_toPrimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Returns true if symbol own property found Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: thr"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert a Symbol value to a string\nzjs: throw: TypeError: Cannot convert a Symbol value to"
     },
     {
       "path": "test/built-ins/Object/hasOwn/symbol_property_toString.js",
@@ -3966,7 +3934,7 @@
     },
     {
       "path": "test/built-ins/Object/prototype/hasOwnProperty/symbol_property_toPrimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Returns true if symbol own property found Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be true\nzjs: thr"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert a Symbol value to a string\nzjs: throw: TypeError: Cannot convert a Symbol value to"
     },
     {
       "path": "test/built-ins/Object/prototype/hasOwnProperty/symbol_property_toString.js",
@@ -3998,7 +3966,7 @@
     },
     {
       "path": "test/built-ins/Object/prototype/propertyIsEnumerable/symbol_property_toPrimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Returns true if symbol own enumerable property found Expected SameValue(\u00abfalse\u00bb, \u00abtrue\u00bb) to be tr"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert a Symbol value to a string\nzjs: throw: TypeError: Cannot convert a Symbol value to"
     },
     {
       "path": "test/built-ins/Object/prototype/propertyIsEnumerable/symbol_property_toString.js",
@@ -5185,10 +5153,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): #2: function __obj(){}; __str = new String(__obj); __str ==\"true\". Actual: __str ==function __obj"
     },
     {
-      "path": "test/built-ins/String/S15.5.2.1_A1_T13.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: e===\"invalueof\". Actual: e===Test262Error: #1: __obj.valueOf=function(){throw \"invalueof\"};"
-    },
-    {
       "path": "test/built-ins/String/S15.5.2.1_A1_T8.js",
       "reason": "[sloppy] zjs: throw: (unknown): #2: Function.prototype.toString=function(){return \"SHIFTED\"}; __str = new String(function(){}); _"
     },
@@ -5215,10 +5179,6 @@
     {
       "path": "test/built-ins/String/S15.5.5_A2_T2.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
-    },
-    {
-      "path": "test/built-ins/String/S8.12.8_A1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.2: var __obj = {toString: function() {return new Object();}}; String(__obj) throw TypeError. A"
     },
     {
       "path": "test/built-ins/String/fromCharCode/S15.5.3.2_A1.js",
@@ -5346,19 +5306,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/indexOf/searchstring-tostring-bigint.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToString: unbox object with internal slot => BigInt to String Expected SameValue(\u00ab-1\u00bb, \u00ab2\u00bb) to be"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/searchstring-tostring-errors.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToString: @@toPrimitive => Symbol => TypeError Expected a TypeError to be thrown but no exception"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/searchstring-tostring-toprimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \nzjs: throw: (unknown):"
-    },
-    {
-      "path": "test/built-ins/String/prototype/indexOf/searchstring-tostring-wrapped-values.js",
-      "reason": "[sloppy] zjs: throw: (unknown): ToPrimitive: @@toPrimitive Expected SameValue(\u00ab-1\u00bb, \u00ab2\u00bb) to be true\nzjs: throw: (unknown): ToPrim"
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
     },
     {
       "path": "test/built-ins/String/prototype/isWellFormed/length.js",
@@ -5601,10 +5549,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): #1.1: Exception is instance of TypeError. Actual: Test262Error: #1.0: x = __instance.replace(__ob"
     },
     {
-      "path": "test/built-ins/String/prototype/replace/S15.5.4.11_A1_T16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): #1.1: Exception is instance of TypeError. Actual: Test262Error: #1.0: x = __instance.replace(__ob"
-    },
-    {
       "path": "test/built-ins/String/prototype/replace/S15.5.4.11_A1_T17.js",
       "reason": "[sloppy] zjs: throw: (unknown): #1: var x; var __re = new RegExp(x,\"g\"); __instance = String(\"asdf\"); __str = \"1\"; __instance.rep"
     },
@@ -5629,10 +5573,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
     },
     {
-      "path": "test/built-ins/String/prototype/replace/tostring-this-throws-toprimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): String.prototype.replace should throw a TypeError in its ToPrimitive step. Expected a TypeError t"
-    },
-    {
       "path": "test/built-ins/String/prototype/replaceAll/getSubstitution-0x0024-0x003C.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"a($<$<)a($<$<)a($<$<)a($<$<)a($<$<)a($<$<)a($<$<)a($<$<)a($<$<)a($<$<)a($<$<"
     },
@@ -5643,10 +5583,6 @@
     {
       "path": "test/built-ins/String/prototype/replaceAll/getSubstitution-0x0024NN.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"a($12$11)a($12$11)a($12$11)a($12$11)a($12$11)a($12$11)a($12$11)a($12$11)a($1"
-    },
-    {
-      "path": "test/built-ins/String/prototype/replaceAll/replaceValue-value-tostring.js",
-      "reason": "[sloppy] zjs: throw: poison\nzjs: throw: poison"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-flags-no-g-throws.js",
@@ -5697,10 +5633,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): /./g Expected SameValue(\u00ab\"zzzzzzzzzzzzzzz\"\u00bb, \u00ab\"aa z z aa\"\u00bb) to be true\nzjs: throw: (unknown): /./"
     },
     {
-      "path": "test/built-ins/String/prototype/replaceAll/this-tostring.js",
-      "reason": "[sloppy] zjs: throw: poison\nzjs: throw: poison"
-    },
-    {
       "path": "test/built-ins/String/prototype/search/cstm-search-get-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
     },
@@ -5727,10 +5659,6 @@
     {
       "path": "test/built-ins/String/prototype/slice/S15.5.4.13_A1_T5.js",
       "reason": "[sloppy] zjs: throw: (unknown): #1: __func.slice(null, Function().slice(__func,5).length) === \"gnull\". Actual: funct\nzjs: throw: "
-    },
-    {
-      "path": "test/built-ins/String/prototype/slice/this-value-tostring-throws-toprimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): String.prototype.slice throws in its toprimitive step. Expected a TypeError to be thrown but no e"
     },
     {
       "path": "test/built-ins/String/prototype/split/cstm-split-get-err.js",
@@ -5793,10 +5721,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): #1: __instance = new Boolean(); __instance.substring = String.prototype.substring;  __instance.su"
     },
     {
-      "path": "test/built-ins/String/prototype/substring/this-value-tostring-throws-toprimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): String.prototype.substring throws in its toprimitive step. Expected a TypeError to be thrown but "
-    },
-    {
       "path": "test/built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A1_T14.js",
       "reason": "[sloppy] zjs: throw: (unknown): #1: var __reg = new RegExp(\"ABC\"); __reg.toLocaleLowerCase = String.prototype.toLocaleLowerCase; "
     },
@@ -5839,10 +5763,6 @@
     {
       "path": "test/built-ins/String/prototype/toLowerCase/supplementary_plane.js",
       "reason": "[sloppy] zjs: throw: (unknown): DESERET CAPITAL LETTER LONG I Expected SameValue(\u00ab\"\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\"\u00bb, \u00ab\"\ufffd\ufffd\ufffd\ufffd\ufffd\ufffd\"\u00bb) to be true\nzjs: throw: ("
-    },
-    {
-      "path": "test/built-ins/String/prototype/toLowerCase/this-value-tostring-throws-toprimitive.js",
-      "reason": "[sloppy] zjs: throw: (unknown): String.prototype.toLowerCase throws in its toprimitive step. Expected a TypeError to be thrown bu"
     },
     {
       "path": "test/built-ins/String/prototype/toString/non-generic-realm.js",
@@ -5897,192 +5817,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): coerces the receiver to a string Expected a Test262Error but got a TypeError\nzjs: throw: (unknown"
     },
     {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-2-42.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/built-ins/String/prototype/trim/15.5.4.20-2-49.js",
       "reason": "[sloppy] zjs: throw: (unknown): String.prototype.trim.call(regObj) Expected SameValue(\u00ab\"[object]\"\u00bb, \u00ab\"/test/\"\u00bb) to be true\nzjs: t"
     },
     {
       "path": "test/built-ins/String/prototype/trim/15.5.4.20-2-51.js",
       "reason": "[sloppy] zjs: throw: (unknown): String.prototype.trim.call(argObj) Expected SameValue(\u00ab\"1,2,true\"\u00bb, \u00ab\"[object Arguments]\"\u00bb) to be"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-3-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): lineTerminatorsStr.trim() Expected SameValue(\u00ab\"\u2028\u2029\"\u00bb, \u00ab\"\"\u00bb) to be true\nzjs: throw: (unknown): line"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-3-2.js",
-      "reason": "[sloppy] zjs: throw: (unknown): whiteSpacesStr.trim() Expected SameValue(\u00ab\"\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff\"\u00bb, \u00ab\"\"\u00bb) to be true\nzjs: throw: (u"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-3-3.js",
-      "reason": "[sloppy] zjs: throw: (unknown): str.trim() Expected SameValue(\u00ab\"\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff\\n\\r\u2028\u2029\"\u00bb, \u00ab\"\"\u00bb) to be true\nzjs: throw: (unknow"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-3-4.js",
-      "reason": "[sloppy] zjs: throw: (unknown): str.trim() Expected SameValue(\u00ab\"\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff\\n\\r\u2028\u2029abc\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: ("
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-3-5.js",
-      "reason": "[sloppy] zjs: throw: (unknown): str.trim() Expected SameValue(\u00ab\"abc\\t\\n\\u000b\\f\\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff\\n\\r\u2028\u2029\"\u00bb, \u00ab\"abc\"\u00bb) to be tru"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-3-6.js",
-      "reason": "[sloppy] zjs: throw: (unknown): str.trim() Expected SameValue(\u00ab\"\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff\\n\\r\u2028\u2029abc\\t\\n\\u000b\\f\\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff\\n\\"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-10.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"\ufeffabc\".trim() Expected SameValue(\u00ab\"\ufeffabc\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): \"\ufeffabc\".trim"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-16.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"abc\u00a0\".trim() Expected SameValue(\u00ab\"abc\u00a0\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): \"abc\u00a0\".trim"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-18.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"abc\ufeff\".trim() Expected SameValue(\u00ab\"abc\ufeff\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): \"abc\ufeff\".trim"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-24.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"\u00a0abc\u00a0\".trim() Expected SameValue(\u00ab\"\u00a0abc\u00a0\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): \"\u00a0abc\u00a0\".t"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-32.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"\u00a0\u00a0\".trim() Expected SameValue(\u00ab\"\u00a0\u00a0\"\u00bb, \u00ab\"\"\u00bb) to be true\nzjs: throw: (unknown): \"\u00a0\u00a0\".trim() Expect"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-34.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"\ufeff\ufeff\".trim() Expected SameValue(\u00ab\"\ufeff\ufeff\"\u00bb, \u00ab\"\"\u00bb) to be true\nzjs: throw: (unknown): \"\ufeff\ufeff\".trim() Expect"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-45.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"\u2028abc\".trim() Expected SameValue(\u00ab\"\u2028abc\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): \"\u2028abc\".trim"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-46.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"\u2029abc\".trim() Expected SameValue(\u00ab\"\u2029abc\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): \"\u2029abc\".trim"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-49.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"abc\u2028\".trim() Expected SameValue(\u00ab\"abc\u2028\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): \"abc\u2028\".trim"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-50.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"abc\u2029\".trim() Expected SameValue(\u00ab\"abc\u2029\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): \"abc\u2029\".trim"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-53.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"\u2028abc\u2028\".trim() Expected SameValue(\u00ab\"\u2028abc\u2028\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): \"\u2028abc\u2028\".t"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-54.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"\u2029abc\u2029\".trim() Expected SameValue(\u00ab\"\u2029abc\u2029\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): \"\u2029abc\u2029\".t"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-57.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"\u2028\u2028\".trim() Expected SameValue(\u00ab\"\u2028\u2028\"\u00bb, \u00ab\"\"\u00bb) to be true\nzjs: throw: (unknown): \"\u2028\u2028\".trim() Expect"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-58.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"\u2029\u2029\".trim() Expected SameValue(\u00ab\"\u2029\u2029\"\u00bb, \u00ab\"\"\u00bb) to be true\nzjs: throw: (unknown): \"\u2029\u2029\".trim() Expect"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-59.js",
-      "reason": "[sloppy] zjs: throw: (unknown): s.trim() Expected SameValue(\u00ab\"\u2029           abc\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): s.tri"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trim/15.5.4.20-4-8.js",
-      "reason": "[sloppy] zjs: throw: (unknown): \"\u00a0abc\".trim() Expected SameValue(\u00ab\"\u00a0abc\"\u00bb, \u00ab\"abc\"\u00bb) to be true\nzjs: throw: (unknown): \"\u00a0abc\".trim"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-line-terminator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\\n\\r\u2028\u2029a\\n\\r\u2028\u2029b\\n\\r\u2028\u2029\"\u00bb, \u00ab\"\\n\\r\u2028\u2029a\\n\\r\u2028\u2029b\"\u00bb) to be true\nzjs: throw: (unknown)"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-cannot-convert-to-primitive-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-toprimitive-call-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-toprimitive-meth-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-toprimitive-meth-priority.js",
-      "reason": "[sloppy] zjs: throw: (unknown): thisVal[Symbol.toPrimitive] expected to have been accessed. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be tr"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-toprimitive-returns-object-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-tostring-meth-priority.js",
-      "reason": "[sloppy] zjs: throw: (unknown): thisVal.toString expected to have been accessed. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: thr"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-tostring-returns-object-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-valueof-meth-priority.js",
-      "reason": "[sloppy] zjs: throw: (unknown): thisVal[Symbol.toPrimitive should have been accessed. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-object-valueof-returns-object-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimEnd/this-value-whitespace.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\\t\\n\\u000b\\f\\r \ufffd\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000\u2028\u2029\ufeffa\\t\\n\\u000b\\f\\r \ufffd\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000\u2028\u2029\ufeffb\\t\\n\\u"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-line-terminator.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\u2028\u2029a\\n\\r\u2028\u2029b\\n\\r\u2028\u2029\"\u00bb, \u00ab\"a\\n\\r\u2028\u2029b\\n\\r\u2028\u2029\"\u00bb) to be true\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-cannot-convert-to-primitive-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-toprimitive-call-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-toprimitive-meth-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a Test262Error to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Ex"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-toprimitive-meth-priority.js",
-      "reason": "[sloppy] zjs: throw: (unknown): thisVal[Symbol.toPrimitive] expected to have been accessed. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be tr"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-toprimitive-returns-object-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-tostring-meth-priority.js",
-      "reason": "[sloppy] zjs: throw: (unknown): thisVal.toString expected to have been accessed. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: thr"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-tostring-returns-object-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-valueof-meth-priority.js",
-      "reason": "[sloppy] zjs: throw: (unknown): thisVal[Symbol.toPrimitive should have been accessed. Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-object-valueof-returns-object-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/built-ins/String/prototype/trimStart/this-value-whitespace.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab\"\ufffd\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000\u2028\u2029\ufeffa\\t\\n\\u000b\\f\\r \ufffd\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u202f\u205f\u3000\u2028\u2029\ufeffb\\t\\n\\u000b\\f\\r \ufffd\u1680\u2000\u2001\u2002\u2003"
     },
     {
       "path": "test/built-ins/String/prototype/valueOf/non-generic-realm.js",
@@ -6143,10 +5883,6 @@
     {
       "path": "test/built-ins/Symbol/constructor.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of null (reading 'constructor')\nzjs: throw: TypeError: Cannot read propert"
-    },
-    {
-      "path": "test/built-ins/Symbol/desc-to-string.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `toString` is not callable, and `valueOf` returns a non-primitive value Expected a TypeError to b"
     },
     {
       "path": "test/built-ins/Symbol/hasInstance/cross-realm.js",
@@ -6521,10 +6257,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'x')\nzjs: throw: TypeError: Cannot read properties o"
     },
     {
-      "path": "test/language/expressions/arrow-function/strict.js",
-      "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
       "path": "test/language/expressions/arrow-function/syntax/arrowparameters-bindingidentifier-yield.js",
       "reason": "zjs: throw: SyntaxError: parse error\nzjs: throw: SyntaxError: parse error"
     },
@@ -6597,14 +6329,6 @@
       "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/expressions/assignment/assignment-operator-calls-putvalue-lref--rval-.js",
-      "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/expressions/assignment/destructuring/default-expr-throws-iterator-return-get-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
-    },
-    {
       "path": "test/language/expressions/assignment/destructuring/iterator-destructuring-property-reference-target-evaluation-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [source, iterator, iterator-step, iterator-done, target, target-key, target-key-tostring, "
     },
@@ -6615,10 +6339,6 @@
     {
       "path": "test/language/expressions/assignment/destructuring/keyed-destructuring-property-reference-target-evaluation-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [source, source-key, source-key-tostring, get, target, target-key, target-key-tostring, se"
-    },
-    {
-      "path": "test/language/expressions/assignment/destructuring/target-assign-throws-iterator-return-get-throws.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-init-let.js",
@@ -6649,16 +6369,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be"
     },
     {
-      "path": "test/language/expressions/assignment/dstr/array-elem-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/array-elem-put-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-elem-put-unresolvable-strict.js",
-      "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-elision-iter-nrml-close-null.js",
@@ -6741,16 +6453,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be"
     },
     {
-      "path": "test/language/expressions/assignment/dstr/array-rest-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/array-rest-put-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-rest-put-unresolvable-strict.js",
-      "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
       "path": "test/language/expressions/assignment/dstr/obj-id-identifier-yield-ident-valid.js",
@@ -6761,32 +6465,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/expressions/assignment/dstr/obj-id-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/obj-id-put-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/obj-id-put-unresolvable-strict.js",
-      "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
       "path": "test/language/expressions/assignment/dstr/obj-prop-elem-init-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/expressions/assignment/dstr/obj-prop-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/obj-prop-put-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/obj-prop-put-unresolvable-strict.js",
-      "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
       "path": "test/language/expressions/assignment/dstr/obj-rest-computed-property-no-strict.js",
@@ -6827,10 +6515,6 @@
     {
       "path": "test/language/expressions/assignment/dstr/obj-rest-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [z, a, 1] and expected [1, z, a, Symbol(foo)] should have the same contents. \nzjs: throw: "
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/obj-rest-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/language/expressions/assignment/dstr/obj-rest-str-val.js",
@@ -6958,7 +6642,7 @@
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/computed-err-to-prop-key.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `get` accessor Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: ("
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
     },
     {
       "path": "test/language/expressions/class/accessor-name-inst/literal-numeric-non-canonical.js",
@@ -6970,7 +6654,7 @@
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/computed-err-to-prop-key.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `get` accessor Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: ("
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
     },
     {
       "path": "test/language/expressions/class/accessor-name-static/literal-numeric-non-canonical.js",
@@ -8189,20 +7873,8 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/expressions/function/name-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/expressions/function/name-eval-strict-body.js",
       "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/function/name-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/expressions/function/name-eval-stricteval.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
       "path": "test/language/expressions/function/name.js",
@@ -8502,7 +8174,7 @@
     },
     {
       "path": "test/language/expressions/object/accessor-name-computed-err-to-prop-key.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `get` accessor Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: ("
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
     },
     {
       "path": "test/language/expressions/object/computed-property-name-topropertykey-before-value-evaluation.js",
@@ -9093,14 +8765,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/async-function/early-errors-declaration-binding-identifier-arguments.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/async-function/early-errors-declaration-binding-identifier-eval.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/async-function/early-errors-declaration-formals-body-duplicate.js",
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
@@ -9142,7 +8806,7 @@
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/computed-err-to-prop-key.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `get` accessor Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: ("
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
     },
     {
       "path": "test/language/statements/class/accessor-name-inst/literal-numeric-non-canonical.js",
@@ -9150,7 +8814,7 @@
     },
     {
       "path": "test/language/statements/class/accessor-name-static/computed-err-to-prop-key.js",
-      "reason": "[sloppy] zjs: throw: (unknown): `get` accessor Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: ("
+      "reason": "[sloppy] zjs: throw: TypeError: Cannot convert object to primitive value\nzjs: throw: TypeError: Cannot convert object to primitiv"
     },
     {
       "path": "test/language/statements/class/accessor-name-static/literal-numeric-non-canonical.js",
@@ -9267,10 +8931,6 @@
     {
       "path": "test/language/statements/class/cpn-class-decl-fields-methods-computed-property-name-from-yield-expression.js",
       "reason": "[sloppy] zjs: throw: SyntaxError: yield outside generator body\nzjs: throw: SyntaxError: yield outside generator body"
-    },
-    {
-      "path": "test/language/statements/class/definition/constructor-strict-by-default.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
       "path": "test/language/statements/class/definition/fn-length-static-precedence-order.js",
@@ -9677,20 +9337,12 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
-      "path": "test/language/statements/class/elements/privatefieldget-typeerror-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/language/statements/class/elements/privatefieldget-typeerror-4.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/language/statements/class/elements/privatefieldset-evaluation-order-3.js",
       "reason": "[sloppy] zjs: throw: TypeError: Cannot access private member on an object whose class did not declare it\u0000\nzjs: throw: TypeError: "
-    },
-    {
-      "path": "test/language/statements/class/elements/privatefieldset-typeerror-1.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/language/statements/class/elements/privatefieldset-typeerror-10.js",
@@ -10189,18 +9841,6 @@
       "reason": "[sloppy] expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/const/syntax/const-invalid-assignment-next-expression-for.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/statements/const/syntax/const-invalid-assignment-statement-body-for-in.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
-      "path": "test/language/statements/const/syntax/const-invalid-assignment-statement-body-for-of.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/language/statements/continue/line-terminators.js",
       "reason": "[sloppy] zjs: throw: ReferenceError: continue\u2028FOR3 is not defined\nzjs: throw: ReferenceError: continue\u2028FOR3 is not defined"
     },
@@ -10317,18 +9957,6 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/statements/for-in/var-arguments-fn-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/var-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/for-in/var-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/for-of/arguments-mapped-aliasing.js",
       "reason": "zjs: throw: (unknown): argument at index 1 Expected SameValue(\u00ab2\u00bb, \u00ab3\u00bb) to be true\nzjs: throw: (unknown): argument at in"
     },
@@ -10377,16 +10005,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be"
     },
     {
-      "path": "test/language/statements/for-of/dstr/array-elem-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/array-elem-put-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-put-unresolvable-strict.js",
-      "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-elision-iter-nrml-close-null.js",
@@ -10469,16 +10089,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be"
     },
     {
-      "path": "test/language/statements/for-of/dstr/array-rest-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/array-rest-put-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-rest-put-unresolvable-strict.js",
-      "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-id-identifier-yield-ident-valid.js",
@@ -10489,32 +10101,16 @@
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/statements/for-of/dstr/obj-id-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/obj-id-put-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-id-put-unresolvable-strict.js",
-      "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-prop-elem-init-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
-      "path": "test/language/statements/for-of/dstr/obj-prop-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/obj-prop-put-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-prop-put-unresolvable-strict.js",
-      "reason": "zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-rest-computed-property-no-strict.js",
@@ -10555,10 +10151,6 @@
     {
       "path": "test/language/statements/for-of/dstr/obj-rest-order.js",
       "reason": "[sloppy] zjs: throw: (unknown): Actual [z, a, 1] and expected [1, z, a, Symbol(foo)] should have the same contents. \nzjs: throw: "
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/obj-rest-put-const.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
     },
     {
       "path": "test/language/statements/for-of/dstr/obj-rest-str-val.js",
@@ -10705,10 +10297,6 @@
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
-      "path": "test/language/statements/function/13.1-13gs.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/function/13.1-2-s.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
@@ -10717,15 +10305,7 @@
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
-      "path": "test/language/statements/function/13.1-39-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
       "path": "test/language/statements/function/13.1-4-s.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/function/13.1-41-s.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
@@ -10857,20 +10437,8 @@
       "reason": "expected SyntaxError, got Test262"
     },
     {
-      "path": "test/language/statements/function/name-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/function/name-eval-strict-body.js",
       "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/function/name-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/function/name-eval-stricteval.js",
-      "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
       "path": "test/language/statements/function/param-arguments-strict-body.js",
@@ -11261,16 +10829,8 @@
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
-      "path": "test/language/statements/try/catch-parameter-boundnames-restriction-arguments-negative-early.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/try/catch-parameter-boundnames-restriction-eval-eval-throws.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/try/catch-parameter-boundnames-restriction-eval-negative-early.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/try/completion-values-fn-finally-abrupt.js",
@@ -11309,16 +10869,8 @@
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
-      "path": "test/language/statements/variable/12.2.1-1gs.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/variable/12.2.1-2-s.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/variable/12.2.1-22-s.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
     },
     {
       "path": "test/language/statements/variable/12.2.1-3-s.js",
@@ -11327,10 +10879,6 @@
     {
       "path": "test/language/statements/variable/12.2.1-4-s.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/variable/12.2.1-4gs.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/variable/12.2.1-7-s.js",
@@ -11353,124 +10901,8 @@
       "reason": "[sloppy] zjs: throw: (unknown): #1: When using property attributes, {DontEnum} not used\nzjs: throw: (unknown): #1: When using pro"
     },
     {
-      "path": "test/language/statements/variable/arguments-fn-strict-list-final-init.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-fn-strict-list-final.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-fn-strict-list-first-init.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-fn-strict-list-first.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-fn-strict-list-middle-init.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-fn-strict-list-middle.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-fn-strict-list-repeated.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-fn-strict-single-init.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-fn-strict-single.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-strict-list-final-init.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-strict-list-final.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-strict-list-first-init.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-strict-list-first.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-strict-list-middle-init.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-strict-list-middle.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-strict-list-repeated.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-strict-single-init.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/arguments-strict-single.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
       "path": "test/language/statements/variable/binding-resolution.js",
       "reason": "zjs: throw: (unknown): Expected SameValue(\u00abundefined\u00bb, \u00abtrue\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00abund"
-    },
-    {
-      "path": "test/language/statements/variable/eval-strict-list-final-init.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/eval-strict-list-final.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/eval-strict-list-first-init.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/eval-strict-list-first.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/eval-strict-list-middle-init.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/eval-strict-list-middle.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/eval-strict-list-repeated.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/eval-strict-single-init.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/eval-strict-single.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/id-arguments-strict.js",
-      "reason": "expected SyntaxError, got Test262"
-    },
-    {
-      "path": "test/language/statements/variable/id-eval-strict.js",
-      "reason": "expected SyntaxError, got Test262"
     },
     {
       "path": "test/language/statements/while/let-block-with-newline.js",

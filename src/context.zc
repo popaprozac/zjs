@@ -9334,25 +9334,82 @@ fn host_string_includes(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
 
 // String.prototype.trim — strip whitespace + line terminators per
 // ECMA-262 §22.1.3.32.
+// #401 — ECMA-262 TrimString (§22.1.3.32.1) strips the WhiteSpace
+// production (§12.2: TAB VT FF SP NBSP ZWNBSP + Unicode Zs) plus
+// LineTerminator (§12.3: LF CR LS PS). The previous byte loops only
+// knew the six ASCII chars.
+fn js_cp_is_trim_ws(cp: u32) -> int {
+    if cp == 0x09 || cp == 0x0A || cp == 0x0B || cp == 0x0C || cp == 0x0D
+       || cp == 0x20 || cp == 0xA0 || cp == 0x1680
+       || (cp >= 0x2000 && cp <= 0x200A)
+       || cp == 0x2028 || cp == 0x2029 || cp == 0x202F || cp == 0x205F
+       || cp == 0x3000 || cp == 0xFEFF {
+        return 1;
+    }
+    return 0;
+}
+
+// Advance lo past leading JS whitespace in the UTF-8 bytes [lo, hi).
+fn js_trim_scan_start(sd: char*, lo: u32, hi: u32) -> u32 {
+    raw {
+        while (lo < hi) {
+            unsigned char c = (unsigned char)sd[lo];
+            uint32_t cp = c; uint32_t n = 1;
+            if (c >= 0xF0) {
+                if (lo + 3 >= hi) break;
+                cp = ((uint32_t)(c & 0x07) << 18) | ((uint32_t)((unsigned char)sd[lo+1] & 0x3F) << 12)
+                   | ((uint32_t)((unsigned char)sd[lo+2] & 0x3F) << 6) | (uint32_t)((unsigned char)sd[lo+3] & 0x3F);
+                n = 4;
+            } else if (c >= 0xE0) {
+                if (lo + 2 >= hi) break;
+                cp = ((uint32_t)(c & 0x0F) << 12) | ((uint32_t)((unsigned char)sd[lo+1] & 0x3F) << 6)
+                   | (uint32_t)((unsigned char)sd[lo+2] & 0x3F);
+                n = 3;
+            } else if (c >= 0xC0) {
+                if (lo + 1 >= hi) break;
+                cp = ((uint32_t)(c & 0x1F) << 6) | (uint32_t)((unsigned char)sd[lo+1] & 0x3F);
+                n = 2;
+            }
+            if (!js_cp_is_trim_ws(cp)) break;
+            lo += n;
+        }
+    }
+    return lo;
+}
+
+// Retreat hi past trailing JS whitespace in the UTF-8 bytes [lo, hi).
+// Re-syncs on the previous lead byte before decoding.
+fn js_trim_scan_end(sd: char*, lo: u32, hi: u32) -> u32 {
+    raw {
+        while (hi > lo) {
+            uint32_t st = hi - 1;
+            while (st > lo && ((unsigned char)sd[st] & 0xC0) == 0x80) st--;
+            unsigned char c = (unsigned char)sd[st];
+            uint32_t cp = c;
+            uint32_t avail = hi - st;
+            if (c >= 0xF0 && avail >= 4) {
+                cp = ((uint32_t)(c & 0x07) << 18) | ((uint32_t)((unsigned char)sd[st+1] & 0x3F) << 12)
+                   | ((uint32_t)((unsigned char)sd[st+2] & 0x3F) << 6) | (uint32_t)((unsigned char)sd[st+3] & 0x3F);
+            } else if (c >= 0xE0 && avail >= 3) {
+                cp = ((uint32_t)(c & 0x0F) << 12) | ((uint32_t)((unsigned char)sd[st+1] & 0x3F) << 6)
+                   | (uint32_t)((unsigned char)sd[st+2] & 0x3F);
+            } else if (c >= 0xC0 && avail >= 2) {
+                cp = ((uint32_t)(c & 0x1F) << 6) | (uint32_t)((unsigned char)sd[st+1] & 0x3F);
+            }
+            if (!js_cp_is_trim_ws(cp)) break;
+            hi = st;
+        }
+    }
+    return hi;
+}
+
 fn host_string_trim(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let str_v = coerce_string_this(ctx);
     if zjs_is_string(str_v) == 0 { return ctx_intern_string(ctx, (char*)"", 0); }
     let s = zjs_as_string(str_v);
     let sd = s.data;
-    let lo: u32 = 0;
-    let hi: u32 = s.length;
-    raw {
-        while (lo < hi) {
-            unsigned char c = (unsigned char)sd[lo];
-            if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') lo++;
-            else break;
-        }
-        while (hi > lo) {
-            unsigned char c = (unsigned char)sd[hi - 1];
-            if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') hi--;
-            else break;
-        }
-    }
+    let lo: u32 = js_trim_scan_start(sd, 0, s.length);
+    let hi: u32 = js_trim_scan_end(sd, lo, s.length);
     let outlen = hi - lo;
     let buf = alloc_n<char>((usize)(outlen + 1));
     if outlen > 0 {
@@ -9649,22 +9706,8 @@ fn string_trim_dir_impl(ctx: ZjsContext*, do_start: int, do_end: int) -> ZjsValu
     let sd = s.data;
     let lo: u32 = 0;
     let hi: u32 = s.length;
-    raw {
-        if (do_start) {
-            while (lo < hi) {
-                unsigned char c = (unsigned char)sd[lo];
-                if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') lo++;
-                else break;
-            }
-        }
-        if (do_end) {
-            while (hi > lo) {
-                unsigned char c = (unsigned char)sd[hi - 1];
-                if (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\v' || c == '\f') hi--;
-                else break;
-            }
-        }
-    }
+    if do_start != 0 { lo = js_trim_scan_start(sd, lo, hi); }
+    if do_end != 0   { hi = js_trim_scan_end(sd, lo, hi); }
     let outlen = hi - lo;
     let buf = alloc_n<char>((usize)(outlen + 1));
     if outlen > 0 {
@@ -32220,32 +32263,22 @@ fn zjs_to_string(ctx: ZjsContext*, v: ZjsValue) -> ZjsValue {
     } else if zjs_is_undefined(v) != 0 {
         raw { len = (size_t)snprintf(buf, 64, "undefined"); }
     } else if zjs_is_object(v) != 0 || zjs_is_uint8_array(v) != 0 {
-        // ECMA-262 §7.1.17/§7.1.18: ToPrimitive(O, "string") tries
-        // toString then valueOf. Fetch each via property_get so
-        // accessor getters fire (and their throws propagate). Uint8Array
-        // (and Buffer, which subclasses it) is a distinct cell tag, not a
-        // plain object — route it here too so `String(buf)` / `${buf}`
-        // invoke its inherited toString (-> "65,66" / decoded text)
-        // instead of falling through to the "[object]" sink. #328.
-        let ts_v = property_get(ctx, v, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"toString", 8)));
+        // ECMA-262 §7.1.17 ToString(object) = ToString(ToPrimitive(v,
+        // hint string)). zjs_to_primitive runs the full §7.1.1 ladder
+        // (@@toPrimitive → toString → valueOf) and arms a TypeError
+        // when nothing yields a primitive. #401 — the previous inline
+        // dance here skipped @@toPrimitive and sank to "[object
+        // Object]" instead of throwing. Uint8Array (and Buffer, which
+        // subclasses it) is a distinct cell tag, not a plain object —
+        // routed here too so `String(buf)` / `${buf}` invoke its
+        // inherited toString (#328).
+        let p = zjs_to_primitive(ctx, v, true);
         if ctx.pending_throw_active { return zjs_undefined(); }
-        if zjs_is_function(ts_v) != 0 || zjs_is_closure(ts_v) != 0 || zjs_is_host_function(ts_v) != 0 {
-            let nullp: ZjsValue* = NULL;
-            let r: ZjsValue = zjs_call_value_with_this(ctx, ts_v, v, nullp, 0);
-            if ctx.pending_throw_active { return zjs_undefined(); }
-            if zjs_is_string(r) != 0 { return r; }
-            if zjs_is_object(r) == 0 && zjs_is_array(r) == 0 {
-                return zjs_to_string(ctx, r);
-            }
+        if zjs_is_object(p) == 0 && zjs_is_uint8_array(p) == 0 {
+            return zjs_to_string(ctx, p);
         }
-        let vo_v = property_get(ctx, v, zjs_cell_from_ptr((void*)ctx_intern_atom(ctx, (char*)"valueOf", 7)));
-        if ctx.pending_throw_active { return zjs_undefined(); }
-        if zjs_is_function(vo_v) != 0 || zjs_is_closure(vo_v) != 0 || zjs_is_host_function(vo_v) != 0 {
-            let nullp: ZjsValue* = NULL;
-            let r2: ZjsValue = zjs_call_value_with_this(ctx, vo_v, v, nullp, 0);
-            if ctx.pending_throw_active { return zjs_undefined(); }
-            if zjs_is_object(r2) == 0 { return zjs_to_string(ctx, r2); }
-        }
+        // Defensive sink — zjs_to_primitive contracts to primitive-or-
+        // throw, so this only fires on a tag outside its predicate.
         raw { len = (size_t)snprintf(buf, 64, "[object Object]"); }
     } else if zjs_is_function(v) != 0 || zjs_is_closure(v) != 0 || zjs_is_host_function(v) != 0 {
         // ECMA-262 §22.2.5.13 (Function.prototype.toString):

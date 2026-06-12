@@ -858,6 +858,21 @@ fn is_binding_ident_tok(p: Parser*, t: Token, source: char*) -> bool {
     return true;
 }
 
+// #401 inc5 — §13.1.1 BindingIdentifier early error: in strict code,
+// `eval` and `arguments` cannot be BOUND (var/let/const declarators,
+// function names, catch params). They stay legal as references, so
+// this must NOT be folded into is_binding_ident_tok (which the
+// parse_primary reference site shares). Call at binding sites only,
+// AFTER the token is known to be a valid binding ident.
+fn binding_name_strict_reserved(p: Parser*, t: Token) -> bool {
+    if !p.strict_mode { return false; }
+    // ident_source_matches (not name_is_arguments_or_eval) so the
+    // `eval`-style escaped spellings are caught too.
+    if ident_source_matches(p.source, t.start, t.length, (char*)"eval", 4)      { return true; }
+    if ident_source_matches(p.source, t.start, t.length, (char*)"arguments", 9) { return true; }
+    return false;
+}
+
 // IdentifierName per ECMA-262 §11.6: identifier OR any reserved
 // word. Used wherever the spec allows a keyword as a name —
 // PropertyName in object literals, MemberExpression after `.`, etc.
@@ -897,6 +912,9 @@ fn parse_binding_target(p: Parser*) -> AstNode* {
     if k == TokenKind::LBracket { return parse_array_pattern(p); }
     let t = peek(p);
     if !is_binding_ident_tok(p, t, p.source) { p.had_error = true; return NULL; }
+    // #401 inc5 — strict code can't bind eval/arguments (params,
+    // catch params, pattern leaves all funnel through here).
+    if binding_name_strict_reserved(p, t) { p.had_error = true; return NULL; }
     advance(p);
     let node = new_node(&p.tracker, NodeKind::IdentExpr, t.start, t.start + t.length);
     node.name_start  = t.start;
@@ -920,6 +938,7 @@ fn parse_object_pattern(p: Parser*) -> AstNode* {
             advance(p);
             let id = peek(p);
             if !is_binding_ident_tok(p, id, p.source) { p.had_error = true; break; }
+            if binding_name_strict_reserved(p, id) { p.had_error = true; break; }   // #401 inc5
             advance(p);
             let ident = new_node(&p.tracker, NodeKind::IdentExpr, id.start, id.start + id.length);
             ident.name_start  = id.start;
@@ -974,6 +993,7 @@ fn parse_object_pattern(p: Parser*) -> AstNode* {
             if !is_binding_ident_tok(p, key_tok_saved, p.source) {
                 p.had_error = true; break;
             }
+            if binding_name_strict_reserved(p, key_tok_saved) { p.had_error = true; break; }   // #401 inc5
             target = new_node(&p.tracker, NodeKind::IdentExpr, key_start, key_start + key_len);
             target.name_start  = key_start;
             target.name_length = key_len;
@@ -1095,6 +1115,11 @@ fn parse_var_decl(p: Parser*, consume_semi: bool) -> AstNode* {
         } else {
             let name_tok = peek(p);
             if !is_binding_ident_tok(p, name_tok, p.source) {
+                p.had_error = true;
+                break;
+            }
+            // #401 inc5 — strict code can't bind eval/arguments.
+            if binding_name_strict_reserved(p, name_tok) {
                 p.had_error = true;
                 break;
             }
@@ -1811,6 +1836,11 @@ fn parse_function_decl(p: Parser*, is_async: bool) -> AstNode* {
         p.had_error = true;
         return NULL;
     }
+    // #401 inc5 — strict code can't bind eval/arguments (§15.2.1).
+    if binding_name_strict_reserved(p, name_tok) {
+        p.had_error = true;
+        return NULL;
+    }
     advance(p);
 
     if !expect_kind(p, TokenKind::LParen) { return NULL; }
@@ -2361,6 +2391,11 @@ fn parse_class_body(p: Parser*, is_derived: bool) -> ParamList {
                         m_node.left  = this_e;
                         m_node.name_start  = f.name_start;
                         m_node.name_length = f.name_length;
+                        // #401 inc4 — mark the synthesized DefineField
+                        // target: a private-field DEFINE must skip the
+                        // PrivateFieldFind presence check that ordinary
+                        // private SETs perform (§7.3.31 vs §7.3.30).
+                        m_node.num = 1.0;
                         target = m_node;
                     }
                     let init_val = f.left;
@@ -2678,6 +2713,12 @@ fn parse_class_decl(p: Parser*) -> AstNode* {
     if is_strict_reserved_name(p.source + name_tok.start, name_tok.length) {
         p.had_error = true; return NULL;
     }
+    // #401 inc5 — a class definition is ALWAYS strict code, so the
+    // binding can never be eval/arguments (unconditional, unlike the
+    // p.strict_mode-gated sites).
+    if name_is_arguments_or_eval(p.source, name_tok.start, name_tok.length) {
+        p.had_error = true; return NULL;
+    }
     advance(p);
 
     // Optional `extends <LeftHandSideExpression>`.
@@ -2744,6 +2785,9 @@ fn parse_function_expr(p: Parser*, is_async: bool) -> AstNode* {
     // are also valid names per is_binding_ident_tok.
     let nt = peek(p);
     if nt.kind != TokenKind::LParen && is_binding_ident_tok(p, nt, p.source) {
+        // #401 inc5 — strict code can't bind eval/arguments, and a
+        // named function expression binds its own name (§16.1.7).
+        if binding_name_strict_reserved(p, nt) { p.had_error = true; return NULL; }
         advance(p);
         name_start = nt.start;
         name_length = nt.length;

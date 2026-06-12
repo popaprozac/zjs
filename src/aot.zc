@@ -37,7 +37,10 @@ def ZJS_AOT_MAGIC3: u8 = 'b' as u8;
 // Function brand_atom field (serialized as a name; see the function
 // writer/reader). Same mismatch hazard class as v7/v8.
 // v10: #400 inc B added Op::ThrowTypeError (1-slot) at the enum end.
-def ZJS_AOT_VERSION: u32 = 10;
+// v11: #401 added Op::StoreGlobalStrict (1-slot, global-slot operand —
+// included in aot_inst_is_global_ref so the loader remap rewrites it)
+// at the enum end.
+def ZJS_AOT_VERSION: u32 = 11;
 
 def ZJS_AOT_TAG_INT32:    u8 = 0;
 def ZJS_AOT_TAG_DOUBLE:   u8 = 1;
@@ -404,7 +407,8 @@ fn aot_inst_is_global_ref(op: Op) -> bool {
     return op == Op::DefineGlobal
         || op == Op::LoadGlobal
         || op == Op::LoadGlobalOrUndefined
-        || op == Op::StoreGlobal;
+        || op == Op::StoreGlobal
+        || op == Op::StoreGlobalStrict;
 }
 
 // Walk a function's code looking for the max global slot referenced —

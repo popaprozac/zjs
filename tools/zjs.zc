@@ -712,7 +712,8 @@ fn disasm_function(ctx: ZjsContext*, f: Function*, label: char*) -> void {
         raw { fprintf(stdout, "%5zu  %-20s", (size_t)i, zjs_op_name_lookup((int)op)); }
 
         if op == Op::LoadGlobal || op == Op::LoadGlobalOrUndefined
-        || op == Op::StoreGlobal || op == Op::DefineGlobal {
+        || op == Op::StoreGlobal || op == Op::DefineGlobal
+        || op == Op::StoreGlobalStrict {
             let slot = inst_bc_u16(inst);
             let nm = ctx.realm.globals[slot].name;
             let nl = ctx.realm.globals[slot].name_len;

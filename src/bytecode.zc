@@ -518,6 +518,22 @@ enum Op {
     // private method). Generic — reusable for other compile-time-
     // provable TypeError points. 1-slot.
     ThrowTypeError,   // bc = u16 const idx of message string
+
+    // #401 strict-mode global store (§6.2.5.6 PutValue): an
+    // unresolvable reference in strict code throws ReferenceError
+    // instead of creating a global. "Unresolvable" is a runtime
+    // question — the slot may be undeclared yet the name still live
+    // on globalThis (own or inherited), in which case the assignment
+    // proceeds as a property set. Appended at the END (AOT
+    // positional; ZJS_AOT_VERSION -> 11). 1-slot.
+    StoreGlobalStrict, // a=value reg, bc = u16 global slot
+
+    // #401 — IteratorClose with a THROW completion (§7.4.6 steps
+    // 6-9): call iterator.return() but swallow everything it does —
+    // the original (abrupt) completion always wins. Emitted in the
+    // catch handler that destructure_array wraps around element
+    // evaluation; the rethrow of the original error follows. 1-slot.
+    IterCloseQuiet,   // a=iter reg, b=done reg
 }
 
 struct Inst {
