@@ -30,7 +30,7 @@
 // CSPRNG and GetProcessMemoryInfo (psapi.dll) for peak RSS. http_windows.c
 // uses WinHTTP (winhttp.dll). These must be linked into every binary that
 // compiles the engine.
-//> windows: link: -lbcrypt -lpsapi -lwinhttp -lws2_32
+//> windows: link: -lbcrypt -lpsapi -lwinhttp -lws2_32 -lz
 
 import "./context.zc";
 import "./value.zc";

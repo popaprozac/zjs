@@ -462,11 +462,12 @@ static inline int zjs_hkdf_oneshot(int algo,
 // ---------------------------------------------------------------------
 // zlib one-shot compress / decompress (node:zlib + CompressionStream).
 // `fmt`: 0 = zlib (deflate), 1 = gzip, 2 = raw deflate. Backed by the
-// platform zlib (Apple SDK libz / Linux -lz). Windows has no system
-// zlib, so these return -1 there (node:zlib reports NotSupported).
+// platform zlib (Apple SDK libz / Linux -lz / MinGW-w64's bundled
+// libz.a on Windows). Toolchains without <zlib.h> fall through to the
+// -1 stubs (node:zlib reports NotSupported).
 // On success mallocs *out (caller frees) and sets *out_len; returns 0.
 // ---------------------------------------------------------------------
-#if !defined(_WIN32) && defined(__has_include) && __has_include(<zlib.h>)
+#if defined(__has_include) && __has_include(<zlib.h>)
 #  include <zlib.h>
 #  define ZJS_HAS_ZLIB 1
 #endif
