@@ -207,22 +207,16 @@ struct Compiler {
     pending_label_start:  u32;
     pending_label_length: u32;
 
-    // Phase 3.9d — stack of finally bodies currently "active" (we're
-    // compiling the matching try / catch). A ReturnStmt encountered
-    // inside walks this list top-down and inlines each finally body
-    // before emitting the actual Return.
-    active_finallies:        AstNode**;
-    active_finally_count:    u32;
-    active_finally_cap:      u32;
-
-    // #326 — depth of enclosing try blocks whose *body* we're currently
-    // compiling AND which have a catch handler that would catch a local
-    // throw. A `return f()` inside such a body is NOT in tail position
-    // (the catch must stay active while f() runs), so the tail-call
-    // rewrite must be suppressed. Bumped only around the try-body; the
-    // catch body itself runs at the outer level. (finally-bearing trys
-    // are already covered by active_finally_count.)
-    active_try_count:        u32;
+    // #402b — ordered stack of every protected region open at the
+    // current compile point (replaces the old active_finallies +
+    // active_try_count pair; see UnwindRegion / emit_unwind_regions).
+    // region_count > 0 also serves as the #326 tail-call suppressor:
+    // a `return f()` inside ANY region is not in tail position (a
+    // handler must stay live, a finally must run, or an iterator must
+    // close before the frame can be replaced).
+    regions:      UnwindRegion*;
+    region_count: u32;
+    region_cap:   u32;
 
     // Phase 3.8e — implicit `arguments` binding. -1 if the function
     // doesn't reference `arguments` (or it's shadowed by a real
@@ -313,6 +307,23 @@ struct Compiler {
     next_scope_id: u32;
 }
 
+// #402b — one entry per protected region open at the current compile
+// point (see region_push / emit_unwind_regions). kind: 0 = catch
+// region (plain try body, or the inner region of try-catch-finally),
+// 1 = finally-outer (finally_body inlined on the way out), 2 =
+// iterator wrap (for-of body / destructuring pattern; IterClose +
+// optional per-iter env restore on the way out). has_handler: a
+// runtime EnterTry was emitted for it (false for the for-await close
+// record, which has no throw wrapper yet).
+struct UnwindRegion {
+    kind:            u8;
+    has_handler:     bool;
+    finally_body:    AstNode*;
+    iter_reg:        i32;
+    done_reg:        i32;
+    env_restore_reg: i32;
+}
+
 struct LoopFrame {
     continue_target: u32;        // bytecode offset for `continue` to jump to
     have_continue:   bool;       // false until set; if false, continue emits a placeholder + patch
@@ -327,30 +338,21 @@ struct LoopFrame {
     // matching label walk the stack to find this frame.
     label_start:     u32;
     label_length:    u32;
-    // Phase 3.9d — depth of c.active_finallies when this loop was
-    // pushed. Break/continue targeting this frame must inline every
-    // finally body above this depth before jumping.
-    finally_depth_at_entry: u32;
     // Phase 4.8 — distinguishes real iteration loops from switch frames
     // (which only push to receive `break` patches). `continue` walks
     // past non-iter frames so `continue` inside a switch jumps to the
     // enclosing for/while update, not into nothing. Default true; set
     // to false when pushing a switch frame.
     is_iter: bool;
-    // #401 inc6 — compile-time EnterTry depth when this loop was
-    // pushed. break/continue crossing try regions (incl. the for-of
-    // body's close-on-throw wrap) emit one LeaveTry per crossed region
-    // or the runtime try stack keeps stale handlers.
-    try_depth_at_entry: u32;
-    // #401 inc6 — live-iterator registers for for-of frames (-1 =
-    // none). Abrupt exits crossing this frame IteratorClose it.
-    iter_reg: i32;
-    done_reg: i32;
-    // #401 inc6 — for per-iter-env for-of frames: the register holding
-    // the env that was current when the loop was entered. Abrupt exits
-    // crossing this frame must Mov it back into env_reg or captured-
-    // local access after the jump reads the dead per-iter env.
-    env_restore_reg: i32;
+    // #402b — c.region_count when this loop was pushed; break/continue
+    // targeting this frame unwind every region above it via
+    // emit_unwind_regions (handler pops + finally inlining + iterator
+    // closes, in exact nesting order).
+    region_depth_at_entry: u32;
+    // #402b — region index of this for-of's own body wrap (-1 for
+    // non-for-of loops). Excluded from IterClose when this frame is
+    // the unwind TARGET.
+    own_iter_region: i32;
 }
 
 // --- Lifecycle ------------------------------------------------------
@@ -360,7 +362,9 @@ fn compiler_new(ctx: ZjsContext*, source: char*) -> Compiler* {
     c.ctx = ctx;
     c.source = source;
     c.last_expr_reg = -1;
-    c.active_try_count = 0;
+    c.regions = NULL;
+    c.region_count = 0;
+    c.region_cap = 0;
     c.with_depth = 0;
     c.tail_call_node = NULL;
     c.arguments_reg = -1;
@@ -423,19 +427,83 @@ fn compiler_mark_chain(ctx: ZjsContext*) -> void {
     }
 }
 
-fn finally_push(c: Compiler*, body: AstNode*) -> void {
-    if c.active_finally_count >= c.active_finally_cap {
-        let new_cap: u32 = if c.active_finally_cap == 0 { 4 } else { c.active_finally_cap * 2 };
-        c.active_finallies = realloc_n<AstNode*>(c.active_finallies, (usize)c.active_finally_cap, (usize)new_cap);
-        c.active_finally_cap = new_cap;
+// #402b — ordered compile-time record of every protected region open
+// at the current compile point, innermost LAST. Replaces the old
+// flat active_try_count + active_finallies pair, whose lack of
+// ordering caused two real bugs: break/continue out of a try-finally
+// left its runtime handlers stale, and an abrupt exit ran finally
+// bodies while their own outer handler was still pushed — so a
+// throwing finally was re-caught by its own region and ran TWICE.
+fn region_push(c: Compiler*, kind: u8, has_handler: bool, body: AstNode*,
+               iter_reg: i32, done_reg: i32, env_restore_reg: i32) -> void {
+    if c.region_count >= c.region_cap {
+        let new_cap: u32 = if c.region_cap == 0 { 4 } else { c.region_cap * 2 };
+        c.regions = realloc_n<UnwindRegion>(c.regions, (usize)c.region_cap, (usize)new_cap);
+        c.region_cap = new_cap;
     }
-    c.active_finallies[c.active_finally_count] = body;
-    c.active_finally_count = c.active_finally_count + 1;
+    c.regions[c.region_count] = UnwindRegion{
+        kind: kind, has_handler: has_handler, finally_body: body,
+        iter_reg: iter_reg, done_reg: done_reg, env_restore_reg: env_restore_reg,
+    };
+    c.region_count = c.region_count + 1;
 }
 
-fn finally_pop(c: Compiler*) -> void {
-    if c.active_finally_count > 0 {
-        c.active_finally_count = c.active_finally_count - 1;
+fn region_push_catch(c: Compiler*) -> void {
+    region_push(c, 0, true, NULL, -1, -1, -1);
+}
+
+fn region_push_finally(c: Compiler*, body: AstNode*) -> void {
+    region_push(c, 1, true, body, -1, -1, -1);
+}
+
+fn region_push_iter(c: Compiler*, has_handler: bool, iter_reg: i32,
+                    done_reg: i32, env_restore_reg: i32) -> void {
+    region_push(c, 2, has_handler, NULL, iter_reg, done_reg, env_restore_reg);
+}
+
+fn region_pop(c: Compiler*) -> void {
+    if c.region_count > 0 { c.region_count = c.region_count - 1; }
+}
+
+// #402b — THE unwinder. Emit the runtime exit sequence for leaving
+// every region above target_depth, innermost-first, in exact nesting
+// order: pop the region's handler FIRST, then run its payload — so a
+// finally body executes unguarded by its own region but still guarded
+// by everything outside it (a throwing finally propagates to the next
+// enclosing catch instead of re-entering its own region), and crossed
+// for-of/destructuring iterators close at their nesting position.
+// skip_iter_region: region index whose IterClose/env-restore must NOT
+// run — a break/continue TARGET loop's own body wrap (break closes at
+// the landing site; continue keeps iterating). Its LeaveTry still
+// emits. Compile-time region state is only mutated transiently while
+// a finally body compiles (truncated so a return/break inside it
+// can't re-inline itself). Same KNOWN IMPRECISION as the old
+// inline_finallies_above: the body compiles under the exit SITE's
+// scope stack (task #382).
+fn emit_unwind_regions(c: Compiler*, target_depth: u32, skip_iter_region: i32) -> void {
+    let i: i32 = (i32)c.region_count - 1;
+    while i >= (i32)target_depth {
+        let kind = c.regions[(u32)i].kind;
+        if c.regions[(u32)i].has_handler {
+            emit(c, make_inst_a(Op::LeaveTry, 0));
+        }
+        if kind == 1 && c.regions[(u32)i].finally_body != NULL {
+            let saved = c.region_count;
+            c.region_count = (u32)i;
+            compile_stmt(c, c.regions[(u32)i].finally_body);
+            c.region_count = saved;
+        } else if kind == 2 && i != skip_iter_region {
+            if c.regions[(u32)i].iter_reg >= 0 {
+                emit(c, make_inst_ab(Op::IterClose,
+                                     (u8)c.regions[(u32)i].iter_reg,
+                                     (u8)c.regions[(u32)i].done_reg));
+            }
+            if c.regions[(u32)i].env_restore_reg >= 0 {
+                emit(c, make_inst_ab(Op::Mov, c.env_reg,
+                                     (u8)c.regions[(u32)i].env_restore_reg));
+            }
+        }
+        i = i - 1;
     }
 }
 
@@ -459,81 +527,32 @@ fn loop_push(c: Compiler*) -> void {
     c.loop_stack[c.loop_depth].label_length = c.pending_label_length;
     c.pending_label_start  = 0;
     c.pending_label_length = 0;
-    // Phase 3.9d — snapshot the active-finally depth so break/continue
-    // can inline only the finallies above this point.
-    c.loop_stack[c.loop_depth].finally_depth_at_entry = c.active_finally_count;
     // Default to "real iteration loop" so existing call sites (for/
     // while/do/for-of/for-in) work unchanged; switch flips to false
     // right after loop_push.
     c.loop_stack[c.loop_depth].is_iter = true;
-    // #401 inc6 — snapshot try depth; no live iterator by default
-    // (compile_for_of_live fills the regs in right after pushing).
-    c.loop_stack[c.loop_depth].try_depth_at_entry = c.active_try_count;
-    c.loop_stack[c.loop_depth].iter_reg = -1;
-    c.loop_stack[c.loop_depth].done_reg = -1;
-    c.loop_stack[c.loop_depth].env_restore_reg = -1;
+    // #402b — snapshot the region depth; break/continue targeting
+    // this frame unwind every region above it (handler pops, finally
+    // inlining, iterator closes — in nesting order). own_iter_region:
+    // the for-of body wrap's region index (its IterClose is skipped
+    // when this frame is the TARGET — break closes at the landing
+    // site, continue keeps iterating).
+    c.loop_stack[c.loop_depth].region_depth_at_entry = c.region_count;
+    c.loop_stack[c.loop_depth].own_iter_region = -1;
     c.loop_depth = c.loop_depth + 1;
 }
 
-// #401 inc6 — emit the unwind sequence for a break/continue jumping
-// to loop frame `frame_idx`: walking frames innermost-first, pop every
-// try region entered since that frame (LeaveTry — without this the
-// runtime try stack keeps stale handlers, the latent try{break} bug),
-// then IteratorClose the frame's live for-of iterator. The target
-// frame itself is excluded (break lands on its IterClose site;
-// continue keeps it iterating). Compile-time state is NOT mutated —
-// code after the break statement is still inside those regions.
-fn emit_loop_exit_unwind(c: Compiler*, frame_idx: i32) -> void {
-    let cur_try: u32 = c.active_try_count;
-    let w: i32 = (i32)c.loop_depth - 1;
-    while w > frame_idx {
-        let fr_try = c.loop_stack[(u32)w].try_depth_at_entry;
-        while cur_try > fr_try {
-            emit(c, make_inst_a(Op::LeaveTry, 0));
-            cur_try = cur_try - 1;
-        }
-        if c.loop_stack[(u32)w].iter_reg >= 0 {
-            emit(c, make_inst_ab(Op::IterClose,
-                                 (u8)c.loop_stack[(u32)w].iter_reg,
-                                 (u8)c.loop_stack[(u32)w].done_reg));
-        }
-        // Per-iter-env frame: put the loop-entry env back. Walking
-        // innermost-out, the last Mov wins = the outermost crossed
-        // frame's entry env = the env at the target frame's level.
-        if c.loop_stack[(u32)w].env_restore_reg >= 0 {
-            emit(c, make_inst_ab(Op::Mov, c.env_reg,
-                                 (u8)c.loop_stack[(u32)w].env_restore_reg));
-        }
-        w = w - 1;
-    }
-    let target_try = c.loop_stack[(u32)frame_idx].try_depth_at_entry;
-    while cur_try > target_try {
-        emit(c, make_inst_a(Op::LeaveTry, 0));
-        cur_try = cur_try - 1;
-    }
-}
-
-// #401/#402a — the function-exit tail shared by ReturnStmt and the
-// generator return-completion dispatch after each Yield: inline every
-// pending finally (r protected across them), IteratorClose every live
-// for-of frame innermost-first (§14.7.5.7; a throwing return() wins
-// over the return value), then Op::Return. No LeaveTrys needed —
-// frame teardown trims this frame's handlers via try_depth_at_entry.
+// #401/#402a/#402b — the function-exit tail shared by ReturnStmt and
+// the generator return-completion dispatch after each Yield: unwind
+// EVERY open region in nesting order (handler pops, finally bodies,
+// iterator closes — see emit_unwind_regions), then Op::Return. r is
+// protected across finally bodies via fixed_regs.
 fn emit_return_sequence(c: Compiler*, r: u8) -> void {
-    if c.active_finally_count > 0 {
+    if c.region_count > 0 {
         let saved_fixed = c.fixed_regs;
         if r + 1 > c.fixed_regs { c.fixed_regs = r + 1; }
-        inline_finallies_above(c, 0);     // run ALL — we're leaving the function
+        emit_unwind_regions(c, 0, -1);
         c.fixed_regs = saved_fixed;
-    }
-    let rw: i32 = (i32)c.loop_depth - 1;
-    while rw >= 0 {
-        if c.loop_stack[(u32)rw].iter_reg >= 0 {
-            emit(c, make_inst_ab(Op::IterClose,
-                                 (u8)c.loop_stack[(u32)rw].iter_reg,
-                                 (u8)c.loop_stack[(u32)rw].done_reg));
-        }
-        rw = rw - 1;
     }
     emit(c, make_inst_a(Op::Return, r));
 }
@@ -547,37 +566,6 @@ fn emit_yield_with_return_dispatch(c: Compiler*, dst: u8, src: u8) -> void {
     let skip = emit(c, make_inst_i16(Op::JmpIfNotGenReturn, 0));
     emit_return_sequence(c, dst);
     patch_jump(c, skip);
-}
-
-// Inline every finally body whose nesting is above `min_depth`,
-// top-down. Used by break/continue to run finallies that sit between
-// the current compile point and the target loop frame, and by Return
-// when exiting the whole function. Caller is responsible for any
-// reg-protection bookkeeping around the call.
-fn inline_finallies_above(c: Compiler*, min_depth: u32) -> void {
-    if c.active_finally_count <= min_depth { return; }
-    let saved_stack = c.active_finallies;
-    let saved_count = c.active_finally_count;
-    // Temporarily empty the stack so a Return inside a finally body
-    // doesn't try to re-inline it.
-    c.active_finally_count = min_depth;
-    let i = saved_count;
-    while i > min_depth {
-        i = i - 1;
-        if saved_stack[i] != NULL {
-            // KNOWN IMPRECISION: the body compiles under the inline
-            // SITE's scope stack, so a name the finally uses that a
-            // block between the try and the site shadows resolves to
-            // the shadow, not the finally's lexical binding. Fixing
-            // this needs a lexical-stack snapshot here PLUS shadow-
-            // aware capture marking in scan_inner_for_captures (its
-            // name-based gate misses outer captures once any same-
-            // named local exists in the function) — see task #382.
-            compile_stmt(c, saved_stack[i]);
-        }
-    }
-    c.active_finallies = saved_stack;
-    c.active_finally_count = saved_count;
 }
 
 // Walk the loop stack top-down looking for a frame whose label
@@ -681,7 +669,7 @@ fn compiler_free(c: Compiler*) -> void {
     dealloc(c.code);
     dealloc(c.constants);
     dealloc(c.loop_stack);
-    dealloc(c.active_finallies);
+    dealloc(c.regions);
     dealloc(c.locals);
     dealloc(c.ics);
     dealloc(c.scope_stack);
@@ -1688,10 +1676,13 @@ fn compile_expr(c: Compiler*, node: AstNode*) -> u8 {
         let local_idx = find_local_index(c, name, name_len);
         if local_idx >= 0 {
             if c.locals[(u32)local_idx].captured {
-                // Captured local — read through env via an IC.
+                // Captured local — read through the env that OWNS it
+                // (#402c: per-iter envs shadow everything else).
                 let dst = alloc_reg(c);
                 let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-                emit_load_prop_atom(c, dst, c.env_reg, name_atom);
+                let er = env_for_local(c, (u32)local_idx);
+                emit_load_prop_atom(c, dst, er, name_atom);
+                if er != c.env_reg { release_reg(c, er); }
                 return dst;
             }
             // #330 TDZ: a let/const/default-param read that we can't
@@ -2340,7 +2331,9 @@ fn emit_load_name_normal(c: Compiler*, name: char*, name_len: u32, dst: u8) -> v
     if local_idx >= 0 {
         if c.locals[(u32)local_idx].captured {
             let na = ctx_intern_atom(c.ctx, name, name_len);
-            emit_load_prop_atom(c, dst, c.env_reg, na);
+            let er = env_for_local(c, (u32)local_idx);   // #402c
+            emit_load_prop_atom(c, dst, er, na);
+            if er != c.env_reg { release_reg(c, er); }
         } else {
             emit(c, make_inst_ab(Op::Mov, dst, c.locals[(u32)local_idx].reg));
         }
@@ -2366,7 +2359,9 @@ fn emit_store_name_normal(c: Compiler*, name: char*, name_len: u32, val: u8) -> 
     if local_idx >= 0 {
         if c.locals[(u32)local_idx].captured {
             let na = ctx_intern_atom(c.ctx, name, name_len);
-            emit_store_prop_atom(c, c.env_reg, na, val);
+            let er = env_for_local(c, (u32)local_idx);   // #402c
+            emit_store_prop_atom(c, er, na, val);
+            if er != c.env_reg { release_reg(c, er); }
         } else {
             emit(c, make_inst_ab(Op::Mov, c.locals[(u32)local_idx].reg, val));
         }
@@ -2571,7 +2566,9 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         if local_idx >= 0 {
             if captured_local {
                 let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-                emit_store_prop_atom(c, c.env_reg, name_atom, r);
+                let er = env_for_local(c, (u32)local_idx);   // #402c
+                emit_store_prop_atom(c, er, name_atom, r);
+                if er != c.env_reg { release_reg(c, er); }
             } else if r != local_reg {
                 // RHS didn't take our hint (e.g. it was a bare ident
                 // returning a borrowed reg) — fall back to Mov.
@@ -2600,7 +2597,9 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     if local_idx >= 0 {
         if captured_local {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-            emit_load_prop_atom(c, cur, c.env_reg, name_atom);
+            let er = env_for_local(c, (u32)local_idx);   // #402c
+            emit_load_prop_atom(c, cur, er, name_atom);
+            if er != c.env_reg { release_reg(c, er); }
         } else {
             // #401 — GetValue on a TDZ-uninit binding throws first
             // (§13.15.2 step 1 runs before the RHS evaluates).
@@ -2644,7 +2643,9 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
         } else if local_idx >= 0 {
             if captured_local {
                 let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-                emit_store_prop_atom(c, c.env_reg, name_atom, dst);
+                let er = env_for_local(c, (u32)local_idx);   // #402c
+                emit_store_prop_atom(c, er, name_atom, dst);
+                if er != c.env_reg { release_reg(c, er); }
             } else {
                 emit(c, make_inst_ab(Op::Mov, local_reg, dst));
             }
@@ -2696,7 +2697,9 @@ fn compile_assignment(c: Compiler*, node: AstNode*) -> u8 {
     } else if local_idx >= 0 {
         if captured_local {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-            emit_store_prop_atom(c, c.env_reg, name_atom, dst);
+            let er = env_for_local(c, (u32)local_idx);   // #402c
+            emit_store_prop_atom(c, er, name_atom, dst);
+            if er != c.env_reg { release_reg(c, er); }
         } else {
             emit(c, make_inst_ab(Op::Mov, local_reg, dst));
         }
@@ -5589,7 +5592,9 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
     if local_idx >= 0 {
         if captured_local {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-            emit_load_prop_atom(c, cur, c.env_reg, name_atom);
+            let er = env_for_local(c, (u32)local_idx);   // #402c
+            emit_load_prop_atom(c, cur, er, name_atom);
+            if er != c.env_reg { release_reg(c, er); }
         } else {
             // #401 — GetValue on a TDZ-uninit binding throws first.
             if c.locals[(u32)local_idx].is_tdz && !c.locals[(u32)local_idx].initialized {
@@ -5619,7 +5624,9 @@ fn compile_inc_dec(c: Compiler*, target: AstNode*, is_postfix: bool, is_inc: boo
     } else if local_idx >= 0 {
         if captured_local {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-            emit_store_prop_atom(c, c.env_reg, name_atom, new_reg);
+            let er = env_for_local(c, (u32)local_idx);   // #402c
+            emit_store_prop_atom(c, er, name_atom, new_reg);
+            if er != c.env_reg { release_reg(c, er); }
         } else {
             emit(c, make_inst_ab(Op::Mov, local_reg, new_reg));
         }
@@ -6275,6 +6282,32 @@ fn emit_ident_store_guard(c: Compiler*, local_idx: i32, outer_depth: u32,
     return false;
 }
 
+// #402c — the env register that OWNS captured local `li`. When any
+// for-of per-iteration scopes are open, c.env_reg points at the
+// innermost PER-ITER env, but a captured local declared outside them
+// lives (per_iter_envs_open - per_iter_depth) __outer__ hops up.
+// Accessing it directly on c.env_reg silently created/read a SHADOW
+// on the per-iter env — `let sum = 0; const f = () => sum;
+// for (const v of [1,2,3]) sum += v;` left sum at 0 (the loop wrote a
+// per-iter shadow that died with the iteration). Returns c.env_reg
+// (borrow) when no hops are needed; otherwise a fresh temp the caller
+// must release_reg after the access.
+fn env_for_local(c: Compiler*, li: u32) -> u8 {
+    let lp = c.locals[li].per_iter_depth;
+    if c.per_iter_envs_open <= lp { return c.env_reg; }
+    let delta = c.per_iter_envs_open - lp;
+    let env_r = alloc_reg(c);
+    emit(c, make_inst_ab(Op::Mov, env_r, c.env_reg));
+    let outer_atom = ctx_intern_atom(c.ctx, OUTER_ENV_KEY, OUTER_ENV_KEY_LEN);
+    let w: u32 = 0;
+    while w < delta {
+        let ic_o = alloc_ic_slot(c, outer_atom);
+        emit(c, make_inst_abc(Op::LoadProp, env_r, env_r, (u8)ic_o));
+        w = w + 1;
+    }
+    return env_r;
+}
+
 // Emit a register holding the env at `depth` levels up the chain.
 // Allocates a fresh temp register OR returns the cached prologue reg
 // when depth==1 and one is set up. release_reg on the returned value
@@ -6588,7 +6621,9 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
             if emit_ident_store_guard(c, lidx, 0, nm, nl) { return; }
             if c.locals[(u32)lidx].captured {
                 let name_atom = ctx_intern_atom(c.ctx, nm, nl);
-                emit_store_prop_atom(c, c.env_reg, name_atom, val_reg);
+                let er = env_for_local(c, (u32)lidx);   // #402c
+                emit_store_prop_atom(c, er, name_atom, val_reg);
+                if er != c.env_reg { release_reg(c, er); }
             } else {
                 emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, val_reg));
             }
@@ -6634,7 +6669,9 @@ fn bind_destructure_target(c: Compiler*, target: AstNode*, val_reg: u8) -> void 
         }
         if c.locals[(u32)lidx].captured {
             let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-            emit_store_prop_atom(c, c.env_reg, name_atom, val_reg);
+            let er = env_for_local(c, (u32)lidx);   // #402c
+            emit_store_prop_atom(c, er, name_atom, val_reg);
+            if er != c.env_reg { release_reg(c, er); }
         } else {
             emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, val_reg));
         }
@@ -6810,27 +6847,13 @@ fn destructure_array(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
     let catch_reg = alloc_reg(c);
     if catch_reg + 1 > c.fixed_regs { c.fixed_regs = catch_reg + 1; }
     let enter_idx = emit(c, make_inst_a_i16(Op::EnterTry, catch_reg, 0));
-    // #326 — suppress tail-call rewrites while a handler is active.
-    c.active_try_count = c.active_try_count + 1;
-    // #402a — register the destructuring iterator as a pseudo loop
-    // frame so a `yield` inside the pattern (defaults/targets) that
-    // gets resumed with .return() closes it via emit_return_sequence
-    // (return completions skip the catch handler above by design —
-    // that handler is for THROW completions). Not a continue target
-    // (is_iter=false); statements can't occur mid-pattern, so only
-    // the post-Yield dispatch ever observes this frame. Labels are
-    // saved across loop_push so a pending `lbl:` isn't stolen from
-    // the statement that owns it.
-    let saved_pl_start = c.pending_label_start;
-    let saved_pl_len   = c.pending_label_length;
-    loop_push(c);
-    c.pending_label_start  = saved_pl_start;
-    c.pending_label_length = saved_pl_len;
-    c.loop_stack[c.loop_depth - 1].label_start  = 0;
-    c.loop_stack[c.loop_depth - 1].label_length = 0;
-    c.loop_stack[c.loop_depth - 1].is_iter  = false;
-    c.loop_stack[c.loop_depth - 1].iter_reg = (i32)iter_r;
-    c.loop_stack[c.loop_depth - 1].done_reg = (i32)done_r;
+    // #402b — one region records both the handler (popped on any
+    // unwind crossing it) and the iterator (closed by a `yield` in
+    // the pattern resumed with .return() — return completions skip
+    // the catch handler by design; it's for THROW completions).
+    // Statements can't occur mid-pattern, so only the post-Yield
+    // dispatch ever unwinds past this region.
+    region_push_iter(c, true, (i32)iter_r, (i32)done_r, -1);
 
     let i: u32 = 0;
     let saw_rest: bool = false;
@@ -6863,8 +6886,7 @@ fn destructure_array(c: Compiler*, pat: AstNode*, src_reg: u8) -> void {
         i = i + 1;
     }
 
-    loop_pop(c);   // #402a — pseudo frame off before the handler block
-    c.active_try_count = c.active_try_count - 1;
+    region_pop(c);   // #402b
     emit(c, make_inst_a(Op::LeaveTry, 0));
     let skip_handler = emit(c, make_inst_i16(Op::Jmp, 0));
     patch_jump(c, enter_idx);
@@ -7359,7 +7381,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
                         // Captured locals live as properties on the env
                         // object — outer's reg slot is unused.
                         let name_atom = ctx_intern_atom(c.ctx, name, name_len);
-                        emit_store_prop_atom(c, c.env_reg, name_atom, r);
+                        let er = env_for_local(c, (u32)lidx);   // #402c
+                        emit_store_prop_atom(c, er, name_atom, r);
+                        if er != c.env_reg { release_reg(c, er); }
                     } else if r != lreg {
                         emit(c, make_inst_ab(Op::Mov, lreg, r));
                     }
@@ -7397,7 +7421,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             if lidx >= 0 {
                 if c.locals[(u32)lidx].captured {
                     let n_atom = ctx_intern_atom(c.ctx, c.source + node.name_start, node.name_length);
-                    emit_store_prop_atom(c, c.env_reg, n_atom, r);
+                    let er = env_for_local(c, (u32)lidx);   // #402c
+                    emit_store_prop_atom(c, er, n_atom, r);
+                    if er != c.env_reg { release_reg(c, er); }
                 } else {
                     emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, r));
                 }
@@ -7452,7 +7478,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
                     let n_atom = ctx_intern_atom(c.ctx,
                                                  c.source + node.name_start,
                                                  node.name_length);
-                    emit_store_prop_atom(c, c.env_reg, n_atom, r);
+                    let er = env_for_local(c, (u32)lidx);   // #402c
+                    emit_store_prop_atom(c, er, n_atom, r);
+                    if er != c.env_reg { release_reg(c, er); }
                 } else {
                     emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, r));
                 }
@@ -7908,7 +7936,9 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             if lidx >= 0 {
                 if c.locals[(u32)lidx].captured {
                     let name_atom = ctx_intern_atom(c.ctx, bname, bname_len);
-                    emit_store_prop_atom(c, c.env_reg, name_atom, elem_r);
+                    let er = env_for_local(c, (u32)lidx);   // #402c
+                    emit_store_prop_atom(c, er, name_atom, elem_r);
+                    if er != c.env_reg { release_reg(c, er); }
                 } else {
                     emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, elem_r));
                 }
@@ -8087,8 +8117,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             // matches `last op == Op::Invoke` in place, and a fused
             // call there would silently lose TCO. Nested calls inside
             // the return expression compare unequal and still fuse.
-            if c.is_function && c.active_finally_count == 0
-               && c.active_try_count == 0
+            if c.is_function && c.region_count == 0
                && node.left.kind == NodeKind::Call {
                 c.tail_call_node = node.left;
             }
@@ -8113,7 +8142,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // incorrectly rewrite it; (b) the last emitted op matching, so
         // we don't rewrite an Invoke that's no longer the tail (e.g.
         // some peephole emitted a Mov after it).
-        if c.is_function && c.active_finally_count == 0 && c.active_try_count == 0
+        if c.is_function && c.region_count == 0
            && c.code_count > 0
            && node.left != NULL && node.left.kind == NodeKind::Call {
             let last_op = c.code[c.code_count - 1].op;
@@ -8155,18 +8184,13 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             frame_idx = find_labeled_loop(c, c.source + node.name_start, node.name_length);
             if frame_idx < 0 { c.had_error = true; return; }
         }
-        // Phase 3.9d: run any finallies that sit between us and the
-        // target loop frame before we jump.
-        let target_depth = c.loop_stack[(u32)frame_idx].finally_depth_at_entry;
-        if c.active_finally_count > target_depth {
-            inline_finallies_above(c, target_depth);
-        }
-        // #401 inc6 — unwind to the target frame: pop every try region
-        // entered since each crossed frame (stale-handler fix), and
-        // IteratorClose crossed for-of frames innermost-first. The
-        // TARGET frame's own iterator is closed by the break patch
-        // landing at its IterClose site, so it's excluded here.
-        emit_loop_exit_unwind(c, frame_idx);
+        // #402b — unwind every region above the target frame in
+        // nesting order (handler pops, finally inlining, iterator
+        // closes). The target's OWN body-wrap region pops its handler
+        // but skips its IterClose — the break patch lands on the
+        // loop's close site.
+        emit_unwind_regions(c, c.loop_stack[(u32)frame_idx].region_depth_at_entry,
+                            c.loop_stack[(u32)frame_idx].own_iter_region);
         let jmp_idx = emit(c, make_inst_i16(Op::Jmp, 0));
         loop_add_break_to(c, (u32)frame_idx, (u32)jmp_idx);
         return;
@@ -8187,15 +8211,11 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             }
             if frame_idx < 0 { c.had_error = true; return; }
         }
-        // Same finally unwind as break.
-        let target_depth = c.loop_stack[(u32)frame_idx].finally_depth_at_entry;
-        if c.active_finally_count > target_depth {
-            inline_finallies_above(c, target_depth);
-        }
-        // #401 inc6 — same crossing unwind as break: the target frame
-        // keeps iterating, so its own iterator stays open; frames
-        // ABOVE it close, and every crossed try region pops.
-        emit_loop_exit_unwind(c, frame_idx);
+        // #402b — same unwind as break; the target's own wrap region
+        // pops its handler but keeps its iterator open (the loop
+        // keeps iterating; the next iteration re-pushes the handler).
+        emit_unwind_regions(c, c.loop_stack[(u32)frame_idx].region_depth_at_entry,
+                            c.loop_stack[(u32)frame_idx].own_iter_region);
         let lp = c.loop_stack[(u32)frame_idx];
         if lp.have_continue {
             emit_jump_back(c, Op::Jmp, lp.continue_target);
@@ -8323,12 +8343,12 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         if !has_finally {
             // Phase 3.1c shape: try { ... } catch (e) { ... } — no finally.
             let enter_idx = emit(c, make_inst_a_i16(Op::EnterTry, catch_reg, 0));
-            // #326 — a throw from the try body is caught here, so a
-            // `return f()` inside it is not in tail position; suppress
-            // the tail-call rewrite while compiling the body.
-            c.active_try_count = c.active_try_count + 1;
+            // #402b — catch region open during the body (also the #326
+            // tail-call suppressor: a `return f()` inside is not in
+            // tail position while the handler is live).
+            region_push_catch(c);
             compile_stmt(c, node.left);
-            c.active_try_count = c.active_try_count - 1;
+            region_pop(c);
             emit(c, make_inst_a(Op::LeaveTry, 0));
             let skip_idx = emit(c, make_inst_i16(Op::Jmp, 0));
             patch_jump(c, enter_idx);
@@ -8366,14 +8386,22 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
         // at outer_handler with `thrown` placed in pending_reg.
         let outer_enter = emit(c, make_inst_a_i16(Op::EnterTry, pending_reg, 0));
 
-        // Push the finally body so that a `return` in either the try
-        // or catch arms runs the finally before exiting. (Phase 3.9d.)
-        finally_push(c, node.third);
+        // #402b — the finally-outer region: a return/break/continue
+        // inside the try or catch arms pops this handler FIRST, then
+        // inlines the finally body (so a throw from the body reaches
+        // the next ENCLOSING handler instead of re-entering this one
+        // — the finally-double-run bug), in nesting order with any
+        // sibling regions.
+        region_push_finally(c, node.third);
 
         if has_catch {
             // Inner try: throws from the try-body land in catch_reg.
             let inner_enter = emit(c, make_inst_a_i16(Op::EnterTry, catch_reg, 0));
+            // #402b — the inner catch region was previously uncounted:
+            // break/continue out of this body left BOTH handlers stale.
+            region_push_catch(c);
             compile_stmt(c, node.left);
+            region_pop(c);
             emit(c, make_inst_a(Op::LeaveTry, 0));
             let skip_catch = emit(c, make_inst_i16(Op::Jmp, 0));
             patch_jump(c, inner_enter);
@@ -8400,7 +8428,7 @@ fn compile_stmt(c: Compiler*, node: AstNode*) -> void {
             compile_stmt(c, node.left);
         }
 
-        finally_pop(c);
+        region_pop(c);   // #402b — finally-outer region closes here
 
         emit(c, make_inst_a(Op::LeaveTry, 0));   // pop outer
 
@@ -8594,14 +8622,6 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
     let loop_top = (u32)c.code_count;
     loop_push(c);
     loop_set_continue(c, loop_top);
-    // #401 inc6 — record the live iterator on the frame so abrupt
-    // exits crossing this loop (labeled break/continue, return) can
-    // emit its IteratorClose.
-    c.loop_stack[c.loop_depth - 1].iter_reg = (i32)iter_r;
-    c.loop_stack[c.loop_depth - 1].done_reg = (i32)done_r;
-    if need_per_iter_env {
-        c.loop_stack[c.loop_depth - 1].env_restore_reg = (i32)saved_env_r;
-    }
 
     // Fresh env per iteration — runs BEFORE IterStep so the env exists
     // even if the body's binding writeback uses c.env_reg directly.
@@ -8644,17 +8664,24 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
     // from the binding store OR the body closes the iterator with the
     // THROW completion before propagating. Sync for-of only — the
     // for-await Await suspension across an open try region is its own
-    // arc. break/continue/return inside the body pop this handler via
-    // the loop frame's try_depth_at_entry accounting.
+    // arc.
+    // #402b — the wrap is one region: handler pop + IterClose + env
+    // restore, all unwound in nesting order by break/continue/return.
+    // For-await gets a handler-less region so returns/labeled exits
+    // still close its iterator and restore its env.
     let wrap_body: bool = !node.bool_value;
     let fo_catch_reg: u8 = 0;
     let fo_enter_idx: u32 = 0;
+    let fo_env_restore: i32 = if need_per_iter_env { (i32)saved_env_r } else { -1 };
     if wrap_body {
         fo_catch_reg = alloc_reg(c);
         if fo_catch_reg + 1 > c.fixed_regs { c.fixed_regs = fo_catch_reg + 1; }
         fo_enter_idx = emit(c, make_inst_a_i16(Op::EnterTry, fo_catch_reg, 0));
-        c.active_try_count = c.active_try_count + 1;
+        region_push_iter(c, true, (i32)iter_r, (i32)done_r, fo_env_restore);
+    } else {
+        region_push_iter(c, false, (i32)iter_r, (i32)done_r, fo_env_restore);
     }
+    c.loop_stack[c.loop_depth - 1].own_iter_region = (i32)(c.region_count - 1);
 
     // Write `value_r` into the binding. Reuses the binding logic from
     // the original for-of/in path: Member / Computed targets, plain
@@ -8697,7 +8724,9 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
                 if lidx >= 0 {
                     if c.locals[(u32)lidx].captured {
                         let name_atom = ctx_intern_atom(c.ctx, bname, bname_len);
-                        emit_store_prop_atom(c, c.env_reg, name_atom, value_r);
+                        let er = env_for_local(c, (u32)lidx);   // #402c
+                        emit_store_prop_atom(c, er, name_atom, value_r);
+                        if er != c.env_reg { release_reg(c, er); }
                     } else {
                         emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, value_r));
                     }
@@ -8723,7 +8752,9 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
                     // const target: the throw replaces the store.
                 } else if c.locals[(u32)lidx].captured {
                     let name_atom = ctx_intern_atom(c.ctx, bname, bname_len);
-                    emit_store_prop_atom(c, c.env_reg, name_atom, value_r);
+                    let er = env_for_local(c, (u32)lidx);   // #402c
+                    emit_store_prop_atom(c, er, name_atom, value_r);
+                    if er != c.env_reg { release_reg(c, er); }
                 } else {
                     emit(c, make_inst_ab(Op::Mov, c.locals[(u32)lidx].reg, value_r));
                 }
@@ -8747,8 +8778,8 @@ fn compile_for_of_live(c: Compiler*, node: AstNode*) -> void {
         compile_stmt(c, node.children[0]);
     }
 
+    region_pop(c);   // #402b — wrap region (handler-less for for-await)
     if wrap_body {
-        c.active_try_count = c.active_try_count - 1;
         emit(c, make_inst_a(Op::LeaveTry, 0));
     }
     emit_jump_back(c, Op::Jmp, loop_top);

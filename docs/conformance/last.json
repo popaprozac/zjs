@@ -1,9 +1,9 @@
 {
   "summary": {
-    "when": "2026-06-12 01:37 UTC",
+    "when": "2026-06-12 02:13 UTC",
     "total": 27568,
-    "passed": 24531,
-    "failed": 2699,
+    "passed": 24538,
+    "failed": 2692,
     "skipped": 338,
     "platform": "macOS"
   },
@@ -330,7 +330,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/entries/resizable-buffer-shrink-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0,0, 1,2, 2,4] should have the same contents. TestIterationAndResize: lis"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a Test262Error\nzjs: throw: (unknown): Expected a TypeError but got a"
     },
     {
       "path": "test/built-ins/Array/prototype/entries/resizable-buffer.js",
@@ -666,7 +666,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-grow.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'resize')\nzjs: throw: TypeError: Cannot read propert"
+      "reason": "[sloppy] zjs: throw: RangeError: ArrayBuffer resize length exceeds maxByteLength\nzjs: throw: RangeError: ArrayBuffer resize lengt"
     },
     {
       "path": "test/built-ins/Array/prototype/indexOf/coerced-searchelement-fromindex-shrink.js",
@@ -694,11 +694,11 @@
     },
     {
       "path": "test/built-ins/Array/prototype/join/coerced-separator-grow.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'resize')\nzjs: throw: TypeError: Cannot read propert"
+      "reason": "[sloppy] zjs: throw: RangeError: ArrayBuffer resize length exceeds maxByteLength\nzjs: throw: RangeError: ArrayBuffer resize lengt"
     },
     {
       "path": "test/built-ins/Array/prototype/join/coerced-separator-shrink.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'resize')\nzjs: throw: TypeError: Cannot read propert"
+      "reason": "[sloppy] zjs: throw: RangeError: ArrayBuffer resize length exceeds maxByteLength\nzjs: throw: RangeError: ArrayBuffer resize lengt"
     },
     {
       "path": "test/built-ins/Array/prototype/join/resizable-buffer.js",
@@ -714,7 +714,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/keys/resizable-buffer-shrink-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1, 2] should have the same contents. TestIterationAndResize: list of i"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a Test262Error\nzjs: throw: (unknown): Expected a TypeError but got a"
     },
     {
       "path": "test/built-ins/Array/prototype/keys/resizable-buffer.js",
@@ -738,7 +738,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/15.4.4.15-8-a-3.js",
-      "reason": "[sloppy] "
+      "reason": "[sloppy] zjs: throw: (unknown): arr.lastIndexOf(targetObj, fromIndex) Expected SameValue(\u00ab-1\u00bb, \u00ab4\u00bb) to be true\nzjs: throw: (unkno"
     },
     {
       "path": "test/built-ins/Array/prototype/lastIndexOf/coerced-position-grow.js",
@@ -1010,7 +1010,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/reverse/resizable-buffer.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'length')\nzjs: throw: TypeError: Cannot read propert"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [6, 4, 2, 0] should have the same contents. \nzjs: throw: (unknown): Actual"
     },
     {
       "path": "test/built-ins/Array/prototype/shift/S15.4.4.9_A1.2_T1.js",
@@ -1158,7 +1158,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/sort/comparefn-resizable-buffer.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'length')\nzjs: throw: TypeError: Cannot read propert"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [7, 9, 8, 10] should have the same contents. \nzjs: throw: (unknown): Actua"
     },
     {
       "path": "test/built-ins/Array/prototype/sort/comparefn-shrink.js",
@@ -1174,7 +1174,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/sort/resizable-buffer-default-comparator.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'length')\nzjs: throw: TypeError: Cannot read propert"
+      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [10, 4, 6, 8] should have the same contents. \nzjs: throw: (unknown): Actua"
     },
     {
       "path": "test/built-ins/Array/prototype/splice/S15.4.4.12_A3_T1.js",
@@ -1350,7 +1350,7 @@
     },
     {
       "path": "test/built-ins/Array/prototype/values/resizable-buffer-shrink-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 2, 4] should have the same contents. TestIterationAndResize: list of i"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a Test262Error\nzjs: throw: (unknown): Expected a TypeError but got a"
     },
     {
       "path": "test/built-ins/Array/prototype/values/resizable-buffer.js",
@@ -5606,7 +5606,7 @@
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-replacer-RegExp-call-fn.js",
-      "reason": "[sloppy] zjs: throw: TypeError: Cannot read properties of undefined (reading 'push')\nzjs: throw: TypeError: Cannot read propertie"
+      "reason": "[sloppy] zjs: throw: (unknown): called -- sample 0: 'aaa abc'.replaceAll(/(a)/g, () => 'z') Expected SameValue(\u00ab0\u00bb, \u00ab1\u00bb) to be tr"
     },
     {
       "path": "test/built-ins/String/prototype/replaceAll/searchValue-replacer-RegExp-call.js",
@@ -6349,10 +6349,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
     },
     {
-      "path": "test/language/expressions/assignment/dstr/array-elem-iter-rtrn-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be"
-    },
-    {
       "path": "test/language/expressions/assignment/dstr/array-elem-iter-thrw-close-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be"
     },
@@ -6363,14 +6359,6 @@
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-put-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-list-rtrn-close-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be"
-    },
-    {
-      "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-list-rtrn-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/language/expressions/assignment/dstr/array-elem-trlg-iter-list-thrw-close-err.js",
@@ -9686,7 +9674,7 @@
     },
     {
       "path": "test/language/statements/class/subclass/derived-class-return-override-catch-super.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Expec"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a ReferenceError\nzjs: throw: (unknown): Expected a TypeError but got"
     },
     {
       "path": "test/language/statements/class/subclass/derived-class-return-override-finally-super-arrow.js",
@@ -9945,10 +9933,6 @@
       "reason": "[sloppy] zjs: throw: TypeError: iterator.next is not callable\nzjs: throw: TypeError: iterator.next is not callable"
     },
     {
-      "path": "test/language/statements/for-of/dstr/array-elem-iter-rtrn-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be"
-    },
-    {
       "path": "test/language/statements/for-of/dstr/array-elem-iter-thrw-close-err.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab1\u00bb, \u00ab0\u00bb) to be"
     },
@@ -9959,14 +9943,6 @@
     {
       "path": "test/language/statements/for-of/dstr/array-elem-put-let.js",
       "reason": "[sloppy] zjs: throw: (unknown): Expected a ReferenceError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): "
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-list-rtrn-close-err.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be"
-    },
-    {
-      "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-list-rtrn-close-null.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be"
     },
     {
       "path": "test/language/statements/for-of/dstr/array-elem-trlg-iter-list-thrw-close-err.js",
@@ -10170,7 +10146,7 @@
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer-shrink-to-zero-mid-iteration.js",
-      "reason": "[sloppy] zjs: throw: (unknown): Actual [] and expected [0, 1] should have the same contents. TestIterationAndResize: list of iter"
+      "reason": "[sloppy] zjs: throw: (unknown): Expected a TypeError but got a Test262Error\nzjs: throw: (unknown): Expected a TypeError but got a"
     },
     {
       "path": "test/language/statements/for-of/typedarray-backed-by-resizable-buffer.js",
@@ -10723,10 +10699,6 @@
     {
       "path": "test/language/statements/try/catch-parameter-boundnames-restriction-eval-eval-throws.js",
       "reason": "zjs: throw: (unknown): Expected a SyntaxError to be thrown but no exception was thrown at all\nzjs: throw: (unknown): Exp"
-    },
-    {
-      "path": "test/language/statements/try/completion-values-fn-finally-abrupt.js",
-      "reason": "[sloppy] zjs: throw: (unknown): 2: fiinally count Expected SameValue(\u00ab2\u00bb, \u00ab1\u00bb) to be true\nzjs: throw: (unknown): 2: fiinally coun"
     },
     {
       "path": "test/language/statements/try/early-catch-duplicates.js",
