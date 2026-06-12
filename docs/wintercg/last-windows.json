@@ -1,9 +1,9 @@
 {
-  "when": "2026-06-12 05:11 UTC",
+  "when": "2026-06-12 05:54 UTC",
   "zjs_bin": "C:\\Users\\Zach\\zjs\\build\\zjs.exe",
   "totals": {
-    "pass": 101,
-    "fail": 2,
+    "pass": 103,
+    "fail": 0,
     "timeout": 0,
     "error": 0
   },
@@ -316,8 +316,8 @@
     {
       "area": "fetch",
       "totals": {
-        "pass": 10,
-        "fail": 2,
+        "pass": 12,
+        "fail": 0,
         "timeout": 0,
         "error": 0
       },
@@ -374,13 +374,13 @@
         },
         {
           "name": "fetch data: URL",
-          "status": "fail",
-          "message": "fetch: URL parse failed (WinHTTP error 12006): The URL does not use a recognized protocol"
+          "status": "pass",
+          "message": ""
         },
         {
           "name": "fetch data: JSON",
-          "status": "fail",
-          "message": "fetch: URL parse failed (WinHTTP error 12006): The URL does not use a recognized protocol"
+          "status": "pass",
+          "message": ""
         }
       ],
       "stderr": ""
@@ -571,12 +571,12 @@
           "message": ""
         },
         {
-          "name": "queueMicrotask before setTimeout(0)",
+          "name": "clearTimeout cancels",
           "status": "pass",
           "message": ""
         },
         {
-          "name": "clearTimeout cancels",
+          "name": "queueMicrotask before setTimeout(0)",
           "status": "pass",
           "message": ""
         },
