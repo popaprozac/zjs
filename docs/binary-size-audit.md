@@ -1,4 +1,62 @@
-# Binary-size audit — 2026-06-03
+# Binary-size audit — 2026-06-11
+
+## 2026-06-11 snapshot — tiers × levers × conformance matrix (at 90.06% test262)
+
+Embedder shape as always: `tests/embed_smoke.c` linked against a
+per-config `libzjs.a`, `clang -O2 … -Wl,-dead_strip`, then `strip -S`.
+Host: Darwin 25.5.0 arm64, Apple clang, LTO on. Engine at commit
+9effb27 (#401 arc complete — curated test262 24523/27230 = **90.06%**).
+
+### Embedder shape (what you ship)
+
+| Config                        | Binary  | Δ vs default | Conformance note |
+| ----------------------------- | ------: | -----------: | ---------------- |
+| default (full)                | 1211 KB |            — | 90.06% test262; embed smoke 399/399 |
+| default, PGO (`lib-pgo`)      | 1085 KB |      −126 KB | identical conformance, ~−21% runtime (#392) |
+| `ZJS_TIER=ring1`              | 1108 KB |      −103 KB | ES core identical; drops `node:` modules |
+| `ZJS_TIER=minimal`            | 1060 KB |      −151 KB | ES core identical; drops Ring-1/2 + AOT writer (smoke 394/399 — the 5 are the by-design `zjs_compile_to_bytecode`=NULL probes) |
+| default + `ZJS_NO_TEMPORAL`   | 1125 KB |       −86 KB | **0 curated-test262 cost** (the 8 Temporal-adjacent tests in the curated set all fail today; the Temporal suite proper isn't in the curated run) |
+| minimal + `ZJS_NO_TEMPORAL`   | **974 KB** |   −243 KB | smallest sensible config — back under 1 MB |
+
+Levers compose: Temporal −86 KB is the single biggest feature; tier
+gating (full→minimal) −151 KB; PGO −126 KB on top of default. PGO is
+also measured on the default tier only — it should compose with tier
+gating if a `lib-pgo ZJS_TIER=…` build is ever needed.
+
+### CLI / library artifacts (raw; `strip -S` is a no-op on these)
+
+| Artifact            | Size    | Note |
+| ------------------- | ------: | ---- |
+| `build/zjs`         | 1376 KB | dev interpreter CLI (`make cli`) |
+| `build/zjs-pgo`     | **1071 KB** | canonical release CLI (#392) — 22% smaller AND ~21% faster than `make cli` (single-TU `cc -O3 -fprofile-use` pipeline + profile-led layout) |
+| `build/zjs-jit`     | 1396 KB | opt-in copy-and-patch JIT build; test262 byte-identical |
+| `build/libzjs.dylib`| 1358 KB | shared lib |
+| `build/libzjs.a`    | 2314 KB | raw archive — contains all tiers' symbols; dead-strip at the consumer link is what produces the tiered sizes above |
+| `build/libzjs-pgo.a`| 1781 KB | embedder PGO archive (zapp's build) |
+
+### Conformance columns, stated precisely
+
+- Curated test262 (the dashboard number): **24523 / 27230 non-skipped
+  = 90.06%**, identical for every tier/lever above — `ZJS_TIER` and
+  the `ZJS_NO_*` flags gate the runtime layer (WinterTC surface, node:
+  modules, AOT writer), not ES-core semantics, and `ZJS_NO_TEMPORAL`
+  currently forfeits nothing the curated run measures.
+- WinterCG MCA suite: 100% on the default tier (the suite exercises
+  Streams/Events/Blob/fetch — ring1 keeps them, minimal by design
+  drops them; the runner drives the always-full CLI, so per-tier
+  WinterCG numbers would need a tiered CLI build that doesn't exist).
+- Unfiltered full test262 (every harness-feature dir, no skip list):
+  31970/47183 ≈ 69% for context — the curated set is the tracked
+  number; the gap is dominated by un-implemented feature dirs
+  (Intl/staging/etc.) plus the harness skip list (#341).
+
+### vs 2026-06-03 snapshot
+
+default 1111 → 1211 KB (+100), ring1 1009 → 1108 (+100), minimal
+960 → 1060 (+100). The uniform ~+100 KB across tiers = core-engine
+growth from the #399/#400/#401 conformance arcs (+1300 tests),
+the generational-GC default-on machinery, and InvokeGlobal/Mov-
+elimination codegen — none of it tier-gated, as expected.
 
 ## 2026-06-03 snapshot — post BigInt / Temporal / TypedArray-intrinsic / dynamic-import
 
