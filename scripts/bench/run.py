@@ -232,7 +232,7 @@ tracked separately below.</p>
 <div class="card">
   <strong>Latest run</strong> &mdash; <span id="when"></span> @ <code id="sha"></code>
   <table id="latest-table" style="margin-top: 0.5em;">
-    <thead><tr><th>Benchmark</th><th class="ms">Median ms</th><th class="ms">Min ms</th><th class="ms">Max ms</th><th class="delta">Δ vs first</th></tr></thead>
+    <thead><tr><th>Benchmark</th><th class="ms">Median ms</th><th class="ms">Min ms</th><th class="ms">Max ms</th><th class="delta">Δ vs 1st-recorded</th></tr></thead>
     <tbody></tbody>
   </table>
 </div>
@@ -807,7 +807,12 @@ def main():
         if baseline:
             pct = (stats["median"] - baseline) / baseline * 100
             sign = "+" if pct >= 0 else ""
-            delta_str = f"  ({sign}{pct:.1f}% vs first)"
+            # "first" = the first row in history-<platform>.jsonl, i.e. a
+            # cross-commit regression indicator — NOT a cold-vs-warm /
+            # first-iteration delta. Labeled explicitly to avoid that
+            # misread (regex_match's "+293% vs 1st-recorded" is the
+            # historical TRE->libregexp swap, not a steady-state anomaly).
+            delta_str = f"  ({sign}{pct:.1f}% vs 1st-recorded)"
         startup_str = ""
         sm = stats.get("startup_median")
         if sm is not None and sm > 0:
