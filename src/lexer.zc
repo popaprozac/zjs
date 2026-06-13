@@ -91,7 +91,9 @@ impl Lexer {
             let c = self.peek();
             if c == (u8)' ' || c == (u8)'\t' || c == (u8)'\r' || c == (u8)'\n'
                || c == 0x0B || c == 0x0C {
-                if c == (u8)'\n' { self.crossed_newline = true; }
+                // <CR> is a LineTerminator too (§12.3) — CRLF sources
+                // must drive ASI exactly like LF-only ones.
+                if c == (u8)'\n' || c == (u8)'\r' { self.crossed_newline = true; }
                 self.advance();
             } else if c == 0xC2 && self.peek_at(1) == 0xA0 {
                 // U+00A0 NO-BREAK SPACE (UTF-8: C2 A0).
@@ -110,7 +112,7 @@ impl Lexer {
                 // advance() will count it next pass through the loop)
                 self.advance();
                 self.advance();
-                while !self.at_end() && self.peek() != (u8)'\n' {
+                while !self.at_end() && self.peek() != (u8)'\n' && self.peek() != (u8)'\r' {
                     self.advance();
                 }
             } else if c == (u8)'/' && self.peek_at(1) == (u8)'*' {
@@ -410,13 +412,25 @@ impl Lexer {
                 self.advance();
                 return Token{kind: TokenKind::StringLit, start: start, length: (u32)self.pos - start};
             }
-            if c == (u8)'\n' {
-                // unterminated string at end of line
+            if c == (u8)'\n' || c == (u8)'\r' {
+                // unterminated string at end of line (<CR> is a
+                // LineTerminator like <LF> — §12.3)
                 return Token{kind: TokenKind::Invalid, start: start, length: (u32)self.pos - start};
             }
             if c == (u8)'\\' {
                 self.advance();
-                if !self.at_end() { self.advance(); }
+                if !self.at_end() {
+                    // LineContinuation: \<CR><LF> is ONE terminator
+                    // sequence — consume both so the LF isn't
+                    // re-scanned as an unterminated-string error
+                    // (CRLF sources: `\` + newline inside a string).
+                    if self.peek() == (u8)'\r' {
+                        self.advance();
+                        if !self.at_end() && self.peek() == (u8)'\n' { self.advance(); }
+                    } else {
+                        self.advance();
+                    }
+                }
             } else {
                 self.advance();
             }

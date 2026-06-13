@@ -340,8 +340,12 @@ def run_one(zjs_bin, source, timeout_s, aot=False):
     # Force UTF-8 on the tempfile — test262 sources are UTF-8, and on
     # Windows the default text-mode encoding (cp1252) chokes on the
     # full Unicode range (arrows, math symbols, etc).
+    # newline="" disables universal-newline translation: Windows text
+    # mode was rewriting every \n to \r\n, silently feeding the engine
+    # CRLF sources the test never contained (string line-continuations
+    # `\<LF>` became `\<CR><LF>` and failed to parse).
     with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
-                                     encoding="utf-8") as f:
+                                     encoding="utf-8", newline="") as f:
         f.write(source)
         path = f.name
     zbc_path = path + ".zbc"
