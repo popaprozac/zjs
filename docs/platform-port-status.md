@@ -145,6 +145,13 @@ platform-specific header directly.
 
 ## Windows gap matrix — 2026-06-12
 
+> **Update (`windows-port-2`, 2026-06-13):** the engine fixes below
+> moved Windows test262 to **24613/27629 (90.3%)** — +93 over the
+> 24520 baseline this matrix was written against (94 fixed, 1 moved to
+> macOS parity, 0 real regressions). WinterCG stays **103/103**. See
+> the Progress subsection after the recommended-order line for the
+> per-row status. Only **Windows PGO + lib-static** remains open.
+
 Measured at `windows-port` HEAD: Windows test262 **24520/27629** vs
 macOS **24539/27568** (same commit, both 90.1%-class); WinterCG MCA
 **103/103 on both**; macOS verification of the branch = 0 curated
