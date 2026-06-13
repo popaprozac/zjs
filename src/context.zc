@@ -4218,6 +4218,136 @@ fn host_error_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     return ctx_intern_string_take(ctx, buf, total);
 }
 
+// --- Error.prototype.stack (error-stacks proposal) -------------------
+//
+// Installed as an accessor pair { get, set } on Error.prototype —
+// non-enumerable, configurable. The suite exercises the DESCRIPTOR
+// SHAPE and brand semantics, not unwind quality, so the getter
+// returns the toString()-shaped "Name: message" line as the
+// implementation-defined stack string (no frame capture yet).
+
+// %Error.prototype% of the current realm (NULL when Error isn't
+// registered yet — bootstrap edge).
+fn realm_error_prototype(ctx: ZjsContext*) -> ZjsObject* {
+    let none: ZjsObject* = NULL;
+    let slot = ctx_find_global(ctx, (char*)"Error", 5);
+    if slot < 0 { return none; }
+    let v = ctx.realm.globals[slot].value;
+    if zjs_is_host_function(v) == 0 { return none; }
+    return zjs_as_host_function(v).prototype;
+}
+
+// Does this object carry the [[ErrorData]] brand? (Own __zjs_tag__
+// slot = "Error" — set by every error construction path; deliberately
+// an OWN-slot read so Object.create(new Error()) is unbranded.)
+fn object_has_error_brand(ctx: ZjsContext*, obj: ZjsObject*) -> bool {
+    let tag_v = object_get(obj, ctx_intern_atom(ctx, TAG_NAME_KEY, TAG_NAME_KEY_LEN));
+    if zjs_is_string(tag_v) == 0 { return false; }
+    let s = zjs_as_string(tag_v);
+    let is_err: int = 0;
+    raw { if (s->length == 5 && memcmp(s->data, "Error", 5) == 0) is_err = 1; }
+    return is_err != 0;
+}
+
+fn host_error_stack_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = ctx.host_this;
+    if !value_is_object_type(t) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Error.prototype.stack getter: receiver is not an object", 56);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    // No [[ErrorData]] → undefined (Error.prototype itself, plain
+    // objects with an error as [[Prototype]], etc.).
+    if zjs_is_object(t) == 0 { return zjs_undefined(); }
+    if !object_has_error_brand(ctx, zjs_as_object(t)) { return zjs_undefined(); }
+    return host_error_to_string(ctx, args, 0);
+}
+
+// set Error.prototype.stack (proposal): throws on non-object
+// receivers and non-String values, then runs
+// SetterThatIgnoresPrototypeProperties(this, %Error.prototype%,
+// "stack", v):
+//   - this === %Error.prototype%  → TypeError
+//   - no own "stack"              → CreateDataPropertyOrThrow
+//   - own accessor                → call its setter (TypeError if none)
+//   - own data                    → [[Set]]: update value, keep attrs
+//                                   (TypeError when non-writable)
+fn host_error_stack_setter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = ctx.host_this;
+    if !value_is_object_type(t) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Error.prototype.stack setter: receiver is not an object", 56);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let v: ZjsValue = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_string(v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Error.prototype.stack setter: value must be a string", 52);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    if zjs_is_object(t) != 0 {
+        let obj = zjs_as_object(t);
+        if obj == realm_error_prototype(ctx) {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"Cannot set 'stack' on Error.prototype itself", 44);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        let stack_atom = ctx_intern_atom(ctx, (char*)"stack", 5);
+        let slot = class_find_slot(obj.cls, stack_atom);
+        if slot < 0 {
+            // CreateDataPropertyOrThrow.
+            if obj.non_extensible {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"Cannot add property 'stack' to a non-extensible object", 54);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return zjs_undefined();
+            }
+            object_define_property_slot(ctx, obj, stack_atom, v, PROP_DEFAULT);
+            return zjs_undefined();
+        }
+        let cur = obj.slots[(u32)slot];
+        if zjs_is_accessor(cur) != 0 {
+            let acc = zjs_as_accessor(cur);
+            let setter_v = acc.set;
+            let settable: bool = zjs_is_function(setter_v) != 0
+                || zjs_is_closure(setter_v) != 0
+                || zjs_is_host_function(setter_v) != 0;
+            if !settable {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"Cannot set 'stack': own accessor has no setter", 46);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return zjs_undefined();
+            }
+            let call_args: ZjsValue[1];
+            call_args[0] = v;
+            let ca_ptr: ZjsValue* = NULL; raw { ca_ptr = &call_args[0]; }
+            raw { zjs_call_value_with_this(ctx, setter_v, t, ca_ptr, 1); }
+            return zjs_undefined();
+        }
+        // Own data property: [[Set]] — value only, attrs preserved.
+        let attrs: u8 = PROP_DEFAULT;
+        if obj.attrs != NULL { attrs = obj.attrs[(u32)slot]; }
+        if (attrs & PROP_WRITABLE) == 0 {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"Cannot set non-writable property 'stack'", 40);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        obj.slots[(u32)slot] = v;
+        gc_write_barrier(ctx, (void*)obj, v);
+        return zjs_undefined();
+    }
+    // Non-plain-object receivers (arrays, functions, proxies): route
+    // through the generic property path; proxy defineProperty-trap
+    // fidelity is deferred.
+    property_set(ctx, t, ctx_intern_string(ctx, (char*)"stack", 5), v);
+    return zjs_undefined();
+}
+
 // --- Math.* helpers -------------------------------------------------
 
 raw {
@@ -7241,6 +7371,9 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
         return zjs_undefined();
     }
     let raw_v = o.slots[(u32)slot];
+    // A deleted slot (the `delete` sentinel) is an absent property —
+    // hasOwnProperty already honors this; gOPD must too.
+    if zjs_is_deleted(raw_v) != 0 { return zjs_undefined(); }
 
     let result_v = ctx_new_object(ctx);
     ctx_push_temp_root(ctx, result_v);
@@ -23927,6 +24060,36 @@ fn host_property_is_enumerable(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
                 if (attrs & PROP_ENUMERABLE) != 0 { return zjs_bool(1); }
             }
         }
+        return zjs_bool(0);
+    }
+    // Function / closure / host-function receivers store expandos on
+    // their .props bag — same own-slot + enumerable-bit walk. (for-in
+    // and Object.keys already enumerate these; pIE previously said
+    // false unconditionally.)
+    let props_o: ZjsObject* = NULL;
+    if zjs_is_function(this_val) != 0 {
+        let fp = zjs_cell_as_ptr(this_val);
+        let ff: Function* = NULL;
+        raw { ff = (Function*)fp; }
+        props_o = ff.props;
+    } else if zjs_is_closure(this_val) != 0 {
+        let cl = zjs_as_closure(this_val);
+        if cl.props != NULL { props_o = cl.props; }
+        else {
+            let fp2 = cl.function;
+            let ff2: Function* = NULL;
+            raw { ff2 = (Function*)fp2; }
+            props_o = ff2.props;
+        }
+    } else if zjs_is_host_function(this_val) != 0 {
+        props_o = zjs_as_host_function(this_val).props;
+    }
+    if props_o != NULL {
+        let slot = class_find_slot(props_o.cls, name);
+        if slot >= 0 && zjs_is_deleted(props_o.slots[(u32)slot]) == 0 {
+            let attrs = object_get_attrs(props_o, (u32)slot);
+            if (attrs & PROP_ENUMERABLE) != 0 { return zjs_bool(1); }
+        }
     }
     return zjs_bool(0);
 }
@@ -30823,6 +30986,17 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
             let ets_ptr: void* = NULL; raw { ets_ptr = (void*)host_error_to_string; }
             object_set(ctx, err_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
                        ctx_make_host_function(ctx, (char*)"toString", ets_ptr));
+            // Error.prototype.stack accessor (error-stacks proposal):
+            // { get, set }, non-enumerable, configurable.
+            let esg_ptr: void* = NULL; raw { esg_ptr = (void*)host_error_stack_getter; }
+            let ess_ptr: void* = NULL; raw { ess_ptr = (void*)host_error_stack_setter; }
+            let stack_acc = zjs_accessor_new(
+                ctx_make_host_function_arity(ctx, (char*)"get stack", esg_ptr, 0),
+                ctx_make_host_function_arity(ctx, (char*)"set stack", ess_ptr, 1));
+            ctx_register_cell(ctx, (void*)stack_acc);
+            object_define_property_slot(ctx, err_proto,
+                ctx_intern_atom(ctx, (char*)"stack", 5),
+                zjs_cell_from_ptr((void*)stack_acc), PROP_CONFIGURABLE);
             // Subclass each *Error.prototype to inherit from Error.prototype,
             // AND set [[Prototype]] = Error so `Object.getPrototypeOf(TypeError)
             // === Error` per spec.

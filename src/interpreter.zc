@@ -8001,6 +8001,20 @@ fn interpret_inner_full(ctx: ZjsContext*,
                     // `delete arr[i]` on a dense element leaves a hole.
                     a.elements[(u32)idx] = zjs_deleted();
                 }
+                // Non-index keys ('stack', 'foo', ...) live in the
+                // a.props expando bag — delete the slot there too,
+                // honoring its configurable bit. Previously this fell
+                // through silently (returning true without removing).
+                if idx < 0 && a.props != NULL {
+                    let key_str = if zjs_is_string(key) != 0 { key } else { zjs_to_string(ctx, key) };
+                    let kname = zjs_as_string(key_str);
+                    let pslot2 = class_find_slot(a.props.cls, kname);
+                    if pslot2 >= 0 && zjs_is_deleted(a.props.slots[(u32)pslot2]) == 0 {
+                        let pa2 = object_get_attrs(a.props, (u32)pslot2);
+                        if (pa2 & PROP_CONFIGURABLE) == 0 { ok = false; }
+                        else { a.props.slots[(u32)pslot2] = zjs_deleted(); }
+                    }
+                }
             } else if obj_tag == TAG_HOST_FUNCTION {
                 // Host functions synthesize `name` / `length` lazily
                 // from hf.name / hf.arity rather than storing them as
