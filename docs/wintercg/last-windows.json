@@ -1,5 +1,5 @@
 {
-  "when": "2026-06-12 05:54 UTC",
+  "when": "2026-06-13 07:26 UTC",
   "zjs_bin": "C:\\Users\\Zach\\zjs\\build\\zjs.exe",
   "totals": {
     "pass": 103,
@@ -571,12 +571,12 @@
           "message": ""
         },
         {
-          "name": "clearTimeout cancels",
+          "name": "queueMicrotask before setTimeout(0)",
           "status": "pass",
           "message": ""
         },
         {
-          "name": "queueMicrotask before setTimeout(0)",
+          "name": "clearTimeout cancels",
           "status": "pass",
           "message": ""
         },
