@@ -15852,6 +15852,36 @@ fn format_iso_string(ctx: ZjsContext*, ms: f64) -> ZjsValue {
 // Compose ms since epoch from broken-down UTC components. Matches
 // the spec's MakeDay / MakeTime / MakeDate. Falls through to NaN for
 // out-of-range inputs.
+// ECMA-262 §21.4.1.13 MakeFullYear: ToIntegerOrInfinity(year), then a
+// year in 0..99 maps to 1900+year. Applied ONLY by the `new Date(y,
+// ...)` constructor, Date.UTC, and legacy setYear — NOT by
+// setFullYear (which takes the year literally).
+fn make_full_year(year: f64) -> f64 {
+    let r: f64 = 0.0;
+    raw {
+        if (!isfinite(year)) { r = year; }
+        else {
+            double yi = trunc(year);
+            r = (yi >= 0.0 && yi <= 99.0) ? yi + 1900.0 : yi;
+        }
+    }
+    return r;
+}
+
+// ECMA-262 §21.4.1.1 TimeClip: non-finite or |t| > 8.64e15 → NaN;
+// otherwise truncate toward zero. The single chokepoint for every
+// [[DateValue]] write so the platform breakdown shims never see an
+// out-of-range epoch (they'd compute a valid-but-absurd date where
+// the spec wants Invalid Date).
+fn date_time_clip(ms: f64) -> f64 {
+    let r: f64 = 0.0;
+    raw {
+        if (!isfinite(ms) || ms > 8.64e15 || ms < -8.64e15) r = 0.0/0.0;
+        else r = trunc(ms);
+    }
+    return r;
+}
+
 fn date_compose_utc_ms(year: f64, month: f64, day: f64,
                        hour: f64, minute: f64, second: f64,
                        ms_part: f64) -> f64 {
@@ -15866,26 +15896,29 @@ fn date_compose_utc_ms(year: f64, month: f64, day: f64,
             || !isfinite(ms_part)) {
             result = 0.0/0.0;
         } else {
-            // Spec: year < 100 maps to 1900-relative. §21.4.1.13.
+            // NOTE: the §21.4.1.13 MakeFullYear 0-99 → 1900+ mapping is
+            // NOT applied here — it belongs only to the `new Date(y,..)`
+            // constructor and Date.UTC (their callers map before
+            // calling). setFullYear/setYear pass the year literally, so
+            // applying it here made setFullYear(2) land in 1902.
             double yr = year;
-            if (yr >= 0.0 && yr <= 99.0) yr += 1900.0;
-            struct tm t;
-            memset(&t, 0, sizeof(t));
-            t.tm_year = (int)yr - 1900;
-            t.tm_mon  = (int)month;
-            t.tm_mday = (int)day;
-            t.tm_hour = (int)hour;
-            t.tm_min  = (int)minute;
-            t.tm_sec  = (int)second;
-            time_t secs = zjs_timegm(&t);
-            if (secs == (time_t)-1) {
-                result = 0.0/0.0;
-            } else {
-                result = (double)secs * 1000.0 + ms_part;
-            }
+            // MakeDay/MakeDate in f64 day-space rather than via struct
+            // tm — a struct tm truncates day-of-month to int, which
+            // can't represent the ±100000000-day boundary tests. f64 is
+            // exact to 2^53, far past the ±8.64e15 ms clip range.
+            // Month normalizes into the year (MakeDay accepts any int).
+            double ynorm = yr + floor(month / 12.0);
+            double mnorm = month - floor(month / 12.0) * 12.0;  /* 0..11 */
+            int64_t day_count = zjs_civil_to_days((int64_t)ynorm, (int64_t)mnorm + 1, 1)
+                                + (int64_t)day - 1;
+            result = (double)day_count * 86400000.0
+                     + hour   * 3600000.0
+                     + minute * 60000.0
+                     + second * 1000.0
+                     + ms_part;
         }
     }
-    return result;
+    return date_time_clip(result);
 }
 
 // Convenience: install a getter (and optionally setter) as an
@@ -21139,10 +21172,10 @@ fn host_date_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             }
             ms = parsed;
         } else {
-            ms = zjs_to_double(v);
+            ms = date_time_clip(zjs_to_double(v));
         }
     } else {
-        let y = zjs_to_double(args[0]);
+        let y = make_full_year(zjs_to_double(args[0]));
         let mo = zjs_to_double(args[1]);
         let d = if argc > 2 { zjs_to_double(args[2]) } else { 1.0 };
         let h = if argc > 3 { zjs_to_double(args[3]) } else { 0.0 };
@@ -21190,7 +21223,7 @@ fn host_date_parse_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
 }
 
 fn host_date_utc_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let y = if argc > 0 { zjs_to_double(args[0]) } else { 0.0/0.0 };
+    let y = if argc > 0 { make_full_year(zjs_to_double(args[0])) } else { 0.0/0.0 };
     let mo = if argc > 1 { zjs_to_double(args[1]) } else { 0.0 };
     let d = if argc > 2 { zjs_to_double(args[2]) } else { 1.0 };
     let h = if argc > 3 { zjs_to_double(args[3]) } else { 0.0 };
@@ -21221,7 +21254,7 @@ fn host_date_get_time(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
 fn host_date_set_time(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let d = date_require_this(ctx);
     if d == NULL { return zjs_undefined(); }
-    let ms = if argc > 0 { zjs_to_double(args[0]) } else { 0.0/0.0 };
+    let ms = date_time_clip(if argc > 0 { zjs_to_double(args[0]) } else { 0.0/0.0 });
     d.time_ms = ms;
     return zjs_double(ms);
 }

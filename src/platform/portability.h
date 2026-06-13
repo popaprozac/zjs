@@ -96,22 +96,77 @@ static inline char* zjs_realpath(const char* path, char* resolved) {
 #endif
 }
 
+// Proleptic-Gregorian civil-date conversions (Howard Hinnant's
+// days_from_civil / civil_from_days, epoch 1970-01-01). Available on
+// every platform: the Windows struct-tm shims use them (MSVCRT's
+// gmtime_s/_mkgmtime reject epochs outside roughly 1970..3000, but JS
+// Dates span ±275760 years), and the engine's Date math composes
+// epoch-ms directly through zjs_civil_to_days to avoid the int
+// day-of-month truncation a struct tm would impose.
+static inline int64_t zjs_civil_to_days(int64_t y, int64_t m, int64_t d) {
+    y -= m <= 2;
+    int64_t era = (y >= 0 ? y : y - 399) / 400;
+    int64_t yoe = y - era * 400;
+    int64_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468;
+}
+static inline void zjs_days_to_civil(int64_t z, int64_t* y, int64_t* m, int64_t* d) {
+    z += 719468;
+    int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    int64_t doe = z - era * 146097;
+    int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    int64_t yy  = yoe + era * 400;
+    int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    int64_t mp  = (5 * doy + 2) / 153;
+    *d = doy - (153 * mp + 2) / 5 + 1;
+    *m = mp + (mp < 10 ? 3 : -9);
+    *y = yy + (*m <= 2);
+}
+
 // gmtime_r-style: decompose seconds-since-epoch into a `struct tm`
 // in UTC. Returns the `out` pointer on success, NULL on failure.
-// MSVC's gmtime_s has a different signature; this wraps both.
+// Windows computes the proleptic breakdown directly (see above);
+// POSIX gmtime_r already handles the full 64-bit range.
 static inline struct tm* zjs_gmtime_r(const time_t* t, struct tm* out) {
 #ifdef _WIN32
-    if (gmtime_s(out, t) == 0) return out;
-    return NULL;
+    int64_t secs = (int64_t)*t;
+    int64_t days = secs / 86400;
+    int64_t rem  = secs % 86400;
+    if (rem < 0) { rem += 86400; days -= 1; }
+    out->tm_hour = (int)(rem / 3600);
+    out->tm_min  = (int)((rem % 3600) / 60);
+    out->tm_sec  = (int)(rem % 60);
+    int64_t y, m, d;
+    zjs_days_to_civil(days, &y, &m, &d);
+    out->tm_year = (int)(y - 1900);
+    out->tm_mon  = (int)(m - 1);
+    out->tm_mday = (int)d;
+    out->tm_wday = (int)(((days + 4) % 7 + 7) % 7);   /* 1970-01-01 = Thursday */
+    out->tm_yday = (int)(days - zjs_civil_to_days(y, 1, 1));
+    out->tm_isdst = 0;
+    return out;
 #else
     return gmtime_r(t, out);
 #endif
 }
 
-// timegm — inverse of gmtime, assuming UTC. Windows has _mkgmtime.
+// timegm — inverse of gmtime, assuming UTC. Windows computes it via
+// the civil conversion (with POSIX-style field normalization — month
+// overflow carries into the year, oversized mday/hour/min/sec carry
+// linearly); _mkgmtime would reject years outside ~1970..3000.
 static inline time_t zjs_timegm(struct tm* t) {
 #ifdef _WIN32
-    return _mkgmtime(t);
+    int64_t y = (int64_t)t->tm_year + 1900;
+    int64_t mon0 = (int64_t)t->tm_mon;          /* 0-based, may be out of range */
+    int64_t carry = mon0 >= 0 ? mon0 / 12 : -((-mon0 + 11) / 12);
+    y += carry;
+    int64_t m = mon0 - carry * 12 + 1;          /* 1..12 */
+    int64_t days = zjs_civil_to_days(y, m, 1) + ((int64_t)t->tm_mday - 1);
+    return (time_t)(days * 86400
+                    + (int64_t)t->tm_hour * 3600
+                    + (int64_t)t->tm_min * 60
+                    + (int64_t)t->tm_sec);
 #else
     return timegm(t);
 #endif
