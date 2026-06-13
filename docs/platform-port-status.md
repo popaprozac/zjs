@@ -249,8 +249,34 @@ platform-neutral fixes that also help macOS/Linux:
   `path.posix`/`path.win32`. 34/34 behavioral checks (drive roots,
   UNC, relative, parse). POSIX unchanged on mac/Linux.
 
-Still open: **Windows PGO + `lib-static`** in `build-windows.ps1`
-(release-shape parity + embedding) — the one deferred item.
+Still open: **Windows PGO** in `build-windows.ps1` (release-shape
+parity; the MinGW `-fprofile-generate`/`-fprofile-use` flow). `lib-static`
+is DONE (`build-windows.ps1 -Lib` → `build/win-x64/libzjs.a`, passes the
+399-assert `embed_smoke` ABI gate).
+
+#### macOS follow-ups (to apply on a Mac-validated pass)
+
+1. **Per-platform artifact layout (Makefile side).** Windows now writes
+   `build/win-x64/` and all three runners resolve `build/<os>-<arch>/zjs`
+   with a flat `build/zjs` fallback (so macOS keeps working *as-is* until
+   this lands — nothing is broken in the interim). To move macOS/Linux
+   onto the scheme, add a **separate native dir** rather than repointing
+   `BUILD_DIR` (which iOS=`build/ios`, cross=`build/zjs.linux.*`, and the
+   intermediate `*.o` targets all share):
+   ```makefile
+   UNAME_M    := $(shell uname -m)
+   HOST_OS    := $(if $(filter Darwin,$(UNAME_S)),macos,linux)
+   HOST_ARCH  := $(if $(filter arm64 aarch64,$(UNAME_M)),arm64,x64)
+   NATIVE_DIR := $(BUILD_DIR)/$(HOST_OS)-$(HOST_ARCH)
+   ```
+   Point the native artifacts (`CLI`, `LIB`, `LIBA`, `SMOKE*`) at
+   `$(NATIVE_DIR)`; leave iOS/cross/intermediates on `$(BUILD_DIR)`.
+   Verify with `make`, `make ios-all`, `make cross-all`.
+2. **Mirror `docs/build-windows.md` for macOS/iOS/Linux** (the user will
+   author this) — same structure: prereqs, CLI + lib-static + PGO, the
+   embedding link line, running the suites.
+3. **Pin `vendor/test262`** to a known commit so the macOS and Windows
+   dashboards share a denominator (the Row-5 suite-skew finding).
 
 ### Web-API surface — verification depth (added after review)
 
