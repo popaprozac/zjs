@@ -288,7 +288,7 @@ exhaustive coverage. Per-API status:
 | AbortController/Signal, Blob/File/FormData, Event/EventTarget/CustomEvent/DOMException, TextEncoder/Decoder(+streams), Streams(+BYOB/tee), structuredClone, performance.*, timers, URL/URLSearchParams | pure JS/engine — same code as macOS | ✅ wintercg areas pass 103/103 both platforms | none known |
 | `crypto.subtle` (digest/HMAC/AES-GCM/PBKDF2/HKDF) | BCrypt backend | ✅ wintercg + RFC test vectors | none known |
 | `fetch` | WinHTTP async | ⚠️ suite tests SHAPES + `data:` URLs only (by design, no network in CI); live TLS/redirect/streaming verified once via the port's loopback test | thin live-path coverage — applies to every platform, but Windows's WinHTTP state machine is the newest code |
-| **WebSocket** | WinHTTP WebSocket (`ws_windows.c`, 740 lines) | ❌ **no wintercg area exists for WebSocket on ANY platform** — the only gate is zapp's `verify-zjs-worker-fetch.sh`, which is macOS-only | the single biggest web-API verification debt; a `websocket` area with a loopback echo server would gate all three backends |
+| **WebSocket** | WinHTTP WebSocket (`ws_windows.c`, 740 lines) | ✅ **wintercg `websocket` area (7 tests)** — a loopback RFC 6455 echo server (`scripts/wintercg/ws_echo_server.py`, stdlib socket, no network) gates the platform client backend. Verified 7/7 on Windows (ws_windows); same area gates ws_apple/ws_linux on those hosts | text + binary round-trip, FIFO ordering, clean close, addEventListener — covers the common client surface. (Was the biggest web-API verification debt; now closed.) |
 | `navigator.*` | absent everywhere | — | parked (WinterTC navigator-registry, by design) |
 
 ### stdlib surface — Windows status per module
