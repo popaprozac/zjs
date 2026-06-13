@@ -57,6 +57,34 @@
 #  endif
 #endif
 
+// Saturating f64 → integer casts. A C cast of a double whose value
+// doesn't fit the target type is UB (C11 §6.3.1.4) — clang on arm64
+// happens to saturate (fcvtzs) and NaN→0, which is what the engine
+// has implicitly relied on; gcc on x86-64 emits cvttsd2si whose
+// out-of-range result is INT_MIN-flavored garbage. These helpers pin
+// the arm64/clang semantics on every platform: NaN → 0, ±overflow →
+// type min/max, else truncate toward zero. Use them for every cast
+// where the double comes from script (ToNumber/ToLength/fromIndex).
+#include <math.h>
+static inline int32_t zjs_f64_to_i32_sat(double d) {
+    if (isnan(d)) return 0;
+    if (d >= 2147483647.0) return INT32_MAX;
+    if (d <= -2147483648.0) return INT32_MIN;
+    return (int32_t)d;
+}
+static inline uint32_t zjs_f64_to_u32_sat(double d) {
+    if (isnan(d)) return 0;
+    if (d >= 4294967295.0) return UINT32_MAX;
+    if (d <= 0.0) return 0;
+    return (uint32_t)d;
+}
+static inline int64_t zjs_f64_to_i64_sat(double d) {
+    if (isnan(d)) return 0;
+    if (d >= 9223372036854775807.0) return INT64_MAX;
+    if (d <= -9223372036854775808.0) return INT64_MIN;
+    return (int64_t)d;
+}
+
 // realpath(path, resolved) — canonicalize a filesystem path.
 // `resolved` must point to a buffer of at least PATH_MAX bytes.
 // Returns `resolved` on success, NULL on failure (sets errno).

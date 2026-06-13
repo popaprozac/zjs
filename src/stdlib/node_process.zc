@@ -86,8 +86,8 @@ fn host_process_hrtime(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
         if prev.length >= 2 {
             let p0 = prev.elements[0];
             let p1 = prev.elements[1];
-            let prev_s:  i64 = if zjs_is_int32(p0) != 0 { (i64)zjs_as_int32(p0) } else { (i64)zjs_to_double(p0) };
-            let prev_ns: i64 = if zjs_is_int32(p1) != 0 { (i64)zjs_as_int32(p1) } else { (i64)zjs_to_double(p1) };
+            let prev_s:  i64 = if zjs_is_int32(p0) != 0 { (i64)zjs_as_int32(p0) } else { f64_to_i64_sat(zjs_to_double(p0)) };
+            let prev_ns: i64 = if zjs_is_int32(p1) != 0 { (i64)zjs_as_int32(p1) } else { f64_to_i64_sat(zjs_to_double(p1)) };
             sec = sec - prev_s;
             nsec = nsec - prev_ns;
             if nsec < 0 { sec = sec - 1; nsec = nsec + 1000000000; }
