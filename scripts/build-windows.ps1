@@ -31,6 +31,12 @@ $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 
+# Per-platform artifact dir: build/<os>-<arch>/ (matches the layout the
+# runners resolve and the Makefile's BUILD_DIR convention). x64 is the
+# only Windows arch we build today.
+$OutDir = "build\win-x64"
+$ObjDir = "$OutDir\obj"
+
 # Win32 link libraries (kept in sync with the //> windows: link
 # directives in src/lib.zc + tools/zjs.zc): bcrypt = CSPRNG +
 # crypto.subtle, psapi = peak RSS, winhttp = fetch/WS, ws2_32 =
@@ -70,16 +76,16 @@ foreach ($js in Get-ChildItem src\stdlib\*.js) {
     Write-Host "embedded $($js.Name) -> $gen"
 }
 
-New-Item -ItemType Directory -Force build | Out-Null
+New-Item -ItemType Directory -Force $OutDir | Out-Null
 
 if (-not $Lib) {
     # === CLI mode ====================================================
     $flags = if ($DebugBuild) { @("-w", "-O0", "-g", "-Isrc") }
              else             { @("-w", "--release", "-Isrc") }
-    Write-Host "zc build $($flags -join ' ') tools/zjs.zc -o build/zjs.exe"
-    zc build @flags tools/zjs.zc -o build/zjs.exe
+    Write-Host "zc build $($flags -join ' ') tools/zjs.zc -o $OutDir\zjs.exe"
+    zc build @flags tools/zjs.zc -o "$OutDir/zjs.exe"
     if ($LASTEXITCODE -ne 0) { Write-Error "zc build failed" }
-    Write-Host "OK: build\zjs.exe"
+    Write-Host "OK: $OutDir\zjs.exe"
     return
 }
 
@@ -87,24 +93,26 @@ if (-not $Lib) {
 # zc's `--release -c`/`-shared` analyzers reject some patterns the CLI
 # build accepts, so (like the Makefile) we transpile to one C TU and
 # drive gcc + ar ourselves.
-New-Item -ItemType Directory -Force build\lib | Out-Null
+New-Item -ItemType Directory -Force $ObjDir | Out-Null
 $qjs = @("-Isrc/third-party/qjs-regex", "-DCONFIG_ALL_UNICODE")
+$libC = "$OutDir\libzjs.c"
+$libA = "$OutDir\libzjs.a"
 
-Write-Host "[lib] transpile engine -> build/libzjs.c"
-zc transpile -w --release -Isrc src/lib.zc -o build/libzjs.c
+Write-Host "[lib] transpile engine -> $libC"
+zc transpile -w --release -Isrc src/lib.zc -o $libC
 if ($LASTEXITCODE -ne 0) { Write-Error "zc transpile failed" }
 
 # Each compile: gcc -O3 <deadstrip> <warns> [extra] -c <src> -o <obj>
 $units = @(
-    @{ src = "build/libzjs.c";                          obj = "build/lib/libzjs.o";        extra = (@("-Isrc") + $qjs) },
-    @{ src = "src/platform/http_windows.c";             obj = "build/lib/http_windows.o";  extra = @("-Isrc") },
-    @{ src = "src/platform/ws_windows.c";               obj = "build/lib/ws_windows.o";    extra = @("-Isrc") },
-    @{ src = "src/platform/socket_windows.c";           obj = "build/lib/socket_windows.o"; extra = @("-Isrc") },
-    @{ src = "src/platform/process_windows.c";          obj = "build/lib/process_windows.o"; extra = @("-Isrc") },
-    @{ src = "src/platform/qjs_regex_shim.c";           obj = "build/lib/qjs_regex_shim.o"; extra = $qjs },
-    @{ src = "src/third-party/qjs-regex/libregexp.c";   obj = "build/lib/qjs_libregexp.o";  extra = $qjs },
-    @{ src = "src/third-party/qjs-regex/libunicode.c";  obj = "build/lib/qjs_libunicode.o"; extra = $qjs },
-    @{ src = "src/third-party/aes-gcm/aes_gcm.c";       obj = "build/lib/aes_gcm.o";        extra = @() }
+    @{ src = $libC;                                     obj = "$ObjDir\libzjs.o";          extra = (@("-Isrc") + $qjs) },
+    @{ src = "src/platform/http_windows.c";             obj = "$ObjDir\http_windows.o";    extra = @("-Isrc") },
+    @{ src = "src/platform/ws_windows.c";               obj = "$ObjDir\ws_windows.o";      extra = @("-Isrc") },
+    @{ src = "src/platform/socket_windows.c";           obj = "$ObjDir\socket_windows.o";  extra = @("-Isrc") },
+    @{ src = "src/platform/process_windows.c";          obj = "$ObjDir\process_windows.o"; extra = @("-Isrc") },
+    @{ src = "src/platform/qjs_regex_shim.c";           obj = "$ObjDir\qjs_regex_shim.o";  extra = $qjs },
+    @{ src = "src/third-party/qjs-regex/libregexp.c";   obj = "$ObjDir\qjs_libregexp.o";   extra = $qjs },
+    @{ src = "src/third-party/qjs-regex/libunicode.c";  obj = "$ObjDir\qjs_libunicode.o";  extra = $qjs },
+    @{ src = "src/third-party/aes-gcm/aes_gcm.c";       obj = "$ObjDir\aes_gcm.o";         extra = @() }
 )
 foreach ($u in $units) {
     Write-Host "[lib] cc $($u.src)"
@@ -112,19 +120,19 @@ foreach ($u in $units) {
     if ($LASTEXITCODE -ne 0) { Write-Error "compile failed: $($u.src)" }
 }
 
-Write-Host "[lib] ar -> build/libzjs.a"
-if (Test-Path build/libzjs.a) { Remove-Item build/libzjs.a }
-& ar rcs build/libzjs.a (Get-ChildItem build/lib/*.o | ForEach-Object { $_.FullName })
+Write-Host "[lib] ar -> $libA"
+if (Test-Path $libA) { Remove-Item $libA }
+& ar rcs $libA (Get-ChildItem "$ObjDir\*.o" | ForEach-Object { $_.FullName })
 if ($LASTEXITCODE -ne 0) { Write-Error "ar failed" }
-$sz = (Get-Item build/libzjs.a).Length / 1MB
-Write-Host ("OK: build\libzjs.a ({0:N2} MB)" -f $sz)
+$sz = (Get-Item $libA).Length / 1MB
+Write-Host ("OK: $libA ({0:N2} MB)" -f $sz)
 
 # ABI gate: link tests/embed_smoke.c against the archive and run it.
 # -static pulls libwinpthread/libgcc in so the .exe has no MinGW DLL
 # runtime dependency (http_windows.c's async path uses pthreads).
 Write-Host "[lib] building + running embed_smoke (ABI gate) ..."
-& gcc -O0 -g -Wall -static -Iinclude tests/embed_smoke.c build/libzjs.a -lm @WinLibs -o build/smoke_static.exe
+& gcc -O0 -g -Wall -static -Iinclude tests/embed_smoke.c $libA -lm @WinLibs -o "$OutDir/smoke_static.exe"
 if ($LASTEXITCODE -ne 0) { Write-Error "smoke link failed" }
-& build/smoke_static.exe
+& "$OutDir/smoke_static.exe"
 if ($LASTEXITCODE -ne 0) { Write-Error "embed_smoke FAILED (ABI gate)" }
-Write-Host "OK: libzjs.a passes the embed_smoke ABI gate"
+Write-Host "OK: $libA passes the embed_smoke ABI gate"

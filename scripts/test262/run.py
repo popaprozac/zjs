@@ -74,7 +74,23 @@ elif IS_LINUX:
 else:
     PLATFORM_TAG = None
     PLATFORM_LABEL = "macOS"
-ZJS_BIN     = REPO_ROOT / "build" / ("zjs.exe" if IS_WINDOWS else "zjs")
+def _host_subdir():
+    """build/<os>-<arch> — must match build-windows.ps1's $OutDir and the
+    Makefile's BUILD_DIR convention."""
+    import platform as _pf
+    os_ = "win" if IS_WINDOWS else ("linux" if IS_LINUX else "macos")
+    m = _pf.machine().lower()
+    arch = "arm64" if m in ("arm64", "aarch64") else ("x64" if m in ("x86_64", "amd64") else m)
+    return f"{os_}-{arch}"
+
+def _resolve_zjs(stem="zjs"):
+    """Prefer build/<os>-<arch>/<stem>, fall back to flat build/<stem> so
+    the runner works before a platform's build moves to subdirs."""
+    exe = stem + (".exe" if IS_WINDOWS else "")
+    sub = REPO_ROOT / "build" / _host_subdir() / exe
+    return sub if sub.exists() else REPO_ROOT / "build" / exe
+
+ZJS_BIN     = _resolve_zjs()
 _suffix     = f"-{PLATFORM_TAG}" if PLATFORM_TAG else ""
 HISTORY     = OUT_DIR / f"history{_suffix}.jsonl"
 LAST_JSON   = OUT_DIR / f"last{_suffix}.json"

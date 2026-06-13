@@ -8,6 +8,13 @@ the `zjs.exe` CLI and the `libzjs.a` static archive for embedding.
 > macOS / Linux contributors: use the `Makefile` (`make cli`,
 > `make lib-static`, `make test`). This page is Windows-only.
 
+**Artifact layout.** Build outputs are arranged per platform under
+`build/<os>-<arch>/` — Windows lands in `build/win-x64/`, macOS in
+`build/macos-arm64/`, etc. (iOS keeps its existing `build/ios/`
+subtree). The test/bench runners resolve `build/<os>-<arch>/zjs` first
+and fall back to a flat `build/zjs`, so they work regardless of which
+layout a given platform's build currently uses.
+
 ## Prerequisites
 
 | Tool | Why | Install |
@@ -30,7 +37,7 @@ yourself only if `zc` lives apart from its `std/`.
 powershell -File scripts\build-windows.ps1
 ```
 
-Output: `build\zjs.exe`. Add `-DebugBuild` for an `-O0 -g` build.
+Output: `build\win-x64\zjs.exe`. Add `-DebugBuild` for an `-O0 -g` build.
 
 The script (a) creates a `std` junction to `$ZC_ROOT\std` — zc resolves
 `std/` against the current directory, so this is the Windows
@@ -40,9 +47,9 @@ Windows platform sources and link libraries come from the
 `//> windows:` build directives inside `tools\zjs.zc` and `src\lib.zc`.
 
 ```powershell
-build\zjs.exe eval "1 + 2"
-build\zjs.exe run path\to\script.js
-build\zjs.exe module path\to\module.mjs
+build\win-x64\zjs.exe eval "1 + 2"
+build\win-x64\zjs.exe run path\to\script.js
+build\win-x64\zjs.exe module path\to\module.mjs
 ```
 
 ## Build the static library (embedding)
@@ -51,7 +58,7 @@ build\zjs.exe module path\to\module.mjs
 powershell -File scripts\build-windows.ps1 -Lib
 ```
 
-Output: `build\libzjs.a` (~3.25 MB). The `-Lib` mode mirrors `make
+Output: `build\win-x64\libzjs.a` (~3.25 MB). The `-Lib` mode mirrors `make
 lib-static` + `make smoke-static`: it `zc transpile`s the engine to one
 C translation unit, compiles it together with the four Windows platform
 units (`http_windows`, `ws_windows`, `socket_windows`,
@@ -76,7 +83,7 @@ zjs_free_context(ctx);
 Link line:
 
 ```
-gcc -static -Iinclude your_host.c build/libzjs.a -lm \
+gcc -static -Iinclude your_host.c build/win-x64/libzjs.a -lm \
     -lbcrypt -lpsapi -lwinhttp -lws2_32 -lz -o your_host.exe
 ```
 

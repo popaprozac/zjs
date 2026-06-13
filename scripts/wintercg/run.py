@@ -42,7 +42,21 @@ IS_WINDOWS = sys.platform == "win32"
 IS_LINUX   = sys.platform.startswith("linux")
 PLATFORM_TAG = "windows" if IS_WINDOWS else ("linux" if IS_LINUX else None)
 _suffix    = f"-{PLATFORM_TAG}" if PLATFORM_TAG else ""
-ZJS_BIN    = REPO_ROOT / "build" / ("zjs.exe" if IS_WINDOWS else "zjs")
+
+def _host_subdir():
+    """build/<os>-<arch> — matches build-windows.ps1 + the Makefile BUILD_DIR."""
+    import platform as _pf
+    os_ = "win" if IS_WINDOWS else ("linux" if IS_LINUX else "macos")
+    m = _pf.machine().lower()
+    arch = "arm64" if m in ("arm64", "aarch64") else ("x64" if m in ("x86_64", "amd64") else m)
+    return f"{os_}-{arch}"
+
+def _resolve_zjs(stem="zjs"):
+    exe = stem + (".exe" if IS_WINDOWS else "")
+    sub = REPO_ROOT / "build" / _host_subdir() / exe
+    return sub if sub.exists() else REPO_ROOT / "build" / exe
+
+ZJS_BIN    = _resolve_zjs()
 
 RESULT_BEGIN = "@@WINTERCG_RESULTS_BEGIN@@"
 RESULT_END   = "@@WINTERCG_RESULTS_END@@"

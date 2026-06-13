@@ -56,17 +56,31 @@ elif IS_LINUX:
 else:
     PLATFORM_TAG = None
     PLATFORM_LABEL = "macOS"
+def _host_subdir():
+    """build/<os>-<arch> — matches build-windows.ps1 + the Makefile BUILD_DIR."""
+    import platform as _pf
+    os_ = "win" if IS_WINDOWS else ("linux" if IS_LINUX else "macos")
+    m = _pf.machine().lower()
+    arch = "arm64" if m in ("arm64", "aarch64") else ("x64" if m in ("x86_64", "amd64") else m)
+    return f"{os_}-{arch}"
+
+def _resolve_zjs(stem):
+    """Prefer build/<os>-<arch>/<stem>, fall back to flat build/<stem>."""
+    exe = stem + (".exe" if IS_WINDOWS else "")
+    sub = REPO_ROOT / "build" / _host_subdir() / exe
+    return sub if sub.exists() else REPO_ROOT / "build" / exe
+
 # #392: canonical bench numbers come from the PGO build (`make cli-pgo`).
-# $ZJS_BIN overrides; otherwise prefer build/zjs-pgo when present, falling
+# $ZJS_BIN overrides; otherwise prefer the PGO build when present, falling
 # back to the plain dev build.
-_default_bin = REPO_ROOT / "build" / ("zjs.exe" if IS_WINDOWS else "zjs")
-_pgo_bin     = REPO_ROOT / "build" / "zjs-pgo"
+_default_bin = _resolve_zjs("zjs")
+_pgo_bin     = _resolve_zjs("zjs-pgo")
 ZJS_BIN    = Path(os.environ["ZJS_BIN"]) if os.environ.get("ZJS_BIN") else (_pgo_bin if _pgo_bin.exists() else _default_bin)
 # Optional second binary built WITH the copy-and-patch JIT (`make cli-jit`).
 # When present it shows up as a JIT column in the solo run and a "zjs-jit"
 # engine in --compare, so the interpreter-vs-JIT delta is visible per bench.
 # Absent on non-JIT arches → benches behave exactly as before.
-ZJS_JIT_BIN = REPO_ROOT / "build" / ("zjs-jit.exe" if IS_WINDOWS else "zjs-jit")
+ZJS_JIT_BIN = _resolve_zjs("zjs-jit")
 _suffix    = f"-{PLATFORM_TAG}" if PLATFORM_TAG else ""
 HISTORY    = OUT_DIR / f"history{_suffix}.jsonl"
 LAST_JSON  = OUT_DIR / f"last{_suffix}.json"
