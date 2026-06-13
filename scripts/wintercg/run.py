@@ -62,8 +62,24 @@ RESULT_BEGIN = "@@WINTERCG_RESULTS_BEGIN@@"
 RESULT_END   = "@@WINTERCG_RESULTS_END@@"
 
 def run_probe(probe_path: Path, timeout: float = 30.0):
-    """Run a single probe file; return {area, totals, results}."""
-    src = HARNESS.read_text(encoding="utf-8") + "\n" + probe_path.read_text(encoding="utf-8")
+    """Run a single probe file; return {area, totals, results}.
+
+    The `websocket` probe needs a live WS peer: we spin up an in-process
+    RFC 6455 echo server (stdlib socket, no external network) and inject
+    its ws://127.0.0.1:<port> URL as globalThis.__WS_ECHO_URL. This
+    exercises the platform WebSocket *client* backend (ws_apple /
+    ws_linux / ws_windows) against a known-correct server.
+    """
+    preamble = ""
+    ws_server = None
+    if probe_path.stem == "websocket":
+        from ws_echo_server import WsEchoServer
+        ws_server = WsEchoServer()
+        ws_server.__enter__()
+        preamble = f'globalThis.__WS_ECHO_URL = "{ws_server.url}";\n'
+        timeout = max(timeout, 45.0)
+
+    src = preamble + HARNESS.read_text(encoding="utf-8") + "\n" + probe_path.read_text(encoding="utf-8")
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".js", delete=False, encoding="utf-8"
     ) as tf:
@@ -85,6 +101,8 @@ def run_probe(probe_path: Path, timeout: float = 30.0):
     finally:
         try: tmp_path.unlink()
         except OSError: pass
+        if ws_server is not None:
+            ws_server.__exit__(None, None, None)
 
     out = proc.stdout or ""
     err = proc.stderr or ""
