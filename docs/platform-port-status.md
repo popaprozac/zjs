@@ -200,6 +200,51 @@ every gcc target incl. Linux), then row 1 + 3 (cheap, +39 tests), then
 Windows PGO + `lib-static` in the ps1 (closes the release-shape gap and
 unblocks zapp-on-Windows), then the runtime-layer rows opportunistically.
 
+#### Progress — branch `windows-port-2` (2026-06-12)
+
+All four engine rows + the top stdlib gap closed; all are
+platform-neutral fixes that also help macOS/Linux:
+
+- **Row 2 (UB casts) — DONE.** `portability.h` gains saturating
+  `zjs_f64_to_{i32,u32,i64}_sat` (NaN→0, overflow→min/max, pinning the
+  clang-arm64 semantics on every target); every script-derived f64→int
+  cast in `context.zc`/stdlib routes through them. Fixed all 8 Array
+  Infinity/boundary tests; also fixed the macOS-only
+  `String.fromCharCode` S9.7_A1 (real ToUint16, NaN/±0/±Inf→+0).
+- **Row 1 (Error.prototype.stack) — DONE (29/32).** Accessor pair
+  installed on `Error.prototype` per the error-stacks proposal.
+  Flushed out 3 latent platform-neutral bugs: `delete arr.nonIndexKey`
+  not removing the props-bag slot, `getOwnPropertyDescriptor` reading
+  deleted-sentinel slots as live, `propertyIsEnumerable` always-false
+  on function `.props` expandos. Remaining 3: the instance-attrs spec
+  change + 2 proxy-trap-in-setter cases.
+- **Row 3 (CRLF parse errors) — DONE (7/7).** Lexer treats `<CR>` as a
+  LineTerminator (string continuations, ASI, `//` comments); the
+  test262 runner stops Python text-mode `\n→\r\n` rewriting
+  (`newline=""`).
+- **Row 4 (Date extreme years) — DONE (+20).** Added TimeClip
+  (§21.4.1.1) as the single chokepoint for every `[[DateValue]]`
+  write; compose epoch-ms in f64 day-space via `zjs_civil_to_days`
+  (no struct-tm int truncation); moved the MakeFullYear 0-99→1900
+  mapping out of the shared composer into only the ctor/UTC/setYear
+  callers (was leaking into `setFullYear`). Windows `gmtime_r`/`timegm`
+  shims compute the proleptic breakdown directly (off MSVCRT's
+  ~1970..3000 limit). Net built-ins/Date 476→496, 0 regressions.
+- **Row 5 (harness enumeration drift) — INVESTIGATED, no code bug.**
+  The runner enumerates `sorted(rglob("*.js"))` + config-driven skips —
+  fully platform-independent (no case-folding / symlink logic). The
+  61-total / 29-skip gap is test262 *suite-version skew*: the macOS
+  `last.json` baseline was run against an older checkout than the
+  Windows fresh clone. Fix is operational: compare same-commit runs.
+- **`node:path` win32 personality — DONE.** Rewrote from Node's
+  `lib/path.js` with both `posix` + `win32`; default + named exports
+  bind to the host personality (`process.platform`), both reachable as
+  `path.posix`/`path.win32`. 34/34 behavioral checks (drive roots,
+  UNC, relative, parse). POSIX unchanged on mac/Linux.
+
+Still open: **Windows PGO + `lib-static`** in `build-windows.ps1`
+(release-shape parity + embedding) — the one deferred item.
+
 ### Web-API surface — verification depth (added after review)
 
 The "WinterCG 103/103 on both" line above is a SMOKE suite, not
