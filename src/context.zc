@@ -29540,6 +29540,383 @@ fn host_temporal_monthday_to_plain_date(ctx: ZjsContext*, args: ZjsValue*, argc:
     return zjs_cell_from_ptr((void*)t);
 }
 
+// ===== #403 inc2 — Plain-type field manipulation (macOS, tz-excluded) =
+// with / withCalendar / toPlainDateTime / toPlainYearMonth /
+// toPlainMonthDay. Pure calendar+time field work — no timezone code
+// (toZonedDateTime is deliberately out of scope; the Windows session
+// owns the tz machinery).
+
+// GetTemporalOverflowOption (§13.x): reads options.overflow from an
+// options argument. Returns 0 = "constrain" (default), 1 = "reject";
+// -1 with an armed throw on a bad value or non-object options.
+fn temporal_read_overflow(ctx: ZjsContext*, opts: ZjsValue) -> i32 {
+    if zjs_is_undefined(opts) != 0 { return 0; }
+    if !value_is_object_type(opts) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"options must be an object or undefined", 37);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return -1;
+    }
+    let ov = property_get(ctx, opts, ctx_intern_string(ctx, (char*)"overflow", 8));
+    if ctx.pending_throw_active { return -1; }
+    if zjs_is_undefined(ov) != 0 { return 0; }
+    let s = zjs_to_string(ctx, ov);
+    if ctx.pending_throw_active { return -1; }
+    let ss = zjs_as_string(s);
+    let is_constrain: int = 0; let is_reject: int = 0;
+    raw {
+        is_constrain = (ss->length == 9 && memcmp(ss->data, "constrain", 9) == 0) ? 1 : 0;
+        is_reject    = (ss->length == 6 && memcmp(ss->data, "reject", 6) == 0) ? 1 : 0;
+    }
+    if is_constrain != 0 { return 0; }
+    if is_reject != 0 { return 1; }
+    let _ = temporal_range_error(ctx, (char*)"overflow must be 'constrain' or 'reject'", 40);
+    return -1;
+}
+
+// §with rejects property bags carrying calendar/timeZone (those would
+// silently change the type). Returns 1 (+armed TypeError) if present.
+fn temporal_bag_rejects_cal_tz(ctx: ZjsContext*, arg: ZjsValue) -> int {
+    let cv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"calendar", 8));
+    if ctx.pending_throw_active { return 1; }
+    let tv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"timeZone", 8));
+    if ctx.pending_throw_active { return 1; }
+    if zjs_is_undefined(cv) == 0 || zjs_is_undefined(tv) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"with() cannot set calendar or timeZone", 38);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return 1;
+    }
+    return 0;
+}
+
+// PlainDateTime.prototype.with(dateTimeLike [, options]).
+fn host_temporal_plaindatetime_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_DATETIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainDateTime", 28);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !value_is_object_type(arg) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"with() expects an object", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    if temporal_bag_rejects_cal_tz(ctx, arg) != 0 { return zjs_undefined(); }
+    // Read each field; absent keeps this's value. Order: spec reads
+    // alphabetically but the observable effect (which fields change) is
+    // order-independent here since each is read once.
+    let yv  = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"year", 4));
+    let mov = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"month", 5));
+    let dv  = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"day", 3));
+    let hv  = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"hour", 4));
+    let miv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"minute", 6));
+    let sv  = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"second", 6));
+    let msv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"millisecond", 11));
+    let usv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"microsecond", 11));
+    let nsv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"nanosecond", 10));
+    // At least one recognized field is required.
+    let any: int = 0;
+    raw {
+        any = (!zjs_is_undefined(yv) || !zjs_is_undefined(mov) || !zjs_is_undefined(dv)
+            || !zjs_is_undefined(hv) || !zjs_is_undefined(miv) || !zjs_is_undefined(sv)
+            || !zjs_is_undefined(msv) || !zjs_is_undefined(usv) || !zjs_is_undefined(nsv)) ? 1 : 0;
+    }
+    if any == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"with() requires at least one recognized field", 45);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let ov = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let overflow = temporal_read_overflow(ctx, ov);
+    if overflow < 0 { return zjs_undefined(); }
+    let y  = if zjs_is_undefined(yv)  != 0 { (i64)s.year }        else { (i64)zjs_to_double(yv) };
+    let mo = if zjs_is_undefined(mov) != 0 { (i64)s.month }       else { (i64)zjs_to_double(mov) };
+    let d  = if zjs_is_undefined(dv)  != 0 { (i64)s.day }         else { (i64)zjs_to_double(dv) };
+    let h  = if zjs_is_undefined(hv)  != 0 { (i64)s.hour }        else { (i64)zjs_to_double(hv) };
+    let mi = if zjs_is_undefined(miv) != 0 { (i64)s.minute }      else { (i64)zjs_to_double(miv) };
+    let se = if zjs_is_undefined(sv)  != 0 { (i64)s.second }      else { (i64)zjs_to_double(sv) };
+    let ms = if zjs_is_undefined(msv) != 0 { (i64)s.millisecond } else { (i64)zjs_to_double(msv) };
+    let us = if zjs_is_undefined(usv) != 0 { (i64)s.microsecond } else { (i64)zjs_to_double(usv) };
+    let ns = if zjs_is_undefined(nsv) != 0 { (i64)s.nanosecond }  else { (i64)zjs_to_double(nsv) };
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if overflow == 1 {
+        // reject: every field must already be in range.
+        if !temporal_date_valid(y, mo, d) { return temporal_range_error(ctx, (char*)"invalid ISO date", 16); }
+        if !temporal_time_valid(h, mi, se, ms, us, ns) { return temporal_range_error(ctx, (char*)"invalid time", 12); }
+    } else {
+        let cc: i64[3];
+        let cp: i64* = NULL; raw { cp = &cc[0]; }
+        temporal_constrain_date(y, mo, d, cp);
+        y = cc[0]; mo = cc[1]; d = cc[2];
+        if h  < 0 { h  = 0; } if h  > 23 { h  = 23; }
+        if mi < 0 { mi = 0; } if mi > 59 { mi = 59; }
+        if se < 0 { se = 0; } if se > 59 { se = 59; }
+        if ms < 0 { ms = 0; } if ms > 999 { ms = 999; }
+        if us < 0 { us = 0; } if us > 999 { us = 999; }
+        if ns < 0 { ns = 0; } if ns > 999 { ns = 999; }
+        if !temporal_date_valid(y, mo, d) { return temporal_range_error(ctx, (char*)"invalid ISO date", 16); }
+    }
+    let t = zjs_temporal_new(TMP_PLAIN_DATETIME);
+    t.year = (i32)y; t.month = (i32)mo; t.day = (i32)d;
+    t.hour = (i32)h; t.minute = (i32)mi; t.second = (i32)se;
+    t.millisecond = (i32)ms; t.microsecond = (i32)us; t.nanosecond = (i32)ns;
+    t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// PlainYearMonth.prototype.with(yearMonthLike [, options]).
+fn host_temporal_yearmonth_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_YEARMONTH) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainYearMonth", 29);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !value_is_object_type(arg) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"with() expects an object", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    if temporal_bag_rejects_cal_tz(ctx, arg) != 0 { return zjs_undefined(); }
+    let yv  = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"year", 4));
+    let mov = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"month", 5));
+    if zjs_is_undefined(yv) != 0 && zjs_is_undefined(mov) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"with() requires year or month", 29);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let ov = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let overflow = temporal_read_overflow(ctx, ov);
+    if overflow < 0 { return zjs_undefined(); }
+    let y  = if zjs_is_undefined(yv)  != 0 { (i64)s.year }  else { (i64)zjs_to_double(yv) };
+    let mo = if zjs_is_undefined(mov) != 0 { (i64)s.month } else { (i64)zjs_to_double(mov) };
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    if overflow == 1 {
+        if mo < 1 || mo > 12 { return temporal_range_error(ctx, (char*)"invalid month", 13); }
+    } else {
+        if mo < 1 { mo = 1; } if mo > 12 { mo = 12; }
+    }
+    if y < -271821 || y > 275760 { return temporal_range_error(ctx, (char*)"year out of range", 17); }
+    let t = zjs_temporal_new(TMP_PLAIN_YEARMONTH);
+    t.year = (i32)y; t.month = (i32)mo; t.day = 1;
+    t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// PlainMonthDay.prototype.with(monthDayLike [, options]).
+fn host_temporal_monthday_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_MONTHDAY) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainMonthDay", 28);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if !value_is_object_type(arg) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"with() expects an object", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    if temporal_bag_rejects_cal_tz(ctx, arg) != 0 { return zjs_undefined(); }
+    let mov = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"month", 5));
+    let dv  = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"day", 3));
+    if zjs_is_undefined(mov) != 0 && zjs_is_undefined(dv) != 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"with() requires month or day", 28);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let ov = if argc >= 2 { args[1] } else { zjs_undefined() };
+    let overflow = temporal_read_overflow(ctx, ov);
+    if overflow < 0 { return zjs_undefined(); }
+    let mo = if zjs_is_undefined(mov) != 0 { (i64)s.month } else { (i64)zjs_to_double(mov) };
+    let d  = if zjs_is_undefined(dv)  != 0 { (i64)s.day }   else { (i64)zjs_to_double(dv) };
+    if ctx.pending_throw_active { return zjs_undefined(); }
+    // Validate/constrain against 1972 (leap) so Feb 29 stays legal.
+    if overflow == 1 {
+        if mo < 1 || mo > 12 || d < 1 || d > iso_days_in_month(1972, mo) {
+            return temporal_range_error(ctx, (char*)"invalid month-day", 17);
+        }
+    } else {
+        if mo < 1 { mo = 1; } if mo > 12 { mo = 12; }
+        let dim = iso_days_in_month(1972, mo);
+        if d < 1 { d = 1; } if d > dim { d = dim; }
+    }
+    let t = zjs_temporal_new(TMP_PLAIN_MONTHDAY);
+    t.year = 1972; t.month = (i32)mo; t.day = (i32)d;
+    t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// ToTemporalCalendarIdentifier(arg): only "iso8601" is supported.
+// Returns 1 if arg names the ISO calendar, 0 otherwise (+armed
+// RangeError for any other string, TypeError for bad type).
+fn temporal_calendar_is_iso(ctx: ZjsContext*, arg: ZjsValue) -> int {
+    let s: ZjsString* = NULL;
+    if zjs_is_string(arg) != 0 {
+        s = zjs_as_string(arg);
+    } else if value_is_object_type(arg) {
+        // A Temporal object's calendar, or { calendar } bag — read .calendar.
+        if zjs_is_temporal(arg) != 0 {
+            let tt = zjs_as_temporal(arg);
+            if tt.calendar != NULL { s = tt.calendar; }
+        }
+        if s == NULL {
+            let cv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"calendar", 8));
+            if ctx.pending_throw_active { return 0; }
+            if zjs_is_string(cv) != 0 { s = zjs_as_string(cv); }
+        }
+        if s == NULL {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"invalid calendar", 16);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return 0;
+        }
+    } else {
+        let conv = zjs_to_string(ctx, arg);
+        if ctx.pending_throw_active { return 0; }
+        s = zjs_as_string(conv);
+    }
+    let is_iso: int = 0;
+    raw { is_iso = (s->length == 7 && memcmp(s->data, "iso8601", 7) == 0) ? 1 : 0; }
+    if is_iso != 0 { return 1; }
+    let _ = temporal_range_error(ctx, (char*)"only the iso8601 calendar is supported", 38);
+    return 0;
+}
+
+// PlainDate.prototype.withCalendar(calendar) — iso8601 only; clone.
+fn host_temporal_plaindate_with_calendar(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_DATE) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainDate", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if temporal_calendar_is_iso(ctx, arg) == 0 { return zjs_undefined(); }
+    let s = zjs_as_temporal(this_v);
+    let t = zjs_temporal_new(TMP_PLAIN_DATE);
+    t.year = s.year; t.month = s.month; t.day = s.day;
+    t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// PlainDateTime.prototype.withCalendar(calendar) — iso8601 only; clone.
+fn host_temporal_plaindatetime_with_calendar(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_DATETIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainDateTime", 28);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if temporal_calendar_is_iso(ctx, arg) == 0 { return zjs_undefined(); }
+    let s = zjs_as_temporal(this_v);
+    let t = zjs_temporal_new(TMP_PLAIN_DATETIME);
+    t.year = s.year; t.month = s.month; t.day = s.day;
+    t.hour = s.hour; t.minute = s.minute; t.second = s.second;
+    t.millisecond = s.millisecond; t.microsecond = s.microsecond; t.nanosecond = s.nanosecond;
+    t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// PlainDate.prototype.toPlainDateTime([timeLike]) — combine with a time
+// (default midnight). Accepts a PlainTime or a plain time-fields object.
+fn host_temporal_plaindate_to_plain_datetime(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_DATE) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainDate", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let h: i64 = 0; let mi: i64 = 0; let se: i64 = 0;
+    let ms: i64 = 0; let us: i64 = 0; let ns: i64 = 0;
+    let arg = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_undefined(arg) == 0 {
+        if zjs_is_temporal_kind(arg, TMP_PLAIN_TIME) != 0 {
+            let tt = zjs_as_temporal(arg);
+            h = (i64)tt.hour; mi = (i64)tt.minute; se = (i64)tt.second;
+            ms = (i64)tt.millisecond; us = (i64)tt.microsecond; ns = (i64)tt.nanosecond;
+        } else if value_is_object_type(arg) {
+            let hv  = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"hour", 4));
+            let miv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"minute", 6));
+            let sv  = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"second", 6));
+            let msv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"millisecond", 11));
+            let usv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"microsecond", 11));
+            let nsv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"nanosecond", 10));
+            if zjs_is_undefined(hv)  == 0 { h  = (i64)zjs_to_double(hv); }
+            if zjs_is_undefined(miv) == 0 { mi = (i64)zjs_to_double(miv); }
+            if zjs_is_undefined(sv)  == 0 { se = (i64)zjs_to_double(sv); }
+            if zjs_is_undefined(msv) == 0 { ms = (i64)zjs_to_double(msv); }
+            if zjs_is_undefined(usv) == 0 { us = (i64)zjs_to_double(usv); }
+            if zjs_is_undefined(nsv) == 0 { ns = (i64)zjs_to_double(nsv); }
+            if ctx.pending_throw_active { return zjs_undefined(); }
+            if !temporal_time_valid(h, mi, se, ms, us, ns) { return temporal_range_error(ctx, (char*)"invalid time", 12); }
+        } else {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"toPlainDateTime expects a time or object", 40);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+    }
+    let t = zjs_temporal_new(TMP_PLAIN_DATETIME);
+    t.year = s.year; t.month = s.month; t.day = s.day;
+    t.hour = (i32)h; t.minute = (i32)mi; t.second = (i32)se;
+    t.millisecond = (i32)ms; t.microsecond = (i32)us; t.nanosecond = (i32)ns;
+    t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// PlainDate.prototype.toPlainYearMonth() — project year+month.
+fn host_temporal_plaindate_to_plain_yearmonth(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let _u = args; let _u2 = argc;
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_DATE) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainDate", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let t = zjs_temporal_new(TMP_PLAIN_YEARMONTH);
+    t.year = s.year; t.month = s.month; t.day = 1;
+    t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
+// PlainDate.prototype.toPlainMonthDay() — project month+day (ref 1972).
+fn host_temporal_plaindate_to_plain_monthday(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let _u = args; let _u2 = argc;
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_DATE) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainDate", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let s = zjs_as_temporal(this_v);
+    let t = zjs_temporal_new(TMP_PLAIN_MONTHDAY);
+    t.year = 1972; t.month = s.month; t.day = s.day;
+    t.calendar = zjs_as_string(ctx_intern_string(ctx, (char*)"iso8601", 7));
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+
 // --- Temporal.ZonedDateTime (T5) ---
 // Stored as epoch_ns (BigInt) + timezone (interned id string) +
 // calendar. Wall-clock fields are derived on demand by applying the
@@ -30217,6 +30594,19 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"until", pduntil_ptr));
     object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"since", 5),
                ctx_make_host_function(ctx, (char*)"since", pdsince_ptr));
+    // #403 inc2 — withCalendar + projection conversions.
+    let pdwc_ptr: void* = NULL; raw { pdwc_ptr = (void*)host_temporal_plaindate_with_calendar; }
+    let pd2dt_ptr: void* = NULL; raw { pd2dt_ptr = (void*)host_temporal_plaindate_to_plain_datetime; }
+    let pd2ym_ptr: void* = NULL; raw { pd2ym_ptr = (void*)host_temporal_plaindate_to_plain_yearmonth; }
+    let pd2md_ptr: void* = NULL; raw { pd2md_ptr = (void*)host_temporal_plaindate_to_plain_monthday; }
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"withCalendar", 12),
+               ctx_make_host_function_arity(ctx, (char*)"withCalendar", pdwc_ptr, 1));
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"toPlainDateTime", 15),
+               ctx_make_host_function_arity(ctx, (char*)"toPlainDateTime", pd2dt_ptr, 0));
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"toPlainYearMonth", 16),
+               ctx_make_host_function_arity(ctx, (char*)"toPlainYearMonth", pd2ym_ptr, 0));
+    object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"toPlainMonthDay", 15),
+               ctx_make_host_function_arity(ctx, (char*)"toPlainMonthDay", pd2md_ptr, 0));
     object_set(ctx, ctx.realm.temporal_plaindate_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pd_ctor);
     let pdfrom_ptr: void* = NULL; raw { pdfrom_ptr = (void*)host_temporal_plaindate_from; }
     let pdcmp_ptr: void* = NULL; raw { pdcmp_ptr = (void*)host_temporal_plaindate_compare; }
@@ -30294,6 +30684,13 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"until", pdtunt_ptr));
     object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"since", 5),
                ctx_make_host_function(ctx, (char*)"since", pdtsin_ptr));
+    // #403 inc2 — with + withCalendar.
+    let pdtwith_ptr: void* = NULL; raw { pdtwith_ptr = (void*)host_temporal_plaindatetime_with; }
+    let pdtwc_ptr: void* = NULL; raw { pdtwc_ptr = (void*)host_temporal_plaindatetime_with_calendar; }
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"with", 4),
+               ctx_make_host_function_arity(ctx, (char*)"with", pdtwith_ptr, 1));
+    object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"withCalendar", 12),
+               ctx_make_host_function_arity(ctx, (char*)"withCalendar", pdtwc_ptr, 1));
     object_set(ctx, ctx.realm.temporal_plaindatetime_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), pdt_ctor);
     let pdtfrom_ptr: void* = NULL; raw { pdtfrom_ptr = (void*)host_temporal_plaindatetime_from; }
     let pdtcmp_ptr: void* = NULL; raw { pdtcmp_ptr = (void*)host_temporal_plaindatetime_compare; }
@@ -30325,6 +30722,9 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"subtract", ymsub_ptr));
     object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"toPlainDate", 11),
                ctx_make_host_function(ctx, (char*)"toPlainDate", ym2d_ptr));
+    let ymwith_ptr: void* = NULL; raw { ymwith_ptr = (void*)host_temporal_yearmonth_with; }   // #403 inc2
+    object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"with", 4),
+               ctx_make_host_function_arity(ctx, (char*)"with", ymwith_ptr, 1));
     object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), ym_ctor);
     let ymfrom_ptr: void* = NULL; raw { ymfrom_ptr = (void*)host_temporal_yearmonth_from; }
     let ymcmp_ptr: void* = NULL; raw { ymcmp_ptr = (void*)host_temporal_yearmonth_compare; }
@@ -30350,6 +30750,9 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"equals", mdeq_ptr));
     object_set(ctx, ctx.realm.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"toPlainDate", 11),
                ctx_make_host_function(ctx, (char*)"toPlainDate", md2d_ptr));
+    let mdwith_ptr: void* = NULL; raw { mdwith_ptr = (void*)host_temporal_monthday_with; }   // #403 inc2
+    object_set(ctx, ctx.realm.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"with", 4),
+               ctx_make_host_function_arity(ctx, (char*)"with", mdwith_ptr, 1));
     object_set(ctx, ctx.realm.temporal_monthday_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), md_ctor);
     let mdfrom_ptr: void* = NULL; raw { mdfrom_ptr = (void*)host_temporal_monthday_from; }
     property_set(ctx, md_ctor, ctx_intern_string(ctx, (char*)"from", 4),
