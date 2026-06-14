@@ -71,12 +71,17 @@ def run_probe(probe_path: Path, timeout: float = 30.0):
     ws_linux / ws_windows) against a known-correct server.
     """
     preamble = ""
-    ws_server = None
+    servers = []  # (instance,) entered context managers to tear down
     if probe_path.stem == "websocket":
         from ws_echo_server import WsEchoServer
-        ws_server = WsEchoServer()
-        ws_server.__enter__()
-        preamble = f'globalThis.__WS_ECHO_URL = "{ws_server.url}";\n'
+        s = WsEchoServer(); s.__enter__(); servers.append(s)
+        preamble = f'globalThis.__WS_ECHO_URL = "{s.url}";\n'
+        timeout = max(timeout, 45.0)
+    elif probe_path.stem == "fetch":
+        # Live-HTTP transport tests (the data:/shape tests need no server).
+        from http_echo_server import HttpEchoServer
+        s = HttpEchoServer(); s.__enter__(); servers.append(s)
+        preamble = f'globalThis.__HTTP_ECHO_URL = "{s.url}";\n'
         timeout = max(timeout, 45.0)
 
     src = preamble + HARNESS.read_text(encoding="utf-8") + "\n" + probe_path.read_text(encoding="utf-8")
@@ -101,8 +106,8 @@ def run_probe(probe_path: Path, timeout: float = 30.0):
     finally:
         try: tmp_path.unlink()
         except OSError: pass
-        if ws_server is not None:
-            ws_server.__exit__(None, None, None)
+        for s in servers:
+            s.__exit__(None, None, None)
 
     out = proc.stdout or ""
     err = proc.stderr or ""

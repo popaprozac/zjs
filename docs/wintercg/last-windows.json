@@ -1,8 +1,8 @@
 {
-  "when": "2026-06-13 22:31 UTC",
+  "when": "2026-06-14 16:53 UTC",
   "zjs_bin": "C:\\Users\\Zach\\zjs\\build\\win-x64\\zjs.exe",
   "totals": {
-    "pass": 110,
+    "pass": 115,
     "fail": 0,
     "timeout": 0,
     "error": 0
@@ -316,7 +316,7 @@
     {
       "area": "fetch",
       "totals": {
-        "pass": 12,
+        "pass": 17,
         "fail": 0,
         "timeout": 0,
         "error": 0
@@ -373,7 +373,32 @@
           "message": ""
         },
         {
+          "name": "fetch live response headers",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "fetch live non-2xx status",
+          "status": "pass",
+          "message": ""
+        },
+        {
           "name": "fetch data: URL",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "fetch live POST body + request headers",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "fetch live GET json + Response.json()",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "fetch live GET text",
           "status": "pass",
           "message": ""
         },
