@@ -109,6 +109,29 @@ fn shutdown_requested() -> bool {
     return r != 0;
 }
 
+// Enable ANSI escape processing on the Windows console (legacy conhost
+// renders ESC[…m literally without it). The engine emits no colors
+// itself, but JS apps run under `zjs run` that colorize based on
+// tty.isatty()/process.stdout.isTTY then render correctly — matching
+// Node, which does the same at startup. No-op when output is redirected
+// (GetConsoleMode fails) or on a console that already has it on.
+fn enable_console_ansi() -> void {
+    raw {
+        #if defined(_WIN32)
+            HANDLE outs[2];
+            outs[0] = GetStdHandle(STD_OUTPUT_HANDLE);
+            outs[1] = GetStdHandle(STD_ERROR_HANDLE);
+            for (int i = 0; i < 2; i++) {
+                DWORD mode = 0;
+                if (outs[i] && outs[i] != INVALID_HANDLE_VALUE
+                    && GetConsoleMode(outs[i], &mode)) {
+                    SetConsoleMode(outs[i], mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+                }
+            }
+        #endif
+    }
+}
+
 // Single event-loop driver — used by every CLI subcommand that needs
 // to pump async work after the top-level body returns. Replaces three
 // near-duplicate copies (run, eval, module run).
@@ -1278,6 +1301,7 @@ fn main(argc: int, argv: char**) -> int {
     // event-loop driver; subcommands that don't drive the loop
     // (parse / lex / --version) are unaffected.
     install_signal_handlers();
+    enable_console_ansi();   // Windows: render ANSI from JS apps (no-op elsewhere)
 
     // JIT self-test (only present in a ZJS_JIT build; default/iOS builds omit
     // the stitcher entirely). Proves the engine binary contains + runs the
