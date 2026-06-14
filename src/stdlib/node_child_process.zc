@@ -456,6 +456,41 @@ fn populate_node_child_process(ctx: ZjsContext*, exports: ZjsObject*) -> void {
         static const char CP_ASYNC_BOOTSTRAP[] =
             "(function(exports) {\n"
             "  function defer(fn) { queueMicrotask(fn); }\n"
+            // Node returns Buffers (not plain Uint8Arrays) from the sync
+            // trio when no string encoding is set; the C layer hands back
+            // a raw Uint8Array, so its toString() comma-joins byte values
+            // instead of decoding (execSync().toString() was unusable).
+            // Brand the result in place (zero-copy) as a Buffer. String
+            // results (encoding set) pass through untouched.
+            "  function toBuf(v) {\n"
+            "    return (v instanceof Uint8Array && !v._isBuffer && typeof Buffer === 'function')\n"
+            "      ? Object.setPrototypeOf(v, Buffer.prototype) : v;\n"
+            "  }\n"
+            "  function bufErr(e) {\n"
+            "    if (e && typeof e === 'object') {\n"
+            "      if (e.stdout !== undefined) e.stdout = toBuf(e.stdout);\n"
+            "      if (e.stderr !== undefined) e.stderr = toBuf(e.stderr);\n"
+            "    }\n"
+            "    return e;\n"
+            "  }\n"
+            "  var _spawnSync = exports.spawnSync;\n"
+            "  exports.spawnSync = function() {\n"
+            "    var r = _spawnSync.apply(this, arguments);\n"
+            "    if (r && typeof r === 'object') {\n"
+            "      r.stdout = toBuf(r.stdout);\n"
+            "      r.stderr = toBuf(r.stderr);\n"
+            "      if (Array.isArray(r.output)) r.output = r.output.map(toBuf);\n"
+            "    }\n"
+            "    return r;\n"
+            "  };\n"
+            "  function wrapSync(fn) {\n"
+            "    return function() {\n"
+            "      try { return toBuf(fn.apply(this, arguments)); }\n"
+            "      catch (e) { throw bufErr(e); }\n"
+            "    };\n"
+            "  }\n"
+            "  exports.execSync = wrapSync(exports.execSync);\n"
+            "  exports.execFileSync = wrapSync(exports.execFileSync);\n"
             "  function mergeOpts(options) {\n"
             "    var out = { encoding: 'utf8' };\n"
             "    if (options) {\n"
