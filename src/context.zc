@@ -29179,6 +29179,81 @@ fn host_temporal_plaindatetime_since(ctx: ZjsContext*, args: ZjsValue*, argc: u3
     return temporal_pdt_diff_impl(ctx, -1, args, argc);
 }
 
+// #403 inc2 Batch B — PlainTime.until/since(other[,opts]) → Duration.
+// Time-only difference balanced into hours..nanoseconds. largestUnit
+// defaults to 'hour' and MUST be a time unit (day/week/month/year →
+// RangeError). dir +1 until (this→other), -1 since (other→this).
+// (smallestUnit rounding is a uniform follow-up across all diff sites.)
+fn temporal_plaintime_diff_impl(ctx: ZjsContext*, dir: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_TIME) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainTime", 24);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let other = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_temporal_kind(other, TMP_PLAIN_TIME) == 0 {
+        let oa: ZjsValue[1]; oa[0] = other; let oap: ZjsValue* = NULL; raw { oap = &oa[0]; }
+        other = host_temporal_plaintime_from(ctx, oap, 1);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
+    // largestUnit: default 'hour'; a date-or-bigger unit is invalid.
+    let largest = temporal_parse_largest_unit(ctx, if argc >= 2 { args[1] } else { zjs_undefined() }, -1);
+    if largest >= 0 {
+        return temporal_range_error(ctx, (char*)"largestUnit must be a time unit for PlainTime", 45);
+    }
+    let a = zjs_as_temporal(this_v); let b = zjs_as_temporal(other);
+    let na = temporal_time_total_ns(a); let nb = temporal_time_total_ns(b);
+    let total: i64 = if dir > 0 { nb - na } else { na - nb };
+    let t = zjs_temporal_new(TMP_DURATION);
+    temporal_balance_time(t, total, largest);
+    ctx_register_cell(ctx, (void*)t);
+    return zjs_cell_from_ptr((void*)t);
+}
+fn host_temporal_plaintime_until(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_plaintime_diff_impl(ctx, 1, args, argc);
+}
+fn host_temporal_plaintime_since(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_plaintime_diff_impl(ctx, -1, args, argc);
+}
+
+// #403 inc2 Batch B — PlainYearMonth.until/since(other[,opts]) →
+// Duration in years/months (day=1 reference for both). largestUnit
+// defaults to 'year'; only year/month are valid (week/day/time →
+// RangeError). dir +1 until, -1 since.
+fn temporal_yearmonth_diff_impl(ctx: ZjsContext*, dir: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let this_v = ctx.host_this;
+    if zjs_is_temporal_kind(this_v, TMP_PLAIN_YEARMONTH) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9, (char*)"not a Temporal.PlainYearMonth", 29);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err; return zjs_undefined();
+    }
+    let other = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_temporal_kind(other, TMP_PLAIN_YEARMONTH) == 0 {
+        let oa: ZjsValue[1]; oa[0] = other; let oap: ZjsValue* = NULL; raw { oap = &oa[0]; }
+        other = host_temporal_yearmonth_from(ctx, oap, 1);
+        if ctx.pending_throw_active { return zjs_undefined(); }
+    }
+    // largestUnit: default 'year'; week/day/time units are invalid.
+    let largest = temporal_parse_largest_unit(ctx, if argc >= 2 { args[1] } else { zjs_undefined() }, 3);
+    if largest < 2 {
+        return temporal_range_error(ctx, (char*)"largestUnit must be 'year' or 'month' for PlainYearMonth", 56);
+    }
+    let a = zjs_as_temporal(this_v); let b = zjs_as_temporal(other);
+    // until: a → b; since: b → a. Reference day 1 for both.
+    let sy: i64; let smo: i64; let ey: i64; let emo: i64;
+    if dir > 0 {
+        sy = (i64)a.year; smo = (i64)a.month; ey = (i64)b.year; emo = (i64)b.month;
+    } else {
+        sy = (i64)b.year; smo = (i64)b.month; ey = (i64)a.year; emo = (i64)a.month;
+    }
+    return temporal_diff_iso_date(ctx, sy, smo, 1, ey, emo, 1, largest);
+}
+fn host_temporal_yearmonth_until(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_yearmonth_diff_impl(ctx, 1, args, argc);
+}
+fn host_temporal_yearmonth_since(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    return temporal_yearmonth_diff_impl(ctx, -1, args, argc);
+}
+
 // PlainDate.prototype.add/subtract(durationLike). sign=+1 add, -1 sub.
 fn temporal_plaindate_add_impl(ctx: ZjsContext*, sign: i64, args: ZjsValue*, argc: u32) -> ZjsValue {
     let this_v = ctx.host_this;
@@ -30632,6 +30707,13 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
                ctx_make_host_function(ctx, (char*)"equals", pteq_ptr));
     object_set(ctx, ctx.realm.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"with", 4),
                ctx_make_host_function(ctx, (char*)"with", ptwith_ptr));
+    // #403 inc2 Batch B — time-only difference.
+    let ptuntil_ptr: void* = NULL; raw { ptuntil_ptr = (void*)host_temporal_plaintime_until; }
+    let ptsince_ptr: void* = NULL; raw { ptsince_ptr = (void*)host_temporal_plaintime_since; }
+    object_set(ctx, ctx.realm.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"until", 5),
+               ctx_make_host_function_arity(ctx, (char*)"until", ptuntil_ptr, 1));
+    object_set(ctx, ctx.realm.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"since", 5),
+               ctx_make_host_function_arity(ctx, (char*)"since", ptsince_ptr, 1));
     let ptadd_ptr: void* = NULL; raw { ptadd_ptr = (void*)host_temporal_plaintime_add; }
     let ptsub_ptr: void* = NULL; raw { ptsub_ptr = (void*)host_temporal_plaintime_subtract; }
     object_set(ctx, ctx.realm.temporal_plaintime_proto, ctx_intern_atom(ctx, (char*)"add", 3),
@@ -30725,6 +30807,12 @@ fn ctx_init_temporal(ctx: ZjsContext*) -> void {
     let ymwith_ptr: void* = NULL; raw { ymwith_ptr = (void*)host_temporal_yearmonth_with; }   // #403 inc2
     object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"with", 4),
                ctx_make_host_function_arity(ctx, (char*)"with", ymwith_ptr, 1));
+    let ymuntil_ptr: void* = NULL; raw { ymuntil_ptr = (void*)host_temporal_yearmonth_until; }   // #403 inc2 Batch B
+    let ymsince_ptr: void* = NULL; raw { ymsince_ptr = (void*)host_temporal_yearmonth_since; }
+    object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"until", 5),
+               ctx_make_host_function_arity(ctx, (char*)"until", ymuntil_ptr, 1));
+    object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"since", 5),
+               ctx_make_host_function_arity(ctx, (char*)"since", ymsince_ptr, 1));
     object_set(ctx, ctx.realm.temporal_yearmonth_proto, ctx_intern_atom(ctx, (char*)"constructor", 11), ym_ctor);
     let ymfrom_ptr: void* = NULL; raw { ymfrom_ptr = (void*)host_temporal_yearmonth_from; }
     let ymcmp_ptr: void* = NULL; raw { ymcmp_ptr = (void*)host_temporal_yearmonth_compare; }
