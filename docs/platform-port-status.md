@@ -192,9 +192,11 @@ recommended attack order.
 
 ### Cross-platform debts surfaced by the port (not Windows-specific)
 
-- `Buffer.prototype.toString()` comma-joins bytes instead of UTF-8
-  decoding (`execSync().toString()` is unusable everywhere) — known
-  `TAG_UINT8_ARRAY` family, repros identically on macOS main.
+- ~~`Buffer.prototype.toString()` comma-joins bytes~~ — **FIXED**
+  (windows-port-2). The bug was that the `child_process` sync trio
+  returned a raw `Uint8Array` (whose `toString()` comma-joins) instead
+  of a `Buffer`; the JS coda now brands the result in place. Buffer's
+  own `toString()` was always correct. Platform-neutral fix.
 - `child_process` async `spawn()` + ChildProcess EventEmitter — deferred
   on every platform (needs stream pipes + event-loop integration).
 - `net.connect` (client sockets), keep-alive, chunked transfer-encoding —
