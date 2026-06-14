@@ -171,13 +171,13 @@ recommended attack order.
 
 ### Runtime-layer gaps (Windows-specific behavior)
 
-| Surface | Gap | Severity |
-|---------|-----|----------|
-| `node:fs` | `lstat` shimmed to `stat` — `isSymbolicLink()` always false; NTFS junctions/symlinks invisible | Low until fs consumers need it; fix = `GetFileAttributesW` + `FILE_ATTRIBUTE_REPARSE_POINT` |
-| `node:os` | `cpus()` returns model+speed of core 0 repeated N times | Cosmetic; `GetLogicalProcessorInformationEx` when needed |
-| Temporal | Pre-Win10-1903 machines (no `icu.dll`) silently fall back to the UTC stub | Acceptable; documented. Could warn once at startup |
-| `child_process` | `execSync` quoting follows MSVCRT rules — programs that parse their own cmdline (notably `cmd.exe` builtins with carets, msys tools) may split differently | Documented; revisit if real scripts hit it |
-| Console / TTY | No VT-mode enable on legacy conhost (ANSI colors in REPL/errors); `isatty` semantics differ | Cosmetic; `SetConsoleMode(ENABLE_VIRTUAL_TERMINAL_PROCESSING)` one-liner |
+| Surface | Gap | Status |
+|---------|-----|--------|
+| `node:fs` | `lstat` shimmed to `stat` — `isSymbolicLink()` always false; NTFS junctions/symlinks invisible | ✅ **FIXED** (windows-port-2): `fs_sync_stat` checks `GetFileAttributesA` for `FILE_ATTRIBUTE_REPARSE_POINT` on a non-follow stat and forces `isSymbolicLink()`; verified against an `mklink /J` junction |
+| Console / TTY | No VT-mode enable on legacy conhost (app-emitted ANSI rendered literally) | ✅ **FIXED** (windows-port-2): CLI enables `ENABLE_VIRTUAL_TERMINAL_PROCESSING` on stdout/stderr at startup (no-op when redirected). The engine emits no colors itself; this is for JS CLI apps that self-colorize |
+| `node:os` | `cpus()` returns model+speed of core 0 repeated N times | NOT a Windows gap — **all** platforms do this (true per-core deferred everywhere); fixing only Windows would diverge. Left as a cross-platform item |
+| Temporal | Pre-Win10-1903 machines (no `icu.dll`) silently fall back to the UTC stub | Accepted, documented. A startup warning was considered and skipped (noisy; Node doesn't warn either) |
+| `child_process` | `execSync` quoting follows MSVCRT rules — programs that parse their own cmdline (`cmd.exe` builtins with carets, msys tools) may split differently | Accepted edge case; no concrete failing script. Revisit if one surfaces |
 
 ### Build & artifact gaps (Windows lags the macOS release shape)
 
