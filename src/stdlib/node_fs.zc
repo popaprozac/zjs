@@ -145,7 +145,10 @@ fn fs_build_error(ctx: ZjsContext*, syscall: char*, path: char*, err_no: int) ->
 
 // === Stats object ======================================================
 
-fn fs_build_stats(ctx: ZjsContext*, st_ptr: void*) -> ZjsValue {
+// is_link_override: -1 = derive from st_mode (S_ISLNK), 0/1 = force.
+// Windows has no S_ISLNK; lstat() detects symlinks/junctions out-of-band
+// via FILE_ATTRIBUTE_REPARSE_POINT and passes the result here.
+fn fs_build_stats(ctx: ZjsContext*, st_ptr: void*, is_link_override: int) -> ZjsValue {
     let o_v = ctx_new_object(ctx);
     let o = zjs_as_object(o_v);
     let size: f64 = 0.0;
@@ -182,7 +185,11 @@ fn fs_build_stats(ctx: ZjsContext*, st_ptr: void*) -> ZjsValue {
         #endif
         is_file = S_ISREG(s->st_mode) ? 1 : 0;
         is_dir  = S_ISDIR(s->st_mode) ? 1 : 0;
-        is_link = S_ISLNK(s->st_mode) ? 1 : 0;
+        is_link = (is_link_override >= 0) ? is_link_override : (S_ISLNK(s->st_mode) ? 1 : 0);
+        // A reparse point is reported as both a "directory" (junctions)
+        // and a link; Node's isDirectory() is false for a symlink, so
+        // when we force is_link, clear is_dir/is_file to match lstat.
+        if (is_link_override == 1) { is_dir = 0; is_file = 0; }
     }
     object_set(ctx, o, ctx_intern_atom(ctx, (char*)"size", 4),       zjs_double(size));
     object_set(ctx, o, ctx_intern_atom(ctx, (char*)"mode", 4),       zjs_int32(mode));
@@ -460,6 +467,7 @@ fn host_fs_write_file(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
 
 fn fs_sync_stat(ctx: ZjsContext*, path: char*, follow_link: bool) -> ZjsValue {
     let err_no: int = 0;
+    let is_link_override: int = -1;
     let stat_buf: char[256];      // sizeof(struct stat) ≤ 144 on macOS/Linux
     let buf_p: void* = NULL; raw { buf_p = &stat_buf[0]; }
     raw {
@@ -467,6 +475,17 @@ fn fs_sync_stat(ctx: ZjsContext*, path: char*, follow_link: bool) -> ZjsValue {
             ? stat(path, (struct stat*)buf_p)
             : lstat(path, (struct stat*)buf_p);
         if (rc < 0) err_no = errno;
+        #if defined(_WIN32)
+        // lstat() is a stat() alias on Windows (no S_ISLNK), so detect
+        // symlinks/junctions out-of-band: a non-follow stat of a reparse
+        // point is a "link" for isSymbolicLink() purposes.
+        else if (!follow_link) {
+            DWORD attrs = GetFileAttributesA(path);
+            is_link_override =
+                (attrs != INVALID_FILE_ATTRIBUTES
+                 && (attrs & FILE_ATTRIBUTE_REPARSE_POINT)) ? 1 : 0;
+        }
+        #endif
     }
     if err_no != 0 {
         let err = fs_build_error(ctx, (char*)"stat", path, err_no);
@@ -474,7 +493,7 @@ fn fs_sync_stat(ctx: ZjsContext*, path: char*, follow_link: bool) -> ZjsValue {
         ctx.pending_throw_value = err;
         return zjs_undefined();
     }
-    return fs_build_stats(ctx, buf_p);
+    return fs_build_stats(ctx, buf_p, is_link_override);
 }
 
 fn host_fs_stat_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
