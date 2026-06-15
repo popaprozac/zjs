@@ -1,8 +1,8 @@
 {
-  "when": "2026-06-12 06:09 UTC",
+  "when": "2026-06-15 04:47 UTC",
   "zjs_bin": "/Users/zach/code/zjs/build/zjs",
   "totals": {
-    "pass": 103,
+    "pass": 115,
     "fail": 0,
     "timeout": 0,
     "error": 0
@@ -316,7 +316,7 @@
     {
       "area": "fetch",
       "totals": {
-        "pass": 12,
+        "pass": 17,
         "fail": 0,
         "timeout": 0,
         "error": 0
@@ -373,7 +373,32 @@
           "message": ""
         },
         {
+          "name": "fetch live response headers",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "fetch live non-2xx status",
+          "status": "pass",
+          "message": ""
+        },
+        {
           "name": "fetch data: URL",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "fetch live POST body + request headers",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "fetch live GET json + Response.json()",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "fetch live GET text",
           "status": "pass",
           "message": ""
         },
@@ -649,6 +674,53 @@
         },
         {
           "name": "URLSearchParams percent-decode",
+          "status": "pass",
+          "message": ""
+        }
+      ],
+      "stderr": ""
+    },
+    {
+      "area": "websocket",
+      "totals": {
+        "pass": 7,
+        "fail": 0,
+        "timeout": 0,
+        "error": 0
+      },
+      "results": [
+        {
+          "name": "WebSocket constructor + readyState constants",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "connect: readyState OPEN and url set",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "addEventListener('message')",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "text frame round-trip",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "binary frame round-trip",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "clean close fires close event",
+          "status": "pass",
+          "message": ""
+        },
+        {
+          "name": "multiple frames preserve order",
           "status": "pass",
           "message": ""
         }
