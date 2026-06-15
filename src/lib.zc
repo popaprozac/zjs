@@ -17,20 +17,20 @@
 // `-lwinhttp` from the windows link directive below.
 //> macos: framework: Foundation
 //> macos: framework: Security
-//> macos: cflags:    -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c src/third-party/aes-gcm/aes_gcm.c
+//> macos: cflags:    -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/process_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c src/third-party/aes-gcm/aes_gcm.c
 //> ios:   framework: Foundation
 //> ios:   framework: Security
-//> ios:   cflags:    -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c src/third-party/aes-gcm/aes_gcm.c
-//> linux: cflags:    -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE src/platform/http_linux.c src/platform/ws_linux.c src/platform/http_async.c src/platform/socket_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c
+//> ios:   cflags:    -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/process_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c src/third-party/aes-gcm/aes_gcm.c
+//> linux: cflags:    -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE src/platform/http_linux.c src/platform/ws_linux.c src/platform/http_async.c src/platform/socket_posix.c src/platform/process_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c
 //> linux: link:      -lcurl -lwebsockets -lz
-//> windows: cflags:  -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE src/platform/http_windows.c src/platform/ws_windows.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c
+//> windows: cflags:  -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE src/platform/http_windows.c src/platform/ws_windows.c src/platform/process_windows.c src/platform/socket_windows.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c
 
 // --- Windows portability links ---
 // src/platform/portability.h uses BCryptGenRandom (bcrypt.dll) for
 // CSPRNG and GetProcessMemoryInfo (psapi.dll) for peak RSS. http_windows.c
 // uses WinHTTP (winhttp.dll). These must be linked into every binary that
 // compiles the engine.
-//> windows: link: -lbcrypt -lpsapi -lwinhttp
+//> windows: link: -lbcrypt -lpsapi -lwinhttp -lws2_32 -lz
 
 import "./context.zc";
 import "./value.zc";

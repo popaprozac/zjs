@@ -34,14 +34,57 @@ REPO_ROOT  = Path(__file__).resolve().parent.parent.parent
 HARNESS    = REPO_ROOT / "scripts" / "wintercg" / "zjs_harness.js"
 TESTS_DIR  = REPO_ROOT / "tests" / "wintercg"
 OUT_DIR    = REPO_ROOT / "docs" / "wintercg"
-ZJS_BIN    = REPO_ROOT / "build" / "zjs"
+
+# Same platform-tagging convention as scripts/test262/run.py and
+# scripts/bench/run.py: macOS keeps the original (un-suffixed) output
+# filenames; Windows and Linux land in `-windows` / `-linux` siblings.
+IS_WINDOWS = sys.platform == "win32"
+IS_LINUX   = sys.platform.startswith("linux")
+PLATFORM_TAG = "windows" if IS_WINDOWS else ("linux" if IS_LINUX else None)
+_suffix    = f"-{PLATFORM_TAG}" if PLATFORM_TAG else ""
+
+def _host_subdir():
+    """build/<os>-<arch> — matches build-windows.ps1 + the Makefile BUILD_DIR."""
+    import platform as _pf
+    os_ = "win" if IS_WINDOWS else ("linux" if IS_LINUX else "macos")
+    m = _pf.machine().lower()
+    arch = "arm64" if m in ("arm64", "aarch64") else ("x64" if m in ("x86_64", "amd64") else m)
+    return f"{os_}-{arch}"
+
+def _resolve_zjs(stem="zjs"):
+    exe = stem + (".exe" if IS_WINDOWS else "")
+    sub = REPO_ROOT / "build" / _host_subdir() / exe
+    return sub if sub.exists() else REPO_ROOT / "build" / exe
+
+ZJS_BIN    = _resolve_zjs()
 
 RESULT_BEGIN = "@@WINTERCG_RESULTS_BEGIN@@"
 RESULT_END   = "@@WINTERCG_RESULTS_END@@"
 
 def run_probe(probe_path: Path, timeout: float = 30.0):
-    """Run a single probe file; return {area, totals, results}."""
-    src = HARNESS.read_text(encoding="utf-8") + "\n" + probe_path.read_text(encoding="utf-8")
+    """Run a single probe file; return {area, totals, results}.
+
+    The `websocket` probe needs a live WS peer: we spin up an in-process
+    RFC 6455 echo server (stdlib socket, no external network) and inject
+    its ws://127.0.0.1:<port> URL as globalThis.__WS_ECHO_URL. This
+    exercises the platform WebSocket *client* backend (ws_apple /
+    ws_linux / ws_windows) against a known-correct server.
+    """
+    preamble = ""
+    servers = []  # (instance,) entered context managers to tear down
+    if probe_path.stem == "websocket":
+        from ws_echo_server import WsEchoServer
+        s = WsEchoServer(); s.__enter__(); servers.append(s)
+        preamble = f'globalThis.__WS_ECHO_URL = "{s.url}";\n'
+        timeout = max(timeout, 45.0)
+    elif probe_path.stem == "fetch":
+        # Live-HTTP transport tests (the data:/shape tests need no server).
+        from http_echo_server import HttpEchoServer
+        s = HttpEchoServer(); s.__enter__(); servers.append(s)
+        preamble = f'globalThis.__HTTP_ECHO_URL = "{s.url}";\n'
+        timeout = max(timeout, 45.0)
+
+    src = preamble + HARNESS.read_text(encoding="utf-8") + "\n" + probe_path.read_text(encoding="utf-8")
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".js", delete=False, encoding="utf-8"
     ) as tf:
@@ -63,6 +106,8 @@ def run_probe(probe_path: Path, timeout: float = 30.0):
     finally:
         try: tmp_path.unlink()
         except OSError: pass
+        for s in servers:
+            s.__exit__(None, None, None)
 
     out = proc.stdout or ""
     err = proc.stderr or ""
@@ -161,7 +206,9 @@ def main():
     args = ap.parse_args()
 
     if not ZJS_BIN.exists():
-        sys.stderr.write(f"error: {ZJS_BIN} not found. Run `make cli` first.\n")
+        build_hint = ("powershell -File scripts\\build-windows.ps1"
+                      if IS_WINDOWS else "make cli")
+        sys.stderr.write(f"error: {ZJS_BIN} not found. Run `{build_hint}` first.\n")
         return 2
     if not HARNESS.exists():
         sys.stderr.write(f"error: harness not found at {HARNESS}\n")
@@ -203,10 +250,10 @@ def main():
         "areas": areas,
     }
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    (OUT_DIR / "last.json").write_text(
+    (OUT_DIR / f"last{_suffix}.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"
     )
-    history_path = OUT_DIR / "history.jsonl"
+    history_path = OUT_DIR / f"history{_suffix}.jsonl"
     history_row = {
         "when": when,
         "totals": overall,
@@ -214,7 +261,7 @@ def main():
     }
     with history_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(history_row) + "\n")
-    (OUT_DIR / "index.html").write_text(render_html(summary), encoding="utf-8")
+    (OUT_DIR / f"index{_suffix}.html").write_text(render_html(summary), encoding="utf-8")
 
     n = sum(overall.values())
     pct = (100.0 * overall["pass"] / n) if n else 0.0

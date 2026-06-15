@@ -57,6 +57,34 @@
 #  endif
 #endif
 
+// Saturating f64 → integer casts. A C cast of a double whose value
+// doesn't fit the target type is UB (C11 §6.3.1.4) — clang on arm64
+// happens to saturate (fcvtzs) and NaN→0, which is what the engine
+// has implicitly relied on; gcc on x86-64 emits cvttsd2si whose
+// out-of-range result is INT_MIN-flavored garbage. These helpers pin
+// the arm64/clang semantics on every platform: NaN → 0, ±overflow →
+// type min/max, else truncate toward zero. Use them for every cast
+// where the double comes from script (ToNumber/ToLength/fromIndex).
+#include <math.h>
+static inline int32_t zjs_f64_to_i32_sat(double d) {
+    if (isnan(d)) return 0;
+    if (d >= 2147483647.0) return INT32_MAX;
+    if (d <= -2147483648.0) return INT32_MIN;
+    return (int32_t)d;
+}
+static inline uint32_t zjs_f64_to_u32_sat(double d) {
+    if (isnan(d)) return 0;
+    if (d >= 4294967295.0) return UINT32_MAX;
+    if (d <= 0.0) return 0;
+    return (uint32_t)d;
+}
+static inline int64_t zjs_f64_to_i64_sat(double d) {
+    if (isnan(d)) return 0;
+    if (d >= 9223372036854775807.0) return INT64_MAX;
+    if (d <= -9223372036854775808.0) return INT64_MIN;
+    return (int64_t)d;
+}
+
 // realpath(path, resolved) — canonicalize a filesystem path.
 // `resolved` must point to a buffer of at least PATH_MAX bytes.
 // Returns `resolved` on success, NULL on failure (sets errno).
@@ -68,26 +96,182 @@ static inline char* zjs_realpath(const char* path, char* resolved) {
 #endif
 }
 
+// Proleptic-Gregorian civil-date conversions (Howard Hinnant's
+// days_from_civil / civil_from_days, epoch 1970-01-01). Available on
+// every platform: the Windows struct-tm shims use them (MSVCRT's
+// gmtime_s/_mkgmtime reject epochs outside roughly 1970..3000, but JS
+// Dates span ±275760 years), and the engine's Date math composes
+// epoch-ms directly through zjs_civil_to_days to avoid the int
+// day-of-month truncation a struct tm would impose.
+static inline int64_t zjs_civil_to_days(int64_t y, int64_t m, int64_t d) {
+    y -= m <= 2;
+    int64_t era = (y >= 0 ? y : y - 399) / 400;
+    int64_t yoe = y - era * 400;
+    int64_t doy = (153 * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
+    int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + doe - 719468;
+}
+static inline void zjs_days_to_civil(int64_t z, int64_t* y, int64_t* m, int64_t* d) {
+    z += 719468;
+    int64_t era = (z >= 0 ? z : z - 146096) / 146097;
+    int64_t doe = z - era * 146097;
+    int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    int64_t yy  = yoe + era * 400;
+    int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    int64_t mp  = (5 * doy + 2) / 153;
+    *d = doy - (153 * mp + 2) / 5 + 1;
+    *m = mp + (mp < 10 ? 3 : -9);
+    *y = yy + (*m <= 2);
+}
+
 // gmtime_r-style: decompose seconds-since-epoch into a `struct tm`
 // in UTC. Returns the `out` pointer on success, NULL on failure.
-// MSVC's gmtime_s has a different signature; this wraps both.
+// Windows computes the proleptic breakdown directly (see above);
+// POSIX gmtime_r already handles the full 64-bit range.
 static inline struct tm* zjs_gmtime_r(const time_t* t, struct tm* out) {
 #ifdef _WIN32
-    if (gmtime_s(out, t) == 0) return out;
-    return NULL;
+    int64_t secs = (int64_t)*t;
+    int64_t days = secs / 86400;
+    int64_t rem  = secs % 86400;
+    if (rem < 0) { rem += 86400; days -= 1; }
+    out->tm_hour = (int)(rem / 3600);
+    out->tm_min  = (int)((rem % 3600) / 60);
+    out->tm_sec  = (int)(rem % 60);
+    int64_t y, m, d;
+    zjs_days_to_civil(days, &y, &m, &d);
+    out->tm_year = (int)(y - 1900);
+    out->tm_mon  = (int)(m - 1);
+    out->tm_mday = (int)d;
+    out->tm_wday = (int)(((days + 4) % 7 + 7) % 7);   /* 1970-01-01 = Thursday */
+    out->tm_yday = (int)(days - zjs_civil_to_days(y, 1, 1));
+    out->tm_isdst = 0;
+    return out;
 #else
     return gmtime_r(t, out);
 #endif
 }
 
-// timegm — inverse of gmtime, assuming UTC. Windows has _mkgmtime.
+// timegm — inverse of gmtime, assuming UTC. Windows computes it via
+// the civil conversion (with POSIX-style field normalization — month
+// overflow carries into the year, oversized mday/hour/min/sec carry
+// linearly); _mkgmtime would reject years outside ~1970..3000.
 static inline time_t zjs_timegm(struct tm* t) {
 #ifdef _WIN32
-    return _mkgmtime(t);
+    int64_t y = (int64_t)t->tm_year + 1900;
+    int64_t mon0 = (int64_t)t->tm_mon;          /* 0-based, may be out of range */
+    int64_t carry = mon0 >= 0 ? mon0 / 12 : -((-mon0 + 11) / 12);
+    y += carry;
+    int64_t m = mon0 - carry * 12 + 1;          /* 1..12 */
+    int64_t days = zjs_civil_to_days(y, m, 1) + ((int64_t)t->tm_mday - 1);
+    return (time_t)(days * 86400
+                    + (int64_t)t->tm_hour * 3600
+                    + (int64_t)t->tm_min * 60
+                    + (int64_t)t->tm_sec);
 #else
     return timegm(t);
 #endif
 }
+
+#ifdef _WIN32
+// --- ICU-backed IANA time zones on Windows -----------------------------
+//
+// Windows can't take IANA names via $TZ, but icu.dll has shipped with
+// the OS since Windows 10 1903 and exports the C API *unversioned*
+// (no _72-style suffixes), so we LoadLibrary it lazily — no import
+// lib, no header, no bundled tzdata. Machines without icu.dll
+// (pre-1903) fall back to the old UTC-stub behavior.
+typedef double zjs_icu_UDate;
+typedef uint16_t zjs_icu_UChar;
+typedef void zjs_icu_UCalendar;
+// ucal.h enum values (stable ABI constants):
+#define ZJS_UCAL_GREGORIAN          1
+#define ZJS_UCAL_ZONE_OFFSET        15
+#define ZJS_UCAL_DST_OFFSET         16
+#define ZJS_UCAL_REPEATED_WALL_TIME 3
+#define ZJS_UCAL_WALLTIME_FIRST     1
+
+typedef zjs_icu_UCalendar* (*zjs_ucal_open_fn)(const zjs_icu_UChar* zoneID, int32_t len,
+                                               const char* locale, int type, int* status);
+typedef void    (*zjs_ucal_close_fn)(zjs_icu_UCalendar*);
+typedef void    (*zjs_ucal_setMillis_fn)(zjs_icu_UCalendar*, zjs_icu_UDate, int* status);
+typedef int32_t (*zjs_ucal_get_fn)(const zjs_icu_UCalendar*, int field, int* status);
+typedef void    (*zjs_ucal_setDateTime_fn)(zjs_icu_UCalendar*, int32_t y, int32_t mo, int32_t d,
+                                           int32_t h, int32_t mi, int32_t s, int* status);
+typedef zjs_icu_UDate (*zjs_ucal_getMillis_fn)(const zjs_icu_UCalendar*, int* status);
+typedef int32_t (*zjs_ucal_getDefaultTimeZone_fn)(zjs_icu_UChar* result, int32_t cap, int* status);
+typedef int32_t (*zjs_ucal_getTimeZoneID_fn)(const zjs_icu_UCalendar*, zjs_icu_UChar* result,
+                                             int32_t cap, int* status);
+typedef void    (*zjs_ucal_setAttribute_fn)(zjs_icu_UCalendar*, int attr, int32_t value);
+
+typedef struct {
+    int tried;
+    zjs_ucal_open_fn               ucal_open;
+    zjs_ucal_close_fn              ucal_close;
+    zjs_ucal_setMillis_fn          ucal_setMillis;
+    zjs_ucal_get_fn                ucal_get;
+    zjs_ucal_setDateTime_fn        ucal_setDateTime;
+    zjs_ucal_getMillis_fn          ucal_getMillis;
+    zjs_ucal_getDefaultTimeZone_fn ucal_getDefaultTimeZone;
+    zjs_ucal_getTimeZoneID_fn      ucal_getTimeZoneID;
+    zjs_ucal_setAttribute_fn       ucal_setAttribute;
+} ZjsIcu;
+
+static inline ZjsIcu* zjs_icu(void) {
+    static ZjsIcu icu;
+    if (!icu.tried) {
+        icu.tried = 1;
+        HMODULE m = LoadLibraryA("icu.dll");
+        if (m) {
+            icu.ucal_open       = (zjs_ucal_open_fn)GetProcAddress(m, "ucal_open");
+            icu.ucal_close      = (zjs_ucal_close_fn)GetProcAddress(m, "ucal_close");
+            icu.ucal_setMillis  = (zjs_ucal_setMillis_fn)GetProcAddress(m, "ucal_setMillis");
+            icu.ucal_get        = (zjs_ucal_get_fn)GetProcAddress(m, "ucal_get");
+            icu.ucal_setDateTime= (zjs_ucal_setDateTime_fn)GetProcAddress(m, "ucal_setDateTime");
+            icu.ucal_getMillis  = (zjs_ucal_getMillis_fn)GetProcAddress(m, "ucal_getMillis");
+            icu.ucal_getDefaultTimeZone =
+                (zjs_ucal_getDefaultTimeZone_fn)GetProcAddress(m, "ucal_getDefaultTimeZone");
+            icu.ucal_getTimeZoneID =
+                (zjs_ucal_getTimeZoneID_fn)GetProcAddress(m, "ucal_getTimeZoneID");
+            icu.ucal_setAttribute =
+                (zjs_ucal_setAttribute_fn)GetProcAddress(m, "ucal_setAttribute");
+        }
+    }
+    return (icu.ucal_open && icu.ucal_close && icu.ucal_setMillis &&
+            icu.ucal_get && icu.ucal_setDateTime && icu.ucal_getMillis &&
+            icu.ucal_getDefaultTimeZone && icu.ucal_getTimeZoneID)
+               ? &icu : NULL;
+}
+
+// Open a UCalendar for an ASCII IANA zone name. Returns NULL when ICU
+// is unavailable or the zone is unknown (ICU silently resolves unknown
+// names to "Etc/Unknown" — detect and reject that, except when the
+// caller actually asked for it).
+static inline zjs_icu_UCalendar* zjs_icu_open_zone(ZjsIcu* icu, const char* zone) {
+    zjs_icu_UChar wzone[128];
+    size_t n = strlen(zone);
+    if (n >= 128) return NULL;
+    for (size_t i = 0; i <= n; i++) wzone[i] = (zjs_icu_UChar)(unsigned char)zone[i];
+    int status = 0;
+    zjs_icu_UCalendar* cal = icu->ucal_open(wzone, (int32_t)n, "en_US",
+                                            ZJS_UCAL_GREGORIAN, &status);
+    if (!cal || status > 0) { if (cal) icu->ucal_close(cal); return NULL; }
+    zjs_icu_UChar got[128];
+    status = 0;
+    int32_t glen = icu->ucal_getTimeZoneID(cal, got, 128, &status);
+    if (status <= 0 && glen == 11) {
+        const char* unknown = "Etc/Unknown";
+        int is_unknown = 1;
+        for (int i = 0; i < 11; i++) {
+            if (got[i] != (zjs_icu_UChar)unknown[i]) { is_unknown = 0; break; }
+        }
+        if (is_unknown && strcmp(zone, "Etc/Unknown") != 0) {
+            icu->ucal_close(cal);
+            return NULL;
+        }
+    }
+    return cal;
+}
+#endif // _WIN32
 
 // UTC offset (in seconds, east-positive) for the named IANA time zone
 // at the given epoch seconds, accounting for DST. ok_out (if non-NULL)
@@ -98,14 +282,27 @@ static inline time_t zjs_timegm(struct tm* t) {
 // tm_gmtoff, then restore. zjs is single-threaded, so the transient
 // global-TZ mutation is safe. Apple/Linux ship the IANA tzdata under
 // /usr/share/zoneinfo (or /var/db/timezone). "UTC" short-circuits.
-// Windows doesn't accept IANA names via $TZ — stubbed to UTC pending
-// an ICU-backed lookup (tracked in docs/platform-port-status.md).
+// Windows uses the OS's icu.dll (see zjs_icu above); machines without
+// it (pre-Win10 1903) treat every zone as UTC.
 static inline long zjs_tz_offset_seconds(const char* zone, time_t when, int* ok_out) {
     if (ok_out) *ok_out = 1;
     if (!zone || (zone[0]=='U'&&zone[1]=='T'&&zone[2]=='C'&&zone[3]==0)) return 0;
 #ifdef _WIN32
-    /* No IANA-name support without ICU; treat unknown as UTC. */
-    return 0;
+    ZjsIcu* icu = zjs_icu();
+    if (!icu) return 0;   /* no icu.dll — legacy UTC-stub behavior */
+    zjs_icu_UCalendar* cal = zjs_icu_open_zone(icu, zone);
+    if (!cal) { if (ok_out) *ok_out = 0; return 0; }
+    int status = 0;
+    icu->ucal_setMillis(cal, (zjs_icu_UDate)when * 1000.0, &status);
+    long off = 0;
+    if (status <= 0) {
+        int s2 = 0, s3 = 0;
+        int32_t zone_ms = icu->ucal_get(cal, ZJS_UCAL_ZONE_OFFSET, &s2);
+        int32_t dst_ms  = icu->ucal_get(cal, ZJS_UCAL_DST_OFFSET,  &s3);
+        if (s2 <= 0 && s3 <= 0) off = (long)((zone_ms + dst_ms) / 1000);
+    }
+    icu->ucal_close(cal);
+    return off;
 #else
     const char* prev = getenv("TZ");
     char saved[256]; int had_prev = 0;
@@ -150,7 +347,31 @@ static inline time_t zjs_tz_epoch_from_local(const char* zone,
         return zjs_timegm(&tm0);
     }
 #ifdef _WIN32
-    return zjs_timegm(&tm0);
+    {
+        ZjsIcu* icu = zjs_icu();
+        if (!icu) return zjs_timegm(&tm0);
+        zjs_icu_UCalendar* cal = zjs_icu_open_zone(icu, zone);
+        if (!cal) return zjs_timegm(&tm0);
+        /* ICU's lenient defaults: skipped wall times resolve with the
+         * pre-gap offset (pushes forward — matches mktime/Temporal
+         * 'compatible'); repeated wall times default to the LATER
+         * offset, but 'compatible' wants the earlier — flip it. */
+        if (icu->ucal_setAttribute)
+            icu->ucal_setAttribute(cal, ZJS_UCAL_REPEATED_WALL_TIME,
+                                   ZJS_UCAL_WALLTIME_FIRST);
+        int status = 0;
+        icu->ucal_setDateTime(cal, y, mo - 1, d, h, mi, s, &status);
+        time_t e;
+        if (status <= 0) {
+            int s2 = 0;
+            zjs_icu_UDate ms = icu->ucal_getMillis(cal, &s2);
+            e = (s2 <= 0) ? (time_t)(ms / 1000.0) : zjs_timegm(&tm0);
+        } else {
+            e = zjs_timegm(&tm0);
+        }
+        icu->ucal_close(cal);
+        return e;
+    }
 #else
     const char* prev = getenv("TZ");
     char saved[256]; int had_prev = 0;
@@ -169,7 +390,16 @@ static inline time_t zjs_tz_epoch_from_local(const char* zone,
 // Apple/Linux: resolve the /etc/localtime symlink to its zoneinfo path.
 static inline int zjs_host_timezone_id(char* buf, size_t cap) {
 #ifdef _WIN32
-    return 0;
+    ZjsIcu* icu = zjs_icu();
+    if (!icu) return 0;
+    zjs_icu_UChar wid[128];
+    int status = 0;
+    int32_t n = icu->ucal_getDefaultTimeZone(wid, 128, &status);
+    if (status > 0 || n <= 0 || (size_t)n >= cap) return 0;
+    /* IANA ids are ASCII — narrow directly. */
+    for (int32_t i = 0; i < n; i++) buf[i] = (char)wid[i];
+    buf[n] = 0;
+    return 1;
 #else
     char path[512];
     ssize_t n = readlink("/etc/localtime", path, sizeof(path)-1);
@@ -462,11 +692,12 @@ static inline int zjs_hkdf_oneshot(int algo,
 // ---------------------------------------------------------------------
 // zlib one-shot compress / decompress (node:zlib + CompressionStream).
 // `fmt`: 0 = zlib (deflate), 1 = gzip, 2 = raw deflate. Backed by the
-// platform zlib (Apple SDK libz / Linux -lz). Windows has no system
-// zlib, so these return -1 there (node:zlib reports NotSupported).
+// platform zlib (Apple SDK libz / Linux -lz / MinGW-w64's bundled
+// libz.a on Windows). Toolchains without <zlib.h> fall through to the
+// -1 stubs (node:zlib reports NotSupported).
 // On success mallocs *out (caller frees) and sets *out_len; returns 0.
 // ---------------------------------------------------------------------
-#if !defined(_WIN32) && defined(__has_include) && __has_include(<zlib.h>)
+#if defined(__has_include) && __has_include(<zlib.h>)
 #  include <zlib.h>
 #  define ZJS_HAS_ZLIB 1
 #endif

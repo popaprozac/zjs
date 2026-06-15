@@ -332,7 +332,6 @@
 {"when": "2026-05-15 23:21 UTC", "total": 13247, "passed": 2744, "failed": 559, "skipped": 9944}
 {"when": "2026-05-15 23:26 UTC", "total": 13247, "passed": 2744, "failed": 559, "skipped": 9944}
 {"when": "2026-05-15 23:54 UTC", "total": 13247, "passed": 2744, "failed": 559, "skipped": 9944}
-{"when": "2026-05-15 23:54 UTC", "total": 13247, "passed": 2744, "failed": 559, "skipped": 9944}
 {"when": "2026-05-16 00:28 UTC", "total": 13247, "passed": 2744, "failed": 559, "skipped": 9944}
 {"when": "2026-05-16 00:38 UTC", "total": 13247, "passed": 2744, "failed": 559, "skipped": 9944}
 {"when": "2026-05-16 00:43 UTC", "total": 13247, "passed": 2744, "failed": 559, "skipped": 9944}
@@ -361,7 +360,6 @@
 {"when": "2026-05-16 03:54 UTC", "total": 13247, "passed": 2949, "failed": 930, "skipped": 9368}
 {"when": "2026-05-16 03:56 UTC", "total": 13247, "passed": 2995, "failed": 884, "skipped": 9368}
 {"when": "2026-05-16 04:02 UTC", "total": 13247, "passed": 3003, "failed": 876, "skipped": 9368}
-{"when": "2026-05-16 04:05 UTC", "total": 13247, "passed": 3003, "failed": 876, "skipped": 9368}
 {"when": "2026-05-16 04:05 UTC", "total": 13247, "passed": 3034, "failed": 1199, "skipped": 9014}
 {"when": "2026-05-16 04:10 UTC", "total": 13247, "passed": 3170, "failed": 1063, "skipped": 9014}
 {"when": "2026-05-16 04:13 UTC", "total": 13247, "passed": 3170, "failed": 1063, "skipped": 9014}
@@ -429,7 +427,6 @@
 {"when": "2026-05-19 05:55 UTC", "total": 14524, "passed": 6711, "failed": 1286, "skipped": 6527}
 {"when": "2026-05-19 06:19 UTC", "total": 14524, "passed": 6711, "failed": 1286, "skipped": 6527}
 {"when": "2026-05-19 17:02 UTC", "total": 14524, "passed": 6711, "failed": 1286, "skipped": 6527, "platform": "macOS"}
-{"when": "2026-05-19 17:10 UTC", "total": 14524, "passed": 6711, "failed": 1286, "skipped": 6527, "platform": "macOS"}
 {"when": "2026-05-19 17:10 UTC", "total": 14524, "passed": 6711, "failed": 1286, "skipped": 6527, "platform": "macOS"}
 {"when": "2026-05-19 22:59 UTC", "total": 14524, "passed": 6711, "failed": 1286, "skipped": 6527, "platform": "macOS"}
 {"when": "2026-05-19 23:00 UTC", "total": 14524, "passed": 6711, "failed": 1286, "skipped": 6527, "platform": "macOS"}
@@ -723,16 +720,9 @@
 {"when": "2026-06-03 06:25 UTC", "total": 27491, "passed": 22451, "failed": 4320, "skipped": 720, "platform": "macOS"}
 {"when": "2026-06-03 15:30 UTC", "total": 27491, "passed": 22465, "failed": 4306, "skipped": 720, "platform": "macOS"}
 {"when": "2026-06-03 15:33 UTC", "total": 3, "passed": 1, "failed": 2, "skipped": 0, "platform": "macOS"}
-{"when": "2026-06-03 15:36 UTC", "total": 1, "passed": 0, "failed": 1, "skipped": 0, "platform": "macOS"}
-{"when": "2026-06-03 15:36 UTC", "total": 1, "passed": 0, "failed": 1, "skipped": 0, "platform": "macOS"}
-{"when": "2026-06-03 15:36 UTC", "total": 1, "passed": 0, "failed": 1, "skipped": 0, "platform": "macOS"}
 {"when": "2026-06-03 15:36 UTC", "total": 3, "passed": 1, "failed": 2, "skipped": 0, "platform": "macOS"}
-{"when": "2026-06-03 15:39 UTC", "total": 1, "passed": 0, "failed": 1, "skipped": 0, "platform": "macOS"}
-{"when": "2026-06-03 15:39 UTC", "total": 1, "passed": 0, "failed": 1, "skipped": 0, "platform": "macOS"}
 {"when": "2026-06-03 15:39 UTC", "total": 1, "passed": 1, "failed": 0, "skipped": 0, "platform": "macOS"}
 {"when": "2026-06-03 15:40 UTC", "total": 1, "passed": 0, "failed": 1, "skipped": 0, "platform": "macOS"}
-{"when": "2026-06-03 15:43 UTC", "total": 1, "passed": 1, "failed": 0, "skipped": 0, "platform": "macOS"}
-{"when": "2026-06-03 15:43 UTC", "total": 1, "passed": 1, "failed": 0, "skipped": 0, "platform": "macOS"}
 {"when": "2026-06-03 15:43 UTC", "total": 1, "passed": 1, "failed": 0, "skipped": 0, "platform": "macOS"}
 {"when": "2026-06-03 15:49 UTC", "total": 27491, "passed": 22469, "failed": 4302, "skipped": 720, "platform": "macOS"}
 {"when": "2026-06-03 15:58 UTC", "total": 27491, "passed": 22478, "failed": 4293, "skipped": 720, "platform": "macOS"}
@@ -813,5 +803,6 @@
 {"when": "2026-06-12 02:13 UTC", "total": 27568, "passed": 24538, "failed": 2692, "skipped": 338, "platform": "macOS"}
 {"when": "2026-06-12 02:40 UTC", "total": 27568, "passed": 24539, "failed": 2691, "skipped": 338, "platform": "macOS"}
 {"when": "2026-06-12 03:02 UTC", "total": 27568, "passed": 24539, "failed": 2691, "skipped": 338, "platform": "macOS"}
+{"when": "2026-06-12 06:19 UTC", "total": 27568, "passed": 24539, "failed": 2691, "skipped": 338, "platform": "macOS"}
 {"when": "2026-06-14 16:56 UTC", "total": 27568, "passed": 24539, "failed": 2691, "skipped": 338, "platform": "macOS"}
 {"when": "2026-06-14 17:13 UTC", "total": 27568, "passed": 24539, "failed": 2691, "skipped": 338, "platform": "macOS"}

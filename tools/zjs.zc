@@ -13,14 +13,14 @@
 // via import.
 //> macos: framework: Foundation
 //> macos: framework: Security
-//> macos: cflags:    -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c src/third-party/aes-gcm/aes_gcm.c
+//> macos: cflags:    -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/process_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c src/third-party/aes-gcm/aes_gcm.c
 //> ios:   framework: Foundation
 //> ios:   framework: Security
-//> ios:   cflags:    -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c src/third-party/aes-gcm/aes_gcm.c
-//> linux: cflags:    -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE src/platform/http_linux.c src/platform/ws_linux.c src/platform/http_async.c src/platform/socket_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c
+//> ios:   cflags:    -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE -fobjc-arc src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/process_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c src/third-party/aes-gcm/aes_gcm.c
+//> linux: cflags:    -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE src/platform/http_linux.c src/platform/ws_linux.c src/platform/http_async.c src/platform/socket_posix.c src/platform/process_posix.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c
 //> linux: link:      -lcurl -lwebsockets
-//> windows: cflags:  -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE src/platform/http_windows.c src/platform/ws_windows.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c
-//> windows: link:    -lbcrypt -lpsapi -lwinhttp
+//> windows: cflags:  -Isrc -Isrc/third-party/qjs-regex -DCONFIG_ALL_UNICODE src/platform/http_windows.c src/platform/ws_windows.c src/platform/process_windows.c src/platform/socket_windows.c src/platform/qjs_regex_shim.c src/third-party/qjs-regex/libregexp.c src/third-party/qjs-regex/libunicode.c
+//> windows: link:    -lbcrypt -lpsapi -lwinhttp -lws2_32 -lz
 
 import "../src/lib.zc";
 import "string.h" as libc_str;
@@ -83,16 +83,23 @@ fn event_loop_wait(ms: i64) -> void {
 
 // Install SIGINT + SIGTERM handlers so Ctrl-C and `kill <pid>` set
 // the shutdown flag instead of hard-killing the process mid-fetch.
-// Called once at CLI startup.
+// Called once at CLI startup. Windows has no sigaction — MSVCRT
+// signal() covers SIGINT (dispatched from the console-control thread)
+// and SIGTERM (raise()-only there, but harmless to register).
 fn install_signal_handlers() -> void {
     raw {
-        struct sigaction sa;
-        memset(&sa, 0, sizeof(sa));
-        sa.sa_handler = zjs_cli_sig_handler;
-        sigemptyset(&sa.sa_mask);
-        sa.sa_flags = SA_RESTART;
-        sigaction(SIGINT,  &sa, NULL);
-        sigaction(SIGTERM, &sa, NULL);
+        #if defined(_WIN32)
+            signal(SIGINT,  zjs_cli_sig_handler);
+            signal(SIGTERM, zjs_cli_sig_handler);
+        #else
+            struct sigaction sa;
+            memset(&sa, 0, sizeof(sa));
+            sa.sa_handler = zjs_cli_sig_handler;
+            sigemptyset(&sa.sa_mask);
+            sa.sa_flags = SA_RESTART;
+            sigaction(SIGINT,  &sa, NULL);
+            sigaction(SIGTERM, &sa, NULL);
+        #endif
     }
 }
 
@@ -100,6 +107,29 @@ fn shutdown_requested() -> bool {
     let r: int = 0;
     raw { r = (int)g_shutdown_requested; }
     return r != 0;
+}
+
+// Enable ANSI escape processing on the Windows console (legacy conhost
+// renders ESC[…m literally without it). The engine emits no colors
+// itself, but JS apps run under `zjs run` that colorize based on
+// tty.isatty()/process.stdout.isTTY then render correctly — matching
+// Node, which does the same at startup. No-op when output is redirected
+// (GetConsoleMode fails) or on a console that already has it on.
+fn enable_console_ansi() -> void {
+    raw {
+        #if defined(_WIN32)
+            HANDLE outs[2];
+            outs[0] = GetStdHandle(STD_OUTPUT_HANDLE);
+            outs[1] = GetStdHandle(STD_ERROR_HANDLE);
+            for (int i = 0; i < 2; i++) {
+                DWORD mode = 0;
+                if (outs[i] && outs[i] != INVALID_HANDLE_VALUE
+                    && GetConsoleMode(outs[i], &mode)) {
+                    SetConsoleMode(outs[i], mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+                }
+            }
+        #endif
+    }
 }
 
 // Single event-loop driver — used by every CLI subcommand that needs
@@ -1271,6 +1301,7 @@ fn main(argc: int, argv: char**) -> int {
     // event-loop driver; subcommands that don't drive the loop
     // (parse / lex / --version) are unaffected.
     install_signal_handlers();
+    enable_console_ansi();   // Windows: render ANSI from JS apps (no-op elsewhere)
 
     // JIT self-test (only present in a ZJS_JIT build; default/iOS builds omit
     // the stitcher entirely). Proves the engine binary contains + runs the

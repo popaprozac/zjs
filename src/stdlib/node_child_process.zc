@@ -8,9 +8,11 @@
 // — needs streams integration to surface stdout/stderr without
 // blocking.
 //
-// POSIX-first (macOS + Linux + iOS — though iOS sandbox rejects
-// fork/exec at runtime, mirroring Node's behavior there). Windows
-// shim deferred (will land in src/platform/process_windows.c).
+// Spawn-and-capture is platform code: src/platform/process_posix.c
+// (fork/execvp/poll/waitpid — macOS + Linux + iOS, though iOS sandbox
+// rejects fork/exec at runtime, mirroring Node) and
+// src/platform/process_windows.c (CreateProcess + anonymous pipes).
+// This file only does argv/result marshalling over that ABI.
 //
 // Errors carry Node-shaped fields: `.code` ('ENOENT', 'EACCES',
 // 'E2BIG' etc.), `.errno`, `.syscall`, `.path` where applicable.
@@ -20,12 +22,8 @@ raw {
     #include <stdlib.h>
     #include <string.h>
     #include <errno.h>
-    #include <unistd.h>
-    #include <fcntl.h>
-    #include <sys/types.h>
-    #include <sys/wait.h>
-    #include <poll.h>
     #include <signal.h>
+    #include "platform/process_native.h"
 }
 
 // === argv / env helpers ================================================
@@ -141,165 +139,26 @@ fn cp_build_error(ctx: ZjsContext*, syscall: char*, file: char*, err_no: int) ->
     return err_v;
 }
 
-// === Capture helpers ===================================================
+// === spawn-and-capture =================================================
 //
-// Grow-by-doubling buffer. cap = 0 means uninitialized.
-fn cp_buf_append(buf: char**, len: usize*, cap: usize*, src: char*, n: usize) -> bool {
-    if n == 0 { return true; }
-    let need = len[0] + n;
-    if need > cap[0] {
-        let new_cap = if cap[0] == 0 { (usize)4096 } else { cap[0] * 2 };
-        while new_cap < need { new_cap = new_cap * 2; }
-        let nb: char* = NULL;
-        raw { nb = (char*)realloc(buf[0], new_cap); }
-        if nb == NULL { return false; }
-        buf[0] = nb;
-        cap[0] = new_cap;
-    }
-    raw { memcpy(buf[0] + len[0], src, n); }
-    len[0] = len[0] + n;
-    return true;
-}
-
-// === posix spawn-and-capture ==========================================
-//
-// Returns 0 on successful fork+wait; -1 on syscall error (err_no_out).
-// child exit-status is encoded in *status_out (>=0) or *signal_out (>0
-// → killed by signal). Caller frees out_buf / err_buf.
+// Thin wrapper over the platform ABI (process_native.h). Returns 0 on
+// successful spawn+wait; -1 on syscall error (err_no_out). Child exit
+// status lands in *status_out (>=0) or *signal_out (>0 → killed by
+// signal; always 0 on Windows). Caller frees out_buf / err_buf.
 fn cp_spawn_capture(file: char*, argv: char**, cwd: char*,
                     in_data: char*, in_len: usize,
                     out_buf_p: char**, out_len_p: usize*,
                     err_buf_p: char**, err_len_p: usize*,
                     status_out: int*, signal_out: int*,
                     err_no_out: int*) -> int {
-    let stdin_p:  int[2];
-    let stdout_p: int[2];
-    let stderr_p: int[2];
-    let want_stdin = (in_data != NULL && in_len > 0);
-    let rc: int = 0;
+    let rc: int = -1;
     raw {
-        if (want_stdin && pipe(stdin_p) < 0)  { *err_no_out = errno; rc = -1; }
-        else if (pipe(stdout_p) < 0)          { *err_no_out = errno; rc = -1; }
-        else if (pipe(stderr_p) < 0)          { *err_no_out = errno; rc = -1; }
+        rc = zjs_process_spawn_capture(file, argv, cwd, in_data, in_len,
+                                       out_buf_p, out_len_p,
+                                       err_buf_p, err_len_p,
+                                       status_out, signal_out, err_no_out);
     }
-    if rc != 0 { return -1; }
-    let pid: int = 0;
-    raw { pid = (int)fork(); }
-    if pid < 0 {
-        raw { *err_no_out = errno; }
-        return -1;
-    }
-    if pid == 0 {
-        // === child ===
-        raw {
-            if (want_stdin) {
-                dup2(stdin_p[0], STDIN_FILENO);
-                close(stdin_p[0]); close(stdin_p[1]);
-            }
-            dup2(stdout_p[1], STDOUT_FILENO);
-            dup2(stderr_p[1], STDERR_FILENO);
-            close(stdout_p[0]); close(stdout_p[1]);
-            close(stderr_p[0]); close(stderr_p[1]);
-            if (cwd && *cwd) {
-                if (chdir(cwd) < 0) _exit(127);
-            }
-            execvp(file, argv);
-            // Distinguish "not found" (ENOENT) from "no permission"
-            // (EACCES) the way the shell does.
-            _exit(errno == ENOENT ? 127 : 126);
-        }
-    }
-    // === parent ===
-    raw {
-        close(stdout_p[1]);
-        close(stderr_p[1]);
-        if (want_stdin) close(stdin_p[0]);
-    }
-    // Write stdin if any, then close.
-    if want_stdin {
-        let written: usize = 0;
-        while written < in_len {
-            let n: int = 0;
-            raw { n = (int)write(stdin_p[1], in_data + written, in_len - written); }
-            if n < 0 {
-                let er: int = 0;
-                raw { er = errno; }
-                if er == 4 { continue; } // EINTR
-                break;
-            }
-            written = written + (usize)n;
-        }
-        raw { close(stdin_p[1]); }
-    }
-    // Drain stdout + stderr via poll until both close.
-    let out_cap: usize = 0;
-    let err_cap: usize = 0;
-    out_buf_p[0] = NULL; out_len_p[0] = 0;
-    err_buf_p[0] = NULL; err_len_p[0] = 0;
-    let scratch: char[4096];
-    let scratch_p: char* = NULL; raw { scratch_p = &scratch[0]; }
-    let fds_open: int = 2;
-    while fds_open > 0 {
-        let pfds: struct pollfd[2];
-        raw {
-            pfds[0].fd = stdout_p[0]; pfds[0].events = POLLIN; pfds[0].revents = 0;
-            pfds[1].fd = stderr_p[0]; pfds[1].events = POLLIN; pfds[1].revents = 0;
-            if (stdout_p[0] < 0) pfds[0].fd = -1;
-            if (stderr_p[0] < 0) pfds[1].fd = -1;
-        }
-        let pr: int = 0;
-        raw { pr = poll(pfds, 2, -1); }
-        if pr < 0 {
-            let er: int = 0; raw { er = errno; }
-            if er == 4 { continue; } // EINTR
-            break;
-        }
-        let i: int = 0;
-        while i < 2 {
-            let revents_i: int = 0;
-            let fd_i: int = -1;
-            raw {
-                revents_i = pfds[i].revents;
-                fd_i = pfds[i].fd;
-            }
-            if fd_i < 0 { i = i + 1; continue; }
-            if revents_i != 0 {
-                let nread: int = 0;
-                raw { nread = (int)read(fd_i, scratch_p, 4096); }
-                if nread > 0 {
-                    if i == 0 {
-                        cp_buf_append(out_buf_p, out_len_p, &out_cap, scratch_p, (usize)nread);
-                    } else {
-                        cp_buf_append(err_buf_p, err_len_p, &err_cap, scratch_p, (usize)nread);
-                    }
-                } else {
-                    // EOF or error → close this fd.
-                    raw { close(fd_i); }
-                    if i == 0 { raw { stdout_p[0] = -1; } }
-                    else      { raw { stderr_p[0] = -1; } }
-                    fds_open = fds_open - 1;
-                }
-            }
-            i = i + 1;
-        }
-    }
-    // Reap child.
-    let wstatus: int = 0;
-    let wpid: int = 0;
-    while true {
-        raw { wpid = (int)waitpid(pid, &wstatus, 0); }
-        if wpid >= 0 { break; }
-        let er: int = 0; raw { er = errno; }
-        if er == 4 { continue; } // EINTR
-        raw { *err_no_out = er; }
-        return -1;
-    }
-    raw {
-        if (WIFEXITED(wstatus))      { *status_out = WEXITSTATUS(wstatus); *signal_out = 0; }
-        else if (WIFSIGNALED(wstatus)) { *status_out = -1; *signal_out = WTERMSIG(wstatus); }
-        else                           { *status_out = 0;  *signal_out = 0; }
-    }
-    return 0;
+    return rc;
 }
 
 // === Result-object packaging ==========================================
@@ -308,21 +167,40 @@ fn cp_spawn_capture(file: char*, argv: char**, cwd: char*,
 fn cp_signal_name(sig: int) -> char* {
     let nm: char* = NULL;
     raw {
+        // Windows children never die by signal (signal_out is always
+        // 0 there), but the table must still compile against MinGW's
+        // thin signal.h — hence the per-signal guards.
         switch (sig) {
-            case SIGHUP:  nm = (char*)"SIGHUP";  break;
             case SIGINT:  nm = (char*)"SIGINT";  break;
-            case SIGQUIT: nm = (char*)"SIGQUIT"; break;
             case SIGILL:  nm = (char*)"SIGILL";  break;
             case SIGABRT: nm = (char*)"SIGABRT"; break;
             case SIGFPE:  nm = (char*)"SIGFPE";  break;
-            case SIGKILL: nm = (char*)"SIGKILL"; break;
             case SIGSEGV: nm = (char*)"SIGSEGV"; break;
-            case SIGPIPE: nm = (char*)"SIGPIPE"; break;
-            case SIGALRM: nm = (char*)"SIGALRM"; break;
             case SIGTERM: nm = (char*)"SIGTERM"; break;
+            #ifdef SIGHUP
+            case SIGHUP:  nm = (char*)"SIGHUP";  break;
+            #endif
+            #ifdef SIGQUIT
+            case SIGQUIT: nm = (char*)"SIGQUIT"; break;
+            #endif
+            #ifdef SIGKILL
+            case SIGKILL: nm = (char*)"SIGKILL"; break;
+            #endif
+            #ifdef SIGPIPE
+            case SIGPIPE: nm = (char*)"SIGPIPE"; break;
+            #endif
+            #ifdef SIGALRM
+            case SIGALRM: nm = (char*)"SIGALRM"; break;
+            #endif
+            #ifdef SIGBUS
             case SIGBUS:  nm = (char*)"SIGBUS";  break;
+            #endif
+            #ifdef SIGUSR1
             case SIGUSR1: nm = (char*)"SIGUSR1"; break;
+            #endif
+            #ifdef SIGUSR2
             case SIGUSR2: nm = (char*)"SIGUSR2"; break;
+            #endif
             default: nm = NULL; break;
         }
     }
@@ -501,8 +379,10 @@ fn host_cp_exec_file_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
 
 // === execSync ==========================================================
 //
-// Shells out: `/bin/sh -c "command"`. Returns stdout (Buffer by default,
-// string if options.encoding is set and not 'buffer'). Throws on non-zero.
+// Shells out: `/bin/sh -c "command"` on POSIX, `%COMSPEC% /d /s /c
+// "command"` on Windows (Node's exact cmd.exe invocation). Returns
+// stdout (Buffer by default, string if options.encoding is set and not
+// 'buffer'). Throws on non-zero.
 fn host_cp_exec_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc == 0 || zjs_is_string(args[0]) == 0 {
         let err = build_typed_error(ctx, (char*)"TypeError", 9,
@@ -510,17 +390,40 @@ fn host_cp_exec_sync(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         ctx.pending_throw_active = true; ctx.pending_throw_value = err;
         return zjs_undefined();
     }
-    let sh_argv: ZjsValue[3];
-    sh_argv[0] = ctx_intern_string(ctx, (char*)"-c", 2);
-    sh_argv[1] = args[0];
-    let arr_v = ctx_new_array(ctx, 2);
-    let arr = zjs_as_array(arr_v);
-    array_set(arr, 0, sh_argv[0]);
-    array_set(arr, 1, sh_argv[1]);
-    arr.length = 2;
+    let is_win: int = 0;
+    raw {
+        #if defined(_WIN32)
+            is_win = 1;
+        #endif
+    }
+    let arr_v: ZjsValue = zjs_undefined();
+    let shell_v: ZjsValue = zjs_undefined();
+    if is_win != 0 {
+        let comspec: char* = NULL;
+        raw {
+            comspec = getenv("COMSPEC");
+            if (!comspec || !*comspec) comspec = (char*)"cmd.exe";
+        }
+        let cl: u32 = 0; raw { cl = (uint32_t)strlen(comspec); }
+        shell_v = ctx_intern_string(ctx, comspec, cl);
+        arr_v = ctx_new_array(ctx, 4);
+        let arr = zjs_as_array(arr_v);
+        array_set(arr, 0, ctx_intern_string(ctx, (char*)"/d", 2));
+        array_set(arr, 1, ctx_intern_string(ctx, (char*)"/s", 2));
+        array_set(arr, 2, ctx_intern_string(ctx, (char*)"/c", 2));
+        array_set(arr, 3, args[0]);
+        arr.length = 4;
+    } else {
+        shell_v = ctx_intern_string(ctx, (char*)"/bin/sh", 7);
+        arr_v = ctx_new_array(ctx, 2);
+        let arr = zjs_as_array(arr_v);
+        array_set(arr, 0, ctx_intern_string(ctx, (char*)"-c", 2));
+        array_set(arr, 1, args[0]);
+        arr.length = 2;
+    }
     let opts_v: ZjsValue = if argc >= 2 { args[1] } else { zjs_undefined() };
     let call_args: ZjsValue[3];
-    call_args[0] = ctx_intern_string(ctx, (char*)"/bin/sh", 7);
+    call_args[0] = shell_v;
     call_args[1] = arr_v;
     call_args[2] = opts_v;
     let ca_ptr: ZjsValue* = NULL; raw { ca_ptr = &call_args[0]; }
@@ -553,6 +456,41 @@ fn populate_node_child_process(ctx: ZjsContext*, exports: ZjsObject*) -> void {
         static const char CP_ASYNC_BOOTSTRAP[] =
             "(function(exports) {\n"
             "  function defer(fn) { queueMicrotask(fn); }\n"
+            // Node returns Buffers (not plain Uint8Arrays) from the sync
+            // trio when no string encoding is set; the C layer hands back
+            // a raw Uint8Array, so its toString() comma-joins byte values
+            // instead of decoding (execSync().toString() was unusable).
+            // Brand the result in place (zero-copy) as a Buffer. String
+            // results (encoding set) pass through untouched.
+            "  function toBuf(v) {\n"
+            "    return (v instanceof Uint8Array && !v._isBuffer && typeof Buffer === 'function')\n"
+            "      ? Object.setPrototypeOf(v, Buffer.prototype) : v;\n"
+            "  }\n"
+            "  function bufErr(e) {\n"
+            "    if (e && typeof e === 'object') {\n"
+            "      if (e.stdout !== undefined) e.stdout = toBuf(e.stdout);\n"
+            "      if (e.stderr !== undefined) e.stderr = toBuf(e.stderr);\n"
+            "    }\n"
+            "    return e;\n"
+            "  }\n"
+            "  var _spawnSync = exports.spawnSync;\n"
+            "  exports.spawnSync = function() {\n"
+            "    var r = _spawnSync.apply(this, arguments);\n"
+            "    if (r && typeof r === 'object') {\n"
+            "      r.stdout = toBuf(r.stdout);\n"
+            "      r.stderr = toBuf(r.stderr);\n"
+            "      if (Array.isArray(r.output)) r.output = r.output.map(toBuf);\n"
+            "    }\n"
+            "    return r;\n"
+            "  };\n"
+            "  function wrapSync(fn) {\n"
+            "    return function() {\n"
+            "      try { return toBuf(fn.apply(this, arguments)); }\n"
+            "      catch (e) { throw bufErr(e); }\n"
+            "    };\n"
+            "  }\n"
+            "  exports.execSync = wrapSync(exports.execSync);\n"
+            "  exports.execFileSync = wrapSync(exports.execFileSync);\n"
             "  function mergeOpts(options) {\n"
             "    var out = { encoding: 'utf8' };\n"
             "    if (options) {\n"

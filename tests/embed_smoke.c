@@ -18,6 +18,17 @@
 
 #include "zjs.h"
 
+/* Portable mkdir + temp dir: MSVCRT's mkdir() takes no mode and lives
+ * in <direct.h>; POSIX takes (path, mode). */
+#if defined(_WIN32)
+#  include <direct.h>
+#  define ZJS_MKDIR(path) _mkdir(path)
+#  define ZJS_SMOKE_TMPDIR "zjs_smoke_modules"
+#else
+#  define ZJS_MKDIR(path) mkdir((path), 0755)
+#  define ZJS_SMOKE_TMPDIR "/tmp/zjs_smoke_modules"
+#endif
+
 /* -----------------------------------------------------------------------
  * Tiny test harness — no deps.
  * --------------------------------------------------------------------- */
@@ -779,10 +790,10 @@ static void test_module_abi(void) {
     /* Use a deterministic temp directory under /tmp so consecutive
      * runs don't bleed state. The file contents are also re-written
      * each run so source changes during development land cleanly. */
-    const char* dir       = "/tmp/zjs_smoke_modules";
-    const char* lib_path  = "/tmp/zjs_smoke_modules/lib.mjs";
-    const char* main_path = "/tmp/zjs_smoke_modules/main.mjs";
-    mkdir(dir, 0755);
+    const char* dir       = ZJS_SMOKE_TMPDIR;
+    const char* lib_path  = ZJS_SMOKE_TMPDIR "/lib.mjs";
+    const char* main_path = ZJS_SMOKE_TMPDIR "/main.mjs";
+    ZJS_MKDIR(dir);
 
     CHECK(write_file(lib_path,
         "export const greeting = 'hello';\n"

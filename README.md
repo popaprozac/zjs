@@ -178,6 +178,12 @@ make test       # runs every test target
 make clean      # removes build/
 ```
 
+On **Windows** the Makefile is POSIX-only; build through the PowerShell
+driver instead (`scripts\build-windows.ps1` for the CLI,
+`-Lib` for the static archive). Full instructions, prerequisites, and
+the embedding link line are in [docs/build-windows.md](docs/build-windows.md).
+For embedding zjs in an iOS app, see [docs/ios.md](docs/ios.md).
+
 After `make`:
 
 - `build/zjs` — CLI binary with `eval`, `lex`, `parse`, `--version` subcommands

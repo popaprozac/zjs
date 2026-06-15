@@ -22,6 +22,10 @@ from pathlib import Path
 
 def emit(input_path: Path, output_path: Path, symbol: str) -> None:
     source = input_path.read_bytes().decode("utf-8")
+    # Normalize CRLF → LF so a Windows checkout (core.autocrlf) doesn't
+    # leak raw \r bytes into the C string literal — gcc treats a bare
+    # \r inside a literal as a line ending ("missing terminating \"").
+    source = source.replace("\r\n", "\n")
     lines = source.split("\n")
     # Drop a trailing empty line so the embedded literal doesn't end in
     # a spurious "\n" — but only if the file did end with a newline,
@@ -52,7 +56,9 @@ def emit(input_path: Path, output_path: Path, symbol: str) -> None:
     out.append("")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text("\n".join(out), encoding="utf-8")
+    # newline="\n" keeps the header byte-identical across platforms
+    # (default universal newlines would write \r\n on Windows).
+    output_path.write_text("\n".join(out), encoding="utf-8", newline="\n")
 
 
 def main() -> int:

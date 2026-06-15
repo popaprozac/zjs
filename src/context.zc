@@ -4218,6 +4218,136 @@ fn host_error_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValu
     return ctx_intern_string_take(ctx, buf, total);
 }
 
+// --- Error.prototype.stack (error-stacks proposal) -------------------
+//
+// Installed as an accessor pair { get, set } on Error.prototype —
+// non-enumerable, configurable. The suite exercises the DESCRIPTOR
+// SHAPE and brand semantics, not unwind quality, so the getter
+// returns the toString()-shaped "Name: message" line as the
+// implementation-defined stack string (no frame capture yet).
+
+// %Error.prototype% of the current realm (NULL when Error isn't
+// registered yet — bootstrap edge).
+fn realm_error_prototype(ctx: ZjsContext*) -> ZjsObject* {
+    let none: ZjsObject* = NULL;
+    let slot = ctx_find_global(ctx, (char*)"Error", 5);
+    if slot < 0 { return none; }
+    let v = ctx.realm.globals[slot].value;
+    if zjs_is_host_function(v) == 0 { return none; }
+    return zjs_as_host_function(v).prototype;
+}
+
+// Does this object carry the [[ErrorData]] brand? (Own __zjs_tag__
+// slot = "Error" — set by every error construction path; deliberately
+// an OWN-slot read so Object.create(new Error()) is unbranded.)
+fn object_has_error_brand(ctx: ZjsContext*, obj: ZjsObject*) -> bool {
+    let tag_v = object_get(obj, ctx_intern_atom(ctx, TAG_NAME_KEY, TAG_NAME_KEY_LEN));
+    if zjs_is_string(tag_v) == 0 { return false; }
+    let s = zjs_as_string(tag_v);
+    let is_err: int = 0;
+    raw { if (s->length == 5 && memcmp(s->data, "Error", 5) == 0) is_err = 1; }
+    return is_err != 0;
+}
+
+fn host_error_stack_getter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = ctx.host_this;
+    if !value_is_object_type(t) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Error.prototype.stack getter: receiver is not an object", 56);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    // No [[ErrorData]] → undefined (Error.prototype itself, plain
+    // objects with an error as [[Prototype]], etc.).
+    if zjs_is_object(t) == 0 { return zjs_undefined(); }
+    if !object_has_error_brand(ctx, zjs_as_object(t)) { return zjs_undefined(); }
+    return host_error_to_string(ctx, args, 0);
+}
+
+// set Error.prototype.stack (proposal): throws on non-object
+// receivers and non-String values, then runs
+// SetterThatIgnoresPrototypeProperties(this, %Error.prototype%,
+// "stack", v):
+//   - this === %Error.prototype%  → TypeError
+//   - no own "stack"              → CreateDataPropertyOrThrow
+//   - own accessor                → call its setter (TypeError if none)
+//   - own data                    → [[Set]]: update value, keep attrs
+//                                   (TypeError when non-writable)
+fn host_error_stack_setter(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
+    let t = ctx.host_this;
+    if !value_is_object_type(t) {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Error.prototype.stack setter: receiver is not an object", 56);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    let v: ZjsValue = if argc >= 1 { args[0] } else { zjs_undefined() };
+    if zjs_is_string(v) == 0 {
+        let err = build_typed_error(ctx, (char*)"TypeError", 9,
+            (char*)"Error.prototype.stack setter: value must be a string", 52);
+        ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+        return zjs_undefined();
+    }
+    if zjs_is_object(t) != 0 {
+        let obj = zjs_as_object(t);
+        if obj == realm_error_prototype(ctx) {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"Cannot set 'stack' on Error.prototype itself", 44);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        let stack_atom = ctx_intern_atom(ctx, (char*)"stack", 5);
+        let slot = class_find_slot(obj.cls, stack_atom);
+        if slot < 0 {
+            // CreateDataPropertyOrThrow.
+            if obj.non_extensible {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"Cannot add property 'stack' to a non-extensible object", 54);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return zjs_undefined();
+            }
+            object_define_property_slot(ctx, obj, stack_atom, v, PROP_DEFAULT);
+            return zjs_undefined();
+        }
+        let cur = obj.slots[(u32)slot];
+        if zjs_is_accessor(cur) != 0 {
+            let acc = zjs_as_accessor(cur);
+            let setter_v = acc.set;
+            let settable: bool = zjs_is_function(setter_v) != 0
+                || zjs_is_closure(setter_v) != 0
+                || zjs_is_host_function(setter_v) != 0;
+            if !settable {
+                let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                    (char*)"Cannot set 'stack': own accessor has no setter", 46);
+                ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+                return zjs_undefined();
+            }
+            let call_args: ZjsValue[1];
+            call_args[0] = v;
+            let ca_ptr: ZjsValue* = NULL; raw { ca_ptr = &call_args[0]; }
+            raw { zjs_call_value_with_this(ctx, setter_v, t, ca_ptr, 1); }
+            return zjs_undefined();
+        }
+        // Own data property: [[Set]] — value only, attrs preserved.
+        let attrs: u8 = PROP_DEFAULT;
+        if obj.attrs != NULL { attrs = obj.attrs[(u32)slot]; }
+        if (attrs & PROP_WRITABLE) == 0 {
+            let err = build_typed_error(ctx, (char*)"TypeError", 9,
+                (char*)"Cannot set non-writable property 'stack'", 40);
+            ctx.pending_throw_active = true; ctx.pending_throw_value = err;
+            return zjs_undefined();
+        }
+        obj.slots[(u32)slot] = v;
+        gc_write_barrier(ctx, (void*)obj, v);
+        return zjs_undefined();
+    }
+    // Non-plain-object receivers (arrays, functions, proxies): route
+    // through the generic property path; proxy defineProperty-trap
+    // fidelity is deferred.
+    property_set(ctx, t, ctx_intern_string(ctx, (char*)"stack", 5), v);
+    return zjs_undefined();
+}
+
 // --- Math.* helpers -------------------------------------------------
 
 raw {
@@ -7241,6 +7371,9 @@ fn host_object_get_own_property_descriptor(ctx: ZjsContext*, args: ZjsValue*, ar
         return zjs_undefined();
     }
     let raw_v = o.slots[(u32)slot];
+    // A deleted slot (the `delete` sentinel) is an absent property —
+    // hasOwnProperty already honors this; gOPD must too.
+    if zjs_is_deleted(raw_v) != 0 { return zjs_undefined(); }
 
     let result_v = ctx_new_object(ctx);
     ctx_push_temp_root(ctx, result_v);
@@ -8605,6 +8738,28 @@ fn string_as_array_index(name: ZjsString*) -> i64 {
 
 // Coerce `.length` to a u32. Most array-like objects have an integer
 // length; ECMA-262 has more rigorous coercion rules we approximate.
+// Saturating f64 → int casts for script-derived doubles (fromIndex,
+// depth, length, radix, ...). A plain C cast is UB when the value
+// doesn't fit (NaN / ±Infinity / out of range): clang-arm64 saturates
+// (what macOS has implicitly relied on), gcc-x64 produces INT_MIN
+// garbage — the source of the Windows-only Array Infinity failures.
+// Backed by portability.h's zjs_f64_to_*_sat (NaN→0, overflow→min/max).
+fn f64_to_i32_sat(d: f64) -> i32 {
+    let r: i32 = 0;
+    raw { r = zjs_f64_to_i32_sat(d); }
+    return r;
+}
+fn f64_to_u32_sat(d: f64) -> u32 {
+    let r: u32 = 0;
+    raw { r = zjs_f64_to_u32_sat(d); }
+    return r;
+}
+fn f64_to_i64_sat(d: f64) -> i64 {
+    let r: i64 = 0;
+    raw { r = zjs_f64_to_i64_sat(d); }
+    return r;
+}
+
 fn read_length_u32(ctx: ZjsContext*, this_val: ZjsValue) -> u32 {
     if zjs_is_array(this_val) != 0 {
         return zjs_as_array(this_val).length;
@@ -8629,7 +8784,7 @@ fn read_length_u32(ctx: ZjsContext*, this_val: ZjsValue) -> u32 {
             raw { is_finite = isfinite(d) ? 1 : 0; }
             if is_finite == 0 { return 0; }
             if d <= 0.0 { return 0; }
-            return (u32)d;
+            return f64_to_u32_sat(d);
         }
         // ECMA-262 ToLength: run ToPrimitive("number") first so the
         // proto-chain valueOf fires (test262 cases use a length object
@@ -8642,7 +8797,7 @@ fn read_length_u32(ctx: ZjsContext*, this_val: ZjsValue) -> u32 {
             raw { is_finite = isfinite(d) ? 1 : 0; }
             if is_finite == 0 { return 0; }
             if d <= 0.0 { return 0; }
-            return (u32)d;
+            return f64_to_u32_sat(d);
         }
         if zjs_is_string(v) != 0 {
             // ToNumber on the string.
@@ -8651,7 +8806,7 @@ fn read_length_u32(ctx: ZjsContext*, this_val: ZjsValue) -> u32 {
             raw { is_finite = isfinite(d) ? 1 : 0; }
             if is_finite == 0 { return 0; }
             if d <= 0.0 { return 0; }
-            return (u32)d;
+            return f64_to_u32_sat(d);
         }
         if zjs_is_bool(v) != 0 {
             if zjs_as_bool(v) != 0 { return 1; }
@@ -9161,7 +9316,7 @@ fn slice_clamp(ctx: ZjsContext*, v: ZjsValue, len: u32, default_val: i32) -> i32
         v = zjs_to_primitive(ctx, v, false);
         if ctx.pending_throw_active { return 0; }
     }
-    let n = (i32)zjs_to_double(v);
+    let n = f64_to_i32_sat(zjs_to_double(v));
     if n < 0 { n = (i32)len + n; }
     if n < 0 { n = 0; }
     if n > (i32)len { n = (i32)len; }
@@ -9595,7 +9750,7 @@ fn host_string_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     if argc >= 1 { d = to_number_or_throw(ctx, args[0]); }
     if ctx.pending_throw_active { return zjs_undefined(); }
     raw { if (isnan(d)) d = 0; }
-    let rel = (i32)d;
+    let rel = f64_to_i32_sat(d);
     let k = if rel >= 0 { rel } else { len + rel };
     if k < 0 || k >= len { return zjs_undefined(); }
     let buf = alloc_n<char>((usize)2);
@@ -10952,12 +11107,12 @@ fn host_array_slice(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let start: i32 = 0;
     let end: i32 = (i32)len;
     if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
-        start = (i32)zjs_to_double(args[0]);
+        start = f64_to_i32_sat(zjs_to_double(args[0]));
         if start < 0 { start = (i32)len + start; if start < 0 { start = 0; } }
         if start > (i32)len { start = (i32)len; }
     }
     if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
-        end = (i32)zjs_to_double(args[1]);
+        end = f64_to_i32_sat(zjs_to_double(args[1]));
         if end < 0 { end = (i32)len + end; if end < 0 { end = 0; } }
         if end > (i32)len { end = (i32)len; }
     }
@@ -11559,7 +11714,7 @@ fn host_array_includes(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue
     if argc == 0 { return zjs_bool(0); }
     let target = args[0];
     let from: i32 = if argc >= 2 && zjs_is_int32(args[1]) != 0 { zjs_as_int32(args[1]) }
-                    else if argc >= 2 && zjs_is_double(args[1]) != 0 { (i32)zjs_as_double(args[1]) }
+                    else if argc >= 2 && zjs_is_double(args[1]) != 0 { f64_to_i32_sat(zjs_as_double(args[1])) }
                     else { 0 };
     if from < 0 { from = (i32)len + from; if from < 0 { from = 0; } }
     let i: u32 = (u32)from;
@@ -11675,7 +11830,7 @@ fn host_array_at(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let len: u32 = 0;
     if !array_method_prelude(ctx, args, argc, false, &this_val, &len) { return zjs_undefined(); }
     let n: i32 = if argc >= 1 && zjs_is_int32(args[0]) != 0 { zjs_as_int32(args[0]) }
-                 else if argc >= 1 && zjs_is_double(args[0]) != 0 { (i32)zjs_as_double(args[0]) }
+                 else if argc >= 1 && zjs_is_double(args[0]) != 0 { f64_to_i32_sat(zjs_as_double(args[0])) }
                  else { 0 };
     if n < 0 { n = (i32)len + n; }
     if n < 0 || n >= (i32)len { return zjs_undefined(); }
@@ -11711,7 +11866,7 @@ fn host_array_flat(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let depth: i32 = 1;
     if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
         if zjs_is_int32(args[0]) != 0 { depth = zjs_as_int32(args[0]); }
-        else if zjs_is_double(args[0]) != 0 { depth = (i32)zjs_as_double(args[0]); }
+        else if zjs_is_double(args[0]) != 0 { depth = f64_to_i32_sat(zjs_as_double(args[0])); }
     }
     let out_v = ctx_new_array(ctx, 0);
     ctx_push_temp_root(ctx, out_v);
@@ -12117,7 +12272,7 @@ fn host_array_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let len: u32 = 0;
     if !array_method_prelude(ctx, args, argc, false, &this_val, &len) { return zjs_undefined(); }
     let rel: i64 = if argc >= 1 && zjs_is_int32(args[0]) != 0 { (i64)zjs_as_int32(args[0]) }
-                   else if argc >= 1 && zjs_is_double(args[0]) != 0 { (i64)zjs_as_double(args[0]) }
+                   else if argc >= 1 && zjs_is_double(args[0]) != 0 { f64_to_i64_sat(zjs_as_double(args[0])) }
                    else { 0 };
     let actual: i64 = if rel >= 0 { rel } else { (i64)len + rel };
     if actual < 0 || actual >= (i64)len {
@@ -12150,13 +12305,13 @@ fn host_array_to_spliced(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     let len: u32 = 0;
     if !array_method_prelude(ctx, args, argc, false, &this_val, &len) { return zjs_undefined(); }
     let start: i64 = if argc >= 1 && zjs_is_int32(args[0]) != 0 { (i64)zjs_as_int32(args[0]) }
-                     else if argc >= 1 && zjs_is_double(args[0]) != 0 { (i64)zjs_as_double(args[0]) }
+                     else if argc >= 1 && zjs_is_double(args[0]) != 0 { f64_to_i64_sat(zjs_as_double(args[0])) }
                      else { 0 };
     if start < 0 { start = (i64)len + start; if start < 0 { start = 0; } }
     if start > (i64)len { start = (i64)len; }
     let skip: i64 = if argc < 2 { (i64)len - start }
                     else if zjs_is_int32(args[1]) != 0 { (i64)zjs_as_int32(args[1]) }
-                    else if zjs_is_double(args[1]) != 0 { (i64)zjs_as_double(args[1]) }
+                    else if zjs_is_double(args[1]) != 0 { f64_to_i64_sat(zjs_as_double(args[1])) }
                     else { 0 };
     if skip < 0 { skip = 0; }
     if skip > (i64)len - start { skip = (i64)len - start; }
@@ -15697,6 +15852,36 @@ fn format_iso_string(ctx: ZjsContext*, ms: f64) -> ZjsValue {
 // Compose ms since epoch from broken-down UTC components. Matches
 // the spec's MakeDay / MakeTime / MakeDate. Falls through to NaN for
 // out-of-range inputs.
+// ECMA-262 §21.4.1.13 MakeFullYear: ToIntegerOrInfinity(year), then a
+// year in 0..99 maps to 1900+year. Applied ONLY by the `new Date(y,
+// ...)` constructor, Date.UTC, and legacy setYear — NOT by
+// setFullYear (which takes the year literally).
+fn make_full_year(year: f64) -> f64 {
+    let r: f64 = 0.0;
+    raw {
+        if (!isfinite(year)) { r = year; }
+        else {
+            double yi = trunc(year);
+            r = (yi >= 0.0 && yi <= 99.0) ? yi + 1900.0 : yi;
+        }
+    }
+    return r;
+}
+
+// ECMA-262 §21.4.1.1 TimeClip: non-finite or |t| > 8.64e15 → NaN;
+// otherwise truncate toward zero. The single chokepoint for every
+// [[DateValue]] write so the platform breakdown shims never see an
+// out-of-range epoch (they'd compute a valid-but-absurd date where
+// the spec wants Invalid Date).
+fn date_time_clip(ms: f64) -> f64 {
+    let r: f64 = 0.0;
+    raw {
+        if (!isfinite(ms) || ms > 8.64e15 || ms < -8.64e15) r = 0.0/0.0;
+        else r = trunc(ms);
+    }
+    return r;
+}
+
 fn date_compose_utc_ms(year: f64, month: f64, day: f64,
                        hour: f64, minute: f64, second: f64,
                        ms_part: f64) -> f64 {
@@ -15711,26 +15896,29 @@ fn date_compose_utc_ms(year: f64, month: f64, day: f64,
             || !isfinite(ms_part)) {
             result = 0.0/0.0;
         } else {
-            // Spec: year < 100 maps to 1900-relative. §21.4.1.13.
+            // NOTE: the §21.4.1.13 MakeFullYear 0-99 → 1900+ mapping is
+            // NOT applied here — it belongs only to the `new Date(y,..)`
+            // constructor and Date.UTC (their callers map before
+            // calling). setFullYear/setYear pass the year literally, so
+            // applying it here made setFullYear(2) land in 1902.
             double yr = year;
-            if (yr >= 0.0 && yr <= 99.0) yr += 1900.0;
-            struct tm t;
-            memset(&t, 0, sizeof(t));
-            t.tm_year = (int)yr - 1900;
-            t.tm_mon  = (int)month;
-            t.tm_mday = (int)day;
-            t.tm_hour = (int)hour;
-            t.tm_min  = (int)minute;
-            t.tm_sec  = (int)second;
-            time_t secs = zjs_timegm(&t);
-            if (secs == (time_t)-1) {
-                result = 0.0/0.0;
-            } else {
-                result = (double)secs * 1000.0 + ms_part;
-            }
+            // MakeDay/MakeDate in f64 day-space rather than via struct
+            // tm — a struct tm truncates day-of-month to int, which
+            // can't represent the ±100000000-day boundary tests. f64 is
+            // exact to 2^53, far past the ±8.64e15 ms clip range.
+            // Month normalizes into the year (MakeDay accepts any int).
+            double ynorm = yr + floor(month / 12.0);
+            double mnorm = month - floor(month / 12.0) * 12.0;  /* 0..11 */
+            int64_t day_count = zjs_civil_to_days((int64_t)ynorm, (int64_t)mnorm + 1, 1)
+                                + (int64_t)day - 1;
+            result = (double)day_count * 86400000.0
+                     + hour   * 3600000.0
+                     + minute * 60000.0
+                     + second * 1000.0
+                     + ms_part;
         }
     }
-    return result;
+    return date_time_clip(result);
 }
 
 // Convenience: install a getter (and optionally setter) as an
@@ -16129,7 +16317,7 @@ fn host_response_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
         let init_o = zjs_as_object(init_v);
         let st = property_get(ctx, init_v, ctx_intern_string(ctx, (char*)"status", 6));
         if zjs_is_int32(st) != 0 { status = zjs_as_int32(st); }
-        else if zjs_is_double(st) != 0 { status = (i32)zjs_as_double(st); }
+        else if zjs_is_double(st) != 0 { status = f64_to_i32_sat(zjs_as_double(st)); }
         stext_v = property_get(ctx, init_v, ctx_intern_string(ctx, (char*)"statusText", 10));
         hdrs_v  = property_get(ctx, init_v, ctx_intern_string(ctx, (char*)"headers", 7));
     }
@@ -16720,7 +16908,7 @@ fn host_uint8_array_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
             ctx.pending_throw_active = true; ctx.pending_throw_value = err;
             return zjs_undefined();
         }
-        length = (u32)d;
+        length = f64_to_u32_sat(d);
     } else if zjs_is_uint8_array(args[0]) != 0 {
         // Cloning ctor: copy bytes verbatim.
         let other = zjs_as_uint8_array(args[0]);
@@ -18573,7 +18761,7 @@ fn host_text_decoder_decode(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
             let v = a.elements[i];
             let b: u32 = 0;
             if zjs_is_int32(v) != 0 { b = (u32)zjs_as_int32(v); }
-            else if zjs_is_double(v) != 0 { b = (u32)zjs_as_double(v); }
+            else if zjs_is_double(v) != 0 { b = f64_to_u32_sat(zjs_as_double(v)); }
             buf[i] = (char)(b & 0xff);
             i = i + 1;
         }
@@ -18600,7 +18788,7 @@ fn host_text_decoder_decode(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Zjs
         let v = step.value;
         let b: u32 = 0;
         if zjs_is_int32(v) != 0 { b = (u32)zjs_as_int32(v); }
-        else if zjs_is_double(v) != 0 { b = (u32)zjs_as_double(v); }
+        else if zjs_is_double(v) != 0 { b = f64_to_u32_sat(zjs_as_double(v)); }
         buf[len] = (char)(b & 0xff);
         len = len + 1;
     }
@@ -19416,7 +19604,7 @@ fn crypto_derive_raw(ctx: ZjsContext*, alg_v: ZjsValue, key_v: ZjsValue,
     let rc: int = -1;
     if is_pbkdf2 {
         let iter_v = property_get(ctx, alg_v, ctx_intern_string(ctx, (char*)"iterations", 10));
-        let iters: u32 = (u32)zjs_to_double(iter_v);
+        let iters: u32 = f64_to_u32_sat(zjs_to_double(iter_v));
         if iters == 0 { ok[0] = 0; return NULL; }
         raw {
             rc = zjs_pbkdf2_oneshot(hash_algo, key_p, (size_t)key_n,
@@ -19454,7 +19642,7 @@ fn host_crypto_subtle_derive_bits(ctx: ZjsContext*, args: ZjsValue*, argc: u32) 
         promise_settle(ctx, pv, err, false);
         return pv;
     }
-    let bits = (i64)zjs_to_double(args[2]);
+    let bits = f64_to_i64_sat(zjs_to_double(args[2]));
     if bits <= 0 || (bits % 8) != 0 {
         let err = build_typed_error(ctx, (char*)"OperationError", 14,
                                     (char*)"length must be a positive multiple of 8", 39);
@@ -19525,12 +19713,12 @@ fn host_crypto_subtle_derive_key(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -
         if dk_hash == 1 || dk_hash == 256 { dklen = 64; } else { dklen = 128; }
         let len_v = property_get(ctx, dkt, ctx_intern_string(ctx, (char*)"length", 6));
         if zjs_is_undefined(len_v) == 0 {
-            let lb = (i64)zjs_to_double(len_v);
+            let lb = f64_to_i64_sat(zjs_to_double(len_v));
             if lb > 0 && (lb % 8) == 0 { dklen = (u32)(lb / 8); }
         }
     } else {
         let len_v = property_get(ctx, dkt, ctx_intern_string(ctx, (char*)"length", 6));
-        let lb = (i64)zjs_to_double(len_v);
+        let lb = f64_to_i64_sat(zjs_to_double(len_v));
         if lb != 128 && lb != 192 && lb != 256 {
             let err = build_typed_error(ctx, (char*)"OperationError", 14,
                                         (char*)"AES-GCM length must be 128/192/256", 34);
@@ -19749,7 +19937,7 @@ fn host_clear_timeout(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
         let id = (u32)zjs_as_int32(v);
         timer_cancel(ctx, id);
     } else if zjs_is_double(v) != 0 {
-        timer_cancel(ctx, (u32)zjs_as_double(v));
+        timer_cancel(ctx, f64_to_u32_sat(zjs_as_double(v)));
     }
     return zjs_undefined();
 }
@@ -20984,10 +21172,10 @@ fn host_date_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
             }
             ms = parsed;
         } else {
-            ms = zjs_to_double(v);
+            ms = date_time_clip(zjs_to_double(v));
         }
     } else {
-        let y = zjs_to_double(args[0]);
+        let y = make_full_year(zjs_to_double(args[0]));
         let mo = zjs_to_double(args[1]);
         let d = if argc > 2 { zjs_to_double(args[2]) } else { 1.0 };
         let h = if argc > 3 { zjs_to_double(args[3]) } else { 0.0 };
@@ -21035,7 +21223,7 @@ fn host_date_parse_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
 }
 
 fn host_date_utc_static(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
-    let y = if argc > 0 { zjs_to_double(args[0]) } else { 0.0/0.0 };
+    let y = if argc > 0 { make_full_year(zjs_to_double(args[0])) } else { 0.0/0.0 };
     let mo = if argc > 1 { zjs_to_double(args[1]) } else { 0.0 };
     let d = if argc > 2 { zjs_to_double(args[2]) } else { 1.0 };
     let h = if argc > 3 { zjs_to_double(args[3]) } else { 0.0 };
@@ -21066,7 +21254,7 @@ fn host_date_get_time(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue 
 fn host_date_set_time(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let d = date_require_this(ctx);
     if d == NULL { return zjs_undefined(); }
-    let ms = if argc > 0 { zjs_to_double(args[0]) } else { 0.0/0.0 };
+    let ms = date_time_clip(if argc > 0 { zjs_to_double(args[0]) } else { 0.0/0.0 });
     d.time_ms = ms;
     return zjs_double(ms);
 }
@@ -23905,6 +24093,36 @@ fn host_property_is_enumerable(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
                 if (attrs & PROP_ENUMERABLE) != 0 { return zjs_bool(1); }
             }
         }
+        return zjs_bool(0);
+    }
+    // Function / closure / host-function receivers store expandos on
+    // their .props bag — same own-slot + enumerable-bit walk. (for-in
+    // and Object.keys already enumerate these; pIE previously said
+    // false unconditionally.)
+    let props_o: ZjsObject* = NULL;
+    if zjs_is_function(this_val) != 0 {
+        let fp = zjs_cell_as_ptr(this_val);
+        let ff: Function* = NULL;
+        raw { ff = (Function*)fp; }
+        props_o = ff.props;
+    } else if zjs_is_closure(this_val) != 0 {
+        let cl = zjs_as_closure(this_val);
+        if cl.props != NULL { props_o = cl.props; }
+        else {
+            let fp2 = cl.function;
+            let ff2: Function* = NULL;
+            raw { ff2 = (Function*)fp2; }
+            props_o = ff2.props;
+        }
+    } else if zjs_is_host_function(this_val) != 0 {
+        props_o = zjs_as_host_function(this_val).props;
+    }
+    if props_o != NULL {
+        let slot = class_find_slot(props_o.cls, name);
+        if slot >= 0 && zjs_is_deleted(props_o.slots[(u32)slot]) == 0 {
+            let attrs = object_get_attrs(props_o, (u32)slot);
+            if (attrs & PROP_ENUMERABLE) != 0 { return zjs_bool(1); }
+        }
     }
     return zjs_bool(0);
 }
@@ -24903,7 +25121,7 @@ fn host_array_ctor(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         }
         if zjs_is_double(v) != 0 {
             let d = zjs_as_double(v);
-            let n2 = (i64)d;
+            let n2 = f64_to_i64_sat(d);
             if (f64)n2 == d && n2 >= 0 {
                 let arr_v = ctx_new_array(ctx, (u32)n2);
                 let arr = zjs_as_array(arr_v);
@@ -25107,12 +25325,12 @@ fn host_number(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
         // double — unlike implicit ToNumber(bigint), which throws.
         if zjs_is_bigint(args[0]) != 0 {
             let d0 = bigint_to_f64(zjs_as_bigint(args[0]));
-            let as_i = (i32)d0;
+            let as_i = f64_to_i32_sat(d0);
             if (f64)as_i == d0 { n = zjs_int32(as_i); } else { n = zjs_double(d0); }
             return wrap_primitive_if_new(ctx, n);
         }
         let d = zjs_to_double(args[0]);
-        let as_int = (i32)d;
+        let as_int = f64_to_i32_sat(d);
         if (f64)as_int == d { n = zjs_int32(as_int); }
         else { n = zjs_double(d); }
     }
@@ -25498,7 +25716,7 @@ fn host_number_to_string(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVal
     }
     let radix: i32 = 10;
     if argc >= 1 && zjs_is_undefined(args[0]) == 0 {
-        radix = (i32)zjs_to_double(args[0]);
+        radix = f64_to_i32_sat(zjs_to_double(args[0]));
     }
     if radix < 2 || radix > 36 {
         let err = build_typed_error(ctx, (char*)"RangeError", 10,
@@ -26046,7 +26264,7 @@ fn host_string_raw(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     let len_d = zjs_to_double(len_v);
     let is_nan: int = 0; raw { is_nan = isnan(len_d) ? 1 : 0; }
     if is_nan != 0 || len_d <= 0.0 { return ctx_intern_string(ctx, (char*)"", 0); }
-    let len: u32 = (u32)len_d;
+    let len: u32 = f64_to_u32_sat(len_d);
 
     // Build the result by concatenating: raw[0] + sub[0] + raw[1] + ...
     // For each segment we do a string_concat. argc-1 subs are
@@ -26087,7 +26305,14 @@ fn host_string_from_char_code(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> Z
     let buf = alloc_n<char>((usize)(n + 1));
     let i: u32 = 0;
     while i < argc {
-        let cu = (u8)((u32)zjs_to_double(args[i]) & 255);
+        // ToUint16 (§7.1.8): NaN/±0/±Infinity → +0, else modulo 2^16
+        // (this engine's single-byte model then keeps the low 8). The
+        // i64 route preserves two's-complement low bits for negatives
+        // and huge values — the old plain (u32) cast clamped negatives
+        // to 0 on clang/arm64 (the S9.7_A1 failure) and was UB on gcc.
+        let d = zjs_to_double(args[i]);
+        raw { if (isinf(d)) d = 0.0; }
+        let cu = (u8)((u64)f64_to_i64_sat(d) & 255);
         buf[i] = (char)cu;
         i = i + 1;
     }
@@ -26677,7 +26902,7 @@ fn host_parse_int(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsValue {
     // radix is 16; else 10. Start at 0 ("unset") and resolve below.
     let radix: int = 0;
     if argc >= 2 && zjs_is_undefined(args[1]) == 0 {
-        let r = (i32)zjs_to_double(args[1]);
+        let r = f64_to_i32_sat(zjs_to_double(args[1]));
         if r != 0 { radix = (int)r; }
     }
     let sd = s.data;
@@ -26865,7 +27090,7 @@ fn temporal_dur_arg(args: ZjsValue*, argc: u32, idx: u32, ok: int*) -> i64 {
     let bad: int = 0;
     raw { bad = (!isfinite(d) || d != trunc(d)) ? 1 : 0; }
     if bad != 0 { ok[0] = 0; return 0; }
-    return (i64)d;
+    return f64_to_i64_sat(d);
 }
 
 // `new Temporal.Duration(y, mo, w, d, h, m, s, ms, us, ns)`.
@@ -27161,7 +27386,7 @@ fn temporal_to_duration(ctx: ZjsContext*, v: ZjsValue) -> ZjsTemporal* {
                     let _ = temporal_range_error(ctx, (char*)"Duration components must be integers", 36);
                     return NULL;
                 }
-                vals[i] = (i64)d;
+                vals[i] = f64_to_i64_sat(d);
                 any = 1;
             }
             i = i + 1;
@@ -27295,7 +27520,7 @@ fn host_temporal_duration_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> 
             if bad != 0 {
                 return temporal_range_error(ctx, (char*)"Duration components must be integers", 36);
             }
-            cur[i] = (i64)d;
+            cur[i] = f64_to_i64_sat(d);
             any = 1;
         }
         i = i + 1;
@@ -28365,7 +28590,7 @@ fn temporal_int_arg(args: ZjsValue*, argc: u32, idx: u32, dflt: i64, ok: int*) -
     let bad: int = 0;
     raw { bad = (!isfinite(d) || d != trunc(d)) ? 1 : 0; }
     if bad != 0 { ok[0] = 0; return dflt; }
-    return (i64)d;
+    return f64_to_i64_sat(d);
 }
 
 fn temporal_range_error(ctx: ZjsContext*, msg: char*, mlen: u32) -> ZjsValue {
@@ -28614,9 +28839,9 @@ fn host_temporal_plaindate_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
     let yv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"year", 4));
     let mv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"month", 5));
     let dv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"day", 3));
-    let y: i64 = if zjs_is_undefined(yv) != 0 { (i64)s.year }  else { (i64)zjs_to_double(yv) };
-    let m: i64 = if zjs_is_undefined(mv) != 0 { (i64)s.month } else { (i64)zjs_to_double(mv) };
-    let d: i64 = if zjs_is_undefined(dv) != 0 { (i64)s.day }   else { (i64)zjs_to_double(dv) };
+    let y: i64 = if zjs_is_undefined(yv) != 0 { (i64)s.year }  else { f64_to_i64_sat(zjs_to_double(yv)) };
+    let m: i64 = if zjs_is_undefined(mv) != 0 { (i64)s.month } else { f64_to_i64_sat(zjs_to_double(mv)) };
+    let d: i64 = if zjs_is_undefined(dv) != 0 { (i64)s.day }   else { f64_to_i64_sat(zjs_to_double(dv)) };
     // overflow:'constrain' (the default): clamp into a valid date.
     let cc: i64[3];
     let cp: i64* = NULL; raw { cp = &cc[0]; }
@@ -28784,12 +29009,12 @@ fn host_temporal_plaintime_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) ->
     let fms = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"millisecond", 11));
     let fus = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"microsecond", 11));
     let fns = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"nanosecond", 10));
-    let h  = if zjs_is_undefined(fh)  != 0 { (i64)s.hour }        else { (i64)zjs_to_double(fh) };
-    let mi = if zjs_is_undefined(fm)  != 0 { (i64)s.minute }      else { (i64)zjs_to_double(fm) };
-    let sc = if zjs_is_undefined(fs)  != 0 { (i64)s.second }      else { (i64)zjs_to_double(fs) };
-    let ms = if zjs_is_undefined(fms) != 0 { (i64)s.millisecond } else { (i64)zjs_to_double(fms) };
-    let us = if zjs_is_undefined(fus) != 0 { (i64)s.microsecond } else { (i64)zjs_to_double(fus) };
-    let ns = if zjs_is_undefined(fns) != 0 { (i64)s.nanosecond }  else { (i64)zjs_to_double(fns) };
+    let h  = if zjs_is_undefined(fh)  != 0 { (i64)s.hour }        else { f64_to_i64_sat(zjs_to_double(fh)) };
+    let mi = if zjs_is_undefined(fm)  != 0 { (i64)s.minute }      else { f64_to_i64_sat(zjs_to_double(fm)) };
+    let sc = if zjs_is_undefined(fs)  != 0 { (i64)s.second }      else { f64_to_i64_sat(zjs_to_double(fs)) };
+    let ms = if zjs_is_undefined(fms) != 0 { (i64)s.millisecond } else { f64_to_i64_sat(zjs_to_double(fms)) };
+    let us = if zjs_is_undefined(fus) != 0 { (i64)s.microsecond } else { f64_to_i64_sat(zjs_to_double(fus)) };
+    let ns = if zjs_is_undefined(fns) != 0 { (i64)s.nanosecond }  else { f64_to_i64_sat(zjs_to_double(fns)) };
     if !temporal_time_valid(h, mi, sc, ms, us, ns) { return temporal_range_error(ctx, (char*)"invalid time", 12); }
     let t = zjs_temporal_new(TMP_PLAIN_TIME);
     t.hour = (i32)h; t.minute = (i32)mi; t.second = (i32)sc;
@@ -29499,7 +29724,7 @@ fn host_temporal_yearmonth_to_plain_date(ctx: ZjsContext*, args: ZjsValue*, argc
     if zjs_is_object(arg) == 0 { return temporal_range_error(ctx, (char*)"toPlainDate needs a day", 24); }
     let dv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"day", 3));
     if zjs_is_undefined(dv) != 0 { return temporal_range_error(ctx, (char*)"toPlainDate needs a day", 24); }
-    let d = (i64)zjs_to_double(dv);
+    let d = f64_to_i64_sat(zjs_to_double(dv));
     if !temporal_date_valid((i64)s.year, (i64)s.month, d) { return temporal_range_error(ctx, (char*)"invalid day for month", 21); }
     let t = zjs_temporal_new(TMP_PLAIN_DATE);
     t.year = s.year; t.month = s.month; t.day = (i32)d;
@@ -29602,7 +29827,7 @@ fn host_temporal_monthday_to_plain_date(ctx: ZjsContext*, args: ZjsValue*, argc:
     if zjs_is_object(arg) == 0 { return temporal_range_error(ctx, (char*)"toPlainDate needs a year", 25); }
     let yv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"year", 4));
     if zjs_is_undefined(yv) != 0 { return temporal_range_error(ctx, (char*)"toPlainDate needs a year", 25); }
-    let y = (i64)zjs_to_double(yv);
+    let y = f64_to_i64_sat(zjs_to_double(yv));
     // Constrain the day (Feb 29 in a non-leap target year → Feb 28).
     let cc: i64[3];
     let cp: i64* = NULL; raw { cp = &cc[0]; }
@@ -30227,12 +30452,12 @@ fn host_temporal_zdt_with(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
     let hv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"hour", 4));
     let miv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"minute", 6));
     let sv = property_get(ctx, arg, ctx_intern_string(ctx, (char*)"second", 6));
-    let y  = if zjs_is_undefined(yv)  != 0 { w[0] } else { (i64)zjs_to_double(yv) };
-    let mo = if zjs_is_undefined(mv)  != 0 { w[1] } else { (i64)zjs_to_double(mv) };
-    let d  = if zjs_is_undefined(dv)  != 0 { w[2] } else { (i64)zjs_to_double(dv) };
-    let h  = if zjs_is_undefined(hv)  != 0 { w[3] } else { (i64)zjs_to_double(hv) };
-    let mi = if zjs_is_undefined(miv) != 0 { w[4] } else { (i64)zjs_to_double(miv) };
-    let sc = if zjs_is_undefined(sv)  != 0 { w[5] } else { (i64)zjs_to_double(sv) };
+    let y  = if zjs_is_undefined(yv)  != 0 { w[0] } else { f64_to_i64_sat(zjs_to_double(yv)) };
+    let mo = if zjs_is_undefined(mv)  != 0 { w[1] } else { f64_to_i64_sat(zjs_to_double(mv)) };
+    let d  = if zjs_is_undefined(dv)  != 0 { w[2] } else { f64_to_i64_sat(zjs_to_double(dv)) };
+    let h  = if zjs_is_undefined(hv)  != 0 { w[3] } else { f64_to_i64_sat(zjs_to_double(hv)) };
+    let mi = if zjs_is_undefined(miv) != 0 { w[4] } else { f64_to_i64_sat(zjs_to_double(miv)) };
+    let sc = if zjs_is_undefined(sv)  != 0 { w[5] } else { f64_to_i64_sat(zjs_to_double(sv)) };
     let cc: i64[3];
     let cp: i64* = NULL; raw { cp = &cc[0]; }
     temporal_constrain_date(y, mo, d, cp);
@@ -30401,10 +30626,10 @@ fn host_temporal_zdt_from(ctx: ZjsContext*, args: ZjsValue*, argc: u32) -> ZjsVa
     let hv = property_get(ctx, v, ctx_intern_string(ctx, (char*)"hour", 4));
     let miv = property_get(ctx, v, ctx_intern_string(ctx, (char*)"minute", 6));
     let sv = property_get(ctx, v, ctx_intern_string(ctx, (char*)"second", 6));
-    let y = (i64)zjs_to_double(yv); let mo = (i64)zjs_to_double(mv); let d = (i64)zjs_to_double(dv);
-    let h  = if zjs_is_undefined(hv)  != 0 { 0 } else { (i64)zjs_to_double(hv) };
-    let mi = if zjs_is_undefined(miv) != 0 { 0 } else { (i64)zjs_to_double(miv) };
-    let sc = if zjs_is_undefined(sv)  != 0 { 0 } else { (i64)zjs_to_double(sv) };
+    let y = f64_to_i64_sat(zjs_to_double(yv)); let mo = f64_to_i64_sat(zjs_to_double(mv)); let d = f64_to_i64_sat(zjs_to_double(dv));
+    let h  = if zjs_is_undefined(hv)  != 0 { 0 } else { f64_to_i64_sat(zjs_to_double(hv)) };
+    let mi = if zjs_is_undefined(miv) != 0 { 0 } else { f64_to_i64_sat(zjs_to_double(miv)) };
+    let sc = if zjs_is_undefined(sv)  != 0 { 0 } else { f64_to_i64_sat(zjs_to_double(sv)) };
     if !temporal_date_valid(y, mo, d) { return temporal_range_error(ctx, (char*)"invalid ISO date", 16); }
     let ep = zdt_epoch_ns_from_wall(zjs_as_string(tzv), y, mo, d, h, mi, sc, 0);
     return zdt_make(ctx, ep, zjs_as_string(tzv));
@@ -31285,6 +31510,17 @@ fn ctx_init_builtins(ctx: ZjsContext*) -> void {
             let ets_ptr: void* = NULL; raw { ets_ptr = (void*)host_error_to_string; }
             object_set(ctx, err_proto, ctx_intern_atom(ctx, (char*)"toString", 8),
                        ctx_make_host_function(ctx, (char*)"toString", ets_ptr));
+            // Error.prototype.stack accessor (error-stacks proposal):
+            // { get, set }, non-enumerable, configurable.
+            let esg_ptr: void* = NULL; raw { esg_ptr = (void*)host_error_stack_getter; }
+            let ess_ptr: void* = NULL; raw { ess_ptr = (void*)host_error_stack_setter; }
+            let stack_acc = zjs_accessor_new(
+                ctx_make_host_function_arity(ctx, (char*)"get stack", esg_ptr, 0),
+                ctx_make_host_function_arity(ctx, (char*)"set stack", ess_ptr, 1));
+            ctx_register_cell(ctx, (void*)stack_acc);
+            object_define_property_slot(ctx, err_proto,
+                ctx_intern_atom(ctx, (char*)"stack", 5),
+                zjs_cell_from_ptr((void*)stack_acc), PROP_CONFIGURABLE);
             // Subclass each *Error.prototype to inherit from Error.prototype,
             // AND set [[Prototype]] = Error so `Object.getPrototypeOf(TypeError)
             // === Error` per spec.

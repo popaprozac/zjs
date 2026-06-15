@@ -12,12 +12,19 @@
 
 BUILD_DIR    := build
 
+# The recipes below are POSIX-only (symlinks, uname branches, POSIX
+# shell). Windows builds go through scripts/build-windows.ps1 instead
+# — fail loud rather than falling into the Linux branch.
+ifeq ($(OS),Windows_NT)
+$(error This Makefile is POSIX-only. On Windows run: powershell -File scripts/build-windows.ps1)
+endif
+
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Darwin)
 SHLIB_EXT := dylib
 RPATH_FLAG := -Wl,-rpath,@loader_path
-PLATFORM_SRC     := src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c
-PLATFORM_OBJS    := $(BUILD_DIR)/http_apple.o $(BUILD_DIR)/ws_apple.o $(BUILD_DIR)/socket_posix.o
+PLATFORM_SRC     := src/platform/http_apple.m src/platform/ws_apple.m src/platform/socket_posix.c src/platform/process_posix.c
+PLATFORM_OBJS    := $(BUILD_DIR)/http_apple.o $(BUILD_DIR)/ws_apple.o $(BUILD_DIR)/socket_posix.o $(BUILD_DIR)/process_posix.o
 PLATFORM_LDFLAGS := -framework Foundation -framework Security -fobjc-arc -lz
 PLATFORM_CFLAGS  := -fobjc-arc
 PROFDATA         := xcrun llvm-profdata
@@ -28,8 +35,8 @@ ZC_LINK := -lz
 else
 SHLIB_EXT := so
 RPATH_FLAG := -Wl,-rpath,'$$ORIGIN'
-PLATFORM_SRC     := src/platform/http_linux.c src/platform/http_async.c src/platform/ws_linux.c src/platform/socket_posix.c
-PLATFORM_OBJS    := $(BUILD_DIR)/http_linux.o $(BUILD_DIR)/http_async.o $(BUILD_DIR)/ws_linux.o $(BUILD_DIR)/socket_posix.o
+PLATFORM_SRC     := src/platform/http_linux.c src/platform/http_async.c src/platform/ws_linux.c src/platform/socket_posix.c src/platform/process_posix.c
+PLATFORM_OBJS    := $(BUILD_DIR)/http_linux.o $(BUILD_DIR)/http_async.o $(BUILD_DIR)/ws_linux.o $(BUILD_DIR)/socket_posix.o $(BUILD_DIR)/process_posix.o
 PLATFORM_LDFLAGS := -lpthread -lcurl -lwebsockets -lz
 PLATFORM_CFLAGS  :=
 PROFDATA         := llvm-profdata

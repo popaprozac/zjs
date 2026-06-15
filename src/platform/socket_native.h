@@ -3,7 +3,7 @@
 //   Apple   — POSIX BSD sockets (socket_posix.c)
 //   iOS     — same (POSIX inside the app sandbox)
 //   Linux   — same
-//   Windows — Winsock2 (socket_windows.c) — TBD; socket_stub.c for v0.1
+//   Windows — Winsock2 (socket_windows.c)
 //
 // Single-threaded design: each Server owns a listening fd + a list of
 // accepted-client fds, all non-blocking. JS drains events on every
