@@ -3192,3 +3192,42 @@ suite "parser early errors 2f-3a: strict mode":
   # --- sanity: ordinary code under a strict program is fine ---
   test "ordinary var under a strict program is accepted":
     check not parseHadError("\"use strict\"; var x = 1;")
+
+suite "parser dynamic import 2f-7":
+  test "import(spec) → ImportCall with the spec as its only child":
+    let s = parseOne("import('x')")
+    check s != nil
+    check s.kind == NodeKind.ImportCall
+    check s.importSpec.kind == NodeKind.StringExpr
+
+  test "import(spec, options) → options discarded":
+    let s = parseOne("import('x', opts)")
+    check s != nil
+    check s.kind == NodeKind.ImportCall
+    check s.importSpec.kind == NodeKind.StringExpr
+
+  test "import.meta → ImportMetaExpr leaf":
+    let s = parseOne("import.meta")
+    check s != nil
+    check s.kind == NodeKind.ImportMetaExpr
+
+  test "import.meta.url → Member over ImportMetaExpr":
+    let s = parseOne("import.meta.url")
+    check s != nil
+    check s.kind == NodeKind.Member
+    check s.recv.kind == NodeKind.ImportMetaExpr
+
+  test "import(x).then(f) → Call/Member chain over ImportCall":
+    let s = parseOne("import(x).then(f)")
+    check s != nil
+    check s.kind == NodeKind.Call
+
+  test "dynamic import works inside a function body":
+    let s = parseOne("function f(){ return import(x); }")
+    check s != nil
+    check s.kind == NodeKind.FunctionDecl
+
+  test "import.foo (not meta) is a parse error":
+    var p = initParser("import.foo")
+    discard p.parseProgram()
+    check p.hadError

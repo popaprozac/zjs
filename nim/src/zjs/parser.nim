@@ -543,6 +543,37 @@ proc parsePrimary(p: var Parser): AstNode =
   of KwClass:
     return parseClassExpr(p)
 
+  of KwImport:
+    # Dynamic `import(spec [, options])` and `import.meta` (ES2020).
+    # Port of Zen-c parse_primary KwImport (src/parser.zc:4180). A bare
+    # `import` followed by anything else (e.g. an import *statement*
+    # `import x from "m"`, illegal in script mode) falls through to a
+    # parse error, matching the script-mode oracle.
+    let kw = p.advance()                    # 'import'
+    if p.peek().kind == Dot:
+      discard p.advance()
+      let prop = p.peek()
+      let isMeta = prop.length == 4'u32 and
+        p.source[prop.start.int ..< (prop.start + prop.length).int] == "meta"
+      if not isMeta:
+        p.hadError = true; return nil
+      discard p.advance()
+      return newLeaf(ImportMetaExpr, kw.start, prop.start + prop.length)
+    if not p.expect(LParen): return nil
+    let spec = parseAssignmentExpr(p)
+    if spec == nil: return nil
+    # Optional import-attributes / options arg — parsed and DISCARDED
+    # (not dumped), mirroring Zen-c.
+    if p.peek().kind == Comma:
+      discard p.advance()
+      if p.peek().kind != RParen:
+        let opts = parseAssignmentExpr(p)
+        if opts == nil: return nil
+        if p.peek().kind == Comma: discard p.advance()
+    let rp = p.peek()
+    if not p.expect(RParen): return nil
+    return newImportCall(kw.start, rp.start + rp.length, spec)
+
   of Identifier:
     discard p.advance()
     # Strict-mode future-reserved words (§12.7.2) are reserved as an

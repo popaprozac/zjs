@@ -181,7 +181,10 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
     stdout.write(&"{ind}{label}\n")
     if n.fieldInit != nil: dumpAst(n.fieldInit, src, depth+1)
     if n.fieldComputedKey != nil: dumpAst(n.fieldComputedKey, src, depth+1)
-  else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
+  of ImportCall:                                 # (2f-7) dynamic import(spec)
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.importSpec, src, depth+1)
+  else:  # NullExpr/UndefinedExpr/ThisExpr/ImportMetaExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 
 proc main() =

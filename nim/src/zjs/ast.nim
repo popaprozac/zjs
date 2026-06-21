@@ -226,6 +226,9 @@ type
       fieldInit*: AstNode                        # Zen-c left (initializer; nil if none)
       fieldComputedKey*: AstNode                 # Zen-c third (computed key; nil)
       fieldIsStatic*: bool                       # NOT dumped (Zen-c bool_value)
+    of ImportCall:                               # (2f-7) dynamic import(spec[, options])
+      importSpec*: AstNode                       # Zen-c left (the specifier; options parsed+discarded)
+    # ImportMetaExpr is a label-only leaf ("?") — no branch needed (else: discard)
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -435,3 +438,6 @@ proc newStaticBlock*(s, e: uint32, body: AstNode): AstNode =
 proc newClassField*(s, e, nameStart, nameLen: uint32, init, computedKey: AstNode, isStatic: bool): AstNode =  ## 2e-2
   AstNode(kind: ClassField, start: s, `end`: e, fieldNameStart: nameStart, fieldNameLen: nameLen,
           fieldInit: init, fieldComputedKey: computedKey, fieldIsStatic: isStatic)
+
+proc newImportCall*(s, e: uint32, spec: AstNode): AstNode =  ## 2f-7 dynamic import()
+  AstNode(kind: ImportCall, start: s, `end`: e, importSpec: spec)
