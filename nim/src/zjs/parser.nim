@@ -47,6 +47,16 @@ proc expect(p: var Parser, k: TokenKind): bool {.inline.} =
     p.hadError = true
     false
 
+proc checkBindingReserved(p: var Parser, t: Token) =
+  ## A `yield` bound inside a generator body, or `await` bound inside an async
+  ## body, is a SyntaxError (Zen-c is_binding_ident_ctx, parser.zc:806). Strict
+  ## `yield`, escaped keywords, eval/arguments, and static-block `await` are
+  ## later slices. Params/names are parsed in the enclosing context (flags set
+  ## only for the body), so `function* g(yield){}` stays legal while a yield
+  ## binding in the body or a nested function's params errors.
+  if (t.kind == KwYield and p.inGenerator) or (t.kind == KwAwait and p.inAsync):
+    p.hadError = true
+
 # ------------------------------------------------------------------
 # Numeric literal decoding — port of parse_number_literal / parse_int_prefix
 # ------------------------------------------------------------------
@@ -240,12 +250,13 @@ proc parseObjectPattern(p: var Parser): AstNode =
     var computedKey: AstNode = nil
     var keyStart = 0'u32
     var keyLen = 0'u32
+    var keyTok: Token
     if p.peek().kind == LBracket:            # [expr]: target
       discard p.advance()
       computedKey = parseAssignmentExpr(p)
       discard p.expect(RBracket)
     else:
-      let keyTok = p.peek()
+      keyTok = p.peek()
       if keyTok.kind notin {Identifier, StringLit, NumberLit} and not isKeywordName(keyTok.kind): break
       discard p.advance()
       keyStart = keyTok.start; keyLen = keyTok.length
@@ -255,7 +266,8 @@ proc parseObjectPattern(p: var Parser): AstNode =
       target = parseBindingTarget(p)
     elif computedKey != nil:
       break                                  # computed needs a target
-    else:                                    # shorthand
+    else:                                    # shorthand — key IS the binding
+      p.checkBindingReserved(keyTok)
       target = newLeaf(IdentExpr, keyStart, keyStart + keyLen)
     var dflt: AstNode = nil
     if p.peek().kind == Eq:
@@ -304,6 +316,7 @@ proc parseBindingTarget(p: var Parser): AstNode =
   of LBracket: parseArrayPattern(p)
   else:
     let t = p.advance()
+    p.checkBindingReserved(t)
     newLeaf(IdentExpr, t.start, t.start + t.length)
 
 proc parseArrowBody(p: var Parser, isAsync: bool): AstNode =
@@ -316,6 +329,7 @@ proc parseArrowBody(p: var Parser, isAsync: bool): AstNode =
 
 proc parseArrowSingle(p: var Parser, isAsync: bool): AstNode =
   let nameTok = p.advance()             # identifier
+  p.checkBindingReserved(nameTok)
   discard p.advance()                   # '=>'
   let param = newLeaf(IdentExpr, nameTok.start, nameTok.start + nameTok.length)
   let body = parseArrowBody(p, isAsync)
@@ -1161,6 +1175,7 @@ proc parseVarDecl(p: var Parser, consumeSemi = true): AstNode =
     let nameTok = p.peek()
     if not isBindingIdent(nameTok.kind):
       break                     # guard: non-identifier = stop
+    p.checkBindingReserved(nameTok)
     discard p.advance()         # consume the identifier
 
     var declEnd = nameTok.start + nameTok.length
@@ -1355,8 +1370,10 @@ proc parseTry(p: var Parser): AstNode =
       discard p.advance()
       if p.peek().kind in {LBrace, LBracket}:  # pattern catch param
         catchPat = parseBindingTarget(p)
-      elif p.peek().kind == Identifier:         # bare identifier catch param
-        let id = p.advance(); cpStart = id.start; cpLen = id.length
+      elif isBindingIdent(p.peek().kind):       # bare identifier catch param
+        let id = p.peek()
+        p.checkBindingReserved(id)
+        discard p.advance(); cpStart = id.start; cpLen = id.length
       discard p.expect(RParen)
     catchBlk = parseBlock(p)
   var finallyBlk: AstNode = nil
@@ -1390,6 +1407,7 @@ proc parseParamList(p: var Parser): seq[AstNode] =
     if p.peek().kind == Ellipsis:
       let dots = p.advance()
       let nameTok = p.advance()                 # identifier
+      p.checkBindingReserved(nameTok)
       let ident = newLeaf(IdentExpr, nameTok.start, nameTok.start + nameTok.length)
       result.add(newRestParam(dots.start, nameTok.start + nameTok.length, ident))
       break                                     # rest must be last
@@ -1403,6 +1421,7 @@ proc parseParamList(p: var Parser): seq[AstNode] =
       result.add(param)
     else:
       let nameTok = p.advance()                 # identifier
+      p.checkBindingReserved(nameTok)
       let ident = newLeaf(IdentExpr, nameTok.start, nameTok.start + nameTok.length)
       if p.peek().kind == Eq:
         discard p.advance()
@@ -1420,6 +1439,7 @@ proc parseFunctionDecl(p: var Parser, isAsync = false): AstNode =
   var isGen = false
   if p.peek().kind == Star: discard p.advance(); isGen = true
   let nameTok = p.advance()                     # name (Identifier) — required for a declaration
+  p.checkBindingReserved(nameTok)               # name bound in ENCLOSING context
   discard p.expect(LParen)
   let params = parseParamList(p)
   discard p.expect(RParen)
@@ -1443,6 +1463,7 @@ proc parseFunctionExpr(p: var Parser, isAsync = false): AstNode =
   var nameLen = 0'u32
   if p.peek().kind == Identifier:               # optional name
     let nameTok = p.advance()
+    p.checkBindingReserved(nameTok)             # name bound in ENCLOSING context
     nameStart = nameTok.start; nameLen = nameTok.length
   discard p.expect(LParen)
   let params = parseParamList(p)
@@ -1612,6 +1633,7 @@ proc parseClassBody(p: var Parser, isDerived: bool): seq[AstNode] =
 proc parseClassDecl(p: var Parser): AstNode =
   let kw = p.advance()                      # 'class'
   let nameTok = p.advance()                 # class name (binding ident)
+  p.checkBindingReserved(nameTok)
   var parent: AstNode = nil
   if p.peek().kind == KwExtends:
     discard p.advance()
@@ -1627,6 +1649,7 @@ proc parseClassExpr(p: var Parser): AstNode =
   var nameLen = 0'u32
   if p.peek().kind == Identifier:
     let nt = p.advance()
+    p.checkBindingReserved(nt)
     nameStart = nt.start; nameLen = nt.length
   var parent: AstNode = nil
   if p.peek().kind == KwExtends:

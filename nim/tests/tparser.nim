@@ -2970,3 +2970,86 @@ suite "parser early errors 2f-1: top-level return":
 
   test "`return` inside a nested function is accepted":
     check not parseHadError("function f(){ function g(){ return 1; } return g(); }")
+
+# ------------------------------------------------------------------
+# Phase 2f-2: context-reserved bindings — `yield` may not be BOUND inside a
+# generator body, `await` may not be BOUND inside an async body (Zen-c
+# is_binding_ident_ctx, parser.zc:806). Params/names are parsed in the
+# ENCLOSING context, so a generator's own `yield` param/name stays legal.
+# ------------------------------------------------------------------
+
+suite "parser early errors 2f-2: context-reserved bindings":
+  # --- REJECT: yield bound inside a generator body ---
+  test "var yield in generator body is rejected":
+    check parseHadError("function* g(){ var yield; }")
+
+  test "array-pattern leaf [yield] in generator body is rejected":
+    check parseHadError("function* g(){ let [yield] = x; }")
+
+  test "object-pattern rename {x: yield} in generator body is rejected":
+    check parseHadError("function* g(){ var {x: yield} = o; }")
+
+  test "catch(yield) in generator body is rejected":
+    check parseHadError("function* g(){ try{}catch(yield){} }")
+
+  test "class yield in generator body is rejected":
+    check parseHadError("function* g(){ class yield{} }")
+
+  test "nested fn param (yield) in generator body is rejected":
+    check parseHadError("function* g(){ function inner(yield){} }")
+
+  test "nested fn named yield in generator body is rejected":
+    check parseHadError("function* g(){ function yield(){} }")
+
+  test "arrow body var yield in generator body is rejected":
+    check parseHadError("function* g(){ a => { var yield; } }")
+
+  test "single arrow param (yield) in generator body is rejected":
+    check parseHadError("function* g(){ (yield) => 1; }")
+
+  test "for (var yield of x) in generator body is rejected":
+    check parseHadError("function* g(){ for (var yield of x){} }")
+
+  # --- REJECT: await bound inside an async body ---
+  test "var await in async body is rejected":
+    check parseHadError("async function a(){ var await; }")
+
+  test "object-pattern shorthand {await} in async body is rejected":
+    check parseHadError("async function a(){ const {await} = x; }")
+
+  test "catch(await) in async body is rejected":
+    check parseHadError("async function a(){ try{}catch(await){} }")
+
+  test "nested fn named await in async body is rejected":
+    check parseHadError("async function a(){ function await(){} }")
+
+  test "for (const await in x) in async body is rejected":
+    check parseHadError("async function a(){ for (const await in x){} }")
+
+  # --- ACCEPT: enclosing-context names/params and non-binding positions ---
+  test "generator's own yield param is accepted (enclosing context)":
+    check not parseHadError("function* g(yield){}")
+
+  test "generator's own name yield is accepted (enclosing context)":
+    check not parseHadError("function* yield(){}")
+
+  test "async function's own name await is accepted (enclosing context)":
+    check not parseHadError("async function await(){}")
+
+  test "async function's own await param is accepted (enclosing context)":
+    check not parseHadError("async function a(await){}")
+
+  test "yield EXPRESSION (not a binding) in generator body is accepted":
+    check not parseHadError("function* g(){ var x = yield; }")
+
+  test "yield as a label in generator body is accepted":
+    check not parseHadError("function* g(){ label: yield; }")
+
+  test "var yield in a NON-generator function is accepted":
+    check not parseHadError("function f(){ var yield; }")
+
+  test "var yield in an async-NOT-generator body is accepted (only await reserved)":
+    check not parseHadError("async function a(){ var yield; }")
+
+  test "var await in a NON-async function is accepted":
+    check not parseHadError("function f(){ var await; }")
