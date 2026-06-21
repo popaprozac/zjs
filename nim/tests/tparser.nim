@@ -124,3 +124,84 @@ suite "parser primaries":
     let n = prog.stmts[0]
     check n.start == 0'u32
     check n.`end` == 1'u32
+
+suite "parser operators":
+  test "1 + 2 is Binary Plus":
+    var p = initParser("1 + 2")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Binary
+    check node.binOp == TokenKind.Plus
+    check node.lhs.kind == NodeKind.NumberExpr
+    check node.rhs.kind == NodeKind.NumberExpr
+
+  test "1 + 2 * 3 — precedence: Plus over {1, Star{2,3}}":
+    var p = initParser("1 + 2 * 3")
+    let prog = p.parseProgram()
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Binary
+    check node.binOp == TokenKind.Plus
+    check node.lhs.kind == NodeKind.NumberExpr
+    check node.lhs.numVal == 1.0
+    check node.rhs.kind == NodeKind.Binary
+    check node.rhs.binOp == TokenKind.Star
+    check node.rhs.lhs.numVal == 2.0
+    check node.rhs.rhs.numVal == 3.0
+
+  test "-x is Unary Minus":
+    var p = initParser("-x")
+    let prog = p.parseProgram()
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Unary
+    check node.unOp == TokenKind.Minus
+    check node.operand.kind == NodeKind.IdentExpr
+
+  test "!a is Unary Bang":
+    var p = initParser("!a")
+    let prog = p.parseProgram()
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Unary
+    check node.unOp == TokenKind.Bang
+    check node.operand.kind == NodeKind.IdentExpr
+
+  test "a && b is Logical AmpAmp":
+    var p = initParser("a && b")
+    let prog = p.parseProgram()
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Logical
+    check node.binOp == TokenKind.AmpAmp
+    check node.lhs.kind == NodeKind.IdentExpr
+    check node.rhs.kind == NodeKind.IdentExpr
+
+  test "2 ** 3 ** 2 is right-associative":
+    # outer StarStar, rhs is also StarStar
+    var p = initParser("2 ** 3 ** 2")
+    let prog = p.parseProgram()
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Binary
+    check node.binOp == TokenKind.StarStar
+    check node.lhs.kind == NodeKind.NumberExpr
+    check node.lhs.numVal == 2.0
+    check node.rhs.kind == NodeKind.Binary
+    check node.rhs.binOp == TokenKind.StarStar
+    check node.rhs.lhs.numVal == 3.0
+    check node.rhs.rhs.numVal == 2.0
+
+  test "a + b - c is left-associative — outer Minus, lhs is Plus":
+    var p = initParser("a + b - c")
+    let prog = p.parseProgram()
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Binary
+    check node.binOp == TokenKind.Minus
+    check node.lhs.kind == NodeKind.Binary
+    check node.lhs.binOp == TokenKind.Plus
+    check node.rhs.kind == NodeKind.IdentExpr
+
+  test "a++ is Postfix PlusPlus":
+    var p = initParser("a++")
+    let prog = p.parseProgram()
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Postfix
+    check node.unOp == TokenKind.PlusPlus
+    check node.operand.kind == NodeKind.IdentExpr
