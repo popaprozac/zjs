@@ -87,13 +87,26 @@ test: **does this code run per-bytecode-op or per-GC-cell?**
 
 This keeps the 2.05× while making the 34k-LOC builtins breadth pleasant to write.
 
-### 3.2 The golden rule (perf/size beats fidelity)
+### 3.2 The golden rule (perf/size — AND idiom — beat fidelity)
 
 **Behavioral parity is the hard invariant** — same observable JS results, same
 test262 pass/fail, same thrown errors. But **internal representation** (value
 layout, bytecode, GC structures, data structures) is **free to deviate from
 Zen-c whenever Nim offers a perf or size win — and should**, per the
 fast-jitless north star.
+
+**This is a port to do BEST, not fast (owner decision, 2026-06-21).** Speed of
+porting is explicitly NOT a goal. When a fork pits a faithful, mechanical
+translation of Zen-c against a more idiomatic Nim design, **choose the idiomatic
+Nim design — even when it is more work**, because the whole point of the
+migration is to lean into Nim's strengths (drivers #2 and #4). The differential
+oracle (`zjs lex` / `zjs parse` / test262) de-risks the more-idiomatic choice:
+behavioral parity is enforced regardless of internal shape, so "more idiomatic"
+never costs correctness — only effort, which we are willing to spend. Default to
+the idiomatic Nim construct (object variants, distinct types, `Result`/options,
+`seq`/`openArray`, methods/UFCS) unless the systems register (§3.1) demands
+otherwise. **Concrete standing decision: the AST uses object variants with
+semantic field names** (not a flat fat node) — see §3.4.
 
 Consequence for testing: cheap *structural* diffs (AST-dump diff, disasm diff)
 work only where representation stays aligned. Where we deviate for perf/size,
@@ -119,6 +132,34 @@ behaviorally checked anyway.
   carries over. (Nim 2.2.10 confirmed installed.)
 - **Value:** NaN-boxed `uint64` as a `distinct` type with `{.inline.}` tag-test
   procs — zero-cost idiomatic wrapping of the bit tricks.
+
+### 3.4 AST: object variants with semantic fields (standing decision)
+
+Per §3.2, the AST is modeled as a Nim **`ref object` variant**, not a flat
+"fat node" mirroring Zen-c's generic `left`/`right`/`third`/`children`. The
+design:
+
+- **Discriminant is the full `NodeKind`** (mirrors `src/ast.zc`'s 95 variants,
+  same names) so `$kind` reproduces `zjs parse`'s `nk_label` AND the kind stays
+  exact. Note: a node may be Nim-managed (`ref` + `seq`, arc) — AST is
+  compile-time/host-side data per §3.3's two-heap rule, so NO manual memory.
+- **`of`-branches group kinds by shared shape** (Nim allows multiple enum
+  values per `of` branch), so ~8–12 branches, not 95: e.g.
+  `of Binary, Logical: binOp: TokenKind; lhs, rhs: AstNode`,
+  `of Unary, Postfix: unOp: TokenKind; operand: AstNode`,
+  `of If: cond, then, els: AstNode`, etc.
+- **Fields are SEMANTIC, not generic** — `lhs`/`rhs`/`callee`/`args`/`cond`/
+  `then`/`els`/`init`/`body`, not `left`/`right`/`third`. This is the idiom win;
+  it requires reading the Zen-c parser to learn each kind's `left`/`right`/
+  `third`/`children` meaning, which is exactly the effort we choose to spend.
+- **Grow branches incrementally** with an `else: discard` catch-all for
+  not-yet-implemented kinds; move kinds out of the catch-all as each parser
+  increment implements them. The differential `zjs parse` oracle gates every
+  step.
+
+The AST shape is foundational (parser + compiler both consume it), so the exact
+branch/field design is a **deliberate controller+owner design step at the start
+of each parser increment**, not improvised by an implementer subagent.
 
 ---
 

@@ -16,12 +16,25 @@
 
 ## AST representation decision (deliberate, flag for review)
 
-The design doc floated **object variants** for the AST. This plan instead uses a **flat `ref AstNode`** (a single `ref object` with all fields, Nim-managed via `--mm:arc`, `seq[AstNode]` children) that mirrors Zen-c's flat `AstNode` struct. Rationale:
-- The 4779-LOC parser port becomes near-mechanical (same field accesses: `node.left`, `node.children`, `node.nameStart`).
-- AST is "compile-time / host-side data" (design's two-heap rule) → **Nim-managed** (`ref` + `seq` + arc), so NO manual memory, no `dealloc`.
-- The differential oracle validates the *dump*, not the internal rep — so idiomatizing to object variants **later** (once the parser is green) is a safe, oracle-checked refactor.
+**Decided (owner, 2026-06-21): object variants with semantic fields.** Per design
+doc §3.2 (this is a port to do BEST, not fast) and §3.4 (the AST standing
+decision), the AST is a Nim **`ref object` variant**, NOT a flat fat node:
+- Discriminant = the full `NodeKind` (mirrors `src/ast.zc`, same names → `$kind`
+  matches `zjs parse`'s `nk_label`). Nim-managed (`ref` + `seq`, arc; no manual
+  memory — AST is host-side data per the two-heap rule).
+- `of`-branches **group kinds by shared shape** (Nim allows multiple enum values
+  per branch) → ~8–12 branches, not 95.
+- Fields are **semantic** (`lhs`/`rhs`/`unOp`/`operand`/`init`/`declarators`/
+  `stmts`), NOT generic `left`/`right`/`third`. Deriving these requires reading
+  the Zen-c parser to learn each kind's field meaning — the effort we choose to
+  spend.
+- Branches grow incrementally with an `else: discard` catch-all; the `zjs parse`
+  differential oracle gates every step.
 
-Faithful-first, refactor-when-green — the discipline used throughout the migration. **If you'd rather commit to object variants now, veto here on plan review and I'll restructure Task 1.**
+**Because the AST shape is foundational (parser AND the Phase-3 compiler consume
+it), the exact variant-branch design for the Phase-2b kinds is a deliberate
+controller+owner design step done at the START of execution (with the Zen-c
+parser open) — see Task 1. It is NOT improvised by an implementer subagent.**
 
 ---
 
@@ -62,11 +75,23 @@ The node-kind label is `nk_label(kind)` and the op label is the TokenKind label 
 
 ---
 
-## Task 1: AST node model
+## Task 1: AST node model (object variant — design step + build)
 
 **Files:** Create `nim/src/zjs/ast.nim`, Create `nim/tests/tparser.nim`.
 
-- [ ] **Step 1: Write the failing test** — `nim/tests/tparser.nim`:
+- [ ] **Step 0 (CONTROLLER+OWNER DESIGN STEP — do this first, at execution start, with the Zen-c parser open; NOT delegated to an implementer subagent).**
+  Per design doc §3.4, design the object-variant `AstNode` for the Phase-2b
+  kinds. For each kind in scope (Program, NumberExpr, BigIntExpr, StringExpr,
+  RegexExpr, BoolExpr, NullExpr, UndefinedExpr, ThisExpr, IdentExpr, Binary,
+  Logical, Unary, Postfix, Assignment, VarDecl, Declarator), read `src/parser.zc`
+  + `src/ast.zc` to learn what its generic `left`/`right`/`third`/`children`/
+  `name_*` fields actually MEAN, and define **semantic** variant fields. Group
+  kinds sharing a shape into one `of` branch. Finalize the type below against
+  the reference, then proceed to the TDD steps. The illustrative sketch in Step 3
+  is a STARTING POINT to refine, not the final word.
+
+- [ ] **Step 1: Write the failing test** — `nim/tests/tparser.nim` (adjust field/
+  constructor names to match the Step-0 finalized design):
 ```nim
 import std/unittest
 import ../src/zjs/ast
@@ -80,25 +105,27 @@ suite "ast model":
     check $NodeKind.VarDecl == "VarDecl"
     check $NodeKind.Declarator == "Declarator"
 
-  test "AstNode is a Nim-managed ref with the common fields":
-    let n = newNode(NodeKind.Binary, 0'u32, 5'u32)
-    n.op = TokenKind.Plus
-    n.left = newNode(NodeKind.NumberExpr, 0'u32, 1'u32)
-    n.left.num = 1.0
-    check n.kind == NodeKind.Binary
-    check n.op == TokenKind.Plus
-    check n.left.num == 1.0
-    check n.children.len == 0
+  test "variant nodes expose semantic fields":
+    let lhs = newNumber(0'u32, 1'u32, 1.0)
+    let rhs = newNumber(4'u32, 5'u32, 2.0)
+    let b = newBinary(NodeKind.Binary, 0'u32, 5'u32, TokenKind.Plus, lhs, rhs)
+    check b.kind == NodeKind.Binary
+    check b.binOp == TokenKind.Plus
+    check b.lhs.numVal == 1.0
+    check b.rhs.numVal == 2.0
 ```
 
 - [ ] **Step 2: Run, verify it fails** — `nim c -r --mm:arc --hints:off nim/tests/tparser.nim`.
 
-- [ ] **Step 3: Write `nim/src/zjs/ast.nim`.** Mirror the `NodeKind` enum from `src/ast.zc` (read it — 95 variants, in order, same names so `$kind` matches `nk_label`). Cross-check against `src/ast.zc` exactly (same discipline as the lexer's TokenKind mirror — a mismatch silently breaks the dump). The node type:
+- [ ] **Step 3: Write `nim/src/zjs/ast.nim`.** Mirror the `NodeKind` enum from
+  `src/ast.zc` (read it — 95 variants, in order, same names so `$kind` matches
+  `nk_label`; same discipline as the lexer's TokenKind mirror — a mismatch
+  silently breaks the dump). Then the **object-variant** node. ILLUSTRATIVE
+  sketch (finalize against the Step-0 design):
 ```nim
-## AST — mirrors src/ast.zc. Flat `ref AstNode` (Nim-managed via arc),
-## one object with all fields; each kind uses a subset. NodeKind variant
-## names MUST match src/ast.zc so `$kind` reproduces `zjs parse`'s labels.
-## (Object-variant idiomatization is a deferred, oracle-checked refactor.)
+## AST — object variant (design doc §3.4). Discriminant = full NodeKind
+## (names mirror src/ast.zc so `$kind` == `zjs parse`'s nk_label). of-branches
+## grouped by shape; SEMANTIC field names; Nim-managed (ref + seq + arc).
 import token
 
 type
@@ -110,24 +137,49 @@ type
     ## ... (continue: mirror EVERY variant from src/ast.zc, in order) ...
 
   AstNode* = ref object
-    kind*: NodeKind
-    start*, `end`*: uint32          # `end` is a Nim keyword — escape with backticks
-    op*: TokenKind
-    num*: float64
-    boolVal*: bool
-    left*, right*, third*: AstNode
-    children*: seq[AstNode]
-    nameStart*, nameLength*: uint32
-    scopeId*: uint32
+    start*, `end`*: uint32              # `end` is a Nim keyword — backtick-escape
+    case kind*: NodeKind
+    of NumberExpr: numVal*: float64
+    of BoolExpr: boolVal*: bool
+    of StringExpr, IdentExpr, RegexExpr, BigIntExpr: discard  # value = source slice
+    of NullExpr, UndefinedExpr, ThisExpr: discard             # nullary
+    of Binary, Logical:
+      binOp*: TokenKind
+      lhs*, rhs*: AstNode
+    of Unary, Postfix:
+      unOp*: TokenKind
+      operand*: AstNode
+    of Assignment:
+      assignOp*: TokenKind
+      target*, value*: AstNode
+    of VarDecl:
+      declKind*: TokenKind              # KwLet / KwConst / KwVar
+      declarators*: seq[AstNode]
+    of Declarator:
+      nameStart*, nameLength*: uint32
+      init*: AstNode                    # initializer, or nil
+    of Program:
+      stmts*: seq[AstNode]
+    else: discard                       # kinds implemented in later increments
 
-proc newNode*(kind: NodeKind, start, endPos: uint32): AstNode {.inline.} =
-  AstNode(kind: kind, start: start, `end`: endPos)
+# Shape constructors (one per branch family) — semantic + total:
+proc newNumber*(s, e: uint32, v: float64): AstNode =
+  AstNode(kind: NumberExpr, start: s, `end`: e, numVal: v)
+proc newBinary*(k: NodeKind, s, e: uint32, op: TokenKind, lhs, rhs: AstNode): AstNode =
+  AstNode(kind: k, start: s, `end`: e, binOp: op, lhs: lhs, rhs: rhs)
+# ... (newUnary, newAssignment, newVarDecl, newDeclarator, newProgram,
+#      newIdent/newString/newBool/newNull/..., per the Step-0 design) ...
 ```
-NOTE: `end` is a Nim reserved word — declare the field as `` `end`* `` (backtick-escaped) and access it the same way. Map Zen-c `bool_value`→`boolVal`, `name_start`→`nameStart`, etc. (camelCase idiomatic).
+KEY Nim rules: each field name must be UNIQUE across the whole variant (hence
+`binOp`/`unOp`/`assignOp`/`declKind`, not one shared `op`); common fields
+(`start`/`end`) go OUTSIDE the `case`; you cannot mutate `kind` after
+construction, so construct each node with its kind + fields in one shot via the
+shape constructors. The dumper (Task 2) reads the right semantic field per
+kind-group (`binOp` for Binary/Logical, `unOp` for Unary/Postfix, etc.).
 
 - [ ] **Step 4: Run, verify it passes** — `nim c -r --mm:arc --hints:off nim/tests/tparser.nim` → PASS.
 
-- [ ] **Step 5: Commit** — `git add nim/src/zjs/ast.nim nim/tests/tparser.nim && git commit -m "nim: AST node model — NodeKind enum + ref AstNode (phase 2b)"`
+- [ ] **Step 5: Commit** — `git add nim/src/zjs/ast.nim nim/tests/tparser.nim && git commit -m "nim: AST object-variant node model — semantic fields (phase 2b)"`
 
 ---
 
@@ -157,13 +209,15 @@ proc initParser*(source: string): Parser =
 
 proc parseProgram*(p: var Parser): AstNode =
   ## STUB (Task 2): empty Program. Real parsing in Task 3+.
-  newNode(NodeKind.Program, 0'u32, p.source.len.uint32)
+  newProgram(0'u32, p.source.len.uint32)   # variant constructor; stmts defaults to @[]
 ```
 
-- [ ] **Step 2: The dumper** — `nim/tools/nim_parse.nim` — must match `zjs parse` format (indent 2/depth + per-node attrs from the oracle section). Use `$kind` for the node label and `$op` for the op label (both mirror the Zen-c labels because the enums mirror Zen-c). Implement `dumpAst(node, source, depth)`:
+- [ ] **Step 2: The dumper** — `nim/tools/nim_parse.nim` — must match `zjs parse` format (indent 2/depth + per-node attrs from the oracle section). Use `$kind` for the node label and `$binOp`/`$unOp`/… for the op labels (both mirror the Zen-c labels because the enums mirror Zen-c). With the **object variant**, the header line AND the child walk are both driven by a single `case n.kind` — each branch reads its own semantic fields and recurses into its own semantic children in source order. This is the variant payoff: no generic `left/right/third/children` walk that could visit the wrong slot. Implement `dumpAst(node, source, depth)`:
 ```nim
 import std/[os, strformat, strutils]
 import ../src/zjs/[ast, token, parser]
+
+proc slice(src: string, s, e: uint32): string = src[s.int ..< e.int]
 
 proc dumpAst(n: AstNode, src: string, depth: int) =
   if n == nil:
@@ -172,26 +226,33 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
   let label = $n.kind
   case n.kind
   of NumberExpr:
-    stdout.write(&"{ind}{label} {formatFloat(n.num, ffDefault, 0)}\n")  # match printf %g — verify in Step 4
+    stdout.write(&"{ind}{label} {formatFloat(n.numVal, ffDefault, 0)}\n")  # match printf %g — verify in Step 4
   of BoolExpr:
     stdout.write(&"{ind}{label} {(if n.boolVal: \"true\" else: \"false\")}\n")
-  of IdentExpr, StringExpr:
-    let s = src[n.start.int ..< n.`end`.int]
-    stdout.write(&"{ind}{label} \"{s}\"\n")
-  of Binary, Logical, Unary, Postfix, Assignment, VarDecl:
-    stdout.write(&"{ind}{label} op={$n.op}\n")
-  of Member, OptionalMember, ObjectProp, Declarator:
-    let nm = src[n.nameStart.int ..< (n.nameStart + n.nameLength).int]
-    stdout.write(&"{ind}{label} name=\"{nm}\"\n")
-  else:
+  of IdentExpr, StringExpr, RegexExpr, BigIntExpr:
+    stdout.write(&"{ind}{label} \"{slice(src, n.start, n.`end`)}\"\n")
+  of Binary, Logical:
+    stdout.write(&"{ind}{label} op={$n.binOp}\n")
+    dumpAst(n.lhs, src, depth+1)
+    dumpAst(n.rhs, src, depth+1)
+  of Unary, Postfix:
+    stdout.write(&"{ind}{label} op={$n.unOp}\n")
+    dumpAst(n.operand, src, depth+1)
+  of Assignment:
+    stdout.write(&"{ind}{label} op={$n.assignOp}\n")
+    dumpAst(n.target, src, depth+1)
+    dumpAst(n.value, src, depth+1)
+  of VarDecl:
+    stdout.write(&"{ind}{label} op={$n.declKind}\n")
+    for d in n.declarators: dumpAst(d, src, depth+1)
+  of Declarator:
+    stdout.write(&"{ind}{label} name=\"{slice(src, n.nameStart, n.nameStart + n.nameLength)}\"\n")
+    if n.init != nil: dumpAst(n.init, src, depth+1)
+  of Program:
     stdout.write(&"{ind}{label}\n")
-  # children: left, right, third (in the order Zen-c's dump_ast walks them),
-  # then the children seq. VERIFY the walk order against `zjs parse` in Step 4
-  # and match it exactly (read dump_ast in tools/zjs.zc for the child order).
-  if n.left != nil: dumpAst(n.left, src, depth+1)
-  if n.right != nil: dumpAst(n.right, src, depth+1)
-  if n.third != nil: dumpAst(n.third, src, depth+1)
-  for c in n.children: dumpAst(c, src, depth+1)
+    for s in n.stmts: dumpAst(s, src, depth+1)
+  else:  # NullExpr, UndefinedExpr, ThisExpr, + later-increment kinds (nullary for now)
+    stdout.write(&"{ind}{label}\n")
 
 proc main() =
   let src = if paramCount() >= 1: paramStr(1) else: ""
@@ -201,7 +262,7 @@ proc main() =
 
 main()
 ```
-CRITICAL (Step 4): the **child-walk order** and the **`%g` number formatting** must match Zen-c's `dump_ast` exactly. Read `dump_ast` in `tools/zjs.zc` to confirm the order it recurses (left/right/third/children, or some other order per kind) and replicate it. Use a `Program` with one child to lock indentation, and adjust `formatFloat`/the walk until a real dump diffs clean.
+CRITICAL (Step 4): the **per-kind child-walk order** and the **`%g` number formatting** must match Zen-c's `dump_ast` exactly. Read `dump_ast` in `tools/zjs.zc` to confirm, for each kind, the order it recurses its children (e.g. Binary = left-then-right, Declarator = name-then-init) and replicate that order inside the matching `of` branch. Use a `Program` with one child to lock indentation, and adjust `formatFloat`/the per-branch walk until a real dump diffs clean.
 
 - [ ] **Step 3: Differential harness** — `nim/tests/diff_parse.sh` (copy the structure of `nim/tests/diff_lex.sh`, swapping `lex`→`parse` and `nim-lex`→`nim-parse`; same built-in snippets + `<dir>` mode + `diff` + count).
 
@@ -219,7 +280,7 @@ CRITICAL (Step 4): the **child-walk order** and the **`%g` number formatting** m
 
 - [ ] **Step 2: Run, verify they fail** (stub returns empty Program).
 
-- [ ] **Step 3: Implement** in `nim/src/zjs/parser.nim`: cursor helpers (`peek`/`advance`/`expect`), `parseProgram` (loop parsing statements into `root.children`), a minimal `parseStatement` that for now handles only expression statements, and `parsePrimary` (number/string/bool/null/undefined/ident/this/regex/parenthesized). Port the corresponding bits of `src/parser.zc`. Set `start`/`end`/`num`/`boolVal`/`nameStart`/`nameLength` to match what the Zen-c parser records (the dump reveals these).
+- [ ] **Step 3: Implement** in `nim/src/zjs/parser.nim`: cursor helpers (`peek`/`advance`/`expect`), `parseProgram` (loop parsing statements into a local `stmts: seq[AstNode]`, then `newProgram(0, len, stmts)` — recall a variant's `kind` and case fields are fixed at construction, so accumulate children first and build the node once), a minimal `parseStatement` that for now handles only expression statements, and `parsePrimary` (number/string/bool/null/undefined/ident/this/regex/parenthesized). Build each node via its shape constructor (`newNumber`/`newString`/`newBool`/`newNull`/`newIdent`/`newThis`/…), setting `start`/`end`/`numVal`/`boolVal` to match what the Zen-c parser records (the dump reveals these). For value-from-slice kinds (Ident/String/Regex/BigInt) the value is the `start..end` source slice — set the span, no separate field.
 
 - [ ] **Step 4: Run unit tests → PASS. Differential checks:**
 ```bash
@@ -242,7 +303,7 @@ All must diff clean.
 
 - [ ] **Step 2: Run, verify fail.**
 
-- [ ] **Step 3: Implement** binary/unary expression parsing with correct precedence + associativity, porting `src/parser.zc`'s expression parser (it likely uses precedence climbing or a Pratt-style ladder — mirror its precedence table and associativity exactly; the differential oracle will catch any precedence error). Produce `Binary`/`Logical`/`Unary`/`Postfix` nodes with `op` set, `left`/`right` children.
+- [ ] **Step 3: Implement** binary/unary expression parsing with correct precedence + associativity, porting `src/parser.zc`'s expression parser (it likely uses precedence climbing or a Pratt-style ladder — mirror its precedence table and associativity exactly; the differential oracle will catch any precedence error). Produce nodes via the shape constructors: `newBinary(Binary|Logical, …, op, lhs, rhs)` (`binOp` field), `newUnary(Unary|Postfix, …, op, operand)` (`unOp` field). Note Binary and Logical share the `binOp`/`lhs`/`rhs` shape (one constructor, kind selects which) — Zen-c routes logical operators (`&&`/`||`/`??`) to the `Logical` kind; check `zjs parse 'a && b'` to confirm which operators map to `Logical` vs `Binary` and dispatch the kind accordingly.
 
 - [ ] **Step 4: Run unit tests → PASS. Differential checks:**
 ```bash
@@ -264,7 +325,7 @@ All clean (precedence + associativity must match Zen-c).
 
 - [ ] **Step 2: Run, verify fail.**
 
-- [ ] **Step 3: Implement** `let`/`const`/`var` declaration parsing (port `src/parser.zc`'s var-decl path): a `VarDecl` node with `op` = the keyword token, children = `Declarator` nodes (each with `nameStart`/`nameLength` + an optional initializer child). Wire it into `parseStatement` (dispatch on `KwLet`/`KwConst`/`KwVar`). Keep expression statements working. Handle the trailing `;` (ASI not required for this increment — just consume an optional semicolon, matching `zjs parse 'let x = 1'` with and without `;`).
+- [ ] **Step 3: Implement** `let`/`const`/`var` declaration parsing (port `src/parser.zc`'s var-decl path): `newVarDecl(…, declKind, declarators)` where `declKind` = the keyword token (`KwLet`/`KwConst`/`KwVar`) and `declarators` is a `seq[AstNode]` of `newDeclarator(…, nameStart, nameLength, init)` nodes (each with the identifier span + an optional initializer child, `init = nil` when absent). Accumulate the declarator seq first, then build the `VarDecl` once (variant fields are construction-time). Wire it into `parseStatement` (dispatch on `KwLet`/`KwConst`/`KwVar`). Keep expression statements working. Handle the trailing `;` (ASI not required for this increment — just consume an optional semicolon, matching `zjs parse 'let x = 1'` with and without `;`).
 
 - [ ] **Step 4: Run unit tests → PASS. Differential checks + a small corpus:**
 ```bash
