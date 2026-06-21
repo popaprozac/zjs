@@ -571,13 +571,13 @@ proc scanRegexBody(lx: var Lexer; start: uint32): Token =
   while not lx.atEnd():
     let c = lx.peek()
     if c == '\n' or c == '\r':
-      return Token(kind: Invalid, start: start, length: uint32(lx.pos) - start)
+      return tokenInvalid(start)
     if c == '\\':
       lx.advance()
       if not lx.atEnd():
         let nc = lx.peek()
         if nc == '\n' or nc == '\r':
-          return Token(kind: Invalid, start: start, length: uint32(lx.pos) - start)
+          return tokenInvalid(start)
         lx.advance()
       continue
     if c == '[':
@@ -596,7 +596,7 @@ proc scanRegexBody(lx: var Lexer; start: uint32): Token =
       return tokN(RegexLit, start, lx.pos)
     lx.advance()
   # Ran off the end without finding a closing `/`
-  return Token(kind: Invalid, start: start, length: uint32(lx.pos) - start)
+  return tokenInvalid(start)
 
 # =====================================================================
 # Punctuator scanner (longest-match)
