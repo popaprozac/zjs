@@ -2739,3 +2739,128 @@ suite "ast 2e-2 ClassField":
     check f.fieldNameLen == 0'u32
     check f.fieldComputedKey != nil
     check dumpClass2(f, src, 0) == "?\n  NumberExpr 5\n  IdentExpr \"k2\"\n"
+
+# ------------------------------------------------------------------
+# Phase 2e-2: field parsing + synthetic-constructor synthesis
+# ------------------------------------------------------------------
+
+suite "parser class fields 2e-2":
+  test "instance + static + private + bare fields; synth ctor injects instance only":
+    let c = parseOne("class C { x = 1; static y = 2; #p = 3; z; }")
+    check c != nil
+    # 4 fields + 1 synth ctor (static y EXCLUDED from injection)
+    check c.classMembers.len == 5
+    let ctor = c.classMembers[4]
+    check ctor.kind == NodeKind.MethodDef
+    let stmts = ctor.methodBody.stmtList
+    check stmts.len == 3            # x, #p, z — NOT static y
+    check stmts[0].target.kind == NodeKind.Member
+    check stmts[0].value.kind == NodeKind.NumberExpr
+    # bare `z` → this.z = UndefinedExpr
+    check stmts[2].value.kind == NodeKind.UndefinedExpr
+
+  test "computed field: synth ctor target is Computed[ThisExpr, key]; key SHARED":
+    let c = parseOne("class C { [k2] = 5; }")
+    check c != nil
+    check c.classMembers.len == 2  # field + synth ctor
+    let field = c.classMembers[0]
+    let ctor = c.classMembers[1]
+    let assign = ctor.methodBody.stmtList[0]
+    check assign.target.kind == NodeKind.Computed
+    check assign.target.recv.kind == NodeKind.ThisExpr
+    # the computed-key node is the SAME object under the field and the target
+    check assign.target.index == field.fieldComputedKey
+
+  test "init PREPENDED into existing explicit ctor before its body":
+    let c = parseOne("class C { x = 1; constructor() { foo(); } }")
+    check c != nil
+    # field + explicit ctor (no synth appended)
+    check c.classMembers.len == 2
+    let ctor = c.classMembers[1]
+    let stmts = ctor.methodBody.stmtList
+    check stmts.len == 2
+    check stmts[0].kind == NodeKind.Assignment        # this.x = 1
+    check stmts[1].kind == NodeKind.Call              # foo()
+
+  test "derived class, no ctor: synth ctor has inits THEN super()":
+    let c = parseOne("class C extends B { x = 1; }")
+    check c != nil
+    let ctor = c.classMembers[^1]
+    let stmts = ctor.methodBody.stmtList
+    check stmts.len == 2
+    check stmts[0].kind == NodeKind.Assignment        # this.x = 1 FIRST
+    check stmts[1].kind == NodeKind.Call              # super() LAST
+    check stmts[1].callee.kind == NodeKind.SuperExpr
+
+  test "derived class, explicit ctor: init prepended BEFORE explicit super()":
+    let c = parseOne("class C extends B { x = 1; constructor() { super(); } }")
+    check c != nil
+    let ctor = c.classMembers[^1]
+    let stmts = ctor.methodBody.stmtList
+    check stmts.len == 2
+    check stmts[0].kind == NodeKind.Assignment        # this.x = 1
+    check stmts[1].kind == NodeKind.Call              # explicit super()
+    check stmts[1].callee.kind == NodeKind.SuperExpr
+
+  test "static-only class: NO synth ctor produced":
+    let c = parseOne("class C { static x = 1; }")
+    check c != nil
+    check c.classMembers.len == 1                     # just the static field
+    check c.classMembers[0].kind == NodeKind.ClassField
+    check c.classMembers[0].fieldIsStatic
+
+  test "bare field (no init): synth ctor assigns UndefinedExpr":
+    let c = parseOne("class C { x }")
+    check c != nil
+    let ctor = c.classMembers[^1]
+    check ctor.methodBody.stmtList[0].value.kind == NodeKind.UndefinedExpr
+
+  test "two instance fields injected in source order":
+    let c = parseOne("class C { x = 1; y = 2; }")
+    check c != nil
+    let stmts = c.classMembers[^1].methodBody.stmtList
+    check stmts.len == 2
+    check stmts[0].value.numVal == 1.0
+    check stmts[1].value.numVal == 2.0
+
+  test "mixed computed + named field injection":
+    let c = parseOne("class C { [a] = 1; b = 2; }")
+    check c != nil
+    let stmts = c.classMembers[^1].methodBody.stmtList
+    check stmts.len == 2
+    check stmts[0].target.kind == NodeKind.Computed   # [a]
+    check stmts[1].target.kind == NodeKind.Member     # b
+
+  test "string-literal field name is UNQUOTED in the Member target":
+    let c = parseOne("class C { 'x' = 1; }")
+    check c != nil
+    let target = c.classMembers[^1].methodBody.stmtList[0].target
+    check target.kind == NodeKind.Member
+    # propStart/propLength point at the unquoted `x`, not `'x'`
+    let src = "class C { 'x' = 1; }"
+    check src[target.propStart.int ..< (target.propStart + target.propLength).int] == "x"
+
+  test "ctor not first member: inits still prepend into it":
+    let c = parseOne("class C extends B { x = 1; m() {} constructor() { g(); } }")
+    check c != nil
+    # field + method + explicit ctor (no synth)
+    check c.classMembers.len == 3
+    let ctor = c.classMembers[2]
+    let stmts = ctor.methodBody.stmtList
+    check stmts.len == 2
+    check stmts[0].kind == NodeKind.Assignment        # this.x = 1 prepended
+    check stmts[1].kind == NodeKind.Call              # g()
+
+  test "static field excluded, instance field injected":
+    let c = parseOne("class C { static a = 1; b = 2; }")
+    check c != nil
+    let stmts = c.classMembers[^1].methodBody.stmtList
+    check stmts.len == 1                              # only b, static a excluded
+    check stmts[0].value.numVal == 2.0
+
+  test "method-only class: no synthesis fires":
+    let c = parseOne("class C { m() {} static s() {} }")
+    check c != nil
+    check c.classMembers.len == 2
+    for m in c.classMembers:
+      check m.kind == NodeKind.MethodDef

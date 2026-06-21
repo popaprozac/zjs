@@ -1481,7 +1481,30 @@ proc parseMethodBodyPair(p: var Parser): AstNode =
     if not isPropertyNameStart(nameTok.kind) and nameTok.kind != PrivateName:
       p.hadError = true; return nil
     discard p.advance()
-  # === 2e-2 INSERTION POINT: field branch goes here (see slice 2e-2) ===
+  # === 2e-2 field branch: `(` here means method; otherwise it's a class field ===
+  if p.peek().kind != LParen and accessor == Eq and not isAsync and not isGen:
+    var initExpr: AstNode = nil
+    if p.peek().kind == Eq:
+      discard p.advance()
+      initExpr = parseAssignmentExpr(p)
+      if initExpr == nil: return nil
+    # field terminator: optional `;` (ASI / newline early-errors are error-only, deferred)
+    if p.peek().kind == Semicolon: discard p.advance()
+    let fieldEnd = if initExpr != nil: initExpr.`end`
+                   elif computedKey != nil: computedKey.`end`
+                   else: nameTok.start + nameTok.length
+    # A string-literal field name ('x' = 1) stores the UNQUOTED slice
+    # (start+1, len-2) so the `this.<name>` desugar keys it as `x`, not
+    # `'x'` — matches Zen-c parse_method_body_pair (~2141) and the oracle.
+    var fNameStart = nameTok.start
+    var fNameLen = nameTok.length
+    if nameTok.kind == StringLit and nameTok.length >= 2'u32:
+      fNameStart = nameTok.start + 1
+      fNameLen = nameTok.length - 2
+    return newClassField(mutStart, fieldEnd,
+                         (if computedKey != nil: 0'u32 else: fNameStart),
+                         (if computedKey != nil: 0'u32 else: fNameLen),
+                         initExpr, computedKey, isStatic)
   # --- method: params + body ---
   let sg = p.inGenerator; let sa = p.inAsync
   p.inAsync = isAsync; p.inGenerator = isGen
@@ -1508,6 +1531,44 @@ proc parseClassBody(p: var Parser, isDerived: bool): seq[AstNode] =
     if m == nil: p.hadError = true; break
     members.add(m)
   discard p.expect(RBrace)
+  # --- synthesize / inject instance-field initializers into the constructor ---
+  # (port of parse_class_body ~2284-2425; byte-parity-critical)
+  var ctorIdx = -1
+  var anyInstField = false
+  for i, m in members:
+    if m.kind == ClassField and not m.fieldIsStatic: anyInstField = true
+    if m.kind == MethodDef and not m.methodIsStatic and m.methodNameLen == 11'u32 and
+       p.source[m.methodNameStart.int ..< (m.methodNameStart + m.methodNameLen).int] == "constructor":
+      if ctorIdx < 0: ctorIdx = i           # first constructor wins (dup = error, deferred)
+  if anyInstField:
+    # 1. ensure a constructor exists (synthesize when absent)
+    if ctorIdx < 0:
+      let anchor = if members.len > 0: members[0].start else: 0'u32
+      var bodyStmts: seq[AstNode]
+      if isDerived:
+        let superExpr = newLeaf(SuperExpr, anchor, anchor)
+        bodyStmts.add(newCall(Call, anchor, anchor, superExpr, @[]))
+      let blk = newBlock(anchor, anchor, bodyStmts)
+      let synth = newMethodDef(anchor, anchor, anchor, 0'u32, blk, nil, @[],
+                               false, Eq, false, false)
+      members.add(synth)
+      ctorIdx = members.len - 1
+    # 2. prepend `this.<name> = <init|undefined>` per INSTANCE field (source order)
+    let ctor = members[ctorIdx]
+    if ctor.methodBody != nil and ctor.methodBody.kind == BlockStmt:
+      var inits: seq[AstNode]
+      for m in members:
+        if m.kind == ClassField and not m.fieldIsStatic:
+          let thisE = newLeaf(ThisExpr, m.start, m.start)
+          var target: AstNode
+          if m.fieldNameLen == 0'u32 and m.fieldComputedKey != nil:
+            target = newComputed(Computed, m.start, m.`end`, thisE, m.fieldComputedKey)  # SHARED key node
+          else:
+            target = newMember(Member, m.start, m.`end`, m.fieldNameStart, m.fieldNameLen, thisE)
+          let initVal = if m.fieldInit != nil: m.fieldInit
+                        else: newLeaf(UndefinedExpr, m.start, m.start)
+          inits.add(newAssignment(m.start, initVal.`end`, Eq, target, initVal))
+      ctor.methodBody.stmtList = inits & ctor.methodBody.stmtList
   return members
 
 proc parseClassDecl(p: var Parser): AstNode =
