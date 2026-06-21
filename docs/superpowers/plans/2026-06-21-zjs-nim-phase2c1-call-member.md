@@ -104,4 +104,26 @@ These don't appear in the 2c-1 battery, so the chain simply won't implement thos
 - No regression on the 2b batteries.
 - `delete a.b` now matches (member access unblocks it).
 
+## STATUS: DONE (2026-06-21, commits 5118484 + e98a176)
+- 43 unit tests pass; 29/29 VALID member/call/new/optional-chain inputs byte-clean
+  (battery + adversarial: `a?.b?.c?.d`, `new a.b.c(d)`, `f(g(),h(...x),...y)`,
+  `f(a,)`, `a?.[b][c]`, `a.b.c.d.e.f`, etc.). 0 regressions. nim-diffparse 5/8
+  (the 3 diffs are out-of-scope: compound-assign, tagged template, private names).
+
+## KNOWN DIVERGENCE — parser error reporting (NOT a 2c-1 bug; pre-existing since 2b)
+`new new A()()` was the one adversarial DIFF: **Zen-c emits `zjs: parse error`**
+(its `new`-callee uses `parse_primary`, which can't recurse into a nested `new`),
+while our parser is permissive and emits a tree. Probing confirmed this is a
+**systemic gap**: the Nim parser does NOT replicate Zen-c's parse-error behavior
+at all — on malformed input (`a +`, `(`, `f(`, `)`, `let`, `@`) Zen-c prints
+`zjs: parse error` while the Nim parser silently prints `Program`. (Note Zen-c's
+error set is SPECIFIC — `1 2` and `a.` do NOT error there — so matching means
+faithfully porting `p.had_error` at every parse site + the CLI's error path.)
+
+This is a distinct, cross-cutting future increment (**"parser error reporting"**)
+— it affects no valid program's parse tree, but it IS a prerequisite for the
+eventual test262 **corpus** diff (negative tests) that gates the Phase-2→`nim`
+merge. Scheduled after the remaining positive-input slices (2c-2…2c-5) OR before
+the corpus gate, owner's call.
+
 Next: 2c-2 (conditional `?:` + sequence `,`).
