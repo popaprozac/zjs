@@ -691,3 +691,115 @@ suite "parser array/object":
     check arr.kind == NodeKind.Array
     check arr.elems.len == 1
     check arr.elems[0].kind == NodeKind.Conditional
+
+suite "parser assignment":
+  test "a = b — Assignment Eq with IdentExpr target and value":
+    var p = initParser("a = b")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.assignOp == TokenKind.Eq
+    check node.target.kind == NodeKind.IdentExpr
+    check node.value.kind == NodeKind.IdentExpr
+
+  test "a = b = c — right-associative nested Assignment":
+    var p = initParser("a = b = c")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let outer = prog.stmts[0]
+    check outer.kind == NodeKind.Assignment
+    check outer.assignOp == TokenKind.Eq
+    check outer.target.kind == NodeKind.IdentExpr
+    let inner = outer.value
+    check inner.kind == NodeKind.Assignment
+    check inner.assignOp == TokenKind.Eq
+    check inner.target.kind == NodeKind.IdentExpr
+    check inner.value.kind == NodeKind.IdentExpr
+
+  test "a += b — Assignment PlusEq":
+    var p = initParser("a += b")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.assignOp == TokenKind.PlusEq
+    check node.target.kind == NodeKind.IdentExpr
+    check node.value.kind == NodeKind.IdentExpr
+
+  test "a **= 2 — Assignment StarStarEq with NumberExpr rhs":
+    var p = initParser("a **= 2")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.assignOp == TokenKind.StarStarEq
+    check node.target.kind == NodeKind.IdentExpr
+    check node.value.kind == NodeKind.NumberExpr
+    check node.value.numVal == 2.0
+
+  test "a ||= b — Assignment PipePipeEq":
+    var p = initParser("a ||= b")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.assignOp == TokenKind.PipePipeEq
+    check node.target.kind == NodeKind.IdentExpr
+    check node.value.kind == NodeKind.IdentExpr
+
+  test "a ??= b — Assignment QuestionQuestionEq":
+    var p = initParser("a ??= b")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.assignOp == TokenKind.QuestionQuestionEq
+    check node.target.kind == NodeKind.IdentExpr
+    check node.value.kind == NodeKind.IdentExpr
+
+  test "a.b = c — Assignment Eq with Member target":
+    var p = initParser("a.b = c")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.assignOp == TokenKind.Eq
+    check node.target.kind == NodeKind.Member
+    check node.target.recv.kind == NodeKind.IdentExpr
+    check node.value.kind == NodeKind.IdentExpr
+
+  test "a[i] = b — Assignment Eq with Computed target":
+    var p = initParser("a[i] = b")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.assignOp == TokenKind.Eq
+    check node.target.kind == NodeKind.Computed
+    check node.target.recv.kind == NodeKind.IdentExpr
+    check node.value.kind == NodeKind.IdentExpr
+
+  test "a = b ? c : d — rhs is Conditional":
+    var p = initParser("a = b ? c : d")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.assignOp == TokenKind.Eq
+    check node.target.kind == NodeKind.IdentExpr
+    check node.value.kind == NodeKind.Conditional
+
+  test "a &&= b ||= c — right-assoc: AmpAmpEq outer, PipePipeEq inner":
+    var p = initParser("a &&= b ||= c")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let outer = prog.stmts[0]
+    check outer.kind == NodeKind.Assignment
+    check outer.assignOp == TokenKind.AmpAmpEq
+    check outer.target.kind == NodeKind.IdentExpr
+    let inner = outer.value
+    check inner.kind == NodeKind.Assignment
+    check inner.assignOp == TokenKind.PipePipeEq
+    check inner.target.kind == NodeKind.IdentExpr
+    check inner.value.kind == NodeKind.IdentExpr

@@ -275,11 +275,25 @@ proc parseObject(p: var Parser): AstNode =
   newObject(lb.start, close.start + close.length, props)
 
 # ------------------------------------------------------------------
-# parseAssignmentExpr — no-comma entry; routes through conditional.
+# parseAssignmentExpr — no-comma entry; handles plain and compound
+# assignment (right-associative). Port of fn parse_assignment / is_assignment_op
+# in src/parser.zc (~3153, ~3259).
 # ------------------------------------------------------------------
 
+proc isAssignmentOp(k: TokenKind): bool {.inline.} =
+  k in {Eq, PlusEq, MinusEq, StarEq, StarStarEq, SlashEq, PercentEq,
+        LtLtEq, GtGtEq, GtGtGtEq, AmpEq, PipeEq, CaretEq,
+        AmpAmpEq, PipePipeEq, QuestionQuestionEq}
+
 proc parseAssignmentExpr(p: var Parser): AstNode =
-  parseConditional(p)
+  let left = parseConditional(p)
+  if left == nil: return nil
+  if isAssignmentOp(p.peek().kind):
+    let op = p.advance()
+    let right = parseAssignmentExpr(p)   # right-associative (recurse self)
+    if right == nil: return nil
+    return newAssignment(left.start, right.`end`, op.kind, left, right)
+  return left
 
 # ------------------------------------------------------------------
 # parseArguments — port of fn parse_arguments in src/parser.zc.
