@@ -107,6 +107,7 @@ type
     of StringExpr: discard
     of IdentExpr:
       identDefault*: AstNode        # nil normally; the `= expr` default when used as a param
+      identPattern*: AstNode        # nil normally; binding pattern when used as a param (e.g. ArrayPattern)
     of RegexExpr: discard
     of BigIntExpr: discard
     of NullExpr: discard
@@ -129,6 +130,7 @@ type
     of Declarator:
       nameStart*, nameLength*: uint32
       init*: AstNode                    ## initializer, or nil
+      declPattern*: AstNode             ## binding pattern (e.g. ArrayPattern), or nil
     of Program:
       stmts*: seq[AstNode]
     of Member, OptionalMember, Computed, OptionalComputed:
@@ -178,6 +180,7 @@ type
     of TryStmt:
       tryBlock*, catchBlock*, finallyBlock*: AstNode    # catch/finally nil if absent
       catchParamStart*, catchParamLen*: uint32          # identifier catch param (0/0 = none)
+      catchPattern*: AstNode                            # binding pattern in catch (e.g. ArrayPattern), or nil
     of WithStmt:
       withObj*, withBody*: AstNode
     of RestParam:

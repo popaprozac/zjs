@@ -17,6 +17,7 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
   of IdentExpr:
     stdout.write(&"{ind}{label} \"{slice(src, n.start, n.`end`)}\"\n")
     if n.identDefault != nil: dumpAst(n.identDefault, src, depth+1)
+    if n.identPattern != nil: dumpAst(n.identPattern, src, depth+1)
   of StringExpr:
     stdout.write(&"{ind}{label} \"{slice(src, n.start, n.`end`)}\"\n")
   of Binary, Logical:
@@ -36,6 +37,7 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
   of Declarator:
     stdout.write(&"{ind}{label} name=\"{slice(src, n.nameStart, n.nameStart + n.nameLength)}\"\n")
     if n.init != nil: dumpAst(n.init, src, depth+1)
+    if n.declPattern != nil: dumpAst(n.declPattern, src, depth+1)
   of Paren:
     stdout.write(&"{ind}{label}\n")
     dumpAst(n.inner, src, depth+1)
@@ -130,6 +132,7 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
     dumpAst(n.tryBlock, src, depth+1)
     if n.catchBlock != nil: dumpAst(n.catchBlock, src, depth+1)
     if n.finallyBlock != nil: dumpAst(n.finallyBlock, src, depth+1)
+    if n.catchPattern != nil: dumpAst(n.catchPattern, src, depth+1)
   of WithStmt:
     stdout.write(&"{ind}{label}\n")
     dumpAst(n.withObj, src, depth+1)

@@ -2195,3 +2195,64 @@ suite "parser destructuring":
     check node.kind == NodeKind.Assignment
     check node.assignOp == TokenKind.PlusEq
     check node.target.kind == NodeKind.IdentExpr
+
+suite "ast 2d-5c fields":
+  test "Declarator.declPattern defaults to nil":
+    let d = newDeclarator(0'u32, 1'u32, 0'u32, 1'u32, nil)
+    check d.kind == NodeKind.Declarator
+    check d.declPattern == nil
+
+  test "Declarator.declPattern can be set and read back":
+    let d = newDeclarator(0'u32, 1'u32, 0'u32, 1'u32, nil)
+    let pat = newPattern(NodeKind.ArrayPattern, 0'u32, 5'u32, @[])
+    d.declPattern = pat
+    check d.declPattern != nil
+    check d.declPattern.kind == NodeKind.ArrayPattern
+
+  test "IdentExpr.identPattern defaults to nil":
+    let id = newLeaf(IdentExpr, 0'u32, 3'u32)
+    check id.kind == NodeKind.IdentExpr
+    check id.identPattern == nil
+
+  test "IdentExpr.identPattern can be set and read back":
+    let id = newLeaf(IdentExpr, 0'u32, 3'u32)
+    let pat = newPattern(NodeKind.ArrayPattern, 0'u32, 5'u32, @[])
+    id.identPattern = pat
+    check id.identPattern != nil
+    check id.identPattern.kind == NodeKind.ArrayPattern
+
+  test "TryStmt.catchPattern defaults to nil":
+    let tryB = newBlock(0'u32, 3'u32, @[])
+    let t = newTry(0'u32, 10'u32, tryB, nil, nil, 0'u32, 0'u32)
+    check t.kind == NodeKind.TryStmt
+    check t.catchPattern == nil
+
+  test "TryStmt.catchPattern can be set and read back":
+    let tryB = newBlock(0'u32, 3'u32, @[])
+    let t = newTry(0'u32, 10'u32, tryB, nil, nil, 0'u32, 0'u32)
+    let pat = newPattern(NodeKind.ArrayPattern, 0'u32, 5'u32, @[])
+    t.catchPattern = pat
+    check t.catchPattern != nil
+    check t.catchPattern.kind == NodeKind.ArrayPattern
+
+  test "existing newDeclarator init field still works after field addition":
+    let initNode = newNumber(5'u32, 6'u32, 42.0)
+    let d = newDeclarator(0'u32, 6'u32, 0'u32, 1'u32, initNode)
+    check d.init != nil
+    check d.init.numVal == 42.0
+    check d.declPattern == nil
+
+  test "existing identDefault unaffected after identPattern field addition":
+    let defVal = newNumber(5'u32, 6'u32, 7.0)
+    let id = AstNode(kind: IdentExpr, start: 0'u32, `end`: 1'u32, identDefault: defVal)
+    check id.identDefault != nil
+    check id.identDefault.numVal == 7.0
+    check id.identPattern == nil
+
+  test "existing TryStmt tryBlock/catchBlock still work after catchPattern addition":
+    let tryB   = newBlock(0'u32, 3'u32, @[newLeaf(IdentExpr, 1'u32, 2'u32)])
+    let catchB = newBlock(12'u32, 15'u32, @[newLeaf(IdentExpr, 13'u32, 14'u32)])
+    let t = newTry(0'u32, 15'u32, tryB, catchB, nil, 8'u32, 1'u32)
+    check t.tryBlock.kind == NodeKind.BlockStmt
+    check t.catchBlock != nil
+    check t.catchPattern == nil
