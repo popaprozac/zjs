@@ -8,6 +8,7 @@ type
     source*: string
     toks*: seq[Token]
     pos*: int
+    hadError*: bool   ## set by expect() on mismatch; signals parse failure
 
 proc initParser*(source: string): Parser =
   var lx = initLexer(source)
@@ -33,13 +34,13 @@ proc check(p: Parser, k: TokenKind): bool {.inline.} =
   p.toks[p.pos].kind == k
 
 proc expect(p: var Parser, k: TokenKind): bool {.inline.} =
-  ## Advance if the current token matches k; return true. Otherwise leave
-  ## pos unchanged and return false. For this task all inputs are valid,
-  ## so a false result is only a guard (caller can ignore in the battery).
+  ## Advance if the current token matches k; return true. Otherwise set
+  ## hadError, leave pos unchanged, and return false.
   if p.toks[p.pos].kind == k:
     discard p.advance()
     true
   else:
+    p.hadError = true
     false
 
 # ------------------------------------------------------------------
@@ -83,6 +84,8 @@ proc parseNumberLiteral(src: string, start, length: uint32): float64 =
 # ------------------------------------------------------------------
 
 proc parseExpression(p: var Parser): AstNode
+proc parseConditional(p: var Parser): AstNode
+proc parseSequence(p: var Parser): AstNode
 proc parseNullish(p: var Parser): AstNode
 proc parseLogicalOr(p: var Parser): AstNode
 proc parseLogicalAnd(p: var Parser): AstNode
@@ -163,12 +166,11 @@ proc parsePrimary(p: var Parser): AstNode =
     return nil
 
 # ------------------------------------------------------------------
-# parseAssignmentExpr — no-comma entry; real assignment comes later.
-# For now this is an alias for parseNullish (the top of the op ladder).
+# parseAssignmentExpr — no-comma entry; routes through conditional.
 # ------------------------------------------------------------------
 
 proc parseAssignmentExpr(p: var Parser): AstNode =
-  parseNullish(p)
+  parseConditional(p)
 
 # ------------------------------------------------------------------
 # parseArguments — port of fn parse_arguments in src/parser.zc.
@@ -448,12 +450,49 @@ proc parseNullish(p: var Parser): AstNode =
     result = newBinary(NodeKind.Logical, result.start, rhs.`end`, opTok.kind, result, rhs)
 
 # ------------------------------------------------------------------
-# parseExpression — entry point for expressions; nullish is top of
-# this increment's ladder. Comma/assignment/conditional come later.
+# parseConditional — Level 16 — ternary ?:  (right-associative).
+# Port of fn parse_conditional in src/parser.zc (~3280).
+# Branches: parse_nullish; if no '?' return; else parse two
+# parse_assignment arms. Right-assoc because alt = parseAssignmentExpr.
+# ------------------------------------------------------------------
+
+proc parseConditional(p: var Parser): AstNode =
+  let cond = parseNullish(p)
+  if cond == nil: return nil
+  if p.peek().kind != Question: return cond
+  discard p.advance()                   # consume '?'
+  let conseq = parseAssignmentExpr(p)
+  if conseq == nil: return nil
+  if not p.expect(Colon): return nil
+  let alt = parseAssignmentExpr(p)
+  if alt == nil: return nil
+  newConditional(cond.start, alt.`end`, cond, conseq, alt)
+
+# ------------------------------------------------------------------
+# parseSequence — Level 17 — comma / sequence operator.
+# Port of fn parse_expression in src/parser.zc (~2935).
+# The Zen-c function is named parse_expression but produces Sequence.
+# ------------------------------------------------------------------
+
+proc parseSequence(p: var Parser): AstNode =
+  let first = parseAssignmentExpr(p)
+  if first == nil: return nil
+  if p.peek().kind != Comma: return first
+  var items = @[first]
+  while p.peek().kind == Comma:
+    discard p.advance()                 # consume ','
+    let nxt = parseAssignmentExpr(p)
+    if nxt == nil: break
+    items.add(nxt)
+  newSequence(first.start, items[^1].`end`, items)
+
+# ------------------------------------------------------------------
+# parseExpression — entry point for expressions; routes through
+# the sequence level (Level 17, the top of the expression ladder).
 # ------------------------------------------------------------------
 
 proc parseExpression(p: var Parser): AstNode =
-  parseNullish(p)
+  parseSequence(p)
 
 # ------------------------------------------------------------------
 # parseVarDecl — port of fn parse_var_decl in src/parser.zc.
@@ -477,7 +516,7 @@ proc parseVarDecl(p: var Parser): AstNode =
 
     if p.peek().kind == Eq:
       discard p.advance()       # consume '='
-      init = p.parseExpression()
+      init = p.parseAssignmentExpr()
       if init != nil:
         declEnd = init.`end`
 

@@ -139,6 +139,10 @@ type
       args*: seq[AstNode]               # Zen-c `children`
     of Spread:
       spreadArg*: AstNode               # `...expr` inner (Zen-c `left`)
+    of Conditional:
+      cond*, conseq*, alt*: AstNode     # test ? consequent : alternate
+    of Sequence:
+      items*: seq[AstNode]
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -204,3 +208,11 @@ proc newCall*(kind: NodeKind, s, e: uint32, callee: AstNode, args: seq[AstNode])
 proc newSpread*(s, e: uint32, spreadArg: AstNode): AstNode =
   ## Construct a Spread node.
   AstNode(kind: Spread, start: s, `end`: e, spreadArg: spreadArg)
+
+proc newConditional*(s, e: uint32, cond, conseq, alt: AstNode): AstNode =
+  ## Construct a Conditional node (test ? consequent : alternate).
+  AstNode(kind: Conditional, start: s, `end`: e, cond: cond, conseq: conseq, alt: alt)
+
+proc newSequence*(s, e: uint32, items: seq[AstNode]): AstNode =
+  ## Construct a Sequence node (comma operator).
+  AstNode(kind: Sequence, start: s, `end`: e, items: items)

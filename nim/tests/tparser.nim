@@ -413,3 +413,62 @@ suite "ast 2c-1 nodes":
     let newNode = newCall(NodeKind.New, 0'u32, 6'u32, callee, @[newNumber(4'u32, 5'u32, 1.0)])
     check newNode.kind == NodeKind.New
     check newNode.args.len == 1
+
+suite "parser conditional/sequence":
+  test "ternary a?b:c produces Conditional with three children":
+    var p = initParser("a ? b : c")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let cond = prog.stmts[0]
+    check cond.kind == NodeKind.Conditional
+    check cond.cond.kind == NodeKind.IdentExpr
+    check cond.conseq.kind == NodeKind.IdentExpr
+    check cond.alt.kind == NodeKind.IdentExpr
+
+  test "ternary is right-associative: a?b:c?d:e":
+    var p = initParser("a ? b : c ? d : e")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let outer = prog.stmts[0]
+    check outer.kind == NodeKind.Conditional
+    # cond = a, conseq = b, alt = Conditional{c,d,e}
+    check outer.cond.kind == NodeKind.IdentExpr
+    check outer.conseq.kind == NodeKind.IdentExpr
+    check outer.alt.kind == NodeKind.Conditional
+    check outer.alt.cond.kind == NodeKind.IdentExpr
+    check outer.alt.conseq.kind == NodeKind.IdentExpr
+    check outer.alt.alt.kind == NodeKind.IdentExpr
+
+  test "comma sequence a,b,c produces Sequence with 3 items":
+    var p = initParser("a, b, c")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let seq0 = prog.stmts[0]
+    check seq0.kind == NodeKind.Sequence
+    check seq0.items.len == 3
+    check seq0.items[0].kind == NodeKind.IdentExpr
+    check seq0.items[1].kind == NodeKind.IdentExpr
+    check seq0.items[2].kind == NodeKind.IdentExpr
+
+  test "?: binds tighter than comma: a?b:c,d -> Sequence{Conditional,d}":
+    var p = initParser("a ? b : c, d")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let seq0 = prog.stmts[0]
+    check seq0.kind == NodeKind.Sequence
+    check seq0.items.len == 2
+    check seq0.items[0].kind == NodeKind.Conditional
+    check seq0.items[1].kind == NodeKind.IdentExpr
+
+  test "newConditional and newSequence constructors":
+    let a = newLeaf(IdentExpr, 0'u32, 1'u32)
+    let b = newLeaf(IdentExpr, 4'u32, 5'u32)
+    let c = newLeaf(IdentExpr, 8'u32, 9'u32)
+    let cnode = newConditional(0'u32, 9'u32, a, b, c)
+    check cnode.kind == NodeKind.Conditional
+    check cnode.cond.kind == NodeKind.IdentExpr
+    check cnode.conseq.kind == NodeKind.IdentExpr
+    check cnode.alt.kind == NodeKind.IdentExpr
+    let snode = newSequence(0'u32, 9'u32, @[a, b, c])
+    check snode.kind == NodeKind.Sequence
+    check snode.items.len == 3

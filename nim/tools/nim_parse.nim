@@ -53,6 +53,14 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
   of Spread:
     stdout.write(&"{ind}{label}\n")
     dumpAst(n.spreadArg, src, depth+1)
+  of Conditional:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.cond, src, depth+1)
+    dumpAst(n.conseq, src, depth+1)
+    dumpAst(n.alt, src, depth+1)
+  of Sequence:
+    stdout.write(&"{ind}{label}\n")
+    for it in n.items: dumpAst(it, src, depth+1)
   else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 
@@ -60,6 +68,9 @@ proc main() =
   let src = if paramCount() >= 1: paramStr(1) else: ""
   var p = initParser(src)
   let root = p.parseProgram()
+  if p.hadError:
+    stderr.write("zjs: parse error\n")
+    quit(1)
   dumpAst(root, src, 0)
 
 main()
