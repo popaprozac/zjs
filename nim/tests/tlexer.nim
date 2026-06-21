@@ -198,3 +198,116 @@ suite "lexer core":
     check toks.len == 1
     check toks[0].kind == Eof
     check toks[0].start == 0
+
+suite "lexer strings/templates":
+  # --- Single-quoted string -------------------------------------------
+
+  test "'single' => StringLit(0,8) Eof(8,0)":
+    # Reference: build/zjs lex "'single'"
+    # StringLit  start=0  length=8
+    # Eof        start=8  length=0
+    let toks = lex("'single'")
+    check toks.len == 2
+    check toks[0] == Token(kind: StringLit, start: 0, length: 8)
+    check toks[1] == Token(kind: Eof,       start: 8, length: 0)
+
+  # --- Double-quoted string -------------------------------------------
+
+  test "\"double\" => StringLit(0,8) Eof(8,0)":
+    # Reference: build/zjs lex '"double"'
+    # StringLit  start=0  length=8
+    # Eof        start=8  length=0
+    let toks = lex("\"double\"")
+    check toks.len == 2
+    check toks[0] == Token(kind: StringLit, start: 0, length: 8)
+    check toks[1] == Token(kind: Eof,       start: 8, length: 0)
+
+  # --- Escape sequences -----------------------------------------------
+
+  test "'a\\\\nb' => StringLit(0,6) Eof(6,0)   (backslash-n escape)":
+    # Reference: build/zjs lex "'a\nb'"
+    # StringLit  start=0  length=6   ('a\nb' = 6 chars including quotes)
+    # Eof        start=6  length=0
+    let toks = lex("'a\\nb'")
+    check toks.len == 2
+    check toks[0] == Token(kind: StringLit, start: 0, length: 6)
+    check toks[1] == Token(kind: Eof,       start: 6, length: 0)
+
+  test "'\\x41' => StringLit(0,6) Eof(6,0)   (hex escape)":
+    # Reference: build/zjs lex "'\x41'"
+    # StringLit  start=0  length=6
+    # Eof        start=6  length=0
+    let toks = lex("'\\x41'")
+    check toks.len == 2
+    check toks[0] == Token(kind: StringLit, start: 0, length: 6)
+    check toks[1] == Token(kind: Eof,       start: 6, length: 0)
+
+  test "'it\\'s' => StringLit(0,7) Eof(7,0)   (escaped quote)":
+    # Reference: build/zjs lex "'it\'s'"
+    # StringLit  start=0  length=7   ('it\'s' = 7 chars including quotes)
+    # Eof        start=7  length=0
+    let toks = lex("'it\\'s'")
+    check toks.len == 2
+    check toks[0] == Token(kind: StringLit, start: 0, length: 7)
+    check toks[1] == Token(kind: Eof,       start: 7, length: 0)
+
+  # --- Unterminated string --------------------------------------------
+
+  test "'abc (unterminated) => Invalid(0,4) Eof(4,0)":
+    # Reference: build/zjs lex "'abc"
+    # Invalid  start=0  length=4
+    # Eof      start=4  length=0
+    let toks = lex("'abc")
+    check toks.len == 2
+    check toks[0] == Token(kind: Invalid, start: 0, length: 4)
+    check toks[1] == Token(kind: Eof,     start: 4, length: 0)
+
+  # --- Template literals ----------------------------------------------
+
+  test "`plain` => TemplateLit(0,7) Eof(7,0)":
+    # Reference: build/zjs lex '`plain`'
+    # ?  start=0  length=7
+    # Eof start=7 length=0
+    let toks = lex("`plain`")
+    check toks.len == 2
+    check toks[0] == Token(kind: TemplateLit, start: 0, length: 7)
+    check toks[1] == Token(kind: Eof,         start: 7, length: 0)
+
+  test "`a${b}c` => TemplateLit(0,8) Eof(8,0)   (one token spans whole literal)":
+    # Reference: build/zjs lex '`a${b}c`'
+    # ?  start=0  length=8
+    # Eof start=8 length=0
+    let toks = lex("`a${b}c`")
+    check toks.len == 2
+    check toks[0] == Token(kind: TemplateLit, start: 0, length: 8)
+    check toks[1] == Token(kind: Eof,         start: 8, length: 0)
+
+  test "`${`x`}` => TemplateLit(0,8) Eof(8,0)   (nested template)":
+    # Reference: build/zjs lex '`${`x`}`'
+    # ?  start=0  length=8
+    # Eof start=8 length=0
+    let toks = lex("`${`x`}`")
+    check toks.len == 2
+    check toks[0] == Token(kind: TemplateLit, start: 0, length: 8)
+    check toks[1] == Token(kind: Eof,         start: 8, length: 0)
+
+  test "`${1+2}` => TemplateLit(0,8) Eof(8,0)":
+    # Reference: build/zjs lex '`${1+2}`'
+    # ?  start=0  length=8
+    # Eof start=8 length=0
+    let toks = lex("`${1+2}`")
+    check toks.len == 2
+    check toks[0] == Token(kind: TemplateLit, start: 0, length: 8)
+    check toks[1] == Token(kind: Eof,         start: 8, length: 0)
+
+  test "regex-in-substitution: `${s.replace(/q/g,\"x\")}` => TemplateLit(0,24)":
+    # Reference: SRC='`${s.replace(/q/g,"x")}`'
+    # build/zjs lex "$SRC"
+    # ?  start=0  length=24
+    # Eof start=24 length=0
+    # The ' inside the regex must NOT open a string.
+    let src = "`${s.replace(/q/g,\"x\")}`"
+    let toks = lex(src)
+    check toks.len == 2
+    check toks[0] == Token(kind: TemplateLit, start: 0,  length: 24)
+    check toks[1] == Token(kind: Eof,         start: 24, length: 0)

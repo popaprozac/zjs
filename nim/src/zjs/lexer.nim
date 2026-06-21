@@ -382,6 +382,182 @@ proc scanNumber(lx: var Lexer; start: uint32): Token =
   tokN(NumberLit, start, lx.pos)
 
 # =====================================================================
+# String scanner — single/double-quoted string literals
+# =====================================================================
+# Port of src/lexer.zc scan_string.
+# The token spans the WHOLE literal including both quotes.
+# Escapes are passed through as raw source bytes (the compiler decodes).
+# A raw newline (not preceded by \) terminates the string with Invalid.
+
+proc scanString(lx: var Lexer; start: uint32; quote: char): Token =
+  lx.advance()  # consume opening quote
+  while not lx.atEnd():
+    let c = lx.peek()
+    if c == quote:
+      lx.advance()
+      return tokN(StringLit, start, lx.pos)
+    if c == '\n' or c == '\r':
+      # unterminated string at end of line
+      return tokN(Invalid, start, lx.pos)
+    if c == '\\':
+      lx.advance()
+      if not lx.atEnd():
+        # LineContinuation: \<CR><LF> is one terminator sequence.
+        if lx.peek() == '\r':
+          lx.advance()
+          if not lx.atEnd() and lx.peek() == '\n': lx.advance()
+        else:
+          lx.advance()
+    else:
+      lx.advance()
+  # ran off the end without a closing quote
+  return tokN(Invalid, start, lx.pos)
+
+# =====================================================================
+# Template literal scanner
+# =====================================================================
+# Port of src/lexer.zc scan_template + scan_template_substitution.
+# Emits a single TemplateLit token covering the entire backtick-delimited
+# literal including all ${...} interpolations. The parser walks the slice
+# to extract cooked string segments. Regex (/) is out of scope for Task 4;
+# the substitution helper tracks it best-effort.
+
+proc scanTemplateSubstitution(lx: var Lexer): bool
+
+proc scanTemplate(lx: var Lexer; start: uint32): Token =
+  lx.advance()  # consume opening backtick
+  while not lx.atEnd():
+    let c = lx.peek()
+    if c == '`':
+      lx.advance()
+      return tokN(TemplateLit, start, lx.pos)
+    if c == '\\':
+      lx.advance()
+      if not lx.atEnd(): lx.advance()
+      continue
+    if c == '$' and lx.peekAt(1) == '{':
+      lx.advance(); lx.advance()  # past ${
+      if not lx.scanTemplateSubstitution():
+        return tokN(Invalid, start, lx.pos)
+      continue
+    lx.advance()
+  return tokN(Invalid, start, lx.pos)
+
+proc scanTemplateSubstitution(lx: var Lexer): bool =
+  ## Skip past a `${ ... }` substitution. Tracks balanced braces, nested
+  ## templates / strings / comments / regexes. Returns false on unterminated input.
+  ## Port of src/lexer.zc scan_template_substitution.
+  var depth: int = 1
+  # prev_sig tracks the last significant (non-whitespace) char consumed.
+  # Decides whether a `/` starts a regex (expression position: after an
+  # operator/opener/comma) or is division (value position: after
+  # ident/)/]/quote). Initialized to '{' (expression position).
+  var prevSig: char = '{'
+  while depth > 0 and not lx.atEnd():
+    let c = lx.peek()
+    if c == '{':
+      lx.advance(); inc depth; prevSig = c; continue
+    if c == '}':
+      lx.advance(); dec depth; prevSig = c; continue
+    if c == '\\':
+      lx.advance()
+      if not lx.atEnd(): lx.advance()
+      prevSig = '\\'
+      continue
+    if c == '/':
+      let nx = lx.peekAt(1)
+      if nx == '/':
+        # Line comment — skip to end of line.
+        while not lx.atEnd() and lx.peek() != '\n':
+          lx.advance()
+        continue
+      if nx == '*':
+        # Block comment — skip past the closing */.
+        lx.advance(); lx.advance()
+        while not lx.atEnd():
+          if lx.peek() == '*' and lx.peekAt(1) == '/':
+            lx.advance(); lx.advance()
+            break
+          lx.advance()
+        continue
+      # Is this a regex literal or division?
+      let isValueEnd: bool =
+        (prevSig >= 'a' and prevSig <= 'z') or
+        (prevSig >= 'A' and prevSig <= 'Z') or
+        (prevSig >= '0' and prevSig <= '9') or
+        prevSig == '_' or prevSig == '$' or
+        prevSig == ')' or prevSig == ']' or
+        prevSig == '\'' or prevSig == '"' or
+        prevSig == '`' or prevSig == '}' or
+        prevSig == '.'
+      if not isValueEnd:
+        # Regex literal: body (a `/` inside a [...] char class is literal),
+        # then flag letters.
+        lx.advance()  # opening /
+        var inClass: bool = false
+        while not lx.atEnd():
+          let rc = lx.peek()
+          if rc == '\\':
+            lx.advance()
+            if not lx.atEnd(): lx.advance()
+            continue
+          if rc == '\n': return false
+          if rc == '[': inClass = true; lx.advance(); continue
+          if rc == ']': inClass = false; lx.advance(); continue
+          if rc == '/' and not inClass:
+            lx.advance()  # closing /
+            break
+          lx.advance()
+        # Flags: greedy run of letter chars (g/i/m/s/u/y/d)
+        while not lx.atEnd():
+          let fc = lx.peek()
+          if not ((fc >= 'a' and fc <= 'z') or (fc >= 'A' and fc <= 'Z')):
+            break
+          lx.advance()
+        prevSig = ')'  # a regex is a value
+        continue
+      # Division operator
+      lx.advance()
+      prevSig = c
+      continue
+    if c == '`':
+      # Nested template — consume it whole inline (mirrors the Zen-c approach).
+      lx.advance()  # opening backtick
+      while not lx.atEnd() and lx.peek() != '`':
+        let ic = lx.peek()
+        if ic == '\\':
+          lx.advance()
+          if not lx.atEnd(): lx.advance()
+          continue
+        if ic == '$' and lx.peekAt(1) == '{':
+          lx.advance(); lx.advance()
+          if not lx.scanTemplateSubstitution(): return false
+          continue
+        lx.advance()
+      if not lx.atEnd(): lx.advance()  # closing `
+      prevSig = '`'
+      continue
+    if c == '"' or c == '\'':
+      let quote = c
+      lx.advance()
+      while not lx.atEnd() and lx.peek() != quote:
+        if lx.peek() == '\\':
+          lx.advance()
+          if not lx.atEnd(): lx.advance()
+        elif lx.peek() == '\n':
+          return false
+        else:
+          lx.advance()
+      if not lx.atEnd(): lx.advance()  # closing quote
+      prevSig = quote
+      continue
+    # Update prevSig for significant (non-whitespace) chars
+    if c != ' ' and c != '\t' and c != '\n' and c != '\r':
+      prevSig = c
+    lx.advance()
+  return depth == 0
+
+# =====================================================================
 # Punctuator scanner (longest-match)
 # =====================================================================
 
@@ -504,11 +680,6 @@ proc scanPunctuator(lx: var Lexer; start: uint32): Token =
         break
     return tokN(PrivateName, start, lx.pos)
 
-  # Task 3 gaps: strings and templates (Tasks 4-5).
-  # Advance one char (already done by advance() above) and emit Invalid.
-  of '"', '\'', '`':
-    return Token(kind: Invalid, start: start, length: 1)
-
   else:
     return Token(kind: Invalid, start: start, length: 1)
 
@@ -531,6 +702,10 @@ proc nextTokenInner(lx: var Lexer): Token =
     return lx.scanIdentifierOrKeyword(start)
   if isDigit(c):
     return lx.scanNumber(start)
+  if c == '"' or c == '\'':
+    return lx.scanString(start, c)
+  if c == '`':
+    return lx.scanTemplate(start)
   # '.' may start a number (.5), Ellipsis (...), or plain Dot
   if c == '.':
     if isDigit(lx.peekAt(1)):
