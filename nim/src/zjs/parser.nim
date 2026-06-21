@@ -97,6 +97,9 @@ proc parseMultiplicative(p: var Parser): AstNode
 proc parseExponent(p: var Parser): AstNode
 proc parseUnary(p: var Parser): AstNode
 proc parsePostfix(p: var Parser): AstNode
+proc parseCallMember(p: var Parser): AstNode
+proc parseArguments(p: var Parser): (seq[AstNode], uint32)
+proc parseAssignmentExpr(p: var Parser): AstNode
 
 # ------------------------------------------------------------------
 # parsePrimary — mirrors fn parse_primary in src/parser.zc
@@ -160,14 +163,144 @@ proc parsePrimary(p: var Parser): AstNode =
     return nil
 
 # ------------------------------------------------------------------
+# parseAssignmentExpr — no-comma entry; real assignment comes later.
+# For now this is an alias for parseNullish (the top of the op ladder).
+# ------------------------------------------------------------------
+
+proc parseAssignmentExpr(p: var Parser): AstNode =
+  parseNullish(p)
+
+# ------------------------------------------------------------------
+# parseArguments — port of fn parse_arguments in src/parser.zc.
+# Consumes '(' arglist ')'. Returns (args, endOffset).
+# ------------------------------------------------------------------
+
+proc parseArguments(p: var Parser): (seq[AstNode], uint32) =
+  discard p.advance()   # consume '('
+  var args: seq[AstNode] = @[]
+
+  if p.peek().kind != RParen:
+    while true:
+      var arg: AstNode
+      if p.peek().kind == Ellipsis:
+        let dots = p.advance()          # consume '...'
+        let inner = p.parseAssignmentExpr()
+        if inner == nil: break
+        arg = newSpread(dots.start, inner.`end`, inner)
+      else:
+        arg = p.parseAssignmentExpr()
+        if arg == nil: break
+      args.add(arg)
+      if p.peek().kind == Comma:
+        discard p.advance()              # consume ','
+        # Trailing comma: ')' right after the comma ends the list
+        if p.peek().kind == RParen: break
+      else:
+        break
+
+  let close = p.peek()
+  discard p.expect(RParen)
+  result = (args, close.start + close.length)
+
+# ------------------------------------------------------------------
+# parseCallMember — Level 1 (new, call, member, optional chain).
+# Port of fn parse_call_member in src/parser.zc.
+# ------------------------------------------------------------------
+
+proc parseCallMember(p: var Parser): AstNode =
+  var expr: AstNode
+
+  if p.peek().kind == KwNew:
+    let newTok = p.advance()   # consume 'new'
+
+    # new.target — deferred; skip to regular `new Callee(args?)`.
+    # (We do NOT check for new.target here — no battery cases need it.)
+
+    # Build the callee via primary + member-only loop (no calls).
+    var callee = p.parsePrimary()
+    if callee == nil: return nil
+
+    while true:
+      let kk = p.peek().kind
+      if kk == Dot:
+        discard p.advance()
+        let idTok = p.advance()
+        callee = newMember(NodeKind.Member, callee.start,
+                           idTok.start + idTok.length,
+                           idTok.start, idTok.length, callee)
+      elif kk == LBracket:
+        discard p.advance()
+        let idx = p.parseExpression()
+        if idx == nil: return nil
+        let close = p.peek()
+        discard p.expect(RBracket)
+        callee = newComputed(NodeKind.Computed, callee.start,
+                             close.start + close.length, callee, idx)
+      else:
+        break
+
+    # Optional argument list.
+    if p.peek().kind == LParen:
+      let (args, argsEnd) = p.parseArguments()
+      expr = newCall(NodeKind.New, newTok.start, argsEnd, callee, args)
+    else:
+      expr = newCall(NodeKind.New, newTok.start, callee.`end`, callee, @[])
+
+  else:
+    expr = p.parsePrimary()
+    if expr == nil: return nil
+
+  # Suffix loop — call / member / computed / optional chain.
+  while true:
+    let k = p.peek().kind
+    if k == Dot:
+      discard p.advance()
+      let idTok = p.advance()
+      expr = newMember(NodeKind.Member, expr.start,
+                       idTok.start + idTok.length,
+                       idTok.start, idTok.length, expr)
+    elif k == LBracket:
+      discard p.advance()
+      let idx = p.parseExpression()
+      if idx == nil: return nil
+      let close = p.peek()
+      discard p.expect(RBracket)
+      expr = newComputed(NodeKind.Computed, expr.start,
+                         close.start + close.length, expr, idx)
+    elif k == LParen:
+      let (args, argsEnd) = p.parseArguments()
+      expr = newCall(NodeKind.Call, expr.start, argsEnd, expr, args)
+    elif k == QuestionDot:
+      discard p.advance()
+      let after = p.peek().kind
+      if after == LParen:
+        let (args, argsEnd) = p.parseArguments()
+        expr = newCall(NodeKind.OptionalCall, expr.start, argsEnd, expr, args)
+      elif after == LBracket:
+        discard p.advance()
+        let idx = p.parseExpression()
+        if idx == nil: return nil
+        let close = p.peek()
+        discard p.expect(RBracket)
+        expr = newComputed(NodeKind.OptionalComputed, expr.start,
+                           close.start + close.length, expr, idx)
+      else:
+        let idTok = p.advance()
+        expr = newMember(NodeKind.OptionalMember, expr.start,
+                         idTok.start + idTok.length,
+                         idTok.start, idTok.length, expr)
+    else:
+      return expr
+
+# ------------------------------------------------------------------
 # Operator precedence ladder — mirrors parse_postfix..parse_nullish in
 # src/parser.zc. Level names and associativity follow Zen-c exactly.
 # ------------------------------------------------------------------
 
 # Level 2 — postfix ++ / --.
-# Operand is parsePrimary here (call/member is a later increment).
+# Operand is parseCallMember (rewired from parsePrimary).
 proc parsePostfix(p: var Parser): AstNode =
-  result = parsePrimary(p)
+  result = parseCallMember(p)
   if result == nil: return nil
   let k = p.peek().kind
   if k == PlusPlus or k == MinusMinus:

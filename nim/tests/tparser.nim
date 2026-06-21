@@ -275,6 +275,105 @@ suite "parser declarations":
     check node.lhs.kind == NodeKind.IdentExpr
     check node.rhs.kind == NodeKind.NumberExpr
 
+suite "parser call/member":
+  test "a.b — Member node with propName 'b' and IdentExpr recv":
+    var p = initParser("a.b")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let m = prog.stmts[0]
+    check m.kind == NodeKind.Member
+    check m.recv.kind == NodeKind.IdentExpr
+    # propStart=2, propLength=1 → "b"
+    check p.source[m.propStart.int ..< (m.propStart + m.propLength).int] == "b"
+
+  test "a[b] — Computed node with IdentExpr index":
+    var p = initParser("a[b]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let c = prog.stmts[0]
+    check c.kind == NodeKind.Computed
+    check c.recv.kind == NodeKind.IdentExpr
+    check c.index.kind == NodeKind.IdentExpr
+
+  test "f(x) — Call with one IdentExpr arg":
+    var p = initParser("f(x)")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let call = prog.stmts[0]
+    check call.kind == NodeKind.Call
+    check call.callee.kind == NodeKind.IdentExpr
+    check call.args.len == 1
+    check call.args[0].kind == NodeKind.IdentExpr
+
+  test "f() — Call with zero args":
+    var p = initParser("f()")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let call = prog.stmts[0]
+    check call.kind == NodeKind.Call
+    check call.callee.kind == NodeKind.IdentExpr
+    check call.args.len == 0
+
+  test "new F(1) — New with NumberExpr arg":
+    var p = initParser("new F(1)")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let n = prog.stmts[0]
+    check n.kind == NodeKind.New
+    check n.callee.kind == NodeKind.IdentExpr
+    check n.args.len == 1
+    check n.args[0].kind == NodeKind.NumberExpr
+    check n.args[0].numVal == 1.0
+
+  test "new X — New with no args":
+    var p = initParser("new X")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let n = prog.stmts[0]
+    check n.kind == NodeKind.New
+    check n.callee.kind == NodeKind.IdentExpr
+    check n.args.len == 0
+
+  test "a?.b — OptionalMember node":
+    var p = initParser("a?.b")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let m = prog.stmts[0]
+    check m.kind == NodeKind.OptionalMember
+    check m.recv.kind == NodeKind.IdentExpr
+    check p.source[m.propStart.int ..< (m.propStart + m.propLength).int] == "b"
+
+  test "f(...x) — Call with Spread arg":
+    var p = initParser("f(...x)")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let call = prog.stmts[0]
+    check call.kind == NodeKind.Call
+    check call.args.len == 1
+    check call.args[0].kind == NodeKind.Spread
+    check call.args[0].spreadArg.kind == NodeKind.IdentExpr
+
+  test "a.b.c(d)[e] — chained member/call/computed":
+    var p = initParser("a.b.c(d)[e]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let comp = prog.stmts[0]
+    check comp.kind == NodeKind.Computed
+    check comp.recv.kind == NodeKind.Call
+    let call = comp.recv
+    check call.callee.kind == NodeKind.Member  # "c"
+    check call.callee.recv.kind == NodeKind.Member  # "b"
+    check call.callee.recv.recv.kind == NodeKind.IdentExpr  # "a"
+
+  test "new a.b() — New with Member callee":
+    var p = initParser("new a.b()")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let n = prog.stmts[0]
+    check n.kind == NodeKind.New
+    check n.callee.kind == NodeKind.Member
+    check n.callee.recv.kind == NodeKind.IdentExpr
+
 suite "ast 2c-1 nodes":
   test "member + computed":
     let recv = newLeaf(IdentExpr, 0'u32, 1'u32)
