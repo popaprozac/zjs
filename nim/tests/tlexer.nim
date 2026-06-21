@@ -311,3 +311,154 @@ suite "lexer strings/templates":
     check toks.len == 2
     check toks[0] == Token(kind: TemplateLit, start: 0,  length: 24)
     check toks[1] == Token(kind: Eof,         start: 24, length: 0)
+
+suite "lexer regex":
+  # --- Division (NOT regex) after value-producing tokens ---------------
+
+  test "a / b => Identifier Slash Identifier (division after identifier)":
+    # Reference: build/zjs lex 'a / b'
+    # Identifier(0,1) Slash(2,1) Identifier(4,1) Eof(5,0)
+    let toks = lex("a / b")
+    check toks.len == 4
+    check toks[0] == Token(kind: Identifier, start: 0, length: 1)
+    check toks[1] == Token(kind: Slash,      start: 2, length: 1)
+    check toks[2] == Token(kind: Identifier, start: 4, length: 1)
+    check toks[3].kind == Eof
+
+  test "a /= b => Identifier SlashEq Identifier":
+    # Reference: build/zjs lex 'a /= b'
+    # Identifier(0,1) SlashEq(2,2) Identifier(5,1) Eof(6,0)
+    let toks = lex("a /= b")
+    check toks.len == 4
+    check toks[0] == Token(kind: Identifier, start: 0, length: 1)
+    check toks[1] == Token(kind: SlashEq,    start: 2, length: 2)
+    check toks[2] == Token(kind: Identifier, start: 5, length: 1)
+    check toks[3].kind == Eof
+
+  test "4 / 2 => NumberLit Slash NumberLit (division after number)":
+    # Reference: build/zjs lex '4 / 2'
+    # NumberLit(0,1) Slash(2,1) NumberLit(4,1) Eof(5,0)
+    let toks = lex("4 / 2")
+    check toks.len == 4
+    check toks[0] == Token(kind: NumberLit, start: 0, length: 1)
+    check toks[1] == Token(kind: Slash,     start: 2, length: 1)
+    check toks[2] == Token(kind: NumberLit, start: 4, length: 1)
+    check toks[3].kind == Eof
+
+  test "a[0] / b => ... Slash ... (division after RBracket)":
+    # Reference: build/zjs lex 'a[0] / b'
+    # Identifier(0,1) LBracket(1,1) NumberLit(2,1) RBracket(3,1) Slash(5,1) Identifier(7,1) Eof(8,0)
+    let toks = lex("a[0] / b")
+    check toks.len == 7
+    check toks[0] == Token(kind: Identifier, start: 0, length: 1)
+    check toks[1] == Token(kind: LBracket,   start: 1, length: 1)
+    check toks[2] == Token(kind: NumberLit,  start: 2, length: 1)
+    check toks[3] == Token(kind: RBracket,   start: 3, length: 1)
+    check toks[4] == Token(kind: Slash,      start: 5, length: 1)
+    check toks[5] == Token(kind: Identifier, start: 7, length: 1)
+    check toks[6].kind == Eof
+
+  # --- Regex at expression-start positions ----------------------------
+
+  test "/re/gi at start => RegexLit(0,6) Eof(6,0)":
+    # Reference: build/zjs lex '/re/gi'
+    # ?(=RegexLit)(0,6) Eof(6,0)
+    let toks = lex("/re/gi")
+    check toks.len == 2
+    check toks[0] == Token(kind: RegexLit, start: 0, length: 6)
+    check toks[1].kind == Eof
+
+  test "return /x/ => KwReturn RegexLit(7,3)":
+    # Reference: build/zjs lex 'return /x/'
+    # KwReturn(0,6) ?(7,3) Eof(10,0)
+    let toks = lex("return /x/")
+    check toks.len == 3
+    check toks[0] == Token(kind: KwReturn,  start: 0, length: 6)
+    check toks[1] == Token(kind: RegexLit,  start: 7, length: 3)
+    check toks[2].kind == Eof
+
+  test "x = /y/ => Identifier Eq RegexLit(4,3)":
+    # Reference: build/zjs lex 'x = /y/'
+    # Identifier(0,1) Eq(2,1) ?(4,3) Eof(7,0)
+    let toks = lex("x = /y/")
+    check toks.len == 4
+    check toks[0] == Token(kind: Identifier, start: 0, length: 1)
+    check toks[1] == Token(kind: Eq,         start: 2, length: 1)
+    check toks[2] == Token(kind: RegexLit,   start: 4, length: 3)
+    check toks[3].kind == Eof
+
+  test "typeof /z/ => KwTypeof RegexLit(7,3)":
+    # Reference: build/zjs lex 'typeof /z/'
+    # KwTypeof(0,6) ?(7,3) Eof(10,0)
+    let toks = lex("typeof /z/")
+    check toks.len == 3
+    check toks[0] == Token(kind: KwTypeof, start: 0, length: 6)
+    check toks[1] == Token(kind: RegexLit, start: 7, length: 3)
+    check toks[2].kind == Eof
+
+  test "(/a/) => LParen RegexLit(1,3) RParen":
+    # Reference: build/zjs lex '(/a/)'
+    # LParen(0,1) ?(1,3) RParen(4,1) Eof(5,0)
+    let toks = lex("(/a/)")
+    check toks.len == 4
+    check toks[0] == Token(kind: LParen,   start: 0, length: 1)
+    check toks[1] == Token(kind: RegexLit, start: 1, length: 3)
+    check toks[2] == Token(kind: RParen,   start: 4, length: 1)
+    check toks[3].kind == Eof
+
+  # --- Regex internals ------------------------------------------------
+
+  test "/[/]/ => RegexLit(0,5): slash inside char class is literal":
+    # Reference: build/zjs lex '/[/]/'
+    # ?(0,5) Eof(5,0)
+    let toks = lex("/[/]/")
+    check toks.len == 2
+    check toks[0] == Token(kind: RegexLit, start: 0, length: 5)
+    check toks[1].kind == Eof
+
+  test "/a\\/b/ => RegexLit(0,6): escaped slash inside regex":
+    # Reference: build/zjs lex '/a\/b/'
+    # ?(0,6) Eof(6,0)
+    let toks = lex("/a\\/b/")
+    check toks.len == 2
+    check toks[0] == Token(kind: RegexLit, start: 0, length: 6)
+    check toks[1].kind == Eof
+
+  test "/x/gimuy => RegexLit(0,8): multi-char flags":
+    # Reference: build/zjs lex '/x/gimuy'
+    # ?(0,8) Eof(8,0)
+    let toks = lex("/x/gimuy")
+    check toks.len == 2
+    check toks[0] == Token(kind: RegexLit, start: 0, length: 8)
+    check toks[1].kind == Eof
+
+  # --- The } ambiguity ------------------------------------------------
+
+  test "x={} / 2 => ... Slash (division: } without preceding newline)":
+    # Reference: build/zjs lex 'x={} / 2'
+    # Identifier(0,1) Eq(1,1) LBrace(2,1) RBrace(3,1) Slash(5,1) NumberLit(7,1) Eof(8,0)
+    let toks = lex("x={} / 2")
+    check toks.len == 7
+    check toks[0] == Token(kind: Identifier, start: 0, length: 1)
+    check toks[1] == Token(kind: Eq,         start: 1, length: 1)
+    check toks[2] == Token(kind: LBrace,     start: 2, length: 1)
+    check toks[3] == Token(kind: RBrace,     start: 3, length: 1)
+    check toks[4] == Token(kind: Slash,      start: 5, length: 1)
+    check toks[5] == Token(kind: NumberLit,  start: 7, length: 1)
+    check toks[6].kind == Eof
+
+  test "function f(){}\\n/re/ => RegexLit after block (} + newline)":
+    # Reference: build/zjs lex "function f(){}\n/re/"
+    # KwFunction(0,8) Identifier(9,1) LParen(10,1) RParen(11,1)
+    # LBrace(12,1) RBrace(13,1) ?(15,4) Eof(19,0)
+    let src = "function f(){}\n/re/"
+    let toks = lex(src)
+    check toks.len == 8
+    check toks[0] == Token(kind: KwFunction, start: 0,  length: 8)
+    check toks[1] == Token(kind: Identifier, start: 9,  length: 1)
+    check toks[2] == Token(kind: LParen,     start: 10, length: 1)
+    check toks[3] == Token(kind: RParen,     start: 11, length: 1)
+    check toks[4] == Token(kind: LBrace,     start: 12, length: 1)
+    check toks[5] == Token(kind: RBrace,     start: 13, length: 1)
+    check toks[6] == Token(kind: RegexLit,   start: 15, length: 4)
+    check toks[7].kind == Eof

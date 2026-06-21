@@ -558,6 +558,47 @@ proc scanTemplateSubstitution(lx: var Lexer): bool =
   return depth == 0
 
 # =====================================================================
+# Regex literal scanner
+# =====================================================================
+# Port of src/lexer.zc scan_regex_body.
+# Called after the opening `/` has been consumed (by scanPunctuator's
+# advance() at the top of that proc). Consumes pattern + closing `/`
+# + flag letters. Returns RegexLit spanning from `start` (the `/`)
+# through the end of the flags, or Invalid on unterminated input.
+
+proc scanRegexBody(lx: var Lexer; start: uint32): Token =
+  var inClass = false
+  while not lx.atEnd():
+    let c = lx.peek()
+    if c == '\n' or c == '\r':
+      return Token(kind: Invalid, start: start, length: uint32(lx.pos) - start)
+    if c == '\\':
+      lx.advance()
+      if not lx.atEnd():
+        let nc = lx.peek()
+        if nc == '\n' or nc == '\r':
+          return Token(kind: Invalid, start: start, length: uint32(lx.pos) - start)
+        lx.advance()
+      continue
+    if c == '[':
+      inClass = true
+      lx.advance()
+      continue
+    if c == ']':
+      inClass = false
+      lx.advance()
+      continue
+    if c == '/' and not inClass:
+      lx.advance()  # closing slash
+      # Flags: greedy run of identifier-part chars (g/i/m/s/u/y/d)
+      while not lx.atEnd() and isIdPart(lx.peek()):
+        lx.advance()
+      return tokN(RegexLit, start, lx.pos)
+    lx.advance()
+  # Ran off the end without finding a closing `/`
+  return Token(kind: Invalid, start: start, length: uint32(lx.pos) - start)
+
+# =====================================================================
 # Punctuator scanner (longest-match)
 # =====================================================================
 
@@ -630,9 +671,16 @@ proc scanPunctuator(lx: var Lexer; start: uint32): Token =
     return tok1(Star, start)
 
   of '/':
-    # Task 3-4 gap: regex literals are OUT OF SCOPE for Task 3.
-    # For now, treat / as division (Slash/SlashEq).
-    # This will be replaced in Task 5 when regex scanning lands.
+    # ECMA-262 §12.2.1: contextual regex vs division.
+    # `expectRegex` is set by expectRegexAfter after each token.
+    # Special case: `}` followed by a newline-then-`/` is treated as
+    # end-of-block (ASI) → the `/` starts a regex. Without the newline,
+    # `}/` is more likely object-literal / division.
+    let forceRegex =
+      lx.expectRegex or
+      (lx.prevKind == RBrace and lx.crossedNewline)
+    if forceRegex:
+      return lx.scanRegexBody(start)
     if lx.matchChar('='): return tokN(SlashEq, start, lx.pos)
     return tok1(Slash, start)
 
