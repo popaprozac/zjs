@@ -177,6 +177,10 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
   of StaticBlock:
     stdout.write(&"{ind}{label}\n")
     dumpAst(n.staticBlockBody, src, depth+1)
+  of ClassField:                                 # (2e-2)
+    stdout.write(&"{ind}{label}\n")
+    if n.fieldInit != nil: dumpAst(n.fieldInit, src, depth+1)
+    if n.fieldComputedKey != nil: dumpAst(n.fieldComputedKey, src, depth+1)
   else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 

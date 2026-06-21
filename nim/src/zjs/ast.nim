@@ -221,6 +221,11 @@ type
       methodIsAsync*, methodIsGenerator*: bool   # NOT dumped (Zen-c num encoding)
     of StaticBlock:
       staticBlockBody*: AstNode                  # Zen-c left (BlockStmt)
+    of ClassField:                               # (2e-2)
+      fieldNameStart*, fieldNameLen*: uint32     # NOT dumped (0/0 = computed)
+      fieldInit*: AstNode                        # Zen-c left (initializer; nil if none)
+      fieldComputedKey*: AstNode                 # Zen-c third (computed key; nil)
+      fieldIsStatic*: bool                       # NOT dumped (Zen-c bool_value)
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -426,3 +431,7 @@ proc newMethodDef*(s, e, nameStart, nameLen: uint32, body, computedKey: AstNode,
 
 proc newStaticBlock*(s, e: uint32, body: AstNode): AstNode =
   AstNode(kind: StaticBlock, start: s, `end`: e, staticBlockBody: body)
+
+proc newClassField*(s, e, nameStart, nameLen: uint32, init, computedKey: AstNode, isStatic: bool): AstNode =  ## 2e-2
+  AstNode(kind: ClassField, start: s, `end`: e, fieldNameStart: nameStart, fieldNameLen: nameLen,
+          fieldInit: init, fieldComputedKey: computedKey, fieldIsStatic: isStatic)

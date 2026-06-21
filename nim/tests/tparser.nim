@@ -2659,3 +2659,83 @@ suite "parser classes 2e-1":
     check c != nil
     check c.classMembers.len == 1
     check c.classMembers[0].kind == NodeKind.MethodDef
+
+# ------------------------------------------------------------------
+# Phase 2e-2: ClassField AST node + dumper
+# ------------------------------------------------------------------
+
+# Extend the minimal class dump walk with ClassField + NumberExpr + the
+# synth-ctor shapes (Assignment/Member/Computed/ThisExpr/UndefinedExpr) so
+# the hand-built 2e-2 trees round-trip.
+proc dumpClass2(n: AstNode, src: string, depth: int): string =
+  if n == nil:
+    return repeat("  ", depth) & "(null)\n"
+  let ind = repeat("  ", depth)
+  case n.kind
+  of ClassDecl, ClassExpr:
+    result = ind & "?\n"
+    if n.classParent != nil: result &= dumpClass2(n.classParent, src, depth+1)
+    for m in n.classMembers: result &= dumpClass2(m, src, depth+1)
+  of MethodDef:
+    result = ind & "?\n"
+    result &= dumpClass2(n.methodBody, src, depth+1)
+    if n.methodComputedKey != nil: result &= dumpClass2(n.methodComputedKey, src, depth+1)
+    for prm in n.methodParams: result &= dumpClass2(prm, src, depth+1)
+  of ClassField:
+    result = ind & "?\n"
+    if n.fieldInit != nil: result &= dumpClass2(n.fieldInit, src, depth+1)
+    if n.fieldComputedKey != nil: result &= dumpClass2(n.fieldComputedKey, src, depth+1)
+  of BlockStmt:
+    result = ind & "BlockStmt\n"
+    for st in n.stmtList: result &= dumpClass2(st, src, depth+1)
+  of Assignment:
+    result = ind & "Assignment op=Eq\n"
+    result &= dumpClass2(n.target, src, depth+1)
+    result &= dumpClass2(n.value, src, depth+1)
+  of Member:
+    result = ind & "Member name=\"" & src[n.propStart.int ..< (n.propStart + n.propLength).int] & "\"\n"
+    result &= dumpClass2(n.recv, src, depth+1)
+  of Computed:
+    result = ind & "Computed\n"
+    result &= dumpClass2(n.recv, src, depth+1)
+    result &= dumpClass2(n.index, src, depth+1)
+  of NumberExpr:
+    result = ind & "NumberExpr " & $n.numVal.int & "\n"
+  of IdentExpr:
+    result = ind & "IdentExpr \"" & src[n.start.int ..< n.`end`.int] & "\"\n"
+  of ThisExpr:
+    result = ind & "ThisExpr\n"
+  of UndefinedExpr:
+    result = ind & "UndefinedExpr\n"
+  else:
+    result = ind & "?\n"
+
+suite "ast 2e-2 ClassField":
+  test "newClassField stores fields and dumps init then computed key":
+    let src = "class C { x = 1; }"
+    let xPos = src.find('x').uint32
+    let init = newNumber(0'u32, 0'u32, 1.0)
+    let f = newClassField(xPos, xPos + 5, xPos, 1'u32, init, nil, false)
+    check f.kind == NodeKind.ClassField
+    check f.fieldNameStart == xPos
+    check f.fieldNameLen == 1'u32
+    check f.fieldInit != nil
+    check f.fieldComputedKey == nil
+    check f.fieldIsStatic == false
+    check dumpClass2(f, src, 0) == "?\n  NumberExpr 1\n"
+
+  test "static field carries the isStatic flag, no init dumps bare ?":
+    let f = newClassField(0'u32, 0'u32, 0'u32, 1'u32, nil, nil, true)
+    check f.fieldIsStatic == true
+    check f.fieldInit == nil
+    check dumpClass2(f, "", 0) == "?\n"
+
+  test "computed field: init then the computed key node":
+    let src = "class C { [k2] = 5; }"
+    let kPos = src.find("k2").uint32
+    let key = newLeaf(IdentExpr, kPos, kPos + 2)
+    let init = newNumber(0'u32, 0'u32, 5.0)
+    let f = newClassField(0'u32, 0'u32, 0'u32, 0'u32, init, key, false)
+    check f.fieldNameLen == 0'u32
+    check f.fieldComputedKey != nil
+    check dumpClass2(f, src, 0) == "?\n  NumberExpr 5\n  IdentExpr \"k2\"\n"
