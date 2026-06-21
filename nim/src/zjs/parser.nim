@@ -105,6 +105,109 @@ proc parseArguments(p: var Parser): (seq[AstNode], uint32)
 proc parseAssignmentExpr(p: var Parser): AstNode
 proc parseArray(p: var Parser): AstNode
 proc parseObject(p: var Parser): AstNode
+proc parseTemplateLit(p: var Parser): AstNode
+
+# ------------------------------------------------------------------
+# parseTemplateExprSlice — re-lex a substitution slice with absolute
+# offsets, parse as an assignment expression.
+# ------------------------------------------------------------------
+
+proc parseTemplateExprSlice(p: var Parser, exprStart, exprEnd: uint32): AstNode =
+  if exprStart >= exprEnd: return nil
+  let sub = p.source[exprStart.int ..< exprEnd.int]
+  var lx = initLexer(sub)
+  var toks: seq[Token]
+  for t in lx.tokens():
+    var tt = t
+    tt.start += exprStart        # shift to absolute
+    toks.add(tt)
+  var subP = Parser(source: p.source, toks: toks, pos: 0)
+  parseAssignmentExpr(subP)
+
+# ------------------------------------------------------------------
+# parseTemplateLit — port of fn parse_template_lit in src/parser.zc.
+# Splits the TemplateLit token body on ${ } substitutions, emitting
+# alternating TemplatePartExpr / expression children.
+# ------------------------------------------------------------------
+
+proc parseTemplateLit(p: var Parser): AstNode =
+  let t = p.advance()                          # the TemplateLit token
+  let bodyStart = t.start + 1
+  let bodyEnd = (if t.length >= 2: t.start + t.length - 1 else: t.start + 1)
+  var children: seq[AstNode]
+  var cur = bodyStart
+  var segStart = cur
+  while cur < bodyEnd:
+    let c = p.source[cur.int]
+    if c == '\\':
+      cur += 1
+      if cur < bodyEnd: cur += 1
+      continue
+    if c == '$' and cur + 1 < bodyEnd and p.source[(cur+1).int] == '{':
+      children.add(newLeaf(TemplatePartExpr, segStart, cur))   # literal part [segStart, cur)
+      cur += 2                                  # past `${`
+      let exprStart = cur
+      var depth = 1'u32
+      while cur < bodyEnd:
+        let ec = p.source[cur.int]
+        if ec == '\\':
+          cur += 1
+          if cur < bodyEnd: cur += 1
+          continue
+        if ec == '{':
+          depth += 1; cur += 1; continue
+        if ec == '}':
+          depth -= 1
+          if depth == 0: break
+          cur += 1; continue
+        if ec == '"' or ec == '\'':
+          let q = ec
+          cur += 1
+          while cur < bodyEnd and p.source[cur.int] != q:
+            if p.source[cur.int] == '\\':
+              cur += 1
+              if cur < bodyEnd: cur += 1
+            else: cur += 1
+          if cur < bodyEnd: cur += 1
+          continue
+        if ec == '`':                           # nested template — skip as a unit
+          cur += 1
+          while cur < bodyEnd and p.source[cur.int] != '`':
+            let tc = p.source[cur.int]
+            if tc == '\\':
+              cur += 1
+              if cur < bodyEnd: cur += 1
+              continue
+            if tc == '$' and cur + 1 < bodyEnd and p.source[(cur+1).int] == '{':
+              cur += 2
+              var nd = 1'u32
+              while cur < bodyEnd and nd > 0'u32:
+                let nc = p.source[cur.int]
+                if nc == '\\':
+                  cur += 1
+                  if cur < bodyEnd: cur += 1
+                  continue
+                if nc == '{': nd += 1
+                if nc == '}':
+                  nd -= 1
+                  if nd == 0'u32:
+                    cur += 1
+                    break
+                cur += 1
+              continue
+            cur += 1
+          if cur < bodyEnd: cur += 1
+          continue
+        cur += 1
+      let exprEnd = cur
+      if cur < bodyEnd: cur += 1                # past `}`
+      let e = parseTemplateExprSlice(p, exprStart, exprEnd)
+      if e != nil: children.add(e)
+      segStart = cur
+      continue
+    cur += 1
+  children.add(newLeaf(TemplatePartExpr, segStart, bodyEnd))   # trailing part
+  newTemplateExpr(t.start, t.start + t.length, children)
 
 # ------------------------------------------------------------------
 # isKeywordName — returns true for Kw* token kinds that may appear
@@ -188,9 +291,11 @@ proc parsePrimary(p: var Parser): AstNode =
   of LBrace:
     return parseObject(p)
 
+  of TemplateLit:
+    return parseTemplateLit(p)
+
   else:
     # Unknown / unimplemented primary — skip and return nil.
-    # (Later tasks will fill in template, etc.)
     discard p.advance()
     return nil
 
@@ -414,6 +519,9 @@ proc parseCallMember(p: var Parser): AstNode =
         expr = newMember(NodeKind.OptionalMember, expr.start,
                          idTok.start + idTok.length,
                          idTok.start, idTok.length, expr)
+    elif k == TemplateLit:
+      let tmpl = parseTemplateLit(p)
+      expr = newTaggedTemplate(expr.start, tmpl.`end`, expr, tmpl)
     else:
       return expr
 

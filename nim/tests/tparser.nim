@@ -820,3 +820,34 @@ suite "ast 2c-5 nodes":
     check tt.kind == NodeKind.TaggedTemplate
     check tt.tag.kind == NodeKind.IdentExpr
     check tt.tmpl.kind == NodeKind.TemplateExpr
+
+suite "parser templates":
+  test "`abc` — TemplateExpr with one TemplatePartExpr child":
+    var p = initParser("`abc`")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let tmpl = prog.stmts[0]
+    check tmpl.kind == NodeKind.TemplateExpr
+    check tmpl.tparts.len == 1
+    check tmpl.tparts[0].kind == NodeKind.TemplatePartExpr
+
+  test "`a${x}b` — TemplateExpr with 3 children: Part, IdentExpr, Part":
+    var p = initParser("`a${x}b`")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let tmpl = prog.stmts[0]
+    check tmpl.kind == NodeKind.TemplateExpr
+    check tmpl.tparts.len == 3
+    check tmpl.tparts[0].kind == NodeKind.TemplatePartExpr
+    check tmpl.tparts[1].kind == NodeKind.IdentExpr
+    check tmpl.tparts[2].kind == NodeKind.TemplatePartExpr
+
+  test "tag`${a}` — TaggedTemplate with IdentExpr tag and TemplateExpr":
+    var p = initParser("tag`${a}`")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let tt = prog.stmts[0]
+    check tt.kind == NodeKind.TaggedTemplate
+    check tt.tag.kind == NodeKind.IdentExpr
+    check tt.tmpl.kind == NodeKind.TemplateExpr
+    check tt.tmpl.tparts.len == 3   # empty part, IdentExpr a, empty part
