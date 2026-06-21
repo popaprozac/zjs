@@ -49,11 +49,22 @@ exposes the same `zjs.h`, so the test262 harness and Zapp bind to it unchanged.
   via `{.exportc, cdecl.}`. The test262 harness (which uses only 4 functions:
   `zjs_new_context`, `zjs_eval`, `zjs_had_error`, `zjs_free_context`) and Zapp
   bind to it unchanged.
-- **Two parallel tracks, no divergent branch.** `main` stays Zen-c in `src/`,
-  keeps getting conformance/Temporal/perf work, keeps shipping `libzjs.a` to
-  Zapp. The Nim engine grows in a **`nim/` subdirectory of the same repo**
-  (not a long-lived branch). Cutover = flip the Makefile default target +
-  Zapp's lib path. No merge, no rebase.
+- **Branch topology — a long-lived `nim` integration branch.** `main` stays
+  pure shippable Zen-c (in `src/`), keeps getting conformance/Temporal/perf
+  work, keeps shipping `libzjs.a` to Zapp — and is NOT cluttered with the
+  in-progress (red/incomplete-for-months) Nim engine. A long-lived **`nim`
+  integration branch** off `main` holds the migration; **each phase is a
+  sub-branch off `nim`** (e.g. `nim-phase2-…`) that merges back into `nim`
+  (`--no-ff`, one merge per completed phase). When ALL phases reach parity,
+  `nim` merges to `main` — that is the cutover.
+  - **Directory layout (unchanged):** the Nim engine lives in a **`nim/`
+    subdirectory** beside `src/`; it does not replace `src/`. Both trees
+    coexist on the `nim` branch, which is what keeps the differential oracle
+    cheap (build both, run both, diff — on the branch).
+  - **Keeping current:** because `main` edits `src/` and the migration edits
+    `nim/` (different directories), periodic `git merge main → nim` (to refresh
+    the Zen-c oracle + shared test262/tooling) is low-conflict. This periodic
+    sync is the deliberate price of keeping `main` clean.
 - **Acceptance is objective:** test262 conformance ≥ current (24,593) AND perf
   within the parity band AND size ≤ current — all measured exactly as today,
   before any cutover.
