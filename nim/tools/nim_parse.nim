@@ -165,6 +165,18 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
     if n.patTarget != nil: dumpAst(n.patTarget, src, depth+1)
     if n.patDefault != nil: dumpAst(n.patDefault, src, depth+1)
     if n.patComputedKey != nil: dumpAst(n.patComputedKey, src, depth+1)
+  of ClassDecl, ClassExpr:
+    stdout.write(&"{ind}{label}\n")
+    if n.classParent != nil: dumpAst(n.classParent, src, depth+1)
+    for m in n.classMembers: dumpAst(m, src, depth+1)
+  of MethodDef:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.methodBody, src, depth+1)
+    if n.methodComputedKey != nil: dumpAst(n.methodComputedKey, src, depth+1)
+    for prm in n.methodParams: dumpAst(prm, src, depth+1)
+  of StaticBlock:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.staticBlockBody, src, depth+1)
   else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 

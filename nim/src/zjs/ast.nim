@@ -207,6 +207,20 @@ type
       patDefault*: AstNode         # default; nil if none
       patComputedKey*: AstNode     # computed key; nil
       patIsRest*: bool
+    of ClassDecl, ClassExpr:
+      classNameStart*, classNameLen*: uint32     # NOT dumped; kept for semantic fidelity
+      classParent*: AstNode                      # `extends` expr (Zen-c right); nil if none
+      classMembers*: seq[AstNode]                # Zen-c children
+    of MethodDef:
+      methodNameStart*, methodNameLen*: uint32   # NOT dumped (0/0 = computed)
+      methodBody*: AstNode                       # Zen-c left (BlockStmt)
+      methodComputedKey*: AstNode                # Zen-c third (computed key; nil)
+      methodParams*: seq[AstNode]                # Zen-c children
+      methodIsStatic*: bool                      # NOT dumped (Zen-c bool_value)
+      methodAccessor*: TokenKind                 # Eq (plain) / KwGet / KwSet — NOT dumped (Zen-c op)
+      methodIsAsync*, methodIsGenerator*: bool   # NOT dumped (Zen-c num encoding)
+    of StaticBlock:
+      staticBlockBody*: AstNode                  # Zen-c left (BlockStmt)
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -395,3 +409,20 @@ proc newPattern*(kind: NodeKind, s, e: uint32, entries: seq[AstNode]): AstNode =
 proc newPatternEntry*(s, e, keyStart, keyLen: uint32, target, default, computedKey: AstNode, isRest: bool): AstNode =
   AstNode(kind: PatternEntry, start: s, `end`: e, patKeyStart: keyStart, patKeyLen: keyLen,
           patTarget: target, patDefault: default, patComputedKey: computedKey, patIsRest: isRest)
+
+proc newClass*(kind: NodeKind, s, e, nameStart, nameLen: uint32, parent: AstNode, members: seq[AstNode]): AstNode =
+  ## kind ∈ {ClassDecl, ClassExpr}
+  {.cast(uncheckedAssign).}:
+    result = AstNode(kind: kind, start: s, `end`: e, classNameStart: nameStart,
+                     classNameLen: nameLen, classParent: parent, classMembers: members)
+
+proc newMethodDef*(s, e, nameStart, nameLen: uint32, body, computedKey: AstNode,
+                   params: seq[AstNode], isStatic: bool, accessor: TokenKind,
+                   isAsync, isGenerator: bool): AstNode =
+  AstNode(kind: MethodDef, start: s, `end`: e, methodNameStart: nameStart, methodNameLen: nameLen,
+          methodBody: body, methodComputedKey: computedKey, methodParams: params,
+          methodIsStatic: isStatic, methodAccessor: accessor,
+          methodIsAsync: isAsync, methodIsGenerator: isGenerator)
+
+proc newStaticBlock*(s, e: uint32, body: AstNode): AstNode =
+  AstNode(kind: StaticBlock, start: s, `end`: e, staticBlockBody: body)

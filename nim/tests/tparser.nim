@@ -2438,3 +2438,94 @@ suite "parser binding patterns":
     let t = prog.stmts[0]
     check t.catchParamLen == 1'u32
     check t.catchPattern == nil
+
+# ------------------------------------------------------------------
+# Phase 2e-1: class skeleton AST + dumper
+# ------------------------------------------------------------------
+
+import std/strutils
+
+# Minimal dump walk mirroring nim_parse.nim's dumpAst for the class kinds
+# (labels are "?" for all class kinds — verified vs nk_label). Only the
+# shapes exercised by the 2e-1 hand-built tests are covered here.
+proc dumpClass(n: AstNode, src: string, depth: int): string =
+  if n == nil:
+    return repeat("  ", depth) & "(null)\n"
+  let ind = repeat("  ", depth)
+  case n.kind
+  of ClassDecl, ClassExpr:
+    result = ind & "?\n"
+    if n.classParent != nil: result &= dumpClass(n.classParent, src, depth+1)
+    for m in n.classMembers: result &= dumpClass(m, src, depth+1)
+  of MethodDef:
+    result = ind & "?\n"
+    result &= dumpClass(n.methodBody, src, depth+1)
+    if n.methodComputedKey != nil: result &= dumpClass(n.methodComputedKey, src, depth+1)
+    for prm in n.methodParams: result &= dumpClass(prm, src, depth+1)
+  of StaticBlock:
+    result = ind & "?\n"
+    result &= dumpClass(n.staticBlockBody, src, depth+1)
+  of BlockStmt:
+    result = ind & "BlockStmt\n"
+    for st in n.stmtList: result &= dumpClass(st, src, depth+1)
+  of IdentExpr:
+    result = ind & "IdentExpr \"" & src[n.start.int ..< n.`end`.int] & "\"\n"
+  else:
+    result = ind & "?\n"
+
+suite "parser classes ast":
+  test "ClassDecl with parent + one MethodDef dumps the indented ? tree":
+    let src = "class C extends B { m(x) {} }"
+    # parent = IdentExpr "B" at the byte offset of B in src
+    let bPos = src.find('B').uint32
+    let parent = newLeaf(IdentExpr, bPos, bPos + 1)
+    # one param x; method body empty BlockStmt
+    let xPos = src.find('x').uint32
+    let param = newLeaf(IdentExpr, xPos, xPos + 1)
+    let body = newBlock(0'u32, 0'u32, @[])
+    let m = newMethodDef(0'u32, 0'u32, 0'u32, 0'u32, body, nil, @[param],
+                         false, TokenKind.Eq, false, false)
+    let cls = newClass(ClassDecl, 0'u32, 0'u32, 0'u32, 0'u32, parent, @[m])
+    check cls.kind == NodeKind.ClassDecl
+    check cls.classParent != nil
+    check cls.classMembers.len == 1
+    check cls.classMembers[0].kind == NodeKind.MethodDef
+    check cls.classMembers[0].methodParams.len == 1
+    let expected = "?\n  IdentExpr \"B\"\n  ?\n    BlockStmt\n    IdentExpr \"x\"\n"
+    check dumpClass(cls, src, 0) == expected
+
+  test "ClassExpr (no parent) with a computed-key MethodDef":
+    let src = "class { [k]() {} }"
+    let kPos = src.find('k').uint32
+    let key = newLeaf(IdentExpr, kPos, kPos + 1)
+    let body = newBlock(0'u32, 0'u32, @[])
+    let m = newMethodDef(0'u32, 0'u32, 0'u32, 0'u32, body, key, @[],
+                         false, TokenKind.Eq, false, false)
+    let cls = newClass(ClassExpr, 0'u32, 0'u32, 0'u32, 0'u32, nil, @[m])
+    check cls.kind == NodeKind.ClassExpr
+    check cls.classParent == nil
+    check cls.classMembers[0].methodComputedKey != nil
+    # body first, THEN computed key (matches Zen-c left → third order)
+    let expected = "?\n  ?\n    BlockStmt\n    IdentExpr \"k\"\n"
+    check dumpClass(cls, src, 0) == expected
+
+  test "StaticBlock dumps body only":
+    let src = "class C { static {} }"
+    let body = newBlock(0'u32, 0'u32, @[])
+    let sb = newStaticBlock(0'u32, 0'u32, body)
+    check sb.kind == NodeKind.StaticBlock
+    check sb.staticBlockBody != nil
+    let cls = newClass(ClassDecl, 0'u32, 0'u32, 0'u32, 0'u32, nil, @[sb])
+    let expected = "?\n  ?\n    BlockStmt\n"
+    check dumpClass(cls, src, 0) == expected
+
+  test "MethodDef flags round-trip (static/accessor/async/gen)":
+    let body = newBlock(0'u32, 0'u32, @[])
+    let m = newMethodDef(0'u32, 0'u32, 3'u32, 5'u32, body, nil, @[],
+                         true, TokenKind.KwGet, true, true)
+    check m.methodIsStatic
+    check m.methodAccessor == TokenKind.KwGet
+    check m.methodIsAsync
+    check m.methodIsGenerator
+    check m.methodNameStart == 3'u32
+    check m.methodNameLen == 5'u32
