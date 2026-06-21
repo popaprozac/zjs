@@ -323,11 +323,56 @@ proc parseExpression(p: var Parser): AstNode =
   parseNullish(p)
 
 # ------------------------------------------------------------------
+# parseVarDecl — port of fn parse_var_decl in src/parser.zc.
+# Identifier-binding only (destructuring is out of scope this increment).
+# ------------------------------------------------------------------
+
+proc parseVarDecl(p: var Parser): AstNode =
+  let kw = p.advance()          # consume var / let / const
+  var declarators: seq[AstNode]
+  var lastEnd = kw.start + kw.length
+
+  while true:
+    let declStart = p.peek().start
+    let nameTok = p.peek()
+    if nameTok.kind != Identifier:
+      break                     # guard: non-identifier = stop (pattern etc.)
+    discard p.advance()         # consume the identifier
+
+    var declEnd = nameTok.start + nameTok.length
+    var init: AstNode = nil
+
+    if p.peek().kind == Eq:
+      discard p.advance()       # consume '='
+      init = p.parseExpression()
+      if init != nil:
+        declEnd = init.`end`
+
+    let d = newDeclarator(declStart, declEnd,
+                          nameTok.start, nameTok.length, init)
+    declarators.add(d)
+    lastEnd = declEnd
+
+    if p.peek().kind != Comma:
+      break
+    discard p.advance()         # consume ','
+
+  # Consume optional trailing semicolon (ASI not required this increment)
+  if p.peek().kind == Semicolon:
+    discard p.advance()
+
+  newVarDecl(kw.start, lastEnd, kw.kind, declarators)
+
+# ------------------------------------------------------------------
 # parseStatement — bare expression (no ExpressionStmt wrapper per spec).
 # Consumes an optional trailing semicolon.
 # ------------------------------------------------------------------
 
 proc parseStatement(p: var Parser): AstNode =
+  # Dispatch variable declarations
+  if p.peek().kind in {KwVar, KwLet, KwConst}:
+    return p.parseVarDecl()
+  # Expression statement path
   result = p.parseExpression()
   # Optional trailing semicolon (harmless; keeps later tasks compatible)
   if p.check(Semicolon):

@@ -205,3 +205,72 @@ suite "parser operators":
     check node.kind == NodeKind.Postfix
     check node.unOp == TokenKind.PlusPlus
     check node.operand.kind == NodeKind.IdentExpr
+
+suite "parser declarations":
+  test "let x = 1; — VarDecl KwLet with one Declarator init NumberExpr":
+    var p = initParser("let x = 1;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let decl = prog.stmts[0]
+    check decl.kind == NodeKind.VarDecl
+    check decl.declKind == TokenKind.KwLet
+    check decl.declarators.len == 1
+    let d = decl.declarators[0]
+    check d.kind == NodeKind.Declarator
+    check p.source[d.nameStart.int ..< (d.nameStart + d.nameLength).int] == "x"
+    check d.init != nil
+    check d.init.kind == NodeKind.NumberExpr
+    check d.init.numVal == 1.0
+
+  test "const a = 1 + 2; — VarDecl KwConst init Binary":
+    var p = initParser("const a = 1 + 2;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let decl = prog.stmts[0]
+    check decl.kind == NodeKind.VarDecl
+    check decl.declKind == TokenKind.KwConst
+    check decl.declarators.len == 1
+    let d = decl.declarators[0]
+    check p.source[d.nameStart.int ..< (d.nameStart + d.nameLength).int] == "a"
+    check d.init != nil
+    check d.init.kind == NodeKind.Binary
+    check d.init.binOp == TokenKind.Plus
+
+  test "var y; — VarDecl KwVar one Declarator with nil init":
+    var p = initParser("var y;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let decl = prog.stmts[0]
+    check decl.kind == NodeKind.VarDecl
+    check decl.declKind == TokenKind.KwVar
+    check decl.declarators.len == 1
+    let d = decl.declarators[0]
+    check p.source[d.nameStart.int ..< (d.nameStart + d.nameLength).int] == "y"
+    check d.init == nil
+
+  test "let a = 1, b = 2; — two declarators":
+    var p = initParser("let a = 1, b = 2;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let decl = prog.stmts[0]
+    check decl.kind == NodeKind.VarDecl
+    check decl.declKind == TokenKind.KwLet
+    check decl.declarators.len == 2
+    let da = decl.declarators[0]
+    check p.source[da.nameStart.int ..< (da.nameStart + da.nameLength).int] == "a"
+    check da.init != nil
+    check da.init.numVal == 1.0
+    let db = decl.declarators[1]
+    check p.source[db.nameStart.int ..< (db.nameStart + db.nameLength).int] == "b"
+    check db.init != nil
+    check db.init.numVal == 2.0
+
+  test "bare expression statement still works after dispatch extension":
+    var p = initParser("x + 1;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Binary
+    check node.binOp == TokenKind.Plus
+    check node.lhs.kind == NodeKind.IdentExpr
+    check node.rhs.kind == NodeKind.NumberExpr
