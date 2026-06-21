@@ -157,9 +157,33 @@ design:
   increment implements them. The differential `zjs parse` oracle gates every
   step.
 
+**Field-naming convention (Nim constraint, verified 2026-06-21).** Nim requires
+variant field names to be **globally unique across the whole object** — the same
+name cannot appear in two `of` branches even at the same type (`Error: attempt
+to redefine`). So a generic shared `op`/`left`/`right` is impossible; that is
+WHY the operator branches use `binOp`/`unOp`/`assignOp`/`declKind`. Convention:
+prefer the bare semantic role name (`init`, `body`, `test`, `operand`); when a
+recurring role would collide with a differently-shaped branch added in a later
+increment, **that increment's design step qualifies it then** (`forInit` vs
+`declInit`) — no premature qualification, and Nim's compiler flags the collision
+immediately so it can't slip through.
+
+**Dump-label mirroring (standing).** The `zjs parse` / `zjs lex` dumpers in
+`tools/zjs.zc` label nodes/tokens via `nk_label`/`tk_label` lookup tables that
+are **incomplete** — `nk_label` stops at `ForOfStmt`, so e.g. `BigIntExpr` and
+`RegexExpr` render as `?`. Byte-identical parity means the Nim dumpers must
+reproduce that gap, so they label via `nkLabel`/`tkLabel` procs that **mirror
+the Zen-c tables verbatim (including the `?` fallback)** — NOT via Nim's `$kind`
+(which would print the real enum name and diff). These mirror procs live in a
+shared `nim/tools/labels.nim` (tool-only concern; the engine enum keeps real
+names for the compiler). This is the same pattern already used for the lexer's
+`tkLabel`.
+
 The AST shape is foundational (parser + compiler both consume it), so the exact
 branch/field design is a **deliberate controller+owner design step at the start
-of each parser increment**, not improvised by an implementer subagent.
+of each parser increment**, not improvised by an implementer subagent. The
+Phase-2b branch design (the first such step) is recorded in
+`docs/superpowers/plans/2026-06-21-zjs-nim-phase2b-ast-parser.md` Task 1.
 
 ---
 

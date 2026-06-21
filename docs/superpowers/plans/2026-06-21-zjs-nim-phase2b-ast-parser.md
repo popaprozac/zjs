@@ -14,27 +14,40 @@
 
 ---
 
-## AST representation decision (deliberate, flag for review)
+## AST representation decision (FINALIZED — Step-0 design step done 2026-06-21)
 
-**Decided (owner, 2026-06-21): object variants with semantic fields.** Per design
-doc §3.2 (this is a port to do BEST, not fast) and §3.4 (the AST standing
-decision), the AST is a Nim **`ref object` variant**, NOT a flat fat node:
-- Discriminant = the full `NodeKind` (mirrors `src/ast.zc`, same names → `$kind`
-  matches `zjs parse`'s `nk_label`). Nim-managed (`ref` + `seq`, arc; no manual
-  memory — AST is host-side data per the two-heap rule).
+**Decided + designed (owner-approved, 2026-06-21): object variants with semantic
+fields.** Per design doc §3.2 (port to do BEST, not fast) and §3.4 (the AST
+standing decision). The Step-0 controller+owner design step (reading `src/ast.zc`
++ `src/parser.zc` + `dump_ast`) is **complete**; the finalized type is in Task 1
+Step 3. The AST is a Nim **`ref object` variant**, NOT a flat fat node:
+- Discriminant = the full `NodeKind` (mirrors `src/ast.zc`, same names). The
+  enum keeps the real names for the compiler; the **dumper** labels via
+  `nkLabel` (see oracle section), NOT `$kind`. Nim-managed (`ref` + `seq`, arc;
+  no manual memory — AST is host-side data per the two-heap rule).
 - `of`-branches **group kinds by shared shape** (Nim allows multiple enum values
-  per branch) → ~8–12 branches, not 95.
+  per branch) → ~10 branches, not 95.
 - Fields are **semantic** (`lhs`/`rhs`/`unOp`/`operand`/`init`/`declarators`/
-  `stmts`), NOT generic `left`/`right`/`third`. Deriving these requires reading
-  the Zen-c parser to learn each kind's field meaning — the effort we choose to
-  spend.
+  `stmts`/`inner`), NOT generic `left`/`right`/`third`.
+- **Nim requires globally-unique field names** across the whole variant (verified
+  — even same-type reuse errors). Hence `binOp`/`unOp`/`assignOp`/`declKind`, not
+  a shared `op`. Bare role names are unique within 2b (`init` is fine); a future
+  increment's design step qualifies any new collision then (design doc §3.4).
 - Branches grow incrementally with an `else: discard` catch-all; the `zjs parse`
   differential oracle gates every step.
 
-**Because the AST shape is foundational (parser AND the Phase-3 compiler consume
-it), the exact variant-branch design for the Phase-2b kinds is a deliberate
-controller+owner design step done at the START of execution (with the Zen-c
-parser open) — see Task 1. It is NOT improvised by an implementer subagent.**
+**Verified during Step 0** (these shaped the finalized type — see corrections
+baked into Tasks 1–3):
+- **Parens are NOT transparent** — `parse_primary` builds a real `Paren` node
+  (`left = inner`), so `(42)` dumps as `Paren` → `NumberExpr 42`. `Paren` is an
+  in-scope kind with an `inner` field.
+- **`nk_label` is incomplete** (stops at `ForOfStmt`): `BigIntExpr`/`RegexExpr`
+  render as `?`, and dump **label-only** (NOT quoted slices — they are not in the
+  `IdentExpr`/`StringExpr` branch of `dump_ast`).
+- **Expression statements have NO wrapper node** — there is no `ExpressionStmt`
+  kind; the bare expression node is placed directly in `Program.stmts`.
+- **`&"{x:g}"` (Nim strformat) == C `%g`** byte-for-byte (verified across
+  `1`/`1.5`/`1e+21`/`1e+20`/`1.23457e+08`/`1e-06`) — use it for `numVal`.
 
 ---
 
@@ -49,16 +62,28 @@ Program
         NumberExpr 1
         NumberExpr 2
 ```
-Per-node format (from `dump_ast` in `tools/zjs.zc`):
-- default: `<NodeKindLabel>` (then newline)
+Per-node format (from `dump_ast` in `tools/zjs.zc` — the kind→branch mapping is
+EXACT, replicate it; anything not listed falls to the default label-only line):
+- default / label-only: `<label>` (then newline) — incl. `NullExpr`,
+  `UndefinedExpr`, `ThisExpr`, `Paren`, **and `BigIntExpr`/`RegexExpr`** (these
+  two are NOT quoted — they hit the default branch)
 - `NumberExpr`: `<label> %g` (the number via printf `%g`)
 - `BoolExpr`: `<label> true|false`
-- `IdentExpr` / `StringExpr`: `<label> "<source-slice>"`
+- `IdentExpr` / `StringExpr` ONLY: `<label> "<source-slice>"`
 - `Binary`/`Logical`/`Unary`/`Postfix`/`Assignment`/`VarDecl`: `<label> op=<TokenKindLabel>`
 - `Member`/`OptionalMember`/`ObjectProp`/`Declarator`: `<label> name="<slice>"`
 - `FunctionDecl`/`FunctionExpr`: `<label> name="<slice>"` or `<label> (anonymous)`
 
-The node-kind label is `nk_label(kind)` and the op label is the TokenKind label — both in `tools/zjs.zc`. **Acceptance:** `nim-parse '<src>'` output == `build/zjs parse '<src>'`, byte-for-byte, over a corpus.
+**Label mirroring (critical — design doc §3.4):** `<label>` = `nk_label(kind)` and
+`<TokenKindLabel>` = `tk_label(op)`, both lookup tables in `tools/zjs.zc` that are
+**incomplete** — `nk_label` stops at `ForOfStmt`, so `BigIntExpr`/`RegexExpr` (and
+many later kinds) render as `?`. The Nim dumper must reproduce this verbatim via
+`nkLabel`/`tkLabel` procs (shared `nim/tools/labels.nim`), **NOT** Nim's `$kind`
+(which prints the real enum name and would diff). **Child walk:** `dump_ast`
+recurses **uniformly** `left → right → third → children[]` for every kind; the
+variant dumper reproduces that order per-kind (e.g. Binary = lhs then rhs,
+Declarator = init only, Paren = inner). **Acceptance:** `nim-parse '<src>'`
+output == `build/zjs parse '<src>'`, byte-for-byte, over a corpus.
 
 ---
 
@@ -68,6 +93,8 @@ The node-kind label is `nk_label(kind)` and the op label is the TokenKind label 
 |---|---|
 | `nim/src/zjs/ast.nim` | `NodeKind` enum (mirrors `src/ast.zc`) + `AstNode` ref type + node constructors. Pure data, idiomatic register. |
 | `nim/src/zjs/parser.nim` | The recursive-descent parser: `Parser` object over the token stream, `parseProgram`, expression + statement parsers. Idiomatic Nim port of `src/parser.zc`. |
+| `nim/tools/labels.nim` | **New (DRY).** `tkLabel` (moved from `nim_lex.nim`) + `nkLabel` — both mirror the Zen-c `tools/zjs.zc` dump tables verbatim (incl. `?` fallback). Imported by both `nim_lex.nim` and `nim_parse.nim`. Tool-only; the engine enum keeps real names. |
+| `nim/tools/nim_lex.nim` | **Modified:** drop its local `tkLabel`, import it from `labels.nim` (re-verified by `make nim-difflex`). |
 | `nim/tools/nim_parse.nim` | CLI: parse argv source, dump the AST in `zjs parse` format. The parse-tree differential dumper. |
 | `nim/tests/tparser.nim` | `std/unittest` parser tests. |
 | `nim/tests/diff_parse.sh` | Differential harness: run a JS corpus through `zjs parse` and `nim-parse`, diff. |
@@ -79,16 +106,21 @@ The node-kind label is `nk_label(kind)` and the op label is the TokenKind label 
 
 **Files:** Create `nim/src/zjs/ast.nim`, Create `nim/tests/tparser.nim`.
 
-- [ ] **Step 0 (CONTROLLER+OWNER DESIGN STEP — do this first, at execution start, with the Zen-c parser open; NOT delegated to an implementer subagent).**
-  Per design doc §3.4, design the object-variant `AstNode` for the Phase-2b
-  kinds. For each kind in scope (Program, NumberExpr, BigIntExpr, StringExpr,
-  RegexExpr, BoolExpr, NullExpr, UndefinedExpr, ThisExpr, IdentExpr, Binary,
-  Logical, Unary, Postfix, Assignment, VarDecl, Declarator), read `src/parser.zc`
-  + `src/ast.zc` to learn what its generic `left`/`right`/`third`/`children`/
-  `name_*` fields actually MEAN, and define **semantic** variant fields. Group
-  kinds sharing a shape into one `of` branch. Finalize the type below against
-  the reference, then proceed to the TDD steps. The illustrative sketch in Step 3
-  is a STARTING POINT to refine, not the final word.
+- [x] **Step 0 (CONTROLLER+OWNER DESIGN STEP — DONE 2026-06-21, owner-approved).**
+  The variant was designed by reading `src/ast.zc` (per-kind field semantics are
+  documented inline there), `tools/zjs.zc` `dump_ast`/`nk_label`/`tk_label` (the
+  output contract), and `src/parser.zc` (actual node construction). In-scope
+  kinds (18): Program, NumberExpr, BigIntExpr, StringExpr, RegexExpr, BoolExpr,
+  NullExpr, UndefinedExpr, ThisExpr, IdentExpr, Binary, Logical, Unary, Postfix,
+  Assignment, **Paren**, VarDecl, Declarator. The finalized type + constructors
+  are in Step 3 below (no longer "illustrative" — build exactly this). Field
+  semantics derived: Binary/Logical = `binOp`+`lhs`+`rhs` (op,left,right);
+  Unary/Postfix = `unOp`+`operand` (op,left); Assignment = `assignOp`+`target`+
+  `value` (op,left,right); Paren = `inner` (left); VarDecl = `declKind`+
+  `declarators` (op=keyword, children); Declarator = `nameStart`/`nameLength`+
+  `init` (name_*, left=init or nil). Number/String/Ident/Regex/BigInt = value is
+  the `start..end` slice (Number additionally carries `numVal` from
+  `parse_number_literal`); Bool = `boolVal`; Null/Undefined/This = nullary.
 
 - [ ] **Step 1: Write the failing test** — `nim/tests/tparser.nim` (adjust field/
   constructor names to match the Step-0 finalized design):
@@ -118,14 +150,16 @@ suite "ast model":
 - [ ] **Step 2: Run, verify it fails** — `nim c -r --mm:arc --hints:off nim/tests/tparser.nim`.
 
 - [ ] **Step 3: Write `nim/src/zjs/ast.nim`.** Mirror the `NodeKind` enum from
-  `src/ast.zc` (read it — 95 variants, in order, same names so `$kind` matches
-  `nk_label`; same discipline as the lexer's TokenKind mirror — a mismatch
-  silently breaks the dump). Then the **object-variant** node. ILLUSTRATIVE
-  sketch (finalize against the Step-0 design):
+  `src/ast.zc` (read it — **all 95 variants, in order, same names**; the enum
+  keeps the real names for the Phase-3 compiler — same discipline as the lexer's
+  TokenKind mirror. NOTE: the dumper does NOT use `$kind`; it uses `nkLabel`
+  which mirrors `nk_label`'s `?`-gap. The enum still mirrors all 95 so the
+  compiler and `else: discard` growth work cleanly). Then the **finalized
+  object-variant** node — build exactly this (Step-0 design, owner-approved):
 ```nim
 ## AST — object variant (design doc §3.4). Discriminant = full NodeKind
-## (names mirror src/ast.zc so `$kind` == `zjs parse`'s nk_label). of-branches
-## grouped by shape; SEMANTIC field names; Nim-managed (ref + seq + arc).
+## (names mirror src/ast.zc). of-branches grouped by shape; SEMANTIC field
+## names; globally-unique (Nim requires it); Nim-managed (ref + seq + arc).
 import token
 
 type
@@ -134,15 +168,17 @@ type
     NumberExpr, BigIntExpr, StringExpr, TemplateExpr, TemplatePartExpr,
     TaggedTemplate, BoolExpr, NullExpr, UndefinedExpr, HoleExpr, ThisExpr,
     IdentExpr, RegexExpr,
-    ## ... (continue: mirror EVERY variant from src/ast.zc, in order) ...
+    ## ... (continue: mirror EVERY variant from src/ast.zc, in order, through
+    ## ImportMetaExpr — the full 95. Most stay in the `else: discard` branch
+    ## until 2c/2d/3.x implement them.) ...
 
   AstNode* = ref object
     start*, `end`*: uint32              # `end` is a Nim keyword — backtick-escape
     case kind*: NodeKind
     of NumberExpr: numVal*: float64
     of BoolExpr: boolVal*: bool
-    of StringExpr, IdentExpr, RegexExpr, BigIntExpr: discard  # value = source slice
-    of NullExpr, UndefinedExpr, ThisExpr: discard             # nullary
+    of StringExpr, IdentExpr, RegexExpr, BigIntExpr,
+       NullExpr, UndefinedExpr, ThisExpr: discard   # value = start..end slice, or nullary
     of Binary, Logical:
       binOp*: TokenKind
       lhs*, rhs*: AstNode
@@ -152,6 +188,8 @@ type
     of Assignment:
       assignOp*: TokenKind
       target*, value*: AstNode
+    of Paren:
+      inner*: AstNode
     of VarDecl:
       declKind*: TokenKind              # KwLet / KwConst / KwVar
       declarators*: seq[AstNode]
@@ -163,12 +201,28 @@ type
     else: discard                       # kinds implemented in later increments
 
 # Shape constructors (one per branch family) — semantic + total:
+proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
+  AstNode(kind: Program, start: s, `end`: e, stmts: stmts)
 proc newNumber*(s, e: uint32, v: float64): AstNode =
   AstNode(kind: NumberExpr, start: s, `end`: e, numVal: v)
-proc newBinary*(k: NodeKind, s, e: uint32, op: TokenKind, lhs, rhs: AstNode): AstNode =
-  AstNode(kind: k, start: s, `end`: e, binOp: op, lhs: lhs, rhs: rhs)
-# ... (newUnary, newAssignment, newVarDecl, newDeclarator, newProgram,
-#      newIdent/newString/newBool/newNull/..., per the Step-0 design) ...
+proc newBool*(s, e: uint32, v: bool): AstNode =
+  AstNode(kind: BoolExpr, start: s, `end`: e, boolVal: v)
+proc newLeaf*(kind: NodeKind, s, e: uint32): AstNode =
+  ## String/Ident/Regex/BigInt (value = slice) + Null/Undefined/This (nullary)
+  AstNode(kind: kind, start: s, `end`: e)
+proc newBinary*(kind: NodeKind, s, e: uint32, op: TokenKind, lhs, rhs: AstNode): AstNode =
+  AstNode(kind: kind, start: s, `end`: e, binOp: op, lhs: lhs, rhs: rhs)  # Binary | Logical
+proc newUnary*(kind: NodeKind, s, e: uint32, op: TokenKind, operand: AstNode): AstNode =
+  AstNode(kind: kind, start: s, `end`: e, unOp: op, operand: operand)     # Unary | Postfix
+proc newAssignment*(s, e: uint32, op: TokenKind, target, value: AstNode): AstNode =
+  AstNode(kind: Assignment, start: s, `end`: e, assignOp: op, target: target, value: value)
+proc newParen*(s, e: uint32, inner: AstNode): AstNode =
+  AstNode(kind: Paren, start: s, `end`: e, inner: inner)
+proc newVarDecl*(s, e: uint32, declKind: TokenKind, declarators: seq[AstNode]): AstNode =
+  AstNode(kind: VarDecl, start: s, `end`: e, declKind: declKind, declarators: declarators)
+proc newDeclarator*(s, e, nameStart, nameLength: uint32, init: AstNode): AstNode =
+  AstNode(kind: Declarator, start: s, `end`: e,
+          nameStart: nameStart, nameLength: nameLength, init: init)
 ```
 KEY Nim rules: each field name must be UNIQUE across the whole variant (hence
 `binOp`/`unOp`/`assignOp`/`declKind`, not one shared `op`); common fields
@@ -187,7 +241,78 @@ kind-group (`binOp` for Binary/Logical, `unOp` for Unary/Postfix, etc.).
 
 Build the dumper + harness against a stub parser (returns a bare `Program`), so the oracle is live for Tasks 3-5.
 
-**Files:** Create `nim/src/zjs/parser.nim` (stub), Create `nim/tools/nim_parse.nim`, Create `nim/tests/diff_parse.sh`, Modify `Makefile`.
+**Files:** Create `nim/tools/labels.nim`, Modify `nim/tools/nim_lex.nim`, Create `nim/src/zjs/parser.nim` (stub), Create `nim/tools/nim_parse.nim`, Create `nim/tests/diff_parse.sh`, Modify `Makefile`.
+
+- [ ] **Step 0: Shared label module (DRY refactor).** Create `nim/tools/labels.nim`
+  exporting two procs that mirror the Zen-c `tools/zjs.zc` dump tables **verbatim,
+  including the `?` fallback** — these are tool-only and must reproduce the Zen-c
+  tables' incompleteness for byte-identical parity:
+```nim
+## Mirrors tools/zjs.zc's tk_label + nk_label EXACTLY (incl. the `?` fallback
+## for kinds/tokens the Zen-c tables omit). Tool-only; NOT $kind/$tok.
+import ../src/zjs/[token, ast]
+
+proc tkLabel*(k: TokenKind): string =
+  case k
+  of Eof: "Eof"
+  # ... (move the EXACT body of the existing tkLabel from nim_lex.nim here) ...
+  else: "?"
+
+proc nkLabel*(k: NodeKind): string =
+  ## Mirror nk_label in tools/zjs.zc — it stops at ForOfStmt, so kinds after
+  ## it (BigIntExpr, RegexExpr, …) MUST fall through to "?".
+  case k
+  of Program: "Program"
+  of NumberExpr: "NumberExpr"
+  of StringExpr: "StringExpr"
+  of BoolExpr: "BoolExpr"
+  of NullExpr: "NullExpr"
+  of UndefinedExpr: "UndefinedExpr"
+  of ThisExpr: "ThisExpr"
+  of IdentExpr: "IdentExpr"
+  of Binary: "Binary"
+  of Logical: "Logical"
+  of Unary: "Unary"
+  of Postfix: "Postfix"
+  of Conditional: "Conditional"
+  of Assignment: "Assignment"
+  of Call: "Call"
+  of OptionalCall: "OptionalCall"
+  of New: "New"
+  of Member: "Member"
+  of OptionalMember: "OptionalMember"
+  of Computed: "Computed"
+  of OptionalComputed: "OptionalComputed"
+  of Sequence: "Sequence"
+  of Array: "Array"
+  of Object: "Object"
+  of ObjectProp: "ObjectProp"
+  of Paren: "Paren"
+  of BlockStmt: "BlockStmt"
+  of VarDecl: "VarDecl"
+  of Declarator: "Declarator"
+  of IfStmt: "IfStmt"
+  of ReturnStmt: "ReturnStmt"
+  of WhileStmt: "WhileStmt"
+  of DoWhileStmt: "DoWhileStmt"
+  of ForStmt: "ForStmt"
+  of BreakStmt: "BreakStmt"
+  of ContinueStmt: "ContinueStmt"
+  of EmptyStmt: "EmptyStmt"
+  of FunctionDecl: "FunctionDecl"
+  of FunctionExpr: "FunctionExpr"
+  of ArrowFunc: "ArrowFunc"
+  of ForInStmt: "ForInStmt"
+  of ForOfStmt: "ForOfStmt"
+  else: "?"     # BigIntExpr, RegexExpr, TemplateExpr, … all render as "?"
+```
+  Then **modify `nim/tools/nim_lex.nim`**: delete its local `tkLabel`, add
+  `import labels` (or `from labels import tkLabel`). Rebuild + `make nim-difflex`
+  → must STILL be byte-clean (proves the move is behavior-preserving). Commit
+  this refactor on its own: `git add nim/tools/labels.nim nim/tools/nim_lex.nim &&
+  git commit -m "nim: extract shared dump-label tables to tools/labels.nim"`.
+  (The `nkLabel` arm list above is the EXACT current `nk_label` table — verify
+  against `tools/zjs.zc` at build time in case it grew.)
 
 - [ ] **Step 1: Stub parser** — `nim/src/zjs/parser.nim`:
 ```nim
@@ -212,10 +337,11 @@ proc parseProgram*(p: var Parser): AstNode =
   newProgram(0'u32, p.source.len.uint32)   # variant constructor; stmts defaults to @[]
 ```
 
-- [ ] **Step 2: The dumper** — `nim/tools/nim_parse.nim` — must match `zjs parse` format (indent 2/depth + per-node attrs from the oracle section). Use `$kind` for the node label and `$binOp`/`$unOp`/… for the op labels (both mirror the Zen-c labels because the enums mirror Zen-c). With the **object variant**, the header line AND the child walk are both driven by a single `case n.kind` — each branch reads its own semantic fields and recurses into its own semantic children in source order. This is the variant payoff: no generic `left/right/third/children` walk that could visit the wrong slot. Implement `dumpAst(node, source, depth)`:
+- [ ] **Step 2: The dumper** — `nim/tools/nim_parse.nim` — must match `zjs parse` format (indent 2/depth + per-node attrs from the oracle section). Label via `nkLabel(n.kind)` and op via `tkLabel(...)` (from `labels.nim`) — **NOT** `$kind`/`$binOp` (those print the real enum name; `nkLabel`/`tkLabel` reproduce the Zen-c `?`-gap). Number via `&"{n.numVal:g}"` (verified == C `%g`). With the **object variant**, the header line AND the child walk are both driven by a single `case n.kind` — each branch reads its own semantic fields and recurses into its own semantic children in source order. This is the variant payoff: no generic `left/right/third/children` walk that could visit the wrong slot. Implement `dumpAst(node, source, depth)`:
 ```nim
 import std/[os, strformat, strutils]
 import ../src/zjs/[ast, token, parser]
+import labels   # nkLabel, tkLabel — shared with nim_lex
 
 proc slice(src: string, s, e: uint32): string = src[s.int ..< e.int]
 
@@ -223,35 +349,38 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
   if n == nil:
     stdout.write(repeat("  ", depth) & "(null)\n"); return
   let ind = repeat("  ", depth)
-  let label = $n.kind
+  let label = nkLabel(n.kind)        # mirrors nk_label, incl. "?" gap — NOT $kind
   case n.kind
   of NumberExpr:
-    stdout.write(&"{ind}{label} {formatFloat(n.numVal, ffDefault, 0)}\n")  # match printf %g — verify in Step 4
+    stdout.write(&"{ind}{label} {n.numVal:g}\n")        # :g == C %g (verified)
   of BoolExpr:
     stdout.write(&"{ind}{label} {(if n.boolVal: \"true\" else: \"false\")}\n")
-  of IdentExpr, StringExpr, RegexExpr, BigIntExpr:
+  of IdentExpr, StringExpr:                              # ONLY these two are quoted
     stdout.write(&"{ind}{label} \"{slice(src, n.start, n.`end`)}\"\n")
   of Binary, Logical:
-    stdout.write(&"{ind}{label} op={$n.binOp}\n")
+    stdout.write(&"{ind}{label} op={tkLabel(n.binOp)}\n")
     dumpAst(n.lhs, src, depth+1)
     dumpAst(n.rhs, src, depth+1)
   of Unary, Postfix:
-    stdout.write(&"{ind}{label} op={$n.unOp}\n")
+    stdout.write(&"{ind}{label} op={tkLabel(n.unOp)}\n")
     dumpAst(n.operand, src, depth+1)
   of Assignment:
-    stdout.write(&"{ind}{label} op={$n.assignOp}\n")
+    stdout.write(&"{ind}{label} op={tkLabel(n.assignOp)}\n")
     dumpAst(n.target, src, depth+1)
     dumpAst(n.value, src, depth+1)
   of VarDecl:
-    stdout.write(&"{ind}{label} op={$n.declKind}\n")
+    stdout.write(&"{ind}{label} op={tkLabel(n.declKind)}\n")
     for d in n.declarators: dumpAst(d, src, depth+1)
   of Declarator:
     stdout.write(&"{ind}{label} name=\"{slice(src, n.nameStart, n.nameStart + n.nameLength)}\"\n")
     if n.init != nil: dumpAst(n.init, src, depth+1)
+  of Paren:
+    stdout.write(&"{ind}{label}\n")                      # label-only ("Paren")
+    dumpAst(n.inner, src, depth+1)
   of Program:
     stdout.write(&"{ind}{label}\n")
     for s in n.stmts: dumpAst(s, src, depth+1)
-  else:  # NullExpr, UndefinedExpr, ThisExpr, + later-increment kinds (nullary for now)
+  else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 
 proc main() =
@@ -262,7 +391,7 @@ proc main() =
 
 main()
 ```
-CRITICAL (Step 4): the **per-kind child-walk order** and the **`%g` number formatting** must match Zen-c's `dump_ast` exactly. Read `dump_ast` in `tools/zjs.zc` to confirm, for each kind, the order it recurses its children (e.g. Binary = left-then-right, Declarator = name-then-init) and replicate that order inside the matching `of` branch. Use a `Program` with one child to lock indentation, and adjust `formatFloat`/the per-branch walk until a real dump diffs clean.
+CRITICAL (Step 4): the **per-kind child-walk order** must match Zen-c's `dump_ast` (which walks uniformly `left → right → third → children[]`) — the per-branch walks above reproduce that order (Binary = lhs→rhs, Assignment = target→value, Declarator = init only, Paren = inner, Program/VarDecl = their seq). Number formatting is `:g` (already verified byte-equal to C `%g`). `BigIntExpr`/`RegexExpr` are deliberately in the `else` (label-only `?`) branch — they are NOT quoted. Use a `Program` with one child to lock indentation, then diff a real dump clean.
 
 - [ ] **Step 3: Differential harness** — `nim/tests/diff_parse.sh` (copy the structure of `nim/tests/diff_lex.sh`, swapping `lex`→`parse` and `nim-lex`→`nim-parse`; same built-in snippets + `<dir>` mode + `diff` + count).
 
@@ -276,11 +405,11 @@ CRITICAL (Step 4): the **per-kind child-walk order** and the **`%g` number forma
 
 **Files:** Modify `nim/src/zjs/parser.nim`, Modify `nim/tests/tparser.nim`.
 
-- [ ] **Step 1: Unit tests** for parsing single primary expressions wrapped in a Program (an expression statement): `1` → Program/NumberExpr; `"s"` → Program/StringExpr; `true`/`false` → BoolExpr; `null` → NullExpr; `x` → IdentExpr; `this` → ThisExpr; `(1)` → the inner NumberExpr (parens are transparent — verify against `zjs parse '(1)'`). Derive expected trees from `build/zjs parse '<input>'`. Assert by comparing your dumped tree (call a small test helper that renders the AST like the dumper, or assert node kinds/fields directly).
+- [ ] **Step 1: Unit tests** for parsing single primary expressions wrapped in a Program (an expression statement): `1` → Program/NumberExpr; `"s"` → Program/StringExpr; `true`/`false` → BoolExpr; `null` → NullExpr; `x` → IdentExpr; `this` → ThisExpr; `(42)` → Program/**Paren**/NumberExpr (parens are NOT transparent — Zen-c builds a real `Paren` node with `inner` = the expression; verify against `zjs parse '(42)'`). Derive expected trees from `build/zjs parse '<input>'`. Assert by comparing your dumped tree (call a small test helper that renders the AST like the dumper, or assert node kinds/fields directly).
 
 - [ ] **Step 2: Run, verify they fail** (stub returns empty Program).
 
-- [ ] **Step 3: Implement** in `nim/src/zjs/parser.nim`: cursor helpers (`peek`/`advance`/`expect`), `parseProgram` (loop parsing statements into a local `stmts: seq[AstNode]`, then `newProgram(0, len, stmts)` — recall a variant's `kind` and case fields are fixed at construction, so accumulate children first and build the node once), a minimal `parseStatement` that for now handles only expression statements, and `parsePrimary` (number/string/bool/null/undefined/ident/this/regex/parenthesized). Build each node via its shape constructor (`newNumber`/`newString`/`newBool`/`newNull`/`newIdent`/`newThis`/…), setting `start`/`end`/`numVal`/`boolVal` to match what the Zen-c parser records (the dump reveals these). For value-from-slice kinds (Ident/String/Regex/BigInt) the value is the `start..end` source slice — set the span, no separate field.
+- [ ] **Step 3: Implement** in `nim/src/zjs/parser.nim`: cursor helpers (`peek`/`advance`/`expect`), `parseProgram` (loop parsing statements into a local `stmts: seq[AstNode]`, then `newProgram(0, len, stmts)` — recall a variant's `kind` and case fields are fixed at construction, so accumulate children first and build the node once), a minimal `parseStatement` that for now handles only expression statements (an expression statement is the **bare expression node** placed directly in `Program.stmts` — there is no ExpressionStmt wrapper), and `parsePrimary` (number/string/bool/null/undefined/ident/this/regex/parenthesized). Build each node via its shape constructor: `newNumber` (set `numVal` from a port of `parse_number_literal`), `newBool`, `newLeaf(StringExpr|IdentExpr|RegexExpr|NullExpr|UndefinedExpr|ThisExpr, …)`, and **`newParen(start, end, inner)`** for `( expr )` — Zen-c consumes `(`, parses the inner expression, consumes `)`, and wraps it in a `Paren` whose span runs from `(` to `)`. Set `start`/`end` to match the Zen-c spans (the dump reveals these). For value-from-slice kinds (Ident/String/Regex/BigInt) the value is the `start..end` source slice — set the span, no separate field.
 
 - [ ] **Step 4: Run unit tests → PASS. Differential checks:**
 ```bash
