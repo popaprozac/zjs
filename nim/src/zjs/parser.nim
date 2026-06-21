@@ -1368,6 +1368,12 @@ proc parseFor(p: var Parser): AstNode =
     var binding = init
     if init != nil and init.kind != VarDecl:
       binding = reinterpretAssignTarget(init)
+    # §13.7.5 / §14.7.5: a for-in / for-of binding may NOT carry an
+    # initializer — `for (var x = 1 in y)` / `for (let [a] = 0 of z)` are
+    # SyntaxErrors (Zen-c rejects all forms; no Annex-B legacy allowance).
+    if init != nil and init.kind == VarDecl:
+      for d in init.declarators:
+        if d.init != nil: p.hadError = true
     let iterable = if wasOf: parseAssignmentExpr(p) else: parseExpression(p)
     discard p.expect(RParen)
     let body = parseStatement(p)

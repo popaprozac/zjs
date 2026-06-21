@@ -3231,3 +3231,17 @@ suite "parser dynamic import 2f-7":
     var p = initParser("import.foo")
     discard p.parseProgram()
     check p.hadError
+
+suite "parser early errors 2f-4: for-in/of binding initializer":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "for (var x = 1 in y) — initializer is a SyntaxError":
+    check hadErr("for (var x = 1 in y){}")
+  test "for (let [a] = 0 of z) — pattern initializer rejected":
+    check hadErr("for (let [a] = 0 of z){}")
+  test "for (var x in y) — no initializer is fine":
+    check not hadErr("for (var x in y){}")
+  test "for (const [a,b] of y) — no initializer is fine":
+    check not hadErr("for (const [a,b] of y){}")
+  test "C-style for with initializer still fine":
+    check not hadErr("for (var i = 0; i < n; i++){}")
