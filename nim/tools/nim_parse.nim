@@ -71,6 +71,13 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
     stdout.write(&"{ind}{label} name=\"{slice(src, n.keyStart, n.keyStart + n.keyLength)}\"\n")
     dumpAst(n.propVal, src, depth+1)
     if n.computedKey != nil: dumpAst(n.computedKey, src, depth+1)
+  of TemplateExpr:
+    stdout.write(&"{ind}{label}\n")
+    for c in n.tparts: dumpAst(c, src, depth+1)
+  of TaggedTemplate:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.tag, src, depth+1)
+    dumpAst(n.tmpl, src, depth+1)
   else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 

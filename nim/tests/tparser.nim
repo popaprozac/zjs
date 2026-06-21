@@ -803,3 +803,20 @@ suite "parser assignment":
     check inner.assignOp == TokenKind.PipePipeEq
     check inner.target.kind == NodeKind.IdentExpr
     check inner.value.kind == NodeKind.IdentExpr
+
+suite "ast 2c-5 nodes":
+  test "template expr":
+    let p0 = newLeaf(TemplatePartExpr, 1'u32, 2'u32)
+    let x = newLeaf(IdentExpr, 4'u32, 5'u32)
+    let p1 = newLeaf(TemplatePartExpr, 6'u32, 6'u32)
+    let t = newTemplateExpr(0'u32, 7'u32, @[p0, x, p1])
+    check t.kind == NodeKind.TemplateExpr
+    check t.tparts.len == 3
+    check t.tparts[0].kind == NodeKind.TemplatePartExpr
+  test "tagged template":
+    let tag = newLeaf(IdentExpr, 0'u32, 3'u32)
+    let tmpl = newTemplateExpr(3'u32, 8'u32, @[newLeaf(TemplatePartExpr, 4'u32, 7'u32)])
+    let tt = newTaggedTemplate(0'u32, 8'u32, tag, tmpl)
+    check tt.kind == NodeKind.TaggedTemplate
+    check tt.tag.kind == NodeKind.IdentExpr
+    check tt.tmpl.kind == NodeKind.TemplateExpr

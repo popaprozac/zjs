@@ -151,6 +151,11 @@ type
       keyStart*, keyLength*: uint32   # raw key slice (incl. quotes for strings); 0/0 = computed
       propVal*: AstNode               # the value (shorthand → IdentExpr of the key)
       computedKey*: AstNode           # the `[expr]` key; nil unless computed
+    of TemplateExpr:
+      tparts*: seq[AstNode]             # alternating TemplatePartExpr / expr
+    of TaggedTemplate:
+      tag*: AstNode
+      tmpl*: AstNode
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -237,3 +242,11 @@ proc newObjectProp*(s, e, keyStart, keyLength: uint32, propVal, computedKey: Ast
   ## Construct an ObjectProp node. computedKey may be nil (non-computed property).
   AstNode(kind: ObjectProp, start: s, `end`: e, keyStart: keyStart,
           keyLength: keyLength, propVal: propVal, computedKey: computedKey)
+
+proc newTemplateExpr*(s, e: uint32, tparts: seq[AstNode]): AstNode =
+  ## Construct a TemplateExpr node; tparts alternates TemplatePartExpr / expression.
+  AstNode(kind: TemplateExpr, start: s, `end`: e, tparts: tparts)
+
+proc newTaggedTemplate*(s, e: uint32, tag, tmpl: AstNode): AstNode =
+  ## Construct a TaggedTemplate node; tmpl must be a TemplateExpr.
+  AstNode(kind: TaggedTemplate, start: s, `end`: e, tag: tag, tmpl: tmpl)
