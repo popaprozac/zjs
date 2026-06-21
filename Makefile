@@ -462,8 +462,9 @@ NIM_LIB        := $(NIM_OUT)/libzjs.a
 NIM_ENTRY      := nim/src/zjs.nim
 NIM_RUNNER     := $(NIM_OUT)/test262_runner
 
+NIM_SRCS := $(shell find nim/src -name '*.nim')
 nim-lib: $(NIM_LIB)
-$(NIM_LIB): $(wildcard nim/src/*.nim nim/src/zjs/*.nim) | $(NIM_OUT)
+$(NIM_LIB): $(NIM_SRCS) | $(NIM_OUT)
 	$(NIM) c --app:staticlib --noMain:on --mm:arc -d:release \
 	  --nimcache:$(NIM_OUT)/cache --out:$(NIM_LIB) $(NIM_ENTRY)
 
@@ -481,7 +482,10 @@ nim-cabi-smoke: $(NIM_LIB)
 	$(CLANG) -O2 -Wall -Iinclude nim/tests/cabi_smoke.c $(NIM_LIB) -lm -o $(NIM_OUT)/cabi_smoke
 	@$(NIM_OUT)/cabi_smoke
 
-.PHONY: nim-lib nim-test262 nim-cabi-smoke
+nim-test:
+	$(NIM) c -r --mm:arc -d:release --hints:off nim/tests/tvalue.nim
+
+.PHONY: nim-lib nim-test262 nim-cabi-smoke nim-test
 
 # WinterTC Minimum Common API conformance. Probes ship in
 # tests/wintercg/ — each is a WPT-shaped .js using the harness at
