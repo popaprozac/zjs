@@ -477,7 +477,11 @@ $(NIM_RUNNER): tests/test262_runner.c include/zjs.h $(NIM_LIB) | $(NIM_OUT)
 nim-test262: $(NIM_RUNNER)
 	@$(NIM_RUNNER) $(T262_DIR)
 
-.PHONY: nim-lib nim-test262
+nim-cabi-smoke: $(NIM_LIB)
+	$(CLANG) -O2 -Wall -Iinclude nim/tests/cabi_smoke.c $(NIM_LIB) -lm -o $(NIM_OUT)/cabi_smoke
+	@$(NIM_OUT)/cabi_smoke
+
+.PHONY: nim-lib nim-test262 nim-cabi-smoke
 
 # WinterTC Minimum Common API conformance. Probes ship in
 # tests/wintercg/ — each is a WPT-shaped .js using the harness at
