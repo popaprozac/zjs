@@ -8,8 +8,10 @@ type
     source*: string
     toks*: seq[Token]
     pos*: int
-    hadError*: bool   ## set by expect() on mismatch; signals parse failure
-    noIn*: bool       ## when true, KwIn is NOT treated as a relational operator (for-init)
+    hadError*: bool        ## set by expect() on mismatch; signals parse failure
+    noIn*: bool            ## when true, KwIn is NOT treated as a relational operator (for-init)
+    inGenerator*: bool     ## true when parsing inside a generator body
+    inAsync*: bool         ## true when parsing inside an async function body
 
 proc initParser*(source: string): Parser =
   var lx = initLexer(source)
@@ -107,8 +109,8 @@ proc parseAssignmentExpr(p: var Parser): AstNode
 proc parseArray(p: var Parser): AstNode
 proc parseObject(p: var Parser): AstNode
 proc parseTemplateLit(p: var Parser): AstNode
-proc parseFunctionDecl(p: var Parser): AstNode
-proc parseFunctionExpr(p: var Parser): AstNode
+proc parseFunctionDecl(p: var Parser, isAsync = false): AstNode
+proc parseFunctionExpr(p: var Parser, isAsync = false): AstNode
 proc parseParamList(p: var Parser): seq[AstNode]
 
 # ------------------------------------------------------------------
@@ -309,6 +311,33 @@ proc parsePrimary(p: var Parser): AstNode =
   of KwFunction:
     return parseFunctionExpr(p)
 
+  of KwAsync:
+    # async function expr: `async function ...`
+    if p.toks[p.pos + 1].kind == KwFunction:
+      discard p.advance()   # consume 'async'
+      return parseFunctionExpr(p, isAsync = true)
+    # Otherwise fall through: treat 'async' as an identifier
+    discard p.advance()
+    return newLeaf(IdentExpr, t.start, t.start + t.length)
+
+  of KwYield:
+    # Outside a generator, 'yield' is an identifier
+    if not p.inGenerator:
+      discard p.advance()
+      return newLeaf(IdentExpr, t.start, t.start + t.length)
+    # Inside a generator, handled in parseAssignmentExpr before we get here
+    discard p.advance()
+    return newLeaf(IdentExpr, t.start, t.start + t.length)
+
+  of KwAwait:
+    # Outside async, 'await' is an identifier
+    if not p.inAsync:
+      discard p.advance()
+      return newLeaf(IdentExpr, t.start, t.start + t.length)
+    # Inside async, handled in parseUnary before we get here
+    discard p.advance()
+    return newLeaf(IdentExpr, t.start, t.start + t.length)
+
   else:
     # Unknown / unimplemented primary — skip and return nil.
     discard p.advance()
@@ -406,6 +435,17 @@ proc isAssignmentOp(k: TokenKind): bool {.inline.} =
         AmpAmpEq, PipePipeEq, QuestionQuestionEq}
 
 proc parseAssignmentExpr(p: var Parser): AstNode =
+  # yield expression — only inside a generator body
+  if p.peek().kind == KwYield and p.inGenerator:
+    let kw = p.advance()
+    var delegate = false
+    if p.peek().kind == Star: discard p.advance(); delegate = true
+    var arg: AstNode = nil
+    var endPos = kw.start + kw.length
+    if delegate or p.peek().kind notin {Semicolon, RParen, RBracket, RBrace, Comma, Colon, Eof}:
+      arg = parseAssignmentExpr(p)
+      if arg != nil: endPos = arg.`end`
+    return newYield(kw.start, endPos, arg, delegate)
   let left = parseConditional(p)
   if left == nil: return nil
   if isAssignmentOp(p.peek().kind):
@@ -561,6 +601,11 @@ proc parsePostfix(p: var Parser): AstNode =
 
 # Level 3 — unary prefix (right-associative; recurses itself).
 proc parseUnary(p: var Parser): AstNode =
+  # await expression — only inside an async function body
+  if p.peek().kind == KwAwait and p.inAsync:
+    let kw = p.advance()
+    let operand = parseUnary(p)
+    return newAwait(kw.start, (if operand != nil: operand.`end` else: kw.start + kw.length), operand)
   let k = p.peek().kind
   if k == Bang or k == Tilde or
      k == Plus or k == Minus or
@@ -746,6 +791,12 @@ proc parseExpression(p: var Parser): AstNode =
 # Identifier-binding only (destructuring is out of scope this increment).
 # ------------------------------------------------------------------
 
+# isBindingIdent — returns true for token kinds that may serve as a binding
+# identifier (plain Identifier or contextual keywords that JS allows as names).
+proc isBindingIdent(k: TokenKind): bool {.inline.} =
+  k in {Identifier, KwYield, KwAwait, KwAsync,
+        KwOf, KwFrom, KwAs, KwGet, KwSet}
+
 proc parseVarDecl(p: var Parser, consumeSemi = true): AstNode =
   let kw = p.advance()          # consume var / let / const
   var declarators: seq[AstNode]
@@ -754,7 +805,7 @@ proc parseVarDecl(p: var Parser, consumeSemi = true): AstNode =
   while true:
     let declStart = p.peek().start
     let nameTok = p.peek()
-    if nameTok.kind != Identifier:
+    if not isBindingIdent(nameTok.kind):
       break                     # guard: non-identifier = stop (pattern etc.)
     discard p.advance()         # consume the identifier
 
@@ -837,6 +888,8 @@ proc parseDoWhile(p: var Parser): AstNode =
 
 proc parseFor(p: var Parser): AstNode =
   let kw = p.advance()                       # 'for'
+  # for-await: consume 'await' if present inside an async function
+  if p.peek().kind == KwAwait and p.inAsync: discard p.advance()
   discard p.expect(LParen)
 
   # Parse the init clause with noIn=true so "x in obj" stops at 'in'.
@@ -984,21 +1037,28 @@ proc parseParamList(p: var Parser): seq[AstNode] =
 # parseFunctionDecl — port of fn parse_function_decl in src/parser.zc (~1823).
 # ------------------------------------------------------------------
 
-proc parseFunctionDecl(p: var Parser): AstNode =
+proc parseFunctionDecl(p: var Parser, isAsync = false): AstNode =
   let kw = p.advance()                          # 'function'
+  var isGen = false
+  if p.peek().kind == Star: discard p.advance(); isGen = true
   let nameTok = p.advance()                     # name (Identifier) — required for a declaration
   discard p.expect(LParen)
   let params = parseParamList(p)
   discard p.expect(RParen)
+  let savedG = p.inGenerator; let savedA = p.inAsync
+  p.inGenerator = isGen; p.inAsync = isAsync
   let body = parseBlock(p)
-  newFunctionDecl(kw.start, body.`end`, nameTok.start, nameTok.length, body, params)
+  p.inGenerator = savedG; p.inAsync = savedA
+  newFunctionDecl(kw.start, body.`end`, nameTok.start, nameTok.length, body, params, isAsync, isGen)
 
 # ------------------------------------------------------------------
 # parseFunctionExpr — port of fn parse_function_expr in src/parser.zc (~2772).
 # ------------------------------------------------------------------
 
-proc parseFunctionExpr(p: var Parser): AstNode =
+proc parseFunctionExpr(p: var Parser, isAsync = false): AstNode =
   let kw = p.advance()                          # 'function'
+  var isGen = false
+  if p.peek().kind == Star: discard p.advance(); isGen = true
   var nameStart = 0'u32
   var nameLen = 0'u32
   if p.peek().kind == Identifier:               # optional name
@@ -1007,8 +1067,11 @@ proc parseFunctionExpr(p: var Parser): AstNode =
   discard p.expect(LParen)
   let params = parseParamList(p)
   discard p.expect(RParen)
+  let savedG = p.inGenerator; let savedA = p.inAsync
+  p.inGenerator = isGen; p.inAsync = isAsync
   let body = parseBlock(p)
-  newFunctionExpr(kw.start, body.`end`, nameStart, nameLen, body, params)
+  p.inGenerator = savedG; p.inAsync = savedA
+  newFunctionExpr(kw.start, body.`end`, nameStart, nameLen, body, params, isAsync, isGen)
 
 # ------------------------------------------------------------------
 # parseStatement — core dispatch. Expression statement consumes an
@@ -1035,6 +1098,10 @@ proc parseStatement(p: var Parser): AstNode =
     let semi = p.advance()
     return newLeaf(EmptyStmt, semi.start, semi.start + semi.length)
   else: discard
+  # async function declaration: `async function ...`
+  if p.peek().kind == KwAsync and p.toks[p.pos + 1].kind == KwFunction:
+    discard p.advance()   # consume 'async'
+    return parseFunctionDecl(p, isAsync = true)
   # Labeled statement: Identifier ':' (2-token lookahead)
   if p.peek().kind == Identifier and p.toks[p.pos + 1].kind == Colon:
     let id = p.advance()

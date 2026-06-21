@@ -187,6 +187,11 @@ type
       fnBody*: AstNode
       fnParams*: seq[AstNode]
       fnIsAsync*, fnIsGenerator*: bool
+    of YieldExpr:
+      yieldArg*: AstNode        # nil for bare `yield`
+      yieldDelegate*: bool
+    of AwaitExpr:
+      awaitArg*: AstNode
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -354,3 +359,11 @@ proc newFunctionExpr*(s, e, nameStart, nameLen: uint32, body: AstNode, params: s
   ## Construct a FunctionExpr node; nameLen=0 means anonymous.
   AstNode(kind: FunctionExpr, start: s, `end`: e, fnNameStart: nameStart, fnNameLen: nameLen,
           fnBody: body, fnParams: params, fnIsAsync: isAsync, fnIsGenerator: isGenerator)
+
+proc newYield*(s, e: uint32, arg: AstNode, delegate: bool): AstNode =
+  ## Construct a YieldExpr node; arg is nil for bare `yield`.
+  AstNode(kind: YieldExpr, start: s, `end`: e, yieldArg: arg, yieldDelegate: delegate)
+
+proc newAwait*(s, e: uint32, arg: AstNode): AstNode =
+  ## Construct an AwaitExpr node.
+  AstNode(kind: AwaitExpr, start: s, `end`: e, awaitArg: arg)

@@ -1500,3 +1500,177 @@ suite "parser functions":
     let inner = outer.fnBody.stmtList[0]
     check inner.kind == NodeKind.FunctionDecl
     check outer.fnBody.stmtList[1].kind == NodeKind.ReturnStmt
+
+suite "parser gen/async":
+  test "function* g(){} — FunctionDecl with fnIsGenerator=true":
+    var p = initParser("function* g(){}")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.kind == NodeKind.FunctionDecl
+    check p.source[fn.fnNameStart.int ..< (fn.fnNameStart + fn.fnNameLen).int] == "g"
+    check fn.fnIsGenerator == true
+    check fn.fnIsAsync == false
+
+  test "async function f(){} — FunctionDecl with fnIsAsync=true":
+    var p = initParser("async function f(){}")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.kind == NodeKind.FunctionDecl
+    check p.source[fn.fnNameStart.int ..< (fn.fnNameStart + fn.fnNameLen).int] == "f"
+    check fn.fnIsAsync == true
+    check fn.fnIsGenerator == false
+
+  test "function* g(){ yield; } — bare yield produces YieldExpr with nil arg":
+    var p = initParser("function* g(){ yield; }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.kind == NodeKind.FunctionDecl
+    check fn.fnIsGenerator == true
+    check fn.fnBody.stmtList.len == 1
+    let y = fn.fnBody.stmtList[0]
+    check y.kind == NodeKind.YieldExpr
+    check y.yieldArg == nil
+    check y.yieldDelegate == false
+
+  test "function* g(){ yield 1; } — yield with NumberExpr arg":
+    var p = initParser("function* g(){ yield 1; }")
+    let prog = p.parseProgram()
+    let fn = prog.stmts[0]
+    check fn.fnBody.stmtList.len == 1
+    let y = fn.fnBody.stmtList[0]
+    check y.kind == NodeKind.YieldExpr
+    check y.yieldArg != nil
+    check y.yieldArg.kind == NodeKind.NumberExpr
+    check y.yieldArg.numVal == 1.0
+    check y.yieldDelegate == false
+
+  test "function* g(){ yield* x; } — yield delegate with IdentExpr arg":
+    var p = initParser("function* g(){ yield* x; }")
+    let prog = p.parseProgram()
+    let fn = prog.stmts[0]
+    let y = fn.fnBody.stmtList[0]
+    check y.kind == NodeKind.YieldExpr
+    check y.yieldDelegate == true
+    check y.yieldArg != nil
+    check y.yieldArg.kind == NodeKind.IdentExpr
+
+  test "function* g(){ let a = yield b; } — yield as rhs of declarator":
+    var p = initParser("function* g(){ let a = yield b; }")
+    let prog = p.parseProgram()
+    let fn = prog.stmts[0]
+    check fn.fnBody.stmtList.len == 1
+    let decl = fn.fnBody.stmtList[0]
+    check decl.kind == NodeKind.VarDecl
+    let d = decl.declarators[0]
+    check d.init != nil
+    check d.init.kind == NodeKind.YieldExpr
+    check d.init.yieldArg.kind == NodeKind.IdentExpr
+
+  test "async function f(){ await x; } — AwaitExpr with IdentExpr arg":
+    var p = initParser("async function f(){ await x; }")
+    let prog = p.parseProgram()
+    let fn = prog.stmts[0]
+    check fn.fnIsAsync == true
+    check fn.fnBody.stmtList.len == 1
+    let aw = fn.fnBody.stmtList[0]
+    check aw.kind == NodeKind.AwaitExpr
+    check aw.awaitArg != nil
+    check aw.awaitArg.kind == NodeKind.IdentExpr
+
+  test "async function f(){ return await g(); } — await wraps a call":
+    var p = initParser("async function f(){ return await g(); }")
+    let prog = p.parseProgram()
+    let fn = prog.stmts[0]
+    check fn.fnBody.stmtList.len == 1
+    let ret = fn.fnBody.stmtList[0]
+    check ret.kind == NodeKind.ReturnStmt
+    check ret.retArg != nil
+    check ret.retArg.kind == NodeKind.AwaitExpr
+    check ret.retArg.awaitArg.kind == NodeKind.Call
+
+  test "async function f(){ let x = await a + await b; } — two awaits in binary":
+    var p = initParser("async function f(){ let x = await a + await b; }")
+    let prog = p.parseProgram()
+    let fn = prog.stmts[0]
+    let decl = fn.fnBody.stmtList[0]
+    check decl.kind == NodeKind.VarDecl
+    let d = decl.declarators[0]
+    check d.init != nil
+    check d.init.kind == NodeKind.Binary
+    check d.init.lhs.kind == NodeKind.AwaitExpr
+    check d.init.rhs.kind == NodeKind.AwaitExpr
+
+  test "yield outside generator is IdentExpr":
+    var p = initParser("yield")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.IdentExpr
+
+  test "await outside async is IdentExpr":
+    var p = initParser("await")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.IdentExpr
+
+  test "var yield = 1 — yield as var name outside generator":
+    var p = initParser("var yield = 1;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let decl = prog.stmts[0]
+    check decl.kind == NodeKind.VarDecl
+    check decl.declarators.len == 1
+
+  test "nested: non-gen inside gen — yield NOT a keyword in inner fn":
+    var p = initParser("function* g(){ function h(){ return 1; } yield h(); }")
+    let prog = p.parseProgram()
+    let fn = prog.stmts[0]
+    check fn.fnIsGenerator == true
+    check fn.fnBody.stmtList.len == 2
+    let innerFn = fn.fnBody.stmtList[0]
+    check innerFn.kind == NodeKind.FunctionDecl
+    check innerFn.fnIsGenerator == false
+    # The outer yield is still a YieldExpr
+    let y = fn.fnBody.stmtList[1]
+    check y.kind == NodeKind.YieldExpr
+
+  test "let af = async function(){ await x; } — async FunctionExpr":
+    var p = initParser("let af = async function(){ await x; };")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let decl = prog.stmts[0]
+    check decl.kind == NodeKind.VarDecl
+    let fn = decl.declarators[0].init
+    check fn != nil
+    check fn.kind == NodeKind.FunctionExpr
+    check fn.fnIsAsync == true
+    check fn.fnBody.stmtList.len == 1
+    check fn.fnBody.stmtList[0].kind == NodeKind.AwaitExpr
+
+  test "let gf = function*(){ yield 1; } — generator FunctionExpr":
+    var p = initParser("let gf = function*(){ yield 1; };")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let decl = prog.stmts[0]
+    let fn = decl.declarators[0].init
+    check fn != nil
+    check fn.kind == NodeKind.FunctionExpr
+    check fn.fnIsGenerator == true
+    let y = fn.fnBody.stmtList[0]
+    check y.kind == NodeKind.YieldExpr
+    check y.yieldArg.kind == NodeKind.NumberExpr
+
+  test "async is IdentExpr outside async context":
+    var p = initParser("async")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.IdentExpr
+
+  test "let async = 1 — async as var name":
+    var p = initParser("let async = 1;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let decl = prog.stmts[0]
+    check decl.kind == NodeKind.VarDecl

@@ -144,6 +144,12 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
       stdout.write(&"{ind}{label} (anonymous)\n")
     dumpAst(n.fnBody, src, depth+1)
     for prm in n.fnParams: dumpAst(prm, src, depth+1)
+  of YieldExpr:
+    stdout.write(&"{ind}{label}\n")
+    if n.yieldArg != nil: dumpAst(n.yieldArg, src, depth+1)
+  of AwaitExpr:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.awaitArg, src, depth+1)
   else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 
