@@ -139,7 +139,7 @@ Per §3.2, the AST is modeled as a Nim **`ref object` variant**, not a flat
 "fat node" mirroring Zen-c's generic `left`/`right`/`third`/`children`. The
 design:
 
-- **Discriminant is the full `NodeKind`** (mirrors `src/ast.zc`'s 95 variants,
+- **Discriminant is the full `NodeKind`** (mirrors `src/ast.zc`'s 74 variants,
   same names) so `$kind` reproduces `zjs parse`'s `nk_label` AND the kind stays
   exact. Note: a node may be Nim-managed (`ref` + `seq`, arc) — AST is
   compile-time/host-side data per §3.3's two-heap rule, so NO manual memory.

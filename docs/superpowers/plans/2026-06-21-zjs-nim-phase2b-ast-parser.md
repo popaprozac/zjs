@@ -26,7 +26,7 @@ Step 3. The AST is a Nim **`ref object` variant**, NOT a flat fat node:
   `nkLabel` (see oracle section), NOT `$kind`. Nim-managed (`ref` + `seq`, arc;
   no manual memory — AST is host-side data per the two-heap rule).
 - `of`-branches **group kinds by shared shape** (Nim allows multiple enum values
-  per branch) → ~10 branches, not 95.
+  per branch) → ~10 branches, not 74.
 - Fields are **semantic** (`lhs`/`rhs`/`unOp`/`operand`/`init`/`declarators`/
   `stmts`/`inner`), NOT generic `left`/`right`/`third`.
 - **Nim requires globally-unique field names** across the whole variant (verified
@@ -169,7 +169,7 @@ type
     TaggedTemplate, BoolExpr, NullExpr, UndefinedExpr, HoleExpr, ThisExpr,
     IdentExpr, RegexExpr,
     ## ... (continue: mirror EVERY variant from src/ast.zc, in order, through
-    ## ImportMetaExpr — the full 95. Most stay in the `else: discard` branch
+    ## ImportMetaExpr — the full 74. Most stay in the `else: discard` branch
     ## until 2c/2d/3.x implement them.) ...
 
   AstNode* = ref object
