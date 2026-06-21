@@ -78,6 +78,37 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
     stdout.write(&"{ind}{label}\n")
     dumpAst(n.tag, src, depth+1)
     dumpAst(n.tmpl, src, depth+1)
+  of BlockStmt:
+    stdout.write(&"{ind}{label}\n")
+    for st in n.stmtList: dumpAst(st, src, depth+1)
+  of IfStmt:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.ifCond, src, depth+1)
+    dumpAst(n.thenStmt, src, depth+1)
+    if n.elseStmt != nil: dumpAst(n.elseStmt, src, depth+1)
+  of WhileStmt:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.whileCond, src, depth+1)
+    dumpAst(n.whileBody, src, depth+1)
+  of DoWhileStmt:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.doBody, src, depth+1)
+    dumpAst(n.doCond, src, depth+1)
+  of ForStmt:
+    stdout.write(&"{ind}{label}\n")
+    if n.forInit   != nil: dumpAst(n.forInit,   src, depth+1)
+    if n.forTest   != nil: dumpAst(n.forTest,   src, depth+1)
+    if n.forUpdate != nil: dumpAst(n.forUpdate, src, depth+1)
+    dumpAst(n.forBody, src, depth+1)
+  of ReturnStmt:
+    stdout.write(&"{ind}{label}\n")
+    if n.retArg != nil: dumpAst(n.retArg, src, depth+1)
+  of ThrowStmt:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.throwArg, src, depth+1)
+  of LabeledStmt:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.labeled, src, depth+1)
   else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 

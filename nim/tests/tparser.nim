@@ -851,3 +851,102 @@ suite "parser templates":
     check tt.tag.kind == NodeKind.IdentExpr
     check tt.tmpl.kind == NodeKind.TemplateExpr
     check tt.tmpl.tparts.len == 3   # empty part, IdentExpr a, empty part
+
+suite "ast 2d-1 nodes":
+  test "BlockStmt — stmtList field":
+    let s1 = newLeaf(IdentExpr, 2'u32, 3'u32)
+    let s2 = newLeaf(IdentExpr, 5'u32, 6'u32)
+    let b = newBlock(0'u32, 8'u32, @[s1, s2])
+    check b.kind == NodeKind.BlockStmt
+    check b.stmtList.len == 2
+    check b.stmtList[0].kind == NodeKind.IdentExpr
+    check b.stmtList[1].kind == NodeKind.IdentExpr
+
+  test "IfStmt — with else":
+    let cond = newLeaf(IdentExpr, 4'u32, 5'u32)
+    let then = newLeaf(IdentExpr, 7'u32, 8'u32)
+    let els  = newLeaf(IdentExpr, 15'u32, 16'u32)
+    let n = newIf(0'u32, 16'u32, cond, then, els)
+    check n.kind == NodeKind.IfStmt
+    check n.ifCond.kind == NodeKind.IdentExpr
+    check n.thenStmt.kind == NodeKind.IdentExpr
+    check n.elseStmt != nil
+    check n.elseStmt.kind == NodeKind.IdentExpr
+
+  test "IfStmt — no else (elseStmt is nil)":
+    let cond = newLeaf(IdentExpr, 4'u32, 5'u32)
+    let then = newLeaf(IdentExpr, 7'u32, 8'u32)
+    let n = newIf(0'u32, 9'u32, cond, then, nil)
+    check n.kind == NodeKind.IfStmt
+    check n.elseStmt == nil
+
+  test "WhileStmt — cond + body":
+    let cond = newLeaf(IdentExpr, 7'u32, 8'u32)
+    let body = newLeaf(IdentExpr, 10'u32, 11'u32)
+    let w = newWhile(0'u32, 12'u32, cond, body)
+    check w.kind == NodeKind.WhileStmt
+    check w.whileCond.kind == NodeKind.IdentExpr
+    check w.whileBody.kind == NodeKind.IdentExpr
+
+  test "DoWhileStmt — body first then cond":
+    let body = newLeaf(IdentExpr, 3'u32, 4'u32)
+    let cond = newLeaf(IdentExpr, 13'u32, 14'u32)
+    let d = newDoWhile(0'u32, 16'u32, body, cond)
+    check d.kind == NodeKind.DoWhileStmt
+    check d.doBody.kind == NodeKind.IdentExpr
+    check d.doCond.kind == NodeKind.IdentExpr
+
+  test "ForStmt — all slots present":
+    let init   = newLeaf(IdentExpr, 5'u32, 6'u32)
+    let test0  = newLeaf(IdentExpr, 8'u32, 9'u32)
+    let update = newLeaf(IdentExpr, 11'u32, 12'u32)
+    let body   = newLeaf(IdentExpr, 14'u32, 15'u32)
+    let f = newFor(0'u32, 16'u32, init, test0, update, body)
+    check f.kind == NodeKind.ForStmt
+    check f.forInit   != nil
+    check f.forTest   != nil
+    check f.forUpdate != nil
+    check f.forBody.kind == NodeKind.IdentExpr
+
+  test "ForStmt — nil init/test/update":
+    let body = newLeaf(IdentExpr, 6'u32, 7'u32)
+    let f = newFor(0'u32, 8'u32, nil, nil, nil, body)
+    check f.kind == NodeKind.ForStmt
+    check f.forInit   == nil
+    check f.forTest   == nil
+    check f.forUpdate == nil
+    check f.forBody.kind == NodeKind.IdentExpr
+
+  test "ReturnStmt — with arg":
+    let arg = newLeaf(IdentExpr, 7'u32, 8'u32)
+    let r = newReturn(0'u32, 9'u32, arg)
+    check r.kind == NodeKind.ReturnStmt
+    check r.retArg != nil
+    check r.retArg.kind == NodeKind.IdentExpr
+
+  test "ReturnStmt — bare return (nil arg)":
+    let r = newReturn(0'u32, 7'u32, nil)
+    check r.kind == NodeKind.ReturnStmt
+    check r.retArg == nil
+
+  test "ThrowStmt — throwArg":
+    let arg = newLeaf(IdentExpr, 6'u32, 7'u32)
+    let t = newThrow(0'u32, 8'u32, arg)
+    check t.kind == NodeKind.ThrowStmt
+    check t.throwArg.kind == NodeKind.IdentExpr
+
+  test "LabeledStmt — label slice + body":
+    let body = newLeaf(IdentExpr, 5'u32, 8'u32)
+    let l = newLabeled(0'u32, 9'u32, 0'u32, 3'u32, body)
+    check l.kind == NodeKind.LabeledStmt
+    check l.labelStart  == 0'u32
+    check l.labelLen    == 3'u32
+    check l.labeled.kind == NodeKind.IdentExpr
+
+  test "BreakStmt + ContinueStmt + EmptyStmt — via newLeaf":
+    let br = newLeaf(BreakStmt,    0'u32, 5'u32)
+    let co = newLeaf(ContinueStmt, 0'u32, 8'u32)
+    let em = newLeaf(EmptyStmt,    0'u32, 1'u32)
+    check br.kind == NodeKind.BreakStmt
+    check co.kind == NodeKind.ContinueStmt
+    check em.kind == NodeKind.EmptyStmt

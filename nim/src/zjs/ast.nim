@@ -156,6 +156,16 @@ type
     of TaggedTemplate:
       tag*: AstNode
       tmpl*: AstNode
+    of BlockStmt:    stmtList*: seq[AstNode]
+    of IfStmt:       ifCond*, thenStmt*, elseStmt*: AstNode    # elseStmt nil if no else
+    of WhileStmt:    whileCond*, whileBody*: AstNode
+    of DoWhileStmt:  doBody*, doCond*: AstNode
+    of ForStmt:      forInit*, forTest*, forUpdate*, forBody*: AstNode  # init/test/update may be nil
+    of ReturnStmt:   retArg*: AstNode                          # nil for bare return
+    of ThrowStmt:    throwArg*: AstNode
+    of LabeledStmt:
+      labelStart*, labelLen*: uint32
+      labeled*: AstNode
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -250,3 +260,36 @@ proc newTemplateExpr*(s, e: uint32, tparts: seq[AstNode]): AstNode =
 proc newTaggedTemplate*(s, e: uint32, tag, tmpl: AstNode): AstNode =
   ## Construct a TaggedTemplate node; tmpl must be a TemplateExpr.
   AstNode(kind: TaggedTemplate, start: s, `end`: e, tag: tag, tmpl: tmpl)
+
+proc newBlock*(s, e: uint32, stmtList: seq[AstNode]): AstNode =
+  ## Construct a BlockStmt node.
+  AstNode(kind: BlockStmt, start: s, `end`: e, stmtList: stmtList)
+
+proc newIf*(s, e: uint32, ifCond, thenStmt, elseStmt: AstNode): AstNode =
+  ## Construct an IfStmt node; elseStmt may be nil.
+  AstNode(kind: IfStmt, start: s, `end`: e, ifCond: ifCond, thenStmt: thenStmt, elseStmt: elseStmt)
+
+proc newWhile*(s, e: uint32, whileCond, whileBody: AstNode): AstNode =
+  ## Construct a WhileStmt node.
+  AstNode(kind: WhileStmt, start: s, `end`: e, whileCond: whileCond, whileBody: whileBody)
+
+proc newDoWhile*(s, e: uint32, doBody, doCond: AstNode): AstNode =
+  ## Construct a DoWhileStmt node; body comes before condition.
+  AstNode(kind: DoWhileStmt, start: s, `end`: e, doBody: doBody, doCond: doCond)
+
+proc newFor*(s, e: uint32, forInit, forTest, forUpdate, forBody: AstNode): AstNode =
+  ## Construct a ForStmt node; forInit/forTest/forUpdate may be nil.
+  AstNode(kind: ForStmt, start: s, `end`: e, forInit: forInit, forTest: forTest,
+          forUpdate: forUpdate, forBody: forBody)
+
+proc newReturn*(s, e: uint32, retArg: AstNode): AstNode =
+  ## Construct a ReturnStmt node; retArg may be nil for bare `return;`.
+  AstNode(kind: ReturnStmt, start: s, `end`: e, retArg: retArg)
+
+proc newThrow*(s, e: uint32, throwArg: AstNode): AstNode =
+  ## Construct a ThrowStmt node.
+  AstNode(kind: ThrowStmt, start: s, `end`: e, throwArg: throwArg)
+
+proc newLabeled*(s, e, labelStart, labelLen: uint32, labeled: AstNode): AstNode =
+  ## Construct a LabeledStmt node; labelStart/labelLen are the label identifier slice.
+  AstNode(kind: LabeledStmt, start: s, `end`: e, labelStart: labelStart, labelLen: labelLen, labeled: labeled)
