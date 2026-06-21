@@ -103,6 +103,38 @@ proc checkBindingReserved(p: var Parser, t: Token) =
       if sp == "eval" or sp == "arguments" or sp in FutureReserved:
         p.hadError = true
 
+proc collectParamNames(node: AstNode, src: string, acc: var seq[string]) =
+  ## Gather the binding-identifier source slices in a parameter node, walking
+  ## into pattern params (`{a}`/`[b]`) and rest params (`...r`).
+  if node == nil: return
+  case node.kind
+  of IdentExpr:
+    if node.identPattern != nil: collectParamNames(node.identPattern, src, acc)
+    else: acc.add(src[node.start.int ..< node.`end`.int])
+  of RestParam: collectParamNames(node.restArg, src, acc)
+  of ArrayPattern, ObjectPattern:
+    for en in node.patEntries:
+      if en.patTarget != nil: collectParamNames(en.patTarget, src, acc)
+  else: discard
+
+proc paramsAreSimple(params: seq[AstNode]): bool =
+  ## True when every param is a plain identifier (no pattern, default, or rest).
+  for prm in params:
+    if prm.kind != IdentExpr: return false           # RestParam → non-simple
+    if prm.identPattern != nil or prm.identDefault != nil: return false
+  true
+
+proc checkDupParams(p: var Parser, params: seq[AstNode]) =
+  ## §15.x UniqueFormalParameters: a duplicate bound name in the parameter
+  ## list is a SyntaxError. Caller gates WHEN this applies (arrow / method /
+  ## strict / non-simple); a sloppy regular function with simple params allows
+  ## duplicates, so this is not called there. (O(n^2) — param lists are tiny.)
+  var names: seq[string]
+  for prm in params: collectParamNames(prm, p.source, names)
+  for i in 0 ..< names.len:
+    for j in (i + 1) ..< names.len:
+      if names[i] == names[j]: p.hadError = true; return
+
 # ------------------------------------------------------------------
 # Numeric literal decoding — port of parse_number_literal / parse_int_prefix
 # ------------------------------------------------------------------
@@ -384,6 +416,7 @@ proc parseArrowSingle(p: var Parser, isAsync: bool): AstNode =
 proc parseArrowParen(p: var Parser, isAsync: bool): AstNode =
   let lp = p.advance()                  # '('
   let params = parseParamList(p)
+  p.checkDupParams(params)              # arrows: UniqueFormalParameters (always)
   discard p.expect(RParen)
   discard p.expect(Arrow)
   let body = parseArrowBody(p, isAsync)
@@ -728,6 +761,7 @@ proc parseObject(p: var Parser): AstNode =
         # Computed method: [k]() {}
         discard p.expect(LParen)
         let params = parseParamList(p)
+        p.checkDupParams(params)              # methods: UniqueFormalParameters
         discard p.expect(RParen)
         let sg = p.inGenerator; let sa = p.inAsync
         p.inGenerator = omGen; p.inAsync = omAsync
@@ -798,6 +832,7 @@ proc parseObject(p: var Parser): AstNode =
       # Named method: key() {}
       discard p.expect(LParen)
       let params = parseParamList(p)
+      p.checkDupParams(params)                # methods: UniqueFormalParameters
       discard p.expect(RParen)
       let sg = p.inGenerator; let sa = p.inAsync
       p.inGenerator = omGen; p.inAsync = omAsync
@@ -1533,6 +1568,9 @@ proc parseFunctionDecl(p: var Parser, isAsync = false): AstNode =
   p.checkBindingReserved(nameTok)               # name bound in ENCLOSING context
   discard p.expect(LParen)
   let params = parseParamList(p)
+  # A regular function enforces UniqueFormalParameters only in strict code or
+  # with a non-simple parameter list (sloppy + simple → duplicates allowed).
+  if p.strict or not paramsAreSimple(params): p.checkDupParams(params)
   discard p.expect(RParen)
   let savedG = p.inGenerator; let savedA = p.inAsync
   p.inGenerator = isGen; p.inAsync = isAsync
@@ -1558,6 +1596,7 @@ proc parseFunctionExpr(p: var Parser, isAsync = false): AstNode =
     nameStart = nameTok.start; nameLen = nameTok.length
   discard p.expect(LParen)
   let params = parseParamList(p)
+  if p.strict or not paramsAreSimple(params): p.checkDupParams(params)
   discard p.expect(RParen)
   let savedG = p.inGenerator; let savedA = p.inAsync
   p.inGenerator = isGen; p.inAsync = isAsync
@@ -1659,6 +1698,7 @@ proc parseMethodBodyPair(p: var Parser): AstNode =
   if not p.expect(LParen):
     p.inGenerator = sg; p.inAsync = sa; return nil
   let params = parseParamList(p)
+  p.checkDupParams(params)                 # class methods: UniqueFormalParameters
   if not p.expect(RParen):
     p.inGenerator = sg; p.inAsync = sa; return nil
   let sfd = p.functionDepth; p.functionDepth = p.functionDepth + 1

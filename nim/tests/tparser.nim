@@ -3245,3 +3245,24 @@ suite "parser early errors 2f-4: for-in/of binding initializer":
     check not hadErr("for (const [a,b] of y){}")
   test "C-style for with initializer still fine":
     check not hadErr("for (var i = 0; i < n; i++){}")
+
+suite "parser early errors 2f-4b: duplicate parameters":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "arrow always rejects duplicate params":
+    check hadErr("(a, a) => 1")
+  test "object method rejects duplicate params":
+    check hadErr("({ m(a, a){} })")
+  test "strict function rejects duplicate params":
+    check hadErr("\"use strict\"; function f(a, a){}")
+  test "non-simple (default) function rejects duplicate params":
+    check hadErr("function f(a, b = 1, a){}")
+  test "non-simple (pattern) rejects nested duplicate":
+    check hadErr("function f([a, a]){}")
+  test "sloppy simple function ALLOWS duplicate params":
+    check not hadErr("function f(a, a){}")
+  test "sloppy simple generator ALLOWS duplicate params":
+    check not hadErr("function* g(a, a){}")
+  test "distinct params are fine everywhere":
+    check not hadErr("(a, b) => a")
+    check not hadErr("function f({a}, {b}){}")
