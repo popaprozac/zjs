@@ -1167,3 +1167,142 @@ suite "ast 2d-2 nodes":
     check w.kind == NodeKind.WithStmt
     check w.withObj.kind  == NodeKind.IdentExpr
     check w.withBody.kind == NodeKind.IdentExpr
+
+suite "parser 2d-2":
+  test "for (x in obj) y; — ForInStmt with IdentExpr binding":
+    var p = initParser("for (x in obj) y;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let f = prog.stmts[0]
+    check f.kind == NodeKind.ForInStmt
+    check f.forBinding.kind == NodeKind.IdentExpr
+    check f.forIterable.kind == NodeKind.IdentExpr
+    check f.forInOfBody.kind == NodeKind.IdentExpr
+
+  test "for (let k of arr) z; — ForOfStmt with VarDecl binding":
+    var p = initParser("for (let k of arr) z;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let f = prog.stmts[0]
+    check f.kind == NodeKind.ForOfStmt
+    check f.forBinding.kind == NodeKind.VarDecl
+    check f.forBinding.declarators.len == 1
+    check f.forIterable.kind == NodeKind.IdentExpr
+    check f.forInOfBody.kind == NodeKind.IdentExpr
+
+  test "for (k in o) { x; } — ForInStmt with BlockStmt body":
+    var p = initParser("for (k in o) { x; }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let f = prog.stmts[0]
+    check f.kind == NodeKind.ForInStmt
+    check f.forInOfBody.kind == NodeKind.BlockStmt
+
+  test "a in b — Binary KwIn (noIn NOT set outside for-init)":
+    var p = initParser("a in b")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let n = prog.stmts[0]
+    check n.kind == NodeKind.Binary
+    check n.binOp == TokenKind.KwIn
+    check n.lhs.kind == NodeKind.IdentExpr
+    check n.rhs.kind == NodeKind.IdentExpr
+
+  test "[a in b] — in is binary inside array literal":
+    var p = initParser("[a in b]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.Array
+    check arr.elems.len == 1
+    check arr.elems[0].kind == NodeKind.Binary
+    check arr.elems[0].binOp == TokenKind.KwIn
+
+  test "switch (x) { case 1: a; break; default: b; } — SwitchStmt":
+    var p = initParser("switch (x) { case 1: a; break; default: b; }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let sw = prog.stmts[0]
+    check sw.kind == NodeKind.SwitchStmt
+    check sw.switchDisc.kind == NodeKind.IdentExpr
+    check sw.cases.len == 2
+    check sw.cases[0].kind == NodeKind.SwitchCase
+    check sw.cases[0].caseTest != nil
+    check sw.cases[0].caseTest.kind == NodeKind.NumberExpr
+    check sw.cases[0].caseBody.len == 2   # a; break;
+    check sw.cases[1].caseTest == nil     # default:
+    check sw.cases[1].caseBody.len == 1   # b;
+
+  test "switch (x) { case 1: case 2: a; break; default: } — fall-through cases":
+    var p = initParser("switch (x) { case 1: case 2: a; break; default: }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let sw = prog.stmts[0]
+    check sw.kind == NodeKind.SwitchStmt
+    check sw.cases.len == 3
+    check sw.cases[0].caseBody.len == 0   # fall-through: case 1 has no body
+    check sw.cases[1].caseTest != nil
+    check sw.cases[1].caseBody.len == 2   # a; break;
+    check sw.cases[2].caseTest == nil     # default: with no body
+
+  test "try { a; } catch (e) { b; } finally { c; } — TryStmt all three":
+    var p = initParser("try { a; } catch (e) { b; } finally { c; }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let t = prog.stmts[0]
+    check t.kind == NodeKind.TryStmt
+    check t.tryBlock.kind == NodeKind.BlockStmt
+    check t.catchBlock != nil
+    check t.catchBlock.kind == NodeKind.BlockStmt
+    check t.finallyBlock != nil
+    check t.finallyBlock.kind == NodeKind.BlockStmt
+    check t.catchParamLen == 1'u32   # "e"
+
+  test "try { a; } catch { b; } — optional catch param (no binding)":
+    var p = initParser("try { a; } catch { b; }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let t = prog.stmts[0]
+    check t.kind == NodeKind.TryStmt
+    check t.catchBlock != nil
+    check t.finallyBlock == nil
+    check t.catchParamLen == 0'u32   # no catch param
+
+  test "try { a; } finally { c; } — no catch block":
+    var p = initParser("try { a; } finally { c; }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let t = prog.stmts[0]
+    check t.kind == NodeKind.TryStmt
+    check t.catchBlock == nil
+    check t.finallyBlock != nil
+    check t.finallyBlock.kind == NodeKind.BlockStmt
+
+  test "with (o) x; — WithStmt":
+    var p = initParser("with (o) x;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let w = prog.stmts[0]
+    check w.kind == NodeKind.WithStmt
+    check w.withObj.kind == NodeKind.IdentExpr
+    check w.withBody.kind == NodeKind.IdentExpr
+
+  test "for ((a in b); ;) x; — paren'd in-expr is not for-in":
+    var p = initParser("for ((a in b); ;) x;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let f = prog.stmts[0]
+    check f.kind == NodeKind.ForStmt   # C-style, not ForInStmt
+    check f.forInit != nil
+    check f.forInit.kind == NodeKind.Paren
+    check f.forInit.inner.kind == NodeKind.Binary
+    check f.forInit.inner.binOp == TokenKind.KwIn
+
+  test "for (var i = 0; i < 3; i++) for (j in o) x; — nested for-in inside for":
+    var p = initParser("for (var i = 0; i < 3; i++) for (j in o) x;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let outer = prog.stmts[0]
+    check outer.kind == NodeKind.ForStmt
+    check outer.forBody.kind == NodeKind.ForInStmt
+    check outer.forBody.forBinding.kind == NodeKind.IdentExpr
