@@ -83,6 +83,53 @@ proc parseNumberLiteral(src: string, start, length: uint32): float64 =
   parseFloat(buf)
 
 # ------------------------------------------------------------------
+# Cover-grammar reinterpretation — Array/Object literal → Pattern
+# ------------------------------------------------------------------
+
+proc reinterpretAsPattern(node: AstNode): AstNode
+
+proc reinterpretAssignTarget(node: AstNode): AstNode =
+  if node == nil: return nil
+  case node.kind
+  of Array, Object: reinterpretAsPattern(node)
+  of Paren: reinterpretAssignTarget(node.inner)
+  else: node            # IdentExpr / Member / Computed / etc — leaf target
+
+proc reinterpretAsPattern(node: AstNode): AstNode =
+  if node == nil: return nil
+  case node.kind
+  of Array:
+    var entries: seq[AstNode]
+    for el in node.elems:
+      if el == nil or el.kind == HoleExpr:
+        entries.add(newPatternEntry(0'u32, 0'u32, 0'u32, 0'u32, nil, nil, nil, false))
+      elif el.kind == Spread:
+        entries.add(newPatternEntry(el.start, el.`end`, 0'u32, 0'u32, reinterpretAssignTarget(el.spreadArg), nil, nil, true))
+      elif el.kind == Assignment and el.assignOp == Eq:
+        entries.add(newPatternEntry(el.start, el.`end`, 0'u32, 0'u32, reinterpretAssignTarget(el.target), el.value, nil, false))
+      else:
+        entries.add(newPatternEntry(el.start, el.`end`, 0'u32, 0'u32, reinterpretAssignTarget(el), nil, nil, false))
+    return newPattern(ArrayPattern, node.start, node.`end`, entries)
+  of Object:
+    var entries: seq[AstNode]
+    for pr in node.props:
+      if pr.kind == Spread:
+        entries.add(newPatternEntry(pr.start, pr.`end`, 0'u32, 0'u32, reinterpretAssignTarget(pr.spreadArg), nil, nil, true))
+      elif pr.kind == ObjectProp:
+        var tgt: AstNode
+        var dflt: AstNode = nil
+        if pr.propVal != nil and pr.propVal.kind == Assignment and pr.propVal.assignOp == Eq:
+          tgt = reinterpretAssignTarget(pr.propVal.target); dflt = pr.propVal.value
+        else:
+          tgt = reinterpretAssignTarget(pr.propVal)
+        entries.add(newPatternEntry(pr.start, pr.`end`, pr.keyStart, pr.keyLength, tgt, dflt, pr.computedKey, false))
+    return newPattern(ObjectPattern, node.start, node.`end`, entries)
+  of Paren:
+    return reinterpretAsPattern(node.inner)
+  else:
+    return node
+
+# ------------------------------------------------------------------
 # Forward declarations
 # ------------------------------------------------------------------
 
@@ -541,6 +588,15 @@ proc parseObject(p: var Parser): AstNode =
       if val == nil: break
       props.add(newObjectProp(keyTok.start, val.`end`,
                               keyTok.start, keyTok.length, val, nil))
+    elif p.peek().kind == Eq:
+      # Shorthand with default: { a = expr }
+      discard p.advance()                  # consume '='
+      let defaultExpr = parseAssignmentExpr(p)
+      if defaultExpr == nil: break
+      let ident = newLeaf(IdentExpr, keyTok.start, keyTok.start + keyTok.length)
+      let assign = newAssignment(ident.start, defaultExpr.`end`, Eq, ident, defaultExpr)
+      props.add(newObjectProp(keyTok.start, defaultExpr.`end`,
+                              keyTok.start, keyTok.length, assign, nil))
     elif p.peek().kind in {Comma, RBrace}:
       # Shorthand {a}
       let v = newLeaf(IdentExpr, keyTok.start, keyTok.start + keyTok.length)
@@ -600,7 +656,12 @@ proc parseAssignmentExpr(p: var Parser): AstNode =
     let op = p.advance()
     let right = parseAssignmentExpr(p)   # right-associative (recurse self)
     if right == nil: return nil
-    return newAssignment(left.start, right.`end`, op.kind, left, right)
+    let tgt =
+      if op.kind == Eq and left.kind in {Array, Object}:
+        reinterpretAsPattern(left)
+      else:
+        left
+    return newAssignment(left.start, right.`end`, op.kind, tgt, right)
   return left
 
 # ------------------------------------------------------------------

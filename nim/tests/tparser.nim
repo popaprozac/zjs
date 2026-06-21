@@ -2056,3 +2056,142 @@ suite "ast 2d-5b nodes":
     let e = newPatternEntry(2'u32, 3'u32, 0'u32, 0'u32, nil, nil, nil, false)
     check e.kind == NodeKind.PatternEntry
     check e.patTarget == nil
+
+suite "parser destructuring":
+  test "[a, b] = c — ArrayPattern assignment":
+    var p = initParser("[a, b] = c")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.assignOp == TokenKind.Eq
+    check node.target.kind == NodeKind.ArrayPattern
+    check node.target.patEntries.len == 2
+    check node.target.patEntries[0].patTarget.kind == NodeKind.IdentExpr
+    check node.target.patEntries[1].patTarget.kind == NodeKind.IdentExpr
+    check node.value.kind == NodeKind.IdentExpr
+
+  test "({x, y} = o) — ObjectPattern assignment in paren":
+    var p = initParser("({x, y} = o)")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let paren = prog.stmts[0]
+    check paren.kind == NodeKind.Paren
+    let node = paren.inner
+    check node.kind == NodeKind.Assignment
+    check node.target.kind == NodeKind.ObjectPattern
+    check node.target.patEntries.len == 2
+    check node.target.patEntries[0].patTarget.kind == NodeKind.IdentExpr
+    check node.target.patEntries[1].patTarget.kind == NodeKind.IdentExpr
+    check node.value.kind == NodeKind.IdentExpr
+
+  test "[a, ...r] = x — rest element in ArrayPattern":
+    var p = initParser("[a, ...r] = x")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.target.kind == NodeKind.ArrayPattern
+    check node.target.patEntries.len == 2
+    check node.target.patEntries[0].patIsRest == false
+    check node.target.patEntries[0].patTarget.kind == NodeKind.IdentExpr
+    check node.target.patEntries[1].patIsRest == true
+    check node.target.patEntries[1].patTarget.kind == NodeKind.IdentExpr
+
+  test "({a = 1, b: c} = o) — default and rename in ObjectPattern":
+    var p = initParser("({a = 1, b: c} = o)")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let paren = prog.stmts[0]
+    check paren.kind == NodeKind.Paren
+    let node = paren.inner
+    check node.kind == NodeKind.Assignment
+    check node.target.kind == NodeKind.ObjectPattern
+    check node.target.patEntries.len == 2
+    # a = 1: shorthand with default
+    let ea = node.target.patEntries[0]
+    check ea.patTarget.kind == NodeKind.IdentExpr
+    check ea.patDefault != nil
+    check ea.patDefault.kind == NodeKind.NumberExpr
+    check ea.patDefault.numVal == 1.0
+    # b: c: rename (target = c, no default)
+    let eb = node.target.patEntries[1]
+    check eb.patTarget.kind == NodeKind.IdentExpr
+    check eb.patDefault == nil
+
+  test "[a, [b, c]] = x — nested ArrayPattern":
+    var p = initParser("[a, [b, c]] = x")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.target.kind == NodeKind.ArrayPattern
+    check node.target.patEntries.len == 2
+    check node.target.patEntries[0].patTarget.kind == NodeKind.IdentExpr
+    let nested = node.target.patEntries[1].patTarget
+    check nested.kind == NodeKind.ArrayPattern
+    check nested.patEntries.len == 2
+
+  test "[,a] = x — elision in ArrayPattern":
+    var p = initParser("[,a] = x")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.target.kind == NodeKind.ArrayPattern
+    check node.target.patEntries.len == 2
+    check node.target.patEntries[0].patTarget == nil   # elision
+    check node.target.patEntries[1].patTarget.kind == NodeKind.IdentExpr
+
+  test "[a = 1, b = 2] = c — defaults in ArrayPattern":
+    var p = initParser("[a = 1, b = 2] = c")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.target.kind == NodeKind.ArrayPattern
+    check node.target.patEntries.len == 2
+    check node.target.patEntries[0].patDefault != nil
+    check node.target.patEntries[0].patDefault.kind == NodeKind.NumberExpr
+    check node.target.patEntries[1].patDefault != nil
+
+  test "({...r} = o) — rest in ObjectPattern":
+    var p = initParser("({...r} = o)")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0].inner
+    check node.kind == NodeKind.Assignment
+    check node.target.kind == NodeKind.ObjectPattern
+    check node.target.patEntries.len == 1
+    check node.target.patEntries[0].patIsRest == true
+    check node.target.patEntries[0].patTarget.kind == NodeKind.IdentExpr
+
+  # No-regression: standalone array/object literals stay Array/Object
+  test "[1, 2, 3] alone — stays Array (not ArrayPattern)":
+    var p = initParser("[1, 2, 3]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.Array
+
+  test "({a: 1}) alone — stays Object (not ObjectPattern)":
+    var p = initParser("({a: 1})")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let paren = prog.stmts[0]
+    check paren.kind == NodeKind.Paren
+    check paren.inner.kind == NodeKind.Object
+
+  test "[a, b] alone — stays Array":
+    var p = initParser("[a, b]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.Array
+
+  test "a += b — compound op does NOT reinterpret":
+    var p = initParser("a += b")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let node = prog.stmts[0]
+    check node.kind == NodeKind.Assignment
+    check node.assignOp == TokenKind.PlusEq
+    check node.target.kind == NodeKind.IdentExpr
