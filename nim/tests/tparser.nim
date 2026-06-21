@@ -2900,3 +2900,35 @@ suite "parser contextual-keyword identifiers":
     let s = parseOne("let x = 1;")
     check s != nil
     check s.kind == NodeKind.VarDecl
+
+suite "parser for-head destructuring target":
+  # A bare (non-declaration) for-of/for-in LHS is reinterpreted as an
+  # assignment pattern, mirroring destructuring assignment.
+  test "for ({a} of x) — object pattern binding":
+    let s = parseOne("for ({a} of x) {}")
+    check s != nil
+    check s.kind == NodeKind.ForOfStmt
+    check s.forBinding.kind == NodeKind.ObjectPattern
+
+  test "for ([a, b] of x) — array pattern binding":
+    let s = parseOne("for ([a, b] of x) {}")
+    check s != nil
+    check s.kind == NodeKind.ForOfStmt
+    check s.forBinding.kind == NodeKind.ArrayPattern
+
+  test "for ({a} in x) — for-in also reinterprets":
+    let s = parseOne("for ({a} in x) {}")
+    check s != nil
+    check s.kind == NodeKind.ForInStmt
+    check s.forBinding.kind == NodeKind.ObjectPattern
+
+  test "for (const [x] of y) — declaration binding NOT reinterpreted as assignment pattern":
+    let s = parseOne("for (const [x] of y) {}")
+    check s != nil
+    check s.kind == NodeKind.ForOfStmt
+    check s.forBinding.kind == NodeKind.VarDecl
+
+  test "for (x of y) — simple identifier LHS unchanged":
+    let s = parseOne("for (x of y) {}")
+    check s != nil
+    check s.forBinding.kind == NodeKind.IdentExpr

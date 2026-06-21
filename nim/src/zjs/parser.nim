@@ -1253,12 +1253,20 @@ proc parseFor(p: var Parser): AstNode =
   if afterInit == KwIn or afterInit == KwOf:
     let wasOf = (afterInit == KwOf)
     discard p.advance()            # consume 'in' or 'of'
+    # A bare (non-declaration) for-head LHS is a LeftHandSideExpression that
+    # must be reinterpreted as an assignment target: `for ({a} of x)` /
+    # `for ([a] in x)` → Array/ObjectPattern (mirrors Zen-c — same cover-grammar
+    # reinterpretation as destructuring assignment). VarDecl bindings already
+    # carry patterns via parseBindingTarget, so leave those untouched.
+    var binding = init
+    if init != nil and init.kind != VarDecl:
+      binding = reinterpretAssignTarget(init)
     let iterable = if wasOf: parseAssignmentExpr(p) else: parseExpression(p)
     discard p.expect(RParen)
     let body = parseStatement(p)
     let endPos = if body != nil: body.`end` else: kw.start
     let stmtKind = if wasOf: ForOfStmt else: ForInStmt
-    return newForInOf(stmtKind, kw.start, endPos, init, iterable, body)
+    return newForInOf(stmtKind, kw.start, endPos, binding, iterable, body)
 
   # C-style for loop.
   discard p.expect(Semicolon)
