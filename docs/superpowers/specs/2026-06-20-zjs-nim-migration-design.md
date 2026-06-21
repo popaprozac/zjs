@@ -144,7 +144,7 @@ design:
   exact. Note: a node may be Nim-managed (`ref` + `seq`, arc) — AST is
   compile-time/host-side data per §3.3's two-heap rule, so NO manual memory.
 - **`of`-branches group kinds by shared shape** (Nim allows multiple enum
-  values per `of` branch), so ~8–12 branches, not 95: e.g.
+  values per `of` branch), so ~8–12 branches, not 74: e.g.
   `of Binary, Logical: binOp: TokenKind; lhs, rhs: AstNode`,
   `of Unary, Postfix: unOp: TokenKind; operand: AstNode`,
   `of If: cond, then, els: AstNode`, etc.
