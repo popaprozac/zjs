@@ -455,6 +455,30 @@ test262-runner: $(T262_RUNNER)
 $(T262_RUNNER): $(T262_RUNNER_SRC) include/zjs.h $(LIB) | $(BUILD_DIR)
 	$(CLANG) -O2 -Wall -Iinclude $(T262_RUNNER_SRC) -L$(BUILD_DIR) -lzjs $(RPATH_FLAG) -o $@
 
+# --- Nim engine (migration track; see docs/superpowers/specs/2026-06-20-zjs-nim-migration-design.md) ---
+NIM            ?= nim
+NIM_OUT        := build/nim
+NIM_LIB        := $(NIM_OUT)/libzjs.a
+NIM_ENTRY      := nim/src/zjs.nim
+NIM_RUNNER     := $(NIM_OUT)/test262_runner
+
+nim-lib: $(NIM_LIB)
+$(NIM_LIB): $(wildcard nim/src/*.nim nim/src/zjs/*.nim) | $(NIM_OUT)
+	$(NIM) c --app:staticlib --noMain:on --mm:arc -d:release \
+	  --nimcache:$(NIM_OUT)/cache --out:$(NIM_LIB) $(NIM_ENTRY)
+
+$(NIM_OUT):
+	mkdir -p $(NIM_OUT)
+
+# Build the SHARED test262 runner against the Nim lib (runner is unchanged).
+$(NIM_RUNNER): tests/test262_runner.c include/zjs.h $(NIM_LIB) | $(NIM_OUT)
+	$(CLANG) -O2 -Wall -Iinclude tests/test262_runner.c $(NIM_LIB) -lm -o $@
+
+nim-test262: $(NIM_RUNNER)
+	@$(NIM_RUNNER) $(T262_DIR)
+
+.PHONY: nim-lib nim-test262
+
 # WinterTC Minimum Common API conformance. Probes ship in
 # tests/wintercg/ — each is a WPT-shaped .js using the harness at
 # scripts/wintercg/zjs_harness.js. The runner concatenates harness +
