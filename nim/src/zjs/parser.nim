@@ -12,6 +12,7 @@ type
     noIn*: bool            ## when true, KwIn is NOT treated as a relational operator (for-init)
     inGenerator*: bool     ## true when parsing inside a generator body
     inAsync*: bool         ## true when parsing inside an async function body
+    functionDepth*: uint32 ## nesting depth of returnable function contexts; 0 = top level
 
 proc initParser*(source: string): Parser =
   var lx = initLexer(source)
@@ -308,7 +309,9 @@ proc parseBindingTarget(p: var Parser): AstNode =
 proc parseArrowBody(p: var Parser, isAsync: bool): AstNode =
   let savedA = p.inAsync
   if isAsync: p.inAsync = true
+  let savedFD = p.functionDepth; p.functionDepth = p.functionDepth + 1
   result = (if p.peek().kind == LBrace: parseBlock(p) else: parseAssignmentExpr(p))
+  p.functionDepth = savedFD
   p.inAsync = savedA
 
 proc parseArrowSingle(p: var Parser, isAsync: bool): AstNode =
@@ -631,7 +634,9 @@ proc parseObject(p: var Parser): AstNode =
         discard p.expect(RParen)
         let sg = p.inGenerator; let sa = p.inAsync
         p.inGenerator = omGen; p.inAsync = omAsync
+        let sfd = p.functionDepth; p.functionDepth = p.functionDepth + 1
         let body = parseBlock(p)
+        p.functionDepth = sfd
         p.inGenerator = sg; p.inAsync = sa
         let fn = newFunctionExpr(key.start, body.`end`, 0'u32, 0'u32, body, params, omAsync, omGen)
         props.add(newObjectProp(key.start, body.`end`, 0'u32, 0'u32, fn, key))
@@ -678,7 +683,9 @@ proc parseObject(p: var Parser): AstNode =
         discard p.expect(RParen)
         let sg = p.inGenerator; let sa = p.inAsync
         p.inGenerator = false; p.inAsync = false
+        let sfd = p.functionDepth; p.functionDepth = p.functionDepth + 1
         let body = parseBlock(p)
+        p.functionDepth = sfd
         p.inGenerator = sg; p.inAsync = sa
         let fnStart = if computedAccKey != nil: computedAccKey.start else: realNameStart
         let fn = newFunctionExpr(fnStart, body.`end`, realNameStart, realNameLen, body, params)
@@ -697,7 +704,9 @@ proc parseObject(p: var Parser): AstNode =
       discard p.expect(RParen)
       let sg = p.inGenerator; let sa = p.inAsync
       p.inGenerator = omGen; p.inAsync = omAsync
+      let sfd = p.functionDepth; p.functionDepth = p.functionDepth + 1
       let body = parseBlock(p)
+      p.functionDepth = sfd
       p.inGenerator = sg; p.inAsync = sa
       let fn = newFunctionExpr(keyTok.start, body.`end`, 0'u32, 0'u32, body, params, omAsync, omGen)
       props.add(newObjectProp(keyTok.start, body.`end`, keyTok.start, keyTok.length, fn, nil))
@@ -1280,6 +1289,10 @@ proc parseFor(p: var Parser): AstNode =
   newFor(kw.start, (if body != nil: body.`end` else: kw.start), init, test, update, body)
 
 proc parseReturn(p: var Parser): AstNode =
+  # §15.7.1 / Zen-c parse_return:1227 — a `return` outside any function body
+  # (functionDepth == 0) is an early SyntaxError.
+  if p.functionDepth == 0'u32:
+    p.hadError = true; return nil
   let kw = p.advance()
   var arg: AstNode = nil
   var endPos = kw.start + kw.length
@@ -1412,7 +1425,9 @@ proc parseFunctionDecl(p: var Parser, isAsync = false): AstNode =
   discard p.expect(RParen)
   let savedG = p.inGenerator; let savedA = p.inAsync
   p.inGenerator = isGen; p.inAsync = isAsync
+  let savedFD = p.functionDepth; p.functionDepth = p.functionDepth + 1
   let body = parseBlock(p)
+  p.functionDepth = savedFD
   p.inGenerator = savedG; p.inAsync = savedA
   newFunctionDecl(kw.start, body.`end`, nameTok.start, nameTok.length, body, params, isAsync, isGen)
 
@@ -1434,7 +1449,9 @@ proc parseFunctionExpr(p: var Parser, isAsync = false): AstNode =
   discard p.expect(RParen)
   let savedG = p.inGenerator; let savedA = p.inAsync
   p.inGenerator = isGen; p.inAsync = isAsync
+  let savedFD = p.functionDepth; p.functionDepth = p.functionDepth + 1
   let body = parseBlock(p)
+  p.functionDepth = savedFD
   p.inGenerator = savedG; p.inAsync = savedA
   newFunctionExpr(kw.start, body.`end`, nameStart, nameLen, body, params, isAsync, isGen)
 
@@ -1532,7 +1549,9 @@ proc parseMethodBodyPair(p: var Parser): AstNode =
   let params = parseParamList(p)
   if not p.expect(RParen):
     p.inGenerator = sg; p.inAsync = sa; return nil
+  let sfd = p.functionDepth; p.functionDepth = p.functionDepth + 1
   let body = parseBlock(p)
+  p.functionDepth = sfd
   p.inGenerator = sg; p.inAsync = sa
   if body == nil: return nil
   return newMethodDef(mutStart, body.`end`,

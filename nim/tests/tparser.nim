@@ -2932,3 +2932,41 @@ suite "parser for-head destructuring target":
     let s = parseOne("for (x of y) {}")
     check s != nil
     check s.forBinding.kind == NodeKind.IdentExpr
+
+# ------------------------------------------------------------------
+# Phase 2f-1: functionDepth + top-level `return` is a SyntaxError
+# ------------------------------------------------------------------
+
+proc parseHadError(src: string): bool =
+  ## Parse `src` to completion and report whether the parser flagged an error.
+  var p = initParser(src)
+  discard p.parseProgram()
+  p.hadError
+
+suite "parser early errors 2f-1: top-level return":
+  test "bare `return;` at top level is rejected":
+    check parseHadError("return;")
+
+  test "`return 1;` at top level is rejected":
+    check parseHadError("return 1;")
+
+  test "`return` inside a function declaration is accepted":
+    check not parseHadError("function f(){ return; }")
+
+  test "`return 1` inside a function declaration is accepted":
+    check not parseHadError("function f(){ return 1; }")
+
+  test "`return` inside an arrow body is accepted":
+    check not parseHadError("const g = () => { return 1; };")
+
+  test "`return` inside an object method is accepted":
+    check not parseHadError("({ m() { return 2; } })")
+
+  test "`return` inside an object getter is accepted":
+    check not parseHadError("({ get x() { return 3; } })")
+
+  test "`return` inside a class method is accepted":
+    check not parseHadError("class C { m() { return 4; } }")
+
+  test "`return` inside a nested function is accepted":
+    check not parseHadError("function f(){ function g(){ return 1; } return g(); }")
