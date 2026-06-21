@@ -1,6 +1,7 @@
 import std/unittest
 import ../src/zjs/ast
 import ../src/zjs/token
+import ../src/zjs/parser
 
 suite "ast model":
   test "NodeKind variant names match Zen-c dump labels":
@@ -27,3 +28,99 @@ suite "ast model":
     let d = newDeclarator(0'u32, 1'u32, 0'u32, 1'u32, nil)
     check d.kind == NodeKind.Declarator
     check d.init == nil
+
+suite "parser primaries":
+  test "number literal integer":
+    var p = initParser("1")
+    let prog = p.parseProgram()
+    check prog.kind == NodeKind.Program
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.NumberExpr
+    check prog.stmts[0].numVal == 1.0
+
+  test "number literal float":
+    var p = initParser("1.5")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.NumberExpr
+    check prog.stmts[0].numVal == 1.5
+
+  test "number literal 42":
+    var p = initParser("42")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.NumberExpr
+    check prog.stmts[0].numVal == 42.0
+
+  test "string literal":
+    var p = initParser("\"s\"")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.StringExpr
+
+  test "boolean true":
+    var p = initParser("true")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.BoolExpr
+    check prog.stmts[0].boolVal == true
+
+  test "boolean false":
+    var p = initParser("false")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.BoolExpr
+    check prog.stmts[0].boolVal == false
+
+  test "null":
+    var p = initParser("null")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.NullExpr
+
+  test "undefined":
+    var p = initParser("undefined")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.UndefinedExpr
+
+  test "identifier":
+    var p = initParser("x")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.IdentExpr
+
+  test "identifier foo":
+    var p = initParser("foo")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.IdentExpr
+
+  test "this":
+    var p = initParser("this")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.ThisExpr
+
+  test "parenthesized is not transparent":
+    var p = initParser("(42)")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.Paren
+    check prog.stmts[0].inner.kind == NodeKind.NumberExpr
+    check prog.stmts[0].inner.numVal == 42.0
+
+  test "parenthesized spans from lparen to rparen inclusive":
+    var p = initParser("(42)")
+    let prog = p.parseProgram()
+    let paren = prog.stmts[0]
+    # "(42)" — start=0, end=4
+    check paren.start == 0'u32
+    check paren.`end` == 4'u32
+
+  test "number literal start/end spans":
+    var p = initParser("1")
+    let prog = p.parseProgram()
+    let n = prog.stmts[0]
+    check n.start == 0'u32
+    check n.`end` == 1'u32
