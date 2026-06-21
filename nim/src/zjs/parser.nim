@@ -976,38 +976,47 @@ proc parseCallMember(p: var Parser): AstNode =
   if p.peek().kind == KwNew:
     let newTok = p.advance()   # consume 'new'
 
-    # new.target — deferred; skip to regular `new Callee(args?)`.
-    # (We do NOT check for new.target here — no battery cases need it.)
-
-    # Build the callee via primary + member-only loop (no calls).
-    var callee = p.parsePrimary()
-    if callee == nil: return nil
-
-    while true:
-      let kk = p.peek().kind
-      if kk == Dot:
-        discard p.advance()
-        let idTok = p.advance()
-        callee = newMember(NodeKind.Member, callee.start,
-                           idTok.start + idTok.length,
-                           idTok.start, idTok.length, callee)
-      elif kk == LBracket:
-        discard p.advance()
-        let idx = p.parseExpression()
-        if idx == nil: return nil
-        let close = p.peek()
-        discard p.expect(RBracket)
-        callee = newComputed(NodeKind.Computed, callee.start,
-                             close.start + close.length, callee, idx)
-      else:
-        break
-
-    # Optional argument list.
-    if p.peek().kind == LParen:
-      let (args, argsEnd) = p.parseArguments()
-      expr = newCall(NodeKind.New, newTok.start, argsEnd, callee, args)
+    if p.peek().kind == Dot:
+      # `new.target` meta-property (§13.3.12). The only valid member after
+      # `new .` is `target`; Zen-c represents it as a ThisExpr node. The
+      # outer suffix loop still applies (`new.target.foo`, `new.target()`).
+      discard p.advance()
+      let prop = p.peek()
+      if not (prop.length == 6'u32 and
+              p.source[prop.start.int ..< (prop.start + prop.length).int] == "target"):
+        p.hadError = true; return nil
+      discard p.advance()
+      expr = newLeaf(ThisExpr, newTok.start, prop.start + prop.length)
     else:
-      expr = newCall(NodeKind.New, newTok.start, callee.`end`, callee, @[])
+      # Build the callee via primary + member-only loop (no calls).
+      var callee = p.parsePrimary()
+      if callee == nil: return nil
+
+      while true:
+        let kk = p.peek().kind
+        if kk == Dot:
+          discard p.advance()
+          let idTok = p.advance()
+          callee = newMember(NodeKind.Member, callee.start,
+                             idTok.start + idTok.length,
+                             idTok.start, idTok.length, callee)
+        elif kk == LBracket:
+          discard p.advance()
+          let idx = p.parseExpression()
+          if idx == nil: return nil
+          let close = p.peek()
+          discard p.expect(RBracket)
+          callee = newComputed(NodeKind.Computed, callee.start,
+                               close.start + close.length, callee, idx)
+        else:
+          break
+
+      # Optional argument list.
+      if p.peek().kind == LParen:
+        let (args, argsEnd) = p.parseArguments()
+        expr = newCall(NodeKind.New, newTok.start, argsEnd, callee, args)
+      else:
+        expr = newCall(NodeKind.New, newTok.start, callee.`end`, callee, @[])
 
   else:
     expr = p.parsePrimary()
@@ -1660,7 +1669,12 @@ proc parseMethodBodyPair(p: var Parser): AstNode =
       let txt = p.source[id2.start.int ..< (id2.start + id2.length).int]
       if (txt == "get" or txt == "set"):
         let k2 = p.toks[p.pos + 1].kind
-        if isPropertyNameStart(k2) or k2 == LBracket or k2 == PrivateName:
+        # An accessor is never a generator, so `get`/`set` followed by `*`
+        # is NOT an accessor — `get` is a plain field/method name and the
+        # `*gen(){}` after it (commonly across an ASI newline) is a separate
+        # generator member. Exclude Star here (unlike the async/static
+        # prefixes, which legitimately precede `*`).
+        if (isPropertyNameStart(k2) and k2 != Star) or k2 == PrivateName:
           discard p.advance()
           accessor = (if txt == "get": KwGet else: KwSet)
   # --- method name OR computed key ---

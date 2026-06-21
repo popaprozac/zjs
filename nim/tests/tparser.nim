@@ -3326,3 +3326,25 @@ suite "parser early errors 2f-6b: undeclared private-name reference":
     check not hadErr("class O { #x; m(){ class I extends this.#x {} } }")
   test "ordinary (non-private) members never error":
     check not hadErr("class C { #x; m(){ return this.#x; } } obj.foo; this.bar;")
+
+suite "parser new.target + accessor-ASI (class valid-input fixes)":
+  proc one(src: string): AstNode = parseOne(src)
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "new.target parses (as ThisExpr) at top level and in functions/static blocks":
+    check one("new.target").kind == NodeKind.ThisExpr
+    check not hadErr("function f(){ return new.target; }")
+    check not hadErr("class C { static { x = new.target; } }")
+    check not hadErr("new.target.foo")
+    check not hadErr("new.target()")
+  test "new.<not-target> is a parse error":
+    check hadErr("new.foo")
+  test "regular new still works":
+    check one("new Foo(1)").kind == NodeKind.New
+    check one("new a.b.c()").kind == NodeKind.New
+  test "get/set field followed by ASI generator (get is a field, not accessor)":
+    check not hadErr("class C { get\n *gen(){} }")
+    check not hadErr("class C { set\n *gen(){} }")
+  test "get/set accessor still recognized with a real name":
+    check not hadErr("class C { get x(){ return 1; } set x(v){} }")
+    check not hadErr("class C { get [k](){} }")
