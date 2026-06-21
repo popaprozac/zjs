@@ -2864,3 +2864,39 @@ suite "parser class fields 2e-2":
     check c.classMembers.len == 2
     for m in c.classMembers:
       check m.kind == NodeKind.MethodDef
+
+suite "parser contextual-keyword identifiers":
+  # `of`/`from`/`as`/`let` lex as keyword tokens but are valid
+  # IdentifierReferences in primary/operand position (Zen-c is_binding_ident).
+  for kw in ["of", "from", "as"]:
+    test "contextual keyword '" & kw & "' as a bare identifier reference":
+      let s = parseOne(kw & ";")
+      check s != nil
+      check s.kind == NodeKind.IdentExpr
+
+  test "'let' as an identifier in operand position (not statement-initial)":
+    # statement-initial `let` is a declaration; in operand position it is an
+    # IdentifierReference. `x = let` → Assignment whose value is IdentExpr.
+    let s = parseOne("x = let")
+    check s != nil
+    check s.kind == NodeKind.Assignment
+    check s.value.kind == NodeKind.IdentExpr
+
+  test "contextual keyword as a call argument":
+    let s = parseOne("f(from, of, as)")
+    check s != nil
+    check s.kind == NodeKind.Call
+    check s.args.len == 3
+    for a in s.args: check a.kind == NodeKind.IdentExpr
+
+  test "contextual keyword in a binary operand":
+    let s = parseOne("from + to")
+    check s != nil
+    check s.kind == NodeKind.Binary
+    check s.lhs.kind == NodeKind.IdentExpr
+    check s.rhs.kind == NodeKind.IdentExpr
+
+  test "statement-initial 'let' still parses as a declaration (not an ident)":
+    let s = parseOne("let x = 1;")
+    check s != nil
+    check s.kind == NodeKind.VarDecl

@@ -484,6 +484,17 @@ proc parsePrimary(p: var Parser): AstNode =
     discard p.advance()
     return newLeaf(IdentExpr, t.start, t.start + t.length)
 
+  of KwOf, KwFrom, KwAs, KwLet:
+    # Contextual keywords usable as an IdentifierReference in primary
+    # position. Mirrors Zen-c is_binding_ident (src/parser.zc ~782): `of`,
+    # `from`, `as` are reserved only inside for-of / import-export specifier
+    # syntax, and `let` only at a statement/for-init head — all consumed
+    # upstream before they can reach here, so in operand position they are
+    # plain identifiers. (`async`/`await`/`yield` have their own context-
+    # sensitive cases above.)
+    discard p.advance()
+    return newLeaf(IdentExpr, t.start, t.start + t.length)
+
   of LParen:
     let lp = p.advance()    # consume '('
     let savedNoIn = p.noIn; p.noIn = false
