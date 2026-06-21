@@ -130,6 +130,15 @@ type
       init*: AstNode                    ## initializer, or nil
     of Program:
       stmts*: seq[AstNode]
+    of Member, OptionalMember, Computed, OptionalComputed:
+      recv*: AstNode                    # receiver/object (Zen-c `left`)
+      propStart*, propLength*: uint32   # Member/OptionalMember: property-name slice (Computed: unused, 0)
+      index*: AstNode                   # Computed/OptionalComputed: `[expr]` index (Member: nil)
+    of Call, OptionalCall, New:
+      callee*: AstNode                  # Zen-c `left`
+      args*: seq[AstNode]               # Zen-c `children`
+    of Spread:
+      spreadArg*: AstNode               # `...expr` inner (Zen-c `left`)
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -174,3 +183,24 @@ proc newDeclarator*(s, e, nameStart, nameLength: uint32, init: AstNode): AstNode
   ## Construct a Declarator node; init may be nil (no initializer).
   AstNode(kind: Declarator, start: s, `end`: e,
           nameStart: nameStart, nameLength: nameLength, init: init)
+
+proc newMember*(kind: NodeKind, s, e, propStart, propLength: uint32, recv: AstNode): AstNode =
+  ## kind ∈ {Member, OptionalMember}. propStart/propLength are the property name slice.
+  {.cast(uncheckedAssign).}:
+    result = AstNode(kind: kind, start: s, `end`: e, recv: recv,
+                     propStart: propStart, propLength: propLength, index: nil)
+
+proc newComputed*(kind: NodeKind, s, e: uint32, recv, index: AstNode): AstNode =
+  ## kind ∈ {Computed, OptionalComputed}
+  {.cast(uncheckedAssign).}:
+    result = AstNode(kind: kind, start: s, `end`: e, recv: recv,
+                     propStart: 0'u32, propLength: 0'u32, index: index)
+
+proc newCall*(kind: NodeKind, s, e: uint32, callee: AstNode, args: seq[AstNode]): AstNode =
+  ## kind ∈ {Call, OptionalCall, New}
+  {.cast(uncheckedAssign).}:
+    result = AstNode(kind: kind, start: s, `end`: e, callee: callee, args: args)
+
+proc newSpread*(s, e: uint32, spreadArg: AstNode): AstNode =
+  ## Construct a Spread node.
+  AstNode(kind: Spread, start: s, `end`: e, spreadArg: spreadArg)

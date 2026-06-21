@@ -39,6 +39,20 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
   of Program:
     stdout.write(&"{ind}{label}\n")
     for s in n.stmts: dumpAst(s, src, depth+1)
+  of Member, OptionalMember:
+    stdout.write(&"{ind}{label} name=\"{slice(src, n.propStart, n.propStart + n.propLength)}\"\n")
+    dumpAst(n.recv, src, depth+1)
+  of Computed, OptionalComputed:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.recv, src, depth+1)
+    dumpAst(n.index, src, depth+1)
+  of Call, OptionalCall, New:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.callee, src, depth+1)
+    for a in n.args: dumpAst(a, src, depth+1)
+  of Spread:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.spreadArg, src, depth+1)
   else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 

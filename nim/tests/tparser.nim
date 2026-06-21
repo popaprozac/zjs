@@ -274,3 +274,43 @@ suite "parser declarations":
     check node.binOp == TokenKind.Plus
     check node.lhs.kind == NodeKind.IdentExpr
     check node.rhs.kind == NodeKind.NumberExpr
+
+suite "ast 2c-1 nodes":
+  test "member + computed":
+    let recv = newLeaf(IdentExpr, 0'u32, 1'u32)
+    let m = newMember(NodeKind.Member, 0'u32, 3'u32, 2'u32, 1'u32, recv)
+    check m.kind == NodeKind.Member
+    check m.recv.kind == NodeKind.IdentExpr
+    check m.propStart == 2'u32 and m.propLength == 1'u32
+    let idx = newLeaf(IdentExpr, 2'u32, 3'u32)
+    let c = newComputed(NodeKind.Computed, 0'u32, 4'u32, recv, idx)
+    check c.kind == NodeKind.Computed
+    check c.index.kind == NodeKind.IdentExpr
+
+  test "call + new + spread":
+    let callee = newLeaf(IdentExpr, 0'u32, 1'u32)
+    let arg = newNumber(2'u32, 3'u32, 1.0)
+    let call = newCall(NodeKind.Call, 0'u32, 4'u32, callee, @[arg])
+    check call.kind == NodeKind.Call
+    check call.callee.kind == NodeKind.IdentExpr
+    check call.args.len == 1
+    let sp = newSpread(0'u32, 4'u32, callee)
+    check sp.kind == NodeKind.Spread
+    check sp.spreadArg.kind == NodeKind.IdentExpr
+
+  test "optional variants carry correct kind":
+    let recv = newLeaf(IdentExpr, 0'u32, 1'u32)
+    let idx = newLeaf(IdentExpr, 4'u32, 5'u32)
+    let om = newMember(NodeKind.OptionalMember, 0'u32, 4'u32, 3'u32, 1'u32, recv)
+    check om.kind == NodeKind.OptionalMember
+    check om.recv.kind == NodeKind.IdentExpr
+    let oc = newComputed(NodeKind.OptionalComputed, 0'u32, 6'u32, recv, idx)
+    check oc.kind == NodeKind.OptionalComputed
+    check oc.index.kind == NodeKind.IdentExpr
+    let callee = newLeaf(IdentExpr, 0'u32, 1'u32)
+    let ocall = newCall(NodeKind.OptionalCall, 0'u32, 5'u32, callee, @[])
+    check ocall.kind == NodeKind.OptionalCall
+    check ocall.callee.kind == NodeKind.IdentExpr
+    let newNode = newCall(NodeKind.New, 0'u32, 6'u32, callee, @[newNumber(4'u32, 5'u32, 1.0)])
+    check newNode.kind == NodeKind.New
+    check newNode.args.len == 1
