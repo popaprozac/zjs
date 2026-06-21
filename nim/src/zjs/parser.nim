@@ -103,6 +103,29 @@ proc parsePostfix(p: var Parser): AstNode
 proc parseCallMember(p: var Parser): AstNode
 proc parseArguments(p: var Parser): (seq[AstNode], uint32)
 proc parseAssignmentExpr(p: var Parser): AstNode
+proc parseArray(p: var Parser): AstNode
+proc parseObject(p: var Parser): AstNode
+
+# ------------------------------------------------------------------
+# isKeywordName — returns true for Kw* token kinds that may appear
+# as object property names (e.g. {if: 1, return: 2}).
+# ------------------------------------------------------------------
+
+proc isKeywordName(k: TokenKind): bool {.inline.} =
+  k in {KwVar, KwLet, KwConst,
+        KwFunction, KwReturn,
+        KwIf, KwElse,
+        KwFor, KwWhile, KwDo,
+        KwBreak, KwContinue,
+        KwClass, KwExtends, KwSuper, KwNew, KwThis,
+        KwTrue, KwFalse, KwNull, KwUndefined,
+        KwTypeof, KwDelete, KwVoid, KwIn, KwOf, KwInstanceof,
+        KwThrow, KwTry, KwCatch, KwFinally,
+        KwSwitch, KwCase, KwDefault,
+        KwWith,
+        KwAsync, KwAwait, KwYield,
+        KwImport, KwExport, KwFrom, KwAs,
+        KwGet, KwSet}
 
 # ------------------------------------------------------------------
 # parsePrimary — mirrors fn parse_primary in src/parser.zc
@@ -159,11 +182,97 @@ proc parsePrimary(p: var Parser): AstNode =
     discard p.expect(RParen)
     return newParen(lp.start, close.start + close.length, inner)
 
+  of LBracket:
+    return parseArray(p)
+
+  of LBrace:
+    return parseObject(p)
+
   else:
     # Unknown / unimplemented primary — skip and return nil.
-    # (Later tasks will fill in array, object, template, etc.)
+    # (Later tasks will fill in template, etc.)
     discard p.advance()
     return nil
+
+# ------------------------------------------------------------------
+# parseArray — port of fn parse_array in src/parser.zc (~4314).
+# ------------------------------------------------------------------
+
+proc parseArray(p: var Parser): AstNode =
+  let lb = p.advance()                       # consume '['
+  var elems: seq[AstNode]
+  while p.peek().kind notin {RBracket, Eof}:
+    var elem: AstNode
+    if p.peek().kind == Comma:
+      # Elision: comma in element position → HoleExpr (zero-width at comma start)
+      let h = p.peek()
+      elem = newLeaf(HoleExpr, h.start, h.start)
+    elif p.peek().kind == Ellipsis:
+      let dots = p.advance()
+      let inner = parseAssignmentExpr(p)
+      if inner == nil: break
+      elem = newSpread(dots.start, inner.`end`, inner)
+    else:
+      elem = parseAssignmentExpr(p)
+      if elem == nil: break
+    elems.add(elem)
+    if p.peek().kind != Comma: break
+    discard p.advance()                      # consume ','
+  let close = p.peek()
+  discard p.expect(RBracket)
+  newArray(lb.start, close.start + close.length, elems)
+
+# ------------------------------------------------------------------
+# parseObject — port of fn parse_object in src/parser.zc (~4375).
+# ------------------------------------------------------------------
+
+proc parseObject(p: var Parser): AstNode =
+  let lb = p.advance()                       # consume '{'
+  var props: seq[AstNode]
+  while p.peek().kind notin {RBrace, Eof}:
+    if p.peek().kind == Ellipsis:
+      let dots = p.advance()
+      let inner = parseAssignmentExpr(p)
+      if inner == nil: break
+      props.add(newSpread(dots.start, inner.`end`, inner))
+    elif p.peek().kind == LBracket:
+      # Computed key: [expr]: val
+      discard p.advance()                    # consume '['
+      let key = parseAssignmentExpr(p)
+      if key == nil: break
+      if not p.expect(RBracket): break
+      if p.peek().kind != Colon: break       # computed method — out of scope
+      discard p.advance()                    # consume ':'
+      let val = parseAssignmentExpr(p)
+      if val == nil: break
+      # keyStart/keyLength = 0/0 for computed; computedKey = key
+      props.add(newObjectProp(key.start, val.`end`, 0'u32, 0'u32, val, key))
+    else:
+      # Named key: Identifier, keyword-as-name, StringLit, NumberLit
+      let keyTok = p.peek()
+      if keyTok.kind notin {Identifier, StringLit, NumberLit} and not isKeywordName(keyTok.kind):
+        break
+      discard p.advance()                    # consume the key token
+      let nxt = p.peek().kind
+      if nxt == Colon:
+        discard p.advance()                  # consume ':'
+        let val = parseAssignmentExpr(p)
+        if val == nil: break
+        props.add(newObjectProp(keyTok.start, val.`end`,
+                                keyTok.start, keyTok.length, val, nil))
+      elif nxt == Comma or nxt == RBrace:
+        # Shorthand {a} — value = IdentExpr spanning the key token
+        let v = newLeaf(IdentExpr, keyTok.start, keyTok.start + keyTok.length)
+        props.add(newObjectProp(keyTok.start, keyTok.start + keyTok.length,
+                                keyTok.start, keyTok.length, v, nil))
+      else:
+        # '(' = method, 'get'/'set' prefix, '*' = generator — out of scope
+        break
+    if p.peek().kind != Comma: break
+    discard p.advance()                      # consume ','
+  let close = p.peek()
+  discard p.expect(RBrace)
+  newObject(lb.start, close.start + close.length, props)
 
 # ------------------------------------------------------------------
 # parseAssignmentExpr — no-comma entry; routes through conditional.

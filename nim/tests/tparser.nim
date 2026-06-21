@@ -491,3 +491,203 @@ suite "ast 2c-3 nodes":
   test "hole via newLeaf":
     let h = newLeaf(HoleExpr, 2'u32, 2'u32)
     check h.kind == NodeKind.HoleExpr
+
+suite "parser array/object":
+  test "empty array [] — Array with zero elems":
+    var p = initParser("[]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.Array
+    check arr.elems.len == 0
+
+  test "[1, 2, 3] — Array with three NumberExpr elems":
+    var p = initParser("[1, 2, 3]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.Array
+    check arr.elems.len == 3
+    check arr.elems[0].kind == NodeKind.NumberExpr
+    check arr.elems[0].numVal == 1.0
+    check arr.elems[1].numVal == 2.0
+    check arr.elems[2].numVal == 3.0
+
+  test "[1, , 3] — elision produces HoleExpr":
+    var p = initParser("[1, , 3]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.Array
+    check arr.elems.len == 3
+    check arr.elems[0].kind == NodeKind.NumberExpr
+    check arr.elems[1].kind == NodeKind.HoleExpr
+    check arr.elems[2].kind == NodeKind.NumberExpr
+
+  test "[,] — single hole":
+    var p = initParser("[,]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.Array
+    check arr.elems.len == 1
+    check arr.elems[0].kind == NodeKind.HoleExpr
+
+  test "[...a, b] — spread followed by ident":
+    var p = initParser("[...a, b]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.Array
+    check arr.elems.len == 2
+    check arr.elems[0].kind == NodeKind.Spread
+    check arr.elems[0].spreadArg.kind == NodeKind.IdentExpr
+    check arr.elems[1].kind == NodeKind.IdentExpr
+
+  test "[1, ...x, 2] — spread in middle":
+    var p = initParser("[1, ...x, 2]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.Array
+    check arr.elems.len == 3
+    check arr.elems[0].kind == NodeKind.NumberExpr
+    check arr.elems[1].kind == NodeKind.Spread
+    check arr.elems[2].kind == NodeKind.NumberExpr
+
+  test "[a, [b, c]] — nested array":
+    var p = initParser("[a, [b, c]]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.Array
+    check arr.elems.len == 2
+    check arr.elems[0].kind == NodeKind.IdentExpr
+    check arr.elems[1].kind == NodeKind.Array
+    check arr.elems[1].elems.len == 2
+
+  test "({}) — empty object":
+    var p = initParser("({})")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let paren = prog.stmts[0]
+    check paren.kind == NodeKind.Paren
+    let obj = paren.inner
+    check obj.kind == NodeKind.Object
+    check obj.props.len == 0
+
+  test "({a: 1, b: 2}) — two named props":
+    var p = initParser("({a: 1, b: 2})")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let obj = prog.stmts[0].inner
+    check obj.kind == NodeKind.Object
+    check obj.props.len == 2
+    let pa = obj.props[0]
+    check pa.kind == NodeKind.ObjectProp
+    check p.source[pa.keyStart.int ..< (pa.keyStart + pa.keyLength).int] == "a"
+    check pa.propVal.kind == NodeKind.NumberExpr
+    check pa.propVal.numVal == 1.0
+    check pa.computedKey == nil
+    let pb = obj.props[1]
+    check p.source[pb.keyStart.int ..< (pb.keyStart + pb.keyLength).int] == "b"
+    check pb.propVal.numVal == 2.0
+
+  test "({a}) — shorthand prop value is IdentExpr":
+    var p = initParser("({a})")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let obj = prog.stmts[0].inner
+    check obj.kind == NodeKind.Object
+    check obj.props.len == 1
+    let prop = obj.props[0]
+    check prop.kind == NodeKind.ObjectProp
+    check p.source[prop.keyStart.int ..< (prop.keyStart + prop.keyLength).int] == "a"
+    check prop.propVal.kind == NodeKind.IdentExpr
+    check prop.computedKey == nil
+
+  test "({a, b, c}) — multiple shorthand props":
+    var p = initParser("({a, b, c})")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let obj = prog.stmts[0].inner
+    check obj.kind == NodeKind.Object
+    check obj.props.len == 3
+    for prop in obj.props:
+      check prop.kind == NodeKind.ObjectProp
+      check prop.propVal.kind == NodeKind.IdentExpr
+
+  test "({[k]: v}) — computed key: keyStart/Length=0, computedKey=IdentExpr":
+    var p = initParser("({[k]: v})")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let obj = prog.stmts[0].inner
+    check obj.kind == NodeKind.Object
+    check obj.props.len == 1
+    let prop = obj.props[0]
+    check prop.kind == NodeKind.ObjectProp
+    check prop.keyStart == 0'u32
+    check prop.keyLength == 0'u32
+    check prop.propVal.kind == NodeKind.IdentExpr   # "v"
+    check prop.computedKey != nil
+    check prop.computedKey.kind == NodeKind.IdentExpr  # "k"
+
+  test "({...x, y: 1}) — spread then named prop":
+    var p = initParser("({...x, y: 1})")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let obj = prog.stmts[0].inner
+    check obj.kind == NodeKind.Object
+    check obj.props.len == 2
+    check obj.props[0].kind == NodeKind.Spread
+    check obj.props[0].spreadArg.kind == NodeKind.IdentExpr
+    check obj.props[1].kind == NodeKind.ObjectProp
+    check obj.props[1].propVal.kind == NodeKind.NumberExpr
+
+  test "({\"s\": 1, 5: 2}) — string and number keys":
+    var p = initParser("({\"s\": 1, 5: 2})")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let obj = prog.stmts[0].inner
+    check obj.kind == NodeKind.Object
+    check obj.props.len == 2
+    # string key keeps quotes in the source slice
+    let ps = obj.props[0]
+    check ps.kind == NodeKind.ObjectProp
+    check p.source[ps.keyStart.int ..< (ps.keyStart + ps.keyLength).int] == "\"s\""
+    check ps.propVal.numVal == 1.0
+    # number key
+    let pn = obj.props[1]
+    check p.source[pn.keyStart.int ..< (pn.keyStart + pn.keyLength).int] == "5"
+    check pn.propVal.numVal == 2.0
+
+  test "({a: [1,2], b: {c: 3}}) — nested object/array values":
+    var p = initParser("({a: [1,2], b: {c: 3}})")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let obj = prog.stmts[0].inner
+    check obj.kind == NodeKind.Object
+    check obj.props.len == 2
+    check obj.props[0].propVal.kind == NodeKind.Array
+    check obj.props[0].propVal.elems.len == 2
+    check obj.props[1].propVal.kind == NodeKind.Object
+    check obj.props[1].propVal.props.len == 1
+
+  test "({k: a, ...rest}) — prop then spread":
+    var p = initParser("({k: a, ...rest})")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let obj = prog.stmts[0].inner
+    check obj.kind == NodeKind.Object
+    check obj.props.len == 2
+    check obj.props[0].kind == NodeKind.ObjectProp
+    check obj.props[1].kind == NodeKind.Spread
+
+  test "[a ? b : c] — conditional inside array":
+    var p = initParser("[a ? b : c]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.Array
+    check arr.elems.len == 1
+    check arr.elems[0].kind == NodeKind.Conditional
