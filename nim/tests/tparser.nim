@@ -1674,3 +1674,163 @@ suite "parser gen/async":
     check prog.stmts.len == 1
     let decl = prog.stmts[0]
     check decl.kind == NodeKind.VarDecl
+
+suite "parser obj methods":
+  test "({ m() {} }) — simple method: ObjectProp with FunctionExpr (anonymous)":
+    var p = initParser("({ m() {} })")
+    let prog = p.parseProgram()
+    let obj = prog.stmts[0].inner
+    check obj.kind == NodeKind.Object
+    check obj.props.len == 1
+    let prop = obj.props[0]
+    check prop.kind == NodeKind.ObjectProp
+    check p.source[prop.keyStart.int ..< (prop.keyStart + prop.keyLength).int] == "m"
+    check prop.computedKey == nil
+    let fn = prop.propVal
+    check fn != nil
+    check fn.kind == NodeKind.FunctionExpr
+    check fn.fnNameLen == 0'u32     # anonymous
+    check fn.fnIsGenerator == false
+    check fn.fnIsAsync == false
+    check fn.fnBody.kind == NodeKind.BlockStmt
+
+  test "({ m(a, b) { return a; } }) — method with params and return":
+    var p = initParser("({ m(a, b) { return a; } })")
+    let prog = p.parseProgram()
+    let obj = prog.stmts[0].inner
+    check obj.props.len == 1
+    let fn = obj.props[0].propVal
+    check fn.kind == NodeKind.FunctionExpr
+    check fn.fnNameLen == 0'u32
+    check fn.fnParams.len == 2
+    check fn.fnBody.stmtList.len == 1
+    check fn.fnBody.stmtList[0].kind == NodeKind.ReturnStmt
+
+  test "({ get x() { return 1; } }) — getter: FunctionExpr named 'x'":
+    var p = initParser("({ get x() { return 1; } })")
+    let prog = p.parseProgram()
+    let obj = prog.stmts[0].inner
+    check obj.props.len == 1
+    let prop = obj.props[0]
+    check p.source[prop.keyStart.int ..< (prop.keyStart + prop.keyLength).int] == "x"
+    check prop.computedKey == nil
+    let fn = prop.propVal
+    check fn.kind == NodeKind.FunctionExpr
+    # getter FunctionExpr is NAMED with the property name
+    check fn.fnNameLen == 1'u32
+    check p.source[fn.fnNameStart.int ..< (fn.fnNameStart + fn.fnNameLen).int] == "x"
+    check fn.fnParams.len == 0
+
+  test "({ set x(v) {} }) — setter: FunctionExpr named 'x' with one param":
+    var p = initParser("({ set x(v) {} })")
+    let prog = p.parseProgram()
+    let obj = prog.stmts[0].inner
+    check obj.props.len == 1
+    let prop = obj.props[0]
+    check p.source[prop.keyStart.int ..< (prop.keyStart + prop.keyLength).int] == "x"
+    let fn = prop.propVal
+    check fn.kind == NodeKind.FunctionExpr
+    check fn.fnNameLen == 1'u32
+    check p.source[fn.fnNameStart.int ..< (fn.fnNameStart + fn.fnNameLen).int] == "x"
+    check fn.fnParams.len == 1
+
+  test "({ *gen() { yield 1; } }) — generator method: anonymous FunctionExpr isGenerator":
+    var p = initParser("({ *gen() { yield 1; } })")
+    let prog = p.parseProgram()
+    let obj = prog.stmts[0].inner
+    check obj.props.len == 1
+    let prop = obj.props[0]
+    check p.source[prop.keyStart.int ..< (prop.keyStart + prop.keyLength).int] == "gen"
+    let fn = prop.propVal
+    check fn.kind == NodeKind.FunctionExpr
+    check fn.fnNameLen == 0'u32     # anonymous
+    check fn.fnIsGenerator == true
+    let y = fn.fnBody.stmtList[0]
+    check y.kind == NodeKind.YieldExpr
+    check y.yieldArg.kind == NodeKind.NumberExpr
+
+  test "({ async af() { await x; } }) — async method: anonymous FunctionExpr isAsync":
+    var p = initParser("({ async af() { await x; } })")
+    let prog = p.parseProgram()
+    let obj = prog.stmts[0].inner
+    check obj.props.len == 1
+    let prop = obj.props[0]
+    check p.source[prop.keyStart.int ..< (prop.keyStart + prop.keyLength).int] == "af"
+    let fn = prop.propVal
+    check fn.kind == NodeKind.FunctionExpr
+    check fn.fnNameLen == 0'u32
+    check fn.fnIsAsync == true
+    let aw = fn.fnBody.stmtList[0]
+    check aw.kind == NodeKind.AwaitExpr
+
+  test "({ [k]() {} }) — computed method: keyStart/Length=0, computedKey present":
+    var p = initParser("({ [k]() {} })")
+    let prog = p.parseProgram()
+    let obj = prog.stmts[0].inner
+    check obj.props.len == 1
+    let prop = obj.props[0]
+    check prop.keyStart == 0'u32
+    check prop.keyLength == 0'u32
+    check prop.computedKey != nil
+    check prop.computedKey.kind == NodeKind.IdentExpr
+    let fn = prop.propVal
+    check fn.kind == NodeKind.FunctionExpr
+    check fn.fnNameLen == 0'u32
+
+  test "({ \"str\"() {}, 5() {} }) — string and number key methods":
+    var p = initParser("({ \"str\"() {}, 5() {} })")
+    let prog = p.parseProgram()
+    let obj = prog.stmts[0].inner
+    check obj.props.len == 2
+    let p0 = obj.props[0]
+    check p.source[p0.keyStart.int ..< (p0.keyStart + p0.keyLength).int] == "\"str\""
+    check p0.propVal.kind == NodeKind.FunctionExpr
+    let p1 = obj.props[1]
+    check p.source[p1.keyStart.int ..< (p1.keyStart + p1.keyLength).int] == "5"
+    check p1.propVal.kind == NodeKind.FunctionExpr
+
+  test "({ a, m() {}, b: 2 }) — mixed shorthand + method + data prop":
+    var p = initParser("({ a, m() {}, b: 2 })")
+    let prog = p.parseProgram()
+    let obj = prog.stmts[0].inner
+    check obj.props.len == 3
+    check obj.props[0].propVal.kind == NodeKind.IdentExpr    # shorthand
+    check obj.props[1].propVal.kind == NodeKind.FunctionExpr # method
+    check obj.props[2].propVal.kind == NodeKind.NumberExpr   # data
+
+  test "({ get [k]() {} }) — computed getter accessor":
+    var p = initParser("({ get [k]() {} })")
+    let prog = p.parseProgram()
+    let obj = prog.stmts[0].inner
+    check obj.props.len == 1
+    let prop = obj.props[0]
+    # computed accessor: keyStart/Length point to 'get', computedKey = IdentExpr k
+    check prop.computedKey != nil
+    check prop.computedKey.kind == NodeKind.IdentExpr
+    let fn = prop.propVal
+    check fn.kind == NodeKind.FunctionExpr
+    # computed accessor FunctionExpr is anonymous (realNameLen = 0)
+    check fn.fnNameLen == 0'u32
+
+  test "({ m() {}, get x() {}, set x(v) {} }) — method + getter + setter":
+    var p = initParser("({ m() {}, get x() {}, set x(v) {} })")
+    let prog = p.parseProgram()
+    let obj = prog.stmts[0].inner
+    check obj.props.len == 3
+    check obj.props[0].propVal.kind == NodeKind.FunctionExpr
+    check obj.props[0].propVal.fnNameLen == 0'u32   # method anonymous
+    check obj.props[1].propVal.kind == NodeKind.FunctionExpr
+    check obj.props[1].propVal.fnNameLen == 1'u32   # getter named "x"
+    check obj.props[2].propVal.kind == NodeKind.FunctionExpr
+    check obj.props[2].propVal.fnNameLen == 1'u32   # setter named "x"
+
+  test "({ async *ag() { yield await x; } }) — async generator method":
+    var p = initParser("({ async *ag() { yield await x; } })")
+    let prog = p.parseProgram()
+    let obj = prog.stmts[0].inner
+    check obj.props.len == 1
+    let fn = obj.props[0].propVal
+    check fn.kind == NodeKind.FunctionExpr
+    check fn.fnIsAsync == true
+    check fn.fnIsGenerator == true
+    check fn.fnNameLen == 0'u32

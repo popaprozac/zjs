@@ -112,6 +112,7 @@ proc parseTemplateLit(p: var Parser): AstNode
 proc parseFunctionDecl(p: var Parser, isAsync = false): AstNode
 proc parseFunctionExpr(p: var Parser, isAsync = false): AstNode
 proc parseParamList(p: var Parser): seq[AstNode]
+proc parseBlock(p: var Parser): AstNode
 
 # ------------------------------------------------------------------
 # parseTemplateExprSlice — re-lex a substitution slice with absolute
@@ -375,50 +376,138 @@ proc parseArray(p: var Parser): AstNode =
 # parseObject — port of fn parse_object in src/parser.zc (~4375).
 # ------------------------------------------------------------------
 
+proc isPropertyNameStart(k: TokenKind): bool {.inline.} =
+  ## Returns true for token kinds that can begin a property name (key).
+  k in {Identifier, StringLit, NumberLit, LBracket, Star} or isKeywordName(k)
+
 proc parseObject(p: var Parser): AstNode =
   let lb = p.advance()                       # consume '{'
   var props: seq[AstNode]
   while p.peek().kind notin {RBrace, Eof}:
+    # --- spread ---
     if p.peek().kind == Ellipsis:
       let dots = p.advance()
       let inner = parseAssignmentExpr(p)
       if inner == nil: break
       props.add(newSpread(dots.start, inner.`end`, inner))
-    elif p.peek().kind == LBracket:
-      # Computed key: [expr]: val
+      if p.peek().kind != Comma: break
+      discard p.advance()
+      continue
+
+    # Per-iteration flags
+    var omAsync = false
+    var omGen = false
+
+    # Step 1: detect async prefix
+    if p.peek().kind == KwAsync and p.toks[p.pos + 1].kind.isPropertyNameStart():
+      omAsync = true
+      discard p.advance()                    # consume 'async'
+
+    # Step 2: detect generator prefix
+    if p.peek().kind == Star:
+      omGen = true
+      discard p.advance()                    # consume '*'
+
+    # Step 3: computed key [ expr ]
+    if p.peek().kind == LBracket:
       discard p.advance()                    # consume '['
       let key = parseAssignmentExpr(p)
       if key == nil: break
       if not p.expect(RBracket): break
-      if p.peek().kind != Colon: break       # computed method — out of scope
-      discard p.advance()                    # consume ':'
-      let val = parseAssignmentExpr(p)
-      if val == nil: break
-      # keyStart/keyLength = 0/0 for computed; computedKey = key
-      props.add(newObjectProp(key.start, val.`end`, 0'u32, 0'u32, val, key))
-    else:
-      # Named key: Identifier, keyword-as-name, StringLit, NumberLit
-      let keyTok = p.peek()
-      if keyTok.kind notin {Identifier, StringLit, NumberLit} and not isKeywordName(keyTok.kind):
-        break
-      discard p.advance()                    # consume the key token
-      let nxt = p.peek().kind
-      if nxt == Colon:
+      if p.peek().kind == LParen:
+        # Computed method: [k]() {}
+        discard p.expect(LParen)
+        let params = parseParamList(p)
+        discard p.expect(RParen)
+        let sg = p.inGenerator; let sa = p.inAsync
+        p.inGenerator = omGen; p.inAsync = omAsync
+        let body = parseBlock(p)
+        p.inGenerator = sg; p.inAsync = sa
+        let fn = newFunctionExpr(key.start, body.`end`, 0'u32, 0'u32, body, params, omAsync, omGen)
+        props.add(newObjectProp(key.start, body.`end`, 0'u32, 0'u32, fn, key))
+      elif p.peek().kind == Colon:
+        # Computed data prop: [k]: val
         discard p.advance()                  # consume ':'
         let val = parseAssignmentExpr(p)
         if val == nil: break
-        props.add(newObjectProp(keyTok.start, val.`end`,
-                                keyTok.start, keyTok.length, val, nil))
-      elif nxt == Comma or nxt == RBrace:
-        # Shorthand {a} — value = IdentExpr spanning the key token
-        let v = newLeaf(IdentExpr, keyTok.start, keyTok.start + keyTok.length)
-        props.add(newObjectProp(keyTok.start, keyTok.start + keyTok.length,
-                                keyTok.start, keyTok.length, v, nil))
+        props.add(newObjectProp(key.start, val.`end`, 0'u32, 0'u32, val, key))
       else:
-        # '(' = method, 'get'/'set' prefix, '*' = generator — out of scope
         break
+      if p.peek().kind != Comma: break
+      discard p.advance()
+      continue
+
+    # Step 4: named key
+    let keyTok = p.peek()
+    if keyTok.kind notin {Identifier, StringLit, NumberLit} and not isKeywordName(keyTok.kind):
+      break
+
+    # Accessor check: get/set followed by a property-name-start
+    if keyTok.kind == Identifier and keyTok.length == 3'u32:
+      let ktext = p.source[keyTok.start.int ..< (keyTok.start + keyTok.length).int]
+      let isAccessor = (ktext == "get" or ktext == "set")
+      let nextKind = p.toks[p.pos + 1].kind
+      if isAccessor and nextKind.isPropertyNameStart() and nextKind != LParen:
+        # It's an accessor: consume 'get'/'set', read real name
+        discard p.advance()                  # consume 'get' or 'set'
+        var realNameStart = 0'u32
+        var realNameLen = 0'u32
+        var computedAccKey: AstNode = nil
+        if p.peek().kind == LBracket:
+          # computed accessor: get [expr]() {}
+          discard p.advance()                # consume '['
+          computedAccKey = parseAssignmentExpr(p)
+          if computedAccKey == nil: break
+          if not p.expect(RBracket): break
+        else:
+          let realTok = p.advance()          # the property name token
+          realNameStart = realTok.start
+          realNameLen = realTok.length
+        discard p.expect(LParen)
+        let params = parseParamList(p)
+        discard p.expect(RParen)
+        let sg = p.inGenerator; let sa = p.inAsync
+        p.inGenerator = false; p.inAsync = false
+        let body = parseBlock(p)
+        p.inGenerator = sg; p.inAsync = sa
+        let fnStart = if computedAccKey != nil: computedAccKey.start else: realNameStart
+        let fn = newFunctionExpr(fnStart, body.`end`, realNameStart, realNameLen, body, params)
+        props.add(newObjectProp(keyTok.start, body.`end`, realNameStart, realNameLen, fn, computedAccKey))
+        if p.peek().kind != Comma: break
+        discard p.advance()
+        continue
+
+    # Plain named key: consume it, then dispatch on what follows
+    discard p.advance()                      # consume the key token
+
+    if p.peek().kind == LParen:
+      # Named method: key() {}
+      discard p.expect(LParen)
+      let params = parseParamList(p)
+      discard p.expect(RParen)
+      let sg = p.inGenerator; let sa = p.inAsync
+      p.inGenerator = omGen; p.inAsync = omAsync
+      let body = parseBlock(p)
+      p.inGenerator = sg; p.inAsync = sa
+      let fn = newFunctionExpr(keyTok.start, body.`end`, 0'u32, 0'u32, body, params, omAsync, omGen)
+      props.add(newObjectProp(keyTok.start, body.`end`, keyTok.start, keyTok.length, fn, nil))
+    elif p.peek().kind == Colon:
+      discard p.advance()                    # consume ':'
+      let val = parseAssignmentExpr(p)
+      if val == nil: break
+      props.add(newObjectProp(keyTok.start, val.`end`,
+                              keyTok.start, keyTok.length, val, nil))
+    elif p.peek().kind in {Comma, RBrace}:
+      # Shorthand {a}
+      let v = newLeaf(IdentExpr, keyTok.start, keyTok.start + keyTok.length)
+      props.add(newObjectProp(keyTok.start, keyTok.start + keyTok.length,
+                              keyTok.start, keyTok.length, v, nil))
+    else:
+      break
+
     if p.peek().kind != Comma: break
     discard p.advance()                      # consume ','
+
   let close = p.peek()
   discard p.expect(RBrace)
   newObject(lb.start, close.start + close.length, props)
