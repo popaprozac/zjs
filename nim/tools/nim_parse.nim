@@ -150,6 +150,10 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
   of AwaitExpr:
     stdout.write(&"{ind}{label}\n")
     dumpAst(n.awaitArg, src, depth+1)
+  of ArrowFunc:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.arrowBody, src, depth+1)
+    for prm in n.arrowParams: dumpAst(prm, src, depth+1)
   else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 

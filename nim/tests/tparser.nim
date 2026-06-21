@@ -1834,3 +1834,168 @@ suite "parser obj methods":
     check fn.fnIsAsync == true
     check fn.fnIsGenerator == true
     check fn.fnNameLen == 0'u32
+
+suite "parser arrows":
+  test "x => x + 1 — single-ident ArrowFunc, expr body":
+    var p = initParser("x => x + 1")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.ArrowFunc
+    check arr.arrowIsAsync == false
+    check arr.arrowParams.len == 1
+    check arr.arrowParams[0].kind == NodeKind.IdentExpr
+    check arr.arrowBody != nil
+    check arr.arrowBody.kind == NodeKind.Binary
+    check arr.arrowBody.binOp == TokenKind.Plus
+
+  test "(a, b) => a — paren params, expr body":
+    var p = initParser("(a, b) => a")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.ArrowFunc
+    check arr.arrowParams.len == 2
+    check arr.arrowParams[0].kind == NodeKind.IdentExpr
+    check arr.arrowParams[1].kind == NodeKind.IdentExpr
+    check arr.arrowBody != nil
+    check arr.arrowBody.kind == NodeKind.IdentExpr
+
+  test "() => {} — zero params, block body":
+    var p = initParser("() => {}")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.ArrowFunc
+    check arr.arrowParams.len == 0
+    check arr.arrowBody != nil
+    check arr.arrowBody.kind == NodeKind.BlockStmt
+
+  test "(a) => { return a; } — single paren param, block body":
+    var p = initParser("(a) => { return a; }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.ArrowFunc
+    check arr.arrowParams.len == 1
+    check arr.arrowBody.kind == NodeKind.BlockStmt
+    check arr.arrowBody.stmtList.len == 1
+    check arr.arrowBody.stmtList[0].kind == NodeKind.ReturnStmt
+
+  test "async x => x — async single-ident arrow":
+    var p = initParser("async x => x")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.ArrowFunc
+    check arr.arrowIsAsync == true
+    check arr.arrowParams.len == 1
+    check arr.arrowParams[0].kind == NodeKind.IdentExpr
+    check arr.arrowBody.kind == NodeKind.IdentExpr
+
+  test "a => b => c — right-assoc curried arrow":
+    var p = initParser("a => b => c")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let outer = prog.stmts[0]
+    check outer.kind == NodeKind.ArrowFunc
+    check outer.arrowParams.len == 1
+    check outer.arrowBody.kind == NodeKind.ArrowFunc
+    let inner = outer.arrowBody
+    check inner.arrowParams.len == 1
+    check inner.arrowBody.kind == NodeKind.IdentExpr
+
+  test "(a = 1) => a — default param in paren arrow":
+    var p = initParser("(a = 1) => a")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.ArrowFunc
+    check arr.arrowParams.len == 1
+    check arr.arrowParams[0].kind == NodeKind.IdentExpr
+    check arr.arrowParams[0].identDefault != nil
+    check arr.arrowParams[0].identDefault.kind == NodeKind.NumberExpr
+
+  test "(...r) => r — rest param arrow":
+    var p = initParser("(...r) => r")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.ArrowFunc
+    check arr.arrowParams.len == 1
+    check arr.arrowParams[0].kind == NodeKind.RestParam
+    check arr.arrowParams[0].restArg.kind == NodeKind.IdentExpr
+    check arr.arrowBody.kind == NodeKind.IdentExpr
+
+  test "f(x => x) — arrow as call argument":
+    var p = initParser("f(x => x)")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let call = prog.stmts[0]
+    check call.kind == NodeKind.Call
+    check call.args.len == 1
+    check call.args[0].kind == NodeKind.ArrowFunc
+
+  test "[a => a, b => b] — arrows inside array":
+    var p = initParser("[a => a, b => b]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.Array
+    check arr.elems.len == 2
+    check arr.elems[0].kind == NodeKind.ArrowFunc
+    check arr.elems[1].kind == NodeKind.ArrowFunc
+
+  test "async () => await x — async paren arrow with await body":
+    var p = initParser("async () => await x")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.ArrowFunc
+    check arr.arrowIsAsync == true
+    check arr.arrowParams.len == 0
+    check arr.arrowBody.kind == NodeKind.AwaitExpr
+
+  test "(a, b, c) => a + b + c — three params":
+    var p = initParser("(a, b, c) => a + b + c")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.ArrowFunc
+    check arr.arrowParams.len == 3
+    check arr.arrowBody.kind == NodeKind.Binary
+
+  test "arr.map(x => x * 2) — arrow in method call":
+    var p = initParser("arr.map(x => x * 2)")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let call = prog.stmts[0]
+    check call.kind == NodeKind.Call
+    check call.args.len == 1
+    check call.args[0].kind == NodeKind.ArrowFunc
+    check call.args[0].arrowParams.len == 1
+
+  # Non-arrow regression tests
+  test "(a, b) is Paren/Sequence — NOT an arrow (no =>)":
+    var p = initParser("(a, b)")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.Paren
+
+  test "async is IdentExpr when not followed by arrow head":
+    var p = initParser("async")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.IdentExpr
+
+  test "async(x) is a Call — NOT an arrow":
+    var p = initParser("async(x)")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.Call
+
+  test "a ? b : c is Conditional — NOT affected by arrow detection":
+    var p = initParser("a ? b : c")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.Conditional

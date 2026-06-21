@@ -113,6 +113,50 @@ proc parseFunctionDecl(p: var Parser, isAsync = false): AstNode
 proc parseFunctionExpr(p: var Parser, isAsync = false): AstNode
 proc parseParamList(p: var Parser): seq[AstNode]
 proc parseBlock(p: var Parser): AstNode
+proc lookaheadArrowParen(p: Parser): bool
+proc parseArrowBody(p: var Parser, isAsync: bool): AstNode
+proc parseArrowSingle(p: var Parser, isAsync: bool): AstNode
+proc parseArrowParen(p: var Parser, isAsync: bool): AstNode
+
+# ------------------------------------------------------------------
+# Arrow function helpers
+# ------------------------------------------------------------------
+
+proc lookaheadArrowParen(p: Parser): bool =
+  ## Scan from current pos (at '(') to find matching ')'; check if followed by '=>'.
+  var depth = 0
+  var i = p.pos
+  while i < p.toks.len:
+    let k = p.toks[i].kind
+    if k == LParen: inc depth
+    elif k == RParen:
+      dec depth
+      if depth == 0:
+        return i + 1 < p.toks.len and p.toks[i+1].kind == Arrow
+    elif k == Eof: return false
+    inc i
+  false
+
+proc parseArrowBody(p: var Parser, isAsync: bool): AstNode =
+  let savedA = p.inAsync
+  if isAsync: p.inAsync = true
+  result = (if p.peek().kind == LBrace: parseBlock(p) else: parseAssignmentExpr(p))
+  p.inAsync = savedA
+
+proc parseArrowSingle(p: var Parser, isAsync: bool): AstNode =
+  let nameTok = p.advance()             # identifier
+  discard p.advance()                   # '=>'
+  let param = newLeaf(IdentExpr, nameTok.start, nameTok.start + nameTok.length)
+  let body = parseArrowBody(p, isAsync)
+  newArrow(nameTok.start, (if body != nil: body.`end` else: nameTok.start), body, @[param], isAsync)
+
+proc parseArrowParen(p: var Parser, isAsync: bool): AstNode =
+  let lp = p.advance()                  # '('
+  let params = parseParamList(p)
+  discard p.expect(RParen)
+  discard p.expect(Arrow)
+  let body = parseArrowBody(p, isAsync)
+  newArrow(lp.start, (if body != nil: body.`end` else: lp.start), body, params, isAsync)
 
 # ------------------------------------------------------------------
 # parseTemplateExprSlice — re-lex a substitution slice with absolute
@@ -524,6 +568,21 @@ proc isAssignmentOp(k: TokenKind): bool {.inline.} =
         AmpAmpEq, PipePipeEq, QuestionQuestionEq}
 
 proc parseAssignmentExpr(p: var Parser): AstNode =
+  # Arrow function detection — must come before yield/conditional
+  if p.peek().kind == Identifier and p.toks[p.pos+1].kind == Arrow:
+    return parseArrowSingle(p, false)
+  if p.peek().kind == LParen and lookaheadArrowParen(p):
+    return parseArrowParen(p, false)
+  if p.peek().kind == KwAsync:
+    if p.toks[p.pos+1].kind == Identifier and p.toks[p.pos+2].kind == Arrow:
+      discard p.advance()               # 'async'
+      return parseArrowSingle(p, true)
+    if p.toks[p.pos+1].kind == LParen:
+      let saved = p.pos
+      discard p.advance()               # tentatively consume 'async'
+      if lookaheadArrowParen(p):
+        return parseArrowParen(p, true)
+      p.pos = saved                     # not an arrow — rewind
   # yield expression — only inside a generator body
   if p.peek().kind == KwYield and p.inGenerator:
     let kw = p.advance()

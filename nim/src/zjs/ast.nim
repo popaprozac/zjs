@@ -192,6 +192,10 @@ type
       yieldDelegate*: bool
     of AwaitExpr:
       awaitArg*: AstNode
+    of ArrowFunc:
+      arrowBody*: AstNode
+      arrowParams*: seq[AstNode]
+      arrowIsAsync*: bool
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -367,3 +371,7 @@ proc newYield*(s, e: uint32, arg: AstNode, delegate: bool): AstNode =
 proc newAwait*(s, e: uint32, arg: AstNode): AstNode =
   ## Construct an AwaitExpr node.
   AstNode(kind: AwaitExpr, start: s, `end`: e, awaitArg: arg)
+
+proc newArrow*(s, e: uint32, body: AstNode, params: seq[AstNode], isAsync: bool): AstNode =
+  ## Construct an ArrowFunc node.
+  AstNode(kind: ArrowFunc, start: s, `end`: e, arrowBody: body, arrowParams: params, arrowIsAsync: isAsync)
