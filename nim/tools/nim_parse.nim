@@ -14,7 +14,10 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
     stdout.write(&"{ind}{label} {n.numVal:g}\n")        # :g == C %g (verified)
   of BoolExpr:
     stdout.write(&"{ind}{label} {(if n.boolVal: \"true\" else: \"false\")}\n")
-  of IdentExpr, StringExpr:                              # ONLY these two are quoted
+  of IdentExpr:
+    stdout.write(&"{ind}{label} \"{slice(src, n.start, n.`end`)}\"\n")
+    if n.identDefault != nil: dumpAst(n.identDefault, src, depth+1)
+  of StringExpr:
     stdout.write(&"{ind}{label} \"{slice(src, n.start, n.`end`)}\"\n")
   of Binary, Logical:
     stdout.write(&"{ind}{label} op={tkLabel(n.binOp)}\n")
@@ -131,6 +134,16 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
     stdout.write(&"{ind}{label}\n")
     dumpAst(n.withObj, src, depth+1)
     dumpAst(n.withBody, src, depth+1)
+  of RestParam:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.restArg, src, depth+1)
+  of FunctionDecl, FunctionExpr:
+    if n.fnNameLen > 0'u32:
+      stdout.write(&"{ind}{label} name=\"{slice(src, n.fnNameStart, n.fnNameStart + n.fnNameLen)}\"\n")
+    else:
+      stdout.write(&"{ind}{label} (anonymous)\n")
+    dumpAst(n.fnBody, src, depth+1)
+    for prm in n.fnParams: dumpAst(prm, src, depth+1)
   else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 

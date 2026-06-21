@@ -1306,3 +1306,50 @@ suite "parser 2d-2":
     check outer.kind == NodeKind.ForStmt
     check outer.forBody.kind == NodeKind.ForInStmt
     check outer.forBody.forBinding.kind == NodeKind.IdentExpr
+
+suite "ast 2d-3a nodes":
+  test "IdentExpr via newLeaf — identDefault is nil":
+    let id = newLeaf(IdentExpr, 0'u32, 3'u32)
+    check id.kind == NodeKind.IdentExpr
+    check id.identDefault == nil
+
+  test "IdentExpr with default — identDefault is non-nil":
+    let defVal = newNumber(5'u32, 6'u32, 5.0)
+    let id = AstNode(kind: IdentExpr, start: 3'u32, `end`: 4'u32, identDefault: defVal)
+    check id.kind == NodeKind.IdentExpr
+    check id.identDefault != nil
+    check id.identDefault.kind == NodeKind.NumberExpr
+    check id.identDefault.numVal == 5.0
+
+  test "RestParam — restArg field":
+    let arg = newLeaf(IdentExpr, 3'u32, 7'u32)
+    let rp = newRestParam(0'u32, 7'u32, arg)
+    check rp.kind == NodeKind.RestParam
+    check rp.restArg != nil
+    check rp.restArg.kind == NodeKind.IdentExpr
+
+  test "FunctionDecl — named, params, body":
+    let body = newBlock(10'u32, 12'u32, @[])
+    let paramA = newLeaf(IdentExpr, 12'u32, 13'u32)
+    let paramB = newLeaf(IdentExpr, 15'u32, 16'u32)
+    let fn = newFunctionDecl(0'u32, 30'u32, 9'u32, 1'u32, body, @[paramA, paramB])
+    check fn.kind == NodeKind.FunctionDecl
+    check fn.fnNameStart == 9'u32
+    check fn.fnNameLen   == 1'u32
+    check fn.fnBody != nil
+    check fn.fnBody.kind == NodeKind.BlockStmt
+    check fn.fnParams.len == 2
+    check fn.fnParams[0].kind == NodeKind.IdentExpr
+    check fn.fnParams[1].kind == NodeKind.IdentExpr
+    check fn.fnIsAsync     == false
+    check fn.fnIsGenerator == false
+
+  test "FunctionExpr — anonymous (nameLen=0), one param":
+    let body = newBlock(15'u32, 17'u32, @[])
+    let paramX = newLeaf(IdentExpr, 13'u32, 14'u32)
+    let fn = newFunctionExpr(0'u32, 18'u32, 0'u32, 0'u32, body, @[paramX])
+    check fn.kind == NodeKind.FunctionExpr
+    check fn.fnNameLen  == 0'u32
+    check fn.fnBody.kind == NodeKind.BlockStmt
+    check fn.fnParams.len == 1
+    check fn.fnParams[0].kind == NodeKind.IdentExpr

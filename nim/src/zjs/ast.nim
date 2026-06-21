@@ -105,7 +105,8 @@ type
     of BoolExpr: boolVal*: bool
     # Leaf nodes: value lives in the source slice start..end, no extra fields
     of StringExpr: discard
-    of IdentExpr: discard
+    of IdentExpr:
+      identDefault*: AstNode        # nil normally; the `= expr` default when used as a param
     of RegexExpr: discard
     of BigIntExpr: discard
     of NullExpr: discard
@@ -179,6 +180,13 @@ type
       catchParamStart*, catchParamLen*: uint32          # identifier catch param (0/0 = none)
     of WithStmt:
       withObj*, withBody*: AstNode
+    of RestParam:
+      restArg*: AstNode
+    of FunctionDecl, FunctionExpr:
+      fnNameStart*, fnNameLen*: uint32
+      fnBody*: AstNode
+      fnParams*: seq[AstNode]
+      fnIsAsync*, fnIsGenerator*: bool
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -330,3 +338,19 @@ proc newTry*(s, e: uint32, tryBlock, catchBlock, finallyBlock: AstNode,
 proc newWith*(s, e: uint32, obj, body: AstNode): AstNode =
   ## Construct a WithStmt node.
   AstNode(kind: WithStmt, start: s, `end`: e, withObj: obj, withBody: body)
+
+proc newRestParam*(s, e: uint32, restArg: AstNode): AstNode =
+  ## Construct a RestParam node (`...ident` in a parameter list).
+  AstNode(kind: RestParam, start: s, `end`: e, restArg: restArg)
+
+proc newFunctionDecl*(s, e, nameStart, nameLen: uint32, body: AstNode, params: seq[AstNode],
+                      isAsync = false, isGenerator = false): AstNode =
+  ## Construct a FunctionDecl node.
+  AstNode(kind: FunctionDecl, start: s, `end`: e, fnNameStart: nameStart, fnNameLen: nameLen,
+          fnBody: body, fnParams: params, fnIsAsync: isAsync, fnIsGenerator: isGenerator)
+
+proc newFunctionExpr*(s, e, nameStart, nameLen: uint32, body: AstNode, params: seq[AstNode],
+                      isAsync = false, isGenerator = false): AstNode =
+  ## Construct a FunctionExpr node; nameLen=0 means anonymous.
+  AstNode(kind: FunctionExpr, start: s, `end`: e, fnNameStart: nameStart, fnNameLen: nameLen,
+          fnBody: body, fnParams: params, fnIsAsync: isAsync, fnIsGenerator: isGenerator)
