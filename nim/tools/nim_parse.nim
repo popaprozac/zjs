@@ -109,6 +109,28 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
   of LabeledStmt:
     stdout.write(&"{ind}{label}\n")
     dumpAst(n.labeled, src, depth+1)
+  of ForInStmt, ForOfStmt:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.forBinding, src, depth+1)
+    dumpAst(n.forIterable, src, depth+1)
+    dumpAst(n.forInOfBody, src, depth+1)
+  of SwitchStmt:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.switchDisc, src, depth+1)
+    for c in n.cases: dumpAst(c, src, depth+1)
+  of SwitchCase:
+    stdout.write(&"{ind}{label}\n")
+    if n.caseTest != nil: dumpAst(n.caseTest, src, depth+1)
+    for st in n.caseBody: dumpAst(st, src, depth+1)
+  of TryStmt:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.tryBlock, src, depth+1)
+    if n.catchBlock != nil: dumpAst(n.catchBlock, src, depth+1)
+    if n.finallyBlock != nil: dumpAst(n.finallyBlock, src, depth+1)
+  of WithStmt:
+    stdout.write(&"{ind}{label}\n")
+    dumpAst(n.withObj, src, depth+1)
+    dumpAst(n.withBody, src, depth+1)
   else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 

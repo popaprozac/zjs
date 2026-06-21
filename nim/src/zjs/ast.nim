@@ -166,6 +166,19 @@ type
     of LabeledStmt:
       labelStart*, labelLen*: uint32
       labeled*: AstNode
+    of ForInStmt, ForOfStmt:
+      forBinding*, forIterable*, forInOfBody*: AstNode
+    of SwitchStmt:
+      switchDisc*: AstNode
+      cases*: seq[AstNode]
+    of SwitchCase:
+      caseTest*: AstNode                 # nil for `default:`
+      caseBody*: seq[AstNode]
+    of TryStmt:
+      tryBlock*, catchBlock*, finallyBlock*: AstNode    # catch/finally nil if absent
+      catchParamStart*, catchParamLen*: uint32          # identifier catch param (0/0 = none)
+    of WithStmt:
+      withObj*, withBody*: AstNode
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -293,3 +306,27 @@ proc newThrow*(s, e: uint32, throwArg: AstNode): AstNode =
 proc newLabeled*(s, e, labelStart, labelLen: uint32, labeled: AstNode): AstNode =
   ## Construct a LabeledStmt node; labelStart/labelLen are the label identifier slice.
   AstNode(kind: LabeledStmt, start: s, `end`: e, labelStart: labelStart, labelLen: labelLen, labeled: labeled)
+
+proc newForInOf*(kind: NodeKind, s, e: uint32, binding, iterable, body: AstNode): AstNode =
+  ## kind ∈ {ForInStmt, ForOfStmt}
+  {.cast(uncheckedAssign).}:
+    result = AstNode(kind: kind, start: s, `end`: e,
+                     forBinding: binding, forIterable: iterable, forInOfBody: body)
+
+proc newSwitch*(s, e: uint32, disc: AstNode, cases: seq[AstNode]): AstNode =
+  ## Construct a SwitchStmt node.
+  AstNode(kind: SwitchStmt, start: s, `end`: e, switchDisc: disc, cases: cases)
+
+proc newSwitchCase*(s, e: uint32, test: AstNode, body: seq[AstNode]): AstNode =
+  ## Construct a SwitchCase node; test is nil for `default:`.
+  AstNode(kind: SwitchCase, start: s, `end`: e, caseTest: test, caseBody: body)
+
+proc newTry*(s, e: uint32, tryBlock, catchBlock, finallyBlock: AstNode,
+             catchParamStart, catchParamLen: uint32): AstNode =
+  ## Construct a TryStmt node; catchBlock/finallyBlock may be nil if absent.
+  AstNode(kind: TryStmt, start: s, `end`: e, tryBlock: tryBlock, catchBlock: catchBlock,
+          finallyBlock: finallyBlock, catchParamStart: catchParamStart, catchParamLen: catchParamLen)
+
+proc newWith*(s, e: uint32, obj, body: AstNode): AstNode =
+  ## Construct a WithStmt node.
+  AstNode(kind: WithStmt, start: s, `end`: e, withObj: obj, withBody: body)

@@ -1093,3 +1093,77 @@ suite "parser control-flow":
     let l = prog.stmts[0]
     check l.kind == NodeKind.LabeledStmt
     check l.labeled.kind == NodeKind.WhileStmt
+
+suite "ast 2d-2 nodes":
+  test "ForInStmt — binding/iterable/body fields":
+    let binding  = newLeaf(IdentExpr, 5'u32, 6'u32)
+    let iterable = newLeaf(IdentExpr, 10'u32, 13'u32)
+    let body     = newLeaf(IdentExpr, 15'u32, 16'u32)
+    let n = newForInOf(NodeKind.ForInStmt, 0'u32, 17'u32, binding, iterable, body)
+    check n.kind == NodeKind.ForInStmt
+    check n.forBinding.kind  == NodeKind.IdentExpr
+    check n.forIterable.kind == NodeKind.IdentExpr
+    check n.forInOfBody.kind == NodeKind.IdentExpr
+
+  test "ForOfStmt — correct kind via newForInOf":
+    let binding  = newLeaf(VarDecl, 5'u32, 10'u32)
+    let iterable = newLeaf(IdentExpr, 14'u32, 17'u32)
+    let body     = newLeaf(IdentExpr, 19'u32, 20'u32)
+    let n = newForInOf(NodeKind.ForOfStmt, 0'u32, 21'u32, binding, iterable, body)
+    check n.kind == NodeKind.ForOfStmt
+    check n.forBinding.kind  == NodeKind.VarDecl
+    check n.forIterable.kind == NodeKind.IdentExpr
+    check n.forInOfBody.kind == NodeKind.IdentExpr
+
+  test "SwitchStmt — discriminant and cases":
+    let disc = newLeaf(IdentExpr, 7'u32, 8'u32)
+    let test1 = newNumber(14'u32, 15'u32, 1.0)
+    let body1 = @[newLeaf(IdentExpr, 16'u32, 17'u32), newLeaf(BreakStmt, 18'u32, 24'u32)]
+    let case1 = newSwitchCase(9'u32, 25'u32, test1, body1)
+    let body2 = @[newLeaf(IdentExpr, 34'u32, 35'u32)]
+    let case2 = newSwitchCase(26'u32, 36'u32, nil, body2)   # default:
+    let sw = newSwitch(0'u32, 37'u32, disc, @[case1, case2])
+    check sw.kind == NodeKind.SwitchStmt
+    check sw.switchDisc.kind == NodeKind.IdentExpr
+    check sw.cases.len == 2
+    check sw.cases[0].kind == NodeKind.SwitchCase
+    check sw.cases[0].caseTest != nil
+    check sw.cases[0].caseTest.kind == NodeKind.NumberExpr
+    check sw.cases[0].caseBody.len == 2
+    check sw.cases[1].kind == NodeKind.SwitchCase
+    check sw.cases[1].caseTest == nil    # default: has nil caseTest
+    check sw.cases[1].caseBody.len == 1
+
+  test "TryStmt — try+catch+finally":
+    let tryB     = newBlock(0'u32, 3'u32, @[newLeaf(IdentExpr, 1'u32, 2'u32)])
+    let catchB   = newBlock(12'u32, 15'u32, @[newLeaf(IdentExpr, 13'u32, 14'u32)])
+    let finallyB = newBlock(24'u32, 27'u32, @[newLeaf(IdentExpr, 25'u32, 26'u32)])
+    let t = newTry(0'u32, 27'u32, tryB, catchB, finallyB, 8'u32, 1'u32)
+    check t.kind == NodeKind.TryStmt
+    check t.tryBlock.kind     == NodeKind.BlockStmt
+    check t.catchBlock != nil
+    check t.catchBlock.kind   == NodeKind.BlockStmt
+    check t.finallyBlock != nil
+    check t.finallyBlock.kind == NodeKind.BlockStmt
+    check t.catchParamStart   == 8'u32
+    check t.catchParamLen     == 1'u32
+
+  test "TryStmt — try+finally only (nil catchBlock)":
+    let tryB     = newBlock(0'u32, 3'u32, @[newLeaf(IdentExpr, 1'u32, 2'u32)])
+    let finallyB = newBlock(12'u32, 15'u32, @[newLeaf(IdentExpr, 13'u32, 14'u32)])
+    let t = newTry(0'u32, 15'u32, tryB, nil, finallyB, 0'u32, 0'u32)
+    check t.kind == NodeKind.TryStmt
+    check t.tryBlock.kind     == NodeKind.BlockStmt
+    check t.catchBlock        == nil
+    check t.finallyBlock != nil
+    check t.finallyBlock.kind == NodeKind.BlockStmt
+    check t.catchParamStart   == 0'u32
+    check t.catchParamLen     == 0'u32
+
+  test "WithStmt — obj and body":
+    let obj  = newLeaf(IdentExpr, 5'u32, 6'u32)
+    let body = newLeaf(IdentExpr, 7'u32, 8'u32)
+    let w = newWith(0'u32, 9'u32, obj, body)
+    check w.kind == NodeKind.WithStmt
+    check w.withObj.kind  == NodeKind.IdentExpr
+    check w.withBody.kind == NodeKind.IdentExpr
