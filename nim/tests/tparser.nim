@@ -3053,3 +3053,142 @@ suite "parser early errors 2f-2: context-reserved bindings":
 
   test "var await in a NON-async function is accepted":
     check not parseHadError("function f(){ var await; }")
+
+# ------------------------------------------------------------------
+# Phase 2f-3a: strict-mode flag + strict binding/reference early errors +
+# with-in-strict. Strict mode comes from a PROGRAM-level "use strict"
+# prologue (propagating into all nested fns) and from class bodies (always
+# strict, not leaking past the class). Function-body directives do NOT turn
+# on strict at parse time (Zen-c parse behavior). Escaped `\uXXXX` keyword
+# spellings are slice 2f-3c, out of scope here.
+# ------------------------------------------------------------------
+
+suite "parser early errors 2f-3a: strict mode":
+  # --- with in strict (program prologue + class body) ---
+  test "with in strict program is rejected":
+    check parseHadError("\"use strict\"; with(o){}")
+
+  test "with inside a class method is rejected (class body is strict)":
+    check parseHadError("class C { m(){ with(o){} } }")
+
+  test "with in non-strict is accepted":
+    check not parseHadError("with(o){}")
+
+  # --- eval/arguments bound in strict is rejected (references stay legal) ---
+  test "var eval in strict is rejected":
+    check parseHadError("\"use strict\"; var eval;")
+
+  test "var arguments = 1 in strict is rejected":
+    check parseHadError("\"use strict\"; var arguments = 1;")
+
+  test "function param eval in strict is rejected":
+    check parseHadError("\"use strict\"; function f(eval){}")
+
+  test "function named arguments in strict is rejected":
+    check parseHadError("\"use strict\"; function arguments(){}")
+
+  test "catch(eval) in strict is rejected":
+    check parseHadError("\"use strict\"; try{}catch(eval){}")
+
+  test "var eval = 1 in non-strict is accepted":
+    check not parseHadError("var eval = 1;")
+
+  test "eval as a reference in strict is accepted":
+    check not parseHadError("\"use strict\"; eval;")
+
+  test "x = eval reference in strict is accepted":
+    check not parseHadError("\"use strict\"; x = eval;")
+
+  test "var x = arguments reference in strict is accepted":
+    check not parseHadError("\"use strict\"; var x = arguments;")
+
+  # --- future-reserved words bound in strict ---
+  test "var public in strict is rejected":
+    check parseHadError("\"use strict\"; var public;")
+
+  test "function param private in strict is rejected":
+    check parseHadError("\"use strict\"; function f(private){}")
+
+  test "let interface in strict is rejected":
+    check parseHadError("\"use strict\"; let interface = 1;")
+
+  test "var static in strict is rejected":
+    check parseHadError("\"use strict\"; var static;")
+
+  test "var public in non-strict is accepted":
+    check not parseHadError("var public = 1;")
+
+  # --- yield bound in strict (even outside a generator) ---
+  test "var yield in strict is rejected":
+    check parseHadError("\"use strict\"; var yield;")
+
+  # --- let as a binding is NOT future-reserved (accept) ---
+  test "let x in strict is accepted":
+    check not parseHadError("\"use strict\"; let x = 1;")
+
+  test "var let in strict is accepted (let is not future-reserved)":
+    check not parseHadError("\"use strict\"; var let;")
+
+  # --- future-reserved as a REFERENCE in strict is rejected ---
+  test "future-reserved reference public in strict is rejected":
+    check parseHadError("\"use strict\"; public;")
+
+  test "future-reserved reference private + 1 in strict is rejected":
+    check parseHadError("\"use strict\"; private + 1;")
+
+  test "future-reserved as arg f(interface) in strict is rejected":
+    check parseHadError("\"use strict\"; f(interface);")
+
+  test "future-reserved RHS var x = public in strict is rejected":
+    check parseHadError("\"use strict\"; var x = public;")
+
+  test "bare static reference in strict is rejected":
+    check parseHadError("\"use strict\"; static;")
+
+  # --- strict PROPAGATES into nested functions/arrows/methods ---
+  test "var eval in a nested fn under strict program is rejected":
+    check parseHadError("\"use strict\"; function f(){ var eval; }")
+
+  test "var public in a nested fn under strict program is rejected":
+    check parseHadError("\"use strict\"; function f(){ var public; }")
+
+  test "var arguments in an object method under strict program is rejected":
+    check parseHadError("\"use strict\"; ({ m(){ var arguments; } })")
+
+  test "var eval in an arrow body under strict program is rejected":
+    check parseHadError("\"use strict\"; () => { var eval; }")
+
+  # --- class body is strict; eval/future-reserved bindings in methods ---
+  test "var arguments in a class method is rejected":
+    check parseHadError("class C { m(){ var arguments; } }")
+
+  test "var public in a class method is rejected":
+    check parseHadError("class C { m(){ var public; } }")
+
+  # --- function-body directives do NOT turn on strict at parse time ---
+  test "function-body use-strict does NOT reject var eval (parse-time)":
+    check not parseHadError("function f(){ \"use strict\"; var eval; }")
+
+  test "var eval in a plain function is accepted":
+    check not parseHadError("function f(){ var eval; }")
+
+  # --- strict does NOT leak past a class declaration ---
+  test "var eval after a class decl is accepted (strict does not leak)":
+    check not parseHadError("class C {}; var eval = 1;")
+
+  # --- contextual-name regression guards (static/get/set must still work) ---
+  test "static method name still parses (non-strict)":
+    check not parseHadError("class C { static m(){} }")
+
+  test "object literal { static: 1 } still parses":
+    check not parseHadError("({ static: 1 })")
+
+  test "member obj.static still parses":
+    check not parseHadError("obj.static;")
+
+  test "bare static reference in NON-strict is accepted":
+    check not parseHadError("static;")
+
+  # --- sanity: ordinary code under a strict program is fine ---
+  test "ordinary var under a strict program is accepted":
+    check not parseHadError("\"use strict\"; var x = 1;")

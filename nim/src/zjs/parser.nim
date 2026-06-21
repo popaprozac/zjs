@@ -13,6 +13,8 @@ type
     inGenerator*: bool     ## true when parsing inside a generator body
     inAsync*: bool         ## true when parsing inside an async function body
     functionDepth*: uint32 ## nesting depth of returnable function contexts; 0 = top level
+    strict*: bool          ## strict mode: set by a program-level "use strict" prologue
+                           ## (propagates into all nested fns) and inside class bodies
 
 proc initParser*(source: string): Parser =
   var lx = initLexer(source)
@@ -47,15 +49,59 @@ proc expect(p: var Parser, k: TokenKind): bool {.inline.} =
     p.hadError = true
     false
 
+proc tokensHaveUseStrictPrologue(p: Parser, fromIdx: int): bool =
+  ## Token-level "use strict" prologue detector — port of Zen-c
+  ## tokens_have_use_strict_prologue (src/parser.zc:754). Runs over the leading
+  ## tokens starting at `fromIdx` BEFORE those statements are parsed, so the
+  ## strict flag can be set early enough to govern reserved-word / binding
+  ## checks. A directive is an ExpressionStatement whose sole expression is a
+  ## StringLiteral; we walk the maximal leading run of such statements. The
+  ## `length == 12` raw match also rejects escaped forms (`"use strict"` with
+  ## an escape), which per spec are NOT directives (that's slice 2f-3c).
+  var j = fromIdx
+  while j < p.toks.len:
+    let t = p.toks[j]
+    if t.kind != StringLit: return false
+    if t.length == 12'u32:
+      let s = p.source[t.start.int ..< (t.start + t.length).int]
+      if (s[0] == '"' or s[0] == '\'') and s[1 ..< 11] == "use strict" and s[11] == s[0]:
+        return true
+    # Advance past the directive string. Only continue scanning the prologue
+    # when the string was a complete statement: a `;` terminator or
+    # immediately another string literal. Anything else (`.`, `(`, operators,
+    # templates, …) means the string is part of a bigger expression — not a
+    # directive — so the prologue ends.
+    let nxt = p.toks[j + 1]
+    if nxt.kind == Semicolon: j += 2; continue
+    if nxt.kind == StringLit: j += 1; continue
+    return false
+  return false
+
+proc strictSpelling(p: Parser, t: Token): string {.inline.} =
+  ## The source slice of a token (plain spelling; escape decoding is 2f-3c).
+  p.source[t.start.int ..< (t.start + t.length).int]
+
+const FutureReserved = ["implements", "interface", "package", "private",
+                        "protected", "public", "static"]
+
 proc checkBindingReserved(p: var Parser, t: Token) =
   ## A `yield` bound inside a generator body, or `await` bound inside an async
-  ## body, is a SyntaxError (Zen-c is_binding_ident_ctx, parser.zc:806). Strict
-  ## `yield`, escaped keywords, eval/arguments, and static-block `await` are
-  ## later slices. Params/names are parsed in the enclosing context (flags set
-  ## only for the body), so `function* g(yield){}` stays legal while a yield
-  ## binding in the body or a nested function's params errors.
+  ## body, is a SyntaxError (Zen-c is_binding_ident_ctx, parser.zc:806).
+  ## Additionally, in strict mode (§13.1.1 + §12.7.2): `eval`/`arguments` and
+  ## the future-reserved words may not be BOUND, and `yield` is reserved
+  ## unconditionally (even outside a generator). Escaped keywords and
+  ## static-block `await` are later slices. Params/names are parsed in the
+  ## enclosing context (flags set only for the body), so `function* g(yield){}`
+  ## stays legal while a yield binding in the body or a nested fn's params errors.
   if (t.kind == KwYield and p.inGenerator) or (t.kind == KwAwait and p.inAsync):
     p.hadError = true
+  if p.strict:
+    if t.kind == KwYield:
+      p.hadError = true                    # strict reserves `yield` everywhere
+    elif t.kind == Identifier:
+      let sp = p.strictSpelling(t)
+      if sp == "eval" or sp == "arguments" or sp in FutureReserved:
+        p.hadError = true
 
 # ------------------------------------------------------------------
 # Numeric literal decoding — port of parse_number_literal / parse_int_prefix
@@ -499,6 +545,12 @@ proc parsePrimary(p: var Parser): AstNode =
 
   of Identifier:
     discard p.advance()
+    # Strict-mode future-reserved words (§12.7.2) are reserved as an
+    # IdentifierReference too — `"use strict"; public;` is a SyntaxError.
+    # eval/arguments/yield stay legal as references, so they are NOT rejected
+    # here (only at binding sites, via checkBindingReserved).
+    if p.strict and p.strictSpelling(t) in FutureReserved:
+      p.hadError = true
     return newLeaf(IdentExpr, t.start, t.start + t.length)
 
   of KwOf, KwFrom, KwAs, KwLet:
@@ -1390,6 +1442,8 @@ proc parseTry(p: var Parser): AstNode =
 
 proc parseWith(p: var Parser): AstNode =
   let kw = p.advance()                 # 'with'
+  # `with` is a SyntaxError in strict mode (§14.11.1). Still parse for shape.
+  if p.strict: p.hadError = true
   discard p.expect(LParen)
   let obj = parseExpression(p)
   discard p.expect(RParen)
@@ -1582,6 +1636,12 @@ proc parseMethodBodyPair(p: var Parser): AstNode =
 
 proc parseClassBody(p: var Parser, isDerived: bool): seq[AstNode] =
   if not p.expect(LBrace): return @[]
+  # Class bodies are always strict (§10.2.1). Set the flag for the body only;
+  # code AFTER the class is not strict (`class C {}; var eval = 1;` is OK).
+  # The class name + extends clause are parsed in the enclosing context by the
+  # callers, so they are correctly unaffected.
+  let savedStrict = p.strict
+  p.strict = true
   var members: seq[AstNode]
   while p.peek().kind notin {RBrace, Eof}:
     if p.peek().kind == Semicolon:          # skip empty `;` separators
@@ -1589,6 +1649,7 @@ proc parseClassBody(p: var Parser, isDerived: bool): seq[AstNode] =
     let m = parseMethodBodyPair(p)
     if m == nil: p.hadError = true; break
     members.add(m)
+  p.strict = savedStrict
   discard p.expect(RBrace)
   # --- synthesize / inject instance-field initializers into the constructor ---
   # (port of parse_class_body ~2284-2425; byte-parity-critical)
@@ -1710,6 +1771,10 @@ proc parseStatement(p: var Parser): AstNode =
 # ------------------------------------------------------------------
 
 proc parseProgram*(p: var Parser): AstNode =
+  # A program-level "use strict" prologue turns on strict mode for the whole
+  # script, propagating into all nested functions/arrows/methods. We never
+  # reset it, so e.g. `"use strict"; function f(){ var eval; }` errors.
+  if tokensHaveUseStrictPrologue(p, 0): p.strict = true
   var stmts: seq[AstNode]
   while p.peek().kind != Eof:
     let before = p.pos
