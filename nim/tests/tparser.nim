@@ -950,3 +950,146 @@ suite "ast 2d-1 nodes":
     check br.kind == NodeKind.BreakStmt
     check co.kind == NodeKind.ContinueStmt
     check em.kind == NodeKind.EmptyStmt
+
+suite "parser control-flow":
+  test "block { let x = 1; } — BlockStmt with VarDecl":
+    var p = initParser("{ let x = 1; }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let blk = prog.stmts[0]
+    check blk.kind == NodeKind.BlockStmt
+    check blk.stmtList.len == 1
+    check blk.stmtList[0].kind == NodeKind.VarDecl
+
+  test "nested blocks {{ }} — BlockStmt containing BlockStmt":
+    var p = initParser("{ { } }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let outer = prog.stmts[0]
+    check outer.kind == NodeKind.BlockStmt
+    check outer.stmtList.len == 1
+    check outer.stmtList[0].kind == NodeKind.BlockStmt
+
+  test "if (a) b; — IfStmt no else":
+    var p = initParser("if (a) b;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let n = prog.stmts[0]
+    check n.kind == NodeKind.IfStmt
+    check n.ifCond.kind == NodeKind.IdentExpr
+    check n.thenStmt.kind == NodeKind.IdentExpr
+    check n.elseStmt == nil
+
+  test "if (a) b; else c; — IfStmt with else":
+    var p = initParser("if (a) b; else c;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let n = prog.stmts[0]
+    check n.kind == NodeKind.IfStmt
+    check n.ifCond.kind == NodeKind.IdentExpr
+    check n.thenStmt.kind == NodeKind.IdentExpr
+    check n.elseStmt != nil
+    check n.elseStmt.kind == NodeKind.IdentExpr
+
+  test "dangling else binds inner if: if(a)if(b)c;else d;":
+    var p = initParser("if(a)if(b)c;else d;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let outer = prog.stmts[0]
+    check outer.kind == NodeKind.IfStmt
+    check outer.elseStmt == nil
+    let inner = outer.thenStmt
+    check inner.kind == NodeKind.IfStmt
+    check inner.elseStmt != nil
+    check inner.elseStmt.kind == NodeKind.IdentExpr
+
+  test "while (a) b; — WhileStmt":
+    var p = initParser("while (a) b;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let w = prog.stmts[0]
+    check w.kind == NodeKind.WhileStmt
+    check w.whileCond.kind == NodeKind.IdentExpr
+    check w.whileBody.kind == NodeKind.IdentExpr
+
+  test "do x; while (a); — DoWhileStmt":
+    var p = initParser("do x; while (a);")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let d = prog.stmts[0]
+    check d.kind == NodeKind.DoWhileStmt
+    check d.doBody.kind == NodeKind.IdentExpr
+    check d.doCond.kind == NodeKind.IdentExpr
+
+  test "for (let i = 0; i < n; i++) x; — ForStmt with VarDecl init":
+    var p = initParser("for (let i = 0; i < n; i++) x;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let f = prog.stmts[0]
+    check f.kind == NodeKind.ForStmt
+    check f.forInit != nil
+    check f.forInit.kind == NodeKind.VarDecl
+    check f.forTest != nil
+    check f.forTest.kind == NodeKind.Binary
+    check f.forUpdate != nil
+    check f.forUpdate.kind == NodeKind.Postfix
+    check f.forBody.kind == NodeKind.IdentExpr
+
+  test "for (;;) x; — ForStmt with all nil slots":
+    var p = initParser("for (;;) x;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let f = prog.stmts[0]
+    check f.kind == NodeKind.ForStmt
+    check f.forInit == nil
+    check f.forTest == nil
+    check f.forUpdate == nil
+    check f.forBody.kind == NodeKind.IdentExpr
+
+  test "throw e; — ThrowStmt with IdentExpr arg":
+    var p = initParser("throw e;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let t = prog.stmts[0]
+    check t.kind == NodeKind.ThrowStmt
+    check t.throwArg.kind == NodeKind.IdentExpr
+
+  test "break; — BreakStmt":
+    var p = initParser("break;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.BreakStmt
+
+  test "break foo; — BreakStmt with label (label discarded in AST)":
+    var p = initParser("break foo;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.BreakStmt
+
+  test "continue; — ContinueStmt":
+    var p = initParser("continue;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.ContinueStmt
+
+  test "; — EmptyStmt":
+    var p = initParser(";")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    check prog.stmts[0].kind == NodeKind.EmptyStmt
+
+  test "foo: bar; — LabeledStmt with IdentExpr body":
+    var p = initParser("foo: bar;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let l = prog.stmts[0]
+    check l.kind == NodeKind.LabeledStmt
+    check l.labeled.kind == NodeKind.IdentExpr
+
+  test "outer: while (a) break outer; — labeled while":
+    var p = initParser("outer: while (a) break outer;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let l = prog.stmts[0]
+    check l.kind == NodeKind.LabeledStmt
+    check l.labeled.kind == NodeKind.WhileStmt

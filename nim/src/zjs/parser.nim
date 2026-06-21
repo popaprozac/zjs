@@ -730,7 +730,7 @@ proc parseExpression(p: var Parser): AstNode =
 # Identifier-binding only (destructuring is out of scope this increment).
 # ------------------------------------------------------------------
 
-proc parseVarDecl(p: var Parser): AstNode =
+proc parseVarDecl(p: var Parser, consumeSemi = true): AstNode =
   let kw = p.advance()          # consume var / let / const
   var declarators: seq[AstNode]
   var lastEnd = kw.start + kw.length
@@ -760,18 +760,132 @@ proc parseVarDecl(p: var Parser): AstNode =
       break
     discard p.advance()         # consume ','
 
-  # Consume optional trailing semicolon (ASI not required this increment)
-  if p.peek().kind == Semicolon:
+  # Consume optional trailing semicolon only when requested
+  if consumeSemi and p.peek().kind == Semicolon:
     discard p.advance()
 
   newVarDecl(kw.start, lastEnd, kw.kind, declarators)
 
 # ------------------------------------------------------------------
-# parseStatement — bare expression (no ExpressionStmt wrapper per spec).
-# Consumes an optional trailing semicolon.
+# Statement parsers — forward declaration
+# ------------------------------------------------------------------
+
+proc parseStatement(p: var Parser): AstNode
+
+proc parseBlock(p: var Parser): AstNode =
+  let lb = p.advance()                       # '{'
+  var stmts: seq[AstNode]
+  while p.peek().kind notin {RBrace, Eof}:
+    let s = parseStatement(p)
+    if s == nil: break
+    stmts.add(s)
+  let close = p.peek()
+  discard p.expect(RBrace)
+  newBlock(lb.start, close.start + close.length, stmts)
+
+proc parseIf(p: var Parser): AstNode =
+  let kw = p.advance()                       # 'if'
+  discard p.expect(LParen)
+  let cond = parseExpression(p)
+  discard p.expect(RParen)
+  let then = parseStatement(p)
+  var els: AstNode = nil
+  var endPos = (if then != nil: then.`end` else: kw.start)
+  if p.peek().kind == KwElse:
+    discard p.advance()
+    els = parseStatement(p)
+    if els != nil: endPos = els.`end`
+  newIf(kw.start, endPos, cond, then, els)
+
+proc parseWhile(p: var Parser): AstNode =
+  let kw = p.advance()
+  discard p.expect(LParen)
+  let cond = parseExpression(p)
+  discard p.expect(RParen)
+  let body = parseStatement(p)
+  newWhile(kw.start, (if body != nil: body.`end` else: kw.start), cond, body)
+
+proc parseDoWhile(p: var Parser): AstNode =
+  let kw = p.advance()
+  let body = parseStatement(p)
+  discard p.expect(KwWhile)
+  discard p.expect(LParen)
+  let cond = parseExpression(p)
+  let close = p.peek()
+  discard p.expect(RParen)
+  if p.peek().kind == Semicolon: discard p.advance()
+  newDoWhile(kw.start, close.start + close.length, body, cond)
+
+proc parseFor(p: var Parser): AstNode =
+  let kw = p.advance()                       # 'for'
+  discard p.expect(LParen)
+  var init: AstNode = nil
+  if p.peek().kind != Semicolon:
+    if p.peek().kind in {KwVar, KwLet, KwConst}:
+      init = parseVarDecl(p, consumeSemi = false)
+    else:
+      init = parseExpression(p)
+  discard p.expect(Semicolon)                # C-style; for-in/of is out of scope
+  var test: AstNode = nil
+  if p.peek().kind != Semicolon: test = parseExpression(p)
+  discard p.expect(Semicolon)
+  var update: AstNode = nil
+  if p.peek().kind != RParen: update = parseExpression(p)
+  discard p.expect(RParen)
+  let body = parseStatement(p)
+  newFor(kw.start, (if body != nil: body.`end` else: kw.start), init, test, update, body)
+
+proc parseReturn(p: var Parser): AstNode =
+  let kw = p.advance()
+  var arg: AstNode = nil
+  var endPos = kw.start + kw.length
+  if p.peek().kind notin {Semicolon, RBrace, Eof}:
+    arg = parseExpression(p)
+    if arg != nil: endPos = arg.`end`
+  if p.peek().kind == Semicolon: discard p.advance()
+  newReturn(kw.start, endPos, arg)
+
+proc parseThrow(p: var Parser): AstNode =
+  let kw = p.advance()
+  let arg = parseExpression(p)
+  if p.peek().kind == Semicolon: discard p.advance()
+  newThrow(kw.start, (if arg != nil: arg.`end` else: kw.start), arg)
+
+proc parseBreakContinue(p: var Parser, kind: NodeKind): AstNode =
+  let kw = p.advance()
+  var endPos = kw.start + kw.length
+  if p.peek().kind == Identifier:            # optional label target (discarded — dump omits it)
+    let lbl = p.advance(); endPos = lbl.start + lbl.length
+  if p.peek().kind == Semicolon: discard p.advance()
+  newLeaf(kind, kw.start, endPos)
+
+# ------------------------------------------------------------------
+# parseStatement — core dispatch. Expression statement consumes an
+# optional trailing semicolon.
 # ------------------------------------------------------------------
 
 proc parseStatement(p: var Parser): AstNode =
+  # Control-flow dispatch
+  case p.peek().kind
+  of LBrace: return parseBlock(p)
+  of KwIf: return parseIf(p)
+  of KwWhile: return parseWhile(p)
+  of KwDo: return parseDoWhile(p)
+  of KwFor: return parseFor(p)
+  of KwReturn: return parseReturn(p)
+  of KwThrow: return parseThrow(p)
+  of KwBreak: return parseBreakContinue(p, BreakStmt)
+  of KwContinue: return parseBreakContinue(p, ContinueStmt)
+  of Semicolon:
+    let semi = p.advance()
+    return newLeaf(EmptyStmt, semi.start, semi.start + semi.length)
+  else: discard
+  # Labeled statement: Identifier ':' (2-token lookahead)
+  if p.peek().kind == Identifier and p.toks[p.pos + 1].kind == Colon:
+    let id = p.advance()
+    discard p.advance()                      # ':'
+    let body = parseStatement(p)
+    return newLabeled(id.start, (if body != nil: body.`end` else: id.start), id.start, id.length, body)
   # Dispatch variable declarations
   if p.peek().kind in {KwVar, KwLet, KwConst}:
     return p.parseVarDecl()
