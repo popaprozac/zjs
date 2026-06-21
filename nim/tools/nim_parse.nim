@@ -154,6 +154,14 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
     stdout.write(&"{ind}{label}\n")
     dumpAst(n.arrowBody, src, depth+1)
     for prm in n.arrowParams: dumpAst(prm, src, depth+1)
+  of ArrayPattern, ObjectPattern:
+    stdout.write(&"{ind}{label}\n")
+    for en in n.patEntries: dumpAst(en, src, depth+1)
+  of PatternEntry:
+    stdout.write(&"{ind}{label}\n")
+    if n.patTarget != nil: dumpAst(n.patTarget, src, depth+1)
+    if n.patDefault != nil: dumpAst(n.patDefault, src, depth+1)
+    if n.patComputedKey != nil: dumpAst(n.patComputedKey, src, depth+1)
   else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 

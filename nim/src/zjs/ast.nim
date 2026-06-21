@@ -196,6 +196,14 @@ type
       arrowBody*: AstNode
       arrowParams*: seq[AstNode]
       arrowIsAsync*: bool
+    of ArrayPattern, ObjectPattern:
+      patEntries*: seq[AstNode]
+    of PatternEntry:
+      patKeyStart*, patKeyLen*: uint32
+      patTarget*: AstNode          # binding target / nested pattern; nil for elision
+      patDefault*: AstNode         # default; nil if none
+      patComputedKey*: AstNode     # computed key; nil
+      patIsRest*: bool
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -375,3 +383,12 @@ proc newAwait*(s, e: uint32, arg: AstNode): AstNode =
 proc newArrow*(s, e: uint32, body: AstNode, params: seq[AstNode], isAsync: bool): AstNode =
   ## Construct an ArrowFunc node.
   AstNode(kind: ArrowFunc, start: s, `end`: e, arrowBody: body, arrowParams: params, arrowIsAsync: isAsync)
+
+proc newPattern*(kind: NodeKind, s, e: uint32, entries: seq[AstNode]): AstNode =
+  ## kind ∈ {ArrayPattern, ObjectPattern}
+  {.cast(uncheckedAssign).}:
+    result = AstNode(kind: kind, start: s, `end`: e, patEntries: entries)
+
+proc newPatternEntry*(s, e, keyStart, keyLen: uint32, target, default, computedKey: AstNode, isRest: bool): AstNode =
+  AstNode(kind: PatternEntry, start: s, `end`: e, patKeyStart: keyStart, patKeyLen: keyLen,
+          patTarget: target, patDefault: default, patComputedKey: computedKey, patIsRest: isRest)

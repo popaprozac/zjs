@@ -1999,3 +1999,60 @@ suite "parser arrows":
     let prog = p.parseProgram()
     check prog.stmts.len == 1
     check prog.stmts[0].kind == NodeKind.Conditional
+
+suite "ast 2d-5b nodes":
+  test "ArrayPattern — two PatternEntry children":
+    let a = newLeaf(IdentExpr, 1'u32, 2'u32)
+    let b = newLeaf(IdentExpr, 4'u32, 5'u32)
+    let ea = newPatternEntry(1'u32, 2'u32, 0'u32, 0'u32, a, nil, nil, false)
+    let eb = newPatternEntry(4'u32, 5'u32, 0'u32, 0'u32, b, nil, nil, false)
+    let arr = newPattern(NodeKind.ArrayPattern, 0'u32, 6'u32, @[ea, eb])
+    check arr.kind == NodeKind.ArrayPattern
+    check arr.patEntries.len == 2
+    check arr.patEntries[0].kind == NodeKind.PatternEntry
+    check arr.patEntries[1].kind == NodeKind.PatternEntry
+    check arr.patEntries[0].patTarget.kind == NodeKind.IdentExpr
+    check arr.patEntries[1].patTarget.kind == NodeKind.IdentExpr
+
+  test "ObjectPattern — two PatternEntry children":
+    let a = newLeaf(IdentExpr, 1'u32, 2'u32)
+    let c = newLeaf(IdentExpr, 9'u32, 10'u32)
+    let ea = newPatternEntry(1'u32, 2'u32, 1'u32, 1'u32, a, nil, nil, false)
+    let eb = newPatternEntry(9'u32, 10'u32, 6'u32, 1'u32, c, nil, nil, false)
+    let obj = newPattern(NodeKind.ObjectPattern, 0'u32, 11'u32, @[ea, eb])
+    check obj.kind == NodeKind.ObjectPattern
+    check obj.patEntries.len == 2
+    check obj.patEntries[0].patKeyStart == 1'u32
+    check obj.patEntries[0].patKeyLen   == 1'u32
+    check obj.patEntries[1].patKeyStart == 6'u32
+    check obj.patEntries[1].patKeyLen   == 1'u32
+
+  test "PatternEntry with default value":
+    let target = newLeaf(IdentExpr, 1'u32, 2'u32)
+    let dflt   = newNumber(5'u32, 6'u32, 1.0)
+    let e = newPatternEntry(1'u32, 6'u32, 0'u32, 0'u32, target, dflt, nil, false)
+    check e.kind == NodeKind.PatternEntry
+    check e.patTarget.kind  == NodeKind.IdentExpr
+    check e.patDefault.kind == NodeKind.NumberExpr
+    check e.patDefault.numVal == 1.0
+    check e.patComputedKey == nil
+    check e.patIsRest == false
+
+  test "PatternEntry with isRest = true":
+    let target = newLeaf(IdentExpr, 3'u32, 4'u32)
+    let e = newPatternEntry(0'u32, 4'u32, 0'u32, 0'u32, target, nil, nil, true)
+    check e.patIsRest == true
+    check e.patTarget.kind == NodeKind.IdentExpr
+    check e.patDefault == nil
+
+  test "PatternEntry with computedKey":
+    let target     = newLeaf(IdentExpr, 6'u32, 7'u32)
+    let computed   = newLeaf(IdentExpr, 1'u32, 2'u32)
+    let e = newPatternEntry(0'u32, 7'u32, 0'u32, 0'u32, target, nil, computed, false)
+    check e.patComputedKey != nil
+    check e.patComputedKey.kind == NodeKind.IdentExpr
+
+  test "PatternEntry elision — nil target":
+    let e = newPatternEntry(2'u32, 3'u32, 0'u32, 0'u32, nil, nil, nil, false)
+    check e.kind == NodeKind.PatternEntry
+    check e.patTarget == nil
