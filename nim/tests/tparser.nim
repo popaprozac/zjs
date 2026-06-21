@@ -3290,3 +3290,39 @@ suite "parser early errors 2f-6a: class member name restrictions":
     check not hadErr("class C { static constructor(){} }")  # static METHOD ok
     check not hadErr("class C { prototype(){} prototype = 1; }")  # only STATIC prototype restricted
     check not hadErr("class C { [\"constructor\"](){} }")  # computed skips the check
+
+suite "parser early errors 2f-6b: undeclared private-name reference":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  # --- REJECT: a private reference with no enclosing declaration ---
+  test "undeclared private member in method rejected":
+    check hadErr("class C { m(){ return this.#y; } }")
+  test "undeclared private member with a different declared name rejected":
+    check hadErr("class C { #x; m(){ return this.#y; } }")
+  test "undeclared private member in delete rejected":
+    check hadErr("class C { m(){ delete this.#x; } }")
+  test "private member at top level (no class) rejected":
+    check hadErr("function f(){ return this.#x; }")
+  test "undeclared private member on arbitrary receiver rejected":
+    check hadErr("class C { m(){ obj.#foo; } }")
+  test "private member in extends clause (outer scope) rejected":
+    check hadErr("class C extends this.#x {}")
+  # --- ACCEPT: properly declared (incl. forward + nested) ---
+  test "declared private member accepted":
+    check not hadErr("class C { #x; m(){ return this.#x; } }")
+  test "forward-referenced private field accepted":
+    check not hadErr("class C { m(){ return this.#x; } #x; }")
+  test "private method reference accepted":
+    check not hadErr("class C { #x(){} m(){ this.#x(); } }")
+  test "private accessor reference accepted":
+    check not hadErr("class C { get #x(){} m(){ this.#x; } }")
+  test "instance + static private both accepted":
+    check not hadErr("class C { #x; static #y; m(){ this.#x + C.#y; } }")
+  test "nested class: inner method sees outer private":
+    check not hadErr("class Outer { #o; m(){ class Inner { #i; n(){ this.#o + this.#i; } } } }")
+  test "derived class with super and private accepted":
+    check not hadErr("class C extends D { #x; m(){ super.foo; this.#x; } }")
+  test "extends in method scope where private is declared accepted":
+    check not hadErr("class O { #x; m(){ class I extends this.#x {} } }")
+  test "ordinary (non-private) members never error":
+    check not hadErr("class C { #x; m(){ return this.#x; } } obj.foo; this.bar;")

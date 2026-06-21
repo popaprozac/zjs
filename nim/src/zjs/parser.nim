@@ -1877,6 +1877,232 @@ proc parseStatement(p: var Parser): AstNode =
 # parseProgram — entry point
 # ------------------------------------------------------------------
 
+# ------------------------------------------------------------------
+# Private-name validation — AST post-pass (port of Zen-c
+# validate_private_names / pn_resolves_in_chain, src/parser.zc:299-373).
+#
+# A `this.#x` / `obj.#name` reference to a private name not declared in
+# any enclosing class is a SyntaxError (AllPrivateIdentifiersValid).
+# This runs once over the finished tree at the end of parseProgram and
+# sets p.hadError on the first unresolved reference. It is NOT inline
+# during parsing: forward references (`m(){ this.#x } #x;`) are legal,
+# so the full set of declared names must be visible before we check.
+# ------------------------------------------------------------------
+
+const MaxPrivateScopeDepth = 16
+
+proc pnSliceHasEscape(src: string, start, len: uint32): bool {.inline.} =
+  ## True iff the slice contains a `\` (a UnicodeEscapeSequence). We skip
+  ## validation for any reference/declaration with escapes — a conservative
+  ## skip avoids false rejections (the decoder is tested elsewhere).
+  var i = 0'u32
+  while i < len:
+    if src[(start + i).int] == '\\': return true
+    inc i
+  false
+
+proc pnSliceEquals(src: string, aStart, aLen, bStart, bLen: uint32): bool {.inline.} =
+  ## Byte-equality of two private-name source slices.
+  if aLen != bLen: return false
+  var i = 0'u32
+  while i < aLen:
+    if src[(aStart + i).int] != src[(bStart + i).int]: return false
+    inc i
+  true
+
+proc pnIsPrivateName(src: string, start, len: uint32): bool {.inline.} =
+  ## True iff the slice is a "#"-prefixed token (a PrivateIdentifier).
+  len >= 1'u32 and src[start.int] == '#'
+
+proc pnMemberDeclName(m: AstNode): (uint32, uint32) =
+  ## The declared-name slice contributed by a class member, or (0,0) if it
+  ## declares no private name. MethodDef → methodName*, ClassField →
+  ## fieldName*. The synthetic constructor has methodNameLen==0 → skipped;
+  ## StaticBlock declares nothing.
+  case m.kind
+  of MethodDef:  (m.methodNameStart, m.methodNameLen)
+  of ClassField: (m.fieldNameStart, m.fieldNameLen)
+  else:          (0'u32, 0'u32)
+
+proc pnResolvesInChain(src: string, scopeChain: seq[AstNode], depth: int,
+                       nameStart, nameLen: uint32): bool =
+  ## Walk the class-scope stack [0 ..< depth] top-down; a class resolves the
+  ## name if any of its members declares a matching `#`-name. An escaped
+  ## declaration is conservatively treated as matching anything.
+  var d = depth
+  while d > 0:
+    dec d
+    let cls = scopeChain[d]
+    if cls == nil: continue
+    for el in cls.classMembers:
+      if el == nil: continue
+      let (declStart, declLen) = pnMemberDeclName(el)
+      if pnIsPrivateName(src, declStart, declLen):
+        if pnSliceHasEscape(src, declStart, declLen): return true
+        if pnSliceEquals(src, declStart, declLen, nameStart, nameLen): return true
+  false
+
+proc validatePrivateNames(p: var Parser, node: AstNode,
+                          scopeChain: var seq[AstNode], depth: int) =
+  ## Recursive walk; mirrors dumpAst's child enumeration (nim_parse.nim) for
+  ## the generic case, with class-scope push (step 2) and private-member
+  ## resolution (step 3) layered on. Sets p.hadError on the first unresolved
+  ## private reference.
+  if node == nil or p.hadError: return
+
+  case node.kind
+  of ClassDecl, ClassExpr:
+    # The class HEAD (`extends` clause) is in the OUTER scope — recurse into
+    # the parent expr at the SAME depth (it cannot see this class's privates).
+    if node.classParent != nil:
+      validatePrivateNames(p, node.classParent, scopeChain, depth)
+      if p.hadError: return
+    # Push this class; members see its declared privates (depth+1). Bounded
+    # at 16 — past that we silently stop validating new references.
+    if depth < MaxPrivateScopeDepth:
+      scopeChain[depth] = node
+      let bodyDepth = depth + 1
+      for m in node.classMembers:
+        validatePrivateNames(p, m, scopeChain, bodyDepth)
+        if p.hadError: return
+    return
+
+  of Member, OptionalMember:
+    # A "#"-prefixed (non-escaped) property name is a private-name access.
+    if pnIsPrivateName(p.source, node.propStart, node.propLength) and
+       not pnSliceHasEscape(p.source, node.propStart, node.propLength):
+      if not pnResolvesInChain(p.source, scopeChain, depth,
+                               node.propStart, node.propLength):
+        p.hadError = true
+        return
+    # Receiver still needs validating (e.g. `a.#x.#y`).
+    validatePrivateNames(p, node.recv, scopeChain, depth)
+    return
+
+  # --- Generic recursion: every child AstNode of every kind (mirrors
+  #     dumpAst's per-kind children exactly) -------------------------------
+  of IdentExpr:
+    validatePrivateNames(p, node.identDefault, scopeChain, depth)
+    validatePrivateNames(p, node.identPattern, scopeChain, depth)
+  of Binary, Logical:
+    validatePrivateNames(p, node.lhs, scopeChain, depth)
+    validatePrivateNames(p, node.rhs, scopeChain, depth)
+  of Unary, Postfix:
+    validatePrivateNames(p, node.operand, scopeChain, depth)
+  of Assignment:
+    validatePrivateNames(p, node.target, scopeChain, depth)
+    validatePrivateNames(p, node.value, scopeChain, depth)
+  of VarDecl:
+    for d in node.declarators: validatePrivateNames(p, d, scopeChain, depth)
+  of Declarator:
+    validatePrivateNames(p, node.init, scopeChain, depth)
+    validatePrivateNames(p, node.declPattern, scopeChain, depth)
+  of Paren:
+    validatePrivateNames(p, node.inner, scopeChain, depth)
+  of Program:
+    for s in node.stmts: validatePrivateNames(p, s, scopeChain, depth)
+  of Computed, OptionalComputed:
+    validatePrivateNames(p, node.recv, scopeChain, depth)
+    validatePrivateNames(p, node.index, scopeChain, depth)
+  of Call, OptionalCall, New:
+    validatePrivateNames(p, node.callee, scopeChain, depth)
+    for a in node.args: validatePrivateNames(p, a, scopeChain, depth)
+  of Spread:
+    validatePrivateNames(p, node.spreadArg, scopeChain, depth)
+  of Conditional:
+    validatePrivateNames(p, node.cond, scopeChain, depth)
+    validatePrivateNames(p, node.conseq, scopeChain, depth)
+    validatePrivateNames(p, node.alt, scopeChain, depth)
+  of Sequence:
+    for it in node.items: validatePrivateNames(p, it, scopeChain, depth)
+  of Array:
+    for el in node.elems: validatePrivateNames(p, el, scopeChain, depth)
+  of Object:
+    for pr in node.props: validatePrivateNames(p, pr, scopeChain, depth)
+  of ObjectProp:
+    validatePrivateNames(p, node.propVal, scopeChain, depth)
+    validatePrivateNames(p, node.computedKey, scopeChain, depth)
+  of TemplateExpr:
+    for c in node.tparts: validatePrivateNames(p, c, scopeChain, depth)
+  of TaggedTemplate:
+    validatePrivateNames(p, node.tag, scopeChain, depth)
+    validatePrivateNames(p, node.tmpl, scopeChain, depth)
+  of BlockStmt:
+    for st in node.stmtList: validatePrivateNames(p, st, scopeChain, depth)
+  of IfStmt:
+    validatePrivateNames(p, node.ifCond, scopeChain, depth)
+    validatePrivateNames(p, node.thenStmt, scopeChain, depth)
+    validatePrivateNames(p, node.elseStmt, scopeChain, depth)
+  of WhileStmt:
+    validatePrivateNames(p, node.whileCond, scopeChain, depth)
+    validatePrivateNames(p, node.whileBody, scopeChain, depth)
+  of DoWhileStmt:
+    validatePrivateNames(p, node.doBody, scopeChain, depth)
+    validatePrivateNames(p, node.doCond, scopeChain, depth)
+  of ForStmt:
+    validatePrivateNames(p, node.forInit, scopeChain, depth)
+    validatePrivateNames(p, node.forTest, scopeChain, depth)
+    validatePrivateNames(p, node.forUpdate, scopeChain, depth)
+    validatePrivateNames(p, node.forBody, scopeChain, depth)
+  of ReturnStmt:
+    validatePrivateNames(p, node.retArg, scopeChain, depth)
+  of ThrowStmt:
+    validatePrivateNames(p, node.throwArg, scopeChain, depth)
+  of LabeledStmt:
+    validatePrivateNames(p, node.labeled, scopeChain, depth)
+  of ForInStmt, ForOfStmt:
+    validatePrivateNames(p, node.forBinding, scopeChain, depth)
+    validatePrivateNames(p, node.forIterable, scopeChain, depth)
+    validatePrivateNames(p, node.forInOfBody, scopeChain, depth)
+  of SwitchStmt:
+    validatePrivateNames(p, node.switchDisc, scopeChain, depth)
+    for c in node.cases: validatePrivateNames(p, c, scopeChain, depth)
+  of SwitchCase:
+    validatePrivateNames(p, node.caseTest, scopeChain, depth)
+    for st in node.caseBody: validatePrivateNames(p, st, scopeChain, depth)
+  of TryStmt:
+    validatePrivateNames(p, node.tryBlock, scopeChain, depth)
+    validatePrivateNames(p, node.catchBlock, scopeChain, depth)
+    validatePrivateNames(p, node.finallyBlock, scopeChain, depth)
+    validatePrivateNames(p, node.catchPattern, scopeChain, depth)
+  of WithStmt:
+    validatePrivateNames(p, node.withObj, scopeChain, depth)
+    validatePrivateNames(p, node.withBody, scopeChain, depth)
+  of RestParam:
+    validatePrivateNames(p, node.restArg, scopeChain, depth)
+  of FunctionDecl, FunctionExpr:
+    validatePrivateNames(p, node.fnBody, scopeChain, depth)
+    for prm in node.fnParams: validatePrivateNames(p, prm, scopeChain, depth)
+  of YieldExpr:
+    validatePrivateNames(p, node.yieldArg, scopeChain, depth)
+  of AwaitExpr:
+    validatePrivateNames(p, node.awaitArg, scopeChain, depth)
+  of ArrowFunc:
+    validatePrivateNames(p, node.arrowBody, scopeChain, depth)
+    for prm in node.arrowParams: validatePrivateNames(p, prm, scopeChain, depth)
+  of ArrayPattern, ObjectPattern:
+    for en in node.patEntries: validatePrivateNames(p, en, scopeChain, depth)
+  of PatternEntry:
+    validatePrivateNames(p, node.patTarget, scopeChain, depth)
+    validatePrivateNames(p, node.patDefault, scopeChain, depth)
+    validatePrivateNames(p, node.patComputedKey, scopeChain, depth)
+  of MethodDef:
+    validatePrivateNames(p, node.methodBody, scopeChain, depth)
+    validatePrivateNames(p, node.methodComputedKey, scopeChain, depth)
+    for prm in node.methodParams: validatePrivateNames(p, prm, scopeChain, depth)
+  of StaticBlock:
+    validatePrivateNames(p, node.staticBlockBody, scopeChain, depth)
+  of ClassField:
+    validatePrivateNames(p, node.fieldInit, scopeChain, depth)
+    validatePrivateNames(p, node.fieldComputedKey, scopeChain, depth)
+  of ImportCall:
+    validatePrivateNames(p, node.importSpec, scopeChain, depth)
+  else:
+    # Leaf kinds (NumberExpr/StringExpr/Bool/Null/Undefined/This/Regex/
+    # BigInt/Hole/Template parts/Super*/ImportMetaExpr/import-module decls):
+    # no AstNode children to validate.
+    discard
+
 proc parseProgram*(p: var Parser): AstNode =
   # A program-level "use strict" prologue turns on strict mode for the whole
   # script, propagating into all nested functions/arrows/methods. We never
@@ -1891,4 +2117,10 @@ proc parseProgram*(p: var Parser): AstNode =
     # Guard against infinite loop if pos didn't advance
     if p.pos == before:
       break
-  newProgram(0'u32, p.source.len.uint32, stmts)
+  let prog = newProgram(0'u32, p.source.len.uint32, stmts)
+  # Private-name validation runs post-parse (forward refs are legal), but
+  # only if parsing itself succeeded.
+  if not p.hadError:
+    var chain = newSeq[AstNode](MaxPrivateScopeDepth)
+    validatePrivateNames(p, prog, chain, 0)
+  prog
