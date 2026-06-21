@@ -130,6 +130,14 @@ proc reinterpretAsPattern(node: AstNode): AstNode =
     return node
 
 # ------------------------------------------------------------------
+# Binding pattern forward declarations
+# ------------------------------------------------------------------
+
+proc parseBindingTarget(p: var Parser): AstNode
+proc parseObjectPattern(p: var Parser): AstNode
+proc parseArrayPattern(p: var Parser): AstNode
+
+# ------------------------------------------------------------------
 # Forward declarations
 # ------------------------------------------------------------------
 
@@ -183,6 +191,114 @@ proc lookaheadArrowParen(p: Parser): bool =
     elif k == Eof: return false
     inc i
   false
+
+# ------------------------------------------------------------------
+# isKeywordName — returns true for Kw* token kinds that may appear
+# as object property names (e.g. {if: 1, return: 2}).
+# Also needed for binding-pattern keys (moved here from parseObject section).
+# ------------------------------------------------------------------
+
+proc isKeywordName(k: TokenKind): bool {.inline.} =
+  k in {KwVar, KwLet, KwConst,
+        KwFunction, KwReturn,
+        KwIf, KwElse,
+        KwFor, KwWhile, KwDo,
+        KwBreak, KwContinue,
+        KwClass, KwExtends, KwSuper, KwNew, KwThis,
+        KwTrue, KwFalse, KwNull, KwUndefined,
+        KwTypeof, KwDelete, KwVoid, KwIn, KwOf, KwInstanceof,
+        KwThrow, KwTry, KwCatch, KwFinally,
+        KwSwitch, KwCase, KwDefault,
+        KwWith,
+        KwAsync, KwAwait, KwYield,
+        KwImport, KwExport, KwFrom, KwAs,
+        KwGet, KwSet}
+
+# ------------------------------------------------------------------
+# Binding pattern procs — parse `{...}` / `[...]` directly as patterns.
+# These are used for binding contexts (var-decl, param-list, catch)
+# as opposed to reinterpretAsPattern which handles assignment targets.
+# ------------------------------------------------------------------
+
+proc parseObjectPattern(p: var Parser): AstNode =
+  let lb = p.advance()                       # '{'
+  var entries: seq[AstNode]
+  while p.peek().kind notin {RBrace, Eof}:
+    let entryStart = p.peek().start
+    if p.peek().kind == Ellipsis:            # ...rest (identifier only)
+      discard p.advance()
+      let id = p.advance()
+      let ident = newLeaf(IdentExpr, id.start, id.start + id.length)
+      entries.add(newPatternEntry(entryStart, id.start + id.length, 0'u32, 0'u32, ident, nil, nil, true))
+      break                                  # rest must be last
+    var computedKey: AstNode = nil
+    var keyStart = 0'u32
+    var keyLen = 0'u32
+    if p.peek().kind == LBracket:            # [expr]: target
+      discard p.advance()
+      computedKey = parseAssignmentExpr(p)
+      discard p.expect(RBracket)
+    else:
+      let keyTok = p.peek()
+      if keyTok.kind notin {Identifier, StringLit, NumberLit} and not isKeywordName(keyTok.kind): break
+      discard p.advance()
+      keyStart = keyTok.start; keyLen = keyTok.length
+    var target: AstNode
+    if p.peek().kind == Colon:               # rename / nested
+      discard p.advance()
+      target = parseBindingTarget(p)
+    elif computedKey != nil:
+      break                                  # computed needs a target
+    else:                                    # shorthand
+      target = newLeaf(IdentExpr, keyStart, keyStart + keyLen)
+    var dflt: AstNode = nil
+    if p.peek().kind == Eq:
+      discard p.advance()
+      dflt = parseAssignmentExpr(p)
+    let entryEnd = (if dflt != nil: dflt.`end` elif target != nil: target.`end` else: entryStart)
+    entries.add(newPatternEntry(entryStart, entryEnd, keyStart, keyLen, target, dflt, computedKey, false))
+    if p.peek().kind != Comma: break
+    discard p.advance()
+  let close = p.peek()
+  discard p.expect(RBrace)
+  newPattern(ObjectPattern, lb.start, close.start + close.length, entries)
+
+proc parseArrayPattern(p: var Parser): AstNode =
+  let lb = p.advance()                       # '['
+  var entries: seq[AstNode]
+  while p.peek().kind notin {RBracket, Eof}:
+    let entryStart = p.peek().start
+    if p.peek().kind == Comma:               # elision
+      entries.add(newPatternEntry(entryStart, entryStart, 0'u32, 0'u32, nil, nil, nil, false))
+      discard p.advance()                    # consume the comma
+      continue
+    elif p.peek().kind == Ellipsis:          # ...rest
+      discard p.advance()
+      let target = parseBindingTarget(p)
+      entries.add(newPatternEntry(entryStart, (if target != nil: target.`end` else: entryStart), 0'u32, 0'u32, target, nil, nil, true))
+      if p.peek().kind == Comma: discard p.advance()
+      break                                  # rest must be last
+    else:
+      let target = parseBindingTarget(p)
+      var dflt: AstNode = nil
+      if p.peek().kind == Eq:
+        discard p.advance()
+        dflt = parseAssignmentExpr(p)
+      let entryEnd = (if dflt != nil: dflt.`end` elif target != nil: target.`end` else: entryStart)
+      entries.add(newPatternEntry(entryStart, entryEnd, 0'u32, 0'u32, target, dflt, nil, false))
+    if p.peek().kind != Comma: break
+    discard p.advance()
+  let close = p.peek()
+  discard p.expect(RBracket)
+  newPattern(ArrayPattern, lb.start, close.start + close.length, entries)
+
+proc parseBindingTarget(p: var Parser): AstNode =
+  case p.peek().kind
+  of LBrace:   parseObjectPattern(p)
+  of LBracket: parseArrayPattern(p)
+  else:
+    let t = p.advance()
+    newLeaf(IdentExpr, t.start, t.start + t.length)
 
 proc parseArrowBody(p: var Parser, isAsync: bool): AstNode =
   let savedA = p.inAsync
@@ -308,26 +424,6 @@ proc parseTemplateLit(p: var Parser): AstNode =
   newTemplateExpr(t.start, t.start + t.length, children)
 
 # ------------------------------------------------------------------
-# isKeywordName — returns true for Kw* token kinds that may appear
-# as object property names (e.g. {if: 1, return: 2}).
-# ------------------------------------------------------------------
-
-proc isKeywordName(k: TokenKind): bool {.inline.} =
-  k in {KwVar, KwLet, KwConst,
-        KwFunction, KwReturn,
-        KwIf, KwElse,
-        KwFor, KwWhile, KwDo,
-        KwBreak, KwContinue,
-        KwClass, KwExtends, KwSuper, KwNew, KwThis,
-        KwTrue, KwFalse, KwNull, KwUndefined,
-        KwTypeof, KwDelete, KwVoid, KwIn, KwOf, KwInstanceof,
-        KwThrow, KwTry, KwCatch, KwFinally,
-        KwSwitch, KwCase, KwDefault,
-        KwWith,
-        KwAsync, KwAwait, KwYield,
-        KwImport, KwExport, KwFrom, KwAs,
-        KwGet, KwSet}
-
 # ------------------------------------------------------------------
 # parsePrimary — mirrors fn parse_primary in src/parser.zc
 # ------------------------------------------------------------------
@@ -1013,9 +1109,26 @@ proc parseVarDecl(p: var Parser, consumeSemi = true): AstNode =
 
   while true:
     let declStart = p.peek().start
+    # Pattern declarator: { or [
+    if p.peek().kind in {LBrace, LBracket}:
+      let pat = parseBindingTarget(p)
+      var d = newDeclarator(pat.start, pat.`end`, 0'u32, 0'u32, nil)
+      d.declPattern = pat
+      if p.peek().kind == Eq:
+        discard p.advance()     # consume '='
+        let ini = p.parseAssignmentExpr()
+        if ini != nil:
+          d.init = ini
+          d.`end` = ini.`end`
+      declarators.add(d)
+      lastEnd = d.`end`
+      if p.peek().kind != Comma: break
+      discard p.advance()       # consume ','
+      continue
+
     let nameTok = p.peek()
     if not isBindingIdent(nameTok.kind):
-      break                     # guard: non-identifier = stop (pattern etc.)
+      break                     # guard: non-identifier = stop
     discard p.advance()         # consume the identifier
 
     var declEnd = nameTok.start + nameTok.length
@@ -1191,11 +1304,14 @@ proc parseTry(p: var Parser): AstNode =
   var catchBlk: AstNode = nil
   var cpStart = 0'u32
   var cpLen = 0'u32
+  var catchPat: AstNode = nil
   if p.peek().kind == KwCatch:
     discard p.advance()
     if p.peek().kind == LParen:
       discard p.advance()
-      if p.peek().kind == Identifier:  # bare identifier catch param (pattern → deferred)
+      if p.peek().kind in {LBrace, LBracket}:  # pattern catch param
+        catchPat = parseBindingTarget(p)
+      elif p.peek().kind == Identifier:         # bare identifier catch param
         let id = p.advance(); cpStart = id.start; cpLen = id.length
       discard p.expect(RParen)
     catchBlk = parseBlock(p)
@@ -1206,7 +1322,10 @@ proc parseTry(p: var Parser): AstNode =
   let endPos = (if finallyBlk != nil: finallyBlk.`end`
                 elif catchBlk != nil: catchBlk.`end`
                 else: tryBlk.`end`)
-  newTry(kw.start, endPos, tryBlk, catchBlk, finallyBlk, cpStart, cpLen)
+  let tryNode = newTry(kw.start, endPos, tryBlk, catchBlk, finallyBlk, cpStart, cpLen)
+  if catchPat != nil:
+    tryNode.catchPattern = catchPat
+  tryNode
 
 proc parseWith(p: var Parser): AstNode =
   let kw = p.advance()                 # 'with'
@@ -1231,7 +1350,13 @@ proc parseParamList(p: var Parser): seq[AstNode] =
       result.add(newRestParam(dots.start, nameTok.start + nameTok.length, ident))
       break                                     # rest must be last
     elif p.peek().kind in {LBrace, LBracket}:
-      break                                     # pattern param — DEFERRED (out of scope)
+      let pat = parseBindingTarget(p)
+      let param = newLeaf(IdentExpr, pat.start, pat.`end`)
+      param.identPattern = pat
+      if p.peek().kind == Eq:
+        discard p.advance()
+        param.identDefault = parseAssignmentExpr(p)
+      result.add(param)
     else:
       let nameTok = p.advance()                 # identifier
       let ident = newLeaf(IdentExpr, nameTok.start, nameTok.start + nameTok.length)

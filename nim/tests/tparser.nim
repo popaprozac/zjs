@@ -2256,3 +2256,185 @@ suite "ast 2d-5c fields":
     check t.tryBlock.kind == NodeKind.BlockStmt
     check t.catchBlock != nil
     check t.catchPattern == nil
+
+suite "parser binding patterns":
+  test "let [a, b] = x; — ArrayPattern binding in VarDecl":
+    var p = initParser("let [a, b] = x;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let decl = prog.stmts[0]
+    check decl.kind == NodeKind.VarDecl
+    check decl.declarators.len == 1
+    let d = decl.declarators[0]
+    check d.kind == NodeKind.Declarator
+    check d.nameLength == 0'u32              # pattern declarator has no plain name
+    check d.declPattern != nil
+    check d.declPattern.kind == NodeKind.ArrayPattern
+    check d.declPattern.patEntries.len == 2
+    check d.declPattern.patEntries[0].patTarget.kind == NodeKind.IdentExpr
+    check d.declPattern.patEntries[1].patTarget.kind == NodeKind.IdentExpr
+    check d.init != nil
+    check d.init.kind == NodeKind.IdentExpr
+
+  test "let {a, b} = o; — ObjectPattern shorthand binding":
+    var p = initParser("let {a, b} = o;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let decl = prog.stmts[0]
+    check decl.declarators.len == 1
+    let d = decl.declarators[0]
+    check d.declPattern != nil
+    check d.declPattern.kind == NodeKind.ObjectPattern
+    check d.declPattern.patEntries.len == 2
+    check d.init != nil
+
+  test "let {a: x, b = 2} = o; — rename and default in ObjectPattern":
+    var p = initParser("let {a: x, b = 2} = o;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let d = prog.stmts[0].declarators[0]
+    check d.declPattern.kind == NodeKind.ObjectPattern
+    let entries = d.declPattern.patEntries
+    check entries.len == 2
+    # first entry: key=a, target=x (rename)
+    check entries[0].patTarget.kind == NodeKind.IdentExpr
+    check entries[0].patDefault == nil
+    # second entry: key=b, target=b (shorthand), default=2
+    check entries[1].patTarget.kind == NodeKind.IdentExpr
+    check entries[1].patDefault != nil
+    check entries[1].patDefault.kind == NodeKind.NumberExpr
+
+  test "const [a, ...r] = x; — rest in ArrayPattern binding":
+    var p = initParser("const [a, ...r] = x;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let d = prog.stmts[0].declarators[0]
+    check d.declPattern.kind == NodeKind.ArrayPattern
+    let entries = d.declPattern.patEntries
+    check entries.len == 2
+    check not entries[0].patIsRest
+    check entries[1].patIsRest
+
+  test "function f([a, b]) {} — array pattern param":
+    var p = initParser("function f([a, b]) {}")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.kind == NodeKind.FunctionDecl
+    check fn.fnParams.len == 1
+    let param = fn.fnParams[0]
+    check param.kind == NodeKind.IdentExpr
+    check param.identPattern != nil
+    check param.identPattern.kind == NodeKind.ArrayPattern
+    check param.identPattern.patEntries.len == 2
+
+  test "function f({x, y}) {} — object pattern param":
+    var p = initParser("function f({x, y}) {}")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.fnParams.len == 1
+    let param = fn.fnParams[0]
+    check param.identPattern != nil
+    check param.identPattern.kind == NodeKind.ObjectPattern
+    check param.identPattern.patEntries.len == 2
+
+  test "({a}) => a — object pattern arrow param":
+    var p = initParser("({a}) => a")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arrow = prog.stmts[0]
+    check arrow.kind == NodeKind.ArrowFunc
+    check arrow.arrowParams.len == 1
+    let param = arrow.arrowParams[0]
+    check param.identPattern != nil
+    check param.identPattern.kind == NodeKind.ObjectPattern
+
+  test "([a, b]) => a — array pattern arrow param":
+    var p = initParser("([a, b]) => a")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arrow = prog.stmts[0]
+    check arrow.kind == NodeKind.ArrowFunc
+    check arrow.arrowParams.len == 1
+    check arrow.arrowParams[0].identPattern.kind == NodeKind.ArrayPattern
+
+  test "try { x } catch ([e]) { y } — array pattern catch param":
+    var p = initParser("try { x } catch ([e]) { y }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let t = prog.stmts[0]
+    check t.kind == NodeKind.TryStmt
+    check t.catchParamLen == 0'u32          # no plain identifier param
+    check t.catchPattern != nil
+    check t.catchPattern.kind == NodeKind.ArrayPattern
+    check t.catchPattern.patEntries.len == 1
+
+  test "let [a, [b, c]] = x; — nested array pattern":
+    var p = initParser("let [a, [b, c]] = x;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let d = prog.stmts[0].declarators[0]
+    check d.declPattern.kind == NodeKind.ArrayPattern
+    let entries = d.declPattern.patEntries
+    check entries.len == 2
+    check entries[0].patTarget.kind == NodeKind.IdentExpr
+    check entries[1].patTarget.kind == NodeKind.ArrayPattern
+    check entries[1].patTarget.patEntries.len == 2
+
+  test "let [, , c] = x; — elisions in array pattern binding":
+    var p = initParser("let [, , c] = x;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let d = prog.stmts[0].declarators[0]
+    check d.declPattern.kind == NodeKind.ArrayPattern
+    let entries = d.declPattern.patEntries
+    check entries.len == 3
+    check entries[0].patTarget == nil       # elision
+    check entries[1].patTarget == nil       # elision
+    check entries[2].patTarget != nil
+
+  test "function f(a, [b], {c}) {} — mixed plain and pattern params":
+    var p = initParser("function f(a, [b], {c}) {}")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.fnParams.len == 3
+    check fn.fnParams[0].identPattern == nil    # plain ident
+    check fn.fnParams[1].identPattern != nil
+    check fn.fnParams[1].identPattern.kind == NodeKind.ArrayPattern
+    check fn.fnParams[2].identPattern != nil
+    check fn.fnParams[2].identPattern.kind == NodeKind.ObjectPattern
+
+  test "let {a, ...rest} = o; — rest in ObjectPattern binding":
+    var p = initParser("let {a, ...rest} = o;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let d = prog.stmts[0].declarators[0]
+    check d.declPattern.kind == NodeKind.ObjectPattern
+    let entries = d.declPattern.patEntries
+    check entries.len == 2
+    check not entries[0].patIsRest
+    check entries[1].patIsRest
+    check entries[1].patTarget.kind == NodeKind.IdentExpr
+
+  test "identifier bindings unaffected: let x = 1, y = 2":
+    var p = initParser("let x = 1, y = 2;")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let decl = prog.stmts[0]
+    check decl.declarators.len == 2
+    let d0 = decl.declarators[0]
+    check d0.nameLength > 0'u32
+    check d0.declPattern == nil
+    let d1 = decl.declarators[1]
+    check d1.nameLength > 0'u32
+    check d1.declPattern == nil
+
+  test "catch (e) {}: identifier catch param unaffected":
+    var p = initParser("try { a } catch (e) { b }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let t = prog.stmts[0]
+    check t.catchParamLen == 1'u32
+    check t.catchPattern == nil
