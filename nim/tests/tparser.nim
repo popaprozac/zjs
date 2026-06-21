@@ -1353,3 +1353,150 @@ suite "ast 2d-3a nodes":
     check fn.fnBody.kind == NodeKind.BlockStmt
     check fn.fnParams.len == 1
     check fn.fnParams[0].kind == NodeKind.IdentExpr
+
+suite "parser functions":
+  test "function f(a, b) { return a; } — FunctionDecl with 2 params":
+    var p = initParser("function f(a, b) { return a; }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.kind == NodeKind.FunctionDecl
+    check p.source[fn.fnNameStart.int ..< (fn.fnNameStart + fn.fnNameLen).int] == "f"
+    check fn.fnBody.kind == NodeKind.BlockStmt
+    check fn.fnBody.stmtList.len == 1
+    check fn.fnBody.stmtList[0].kind == NodeKind.ReturnStmt
+    check fn.fnParams.len == 2
+    check fn.fnParams[0].kind == NodeKind.IdentExpr
+    check fn.fnParams[1].kind == NodeKind.IdentExpr
+
+  test "function g() {} — FunctionDecl with no params, empty body":
+    var p = initParser("function g() {}")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.kind == NodeKind.FunctionDecl
+    check p.source[fn.fnNameStart.int ..< (fn.fnNameStart + fn.fnNameLen).int] == "g"
+    check fn.fnParams.len == 0
+    check fn.fnBody.kind == NodeKind.BlockStmt
+    check fn.fnBody.stmtList.len == 0
+
+  test "(function () { return 1; }) — anonymous FunctionExpr in paren":
+    var p = initParser("(function () { return 1; })")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let paren = prog.stmts[0]
+    check paren.kind == NodeKind.Paren
+    let fn = paren.inner
+    check fn.kind == NodeKind.FunctionExpr
+    check fn.fnNameLen == 0'u32   # anonymous
+    check fn.fnParams.len == 0
+    check fn.fnBody.stmtList.len == 1
+    check fn.fnBody.stmtList[0].kind == NodeKind.ReturnStmt
+
+  test "(function named(x) {}) — named FunctionExpr":
+    var p = initParser("(function named(x) {})")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0].inner
+    check fn.kind == NodeKind.FunctionExpr
+    check p.source[fn.fnNameStart.int ..< (fn.fnNameStart + fn.fnNameLen).int] == "named"
+    check fn.fnParams.len == 1
+    check fn.fnParams[0].kind == NodeKind.IdentExpr
+
+  test "function h(a, b = 5, ...rest) {} — default + rest params":
+    var p = initParser("function h(a, b = 5, ...rest) {}")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.kind == NodeKind.FunctionDecl
+    check fn.fnParams.len == 3
+    check fn.fnParams[0].kind == NodeKind.IdentExpr
+    check fn.fnParams[0].identDefault == nil
+    check fn.fnParams[1].kind == NodeKind.IdentExpr
+    check fn.fnParams[1].identDefault != nil
+    check fn.fnParams[1].identDefault.kind == NodeKind.NumberExpr
+    check fn.fnParams[1].identDefault.numVal == 5.0
+    check fn.fnParams[2].kind == NodeKind.RestParam
+    check fn.fnParams[2].restArg.kind == NodeKind.IdentExpr
+
+  test "let f = function (a) { return a; }; — FunctionExpr as var init":
+    var p = initParser("let f = function (a) { return a; };")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let decl = prog.stmts[0]
+    check decl.kind == NodeKind.VarDecl
+    check decl.declarators.len == 1
+    let fn = decl.declarators[0].init
+    check fn != nil
+    check fn.kind == NodeKind.FunctionExpr
+    check fn.fnNameLen == 0'u32   # anonymous
+    check fn.fnParams.len == 1
+    check fn.fnBody.stmtList.len == 1
+
+  test "function f(){ if(a) return b; return c; } — body with multiple stmts":
+    var p = initParser("function f(){ if(a) return b; return c; }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.kind == NodeKind.FunctionDecl
+    check fn.fnBody.stmtList.len == 2
+    check fn.fnBody.stmtList[0].kind == NodeKind.IfStmt
+    check fn.fnBody.stmtList[1].kind == NodeKind.ReturnStmt
+
+  test "function f(a, b,) {} — trailing comma in params":
+    var p = initParser("function f(a, b,) {}")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.kind == NodeKind.FunctionDecl
+    check fn.fnParams.len == 2
+
+  test "(function(){})() — IIFE Call":
+    var p = initParser("(function(){})()")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let call = prog.stmts[0]
+    check call.kind == NodeKind.Call
+    check call.callee.kind == NodeKind.Paren
+    check call.callee.inner.kind == NodeKind.FunctionExpr
+
+  test "[function(){}] — FunctionExpr inside array":
+    var p = initParser("[function(){}]")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let arr = prog.stmts[0]
+    check arr.kind == NodeKind.Array
+    check arr.elems.len == 1
+    check arr.elems[0].kind == NodeKind.FunctionExpr
+
+  test "function f(x = a ? b : c) {} — conditional as default param":
+    var p = initParser("function f(x = a ? b : c) {}")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.kind == NodeKind.FunctionDecl
+    check fn.fnParams.len == 1
+    check fn.fnParams[0].kind == NodeKind.IdentExpr
+    check fn.fnParams[0].identDefault != nil
+    check fn.fnParams[0].identDefault.kind == NodeKind.Conditional
+
+  test "function f(...args) { return args; } — rest-only param":
+    var p = initParser("function f(...args) { return args; }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let fn = prog.stmts[0]
+    check fn.kind == NodeKind.FunctionDecl
+    check fn.fnParams.len == 1
+    check fn.fnParams[0].kind == NodeKind.RestParam
+    check fn.fnParams[0].restArg.kind == NodeKind.IdentExpr
+
+  test "function outer() { function inner() { return 1; } return inner; } — nested decls":
+    var p = initParser("function outer() { function inner() { return 1; } return inner; }")
+    let prog = p.parseProgram()
+    check prog.stmts.len == 1
+    let outer = prog.stmts[0]
+    check outer.kind == NodeKind.FunctionDecl
+    check outer.fnBody.stmtList.len == 2
+    let inner = outer.fnBody.stmtList[0]
+    check inner.kind == NodeKind.FunctionDecl
+    check outer.fnBody.stmtList[1].kind == NodeKind.ReturnStmt

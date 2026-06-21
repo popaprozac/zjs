@@ -107,6 +107,9 @@ proc parseAssignmentExpr(p: var Parser): AstNode
 proc parseArray(p: var Parser): AstNode
 proc parseObject(p: var Parser): AstNode
 proc parseTemplateLit(p: var Parser): AstNode
+proc parseFunctionDecl(p: var Parser): AstNode
+proc parseFunctionExpr(p: var Parser): AstNode
+proc parseParamList(p: var Parser): seq[AstNode]
 
 # ------------------------------------------------------------------
 # parseTemplateExprSlice — re-lex a substitution slice with absolute
@@ -302,6 +305,9 @@ proc parsePrimary(p: var Parser): AstNode =
 
   of TemplateLit:
     return parseTemplateLit(p)
+
+  of KwFunction:
+    return parseFunctionExpr(p)
 
   else:
     # Unknown / unimplemented primary — skip and return nil.
@@ -949,6 +955,62 @@ proc parseWith(p: var Parser): AstNode =
   newWith(kw.start, (if body != nil: body.`end` else: kw.start), obj, body)
 
 # ------------------------------------------------------------------
+# parseParamList — consumes plain/default/rest params up to (not
+# including) the closing ')'. Port of fn parse_param_list in
+# src/parser.zc (~1694).
+# ------------------------------------------------------------------
+
+proc parseParamList(p: var Parser): seq[AstNode] =
+  while p.peek().kind notin {RParen, Eof}:
+    if p.peek().kind == Ellipsis:
+      let dots = p.advance()
+      let nameTok = p.advance()                 # identifier
+      let ident = newLeaf(IdentExpr, nameTok.start, nameTok.start + nameTok.length)
+      result.add(newRestParam(dots.start, nameTok.start + nameTok.length, ident))
+      break                                     # rest must be last
+    elif p.peek().kind in {LBrace, LBracket}:
+      break                                     # pattern param — DEFERRED (out of scope)
+    else:
+      let nameTok = p.advance()                 # identifier
+      let ident = newLeaf(IdentExpr, nameTok.start, nameTok.start + nameTok.length)
+      if p.peek().kind == Eq:
+        discard p.advance()
+        ident.identDefault = parseAssignmentExpr(p)
+      result.add(ident)
+    if p.peek().kind != Comma: break
+    discard p.advance()                         # consume ','  (trailing comma: loop re-checks RParen)
+
+# ------------------------------------------------------------------
+# parseFunctionDecl — port of fn parse_function_decl in src/parser.zc (~1823).
+# ------------------------------------------------------------------
+
+proc parseFunctionDecl(p: var Parser): AstNode =
+  let kw = p.advance()                          # 'function'
+  let nameTok = p.advance()                     # name (Identifier) — required for a declaration
+  discard p.expect(LParen)
+  let params = parseParamList(p)
+  discard p.expect(RParen)
+  let body = parseBlock(p)
+  newFunctionDecl(kw.start, body.`end`, nameTok.start, nameTok.length, body, params)
+
+# ------------------------------------------------------------------
+# parseFunctionExpr — port of fn parse_function_expr in src/parser.zc (~2772).
+# ------------------------------------------------------------------
+
+proc parseFunctionExpr(p: var Parser): AstNode =
+  let kw = p.advance()                          # 'function'
+  var nameStart = 0'u32
+  var nameLen = 0'u32
+  if p.peek().kind == Identifier:               # optional name
+    let nameTok = p.advance()
+    nameStart = nameTok.start; nameLen = nameTok.length
+  discard p.expect(LParen)
+  let params = parseParamList(p)
+  discard p.expect(RParen)
+  let body = parseBlock(p)
+  newFunctionExpr(kw.start, body.`end`, nameStart, nameLen, body, params)
+
+# ------------------------------------------------------------------
 # parseStatement — core dispatch. Expression statement consumes an
 # optional trailing semicolon.
 # ------------------------------------------------------------------
@@ -957,6 +1019,7 @@ proc parseStatement(p: var Parser): AstNode =
   # Control-flow dispatch
   case p.peek().kind
   of LBrace: return parseBlock(p)
+  of KwFunction: return parseFunctionDecl(p)
   of KwIf: return parseIf(p)
   of KwWhile: return parseWhile(p)
   of KwDo: return parseDoWhile(p)
