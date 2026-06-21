@@ -10,7 +10,7 @@
 
 **Branch:** `nim-phase2` (continues from the completed lexer).
 
-**Reference:** Design `docs/superpowers/specs/2026-06-20-zjs-nim-migration-design.md`. Zen-c sources: `src/ast.zc` (the `NodeKind` enum — 95 variants — + the `AstNode` struct), `src/parser.zc` (4779 LOC of recursive-descent rules — THE behavioral spec). The lexer plan `2026-06-20-zjs-nim-phase2a-lexer.md` is the template for the oracle-driven method.
+**Reference:** Design `docs/superpowers/specs/2026-06-20-zjs-nim-migration-design.md`. Zen-c sources: `src/ast.zc` (the `NodeKind` enum — 74 variants — + the `AstNode` struct), `src/parser.zc` (4779 LOC of recursive-descent rules — THE behavioral spec). The lexer plan `2026-06-20-zjs-nim-phase2a-lexer.md` is the template for the oracle-driven method.
 
 ---
 
@@ -150,7 +150,7 @@ suite "ast model":
 - [ ] **Step 2: Run, verify it fails** — `nim c -r --mm:arc --hints:off nim/tests/tparser.nim`.
 
 - [ ] **Step 3: Write `nim/src/zjs/ast.nim`.** Mirror the `NodeKind` enum from
-  `src/ast.zc` (read it — **all 95 variants, in order, same names**; the enum
+  `src/ast.zc` (read it — **all 74 variants, in order, same names**; the enum
   keeps the real names for the Phase-3 compiler — same discipline as the lexer's
   TokenKind mirror. NOTE: the dumper does NOT use `$kind`; it uses `nkLabel`
   which mirrors `nk_label`'s `?`-gap. The enum still mirrors all 95 so the
