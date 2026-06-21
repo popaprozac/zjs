@@ -1198,7 +1198,7 @@ proc parseExpression(p: var Parser): AstNode =
 # identifier (plain Identifier or contextual keywords that JS allows as names).
 proc isBindingIdent(k: TokenKind): bool {.inline.} =
   k in {Identifier, KwYield, KwAwait, KwAsync,
-        KwOf, KwFrom, KwAs, KwGet, KwSet}
+        KwOf, KwFrom, KwAs, KwGet, KwSet, KwLet}
 
 proc parseVarDecl(p: var Parser, consumeSemi = true): AstNode =
   let kw = p.advance()          # consume var / let / const
