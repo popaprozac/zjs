@@ -28,7 +28,7 @@ func isIdPart(c: char): bool {.inline.} =
 
 # =====================================================================
 # Keyword lookup (mirrors src/lexer.zc lookup_keyword)
-# NOTE: get/set/with are NOT in this table — they lex as Identifier,
+# NOTE: get/set are NOT in this table — they lex as Identifier,
 # matching the Zen-c reference exactly.
 # =====================================================================
 
@@ -75,6 +75,7 @@ func lookupKeyword(text: openArray[char]): TokenKind =
   if eq("switch"):     return KwSwitch
   if eq("case"):       return KwCase
   if eq("default"):    return KwDefault
+  if eq("with"):       return KwWith
   if eq("async"):      return KwAsync
   if eq("await"):      return KwAwait
   if eq("yield"):      return KwYield
