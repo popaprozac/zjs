@@ -61,6 +61,16 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
   of Sequence:
     stdout.write(&"{ind}{label}\n")
     for it in n.items: dumpAst(it, src, depth+1)
+  of Array:
+    stdout.write(&"{ind}{label}\n")
+    for el in n.elems: dumpAst(el, src, depth+1)
+  of Object:
+    stdout.write(&"{ind}{label}\n")
+    for pr in n.props: dumpAst(pr, src, depth+1)
+  of ObjectProp:
+    stdout.write(&"{ind}{label} name=\"{slice(src, n.keyStart, n.keyStart + n.keyLength)}\"\n")
+    dumpAst(n.propVal, src, depth+1)
+    if n.computedKey != nil: dumpAst(n.computedKey, src, depth+1)
   else:  # NullExpr/UndefinedExpr/ThisExpr + BigIntExpr/RegexExpr (label-only "?")
     stdout.write(&"{ind}{label}\n")
 

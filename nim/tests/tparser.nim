@@ -472,3 +472,22 @@ suite "parser conditional/sequence":
     let snode = newSequence(0'u32, 9'u32, @[a, b, c])
     check snode.kind == NodeKind.Sequence
     check snode.items.len == 3
+
+suite "ast 2c-3 nodes":
+  test "array":
+    let a = newArray(0'u32, 5'u32, @[newNumber(1'u32,2'u32,1.0)])
+    check a.kind == NodeKind.Array
+    check a.elems.len == 1
+  test "object + prop":
+    let v = newNumber(4'u32,5'u32,1.0)
+    let prop = newObjectProp(1'u32,5'u32, 1'u32,1'u32, v, nil)
+    check prop.kind == NodeKind.ObjectProp
+    check prop.keyStart == 1'u32 and prop.keyLength == 1'u32
+    check prop.propVal.kind == NodeKind.NumberExpr
+    check prop.computedKey == nil
+    let o = newObject(0'u32,6'u32, @[prop])
+    check o.kind == NodeKind.Object
+    check o.props.len == 1
+  test "hole via newLeaf":
+    let h = newLeaf(HoleExpr, 2'u32, 2'u32)
+    check h.kind == NodeKind.HoleExpr

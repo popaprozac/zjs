@@ -143,6 +143,14 @@ type
       cond*, conseq*, alt*: AstNode     # test ? consequent : alternate
     of Sequence:
       items*: seq[AstNode]
+    of Array:
+      elems*: seq[AstNode]
+    of Object:
+      props*: seq[AstNode]
+    of ObjectProp:
+      keyStart*, keyLength*: uint32   # raw key slice (incl. quotes for strings); 0/0 = computed
+      propVal*: AstNode               # the value (shorthand → IdentExpr of the key)
+      computedKey*: AstNode           # the `[expr]` key; nil unless computed
     else: discard                       ## kinds implemented in later increments
 
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
@@ -216,3 +224,16 @@ proc newConditional*(s, e: uint32, cond, conseq, alt: AstNode): AstNode =
 proc newSequence*(s, e: uint32, items: seq[AstNode]): AstNode =
   ## Construct a Sequence node (comma operator).
   AstNode(kind: Sequence, start: s, `end`: e, items: items)
+
+proc newArray*(s, e: uint32, elems: seq[AstNode]): AstNode =
+  ## Construct an Array literal node.
+  AstNode(kind: Array, start: s, `end`: e, elems: elems)
+
+proc newObject*(s, e: uint32, props: seq[AstNode]): AstNode =
+  ## Construct an Object literal node.
+  AstNode(kind: Object, start: s, `end`: e, props: props)
+
+proc newObjectProp*(s, e, keyStart, keyLength: uint32, propVal, computedKey: AstNode): AstNode =
+  ## Construct an ObjectProp node. computedKey may be nil (non-computed property).
+  AstNode(kind: ObjectProp, start: s, `end`: e, keyStart: keyStart,
+          keyLength: keyLength, propVal: propVal, computedKey: computedKey)
