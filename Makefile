@@ -487,13 +487,21 @@ nim-test:
 
 NIM_LEXBIN := $(NIM_OUT)/nim-lex
 nim-lex: $(NIM_LEXBIN)
-$(NIM_LEXBIN): $(NIM_SRCS) nim/tools/nim_lex.nim | $(NIM_OUT)
+$(NIM_LEXBIN): $(NIM_SRCS) nim/tools/nim_lex.nim nim/tools/labels.nim | $(NIM_OUT)
 	$(NIM) c --mm:arc -d:release --hints:off --out:$(NIM_LEXBIN) nim/tools/nim_lex.nim
 
 nim-difflex: nim-lex cli
 	@bash nim/tests/diff_lex.sh
 
-.PHONY: nim-lib nim-test262 nim-cabi-smoke nim-test nim-lex nim-difflex
+NIM_PARSEBIN := $(NIM_OUT)/nim-parse
+nim-parse: $(NIM_PARSEBIN)
+$(NIM_PARSEBIN): $(NIM_SRCS) nim/tools/nim_parse.nim nim/tools/labels.nim | $(NIM_OUT)
+	$(NIM) c --mm:arc -d:release --hints:off --out:$(NIM_PARSEBIN) nim/tools/nim_parse.nim
+
+nim-diffparse: nim-parse cli
+	@bash nim/tests/diff_parse.sh
+
+.PHONY: nim-lib nim-test262 nim-cabi-smoke nim-test nim-lex nim-difflex nim-parse nim-diffparse
 
 # WinterTC Minimum Common API conformance. Probes ship in
 # tests/wintercg/ — each is a WPT-shaped .js using the harness at
