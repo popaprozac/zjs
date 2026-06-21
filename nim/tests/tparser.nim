@@ -3266,3 +3266,27 @@ suite "parser early errors 2f-4b: duplicate parameters":
   test "distinct params are fine everywhere":
     check not hadErr("(a, b) => a")
     check not hadErr("function f({a}, {b}){}")
+
+suite "parser early errors 2f-6a: class member name restrictions":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "duplicate constructor rejected":
+    check hadErr("class C { constructor(){} constructor(){} }")
+  test "special-method constructor rejected (get/set/gen/async)":
+    check hadErr("class C { get constructor(){} }")
+    check hadErr("class C { *constructor(){} }")
+    check hadErr("class C { async constructor(){} }")
+  test "static prototype method/field rejected":
+    check hadErr("class C { static prototype(){} }")
+    check hadErr("class C { static prototype = 1; }")
+  test "field named constructor rejected (instance + static)":
+    check hadErr("class C { constructor = 1; }")
+    check hadErr("class C { static constructor = 1; }")
+  test "#constructor rejected (method + field)":
+    check hadErr("class C { #constructor(){} }")
+    check hadErr("class C { #constructor = 1; }")
+  test "legal members accepted":
+    check not hadErr("class C { constructor(){} }")
+    check not hadErr("class C { static constructor(){} }")  # static METHOD ok
+    check not hadErr("class C { prototype(){} prototype = 1; }")  # only STATIC prototype restricted
+    check not hadErr("class C { [\"constructor\"](){} }")  # computed skips the check

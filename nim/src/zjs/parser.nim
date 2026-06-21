@@ -135,6 +135,15 @@ proc checkDupParams(p: var Parser, params: seq[AstNode]) =
     for j in (i + 1) ..< names.len:
       if names[i] == names[j]: p.hadError = true; return
 
+proc comparableMemberName(p: Parser, t: Token): string =
+  ## The comparable ClassElementName for early-error checks: a string-literal
+  ## name has its surrounding quotes stripped (`'constructor'` ≡ constructor);
+  ## a PrivateName keeps its leading `#`.
+  if t.kind == StringLit and t.length >= 2'u32:
+    p.source[(t.start + 1).int ..< (t.start + t.length - 1).int]
+  else:
+    p.source[t.start.int ..< (t.start + t.length).int]
+
 # ------------------------------------------------------------------
 # Numeric literal decoding — port of parse_number_literal / parse_int_prefix
 # ------------------------------------------------------------------
@@ -1668,6 +1677,10 @@ proc parseMethodBodyPair(p: var Parser): AstNode =
     if not isPropertyNameStart(nameTok.kind) and nameTok.kind != PrivateName:
       p.hadError = true; return nil
     discard p.advance()
+  # §15.7: a private element named #constructor is a SyntaxError (any kind).
+  if computedKey == nil and nameTok.kind == PrivateName and
+     p.comparableMemberName(nameTok) == "#constructor":
+    p.hadError = true
   # === 2e-2 field branch: `(` here means method; otherwise it's a class field ===
   if p.peek().kind != LParen and accessor == Eq and not isAsync and not isGen:
     var initExpr: AstNode = nil
@@ -1683,6 +1696,13 @@ proc parseMethodBodyPair(p: var Parser): AstNode =
     # A string-literal field name ('x' = 1) stores the UNQUOTED slice
     # (start+1, len-2) so the `this.<name>` desugar keys it as `x`, not
     # `'x'` — matches Zen-c parse_method_body_pair (~2141) and the oracle.
+    # §15.7 FieldDefinition PropName restrictions (computed names skip):
+    # instance OR static field MUST NOT be "constructor"; a static field
+    # additionally MUST NOT be "prototype".
+    if computedKey == nil:
+      let cn = p.comparableMemberName(nameTok)
+      if cn == "constructor": p.hadError = true
+      if isStatic and cn == "prototype": p.hadError = true
     var fNameStart = nameTok.start
     var fNameLen = nameTok.length
     if nameTok.kind == StringLit and nameTok.length >= 2'u32:
@@ -1706,6 +1726,15 @@ proc parseMethodBodyPair(p: var Parser): AstNode =
   p.functionDepth = sfd
   p.inGenerator = sg; p.inAsync = sa
   if body == nil: return nil
+  # §15.7 MethodDefinition PropName restrictions (computed names skip):
+  # a NON-static "constructor" may not be a special method (async/generator/
+  # get/set); a STATIC method may not be named "prototype". (A static method
+  # named "constructor" is a legal ordinary static member.)
+  if computedKey == nil:
+    let cn = p.comparableMemberName(nameTok)
+    if cn == "constructor" and (not isStatic) and (isAsync or isGen or accessor != Eq):
+      p.hadError = true
+    if isStatic and cn == "prototype": p.hadError = true
   return newMethodDef(mutStart, body.`end`,
                       (if computedKey != nil: 0'u32 else: nameTok.start),
                       (if computedKey != nil: 0'u32 else: nameTok.length),
@@ -1736,7 +1765,8 @@ proc parseClassBody(p: var Parser, isDerived: bool): seq[AstNode] =
     if m.kind == ClassField and not m.fieldIsStatic: anyInstField = true
     if m.kind == MethodDef and not m.methodIsStatic and m.methodNameLen == 11'u32 and
        p.source[m.methodNameStart.int ..< (m.methodNameStart + m.methodNameLen).int] == "constructor":
-      if ctorIdx < 0: ctorIdx = i           # first constructor wins (dup = error, deferred)
+      if ctorIdx < 0: ctorIdx = i
+      else: p.hadError = true               # §15.7: at most one constructor
   if anyInstField:
     # 1. ensure a constructor exists (synthesize when absent)
     if ctorIdx < 0:
