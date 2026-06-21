@@ -172,6 +172,11 @@ proc lookaheadArrowParen(p: Parser): bool
 proc parseArrowBody(p: var Parser, isAsync: bool): AstNode
 proc parseArrowSingle(p: var Parser, isAsync: bool): AstNode
 proc parseArrowParen(p: var Parser, isAsync: bool): AstNode
+# Class forward declarations (Phase 2e-1)
+proc parseClassDecl(p: var Parser): AstNode
+proc parseClassExpr(p: var Parser): AstNode
+proc parseClassBody(p: var Parser, isDerived: bool): seq[AstNode]
+proc parseMethodBodyPair(p: var Parser): AstNode
 
 # ------------------------------------------------------------------
 # Arrow function helpers
@@ -467,6 +472,13 @@ proc parsePrimary(p: var Parser): AstNode =
   of KwThis:
     discard p.advance()
     return newLeaf(ThisExpr, t.start, t.start + t.length)
+
+  of KwSuper:
+    discard p.advance()
+    return newLeaf(SuperExpr, t.start, t.start + t.length)
+
+  of KwClass:
+    return parseClassExpr(p)
 
   of Identifier:
     discard p.advance()
@@ -1408,6 +1420,125 @@ proc parseFunctionExpr(p: var Parser, isAsync = false): AstNode =
   newFunctionExpr(kw.start, body.`end`, nameStart, nameLen, body, params, isAsync, isGen)
 
 # ------------------------------------------------------------------
+# Class parsing (Phase 2e-1) — ports of parse_class_decl/parse_class_expr/
+# parse_class_body (no synthesis in 2e-1) / parse_method_body_pair
+# (method + static-block paths). Instance fields = 2e-2.
+# ------------------------------------------------------------------
+
+proc parseMethodBodyPair(p: var Parser): AstNode =
+  let mutStart = p.peek().start
+  # --- optional `static` ---
+  var isStatic = false
+  block:
+    let first = p.peek()
+    if first.kind == Identifier and first.length == 6'u32 and
+       p.source[first.start.int ..< (first.start + first.length).int] == "static":
+      # static { ... } block
+      if p.toks[p.pos + 1].kind == LBrace:
+        discard p.advance()                 # consume 'static'
+        let sg = p.inGenerator; let sa = p.inAsync
+        p.inGenerator = false; p.inAsync = false
+        let body = parseBlock(p)
+        p.inGenerator = sg; p.inAsync = sa
+        if body == nil: return nil
+        return newStaticBlock(mutStart, body.`end`, body)
+      # `static <name>` / `static [` / `static *` / `static #x`
+      let k2 = p.toks[p.pos + 1].kind
+      if isPropertyNameStart(k2) or k2 == LBracket or k2 == Star or k2 == PrivateName:
+        discard p.advance(); isStatic = true
+  # --- optional `async` (async method) ---
+  var isAsync = false
+  if p.peek().kind == KwAsync:
+    let k2 = p.toks[p.pos + 1].kind
+    if isPropertyNameStart(k2) or k2 == LBracket or k2 == PrivateName or k2 == Star:
+      discard p.advance(); isAsync = true
+  # --- optional `*` (generator method) ---
+  var isGen = false
+  if p.peek().kind == Star:
+    discard p.advance(); isGen = true
+  # --- optional `get`/`set` accessor (not after async) ---
+  var accessor = Eq                         # Eq sentinel = plain method
+  if not isAsync:
+    let id2 = p.peek()
+    if id2.kind == Identifier and id2.length == 3'u32:
+      let txt = p.source[id2.start.int ..< (id2.start + id2.length).int]
+      if (txt == "get" or txt == "set"):
+        let k2 = p.toks[p.pos + 1].kind
+        if isPropertyNameStart(k2) or k2 == LBracket or k2 == PrivateName:
+          discard p.advance()
+          accessor = (if txt == "get": KwGet else: KwSet)
+  # --- method name OR computed key ---
+  var computedKey: AstNode = nil
+  let nameTok = p.peek()
+  if nameTok.kind == LBracket:
+    discard p.advance()
+    computedKey = parseAssignmentExpr(p)
+    if computedKey == nil: return nil
+    if not p.expect(RBracket): return nil
+  else:
+    # accept any property-name token or PrivateName (permissive; #constructor
+    # early-error deferred to the error-reporting increment)
+    if not isPropertyNameStart(nameTok.kind) and nameTok.kind != PrivateName:
+      p.hadError = true; return nil
+    discard p.advance()
+  # === 2e-2 INSERTION POINT: field branch goes here (see slice 2e-2) ===
+  # --- method: params + body ---
+  let sg = p.inGenerator; let sa = p.inAsync
+  p.inAsync = isAsync; p.inGenerator = isGen
+  if not p.expect(LParen):
+    p.inGenerator = sg; p.inAsync = sa; return nil
+  let params = parseParamList(p)
+  if not p.expect(RParen):
+    p.inGenerator = sg; p.inAsync = sa; return nil
+  let body = parseBlock(p)
+  p.inGenerator = sg; p.inAsync = sa
+  if body == nil: return nil
+  return newMethodDef(mutStart, body.`end`,
+                      (if computedKey != nil: 0'u32 else: nameTok.start),
+                      (if computedKey != nil: 0'u32 else: nameTok.length),
+                      body, computedKey, params, isStatic, accessor, isAsync, isGen)
+
+proc parseClassBody(p: var Parser, isDerived: bool): seq[AstNode] =
+  if not p.expect(LBrace): return @[]
+  var members: seq[AstNode]
+  while p.peek().kind notin {RBrace, Eof}:
+    if p.peek().kind == Semicolon:          # skip empty `;` separators
+      discard p.advance(); continue
+    let m = parseMethodBodyPair(p)
+    if m == nil: p.hadError = true; break
+    members.add(m)
+  discard p.expect(RBrace)
+  return members
+
+proc parseClassDecl(p: var Parser): AstNode =
+  let kw = p.advance()                      # 'class'
+  let nameTok = p.advance()                 # class name (binding ident)
+  var parent: AstNode = nil
+  if p.peek().kind == KwExtends:
+    discard p.advance()
+    parent = parseCallMember(p)             # LeftHandSideExpression
+    if parent == nil: return nil
+  let members = parseClassBody(p, parent != nil)
+  let endPos = if members.len > 0: members[^1].`end` else: p.peek().start
+  return newClass(ClassDecl, kw.start, endPos, nameTok.start, nameTok.length, parent, members)
+
+proc parseClassExpr(p: var Parser): AstNode =
+  let kw = p.advance()                      # 'class'
+  var nameStart = 0'u32
+  var nameLen = 0'u32
+  if p.peek().kind == Identifier:
+    let nt = p.advance()
+    nameStart = nt.start; nameLen = nt.length
+  var parent: AstNode = nil
+  if p.peek().kind == KwExtends:
+    discard p.advance()
+    parent = parseCallMember(p)
+    if parent == nil: return nil
+  let members = parseClassBody(p, parent != nil)
+  let endPos = if members.len > 0: members[^1].`end` else: p.peek().start
+  return newClass(ClassExpr, kw.start, endPos, nameStart, nameLen, parent, members)
+
+# ------------------------------------------------------------------
 # parseStatement — core dispatch. Expression statement consumes an
 # optional trailing semicolon.
 # ------------------------------------------------------------------
@@ -1417,6 +1548,7 @@ proc parseStatement(p: var Parser): AstNode =
   case p.peek().kind
   of LBrace: return parseBlock(p)
   of KwFunction: return parseFunctionDecl(p)
+  of KwClass: return parseClassDecl(p)
   of KwIf: return parseIf(p)
   of KwWhile: return parseWhile(p)
   of KwDo: return parseDoWhile(p)

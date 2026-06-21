@@ -2529,3 +2529,133 @@ suite "parser classes ast":
     check m.methodIsGenerator
     check m.methodNameStart == 3'u32
     check m.methodNameLen == 5'u32
+
+# ------------------------------------------------------------------
+# Phase 2e-1: class skeleton parser (decl/expr/methods/static-block/super)
+# ------------------------------------------------------------------
+
+proc parseOne(src: string): AstNode =
+  ## Parse `src` and return the single top-level statement (nil on error).
+  var p = initParser(src)
+  let prog = p.parseProgram()
+  if p.hadError or prog.stmts.len != 1: return nil
+  prog.stmts[0]
+
+suite "parser classes 2e-1":
+  test "class C {} — empty class decl":
+    let c = parseOne("class C {}")
+    check c != nil
+    check c.kind == NodeKind.ClassDecl
+    check c.classParent == nil
+    check c.classMembers.len == 0
+
+  test "class C extends B {} — parent recorded, no members":
+    let c = parseOne("class C extends B {}")
+    check c != nil
+    check c.kind == NodeKind.ClassDecl
+    check c.classParent != nil
+    check c.classParent.kind == NodeKind.IdentExpr
+    check c.classMembers.len == 0
+
+  test "class C { m(x) { return x; } } — one method, one param":
+    let c = parseOne("class C { m(x) { return x; } }")
+    check c != nil
+    check c.classMembers.len == 1
+    let m = c.classMembers[0]
+    check m.kind == NodeKind.MethodDef
+    check m.methodParams.len == 1
+    check m.methodAccessor == TokenKind.Eq
+    check m.methodBody.kind == NodeKind.BlockStmt
+
+  test "static / get / set — three members with correct flags":
+    let c = parseOne("class C { static s() {} get g() { return 1; } set v(x) {} }")
+    check c != nil
+    check c.classMembers.len == 3
+    check c.classMembers[0].methodIsStatic
+    check c.classMembers[1].methodAccessor == TokenKind.KwGet
+    check c.classMembers[2].methodAccessor == TokenKind.KwSet
+
+  test "class C { [k]() {} } — computed key set":
+    let c = parseOne("class C { [k]() {} }")
+    check c != nil
+    check c.classMembers.len == 1
+    check c.classMembers[0].methodComputedKey != nil
+    check c.classMembers[0].methodNameLen == 0'u32
+
+  test "class C { static { let a = 1; } } — static block":
+    let c = parseOne("class C { static { let a = 1; } }")
+    check c != nil
+    check c.classMembers.len == 1
+    let sb = c.classMembers[0]
+    check sb.kind == NodeKind.StaticBlock
+    check sb.staticBlockBody.kind == NodeKind.BlockStmt
+    check sb.staticBlockBody.stmtList.len == 1
+
+  test "derived ctor with super() and super.m()":
+    let c = parseOne("class C extends B { constructor() { super(); super.m(); } }")
+    check c != nil
+    check c.classParent != nil
+    check c.classMembers.len == 1
+    let ctorBody = c.classMembers[0].methodBody
+    check ctorBody.stmtList.len == 2
+    # super() is a Call whose callee is a SuperExpr
+    check ctorBody.stmtList[0].kind == NodeKind.Call
+    check ctorBody.stmtList[0].callee.kind == NodeKind.SuperExpr
+    # super.m() is a Call of a Member of a SuperExpr
+    check ctorBody.stmtList[1].kind == NodeKind.Call
+    check ctorBody.stmtList[1].callee.kind == NodeKind.Member
+    check ctorBody.stmtList[1].callee.recv.kind == NodeKind.SuperExpr
+
+  test "const C = class extends B {}; — class expression":
+    let d = parseOne("const C = class extends B {};")
+    check d != nil
+    check d.kind == NodeKind.VarDecl
+    let init = d.declarators[0].init
+    check init.kind == NodeKind.ClassExpr
+    check init.classParent != nil
+
+  test "generator + async + async-generator methods":
+    let c = parseOne("class C { *g() {} async a() {} async *ag() {} }")
+    check c != nil
+    check c.classMembers.len == 3
+    check c.classMembers[0].methodIsGenerator
+    check c.classMembers[1].methodIsAsync
+    check c.classMembers[2].methodIsAsync and c.classMembers[2].methodIsGenerator
+
+  test "private methods #m() and get #g()":
+    let c = parseOne("class C { #m() {} get #g() { return 1; } }")
+    check c != nil
+    check c.classMembers.len == 2
+    check c.classMembers[1].methodAccessor == TokenKind.KwGet
+
+  test "string and numeric method names":
+    let c = parseOne("""class C { "s"() {} 0() {} }""")
+    check c != nil
+    check c.classMembers.len == 2
+
+  test "nested class inside a method body":
+    let c = parseOne("class Outer { m() { class Inner {} } }")
+    check c != nil
+    let body = c.classMembers[0].methodBody
+    check body.stmtList.len == 1
+    check body.stmtList[0].kind == NodeKind.ClassDecl
+
+  test "extends f(x).y — member/call parent expression":
+    let c = parseOne("class C extends f(x).y {}")
+    check c != nil
+    check c.classParent.kind == NodeKind.Member
+
+  test "contextual words get/set/static as plain method names":
+    let c = parseOne("class C { get() {} set() {} static() {} }")
+    check c != nil
+    check c.classMembers.len == 3
+    for m in c.classMembers:
+      check m.kind == NodeKind.MethodDef
+      check m.methodAccessor == TokenKind.Eq
+      check not m.methodIsStatic
+
+  test "stray semicolons between members are skipped":
+    let c = parseOne("class C { ; ; m() {} ; }")
+    check c != nil
+    check c.classMembers.len == 1
+    check c.classMembers[0].kind == NodeKind.MethodDef
