@@ -231,6 +231,114 @@ type
     # ImportMetaExpr is a label-only leaf ("?") — no branch needed (else: discard)
     else: discard                       ## kinds implemented in later increments
 
+iterator childNodes*(n: AstNode): AstNode =
+  ## Yields every direct child AstNode of n (non-nil), for tree-walk consumers
+  ## (ContainsArguments, super-position checks, …). Mirrors dumpAst's child
+  ## enumeration in nim/tools/nim_parse.nim (and validatePrivateNames in
+  ## parser.nim) EXACTLY — single source of truth for new generic walks.
+  ## Guards every yield with `if x != nil`.
+  if n != nil:
+    template y(x: AstNode) =
+      if x != nil: yield x
+    case n.kind
+    of IdentExpr:
+      y(n.identDefault); y(n.identPattern)
+    of Binary, Logical:
+      y(n.lhs); y(n.rhs)
+    of Unary, Postfix:
+      y(n.operand)
+    of Assignment:
+      y(n.target); y(n.value)
+    of Paren:
+      y(n.inner)
+    of VarDecl:
+      for d in n.declarators: y(d)
+    of Declarator:
+      y(n.init); y(n.declPattern)
+    of Program:
+      for s in n.stmts: y(s)
+    of Member, OptionalMember, Computed, OptionalComputed:
+      y(n.recv); y(n.index)
+    of Call, OptionalCall, New:
+      y(n.callee)
+      for a in n.args: y(a)
+    of Spread:
+      y(n.spreadArg)
+    of Conditional:
+      y(n.cond); y(n.conseq); y(n.alt)
+    of Sequence:
+      for it in n.items: y(it)
+    of Array:
+      for el in n.elems: y(el)
+    of Object:
+      for pr in n.props: y(pr)
+    of ObjectProp:
+      y(n.propVal); y(n.computedKey)
+    of TemplateExpr:
+      for c in n.tparts: y(c)
+    of TaggedTemplate:
+      y(n.tag); y(n.tmpl)
+    of BlockStmt:
+      for st in n.stmtList: y(st)
+    of IfStmt:
+      y(n.ifCond); y(n.thenStmt); y(n.elseStmt)
+    of WhileStmt:
+      y(n.whileCond); y(n.whileBody)
+    of DoWhileStmt:
+      y(n.doBody); y(n.doCond)
+    of ForStmt:
+      y(n.forInit); y(n.forTest); y(n.forUpdate); y(n.forBody)
+    of ReturnStmt:
+      y(n.retArg)
+    of ThrowStmt:
+      y(n.throwArg)
+    of LabeledStmt:
+      y(n.labeled)
+    of ForInStmt, ForOfStmt:
+      y(n.forBinding); y(n.forIterable); y(n.forInOfBody)
+    of SwitchStmt:
+      y(n.switchDisc)
+      for c in n.cases: y(c)
+    of SwitchCase:
+      y(n.caseTest)
+      for st in n.caseBody: y(st)
+    of TryStmt:
+      y(n.tryBlock); y(n.catchBlock); y(n.finallyBlock); y(n.catchPattern)
+    of WithStmt:
+      y(n.withObj); y(n.withBody)
+    of RestParam:
+      y(n.restArg)
+    of FunctionDecl, FunctionExpr:
+      y(n.fnBody)
+      for prm in n.fnParams: y(prm)
+    of YieldExpr:
+      y(n.yieldArg)
+    of AwaitExpr:
+      y(n.awaitArg)
+    of ArrowFunc:
+      y(n.arrowBody)
+      for prm in n.arrowParams: y(prm)
+    of ArrayPattern, ObjectPattern:
+      for en in n.patEntries: y(en)
+    of PatternEntry:
+      y(n.patTarget); y(n.patDefault); y(n.patComputedKey)
+    of ClassDecl, ClassExpr:
+      y(n.classParent)
+      for m in n.classMembers: y(m)
+    of MethodDef:
+      y(n.methodBody); y(n.methodComputedKey)
+      for prm in n.methodParams: y(prm)
+    of StaticBlock:
+      y(n.staticBlockBody)
+    of ClassField:
+      y(n.fieldInit); y(n.fieldComputedKey)
+    of ImportCall:
+      y(n.importSpec)
+    else:
+      # Leaf kinds (NumberExpr/StringExpr/Bool/Null/Undefined/This/Regex/BigInt/
+      # Hole/Template parts/Super*/ImportMetaExpr + module decls): no children.
+      discard
+
 proc newProgram*(s, e: uint32, stmts: seq[AstNode] = @[]): AstNode =
   ## Construct a Program node.
   AstNode(kind: Program, start: s, `end`: e, stmts: stmts)

@@ -3419,3 +3419,44 @@ suite "parser 2f-3c site-aware escaped eval/arguments (strict)":
     check hadErr("\"use strict\"; function f(eval){}")
     check hadErr("\"use strict\"; class eval {}")
     check hadErr("\"use strict\"; function f(p\\u0075blic){}")
+
+suite "parser early errors: arguments in field initializer":
+  # ECMA-262 ContainsArguments (§15.7): a class field initializer (instance OR
+  # static) must not reference `arguments`. Recurses through arrows; stops at
+  # nested function/method bodies; computed KEYS are not checked.
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  # --- REJECT: `arguments` referenced in a field initializer ---
+  test "bare arguments reference rejected":
+    check hadErr("class C { x = arguments; }")
+  test "arguments index rejected":
+    check hadErr("class C { x = arguments[0]; }")
+  test "arrow inherits arguments — recurse in, rejected":
+    check hadErr("class C { x = () => arguments; }")
+  test "arguments in call args rejected":
+    check hadErr("class C { x = foo(arguments); }")
+  test "static field arguments rejected":
+    check hadErr("class C { static x = arguments; }")
+  test "arguments in binary/member rejected":
+    check hadErr("class C { x = a + arguments.length; }")
+  test "arguments in array literal rejected":
+    check hadErr("class C { x = [1, arguments, 3]; }")
+  test "arguments in conditional rejected":
+    check hadErr("class C { x = cond ? arguments : 0; }")
+  # --- ACCEPT: nested function/method shadows, computed key, unrelated ---
+  test "function expression shadows arguments — accepted":
+    check not hadErr("class C { x = function(){ return arguments; }; }")
+  test "nested class method shadows arguments — accepted":
+    check not hadErr("class C { x = class { m(){ return arguments; } }; }")
+  test "computed KEY named arguments — not checked, accepted":
+    check not hadErr("class C { [arguments] = 1; }")
+  test "ordinary member initializer accepted":
+    check not hadErr("class C { x = this.foo; }")
+  test "literal initializer accepted":
+    check not hadErr("class C { x = 1; }")
+  test "arguments in a real function (not a field) accepted":
+    check not hadErr("function f() { return arguments; }")
+  test "arguments in a method body (not a field init) accepted":
+    check not hadErr("class C { m() { return arguments; } }")
+  test "field NAMED arguments accepted":
+    check not hadErr("class C { arguments = 1; }")

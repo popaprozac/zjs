@@ -1706,6 +1706,26 @@ proc parseFunctionExpr(p: var Parser, isAsync = false): AstNode =
 # (method + static-block paths). Instance fields = 2e-2.
 # ------------------------------------------------------------------
 
+proc exprContainsArguments(src: string, n: AstNode): bool =
+  ## ECMA-262 Static Semantics ContainsArguments over an expression: true if it
+  ## references the identifier `arguments` outside a nested function boundary.
+  ## Recurses into arrows (they inherit `arguments`) but STOPS at FunctionDecl/
+  ## FunctionExpr/MethodDef (those shadow it). Plain byte-compare (NOT escape-
+  ## aware — matches Zen-c expr_contains_arguments, src/parser.zc:4026).
+  if n == nil: return false
+  case n.kind
+  of FunctionDecl, FunctionExpr, MethodDef:
+    return false                                   # nested fn shadows `arguments`
+  of IdentExpr:
+    # A plain IdentifierReference: raw slice must be exactly "arguments" (9 bytes).
+    # A param-wrapper IdentExpr (identPattern != nil) is not a plain reference.
+    return n.identPattern == nil and (n.`end` - n.start) == 9'u32 and
+           src[n.start.int ..< n.`end`.int] == "arguments"
+  else:
+    for c in childNodes(n):
+      if exprContainsArguments(src, c): return true
+    return false
+
 proc parseMethodBodyPair(p: var Parser): AstNode =
   let mutStart = p.peek().start
   # --- optional `static` ---
@@ -1778,6 +1798,10 @@ proc parseMethodBodyPair(p: var Parser): AstNode =
       discard p.advance()
       initExpr = parseAssignmentExpr(p)
       if initExpr == nil: return nil
+      # ECMA-262 ContainsArguments: a class field initializer (instance OR
+      # static) MUST NOT reference `arguments` (recurses into arrows, stops at
+      # nested function/method bodies). Computed KEYS are NOT checked.
+      if exprContainsArguments(p.source, initExpr): p.hadError = true
     # field terminator: optional `;` (ASI / newline early-errors are error-only, deferred)
     if p.peek().kind == Semicolon: discard p.advance()
     let fieldEnd = if initExpr != nil: initExpr.`end`
