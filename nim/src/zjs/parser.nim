@@ -81,6 +81,66 @@ proc strictSpelling(p: Parser, t: Token): string {.inline.} =
   ## The source slice of a token (plain spelling; escape decoding is 2f-3c).
   p.source[t.start.int ..< (t.start + t.length).int]
 
+proc identSourceMatches(src: string, start, length: uint32, target: string): bool =
+  ## Compare an identifier's source slice against an ASCII target, decoding
+  ## `\uXXXX` and `\u{...}` escapes on the fly (port of Zen-c
+  ## ident_source_matches, src/parser.zc:80). All targets are ASCII-only, so an
+  ## escape decoding outside U+0000..U+007F can never match and short-circuits
+  ## to false. Returns true only when BOTH the slice and target are fully
+  ## consumed.
+  var i = 0'u32
+  var ti = 0
+  let tlen = target.len
+  while i < length and ti < tlen:
+    let c = src[(start + i).int].uint8
+    if c == uint8('\\'):
+      # `\uXXXX` (exactly 4 hex) or `\u{ ... }`.
+      if i + 1 >= length: return false
+      if src[(start + i + 1).int].uint8 != uint8('u'): return false
+      var cp = 0'u32
+      if i + 2 < length and src[(start + i + 2).int].uint8 == uint8('{'):
+        var j = i + 3
+        var acc = 0'u32
+        while j < length and src[(start + j).int].uint8 != uint8('}'):
+          let h = src[(start + j).int].uint8
+          var dv = 0'u32
+          if   h >= uint8('0') and h <= uint8('9'): dv = uint32(h - uint8('0'))
+          elif h >= uint8('a') and h <= uint8('f'): dv = uint32(h - uint8('a')) + 10
+          elif h >= uint8('A') and h <= uint8('F'): dv = uint32(h - uint8('A')) + 10
+          else: return false
+          acc = (acc shl 4) or dv
+          j = j + 1
+        if j >= length or src[(start + j).int].uint8 != uint8('}'): return false
+        cp = acc
+        i = j + 1
+      else:
+        if i + 5 >= length: return false
+        var acc = 0'u32
+        var k = 0'u32
+        while k < 4:
+          let h = src[(start + i + 2 + k).int].uint8
+          var dv = 0'u32
+          if   h >= uint8('0') and h <= uint8('9'): dv = uint32(h - uint8('0'))
+          elif h >= uint8('a') and h <= uint8('f'): dv = uint32(h - uint8('a')) + 10
+          elif h >= uint8('A') and h <= uint8('F'): dv = uint32(h - uint8('A')) + 10
+          else: return false
+          acc = (acc shl 4) or dv
+          k = k + 1
+        cp = acc
+        i = i + 6
+      if cp > 127'u32: return false
+      if uint8(cp) != target[ti].uint8: return false
+      ti = ti + 1
+    else:
+      if c != target[ti].uint8: return false
+      i = i + 1
+      ti = ti + 1
+  i == length and ti == tlen
+
+proc identMatches(p: Parser, t: Token, target: string): bool {.inline.} =
+  ## True iff token `t`'s source slice decodes (escapes and all) to `target`.
+  identSourceMatches(p.source, t.start, t.length, target)
+
 const FutureReserved = ["implements", "interface", "package", "private",
                         "protected", "public", "static"]
 
@@ -99,9 +159,13 @@ proc checkBindingReserved(p: var Parser, t: Token) =
     if t.kind == KwYield:
       p.hadError = true                    # strict reserves `yield` everywhere
     elif t.kind == Identifier:
-      let sp = p.strictSpelling(t)
-      if sp == "eval" or sp == "arguments" or sp in FutureReserved:
+      # Compare via identSourceMatches so escaped spellings are caught too
+      # (`var eval` / `var public` in strict mode).
+      if p.identMatches(t, "eval") or p.identMatches(t, "arguments"):
         p.hadError = true
+      else:
+        for w in FutureReserved:
+          if p.identMatches(t, w): p.hadError = true; break
 
 proc collectParamNames(node: AstNode, src: string, acc: var seq[string]) =
   ## Gather the binding-identifier source slices in a parameter node, walking
@@ -621,9 +685,11 @@ proc parsePrimary(p: var Parser): AstNode =
     # Strict-mode future-reserved words (§12.7.2) are reserved as an
     # IdentifierReference too — `"use strict"; public;` is a SyntaxError.
     # eval/arguments/yield stay legal as references, so they are NOT rejected
-    # here (only at binding sites, via checkBindingReserved).
-    if p.strict and p.strictSpelling(t) in FutureReserved:
-      p.hadError = true
+    # here (only at binding sites, via checkBindingReserved). Compare via
+    # identSourceMatches so escaped spellings are caught too (`public`).
+    if p.strict:
+      for w in FutureReserved:
+        if p.identMatches(t, w): p.hadError = true; break
     return newLeaf(IdentExpr, t.start, t.start + t.length)
 
   of KwOf, KwFrom, KwAs, KwLet:
@@ -1872,9 +1938,16 @@ proc parseStatement(p: var Parser): AstNode =
   if p.peek().kind == KwAsync and p.toks[p.pos + 1].kind == KwFunction:
     discard p.advance()   # consume 'async'
     return parseFunctionDecl(p, isAsync = true)
-  # Labeled statement: Identifier ':' (2-token lookahead)
-  if p.peek().kind == Identifier and p.toks[p.pos + 1].kind == Colon:
+  # Labeled statement: (Identifier | yield | await) ':' (2-token lookahead).
+  # `yield`/`await` may NEVER be a LabelIdentifier — unconditionally, whether
+  # spelled bare (KwYield/KwAwait) or with unicode escapes decoding to
+  # "yield"/"await" (§13.13.1 + §12.7.2). Ordinary labels are unaffected.
+  if p.peek().kind in {Identifier, KwYield, KwAwait} and p.toks[p.pos + 1].kind == Colon:
     let id = p.advance()
+    if id.kind == KwYield or id.kind == KwAwait:
+      p.hadError = true
+    elif p.identMatches(id, "yield") or p.identMatches(id, "await"):
+      p.hadError = true
     discard p.advance()                      # ':'
     let body = parseStatement(p)
     return newLabeled(id.start, (if body != nil: body.`end` else: id.start), id.start, id.length, body)

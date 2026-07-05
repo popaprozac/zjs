@@ -3348,3 +3348,52 @@ suite "parser new.target + accessor-ASI (class valid-input fixes)":
   test "get/set accessor still recognized with a real name":
     check not hadErr("class C { get x(){ return 1; } set x(v){} }")
     check not hadErr("class C { get [k](){} }")
+
+suite "parser early errors 2f-3c: escaped-keyword + yield/await label":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  # --- REJECT: yield/await as a LabelIdentifier (bare and escaped) ---
+  test "escaped yield label in generator rejected":
+    check hadErr("function* g(){ \\u0079ield: ; }")
+  test "escaped await label in async rejected":
+    check hadErr("async function a(){ \\u0061wait: ; }")
+  test "plain yield label in generator rejected":
+    check hadErr("function* g(){ yield: ; }")
+  test "plain await label in async rejected":
+    check hadErr("async function a(){ await: ; }")
+  test "plain yield label sloppy top-level rejected":
+    check hadErr("yield: ;")
+  test "escaped yield label sloppy top-level rejected":
+    check hadErr("\\u0079ield: ;")
+  # --- REJECT: escaped strict-reserved bindings + references ---
+  test "escaped future-reserved binding rejected (strict)":
+    check hadErr("\"use strict\"; var p\\u0075blic;")
+  test "escaped eval binding rejected (strict)":
+    check hadErr("\"use strict\"; var \\u0065val;")
+  test "escaped future-reserved reference rejected (strict)":
+    check hadErr("\"use strict\"; p\\u0075blic;")
+  # --- ACCEPT: ordinary labels (bare and escaped) ---
+  test "ordinary label accepted":
+    check not hadErr("foo: ;")
+  test "escaped ordinary label accepted":
+    check not hadErr("\\u0066oo: ;")
+  test "chained ordinary labels accepted":
+    check not hadErr("x: y: z: ;")
+  # --- ACCEPT: escaped yield/await bindings where legal ---
+  test "escaped yield binding sloppy accepted":
+    check not hadErr("var \\u0079ield;")
+  test "escaped ordinary binding accepted":
+    check not hadErr("var f\\u006fo;")
+  test "eval reference stays legal (strict)":
+    check not hadErr("\"use strict\"; \\u0065val;")
+  test "escaped ordinary reference accepted":
+    check not hadErr("f\\u006fo;")
+  # --- ACCEPT: yield expression / ternary are NOT labels ---
+  test "yield expression not a label":
+    check not hadErr("function* g(){ yield x; }")
+  test "ternary is not a label":
+    check not hadErr("a ? b : c")
+  test "escaped yield binding in generator (already agreed) stays agreeing":
+    # NOTE: this is a REJECT (yield binding in a generator body) — kept to
+    # guard against regressing the pre-existing agreement.
+    check hadErr("function* g(){ var \\u0079ield; }")
