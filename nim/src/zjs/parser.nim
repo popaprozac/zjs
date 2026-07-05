@@ -144,7 +144,7 @@ proc identMatches(p: Parser, t: Token, target: string): bool {.inline.} =
 const FutureReserved = ["implements", "interface", "package", "private",
                         "protected", "public", "static"]
 
-proc checkBindingReserved(p: var Parser, t: Token) =
+proc checkBindingReserved(p: var Parser, t: Token, simpleParam = false) =
   ## A `yield` bound inside a generator body, or `await` bound inside an async
   ## body, is a SyntaxError (Zen-c is_binding_ident_ctx, parser.zc:806).
   ## Additionally, in strict mode (§13.1.1 + §12.7.2): `eval`/`arguments` and
@@ -159,9 +159,19 @@ proc checkBindingReserved(p: var Parser, t: Token) =
     if t.kind == KwYield:
       p.hadError = true                    # strict reserves `yield` everywhere
     elif t.kind == Identifier:
-      # Compare via identSourceMatches so escaped spellings are caught too
-      # (`var eval` / `var public` in strict mode).
-      if p.identMatches(t, "eval") or p.identMatches(t, "arguments"):
+      # eval/arguments: escape-aware EXCEPT at a simple identifier parameter.
+      # Zen-c checks simple params with a plain byte-compare (name_is_arguments_
+      # or_eval) but var-decl/fn-name/catch with the escape-aware
+      # binding_name_strict_reserved, so `function f(eval){}` is ACCEPTED
+      # while `var eval` is rejected. Match that quirk. (Future-reserved
+      # stays escape-aware everywhere, incl. simple params.)
+      var isEvalArgs: bool
+      if simpleParam:
+        let sp = p.strictSpelling(t)
+        isEvalArgs = (sp == "eval" or sp == "arguments")
+      else:
+        isEvalArgs = p.identMatches(t, "eval") or p.identMatches(t, "arguments")
+      if isEvalArgs:
         p.hadError = true
       else:
         for w in FutureReserved:
@@ -480,7 +490,7 @@ proc parseArrowBody(p: var Parser, isAsync: bool): AstNode =
 
 proc parseArrowSingle(p: var Parser, isAsync: bool): AstNode =
   let nameTok = p.advance()             # identifier
-  p.checkBindingReserved(nameTok)
+  p.checkBindingReserved(nameTok)       # single arrow param = escape-aware (unlike paren params)
   discard p.advance()                   # '=>'
   let param = newLeaf(IdentExpr, nameTok.start, nameTok.start + nameTok.length)
   let body = parseArrowBody(p, isAsync)
@@ -1377,7 +1387,7 @@ proc parseVarDecl(p: var Parser, consumeSemi = true): AstNode =
     let nameTok = p.peek()
     if not isBindingIdent(nameTok.kind):
       break                     # guard: non-identifier = stop
-    p.checkBindingReserved(nameTok)
+    p.checkBindingReserved(nameTok)    # var-decl declarator = escape-aware
     discard p.advance()         # consume the identifier
 
     var declEnd = nameTok.start + nameTok.length
@@ -1617,7 +1627,7 @@ proc parseParamList(p: var Parser): seq[AstNode] =
     if p.peek().kind == Ellipsis:
       let dots = p.advance()
       let nameTok = p.advance()                 # identifier
-      p.checkBindingReserved(nameTok)
+      p.checkBindingReserved(nameTok, simpleParam = true)
       let ident = newLeaf(IdentExpr, nameTok.start, nameTok.start + nameTok.length)
       result.add(newRestParam(dots.start, nameTok.start + nameTok.length, ident))
       break                                     # rest must be last
@@ -1631,7 +1641,7 @@ proc parseParamList(p: var Parser): seq[AstNode] =
       result.add(param)
     else:
       let nameTok = p.advance()                 # identifier
-      p.checkBindingReserved(nameTok)
+      p.checkBindingReserved(nameTok, simpleParam = true)
       let ident = newLeaf(IdentExpr, nameTok.start, nameTok.start + nameTok.length)
       if p.peek().kind == Eq:
         discard p.advance()
@@ -1881,7 +1891,7 @@ proc parseClassBody(p: var Parser, isDerived: bool): seq[AstNode] =
 proc parseClassDecl(p: var Parser): AstNode =
   let kw = p.advance()                      # 'class'
   let nameTok = p.advance()                 # class name (binding ident)
-  p.checkBindingReserved(nameTok)
+  p.checkBindingReserved(nameTok, simpleParam = true)   # class name uses plain eval/args compare (Zen-c name_is_arguments_or_eval)
   var parent: AstNode = nil
   if p.peek().kind == KwExtends:
     discard p.advance()
@@ -1897,7 +1907,7 @@ proc parseClassExpr(p: var Parser): AstNode =
   var nameLen = 0'u32
   if p.peek().kind == Identifier:
     let nt = p.advance()
-    p.checkBindingReserved(nt)
+    p.checkBindingReserved(nt, simpleParam = true)   # class name = plain eval/args compare
     nameStart = nt.start; nameLen = nt.length
   var parent: AstNode = nil
   if p.peek().kind == KwExtends:

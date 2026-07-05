@@ -3397,3 +3397,25 @@ suite "parser early errors 2f-3c: escaped-keyword + yield/await label":
     # NOTE: this is a REJECT (yield binding in a generator body) — kept to
     # guard against regressing the pre-existing agreement.
     check hadErr("function* g(){ var \\u0079ield; }")
+
+suite "parser 2f-3c site-aware escaped eval/arguments (strict)":
+  # Zen-c uses an escape-AWARE check at var/let/fn-name/catch/pattern/arrow-single
+  # but a PLAIN byte-compare at regular-param/arrow-paren/rest/class-name — so an
+  # escaped `eval` is rejected at the former and accepted at the latter.
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "escaped eval REJECTED at escape-aware sites":
+    check hadErr("\"use strict\"; var \\u0065val;")
+    check hadErr("\"use strict\"; function \\u0065val(){}")
+    check hadErr("\"use strict\"; try{}catch(\\u0065val){}")
+    check hadErr("\"use strict\"; \\u0065val => 1;")
+    check hadErr("\"use strict\"; function f({x: \\u0065val}){}")
+  test "escaped eval ACCEPTED at plain-compare sites":
+    check not hadErr("\"use strict\"; function f(\\u0065val){}")
+    check not hadErr("\"use strict\"; (\\u0065val) => 1;")
+    check not hadErr("\"use strict\"; function f(...\\u0065val){}")
+    check not hadErr("\"use strict\"; class \\u0065val {}")
+  test "unescaped eval rejected everywhere; future-reserved escape-aware at params":
+    check hadErr("\"use strict\"; function f(eval){}")
+    check hadErr("\"use strict\"; class eval {}")
+    check hadErr("\"use strict\"; function f(p\\u0075blic){}")
