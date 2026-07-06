@@ -197,7 +197,12 @@ proc checkClassName(p: var Parser, t: Token) =
   ## binding, which Zen-c allows for `let`), plus `eval`/`arguments`. Plain
   ## byte-compare (Zen-c is_strict_reserved_name + name_is_arguments_or_eval;
   ## `await`/`async`/`of` stay valid class names). Escaped spellings are 2f-3c-tier.
-  if t.kind == KwYield or t.kind == KwLet:
+  # Zen-c's class-name check is PLAIN (is_strict_reserved_name), so an ESCAPED
+  # spelling slips through and is ACCEPTED. The Nim lexer decodes escaped
+  # keywords to their Kw* kind, so guard the KwYield/KwLet branch on "not
+  # escaped" (a `\` in the source slice ⇒ it was written with an escape).
+  if (t.kind == KwYield or t.kind == KwLet) and
+     '\\' notin p.source[t.start.int ..< (t.start + t.length).int]:
     p.hadError = true
   elif t.kind == Identifier and p.strictSpelling(t) in ClassNameReserved:
     p.hadError = true
