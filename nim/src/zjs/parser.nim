@@ -19,6 +19,11 @@ type
                            ## class — the only context where `super()` is legal. Set per
                            ## class-member in parseClassBody; deliberately NOT reset inside
                            ## nested fns (matches Zen-c's textual in_derived_constructor)
+    inStaticBlock*: bool   ## true anywhere lexically inside a class `static {}` block
+    staticBlockDepth*: uint32 ## functionDepth captured at the static block; `await` is
+                           ## reserved only where functionDepth == staticBlockDepth (i.e.
+                           ## directly in the block, not in a nested fn/arrow/method that
+                           ## bumped functionDepth) — mirrors Zen-c static_block_depth
 
 proc initParser*(source: string): Parser =
   var lx = initLexer(source)
@@ -159,6 +164,8 @@ proc checkBindingReserved(p: var Parser, t: Token, simpleParam = false) =
   ## stays legal while a yield binding in the body or a nested fn's params errors.
   if (t.kind == KwYield and p.inGenerator) or (t.kind == KwAwait and p.inAsync):
     p.hadError = true
+  if t.kind == KwAwait and p.inStaticBlock and p.functionDepth == p.staticBlockDepth:
+    p.hadError = true                         # await may not be BOUND directly in a static block
   if p.strict:
     if t.kind == KwYield:
       p.hadError = true                    # strict reserves `yield` everywhere
@@ -780,11 +787,12 @@ proc parsePrimary(p: var Parser): AstNode =
     return newLeaf(IdentExpr, t.start, t.start + t.length)
 
   of KwAwait:
-    # Outside async, 'await' is an identifier
-    if not p.inAsync:
-      discard p.advance()
-      return newLeaf(IdentExpr, t.start, t.start + t.length)
-    # Inside async, handled in parseUnary before we get here
+    # `await` is reserved directly inside a class `static {}` block (§15.7.1),
+    # so a reference to it there is a SyntaxError. Outside async (and outside a
+    # static block) `await` is a plain identifier; inside async an
+    # AwaitExpression is handled in parseUnary before we reach here.
+    if p.inStaticBlock and p.functionDepth == p.staticBlockDepth:
+      p.hadError = true
     discard p.advance()
     return newLeaf(IdentExpr, t.start, t.start + t.length)
 
@@ -1773,9 +1781,15 @@ proc parseMethodBodyPair(p: var Parser): AstNode =
       if p.toks[p.pos + 1].kind == LBrace:
         discard p.advance()                 # consume 'static'
         let sg = p.inGenerator; let sa = p.inAsync
+        let ssb = p.inStaticBlock; let ssbd = p.staticBlockDepth
         p.inGenerator = false; p.inAsync = false
+        # The static block does NOT bump functionDepth (a static block is not a
+        # returnable context — 2f-1). `await` is reserved at this depth; any
+        # nested fn/arrow/method bumps functionDepth and escapes the reservation.
+        p.inStaticBlock = true; p.staticBlockDepth = p.functionDepth
         let body = parseBlock(p)
         p.inGenerator = sg; p.inAsync = sa
+        p.inStaticBlock = ssb; p.staticBlockDepth = ssbd
         if body == nil: return nil
         return newStaticBlock(mutStart, body.`end`, body)
       # `static <name>` / `static [` / `static *` / `static #x`

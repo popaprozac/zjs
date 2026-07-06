@@ -3576,3 +3576,21 @@ suite "parser early errors: yield as IdentifierReference in strict":
     check not hadErr("function* g(){ x = yield; }")       # YieldExpression in generator
     check not hadErr("function f(){ return yield; }")     # sloppy function
     check not hadErr("\"use strict\"; var yieldx = 1;")   # not the word yield
+
+suite "parser early errors: await reserved in a class static block":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "await (ref or binding) directly in a static block is rejected":
+    check hadErr("class C { static { await; } }")
+    check hadErr("class C { static { x = await; } }")
+    check hadErr("class C { static { var await; } }")
+    check hadErr("class C { static { let await = 1; } }")
+    check hadErr("class C { static { { await; } } }")     # nested plain block still reserved
+  test "await escapes the reservation inside a nested fn/arrow/method (depth bump)":
+    check not hadErr("class C { static { () => await; } }")
+    check not hadErr("class C { static { function f(){ await; } } }")
+    check not hadErr("class C { static { ({ m(){ await; } }); } }")
+    check not hadErr("class C { static { class D { m(){ await; } } } }")
+  test "await unaffected outside a static block":
+    check not hadErr("class C { m(){ return await; } }")
+    check not hadErr("var await = 1;")
