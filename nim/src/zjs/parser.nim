@@ -805,6 +805,14 @@ proc parsePrimary(p: var Parser): AstNode =
     discard p.advance()
     return newLeaf(IdentExpr, t.start, t.start + t.length)
 
+  of PrivateName:
+    # A PrivateName is only valid as `#x in obj` (handled in parseRelational) or
+    # after `.` (member access). Reaching parsePrimary as a bare primary — e.g.
+    # `return #x;` — is a SyntaxError (§13.2.1).
+    p.hadError = true
+    discard p.advance()
+    return newLeaf(IdentExpr, t.start, t.start + t.length)
+
   of KwAwait:
     # `await` is reserved directly inside a class `static {}` block (§15.7.1),
     # so a reference to it there is a SyntaxError. Outside async (and outside a
@@ -1281,8 +1289,20 @@ proc parseShift(p: var Parser): AstNode =
 # Level 8 — relational.
 # When p.noIn is true, KwIn is NOT treated as an operator (for-init context).
 proc parseRelational(p: var Parser): AstNode =
-  result = parseShift(p)
-  if result == nil: return nil
+  # Brand check: `#x in obj` — the ONLY position where a PrivateName parses as
+  # an expression (§13.10.1). The LHS becomes a Member with recv=nil (name #x);
+  # validatePrivateNames later checks it resolves. Ported from parser.zc:3439.
+  if p.peek().kind == PrivateName and p.toks[p.pos + 1].kind == KwIn and not p.noIn:
+    let pname = p.advance()
+    let inTok = p.advance()
+    let rhs = parseShift(p)
+    if rhs == nil: return nil
+    let lhs = newMember(NodeKind.Member, pname.start, pname.start + pname.length,
+                        pname.start, pname.length, nil)   # recv=nil marks the brand-check shape
+    result = newBinary(NodeKind.Binary, pname.start, rhs.`end`, inTok.kind, lhs, rhs)
+  else:
+    result = parseShift(p)
+    if result == nil: return nil
   while true:
     let k = p.peek().kind
     if k notin {Lt, Gt, LtEq, GtEq, KwIn, KwInstanceof}: break

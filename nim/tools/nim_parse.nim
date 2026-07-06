@@ -46,7 +46,7 @@ proc dumpAst(n: AstNode, src: string, depth: int) =
     for s in n.stmts: dumpAst(s, src, depth+1)
   of Member, OptionalMember:
     stdout.write(&"{ind}{label} name=\"{slice(src, n.propStart, n.propStart + n.propLength)}\"\n")
-    dumpAst(n.recv, src, depth+1)
+    if n.recv != nil: dumpAst(n.recv, src, depth+1)   # recv nil = `#x in obj` brand-check LHS
   of Computed, OptionalComputed:
     stdout.write(&"{ind}{label}\n")
     dumpAst(n.recv, src, depth+1)

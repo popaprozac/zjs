@@ -3628,3 +3628,23 @@ suite "parser: `in` allowed in a conditional consequent (for-init)":
   test "for-in / for-init noIn still honored elsewhere":
     check not hadErr("for (x in y) {}")
     check not hadErr("for (var i = 0; i < 10; i++) {}")
+
+suite "parser: private brand-check `#x in obj`":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  proc one(src: string): AstNode = parseOne(src)
+  test "#x in obj is a Binary(in) with a recv-less Member LHS":
+    let s = one("class C { #x; m(){ return #x in this; } }")
+    check s != nil and s.kind == NodeKind.ClassDecl
+  test "valid brand checks accepted":
+    check not hadErr("class C { #x; m(){ return #x in obj; } }")
+    check not hadErr("class C { #x; #y; m(){ return #x in a && #y in b; } }")
+    check not hadErr("class C { #x; s = #x in this; }")
+  test "PrivateName only valid as `#x in` or after `.`":
+    check hadErr("class C { #x; m(){ return #x; } }")     # bare #x
+    check hadErr("class C { #x; m(){ return #x + 1; } }")
+    check hadErr("#x in obj")                              # no enclosing class
+    check hadErr("class C { #x; m(){ return #y in this; } }")  # undeclared #y
+  test "normal member/in unaffected":
+    check not hadErr("class C { #x; m(){ return this.#x; } }")
+    check not hadErr("a in b")
