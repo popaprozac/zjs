@@ -1374,7 +1374,12 @@ proc parseConditional(p: var Parser): AstNode =
   if cond == nil: return nil
   if p.peek().kind != Question: return cond
   discard p.advance()                   # consume '?'
+  # The consequent (between `?` and `:`) is ALWAYS [+In] — `in` is allowed there
+  # even in a no-in context like a for-init (§13.14 ConditionalExpression). The
+  # alternative keeps the current [?In].
+  let savedNoIn = p.noIn; p.noIn = false
   let conseq = parseAssignmentExpr(p)
+  p.noIn = savedNoIn
   if conseq == nil: return nil
   if not p.expect(Colon): return nil
   let alt = parseAssignmentExpr(p)

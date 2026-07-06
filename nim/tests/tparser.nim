@@ -3618,3 +3618,13 @@ suite "parser early errors: class declaration name is strict-reserved":
     check not hadErr("(class eval {})")
     check not hadErr("\"use strict\"; (class public {})")
     check not hadErr("let X = class implements {};")
+
+suite "parser: `in` allowed in a conditional consequent (for-init)":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "conditional consequent is [+In] even in a no-in for-init":
+    check not hadErr("for (a ? b in c : d;;) {}")
+    check not hadErr("for (var x = a ? b in c : d;;) {}")
+  test "for-in / for-init noIn still honored elsewhere":
+    check not hadErr("for (x in y) {}")
+    check not hadErr("for (var i = 0; i < 10; i++) {}")
