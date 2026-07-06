@@ -3648,3 +3648,25 @@ suite "parser: private brand-check `#x in obj`":
   test "normal member/in unaffected":
     check not hadErr("class C { #x; m(){ return this.#x; } }")
     check not hadErr("a in b")
+
+suite "parser early errors: declaration as a single-statement body":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "declarations rejected as if/while/do/for/with/label body":
+    check hadErr("if (x) function f(){}")
+    check hadErr("if (x) class C {}")
+    check hadErr("if (x) let y = 1")
+    check hadErr("if (x) a; else function f(){}")
+    check hadErr("while (x) function f(){}")
+    check hadErr("do function f(){} while (x)")
+    check hadErr("for (;;) let y = 1")
+    check hadErr("for (a of b) function f(){}")
+    check hadErr("with (o) function f(){}")
+    check hadErr("l: function f(){}")
+    check hadErr("l: class C {}")
+  test "var + blocks + statement-list level are fine":
+    check not hadErr("if (x) var w = 1")
+    check not hadErr("l: var x = 1")
+    check not hadErr("if (x) { function f(){} }")
+    check not hadErr("function f(){}")
+    check not hadErr("switch (x) { case 1: function f(){} }")

@@ -1517,17 +1517,31 @@ proc parseBlock(p: var Parser): AstNode =
   discard p.expect(RBrace)
   newBlock(lb.start, close.start + close.length, stmts)
 
+proc checkSubStatement(p: var Parser, s: AstNode) =
+  ## A single Statement position — the body of if/else/while/do/for*/with and a
+  ## LabelledStatement — may NOT be a Declaration: FunctionDeclaration (incl.
+  ## generator/async), ClassDeclaration, or a lexical `let`/`const`. `var` is
+  ## allowed. Zen-c does NOT implement the Annex-B relaxations (labeled / if-body
+  ## function declarations), so this rejects them unconditionally.
+  if s == nil: return
+  if s.kind in {FunctionDecl, ClassDecl}:
+    p.hadError = true
+  elif s.kind == VarDecl and s.declKind in {KwLet, KwConst}:
+    p.hadError = true
+
 proc parseIf(p: var Parser): AstNode =
   let kw = p.advance()                       # 'if'
   discard p.expect(LParen)
   let cond = parseExpression(p)
   discard p.expect(RParen)
   let then = parseStatement(p)
+  p.checkSubStatement(then)
   var els: AstNode = nil
   var endPos = (if then != nil: then.`end` else: kw.start)
   if p.peek().kind == KwElse:
     discard p.advance()
     els = parseStatement(p)
+    p.checkSubStatement(els)
     if els != nil: endPos = els.`end`
   newIf(kw.start, endPos, cond, then, els)
 
@@ -1537,11 +1551,13 @@ proc parseWhile(p: var Parser): AstNode =
   let cond = parseExpression(p)
   discard p.expect(RParen)
   let body = parseStatement(p)
+  p.checkSubStatement(body)
   newWhile(kw.start, (if body != nil: body.`end` else: kw.start), cond, body)
 
 proc parseDoWhile(p: var Parser): AstNode =
   let kw = p.advance()
   let body = parseStatement(p)
+  p.checkSubStatement(body)
   discard p.expect(KwWhile)
   discard p.expect(LParen)
   let cond = parseExpression(p)
@@ -1589,6 +1605,7 @@ proc parseFor(p: var Parser): AstNode =
     let iterable = if wasOf: parseAssignmentExpr(p) else: parseExpression(p)
     discard p.expect(RParen)
     let body = parseStatement(p)
+    p.checkSubStatement(body)
     let endPos = if body != nil: body.`end` else: kw.start
     let stmtKind = if wasOf: ForOfStmt else: ForInStmt
     return newForInOf(stmtKind, kw.start, endPos, binding, iterable, body)
@@ -1602,6 +1619,7 @@ proc parseFor(p: var Parser): AstNode =
   if p.peek().kind != RParen: update = parseExpression(p)
   discard p.expect(RParen)
   let body = parseStatement(p)
+  p.checkSubStatement(body)
   newFor(kw.start, (if body != nil: body.`end` else: kw.start), init, test, update, body)
 
 proc parseReturn(p: var Parser): AstNode =
@@ -1697,6 +1715,7 @@ proc parseWith(p: var Parser): AstNode =
   let obj = parseExpression(p)
   discard p.expect(RParen)
   let body = parseStatement(p)
+  p.checkSubStatement(body)
   newWith(kw.start, (if body != nil: body.`end` else: kw.start), obj, body)
 
 # ------------------------------------------------------------------
@@ -2110,6 +2129,7 @@ proc parseStatement(p: var Parser): AstNode =
       p.hadError = true
     discard p.advance()                      # ':'
     let body = parseStatement(p)
+    p.checkSubStatement(body)
     return newLabeled(id.start, (if body != nil: body.`end` else: id.start), id.start, id.length, body)
   # Dispatch variable declarations
   if p.peek().kind in {KwVar, KwLet, KwConst}:
