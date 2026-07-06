@@ -198,6 +198,20 @@ proc paramsAreSimple(params: seq[AstNode]): bool =
     if prm.identPattern != nil or prm.identDefault != nil: return false
   true
 
+proc bodyHasUseStrictDirective(p: Parser, body: AstNode): bool =
+  ## True iff the block body's directive prologue contains an (unescaped)
+  ## "use strict". A directive is a leading ExpressionStatement whose sole
+  ## expression is a StringLiteral; the prologue ends at the first non-string
+  ## statement. Mirrors the length-12 raw match (escaped forms are NOT
+  ## directives). Ports the intent of Zen-c body_has_use_strict_directive.
+  if body == nil or body.kind != BlockStmt: return false
+  for st in body.stmtList:
+    if st.kind != StringExpr: return false          # prologue ended
+    if (st.`end` - st.start) == 12'u32:
+      let s = p.source[st.start.int ..< st.`end`.int]
+      if s == "\"use strict\"" or s == "'use strict'": return true
+  return false
+
 proc checkDupParams(p: var Parser, params: seq[AstNode]) =
   ## §15.x UniqueFormalParameters: a duplicate bound name in the parameter
   ## list is a SyntaxError. Caller gates WHEN this applies (arrow / method /
@@ -503,6 +517,8 @@ proc parseArrowParen(p: var Parser, isAsync: bool): AstNode =
   discard p.expect(RParen)
   discard p.expect(Arrow)
   let body = parseArrowBody(p, isAsync)
+  if not paramsAreSimple(params) and bodyHasUseStrictDirective(p, body):
+    p.hadError = true
   newArrow(lp.start, (if body != nil: body.`end` else: lp.start), body, params, isAsync)
 
 # ------------------------------------------------------------------
@@ -854,6 +870,8 @@ proc parseObject(p: var Parser): AstNode =
         let body = parseBlock(p)
         p.functionDepth = sfd
         p.inGenerator = sg; p.inAsync = sa
+        if not paramsAreSimple(params) and bodyHasUseStrictDirective(p, body):
+          p.hadError = true
         let fn = newFunctionExpr(key.start, body.`end`, 0'u32, 0'u32, body, params, omAsync, omGen)
         props.add(newObjectProp(key.start, body.`end`, 0'u32, 0'u32, fn, key))
       elif p.peek().kind == Colon:
@@ -903,6 +921,8 @@ proc parseObject(p: var Parser): AstNode =
         let body = parseBlock(p)
         p.functionDepth = sfd
         p.inGenerator = sg; p.inAsync = sa
+        if not paramsAreSimple(params) and bodyHasUseStrictDirective(p, body):
+          p.hadError = true
         let fnStart = if computedAccKey != nil: computedAccKey.start else: realNameStart
         let fn = newFunctionExpr(fnStart, body.`end`, realNameStart, realNameLen, body, params)
         props.add(newObjectProp(keyTok.start, body.`end`, realNameStart, realNameLen, fn, computedAccKey))
@@ -925,6 +945,8 @@ proc parseObject(p: var Parser): AstNode =
       let body = parseBlock(p)
       p.functionDepth = sfd
       p.inGenerator = sg; p.inAsync = sa
+      if not paramsAreSimple(params) and bodyHasUseStrictDirective(p, body):
+        p.hadError = true
       let fn = newFunctionExpr(keyTok.start, body.`end`, 0'u32, 0'u32, body, params, omAsync, omGen)
       props.add(newObjectProp(keyTok.start, body.`end`, keyTok.start, keyTok.length, fn, nil))
     elif p.peek().kind == Colon:
@@ -1672,6 +1694,8 @@ proc parseFunctionDecl(p: var Parser, isAsync = false): AstNode =
   let body = parseBlock(p)
   p.functionDepth = savedFD
   p.inGenerator = savedG; p.inAsync = savedA
+  if not paramsAreSimple(params) and bodyHasUseStrictDirective(p, body):
+    p.hadError = true
   newFunctionDecl(kw.start, body.`end`, nameTok.start, nameTok.length, body, params, isAsync, isGen)
 
 # ------------------------------------------------------------------
@@ -1698,6 +1722,8 @@ proc parseFunctionExpr(p: var Parser, isAsync = false): AstNode =
   let body = parseBlock(p)
   p.functionDepth = savedFD
   p.inGenerator = savedG; p.inAsync = savedA
+  if not paramsAreSimple(params) and bodyHasUseStrictDirective(p, body):
+    p.hadError = true
   newFunctionExpr(kw.start, body.`end`, nameStart, nameLen, body, params, isAsync, isGen)
 
 # ------------------------------------------------------------------
@@ -1840,6 +1866,8 @@ proc parseMethodBodyPair(p: var Parser): AstNode =
   p.functionDepth = sfd
   p.inGenerator = sg; p.inAsync = sa
   if body == nil: return nil
+  if not paramsAreSimple(params) and bodyHasUseStrictDirective(p, body):
+    p.hadError = true
   # §15.7 MethodDefinition PropName restrictions (computed names skip):
   # a NON-static "constructor" may not be a special method (async/generator/
   # get/set); a STATIC method may not be named "prototype". (A static method

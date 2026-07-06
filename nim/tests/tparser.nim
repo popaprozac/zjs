@@ -3460,3 +3460,57 @@ suite "parser early errors: arguments in field initializer":
     check not hadErr("class C { m() { return arguments; } }")
   test "field NAMED arguments accepted":
     check not hadErr("class C { arguments = 1; }")
+
+suite "parser early errors: non-simple params + use-strict directive":
+  # ECMA-262 §15.x: a function whose parameter list is NON-simple (default `=`,
+  # destructuring `{}`/`[]`, or rest `...`) AND whose body's directive prologue
+  # contains an (unescaped) "use strict" directive is a SyntaxError. Simple
+  # params, no directive, or a "use strict" that is not in the prologue → OK.
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  # --- REJECT: non-simple params + "use strict" directive ---
+  test "default param + directive rejected":
+    check hadErr("function f(a = 1){ \"use strict\"; }")
+  test "object-pattern param + directive rejected":
+    check hadErr("function f({a}){ \"use strict\"; }")
+  test "array-pattern param + directive rejected":
+    check hadErr("function f([a]){ \"use strict\"; }")
+  test "rest param + directive rejected":
+    check hadErr("function f(...a){ \"use strict\"; }")
+  test "generator default param + directive rejected":
+    check hadErr("function* g(a = 1){ \"use strict\"; }")
+  test "async default param + directive rejected":
+    check hadErr("async function h(a = 1){ \"use strict\"; }")
+  test "class method default param + directive rejected":
+    check hadErr("class C { m(a = 1){ \"use strict\"; } }")
+  test "setter default param + directive rejected":
+    check hadErr("class C { get x(){ \"use strict\"; } set x(v = 1){ \"use strict\"; } }")
+  test "object method default param + directive rejected":
+    check hadErr("({ m(a = 1){ \"use strict\"; } })")
+  test "paren arrow default param + directive rejected":
+    check hadErr("(a = 1) => { \"use strict\"; }")
+  test "paren arrow pattern param + directive rejected":
+    check hadErr("({a}) => { \"use strict\"; }")
+  test "single-quote directive rejected":
+    check hadErr("function f(a = 1){ 'use strict'; }")
+  # --- ACCEPT: simple params, no directive, or directive not in prologue ---
+  test "simple param + directive accepted":
+    check not hadErr("function f(a){ \"use strict\"; }")
+  test "two simple params + directive accepted":
+    check not hadErr("function f(a, b){ \"use strict\"; }")
+  test "default param, empty body accepted":
+    check not hadErr("function f(a = 1){ }")
+  test "default param, non-directive body accepted":
+    check not hadErr("function f(a = 1){ foo(); }")
+  test "use strict NOT in prologue accepted":
+    check not hadErr("function f(a = 1){ 42; \"use strict\"; }")
+  test "escaped use strict is not a directive — accepted":
+    check not hadErr("function f(a = 1){ \"\\165se strict\"; }")
+  test "program-level directive + default-param function accepted":
+    check not hadErr("\"use strict\"; function f(a = 1){ }")
+  test "expression-body arrow (no directive possible) accepted":
+    check not hadErr("(a = 1) => a")
+  test "single-ident arrow with directive accepted":
+    check not hadErr("x => { \"use strict\"; }")
+  test "simple class method param + directive accepted":
+    check not hadErr("class C { m(a){ \"use strict\"; } }")
