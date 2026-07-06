@@ -770,11 +770,12 @@ proc parsePrimary(p: var Parser): AstNode =
     return newLeaf(IdentExpr, t.start, t.start + t.length)
 
   of KwYield:
-    # Outside a generator, 'yield' is an identifier
-    if not p.inGenerator:
-      discard p.advance()
-      return newLeaf(IdentExpr, t.start, t.start + t.length)
-    # Inside a generator, handled in parseAssignmentExpr before we get here
+    # Inside a generator, YieldExpression is handled in parseAssignmentExpr
+    # before we reach here — so a KwYield at this point is an IdentifierReference.
+    # `yield` is a reserved word in strict mode (§12.7.2), so a reference to it
+    # in strict code (incl. class bodies / static blocks) is a SyntaxError.
+    if not p.inGenerator and p.strict:
+      p.hadError = true
     discard p.advance()
     return newLeaf(IdentExpr, t.start, t.start + t.length)
 

@@ -3559,3 +3559,20 @@ suite "parser early errors: super() outside a derived constructor":
     check not hadErr("function f(){ return super.x; }")
     check not hadErr("super.x;")
     check not hadErr("class C extends B { x = 1; }")     # synthetic ctor super() not checked
+
+suite "parser early errors: yield as IdentifierReference in strict":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "yield reference rejected in strict code":
+    check hadErr("\"use strict\"; yield;")
+    check hadErr("\"use strict\"; x = yield;")
+    check hadErr("class C { m(){ return yield; } }")     # class body is strict
+    check hadErr("class C { m(a = yield){} }")           # strict method param default
+    check hadErr("class C { static { yield; } }")        # static block is strict
+    check hadErr("class C { x = yield; }")               # field init (strict)
+  test "yield reference/expression stays valid where allowed":
+    check not hadErr("yield;")                            # sloppy top-level
+    check not hadErr("({ m(){ return yield; } })")        # object method NOT strict
+    check not hadErr("function* g(){ x = yield; }")       # YieldExpression in generator
+    check not hadErr("function f(){ return yield; }")     # sloppy function
+    check not hadErr("\"use strict\"; var yieldx = 1;")   # not the word yield
