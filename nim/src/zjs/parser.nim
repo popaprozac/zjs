@@ -824,8 +824,11 @@ proc parsePrimary(p: var Parser): AstNode =
     return newLeaf(IdentExpr, t.start, t.start + t.length)
 
   else:
-    # Unknown / unimplemented primary — skip and return nil.
-    discard p.advance()
+    # No valid primary here. Reaching this point means an expression was
+    # required but the next token cannot begin one — e.g. a reserved word used
+    # as an IdentifierReference (`x = break`, escaped `x = break`), or an
+    # incomplete expression (`a +`, `x = ;`). That is a SyntaxError.
+    p.hadError = true
     return nil
 
 # ------------------------------------------------------------------

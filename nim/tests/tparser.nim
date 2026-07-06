@@ -3670,3 +3670,25 @@ suite "parser early errors: declaration as a single-statement body":
     check not hadErr("if (x) { function f(){} }")
     check not hadErr("function f(){}")
     check not hadErr("switch (x) { case 1: function f(){} }")
+
+suite "parser early errors: reserved word / incomplete expression":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "reserved word as an IdentifierReference is a SyntaxError":
+    check hadErr("x = break")
+    check hadErr("x = return")
+    check hadErr("x = var")
+    check hadErr("x = case")
+    check hadErr("x = extends")
+    check hadErr("(a = break) => a")
+    check hadErr("f(break)")
+  test "incomplete expression is a SyntaxError":
+    check hadErr("a +")
+    check hadErr("x = ;")
+    check hadErr("1 * ")
+  test "valid expressions unaffected":
+    check not hadErr("a + b * c")
+    check not hadErr("typeof x")
+    check not hadErr("a in b")
+    check not hadErr("new Foo()")
+    check not hadErr("async () => await x")
