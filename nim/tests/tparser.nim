@@ -3514,3 +3514,21 @@ suite "parser early errors: non-simple params + use-strict directive":
     check not hadErr("x => { \"use strict\"; }")
   test "simple class method param + directive accepted":
     check not hadErr("class C { m(a){ \"use strict\"; } }")
+
+suite "non-simple params + use-strict: object computed/accessor exemption":
+  # Zen-c applies the check to named object methods + ALL class methods, but
+  # NOT to object computed-methods or object accessors.
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "object computed method + accessor are EXEMPT (accept)":
+    check not hadErr("({ [k](a=1){ \"use strict\"; } })")
+    check not hadErr("({ set p(a=1){ \"use strict\"; } })")
+    check not hadErr("({ set [k](a=1){ \"use strict\"; } })")
+  test "named object method still rejects (incl gen/async)":
+    check hadErr("({ m(a=1){ \"use strict\"; } })")
+    check hadErr("({ *m(a=1){ \"use strict\"; } })")
+    check hadErr("({ async m(a=1){ \"use strict\"; } })")
+  test "class methods reject at ALL forms":
+    check hadErr("class C { [k](a=1){ \"use strict\"; } }")
+    check hadErr("class C { set p(a=1){ \"use strict\"; } }")
+    check hadErr("class C { constructor(a=1){ \"use strict\"; } }")

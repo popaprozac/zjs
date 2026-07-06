@@ -870,8 +870,8 @@ proc parseObject(p: var Parser): AstNode =
         let body = parseBlock(p)
         p.functionDepth = sfd
         p.inGenerator = sg; p.inAsync = sa
-        if not paramsAreSimple(params) and bodyHasUseStrictDirective(p, body):
-          p.hadError = true
+        # NOTE: Zen-c does NOT apply the non-simple-params + use-strict check to
+        # object COMPUTED methods (only named object methods + all class methods).
         let fn = newFunctionExpr(key.start, body.`end`, 0'u32, 0'u32, body, params, omAsync, omGen)
         props.add(newObjectProp(key.start, body.`end`, 0'u32, 0'u32, fn, key))
       elif p.peek().kind == Colon:
@@ -921,8 +921,8 @@ proc parseObject(p: var Parser): AstNode =
         let body = parseBlock(p)
         p.functionDepth = sfd
         p.inGenerator = sg; p.inAsync = sa
-        if not paramsAreSimple(params) and bodyHasUseStrictDirective(p, body):
-          p.hadError = true
+        # NOTE: Zen-c does NOT apply the non-simple-params + use-strict check to
+        # object ACCESSORS (get/set) — only named object methods + all class methods.
         let fnStart = if computedAccKey != nil: computedAccKey.start else: realNameStart
         let fn = newFunctionExpr(fnStart, body.`end`, realNameStart, realNameLen, body, params)
         props.add(newObjectProp(keyTok.start, body.`end`, realNameStart, realNameLen, fn, computedAccKey))
