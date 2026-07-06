@@ -3532,3 +3532,30 @@ suite "non-simple params + use-strict: object computed/accessor exemption":
     check hadErr("class C { [k](a=1){ \"use strict\"; } }")
     check hadErr("class C { set p(a=1){ \"use strict\"; } }")
     check hadErr("class C { constructor(a=1){ \"use strict\"; } }")
+
+suite "parser early errors: super() outside a derived constructor":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "super() rejected outside a derived ctor":
+    check hadErr("class C { constructor(){ super(); } }")       # non-derived
+    check hadErr("class C extends B { m(){ super(); } }")       # method
+    check hadErr("class C extends B { static m(){ super(); } }")
+    check hadErr("class C extends B { x = super(); }")          # field init
+    check hadErr("function f(){ super(); }")
+    check hadErr("super();")
+  test "special/computed/string 'constructor' is not THE constructor":
+    check hadErr("class C extends B { [\"constructor\"](){ super(); } }")
+    check hadErr("class C extends B { static constructor(){ super(); } }")
+    check hadErr("class C extends B { *constructor(){ super(); } }")
+    check hadErr("class C extends B { \"constructor\"(){ super(); } }")
+  test "super() accepted in a derived ctor (incl nested fn/arrow/block, Zen-c-permissive)":
+    check not hadErr("class C extends B { constructor(){ super(); } }")
+    check not hadErr("class C extends B { constructor(){ super(x, y); } }")
+    check not hadErr("class C extends B { constructor(){ () => super(); } }")
+    check not hadErr("class C extends B { constructor(){ { super(); } } }")
+    check not hadErr("class C extends B { constructor(){ function f(){ super(); } } }")
+    check not hadErr("class C extends B { m(){ class D extends E { constructor(){ super(); } } } }")
+  test "super.prop accepted everywhere (no parse-time position check)":
+    check not hadErr("function f(){ return super.x; }")
+    check not hadErr("super.x;")
+    check not hadErr("class C extends B { x = 1; }")     # synthetic ctor super() not checked

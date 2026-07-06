@@ -15,6 +15,10 @@ type
     functionDepth*: uint32 ## nesting depth of returnable function contexts; 0 = top level
     strict*: bool          ## strict mode: set by a program-level "use strict" prologue
                            ## (propagates into all nested fns) and inside class bodies
+    inDerivedCtor*: bool   ## true while parsing the constructor body of a derived (extends)
+                           ## class — the only context where `super()` is legal. Set per
+                           ## class-member in parseClassBody; deliberately NOT reset inside
+                           ## nested fns (matches Zen-c's textual in_derived_constructor)
 
 proc initParser*(source: string): Parser =
   var lx = initLexer(source)
@@ -1138,6 +1142,10 @@ proc parseCallMember(p: var Parser): AstNode =
       expr = newComputed(NodeKind.Computed, expr.start,
                          close.start + close.length, expr, idx)
     elif k == LParen:
+      # `super(...)` is a SuperCall — legal ONLY directly in a derived-class
+      # constructor (Zen-c parse_call_member: !in_derived_constructor → error).
+      if expr.kind == SuperExpr and not p.inDerivedCtor:
+        p.hadError = true
       let (args, argsEnd) = p.parseArguments()
       expr = newCall(NodeKind.Call, expr.start, argsEnd, expr, args)
     elif k == QuestionDot:
@@ -1882,6 +1890,30 @@ proc parseMethodBodyPair(p: var Parser): AstNode =
                       (if computedKey != nil: 0'u32 else: nameTok.length),
                       body, computedKey, params, isStatic, accessor, isAsync, isGen)
 
+proc nextMemberIsConstructor(p: Parser): bool =
+  ## Peek-ahead: is the upcoming class member a plain non-static, non-special
+  ## `constructor(...)`? (Port of Zen-c next_method_is_constructor, parser.zc:2438.)
+  ## A static/async/generator/accessor prefix, or a computed/string-literal name,
+  ## means it is NOT the class constructor.
+  var i = p.pos
+  var sawPrefix = false
+  while i < p.toks.len:
+    let t = p.toks[i]
+    if t.kind == Identifier and t.length == 6'u32 and
+       p.source[t.start.int ..< (t.start + 6).int] == "static":
+      sawPrefix = true; inc i; continue
+    if t.kind == KwAsync: sawPrefix = true; inc i; continue
+    if t.kind == Star: sawPrefix = true; inc i; continue
+    if t.kind == Identifier and t.length == 3'u32:
+      let s = p.source[t.start.int ..< (t.start + 3).int]
+      if s == "get" or s == "set": sawPrefix = true; inc i; continue
+    if sawPrefix: return false
+    if t.kind == Identifier and t.length == 11'u32 and
+       p.source[t.start.int ..< (t.start + 11).int] == "constructor":
+      return i + 1 < p.toks.len and p.toks[i + 1].kind == LParen
+    return false
+  return false
+
 proc parseClassBody(p: var Parser, isDerived: bool): seq[AstNode] =
   if not p.expect(LBrace): return @[]
   # Class bodies are always strict (§10.2.1). Set the flag for the body only;
@@ -1890,14 +1922,19 @@ proc parseClassBody(p: var Parser, isDerived: bool): seq[AstNode] =
   # callers, so they are correctly unaffected.
   let savedStrict = p.strict
   p.strict = true
+  let savedIDC = p.inDerivedCtor          # restore for the enclosing context (nesting)
   var members: seq[AstNode]
   while p.peek().kind notin {RBrace, Eof}:
     if p.peek().kind == Semicolon:          # skip empty `;` separators
       discard p.advance(); continue
+    # `super()` is legal only in the derived class's constructor body — set the
+    # flag per member (peek-ahead), so it's live through that member's body parse.
+    p.inDerivedCtor = isDerived and nextMemberIsConstructor(p)
     let m = parseMethodBodyPair(p)
     if m == nil: p.hadError = true; break
     members.add(m)
   p.strict = savedStrict
+  p.inDerivedCtor = savedIDC
   discard p.expect(RBrace)
   # --- synthesize / inject instance-field initializers into the constructor ---
   # (port of parse_class_body ~2284-2425; byte-parity-critical)
