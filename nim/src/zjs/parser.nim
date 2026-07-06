@@ -188,6 +188,20 @@ proc checkBindingReserved(p: var Parser, t: Token, simpleParam = false) =
         for w in FutureReserved:
           if p.identMatches(t, w): p.hadError = true; break
 
+const ClassNameReserved = ["implements", "interface", "package", "private",
+                           "protected", "public", "static", "eval", "arguments"]
+
+proc checkClassName(p: var Parser, t: Token) =
+  ## A class definition is ALWAYS strict code, so its BindingIdentifier may not
+  ## be a strict-reserved word — including `yield` and `let` (unlike a plain var
+  ## binding, which Zen-c allows for `let`), plus `eval`/`arguments`. Plain
+  ## byte-compare (Zen-c is_strict_reserved_name + name_is_arguments_or_eval;
+  ## `await`/`async`/`of` stay valid class names). Escaped spellings are 2f-3c-tier.
+  if t.kind == KwYield or t.kind == KwLet:
+    p.hadError = true
+  elif t.kind == Identifier and p.strictSpelling(t) in ClassNameReserved:
+    p.hadError = true
+
 proc collectParamNames(node: AstNode, src: string, acc: var seq[string]) =
   ## Gather the binding-identifier source slices in a parameter node, walking
   ## into pattern params (`{a}`/`[b]`) and rest params (`...r`).
@@ -1995,7 +2009,7 @@ proc parseClassBody(p: var Parser, isDerived: bool): seq[AstNode] =
 proc parseClassDecl(p: var Parser): AstNode =
   let kw = p.advance()                      # 'class'
   let nameTok = p.advance()                 # class name (binding ident)
-  p.checkBindingReserved(nameTok, simpleParam = true)   # class name uses plain eval/args compare (Zen-c name_is_arguments_or_eval)
+  p.checkClassName(nameTok)
   var parent: AstNode = nil
   if p.peek().kind == KwExtends:
     discard p.advance()
@@ -2011,7 +2025,9 @@ proc parseClassExpr(p: var Parser): AstNode =
   var nameLen = 0'u32
   if p.peek().kind == Identifier:
     let nt = p.advance()
-    p.checkBindingReserved(nt, simpleParam = true)   # class name = plain eval/args compare
+    # A class EXPRESSION Identifier name gets NO strict-reserved check (Zen-c
+    # parse_class_expr does none): `(class public {})` / `"use strict"; (class
+    # eval {})` are both accepted. (Only class DECLARATION names are checked.)
     nameStart = nt.start; nameLen = nt.length
   var parent: AstNode = nil
   if p.peek().kind == KwExtends:

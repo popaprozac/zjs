@@ -3594,3 +3594,27 @@ suite "parser early errors: await reserved in a class static block":
   test "await unaffected outside a static block":
     check not hadErr("class C { m(){ return await; } }")
     check not hadErr("var await = 1;")
+
+suite "parser early errors: class declaration name is strict-reserved":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "class DECLARATION name may not be a strict-reserved word":
+    check hadErr("class yield {}")
+    check hadErr("class let {}")           # let IS rejected here (unlike a var binding)
+    check hadErr("class public {}")
+    check hadErr("class implements {}")
+    check hadErr("class private {}")
+    check hadErr("class static {}")
+    check hadErr("class eval {}")
+    check hadErr("class arguments {}")
+  test "valid class declaration names":
+    check not hadErr("class C {}")
+    check not hadErr("class await {}")     # await NOT strict-reserved
+    check not hadErr("class async {}")
+    check not hadErr("class of {}")
+    check not hadErr("class yieldx {}")
+  test "class EXPRESSION name gets NO strict-reserved check":
+    check not hadErr("(class public {})")
+    check not hadErr("(class eval {})")
+    check not hadErr("\"use strict\"; (class public {})")
+    check not hadErr("let X = class implements {};")
