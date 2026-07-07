@@ -1142,6 +1142,7 @@ proc parseCallMember(p: var Parser): AstNode =
         p.hadError = true; return nil
       discard p.advance()
       expr = newLeaf(ThisExpr, newTok.start, prop.start + prop.length)
+      expr.newTarget = true   # marks `new.target` (vs plain `this`); Zen-c bool_value
     else:
       # Build the callee via primary + member-only loop (no calls).
       var callee = p.parsePrimary()

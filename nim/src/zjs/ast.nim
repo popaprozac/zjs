@@ -112,7 +112,12 @@ type
     of BigIntExpr: discard
     of NullExpr: discard
     of UndefinedExpr: discard
-    of ThisExpr: discard
+    of ThisExpr:
+      ## `new.target` meta-property is represented as a ThisExpr with
+      ## newTarget=true (mirrors Zen-c's `bool_value` on the ThisExpr node,
+      ## see body_uses_this / the compile ThisExpr arm). Plain `this` leaves
+      ## it false. NOT dumped by the AST printer (ThisExpr is label-only).
+      newTarget*: bool
     of Binary, Logical:
       binOp*: TokenKind
       lhs*, rhs*: AstNode

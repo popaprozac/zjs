@@ -109,6 +109,25 @@ type
     ## Function.paramCount and the function-top hole-seed start index (a
     ## param is never TDZ-seeded — its value arrives from the caller).
     paramCount*: uint32
+    ## Fixed register holding `this` for the current function body, or -1 if
+    ## the body never references `this` (mirrors compiler.zc `c.this_reg`).
+    ## Reserved AFTER params (and after argumentsReg) in the compileFunction
+    ## prologue; NO prologue op is emitted (the call convention seeds it).
+    ## A ThisExpr reference borrows/Movs this reg (slice 4c).
+    thisReg*: int
+    ## Fixed register holding the implicit `arguments` array, or -1 if the
+    ## body never references `arguments` (mirrors compiler.zc
+    ## `c.arguments_reg`). Reserved AFTER params, BEFORE thisReg; seeded by a
+    ## `BuildArguments argumentsReg` prologue op emitted at function entry.
+    argumentsReg*: int
+    ## The Call AST node in tail position (`return <call>`), or nil. Set by
+    ## the ReturnStmt handler around the tail call's compile so
+    ## compileCallInner SUPPRESSES InvokeGlobal fusion for it — the TCO
+    ## rewriter matches `last op == Invoke/MethodInvoke` in place, and a
+    ## fused 2-slot call there can't be rewritten. Nested calls inside the
+    ## return expression compare unequal and still fuse. Mirrors compiler.zc
+    ## `c.tail_call_node` (#394).
+    tailCallNode*: AstNode
     # --- Lexical scope tracker (compiler.zc scope_stack / *_scope_id) --
     scopeStack*:  seq[uint32]
     curScopeId*:  uint32
@@ -661,6 +680,49 @@ proc bodyReferencesAnyLocal(c: Compiler, body: AstNode, names: seq[string]): boo
     if subtreeMentionsName(c, body, nm): return true
   return false
 
+# --- `this` / `arguments` pre-scan (slice 4c) -----------------------
+#
+# Mirrors compiler.zc body_uses_this / body_uses_arguments. Both walk the
+# function body but STOP at nested non-arrow function boundaries (a nested
+# FunctionDecl/FunctionExpr has its OWN this/arguments). body_uses_this
+# does NOT stop at ArrowFunc (arrows inherit `this`), and returns false for
+# a `new.target` ThisExpr (newTarget=true) — new.target needs no this-reg
+# reservation. body_uses_arguments STOPS at ArrowFunc too for the reserve
+# gate, but note arrows still inherit `arguments` semantically — arrows are
+# deferred (they bail), so the distinction is moot for 4c.
+
+proc bodyUsesThis(n: AstNode): bool =
+  ## True if this subtree references plain `this` (not `new.target`), not
+  ## crossing into a nested FunctionDecl/FunctionExpr body. Mirrors
+  ## compiler.zc body_uses_this exactly.
+  if n == nil: return false
+  if n.kind in {FunctionDecl, FunctionExpr}: return false
+  if n.kind == ThisExpr: return not n.newTarget
+  for ch in childNodes(n):
+    if bodyUsesThis(ch): return true
+  return false
+
+proc bodyUsesArguments(c: Compiler, n: AstNode): bool =
+  ## True if this subtree references the identifier `arguments`, not
+  ## crossing into a nested FunctionDecl/FunctionExpr/ArrowFunc body.
+  ## Mirrors compiler.zc body_uses_arguments exactly.
+  if n == nil: return false
+  if n.kind in {FunctionDecl, FunctionExpr, ArrowFunc}: return false
+  if n.kind == IdentExpr:
+    return c.identName(n) == "arguments"
+  for ch in childNodes(n):
+    if bodyUsesArguments(c, ch): return true
+  return false
+
+proc hasArgumentsLocal(c: Compiler): bool =
+  ## Does the locals table already have a binding named "arguments"? A
+  ## user-declared `arguments` (var/let/const/param/function) shadows the
+  ## implicit one, so no argumentsReg is reserved. Mirrors compiler.zc
+  ## has_arguments_local.
+  for lc in c.locals:
+    if lc.name == "arguments": return true
+  return false
+
 proc blockNeedsEntryHole(c: Compiler, blk: AstNode, name: string): bool =
   ## #387: must this block seed the TDZ hole for `name` at entry?
   ## Source-order scan of the block's DIRECT children (a block's own
@@ -751,6 +813,15 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       # hint target before later reads of it in the same expression.
       let dst = allocReg(c)
       emit(c, instAB(Mov, dst, c.locals[localIdx].reg))
+      return dst
+    # 2a. Implicit `arguments` — only inside a function that uses it AND
+    # where no real local of the same name was hoisted (compile_function
+    # set c.argumentsReg in that case). A reference Movs the reg into a
+    # fresh temp (mirrors compiler.zc ~1717-1724). Uses allocReg (not
+    # allocDst): a defensive read must not steal a live hint (#395).
+    if c.argumentsReg >= 0 and name == "arguments":
+      let dst = allocReg(c)
+      emit(c, instAB(Mov, dst, uint8(c.argumentsReg)))
       return dst
     # 3. Fall through to globals (compiler.zc `3. Fall through to
     # globals`). Uses allocDst so a terminal read consumes a queued hint.
@@ -876,7 +947,14 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       let savedBorrow = c.borrowLocalOk
       let rhsPure = exprIsSimplePure(node.value)
       let lhsPure = exprIsSimplePure(target.recv)
-      if rhsPure: c.borrowLocalOk = true
+      # #395: `this.x = ANY rhs` — thisReg is written exactly once, at frame
+      # entry; no RHS can rebind it, and StoreProp only reads objReg. So
+      # borrow unconditionally when the receiver is `this` (compiler.zc
+      # ~3152-3157 `obj_is_this`). Distinguishes plain `this` from
+      # `new.target` (which is not a stable-reg receiver).
+      let objIsThis = target.recv != nil and target.recv.kind == ThisExpr and
+                      not target.recv.newTarget
+      if rhsPure or objIsThis: c.borrowLocalOk = true
       let objReg = compileExpr(c, target.recv)
       if lhsPure: c.borrowLocalOk = true
       else:       c.borrowLocalOk = savedBorrow
@@ -1002,6 +1080,31 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     return compileCall(c, node)
   of New:
     return compileNew(c, node)
+  of ThisExpr:
+    # `new.target` (newTarget=true) reads fresh via LoadNewTarget — NOT
+    # hoistable (the ctor-call flag flips across nested calls). Mirrors
+    # compiler.zc's ThisExpr `node.bool_value` arm (~2179-2185).
+    if node.newTarget:
+      let dst = allocReg(c)
+      emit(c, instA(LoadNewTarget, dst))
+      return dst
+    # Plain `this`: hand back the function-entry hoisted reg when
+    # borrowLocalOk (the caller proved the value is consumed before any
+    # re-bind — and this_reg is written once at frame entry anyway),
+    # else a defensive Mov. compile_function always sets thisReg for a
+    # body that uses `this`, so the LoadThis fallback (thisReg<0) never
+    # fires here. Mirrors compiler.zc ~2187-2198.
+    if c.thisReg >= 0:
+      if c.borrowLocalOk:
+        return uint8(c.thisReg)
+      let dst = allocReg(c)
+      emit(c, instAB(Mov, dst, uint8(c.thisReg)))
+      return dst
+    # No hoisted this_reg (shouldn't happen for a 4c body that uses
+    # `this`, since compile_function reserves it) — fall back to LoadThis.
+    let dst = allocReg(c)
+    emit(c, instA(LoadThis, dst))
+    return dst
   else:
     # Not yet supported.
     c.hadError = true
@@ -1286,6 +1389,7 @@ proc compileCallInner(c: var Compiler, node: AstNode, retHint: int): uint8 =
   if r == base and c.code.len > 0 and
      c.code[c.code.len - 1].op == LoadGlobal and
      c.code[c.code.len - 1].a == base and
+     node != c.tailCallNode and              # #394: don't fuse a tail call
      callArgsFusionPure(c, node):
     fuseSlot = int(instBcU16(c.code[c.code.len - 1]))
     c.code.setLen(c.code.len - 1)
@@ -1850,10 +1954,9 @@ proc compileStmt(c: var Compiler, node: AstNode) =
     releaseReg(c, r)
     resetTemps(c)
   of ReturnStmt:
-    # `return expr` / `return;`. Slice 4a: no try/finally regions, so
+    # `return expr` / `return;`. Slice 4c has no try/finally regions, so
     # emit_return_sequence reduces to a bare `Return r` (compiler.zc
-    # emit_return_sequence with region_count == 0). Tail-call rewriting
-    # (TailInvoke/TailMethodInvoke) is deferred — calls aren't in 4a.
+    # emit_return_sequence with region_count == 0).
     # `return` outside a function is a SyntaxError; the parser accepts it
     # at program top, so refuse here rather than emit a bogus Return.
     if c.atProgramTop:
@@ -1861,6 +1964,15 @@ proc compileStmt(c: var Compiler, node: AstNode) =
       return
     var r: uint8
     if node.retArg != nil:
+      # #394: a `return <call>` is a tail-call rewrite candidate. Flag the
+      # Call node so compileCallInner skips InvokeGlobal fusion for it —
+      # the TCO rewriter matches `last op == Invoke/MethodInvoke` in place,
+      # and a fused 2-slot call there can't be rewritten. Nested calls in
+      # the return expression compare unequal and still fuse. (region_count
+      # == 0 always in this slice: no try/finally yet.)
+      let isTailCandidate = node.retArg.kind == Call
+      if isTailCandidate:
+        c.tailCallNode = node.retArg
       # Borrow the source reg directly for a bare IdentExpr — Return
       # consumes the value immediately, so IdentExpr's defensive Mov is
       # dead weight (compiler.zc sets borrow_local_ok around the read).
@@ -1868,6 +1980,18 @@ proc compileStmt(c: var Compiler, node: AstNode) =
       c.borrowLocalOk = true
       r = compileExpr(c, node.retArg)
       c.borrowLocalOk = savedBorrow
+      c.tailCallNode = nil
+      # Phase 3.9h-C tail-call optimization. If `return` returns a direct
+      # call's result and the last emitted op is Invoke / MethodInvoke,
+      # rewrite it to its Tail variant IN PLACE and STILL emit the trailing
+      # Return (dead for ordinary callees — the Tail op replaces the frame
+      # and breaks before Return runs). Mirrors compiler.zc ~8145-8170.
+      if isTailCandidate and c.code.len > 0:
+        let lastOp = c.code[c.code.len - 1].op
+        if lastOp == Invoke:
+          c.code[c.code.len - 1].op = TailInvoke
+        elif lastOp == MethodInvoke:
+          c.code[c.code.len - 1].op = TailMethodInvoke
     else:
       r = allocReg(c)
       emit(c, instA(LoadUndefined, r))
@@ -1934,6 +2058,7 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
     preferredDst: -1, borrowLocalOk: false,
     isFunction: true, isScript: false,
     atProgramTop: false,
+    thisReg: -1, argumentsReg: -1,   # set in the prologue if the body uses them
     globals: enclosing.globals,      # SHARED global namespace (see GlobalTable)
     scopeStack: @[0'u32], curScopeId: 0, nextScopeId: 1,
   )
@@ -1980,26 +2105,35 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   if body != nil and anyNestedCaptures(c, body, localNames):
     return nil
 
+  # 2d. `arguments` — if the body references it AND no local of that name
+  #     was hoisted (a user `arguments` binding shadows the implicit one),
+  #     reserve a register AFTER the params. The array itself is built by
+  #     the BuildArguments prologue op below. Mirrors compiler.zc 2d
+  #     (need_args → arguments_reg = alloc_reg). Slice 4c.
+  let needArgs = body != nil and bodyUsesArguments(c, body) and
+                 not hasArgumentsLocal(c)
+  if needArgs:
+    c.argumentsReg = int(allocReg(c))
+
+  # 2e. `this` — if the body references plain `this` (not `new.target`),
+  #     reserve a register AFTER params (and AFTER argumentsReg — matching
+  #     compiler.zc's 2d-then-2e order). NO prologue op is emitted for
+  #     `this`: the interpreter seeds regs[this_reg] from ctx.host_this on
+  #     frame entry (compiler.zc ~2125-2130, "No prologue Op::LoadThis").
+  let needThis = body != nil and bodyUsesThis(body)
+  if needThis:
+    c.thisReg = int(allocReg(c))
+
   # 3. Locals are now fixed; temps live above this watermark.
   c.fixedRegs = c.nextReg
   # Reset scope tracking so compileStmt re-enters block ids matching
   # what collectLocals assigned.
   resetScopeWalk(c)
 
-  # 3b. Also gate on `this` / `arguments` usage anywhere in the body —
-  #     those need the LoadThis/BuildArguments prologue machinery (4b+).
-  proc mentionsThisOrArguments(c: Compiler, n: AstNode): bool =
-    if n == nil: return false
-    # Don't descend into nested non-arrow functions: they have their own
-    # `this`/`arguments`. (Arrows inherit — but arrows already bail.)
-    if n.kind in {FunctionDecl, FunctionExpr}: return false
-    if n.kind == ThisExpr: return true
-    if n.kind == IdentExpr and c.identName(n) == "arguments": return true
-    for ch in childNodes(n):
-      if mentionsThisOrArguments(c, ch): return true
-    return false
-  if body != nil and mentionsThisOrArguments(c, body):
-    return nil
+  # 4a. `arguments` prologue: emit `BuildArguments argumentsReg` as the
+  #     FIRST body op (compiler.zc ~4148). `this` gets no prologue op.
+  if c.argumentsReg >= 0:
+    emit(c, instA(BuildArguments, uint8(c.argumentsReg)))
 
   # 4. Function-top TDZ hole seeding. ECMA-262: a body-top let/const is
   #    seeded with LoadHole before its initializer. Params are never
@@ -2103,6 +2237,7 @@ proc compileProgram*(src: string, root: AstNode): Function =
     isFunction: true,
     isScript: true,
     atProgramTop: true,
+    thisReg: -1, argumentsReg: -1,   # program top has no this/arguments regs
     globals: GlobalTable(),
     scopeStack: @[0'u32],
     curScopeId: 0,

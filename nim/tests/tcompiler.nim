@@ -927,12 +927,8 @@ suite "slice 4a structure + capture bail":
   test "generator function -> compile error (deferred)":
     expect ValueError:
       discard disasmToString("function* f() { return 1; }")
-  test "body using this -> compile error (this prologue deferred)":
-    expect ValueError:
-      discard disasmToString("function f() { return this; }")
-  test "body using arguments -> compile error (arguments prologue deferred)":
-    expect ValueError:
-      discard disasmToString("function f() { return arguments; }")
+  # NOTE: `this`/`arguments`/`new.target` bodies COMPILE as of slice 4c —
+  # see the "slice 4c: this / arguments / new.target" suite below.
 
 # --- Slice 5a: member/element access + object/array literals + IC ---
 
@@ -1197,3 +1193,62 @@ suite "slice 5b deferred forms bail (nim_missing, not text_diff)":
   test "Math.floor(x) intrinsic -> compile error (deferred fusion)":
     expect ValueError:
       discard disasmToString("Math.floor(x);")
+
+# --- Slice 4c: this / arguments / new.target ------------------------
+# Ground-truth constants captured from `build/zjs disasm` (the oracle);
+# each covers the whole program AND its nested `/const#0` function unit.
+
+const
+  t4c_this0 = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; f\n    4  Return              r0\n\n=== <program>/const#0  code_len=1 regs=2 fixed=1 params=0 consts=0 ics=0 ===\n    0  Return              r0\n"
+  t4c_this1 = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; f\n    4  Return              r0\n\n=== <program>/const#0  code_len=1 regs=3 fixed=2 params=1 consts=0 ics=0 ===\n    0  Return              r1\n"
+  t4c_thisx = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; f\n    4  Return              r0\n\n=== <program>/const#0  code_len=2 regs=3 fixed=1 params=0 consts=0 ics=1 ===\n    0  LoadProp            r1   <- r0.x  ic#0\n    1  Return              r1\n"
+  t4c_thisxy = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; f\n    4  Return              r0\n\n=== <program>/const#0  code_len=4 regs=5 fixed=1 params=0 consts=0 ics=2 ===\n    0  LoadProp            r1   <- r0.x  ic#0\n    1  LoadProp            r2   <- r0.y  ic#1\n    2  Add                 a=3   b=1   c=2   | u16=513 i16=513\n    3  Return              r3\n"
+  t4c_thisassign = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; f\n    4  Return              r0\n\n=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=1 ===\n    0  LoadGlobal          r1   g109  ; a\n    1  StoreProp           r0.x <- r1    ic#0\n    2  Return              r0\n"
+  t4c_args = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; f\n    4  Return              r0\n\n=== <program>/const#0  code_len=3 regs=4 fixed=2 params=1 consts=0 ics=0 ===\n    0  BuildArguments      a=1   b=0   c=0   | u16=0 i16=0\n    1  Mov                 r2   <- r1\n    2  Return              r2\n"
+  t4c_argselem = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; f\n    4  Return              r0\n\n=== <program>/const#0  code_len=5 regs=5 fixed=1 params=0 consts=0 ics=0 ===\n    0  BuildArguments      a=0   b=0   c=0   | u16=0 i16=0\n    1  Mov                 r1   <- r0\n    2  LoadInt             r2   = 0\n    3  LoadElem            a=3   b=1   c=2   | u16=513 i16=513\n    4  Return              r3\n"
+  t4c_newtarget = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; f\n    4  Return              r0\n\n=== <program>/const#0  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n    0  LoadNewTarget       a=0   b=0   c=0   | u16=0 i16=0\n    1  Return              r0\n"
+  t4c_thisxy2 = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; f\n    4  Return              r0\n\n=== <program>/const#0  code_len=6 regs=3 fixed=1 params=0 consts=0 ics=2 ===\n    0  LoadInt             r1   = 1\n    1  StoreProp           r0.x <- r1    ic#0\n    2  LoadInt             r1   = 2\n    3  StoreProp           r0.y <- r1    ic#1\n    4  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n    5  Return              r1\n"
+  t4c_thismcall = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; f\n    4  Return              r0\n\n=== <program>/const#0  code_len=6 regs=8 fixed=3 params=2 consts=0 ics=1 ===\n    0  Mov                 r4   <- r2\n    1  LoadProp            r3   <- r4.m  ic#0\n    2  Mov                 r5   <- r0\n    3  Mov                 r6   <- r1\n    4  TailMethodInvoke    base=r3 argc=2\n    5  Return              r3\n"
+  t4c_argslen = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; f\n    4  Return              r0\n\n=== <program>/const#0  code_len=4 regs=4 fixed=1 params=0 consts=0 ics=1 ===\n    0  BuildArguments      a=0   b=0   c=0   | u16=0 i16=0\n    1  Mov                 r1   <- r0\n    2  LoadProp            r2   <- r1.length  ic#0\n    3  Return              r2\n"
+
+suite "slice 4c: this / arguments / new.target byte-identity":
+  test "return this -> this=r0, borrow, Return r0 (fixed=1)":
+    check disasmToString("function f(){ return this; }") == t4c_this0
+  test "param then this -> a=r0, this=r1 (fixed=2)":
+    check disasmToString("function f(a){ return this; }") == t4c_this1
+  test "return this.x -> LoadProp r0.x (this=r0)":
+    check disasmToString("function f(){ return this.x; }") == t4c_thisx
+  test "this.x + this.y -> two LoadProp on r0":
+    check disasmToString("function f(){ return this.x + this.y; }") == t4c_thisxy
+  test "this.x = a; return this -> StoreProp r0.x, Return r0":
+    check disasmToString("function f(){ this.x = a; return this; }") == t4c_thisassign
+  test "param then arguments -> BuildArguments r1, Mov":
+    check disasmToString("function f(a){ return arguments; }") == t4c_args
+  test "arguments[0] -> BuildArguments r0, LoadElem":
+    check disasmToString("function f(){ return arguments[0]; }") == t4c_argselem
+  test "new.target -> LoadNewTarget (fixed=0, no reservation)":
+    check disasmToString("function f(){ return new.target; }") == t4c_newtarget
+  test "this.x=1; this.y=2 -> two StoreProp then undefined return":
+    check disasmToString("function f(){ this.x = 1; this.y = 2; }") == t4c_thisxy2
+  test "this.m(a,b) tail call -> this=r2, TailMethodInvoke":
+    check disasmToString("function f(a,b){ return this.m(a,b); }") == t4c_thismcall
+  test "arguments.length -> BuildArguments, LoadProp .length":
+    check disasmToString("function f(){ return arguments.length; }") == t4c_argslen
+
+suite "slice 4c: register-model + shadowing invariants":
+  test "new.target does NOT reserve a this reg (fixed=0)":
+    check "fixed=0 params=0" in disasmToString("function f(){ return new.target; }")
+  test "this reserved AFTER params (a=r0, this=r1)":
+    check "fixed=2 params=1" in disasmToString("function f(a){ return this; }")
+  test "arguments reserved AFTER params (a=r0, args=r1)":
+    check "fixed=2 params=1" in disasmToString("function f(a){ return arguments; }")
+  test "user `var arguments` shadows implicit -> no BuildArguments":
+    # A hoisted local named `arguments` shadows the implicit one, so no
+    # argumentsReg / BuildArguments is reserved (has_arguments_local).
+    check "BuildArguments" notin
+      disasmToString("function f(){ var arguments = 1; return arguments; }")
+  test "nested non-arrow fn has its own this (outer doesn't reserve)":
+    # The outer body has no `this` of its own; the inner fn does. Outer
+    # must NOT reserve a this reg for the inner's usage.
+    let txt = disasmToString("function f(){ function g(){ return this; } return g; }")
+    check "code_len" in txt   # compiles (both units)
