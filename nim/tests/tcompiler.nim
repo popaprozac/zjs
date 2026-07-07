@@ -941,10 +941,11 @@ suite "slice 4a structure + capture bail":
   test "default referencing a LATER param (TDZ forward-ref) -> bail":
     expect ValueError:
       discard disasmToString("function f(a = b, b = 1) {}")
-  test "destructuring param -> compile error (deferred, slice 4e DEFER)":
-    expect ValueError:
-      discard disasmToString("function f({a}) { return a; }")
-  test "array-pattern param -> compile error (deferred)":
+  test "object-pattern param -> compiles (slice 6d)":
+    # Formerly deferred; slice 6d lowers an object-pattern param via the
+    # AssertCoercible + LoadProp fan-out.
+    discard disasmToString("function f({a}) { return a; }")
+  test "array-pattern param -> compile error (deferred, array slice)":
     expect ValueError:
       discard disasmToString("function f([a]) { return a; }")
   test "named function expression -> compile error (LoadCallee deferred)":
@@ -1610,9 +1611,12 @@ suite "slice 4e: arrow default + rest params compile":
       "    2  Return              r1\n" in txt
 
 suite "slice 4e: deferred param forms bail (nim_missing, not text_diff)":
-  test "destructuring param arrow -> compile error (deferred)":
+  test "object-pattern param arrow -> compiles (slice 6d)":
+    # Formerly deferred; slice 6d lowers an object-pattern arrow param.
+    discard disasmToString("var f = ({a}) => a;")
+  test "array-pattern param arrow -> compile error (deferred, array slice)":
     expect ValueError:
-      discard disasmToString("var f = ({a}) => a;")
+      discard disasmToString("var f = ([a]) => a;")
   test "async arrow -> compile error (deferred)":
     expect ValueError:
       discard disasmToString("var f = async () => 1;")
@@ -2093,3 +2097,133 @@ suite "slice 6c: labeled structural invariants":
     let a = disasmToString("a: b;")
     let b = disasmToString("b;")
     check a == b   # a label on a plain expr statement adds no bytecode
+
+# --- Slice 6d: object destructuring -------------------------------------
+
+suite "slice 6d: object destructuring byte-identity":
+  test "let {x, y} = o -> AssertCoercible + LoadProp fan-out":
+    check disasmToString("let {x, y} = o;") == "\n" &
+      "=== <program>  code_len=8 regs=6 fixed=3 params=0 consts=0 ics=2 ===\n" &
+      "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r3   g108  ; o\n" &
+      "    2  AssertCoercible     a=3   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  LoadProp            r4   <- r3.x  ic#0\n" &
+      "    4  Mov                 r0   <- r4\n" &
+      "    5  LoadProp            r4   <- r3.y  ic#1\n" &
+      "    6  Mov                 r1   <- r4\n" &
+      "    7  Return              r2\n"
+  test "let {x: p} = o -> renamed bind":
+    check disasmToString("let {x: p} = o;") == "\n" &
+      "=== <program>  code_len=6 regs=5 fixed=2 params=0 consts=0 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r2   g108  ; o\n" &
+      "    2  AssertCoercible     a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  LoadProp            r3   <- r2.x  ic#0\n" &
+      "    4  Mov                 r0   <- r3\n" &
+      "    5  Return              r1\n"
+  test "let {x = 1} = o -> default undefined-check":
+    check disasmToString("let {x = 1} = o;") == "\n" &
+      "=== <program>  code_len=11 regs=7 fixed=2 params=0 consts=0 ics=1 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r2   g108  ; o\n" &
+      "    2  AssertCoercible     a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  LoadProp            r3   <- r2.x  ic#0\n" &
+      "    4  LoadUndefined       a=5   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  CmpStrictEq         a=4   b=3   c=5   | u16=1283 i16=1283\n" &
+      "    6  JmpIfFalse          r4   -> 9\n" &
+      "    7  LoadInt             r4   = 1\n" &
+      "    8  Mov                 r3   <- r4\n" &
+      "    9  Mov                 r0   <- r3\n" &
+      "   10  Return              r1\n"
+  test "var {a} = b -> DefineGlobal target, hoisted slot order":
+    check disasmToString("var {a} = b;") == "\n" &
+      "=== <program>  code_len=6 regs=4 fixed=1 params=0 consts=0 ics=1 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r1   g109  ; b\n" &
+      "    2  AssertCoercible     a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  LoadProp            r2   <- r1.a  ic#0\n" &
+      "    4  DefineGlobal        r2   g108  ; a\n" &
+      "    5  Return              r0\n"
+  test "let {a: {b}} = o -> nested object recursion (2nd AssertCoercible)":
+    check disasmToString("let {a: {b}} = o;") == "\n" &
+      "=== <program>  code_len=8 regs=6 fixed=2 params=0 consts=0 ics=2 ===\n" &
+      "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r2   g108  ; o\n" &
+      "    2  AssertCoercible     a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  LoadProp            r3   <- r2.a  ic#0\n" &
+      "    4  AssertCoercible     a=3   b=0   c=0   | u16=0 i16=0\n" &
+      "    5  LoadProp            r4   <- r3.b  ic#1\n" &
+      "    6  Mov                 r0   <- r4\n" &
+      "    7  Return              r1\n"
+  test "({a, b} = c) -> assignment mode StoreGlobal":
+    check disasmToString("({a, b} = c);") == "\n" &
+      "=== <program>  code_len=9 regs=4 fixed=1 params=0 consts=0 ics=2 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r1   g108  ; c\n" &
+      "    2  AssertCoercible     a=1   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  LoadProp            r2   <- r1.a  ic#0\n" &
+      "    4  StoreGlobal         r2   g109  ; a\n" &
+      "    5  LoadProp            r2   <- r1.b  ic#1\n" &
+      "    6  StoreGlobal         r2   g110  ; b\n" &
+      "    7  Mov                 r0   <- r1\n" &
+      "    8  Return              r0\n"
+  test "function f({x, y}) -> pattern param fan-out (srcReg = param placeholder r0)":
+    check disasmToString("function f({x, y}) { return x; }") == "\n" &
+      "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+      "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadConst           r1   const#0 = <function>\n" &
+      "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+      "    3  DefineGlobal        r1   g108  ; f\n" &
+      "    4  Return              r0\n" &
+      "\n" &
+      "=== <program>/const#0  code_len=6 regs=5 fixed=3 params=1 consts=0 ics=2 ===\n" &
+      "    0  AssertCoercible     a=0   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadProp            r3   <- r0.x  ic#0\n" &
+      "    2  Mov                 r1   <- r3\n" &
+      "    3  LoadProp            r3   <- r0.y  ic#1\n" &
+      "    4  Mov                 r2   <- r3\n" &
+      "    5  Return              r1\n"
+  test "let {a, ...r} = o -> object rest (ObjectSpread + DeleteElem)":
+    check disasmToString("let {a, ...r} = o;") == "\n" &
+      "=== <program>  code_len=11 regs=8 fixed=3 params=0 consts=1 ics=1 ===\n" &
+      "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r3   g108  ; o\n" &
+      "    2  AssertCoercible     a=3   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  LoadProp            r4   <- r3.a  ic#0\n" &
+      "    4  Mov                 r0   <- r4\n" &
+      "    5  NewObject           a=4   b=0   c=0   | u16=0 i16=0\n" &
+      "    6  ObjectSpread        a=4   b=3   c=0   | u16=3 i16=3\n" &
+      "    7  LoadConst           r5   const#0 = \"a\"\n" &
+      "    8  DeleteElem          a=6   b=4   c=5   | u16=1284 i16=1284\n" &
+      "    9  Mov                 r1   <- r4\n" &
+      "   10  Return              r2\n"
+  test "let {x} = o, {y} = p -> two pattern declarators, IC continuity":
+    check disasmToString("let {x} = o, {y} = p;") == "\n" &
+      "=== <program>  code_len=10 regs=6 fixed=3 params=0 consts=0 ics=2 ===\n" &
+      "    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n" &
+      "    1  LoadGlobal          r3   g108  ; o\n" &
+      "    2  AssertCoercible     a=3   b=0   c=0   | u16=0 i16=0\n" &
+      "    3  LoadProp            r4   <- r3.x  ic#0\n" &
+      "    4  Mov                 r0   <- r4\n" &
+      "    5  LoadGlobal          r3   g109  ; p\n" &
+      "    6  AssertCoercible     a=3   b=0   c=0   | u16=0 i16=0\n" &
+      "    7  LoadProp            r4   <- r3.y  ic#1\n" &
+      "    8  Mov                 r1   <- r4\n" &
+      "    9  Return              r2\n"
+  test "string key interns RAW slice with quotes (let {\"a-b\": v})":
+    let txt = disasmToString("let {\"a-b\": v} = o;")
+    check "LoadProp            r3   <- r2.\"a-b\"  ic#0" in txt
+
+suite "slice 6d: array patterns still bail (nim_missing, not text_diff)":
+  test "let [a, b] = o -> compile error (array slice deferred)":
+    expect ValueError:
+      discard disasmToString("let [a, b] = o;")
+  test "let {a: [b]} = o -> nested array pattern bails":
+    expect ValueError:
+      discard disasmToString("let {a: [b]} = o;")
+  test "[a, b] = c -> array assignment bails":
+    expect ValueError:
+      discard disasmToString("[a, b] = c;")
+  test "let {a, b: [c]} = o -> object containing array bails":
+    expect ValueError:
+      discard disasmToString("let {a, b: [c]} = o;")

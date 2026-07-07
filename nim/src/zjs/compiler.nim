@@ -232,6 +232,12 @@ type
     ## = IC slot, stored into Function.ics so disasm prints the name. The
     ## count becomes Function.icCount.
     ics*: seq[string]
+    ## Slice 6d: destructuring-pattern mode flag. False = binding mode
+    ## (leaf targets DECLARE a local/global — VarDecl / params); true =
+    ## assignment mode (`({a}=b)` — leaf targets STORE to an existing
+    ## lvalue). bindDestructureTarget branches on it. Mirrors compiler.zc
+    ## Compiler.in_dstr_assign.
+    inDstrAssign*: bool
 
 # --- Register allocator (high-water-mark) ---------------------------
 
@@ -760,6 +766,25 @@ proc tryPlaceSimple(c: var Compiler, node: AstNode, slot: uint8): bool =
 # at script top). var/function/class-global bindings are handled by the
 # existing global path.
 
+proc collectPatternLocals(c: var Compiler, pat: AstNode) =
+  ## Walk a binding pattern and register each contained name as a
+  ## function/script-scope local, in source order (mirrors compiler.zc
+  ## collect_pattern_locals). Recurses through nested patterns; each leaf
+  ## IdentExpr allocs a fixed register at the CURRENT scope. Slice 6d:
+  ## OBJECT patterns only (array patterns bail later at the compile site,
+  ## but pre-registering their idents here is harmless — the compile pass
+  ## sets hadError before any of them are used).
+  if pat == nil: return
+  case pat.kind
+  of IdentExpr:
+    discard allocAndAddLocalScoped(c, pat.start, pat.`end` - pat.start, c.curScopeId)
+  of ObjectPattern, ArrayPattern:
+    for entry in pat.patEntries:
+      if entry != nil and entry.kind == PatternEntry and entry.patTarget != nil:
+        collectPatternLocals(c, entry.patTarget)
+  else:
+    discard
+
 proc collectLocals(c: var Compiler, node: AstNode) =
   if node == nil: return
   case node.kind
@@ -774,6 +799,17 @@ proc collectLocals(c: var Compiler, node: AstNode) =
         discard allocAndAddLocalScoped(c, decl.nameStart, decl.nameLength, scopeId)
         if not isVarKind: c.locals[c.locals.len - 1].isTdz = true
         if node.declKind == KwConst: c.locals[c.locals.len - 1].isConst = true
+      elif decl.declPattern != nil:
+        # Destructuring declarator (`let {a} = …`). Pre-register every
+        # name the pattern introduces (source order), then mark them TDZ
+        # (+ const) for let/const — mirrors compiler.zc collect_locals'
+        # `decl.third != NULL` arm. Snapshot the added range.
+        let before = c.locals.len
+        collectPatternLocals(c, decl.declPattern)
+        if not isVarKind:
+          for pli in before ..< c.locals.len:
+            c.locals[pli].isTdz = true
+            if node.declKind == KwConst: c.locals[pli].isConst = true
   of FunctionDecl:
     # Script-top FunctionDecl creates a globalThis property, NOT a
     # script-scope lexical binding (handled by the global emit path).
@@ -887,9 +923,15 @@ proc paramsCompilable(params: seq[AstNode]): bool =
     if prm == nil: return false
     case prm.kind
     of IdentExpr:
-      # A destructuring binding surfaces as identPattern on the param —
-      # refuse it (defaults, via identDefault, are fine).
-      if prm.identPattern != nil: return false
+      # A destructuring binding surfaces as identPattern on the param.
+      # Slice 6d permits an OBJECT-pattern param (`function f({x})`); an
+      # ARRAY-pattern param and a DEFAULTED pattern param (`{x} = {}`) both
+      # bail — array needs the iterator fan-out (later slice), and a
+      # pattern default's undefined-check + AssertCoercible interleaving is
+      # untested here.
+      if prm.identPattern != nil:
+        if prm.identPattern.kind != ObjectPattern: return false
+        if prm.identDefault != nil: return false
     of RestParam:
       # Only a plain-ident rest binding is supported; `...[a]` / `...{a}`
       # need pattern fan-out (deferred). restArg is the bound target.
@@ -1262,6 +1304,9 @@ proc maybeInferAnonName(c: var Compiler, initExpr: AstNode, valReg: uint8,
 # Function / method / new calls (slice 5b). compileCall reads the outer
 # preferred-dst as its ret_hint (mirrors compiler.zc compile_call).
 proc compileCall(c: var Compiler, node: AstNode): uint8
+# Object destructuring (slice 6d): the Assignment path (`({a}=b)`) calls
+# destructurePattern, which is defined after maybeInferAnonName.
+proc destructurePattern(c: var Compiler, pat: AstNode, srcReg: uint8)
 proc compileNew(c: var Compiler, node: AstNode): uint8
 
 # --- Expressions ----------------------------------------------------
@@ -1597,6 +1642,23 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     # assignment are later slices -- refuse them.
     let target = node.target
     if target == nil:
+      c.hadError = true
+      return 0
+    # --- Destructuring assignment: `({a, b} = src)` -> pattern fan-out --
+    # Only plain `=` permits patterns (the parser only reinterprets an
+    # Object/Array LHS under Eq). The RHS evaluates ONCE into `r`;
+    # destructurePattern in assignment mode dispatches each target through
+    # the LHS-expression store chain. Returns the RHS reg (the assignment's
+    # value). ArrayPattern targets bail inside destructurePattern.
+    if target.kind == ObjectPattern and node.assignOp == Eq:
+      let r = compileExpr(c, node.value)
+      let saved = c.inDstrAssign
+      c.inDstrAssign = true
+      destructurePattern(c, target, r)
+      c.inDstrAssign = saved
+      return r
+    if target.kind == ArrayPattern:
+      # Array destructuring assignment — separate slice.
       c.hadError = true
       return 0
     # --- Member target: `obj.name = rhs` -> StoreProp -----------------
@@ -2472,6 +2534,211 @@ proc maybeInferAnonName(c: var Compiler, initExpr: AstNode, valReg: uint8,
   emit(c, instAB(SetFunctionName, valReg, nameReg))
   releaseReg(c, nameReg)
 
+# --- Object destructuring (slice 6d; mirrors compiler.zc) -----------
+#
+# `let {x, y} = o` / `({a} = b)` / `function f({x})`. The value is in
+# `srcReg`; destructurePattern emits `AssertCoercible srcReg` then fans
+# each entry into a `LoadProp`/`LoadElem` temp, applies the optional
+# default, and binds the target. ARRAY patterns (iterator protocol) are
+# a separate later slice — a pattern that IS or CONTAINS one BAILs.
+
+proc destructureObject(c: var Compiler, pat: AstNode, srcReg: uint8)
+
+proc patternEntryKeyName(c: Compiler, entry: AstNode): string =
+  ## Static key of an object-pattern entry (identifier / string / number
+  ## key). Unlike compile_object_literal (which strips a string key's
+  ## quotes), a destructuring pattern interns the RAW key token slice —
+  ## quotes included — as the property atom (compiler.zc destructure_object
+  ## passes `c.source + entry.name_start` for `entry.name_length` bytes, and
+  ## the parser sets those to the whole key TOKEN). So `let {"a-b": v}` keys
+  ## on the 5-byte `"a-b"` and the disasm prints `r.\"a-b\"`. Empty when the
+  ## entry has no static key (computed / rest).
+  let ks = entry.patKeyStart
+  let kl = entry.patKeyLen
+  if kl == 0: return ""
+  return c.slice(ks, ks + kl)
+
+proc bindDestructureTarget(c: var Compiler, target: AstNode, valReg: uint8) =
+  ## Bind the value in `valReg` to a destructuring leaf target. A nested
+  ## object pattern recurses; a nested ARRAY pattern BAILs. Binding mode
+  ## (inDstrAssign=false) declares a local/global; assignment mode stores
+  ## to an existing Member / Computed / ident lvalue. Mirrors compiler.zc
+  ## bind_destructure_target (the slice-6d subset: no TDZ/const store
+  ## guards, no outer-capture assignment — those shapes aren't in-corpus
+  ## and would need ThrowIfHole / env chains not ported here).
+  if target == nil: return
+  let k = target.kind
+  if k == ObjectPattern:
+    destructurePattern(c, target, valReg)
+    return
+  if k == ArrayPattern:
+    # Array destructuring (iterator protocol) — separate slice. BAIL.
+    c.hadError = true
+    return
+  if c.inDstrAssign:
+    # Assignment mode: the target is any LHSExpression.
+    if k == Member:
+      # Private member (`obj.#x`) store — out of corpus.
+      if target.propLength > 0 and c.src[target.propStart.int] == '#':
+        c.hadError = true
+        return
+      let objR = compileExpr(c, target.recv)
+      let name = c.slice(target.propStart, target.propStart + target.propLength)
+      discard emitStorePropAtom(c, objR, name, valReg)
+      releaseReg(c, objR)
+      return
+    if k == Computed:
+      let objR = compileExpr(c, target.recv)
+      let keyR = compileExpr(c, target.index)
+      emit(c, instABC(StoreElem, objR, keyR, valReg))
+      releaseReg(c, keyR)
+      releaseReg(c, objR)
+      return
+    if k != IdentExpr:
+      c.hadError = true
+      return
+    let nm = c.slice(target.start, target.`end`)
+    let lidx = findLocalIndex(c, nm)
+    if lidx >= 0:
+      # A const / TDZ target would need a PutValue guard (TypeError /
+      # ThrowIfHole) — out of corpus; refuse rather than emit an unguarded
+      # store.
+      if c.locals[lidx].isConst or c.locals[lidx].isTdz:
+        c.hadError = true
+        return
+      if c.locals[lidx].captured:
+        let er = envForLocal(c, lidx)
+        discard emitStorePropAtom(c, er, nm, valReg)
+      else:
+        emit(c, instAB(Mov, c.locals[lidx].reg, valReg))
+      return
+    # Outer-capture assignment target — needs an env chain walk + store
+    # guard; out of corpus. Bail rather than diverge.
+    if outerCaptureDepth(c, nm) > 0:
+      c.hadError = true
+      return
+    # Global target (non-strict StoreGlobal; strict form not modeled here).
+    let slot = internGlobal(c, nm)
+    emit(c, instAU16(StoreGlobal, valReg, uint16(slot)))
+    return
+  # Binding mode: leaf must be a plain identifier.
+  if k != IdentExpr:
+    c.hadError = true
+    return
+  let name = c.slice(target.start, target.`end`)
+  if c.isFunction:
+    let lidx = findLocalIndex(c, name)
+    if lidx < 0:
+      # Script-scope `var {a} = …`: collect_locals skips top-level var, so
+      # the name has no pre-registered local; the spec puts it on
+      # globalThis — DefineGlobal, matching the plain-var declarator path.
+      if c.isScript:
+        let slot = internGlobal(c, name)
+        emit(c, instAU16(DefineGlobal, valReg, uint16(slot)))
+        return
+      c.hadError = true
+      return
+    if c.locals[lidx].captured:
+      let er = envForLocal(c, lidx)
+      discard emitStorePropAtom(c, er, name, valReg)
+    else:
+      emit(c, instAB(Mov, c.locals[lidx].reg, valReg))
+    # #330 TDZ: this binding is now initialized so a later entry's default
+    # referencing it reads the value.
+    if c.locals[lidx].isTdz: c.locals[lidx].isTdz = false
+  else:
+    let slot = internGlobal(c, name)
+    emit(c, instAU16(DefineGlobal, valReg, uint16(slot)))
+
+proc applyDestructureDefault(c: var Compiler, vR: uint8, defaultExpr, target: AstNode) =
+  ## If the entry carries `= default`, emit in place:
+  ##   tmp = alloc; undefR = alloc; LoadUndefined undefR
+  ##   CmpStrictEq tmp, vR, undefR; JmpIfFalse tmp -> skip
+  ##   <compute default>; Mov vR <- default; skip:
+  ## vR is a caller-owned temp. tmp is allocated BEFORE undefR (lower reg)
+  ## but LoadUndefined for undefR emits first — matches compiler.zc's
+  ## alloc-then-emit order. Mirrors apply_destructure_default.
+  if defaultExpr == nil: return
+  let tmp = allocReg(c)
+  let undefR = allocReg(c)
+  emit(c, instA(LoadUndefined, undefR))
+  emit(c, instABC(CmpStrictEq, tmp, vR, undefR))
+  releaseReg(c, undefR)
+  let skip = emit(c, instAI16(JmpIfFalse, tmp, 0))
+  releaseReg(c, tmp)
+  let init = compileExpr(c, defaultExpr)
+  if init != vR: emit(c, instAB(Mov, vR, init))
+  # ECMA-262 NamedEvaluation: an anonymous callable default bound to a
+  # simple-ident target gets that name.
+  if target != nil and target.kind == IdentExpr and target.`end` > target.start:
+    maybeInferAnonName(c, defaultExpr, vR, c.slice(target.start, target.`end`))
+  patchJump(c, skip)
+
+proc destructureObject(c: var Compiler, pat: AstNode, srcReg: uint8) =
+  for entry in pat.patEntries:
+    if c.hadError: return
+    if entry == nil or entry.kind != PatternEntry:
+      c.hadError = true
+      return
+    if entry.patIsRest:
+      # Object rest `{...r}`: copy own enumerable props of src into a fresh
+      # object, then delete each statically-named key declared BEFORE this
+      # rest binding. Mirrors compiler.zc destructure_object's rest arm.
+      let saved = c.nextReg
+      let dstR = allocReg(c)
+      emit(c, instA(NewObject, dstR))
+      emit(c, instAB(ObjectSpread, dstR, srcReg))
+      for prev in pat.patEntries:
+        if prev == entry: break
+        if prev != nil and prev.kind == PatternEntry and not prev.patIsRest:
+          let pn = patternEntryKeyName(c, prev)
+          if pn.len > 0:
+            c.constants.add(Constant(kind: ckString, s: pn))
+            let keyR = allocReg(c)
+            emit(c, instAU16(LoadConst, keyR, uint16(c.constants.len - 1)))
+            let trash = allocReg(c)
+            emit(c, instABC(DeleteElem, trash, dstR, keyR))
+            releaseReg(c, trash)
+            releaseReg(c, keyR)
+      bindDestructureTarget(c, entry.patTarget, dstR)
+      c.nextReg = saved
+      if c.nextReg > c.maxReg: c.maxReg = c.nextReg
+      continue
+
+    let vR = allocReg(c)
+    if entry.patKeyLen > 0:
+      # Static key (identifier / string / number) -> LoadProp with an IC.
+      let name = patternEntryKeyName(c, entry)
+      if name.len == 0:
+        c.hadError = true
+        releaseReg(c, vR)
+        return
+      discard emitLoadPropAtom(c, vR, srcReg, name)
+    elif entry.patComputedKey != nil:
+      # Computed key `[e]` -> LoadElem.
+      let keyR = compileExpr(c, entry.patComputedKey)
+      emit(c, instABC(LoadElem, vR, srcReg, keyR))
+      releaseReg(c, keyR)
+    else:
+      c.hadError = true
+      releaseReg(c, vR)
+      return
+    applyDestructureDefault(c, vR, entry.patDefault, entry.patTarget)
+    bindDestructureTarget(c, entry.patTarget, vR)
+    releaseReg(c, vR)
+
+proc destructurePattern(c: var Compiler, pat: AstNode, srcReg: uint8) =
+  ## Spec: at the head of every destructuring step the value must be
+  ## RequireObjectCoercible — null/undefined throw TypeError before any
+  ## property extraction. Mirrors compiler.zc destructure_pattern.
+  if pat == nil: return
+  emit(c, instA(AssertCoercible, srcReg))
+  if pat.kind == ObjectPattern:
+    destructureObject(c, pat, srcReg)
+    return
+  # ArrayPattern (iterator protocol) is a separate slice — BAIL.
+  c.hadError = true
+
 # --- Statements -----------------------------------------------------
 
 proc compileVarDecl(c: var Compiler, node: AstNode) =
@@ -2482,8 +2749,20 @@ proc compileVarDecl(c: var Compiler, node: AstNode) =
   for decl in node.declarators:
     if decl.kind != Declarator: continue
     if decl.nameLength == 0:
-      # Destructuring declarator (declPattern != nil) -- later slice.
-      c.hadError = true; return
+      # Destructuring declarator: decl.declPattern is the pattern, decl.init
+      # the initializer. Compile the RHS into a temp, destructure (binding
+      # mode), release. `let {a};` (no init) is invalid in the spec — the
+      # parser never produces it; a pattern with no init is a silent no-op.
+      # Mirrors compiler.zc's VarDecl `decl.name_length==0 && decl.third`
+      # arm (~7318).
+      if decl.declPattern == nil:
+        c.hadError = true; return
+      if decl.init != nil:
+        let r = compileExpr(c, decl.init)
+        destructurePattern(c, decl.declPattern, r)
+        releaseReg(c, r)
+        if c.hadError: return
+      continue
     let name = c.slice(decl.nameStart, decl.nameStart + decl.nameLength)
     # Script-top `var x` keeps global semantics; collectLocals skipped
     # it, so it must not fall into the local path.
@@ -3325,6 +3604,12 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   var regularParamCount: uint32 = 0
   var hasRest = false
   var restReg: uint8 = 0
+  # Pass 1: allocate the parameter registers contiguously at the bottom of
+  # the register file. A DESTRUCTURING param (IdentExpr with identPattern)
+  # records a zero-length-name PLACEHOLDER local so the default-init /
+  # env-mirroring / destructure loops keep their param-order indexing
+  # (mirrors compiler.zc ~3993 `add_local(c, p.start, 0, reg)`). Its inner
+  # names are collected in pass 2 (below), AFTER all param regs.
   for p in params:
     if p.kind == RestParam:
       # Rest binding: its own register, param_count NOT incremented.
@@ -3333,6 +3618,13 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
       hasRest = true
       addLocalScoped(c, ra.start, ra.`end` - ra.start, uint32(restReg), 0'u32)
       c.locals[c.locals.len - 1].isParam = true
+    elif p.kind == IdentExpr and p.identPattern != nil:
+      # Object-pattern param placeholder (array patterns bailed above).
+      paramNames.add("")
+      let reg = allocReg(c)
+      addLocalScoped(c, p.start, 0'u32, uint32(reg), 0'u32)
+      c.locals[c.locals.len - 1].isParam = true
+      regularParamCount += 1
     else:
       let nm = c.slice(p.start, p.`end`)
       paramNames.add(nm)
@@ -3341,6 +3633,14 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
       c.locals[c.locals.len - 1].isParam = true
       regularParamCount += 1
   c.paramCount = regularParamCount
+
+  # Pass 2: inner pattern-binding locals come AFTER all param registers so
+  # the caller's arg-passing layout stays contiguous. destructurePattern
+  # (below, after default-init) fans the param value into them. Mirrors
+  # compiler.zc ~4017-4026.
+  for p in params:
+    if p.kind != RestParam and p.kind == IdentExpr and p.identPattern != nil:
+      collectPatternLocals(c, p.identPattern)
 
   # 2. Hoist body var/let/const into fixed locals. The body's own braces
   #    ARE the function scope, so walk its children directly (matching
@@ -3524,6 +3824,23 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
           discard emitStorePropAtom(c, c.envReg, c.locals[j].name, c.locals[j].reg)
         inc j
 
+  # 4a'''. Pattern-param fan-out (slice 6d). Runs AFTER env init so
+  #        bindDestructureTarget can StoreProp into envReg for captured
+  #        inner bindings, and BEFORE the function-top TDZ hole seed
+  #        (matching compiler.zc ~4275). Each object-pattern param's value
+  #        (in its placeholder register) is destructured into its inner
+  #        locals. localIdx tracks param order; a pattern param's src reg is
+  #        the placeholder local's register.
+  block:
+    var localIdx = 0
+    for p in params:
+      if p.kind == RestParam:
+        continue
+      if p.kind == IdentExpr and p.identPattern != nil:
+        let paramReg = c.locals[localIdx].reg
+        destructurePattern(c, p.identPattern, paramReg)
+      inc localIdx
+
   # 4. Function-top TDZ hole seeding. ECMA-262: a body-top let/const is
   #    seeded with LoadHole before its initializer. Params are never
   #    seeded (their value arrives from the caller). Unlike a nested
@@ -3613,6 +3930,21 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
 
 # --- Program --------------------------------------------------------
 
+proc hoistPatternGlobals(c: var Compiler, pat: AstNode) =
+  ## Pre-intern every binding name a `var` destructuring pattern introduces,
+  ## in source order, so its global slot precedes the initializer's globals
+  ## (mirrors compiler.zc hoist_pattern_globals).
+  if pat == nil: return
+  case pat.kind
+  of IdentExpr:
+    if pat.`end` > pat.start:
+      discard internGlobal(c, c.slice(pat.start, pat.`end`))
+  of ObjectPattern, ArrayPattern:
+    for entry in pat.patEntries:
+      if entry != nil and entry.kind == PatternEntry and entry.patTarget != nil:
+        hoistPatternGlobals(c, entry.patTarget)
+  else: discard
+
 proc hoistProgramGlobals(c: var Compiler, root: AstNode) =
   ## `var` AND script-top FunctionDecl hoist into the global object
   ## (mirrors hoist_program_decls). Interning here fixes slot order to
@@ -3626,6 +3958,11 @@ proc hoistProgramGlobals(c: var Compiler, root: AstNode) =
       for decl in stmt.declarators:
         if decl.kind == Declarator and decl.nameLength > 0:
           discard internGlobal(c, c.slice(decl.nameStart, decl.nameStart + decl.nameLength))
+        elif decl.kind == Declarator and decl.declPattern != nil:
+          # Destructuring `var {a} = …` at script scope: pre-intern every
+          # contained binding name so its global slot precedes the RHS's
+          # globals (mirrors hoist_pattern_globals).
+          hoistPatternGlobals(c, decl.declPattern)
     elif stmt.kind == FunctionDecl and stmt.fnNameLen > 0:
       discard internGlobal(c, c.slice(stmt.fnNameStart, stmt.fnNameStart + stmt.fnNameLen))
 
