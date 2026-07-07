@@ -169,7 +169,12 @@ type
     of IfStmt:       ifCond*, thenStmt*, elseStmt*: AstNode    # elseStmt nil if no else
     of WhileStmt:    whileCond*, whileBody*: AstNode
     of DoWhileStmt:  doBody*, doCond*: AstNode
-    of ForStmt:      forInit*, forTest*, forUpdate*, forBody*: AstNode  # init/test/update may be nil
+    of ForStmt:
+      forInit*, forTest*, forUpdate*, forBody*: AstNode  # init/test/update may be nil
+      ## Lexical scope id for the for-statement's own scope (its init
+      ## let/const + body locals don't leak past the loop). Same collect/
+      ## re-enter contract as BlockStmt.blockScopeId. 0 = unassigned.
+      forScopeId*: uint32
     of ReturnStmt:   retArg*: AstNode                          # nil for bare return
     of ThrowStmt:    throwArg*: AstNode
     of LabeledStmt:

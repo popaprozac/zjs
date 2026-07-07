@@ -462,3 +462,232 @@ suite "slice 3b fusion map coverage":
     let txt = disasmToString("if (a === null) c;")
     check "JmpIfNotStrictEq" in txt
     check "LoadNull" in txt
+
+# --- Slice 3c: while / do-while / C-for + loop rotation + break/continue
+
+const
+  whilePlain = "\n" &
+    "=== <program>  code_len=8 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; a\n" &
+    "    3  JmpIfFalse          r1   -> 7\n" &
+    "    4  LoadGlobal          r1   g109  ; b\n" &
+    "    5  Mov                 r0   <- r1\n" &
+    "    6  Jmp                 -> 2\n" &
+    "    7  Return              r0\n"
+
+  whileLtReg = "\n" &
+    "=== <program>  code_len=10 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  Jmp                 -> 5\n" &
+    "    3  LoadGlobal          r1   g108  ; c\n" &
+    "    4  Mov                 r0   <- r1\n" &
+    "    5  LoadGlobal          r1   g109  ; a\n" &
+    "    6  LoadGlobal          r2   g110  ; b\n" &
+    "    7  JmpIfLt             r1   r2   -> 3  [carrier@8]\n" &
+    "    9  Return              r0\n"
+
+  whileLtImm = "\n" &
+    "=== <program>  code_len=9 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  Jmp                 -> 5\n" &
+    "    3  LoadGlobal          r1   g108  ; c\n" &
+    "    4  Mov                 r0   <- r1\n" &
+    "    5  LoadGlobal          r1   g109  ; a\n" &
+    "    6  JmpIfLtImm          r1   imm=5    -> 3  [carrier@7]\n" &
+    "    8  Return              r0\n"
+
+  doPlain = "\n" &
+    "=== <program>  code_len=7 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; b\n" &
+    "    3  Mov                 r0   <- r1\n" &
+    "    4  LoadGlobal          r1   g109  ; a\n" &
+    "    5  JmpIfTrue           r1   -> 2\n" &
+    "    6  Return              r0\n"
+
+  doRelational = "\n" &
+    "=== <program>  code_len=9 regs=5 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; b\n" &
+    "    3  Mov                 r0   <- r1\n" &
+    "    4  LoadGlobal          r1   g109  ; a\n" &
+    "    5  LoadGlobal          r2   g110  ; c\n" &
+    "    6  CmpLt               a=3   b=1   c=2   | u16=513 i16=513\n" &
+    "    7  JmpIfTrue           r3   -> 2\n" &
+    "    8  Return              r0\n"
+
+  forInfBody = "\n" &
+    "=== <program>  code_len=6 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; b\n" &
+    "    3  Mov                 r0   <- r1\n" &
+    "    4  Jmp                 -> 2\n" &
+    "    5  Return              r0\n"
+
+  forInfEmpty = "\n" &
+    "=== <program>  code_len=4 regs=2 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  Jmp                 -> 2\n" &
+    "    3  Return              r0\n"
+
+  forGlobalCounter = "\n" &
+    "=== <program>  code_len=16 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r1   = 0\n" &
+    "    2  StoreGlobal         r1   g108  ; i\n" &
+    "    3  Mov                 r0   <- r1\n" &
+    "    4  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    5  Jmp                 -> 11\n" &
+    "    6  LoadGlobal          r1   g109  ; b\n" &
+    "    7  Mov                 r0   <- r1\n" &
+    "    8  LoadGlobal          r1   g108  ; i\n" &
+    "    9  AddImm              r2   <- r1, imm=1\n" &
+    "   10  StoreGlobal         r2   g108  ; i\n" &
+    "   11  LoadGlobal          r1   g108  ; i\n" &
+    "   12  LoadGlobal          r2   g110  ; n\n" &
+    "   13  JmpIfLt             r1   r2   -> 6  [carrier@14]\n" &
+    "   15  Return              r0\n"
+
+  forLetCounter = "\n" &
+    "=== <program>  code_len=9 regs=4 fixed=2 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 0\n" &
+    "    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  Jmp                 -> 5\n" &
+    "    4  AddImm              r0   <- r0, imm=1\n" &
+    "    5  LoadGlobal          r2   g108  ; n\n" &
+    "    6  JmpIfLt             r0   r2   -> 4  [carrier@7]\n" &
+    "    8  Return              r1\n"
+
+  whileBreak = "\n" &
+    "=== <program>  code_len=7 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; a\n" &
+    "    3  JmpIfFalse          r1   -> 6\n" &
+    "    4  Jmp                 -> 6\n" &
+    "    5  Jmp                 -> 2\n" &
+    "    6  Return              r0\n"
+
+  whileContinue = "\n" &
+    "=== <program>  code_len=7 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; a\n" &
+    "    3  JmpIfFalse          r1   -> 6\n" &
+    "    4  Jmp                 -> 2\n" &
+    "    5  Jmp                 -> 2\n" &
+    "    6  Return              r0\n"
+
+  forBreakInIf = "\n" &
+    "=== <program>  code_len=8 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  LoadGlobal          r1   g108  ; a\n" &
+    "    4  JmpIfFalse          r1   -> 6\n" &
+    "    5  Jmp                 -> 7\n" &
+    "    6  Jmp                 -> 2\n" &
+    "    7  Return              r0\n"
+
+  whileContinueInIf = "\n" &
+    "=== <program>  code_len=12 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; a\n" &
+    "    3  JmpIfFalse          r1   -> 11\n" &
+    "    4  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    5  LoadGlobal          r1   g109  ; b\n" &
+    "    6  JmpIfFalse          r1   -> 8\n" &
+    "    7  Jmp                 -> 2\n" &
+    "    8  LoadGlobal          r1   g110  ; c\n" &
+    "    9  Mov                 r0   <- r1\n" &
+    "   10  Jmp                 -> 2\n" &
+    "   11  Return              r0\n"
+
+  forBreakEq = "\n" &
+    "=== <program>  code_len=19 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r1   = 0\n" &
+    "    2  StoreGlobal         r1   g108  ; i\n" &
+    "    3  Mov                 r0   <- r1\n" &
+    "    4  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    5  Jmp                 -> 15\n" &
+    "    6  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    7  LoadGlobal          r1   g108  ; i\n" &
+    "    8  LoadInt             r2   = 5\n" &
+    "    9  JmpIfNotEq          r1   r2   -> 12  [carrier@10]\n" &
+    "   11  Jmp                 -> 18\n" &
+    "   12  LoadGlobal          r1   g108  ; i\n" &
+    "   13  AddImm              r2   <- r1, imm=1\n" &
+    "   14  StoreGlobal         r2   g108  ; i\n" &
+    "   15  LoadGlobal          r1   g108  ; i\n" &
+    "   16  JmpIfLtImm          r1   imm=10   -> 6  [carrier@17]\n" &
+    "   18  Return              r0\n"
+
+  whileGlobalDec = "\n" &
+    "=== <program>  code_len=11 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  Jmp                 -> 7\n" &
+    "    3  LoadGlobal          r1   g108  ; a\n" &
+    "    4  SubImm              r2   <- r1, imm=1\n" &
+    "    5  StoreGlobal         r2   g108  ; a\n" &
+    "    6  Mov                 r0   <- r2\n" &
+    "    7  LoadGlobal          r1   g108  ; a\n" &
+    "    8  JmpIfGtImm          r1   imm=0    -> 3  [carrier@9]\n" &
+    "   10  Return              r0\n"
+
+suite "slice 3c loops + rotation + break/continue byte-identity":
+  test "while (a) b; (plain cond test-at-top, back-edge Jmp)":
+    check disasmToString("while (a) b;") == whilePlain
+  test "while (a < b) c; (rotated: entry Jmp + true-polarity JmpIfLt back)":
+    check disasmToString("while (a < b) c;") == whileLtReg
+  test "while (a < 5) c; (rotated imm: JmpIfLtImm back)":
+    check disasmToString("while (a < 5) c;") == whileLtImm
+  test "do b; while (a); (bottom test JmpIfTrue back to top)":
+    check disasmToString("do b; while (a);") == doPlain
+  test "do b; while (a < c); (do NOT rotate: CmpLt + JmpIfTrue)":
+    check disasmToString("do b; while (a < c);") == doRelational
+  test "for (;;) b; (infinite for, expr body, back Jmp)":
+    check disasmToString("for (;;) b;") == forInfBody
+  test "for (;;) {} (infinite for, empty block -> Jmp self)":
+    check disasmToString("for (;;) {}") == forInfEmpty
+  test "for (i=0; i<n; i=i+1) b; (global-counter for, StoreGlobal)":
+    check disasmToString("for (i=0; i<n; i=i+1) b;") == forGlobalCounter
+  test "for (let i=0; i<n; i=i+1) {} (let-counter for, local reg update)":
+    check disasmToString("for (let i=0; i<n; i=i+1) {}") == forLetCounter
+  test "while (a) { break; } (break -> loop-end patch)":
+    check disasmToString("while (a) { break; }") == whileBreak
+  test "while (a) { continue; } (continue -> test-top back-edge)":
+    check disasmToString("while (a) { continue; }") == whileContinue
+  test "for (;;) { if (a) break; } (break inside if -> loop end)":
+    check disasmToString("for (;;) { if (a) break; }") == forBreakInIf
+  test "while (a) { if (b) continue; c; } (continue targets test-top)":
+    check disasmToString("while (a) { if (b) continue; c; }") == whileContinueInIf
+  test "for (i=0;i<10;i=i+1) { if (i==5) break; } (break + rotated imm test)":
+    check disasmToString("for (i=0;i<10;i=i+1) { if (i==5) break; }") == forBreakEq
+  test "while (a > 0) a = a - 1; (rotated + global store in body)":
+    check disasmToString("while (a > 0) a = a - 1;") == whileGlobalDec
+
+suite "slice 3c loop structure sanity":
+  test "for (let i=0;...) uses a for-scope local reg (fixed=2)":
+    check "fixed=2" in disasmToString("for (let i=0; i<n; i=i+1) {}")
+  test "do-while never fuses relational (CmpLt present, no JmpIfLt)":
+    let txt = disasmToString("do b; while (a < c);")
+    check "CmpLt" in txt
+    check "JmpIfLt " notin txt
+  test "break with no enclosing loop is a compile error":
+    expect ValueError:
+      discard disasmToString("break;")
+  test "continue with no enclosing loop is a compile error":
+    expect ValueError:
+      discard disasmToString("continue;")

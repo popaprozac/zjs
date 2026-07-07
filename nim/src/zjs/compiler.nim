@@ -35,6 +35,23 @@ type
     isConst*:    bool
     isTdz*:      bool
 
+  LoopFrame* = object
+    ## One iteration-loop context (mirrors `struct LoopFrame` in
+    ## src/compiler.zc). Pushed on loop entry, popped on exit. Slice 3c
+    ## ports the break/continue back-patch machinery for the plain loop
+    ## shapes; labels + switch + try-region unwinding arrive later.
+    ##   * `continueTarget` — bytecode offset a `continue` jumps to (the
+    ##     test-top for a top-tested while, or the update step for a for).
+    ##   * `haveContinue` — false until loopSetContinue publishes the
+    ##     target; while false, `continue` emits a placeholder recorded
+    ##     in continuePatches, patched when the target becomes known.
+    ##   * `breakPatches` — indices of placeholder `Jmp`s a `break`
+    ##     emitted; patched to the loop end on loop exit.
+    continueTarget*:  uint32
+    haveContinue*:    bool
+    breakPatches*:    seq[int]
+    continuePatches*: seq[int]
+
   Compiler* = object
     src*: string                 ## source text (for identifier slices)
     code*: seq[Inst]
@@ -73,6 +90,12 @@ type
     scopeStack*:  seq[uint32]
     curScopeId*:  uint32
     nextScopeId*: uint32
+    # --- Loop context stack for break / continue (compiler.zc) --------
+    ## Pushed on entry to a while/do/for, popped on exit. The top frame
+    ## owns the pending break/continue back-patches for the innermost
+    ## loop. Slice 3c ports the unlabeled-loop subset (labeled break /
+    ## continue, switch frames, and try-region unwinding are later).
+    loopStack*: seq[LoopFrame]
 
 # --- Register allocator (high-water-mark) ---------------------------
 
@@ -142,6 +165,54 @@ proc patchJump(c: var Compiler, jmpIdx: int) =
   let off = here - (int32(jmpIdx) + 1)
   c.code[jmpIdx] = instAI16(inst.op, inst.a, off)
 
+# --- Backward jumps to a KNOWN target (compiler.zc emit_jump_back*) --
+#
+# Loop back-edges land on a target already emitted, so the offset is
+# known at emit time (no back-patch). Base is J+1 -- the interpreter
+# bumps ip past the 1-slot jump then adds the offset.
+
+proc emitJumpBack(c: var Compiler, op: Op, targetIdx: uint32) =
+  let here = int32(c.code.len)
+  let off = int32(targetIdx) - (here + 1)
+  emit(c, instI16(op, off))
+
+proc emitJumpBackIf(c: var Compiler, op: Op, src: uint8, targetIdx: uint32) =
+  let here = int32(c.code.len)
+  let off = int32(targetIdx) - (here + 1)
+  emit(c, instAI16(op, src, off))
+
+# --- Loop context stack (compiler.zc loop_push / loop_pop / ...) -----
+
+proc loopPush(c: var Compiler) =
+  c.loopStack.add(LoopFrame(
+    continueTarget: 0, haveContinue: false,
+    breakPatches: @[], continuePatches: @[],
+  ))
+
+proc loopPop(c: var Compiler) =
+  if c.loopStack.len > 0:
+    c.loopStack.setLen(c.loopStack.len - 1)
+
+proc loopSetContinue(c: var Compiler, target: uint32) =
+  ## Publish the continue target and patch every continue placeholder
+  ## queued before it was known (the ForStmt deferred pattern: `continue`
+  ## targets the update step, positioned AFTER the body). Mirrors
+  ## compiler.zc loop_set_continue.
+  if c.loopStack.len == 0: return
+  let top = c.loopStack.len - 1
+  c.loopStack[top].continueTarget = target
+  c.loopStack[top].haveContinue = true
+  for jmpIdx in c.loopStack[top].continuePatches:
+    patchJump(c, jmpIdx)
+
+proc loopAddBreak(c: var Compiler, jmpIdx: int) =
+  if c.loopStack.len == 0: return
+  c.loopStack[c.loopStack.len - 1].breakPatches.add(jmpIdx)
+
+proc loopAddContinuePatch(c: var Compiler, jmpIdx: int) =
+  if c.loopStack.len == 0: return
+  c.loopStack[c.loopStack.len - 1].continuePatches.add(jmpIdx)
+
 # --- Global interning (mirrors ctx_intern_global at USER_GLOBAL_BASE) --
 
 proc internGlobal(c: var Compiler, name: string): uint32 =
@@ -176,17 +247,25 @@ proc enterScope(c: var Compiler) =
 proc enterScopeAssign(c: var Compiler, node: AstNode) =
   ## Collect-pass scope entry: issue a fresh id AND record it on the node.
   enterScope(c)
-  if node != nil and node.kind == BlockStmt:
-    node.blockScopeId = c.curScopeId
+  if node != nil:
+    case node.kind
+    of BlockStmt: node.blockScopeId = c.curScopeId
+    of ForStmt:   node.forScopeId = c.curScopeId
+    else: discard
 
 proc enterScopeReuse(c: var Compiler, node: AstNode) =
   ## Compile-pass: re-enter the id assigned at collect time. Falls back
   ## to a fresh id for nodes the collect pass never reached (0 = none).
-  if node == nil or node.kind != BlockStmt or node.blockScopeId == 0:
+  let assignedId =
+    if node == nil: 0'u32
+    elif node.kind == BlockStmt: node.blockScopeId
+    elif node.kind == ForStmt: node.forScopeId
+    else: 0'u32
+  if assignedId == 0:
     enterScope(c)
     return
-  c.scopeStack.add(node.blockScopeId)
-  c.curScopeId = node.blockScopeId
+  c.scopeStack.add(assignedId)
+  c.curScopeId = assignedId
 
 proc exitScope(c: var Compiler) =
   if c.scopeStack.len > 1:
@@ -428,6 +507,20 @@ proc collectLocals(c: var Compiler, node: AstNode) =
     # matching the collect walk order (compiler.zc collect_locals).
     collectLocals(c, node.thenStmt)
     collectLocals(c, node.elseStmt)
+  of WhileStmt:
+    collectLocals(c, node.whileBody)
+  of DoWhileStmt:
+    collectLocals(c, node.doBody)
+  of ForStmt:
+    # The for-statement owns a fresh scope so its init `let`/`const`
+    # (and any let/const in the body) don't leak past the loop. Enter it
+    # at collect time (recording the id on the ForStmt node) and re-enter
+    # by id in compile -- matching compiler.zc's enter_scope_assign /
+    # enter_scope_reuse for ForStmt.
+    enterScopeAssign(c, node)
+    collectLocals(c, node.forInit)
+    collectLocals(c, node.forBody)
+    exitScope(c)
   of Program:
     for s in node.stmts:
       collectLocals(c, s)
@@ -593,9 +686,17 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     let name = c.slice(target.start, target.`end`)
     let localIdx = findLocalIndex(c, name)
     if localIdx < 0:
-      # Assignment to a non-local (global) target is a later slice.
-      c.hadError = true
-      return 0
+      # Global target (non-strict): compile the RHS to a fresh temp, then
+      # StoreGlobal. compiler.zc pins preferred_dst = -1 for globals (the
+      # store reads the temp), so the RHS never takes a caller hint.
+      # Strict-mode StoreGlobalStrict / with-object PutValue are later.
+      let slot = internGlobal(c, name)
+      let savedPd = c.preferredDst
+      c.preferredDst = -1
+      let r = compileExpr(c, node.value)
+      c.preferredDst = savedPd
+      emit(c, instAU16(StoreGlobal, r, uint16(slot)))
+      return r
     let localReg = c.locals[localIdx].reg
     # const bindings reject all later assignments (TypeError) -- later
     # slice; refuse for now so we don't emit an unguarded store.
@@ -711,6 +812,77 @@ proc tryEmitCmpBranchIfFalse(c: var Compiler, cond: AstNode): int =
   releaseReg(c, l)
   return idx
 
+# --- Loop-rotation: relational back-edge (compiler.zc) --------------
+#
+# A loop whose condition is a fusable RELATIONAL compare (< <= > >=) is
+# ROTATED to test-at-bottom: the back-edge is a TRUE-polarity fused
+# branch (JmpIf{Lt,Le,Gt,Ge}[Imm]) that jumps BACK to the body head
+# when the compare holds, and falls through to the loop exit otherwise.
+# Slice 3c ports the bare-relational subset; `&&`-chain rotation
+# (compiler.zc cond_is_rotatable's Logical arm) is a later slice.
+
+proc condIsRelationalFusible(cond: AstNode): bool =
+  ## Mirrors compiler.zc cond_is_relational_fusible: a bare Binary whose
+  ## operator is one of the four relationals. Equality is NOT rotatable
+  ## (no TRUE-polarity Eq/Ne back-edge op family).
+  if cond == nil or cond.kind != Binary: return false
+  binaryOp(cond.binOp) in {CmpLt, CmpLe, CmpGt, CmpGe}
+
+proc condIsRotatable(cond: AstNode): bool =
+  ## Slice 3c: rotatable iff bare-relational. The compiler.zc `&&`-chain
+  ## arm (leading conjuncts exit forward, relational tail branches back)
+  ## is deferred -- a plain `a && b` while-condition falls to the
+  ## test-at-top path (and if unfusable, to nim-missing).
+  condIsRelationalFusible(cond)
+
+proc emitCmpBranchBackIfTrue(c: var Compiler, cond: AstNode, bodyHead: uint32) =
+  ## Emit the rotated loop's bottom test: a fused compare that branches
+  ## BACK to bodyHead when TRUE (mirrors compiler.zc
+  ## emit_cmp_branch_back_if_true). The offset is known at emit time and
+  ## baked into the J+1 carrier directly; the branch base is J+2 (the
+  ## instruction after the carrier). Caller guarantees the cond is
+  ## relational-fusible.
+  let opKind = binaryOp(cond.binOp)
+  # RHS small-int literal -> JmpIf*Imm.
+  if cond.rhs != nil and cond.rhs.kind == NumberExpr:
+    let v = cond.rhs.numVal
+    let iv = int32(v)
+    if float64(iv) == v and iv >= -128 and iv <= 127:
+      # RHS is a literal -- LHS is safe to borrow.
+      let savedBorrow = c.borrowLocalOk
+      c.borrowLocalOk = true
+      let src = compileExpr(c, cond.lhs)
+      c.borrowLocalOk = savedBorrow
+      let immByte = uint8(int8(iv))
+      let fusedOp =
+        case opKind
+        of CmpLt: JmpIfLtImm
+        of CmpLe: JmpIfLeImm
+        of CmpGt: JmpIfGtImm
+        else:     JmpIfGeImm    # CmpGe
+      let j = emit(c, instABC(fusedOp, src, immByte, 0))
+      let off = int32(bodyHead) - (int32(j) + 2)
+      emit(c, instI16(Jmp, off))
+      releaseReg(c, src)
+      return
+  # Reg-reg form -- both operands read before branching, borrow safe.
+  let savedBorrow = c.borrowLocalOk
+  c.borrowLocalOk = true
+  let l = compileExpr(c, cond.lhs)
+  let r = compileExpr(c, cond.rhs)
+  c.borrowLocalOk = savedBorrow
+  let fusedOp =
+    case opKind
+    of CmpLt: JmpIfLt
+    of CmpLe: JmpIfLe
+    of CmpGt: JmpIfGt
+    else:     JmpIfGe          # CmpGe
+  let j = emit(c, instABC(fusedOp, l, r, 0))
+  let off = int32(bodyHead) - (int32(j) + 2)
+  emit(c, instI16(Jmp, off))
+  releaseReg(c, r)
+  releaseReg(c, l)
+
 # --- Statements -----------------------------------------------------
 
 proc compileStmt(c: var Compiler, node: AstNode)
@@ -800,6 +972,150 @@ proc compileStmt(c: var Compiler, node: AstNode) =
       patchJump(c, jmpEnd)
     else:
       patchJump(c, jmpElse)
+  of WhileStmt:
+    # ECMA-262 completion reset (top level only): an empty-iteration
+    # while yields undefined, not the prior completion value.
+    if c.lastExprReg >= 0:
+      emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
+    if condIsRotatable(node.whileCond):
+      # Rotated (test-at-bottom) shape -- kills the unconditional
+      # back-edge Jmp. `Jmp -> test`, body_head, <body>, test:, then a
+      # TRUE-polarity fused branch back to body_head (fall-through =
+      # exit). Mirrors compile_while's rotated arm.
+      let entryJmp = emit(c, instI16(Jmp, 0))
+      let bodyHead = uint32(c.code.len)
+      loopPush(c)
+      # No loopSetContinue yet: `continue` must run the bottom test,
+      # whose position isn't known until after the body. Continues queue
+      # placeholders (the ForStmt deferred pattern).
+      compileStmt(c, node.whileBody)
+      patchJump(c, entryJmp)                    # test: = current position
+      loopSetContinue(c, uint32(c.code.len))
+      emitCmpBranchBackIfTrue(c, node.whileCond, bodyHead)
+      resetTemps(c)
+      for bp in c.loopStack[c.loopStack.len - 1].breakPatches:
+        patchJump(c, bp)
+      loopPop(c)
+    else:
+      # Plain condition -> test-at-top: JmpIfFalse->end, body, back-edge
+      # Jmp->test-top. `continue` targets the test-top.
+      let loopTop = uint32(c.code.len)
+      loopPush(c)
+      loopSetContinue(c, loopTop)
+      var jmpExit = tryEmitCmpBranchIfFalse(c, node.whileCond)
+      if jmpExit < 0:
+        let condReg = compileExpr(c, node.whileCond)
+        jmpExit = emit(c, instAI16(JmpIfFalse, condReg, 0))
+        releaseReg(c, condReg)
+      resetTemps(c)
+      compileStmt(c, node.whileBody)
+      emitJumpBack(c, Jmp, loopTop)
+      patchJump(c, jmpExit)
+      for bp in c.loopStack[c.loopStack.len - 1].breakPatches:
+        patchJump(c, bp)
+      loopPop(c)
+  of DoWhileStmt:
+    if c.lastExprReg >= 0:
+      emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
+    let loopTop = uint32(c.code.len)
+    # continue targets the test, only known after the body.
+    loopPush(c)
+    compileStmt(c, node.doBody)
+    let testAt = uint32(c.code.len)
+    loopSetContinue(c, testAt)
+    # do-while ALWAYS compiles the condition to a register and emits a
+    # single-slot JmpIfTrue back-edge -- compile_do does NOT rotate (no
+    # cond_is_rotatable check), so a relational condition still lowers to
+    # Cmp* + JmpIfTrue, not a fused true-polarity branch.
+    let condReg = compileExpr(c, node.doCond)
+    emitJumpBackIf(c, JmpIfTrue, condReg, loopTop)
+    releaseReg(c, condReg)
+    resetTemps(c)
+    for bp in c.loopStack[c.loopStack.len - 1].breakPatches:
+      patchJump(c, bp)
+    loopPop(c)
+  of ForStmt:
+    # Re-enter the for-statement's collect-assigned scope so the init's
+    # let/const (and any let/const in the body) don't leak past the loop.
+    enterScopeReuse(c, node)
+    # init (expression statement or let/const/var decl)
+    if node.forInit != nil:
+      compileStmt(c, node.forInit)
+    # ECMA-262 ForBodyEvaluation step 1: V <- undefined AFTER init, so
+    # the init's expression value doesn't leak into the completion.
+    if c.lastExprReg >= 0:
+      emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
+    if node.forTest != nil and condIsRotatable(node.forTest):
+      # Rotated for-loop: `Jmp -> test` skips body AND update on the
+      # first iteration. body_head, <body>, update_at (continue target),
+      # <update>, test:, JmpIf*->body_head (fall-through = exit).
+      let entryJmp = emit(c, instI16(Jmp, 0))
+      let bodyHead = uint32(c.code.len)
+      loopPush(c)
+      if node.forBody != nil:
+        compileStmt(c, node.forBody)
+      let updateAt = uint32(c.code.len)
+      loopSetContinue(c, updateAt)
+      if node.forUpdate != nil:
+        let ru = compileExpr(c, node.forUpdate)
+        releaseReg(c, ru)
+        resetTemps(c)
+      patchJump(c, entryJmp)                    # test:
+      emitCmpBranchBackIfTrue(c, node.forTest, bodyHead)
+      resetTemps(c)
+      for bp in c.loopStack[c.loopStack.len - 1].breakPatches:
+        patchJump(c, bp)
+      loopPop(c)
+    else:
+      # Test-at-top (or no test -> `for(;;)`). Empty test => unconditional
+      # back Jmp. `continue` targets the update step (below the body).
+      let loopTop = uint32(c.code.len)
+      loopPush(c)
+      var jmpExit = -1
+      if node.forTest != nil:
+        jmpExit = tryEmitCmpBranchIfFalse(c, node.forTest)
+        if jmpExit < 0:
+          let condReg = compileExpr(c, node.forTest)
+          jmpExit = emit(c, instAI16(JmpIfFalse, condReg, 0))
+          releaseReg(c, condReg)
+        resetTemps(c)
+      if node.forBody != nil:
+        compileStmt(c, node.forBody)
+      let updateAt = uint32(c.code.len)
+      loopSetContinue(c, updateAt)
+      if node.forUpdate != nil:
+        let ru = compileExpr(c, node.forUpdate)
+        releaseReg(c, ru)
+        resetTemps(c)
+      emitJumpBack(c, Jmp, loopTop)
+      if jmpExit >= 0: patchJump(c, jmpExit)
+      for bp in c.loopStack[c.loopStack.len - 1].breakPatches:
+        patchJump(c, bp)
+      loopPop(c)
+    exitScope(c)
+  of BreakStmt:
+    # Unlabeled break to the innermost loop. Labeled break is out of
+    # scope (the parser discards labels) -> falls here as an unlabeled
+    # break, which is the correct target for the slice-3c corpus. A
+    # `break` with no enclosing loop is a SyntaxError -> hadError.
+    if c.loopStack.len == 0:
+      c.hadError = true; return
+    let jmpIdx = emit(c, instI16(Jmp, 0))
+    loopAddBreak(c, jmpIdx)
+  of ContinueStmt:
+    if c.loopStack.len == 0:
+      c.hadError = true; return
+    let top = c.loopStack.len - 1
+    if c.loopStack[top].haveContinue:
+      emitJumpBack(c, Jmp, c.loopStack[top].continueTarget)
+    else:
+      # Target not yet known (for-style loops: `continue` runs the update
+      # step, positioned after the body). Emit a placeholder, patched at
+      # loopSetContinue time.
+      let jmpIdx = emit(c, instI16(Jmp, 0))
+      loopAddContinuePatch(c, jmpIdx)
+  of EmptyStmt:
+    discard
   else:
     # Default: an expression statement. At the program top level, Mov
     # the result into the reserved completion slot (lastExprReg).
