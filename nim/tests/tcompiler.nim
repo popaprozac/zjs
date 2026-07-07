@@ -1573,3 +1573,208 @@ suite "slice 4d: deferred arrow forms bail (nim_missing, not text_diff)":
   test "multi-level env chain (f => g => x => f(g(x))) -> compile error (deferred __outer__)":
     expect ValueError:
       discard disasmToString("var compose = f => g => x => f(g(x));")
+
+# --- slice 6a: switch statement ------------------------------------------
+const
+  switchFull = "\n" &
+    "=== <program>  code_len=19 regs=6 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; x\n" &
+    "    3  LoadInt             r2   = 1\n" &
+    "    4  CmpStrictEq         a=3   b=1   c=2   | u16=513 i16=513\n" &
+    "    5  JmpIfTrue           r3   -> 10\n" &
+    "    6  LoadInt             r3   = 2\n" &
+    "    7  CmpStrictEq         a=4   b=1   c=3   | u16=769 i16=769\n" &
+    "    8  JmpIfTrue           r4   -> 13\n" &
+    "    9  Jmp                 -> 16\n" &
+    "   10  LoadGlobal          r1   g109  ; a\n" &
+    "   11  Mov                 r0   <- r1\n" &
+    "   12  Jmp                 -> 18\n" &
+    "   13  LoadGlobal          r1   g110  ; b\n" &
+    "   14  Mov                 r0   <- r1\n" &
+    "   15  Jmp                 -> 18\n" &
+    "   16  LoadGlobal          r1   g111  ; c\n" &
+    "   17  Mov                 r0   <- r1\n" &
+    "   18  Return              r0\n"
+
+  switchSingleCase = "\n" &
+    "=== <program>  code_len=10 regs=5 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; x\n" &
+    "    3  LoadInt             r2   = 1\n" &
+    "    4  CmpStrictEq         a=3   b=1   c=2   | u16=513 i16=513\n" &
+    "    5  JmpIfTrue           r3   -> 7\n" &
+    "    6  Jmp                 -> 9\n" &
+    "    7  LoadGlobal          r1   g109  ; a\n" &
+    "    8  Mov                 r0   <- r1\n" &
+    "    9  Return              r0\n"
+
+  switchDefaultOnly = "\n" &
+    "=== <program>  code_len=7 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; x\n" &
+    "    3  Jmp                 -> 4\n" &
+    "    4  LoadGlobal          r1   g109  ; a\n" &
+    "    5  Mov                 r0   <- r1\n" &
+    "    6  Return              r0\n"
+
+  switchEmptyFallThrough = "\n" &
+    "=== <program>  code_len=14 regs=6 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; x\n" &
+    "    3  LoadInt             r2   = 1\n" &
+    "    4  CmpStrictEq         a=3   b=1   c=2   | u16=513 i16=513\n" &
+    "    5  JmpIfTrue           r3   -> 10\n" &
+    "    6  LoadInt             r3   = 2\n" &
+    "    7  CmpStrictEq         a=4   b=1   c=3   | u16=769 i16=769\n" &
+    "    8  JmpIfTrue           r4   -> 10\n" &
+    "    9  Jmp                 -> 13\n" &
+    "   10  LoadGlobal          r1   g109  ; a\n" &
+    "   11  Mov                 r0   <- r1\n" &
+    "   12  Jmp                 -> 13\n" &
+    "   13  Return              r0\n"
+
+  switchDefaultInMiddle = "\n" &
+    "=== <program>  code_len=19 regs=6 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; x\n" &
+    "    3  LoadInt             r2   = 1\n" &
+    "    4  CmpStrictEq         a=3   b=1   c=2   | u16=513 i16=513\n" &
+    "    5  JmpIfTrue           r3   -> 10\n" &
+    "    6  LoadInt             r3   = 3\n" &
+    "    7  CmpStrictEq         a=4   b=1   c=3   | u16=769 i16=769\n" &
+    "    8  JmpIfTrue           r4   -> 16\n" &
+    "    9  Jmp                 -> 13\n" &
+    "   10  LoadGlobal          r1   g109  ; a\n" &
+    "   11  Mov                 r0   <- r1\n" &
+    "   12  Jmp                 -> 18\n" &
+    "   13  LoadGlobal          r1   g110  ; b\n" &
+    "   14  Mov                 r0   <- r1\n" &
+    "   15  Jmp                 -> 18\n" &
+    "   16  LoadGlobal          r1   g111  ; c\n" &
+    "   17  Mov                 r0   <- r1\n" &
+    "   18  Return              r0\n"
+
+  switchFallThroughNoBreak = "\n" &
+    "=== <program>  code_len=15 regs=6 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; x\n" &
+    "    3  LoadInt             r2   = 1\n" &
+    "    4  CmpStrictEq         a=3   b=1   c=2   | u16=513 i16=513\n" &
+    "    5  JmpIfTrue           r3   -> 10\n" &
+    "    6  LoadInt             r3   = 2\n" &
+    "    7  CmpStrictEq         a=4   b=1   c=3   | u16=769 i16=769\n" &
+    "    8  JmpIfTrue           r4   -> 12\n" &
+    "    9  Jmp                 -> 14\n" &
+    "   10  LoadGlobal          r1   g109  ; a\n" &
+    "   11  Mov                 r0   <- r1\n" &
+    "   12  LoadGlobal          r1   g110  ; b\n" &
+    "   13  Mov                 r0   <- r1\n" &
+    "   14  Return              r0\n"
+
+  switchStringCase = "\n" &
+    "=== <program>  code_len=11 regs=5 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; k\n" &
+    "    3  LoadConst           r2   const#0 = \"a\"\n" &
+    "    4  CmpStrictEq         a=3   b=1   c=2   | u16=513 i16=513\n" &
+    "    5  JmpIfTrue           r3   -> 7\n" &
+    "    6  Jmp                 -> 10\n" &
+    "    7  LoadGlobal          r1   g109  ; x\n" &
+    "    8  Mov                 r0   <- r1\n" &
+    "    9  Jmp                 -> 10\n" &
+    "   10  Return              r0\n"
+
+  switchBlockLet = "\n" &
+    "=== <program>  code_len=12 regs=6 fixed=2 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r2   g108  ; x\n" &
+    "    3  LoadInt             r3   = 1\n" &
+    "    4  CmpStrictEq         a=4   b=2   c=3   | u16=770 i16=770\n" &
+    "    5  JmpIfTrue           r4   -> 7\n" &
+    "    6  Jmp                 -> 11\n" &
+    "    7  LoadInt             r0   = 1\n" &
+    "    8  Mov                 r2   <- r0\n" &
+    "    9  Mov                 r1   <- r2\n" &
+    "   10  Jmp                 -> 11\n" &
+    "   11  Return              r1\n"
+
+  switchInWhile = "\n" &
+    "=== <program>  code_len=15 regs=5 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadInt             r1   = 1\n" &
+    "    3  JmpIfFalse          r1   -> 14\n" &
+    "    4  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    5  LoadGlobal          r1   g108  ; x\n" &
+    "    6  LoadInt             r2   = 1\n" &
+    "    7  CmpStrictEq         a=3   b=1   c=2   | u16=513 i16=513\n" &
+    "    8  JmpIfTrue           r3   -> 10\n" &
+    "    9  Jmp                 -> 11\n" &
+    "   10  Jmp                 -> 11\n" &
+    "   11  LoadGlobal          r1   g109  ; y\n" &
+    "   12  Mov                 r0   <- r1\n" &
+    "   13  Jmp                 -> 2\n" &
+    "   14  Return              r0\n"
+
+suite "slice 6a: switch statement byte-identity":
+  test "full switch: two cases + break + default":
+    check disasmToString("switch(x){ case 1: a; break; case 2: b; break; default: c; }") ==
+      switchFull
+  test "single case, no break, no default":
+    check disasmToString("switch(x){ case 1: a; }") == switchSingleCase
+  test "default only":
+    check disasmToString("switch(x){ default: a; }") == switchDefaultOnly
+  test "empty fall-through case (case 1: case 2: a; break;)":
+    check disasmToString("switch(x){ case 1: case 2: a; break; }") ==
+      switchEmptyFallThrough
+  test "default in the middle (dispatch order preserved, bodies in source order)":
+    check disasmToString("switch(x){ case 1: a; break; default: b; break; case 3: c; }") ==
+      switchDefaultInMiddle
+  test "fall-through with no break between cases":
+    check disasmToString("switch(x){ case 1: a; case 2: b; }") ==
+      switchFallThroughNoBreak
+  test "string case test (LoadConst discriminator compare)":
+    check disasmToString("switch(k){ case \"a\": x; break; }") == switchStringCase
+  test "case body block with a let (fixed=2, local reg)":
+    check disasmToString("switch(x){ case 1: { let y=1; y; } break; }") ==
+      switchBlockLet
+  test "switch inside a while: break targets switch end, loop continues":
+    check disasmToString("while(1){ switch(x){ case 1: break; } y; }") ==
+      switchInWhile
+
+suite "slice 6a: switch in a function body":
+  test "function body switch with return in a case":
+    let txt = disasmToString("function f(){ switch(x){ case 1: return a; } }")
+    # No completion pre-init inside a function body (atProgramTop false).
+    check "=== <program>/const#0  code_len=7 regs=4 fixed=0 params=0 consts=0 ics=0 ===" in txt
+    check "    0  LoadGlobal          r0   g109  ; x" in txt
+    check "    1  LoadInt             r1   = 1" in txt
+    check "    2  CmpStrictEq         a=2   b=0   c=1" in txt
+    check "    3  JmpIfTrue           r2   -> 5" in txt
+    check "    4  Jmp                 -> 7" in txt
+    check "    5  LoadGlobal          r0   g110  ; a" in txt
+    check "    6  Return              r0" in txt
+
+suite "slice 6a: switch structural invariants":
+  test "switch dispatch uses CmpStrictEq + JmpIfTrue (not a jump table)":
+    let txt = disasmToString("switch(x){ case 1: a; break; }")
+    check "CmpStrictEq" in txt
+    check "JmpIfTrue" in txt
+  test "break inside switch continues an enclosing while (continue walks past switch frame)":
+    # `continue` inside the switch must target the while's test-top (r0=2),
+    # not the switch. Verify it compiles and the back-edge Jmp exists.
+    let txt = disasmToString("while(1){ switch(x){ case 1: continue; } }")
+    check "Jmp                 -> 2" in txt   # back-edge to while test-top
+  test "top-level switch pre-inits the completion reg (double LoadUndefined)":
+    let txt = disasmToString("switch(x){ case 1: a; }")
+    check "    0  LoadUndefined       a=0" in txt
+    check "    1  LoadUndefined       a=0" in txt

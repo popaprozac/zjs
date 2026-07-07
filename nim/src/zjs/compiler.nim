@@ -66,6 +66,13 @@ type
     haveContinue*:    bool
     breakPatches*:    seq[int]
     continuePatches*: seq[int]
+    ## Phase-4.8: distinguishes real iteration loops (while/do/for) from a
+    ## switch frame (pushed ONLY to receive `break` patches). An unlabeled
+    ## `continue` walks PAST non-iter frames to the enclosing loop, so
+    ## `continue` inside a switch targets the surrounding for/while, not the
+    ## switch. Default true; set false when pushing the switch frame (slice
+    ## 6a). Mirrors compiler.zc LoopFrame.is_iter (#261).
+    isIter*:          bool
 
   Compiler* = object
     src*: string                 ## source text (for identifier slices)
@@ -269,6 +276,7 @@ proc loopPush(c: var Compiler) =
   c.loopStack.add(LoopFrame(
     continueTarget: 0, haveContinue: false,
     breakPatches: @[], continuePatches: @[],
+    isIter: true,          # real iteration loop; switch frames flip to false
   ))
 
 proc loopPop(c: var Compiler) =
@@ -680,6 +688,18 @@ proc collectLocals(c: var Compiler, node: AstNode) =
     collectLocals(c, node.forInit)
     collectLocals(c, node.forBody)
     exitScope(c)
+  of SwitchStmt:
+    # A switch's CaseBlock is ONE lexical scope shared by every clause, so
+    # the case-body statements are collected in the CURRENT scope (a nested
+    # BlockStmt inside a case still opens its own scope via its own arm).
+    # Recurse into every case's body statements so a case-body `let`/`const`
+    # (via a nested block) gets its register pre-allocated. Mirrors
+    # compiler.zc collect_locals' SwitchStmt handling (case children walked
+    # in the enclosing scope).
+    for cnode in node.cases:
+      if cnode != nil and cnode.kind == SwitchCase:
+        for s in cnode.caseBody:
+          collectLocals(c, s)
   of Program:
     for s in node.stmts:
       collectLocals(c, s)
@@ -2509,6 +2529,132 @@ proc compileStmt(c: var Compiler, node: AstNode) =
         patchJump(c, bp)
       loopPop(c)
     exitScope(c)
+  of SwitchStmt:
+    # `switch (disc) { case t: ...; default: ...; }`. Lowered as an
+    # if-else DISPATCH CHAIN (NOT a jump table). Mirrors compiler.zc's
+    # SwitchStmt arm (~7529):
+    #   disc_r = disc
+    #   for each NON-default case i in order:
+    #     test_r = case_i_test; CmpStrictEq cmp, disc_r, test_r
+    #     JmpIfTrue cmp -> body_i           (forward placeholder)
+    #   Jmp -> default body (if any) else switch end
+    #   bodies in SOURCE order (default wherever it appears); fall through
+    #   unless a `break` Jmps to the end.
+    #
+    # `break` inside a body targets the switch end via a loop frame pushed
+    # with isIter=false, so a `continue` inside walks PAST it to the
+    # enclosing iteration loop (#261). Labeled break/continue and switch
+    # inside a try-region are later slices -- the parser drops labels so a
+    # labeled break arrives here unlabeled (correct target for the corpus).
+
+    # BAIL: a case-body `let`/`const` whose name ALSO exists as an enclosing
+    # lexical binding is a shadowing edge (the CaseBlock shares scope_id with
+    # the enclosing scope in collect_locals, so two same-name bindings
+    # interfere). The reference's capture analysis resolves such a closure
+    # capture to the OUTER binding (marking it captured) via subtle scope
+    # timing we don't model here; matching it byte-for-byte is out of the
+    # slice-6a corpus. Refuse rather than emit divergent bytecode -- surfaces
+    # as nim_missing (capture/TDZ scope class), never a false byte-match.
+    for cnode in node.cases:
+      if cnode == nil or cnode.kind != SwitchCase: continue
+      for s in cnode.caseBody:
+        if s != nil and s.kind == VarDecl and
+           (s.declKind == KwLet or s.declKind == KwConst):
+          for d in s.declarators:
+            if d.kind == Declarator and d.nameLength > 0:
+              let nm = c.slice(d.nameStart, d.nameStart + d.nameLength)
+              # The case-body `let x` is itself in the locals table (added by
+              # collectLocals in the enclosing scope). A SHADOW exists when a
+              # SECOND active binding of the same name is present — i.e. an
+              # enclosing `let x` declared outside the switch. Count active
+              # same-name locals; >=2 means the shadow trigger.
+              var activeCount = 0
+              for lc in c.locals:
+                if lc.name == nm and scopeIdIsActive(c, lc.scopeId):
+                  inc activeCount
+              if activeCount >= 2:
+                c.hadError = true; return
+
+    # 1. Completion pre-init (top level, like `if`): an empty-body switch
+    #    yields undefined, so reset the completion reg before the dispatch.
+    if c.atProgramTop and c.lastExprReg >= 0:
+      emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
+
+    # 2. Discriminant into a register, kept live across every comparison.
+    let discR = compileExpr(c, node.switchDisc)
+
+    # 3. Dispatch chain. For each case (source order): a non-default case
+    #    compiles its test, CmpStrictEq, and a forward JmpIfTrue whose
+    #    patch index we record; a default case records its position (first
+    #    default wins) and gets no test op. The bodies aren't emitted yet,
+    #    so the jumps are placeholders patched in step 6.
+    let n = node.cases.len
+    var caseLabelPatches = newSeq[int](n)   # JmpIfTrue index per case (-1 = default)
+    var defaultIdx = -1
+    for cj in 0 ..< n:
+      let cnode = node.cases[cj]
+      if cnode == nil or cnode.kind != SwitchCase:
+        c.hadError = true; return
+      if cnode.caseTest == nil:
+        # default: no dispatch test; the no-match Jmp targets its body.
+        if defaultIdx < 0: defaultIdx = cj
+        caseLabelPatches[cj] = -1
+      else:
+        let testR = compileExpr(c, cnode.caseTest)
+        let cmpR = allocReg(c)
+        emit(c, instABC(CmpStrictEq, cmpR, discR, testR))
+        releaseReg(c, testR)
+        let idx = emit(c, instAI16(JmpIfTrue, cmpR, 0))
+        releaseReg(c, cmpR)
+        caseLabelPatches[cj] = idx
+    releaseReg(c, discR)
+    resetTemps(c)
+
+    # 4. No case matched -> jump to the default body (if present) else the
+    #    switch end. Placeholder patched in step 6 once positions are known.
+    let toDefaultOrEnd = emit(c, instI16(Jmp, 0))
+
+    # 5. Push a loop frame (isIter=false) so `break` inside a body patches
+    #    to the switch end; `continue` walks past it to the enclosing loop.
+    loopPush(c)
+    c.loopStack[c.loopStack.len - 1].isIter = false
+
+    # 6. Emit each case body in SOURCE order, recording where each starts so
+    #    the dispatch jumps can be patched to it. Bodies fall through (no
+    #    automatic jump between them); a `break` inside adds a break patch.
+    var bodyStarts = newSeq[uint32](n)
+    for bi in 0 ..< n:
+      bodyStarts[bi] = uint32(c.code.len)
+      let cnode = node.cases[bi]
+      for s in cnode.caseBody:
+        if c.hadError: break
+        compileStmt(c, s)
+      if c.hadError: break
+    let endLabel = uint32(c.code.len)
+
+    if c.hadError:
+      loopPop(c)
+      return
+
+    # 7. Patch each non-default case's JmpIfTrue to its body start, and the
+    #    no-match Jmp to the default body (or the switch end). Offsets are
+    #    relative to the instruction AFTER the 1-slot jump (base = idx+1).
+    for pi in 0 ..< n:
+      if caseLabelPatches[pi] >= 0:
+        let jIdx = caseLabelPatches[pi]
+        let inst = c.code[jIdx]
+        let off = int32(bodyStarts[pi]) - (int32(jIdx) + 1)
+        c.code[jIdx] = instAI16(inst.op, inst.a, off)
+    let dest = if defaultIdx >= 0: bodyStarts[defaultIdx] else: endLabel
+    block:
+      let inst2 = c.code[toDefaultOrEnd]
+      let off2 = int32(dest) - (int32(toDefaultOrEnd) + 1)
+      c.code[toDefaultOrEnd] = instI16(inst2.op, off2)
+
+    # 8. Patch every `break` to the switch end, then pop the frame.
+    for bp in c.loopStack[c.loopStack.len - 1].breakPatches:
+      patchJump(c, bp)
+    loopPop(c)
   of BreakStmt:
     # Unlabeled break to the innermost loop. Labeled break is out of
     # scope (the parser discards labels) -> falls here as an unlabeled
@@ -2521,15 +2667,22 @@ proc compileStmt(c: var Compiler, node: AstNode) =
   of ContinueStmt:
     if c.loopStack.len == 0:
       c.hadError = true; return
-    let top = c.loopStack.len - 1
+    # Unlabeled continue targets the innermost ITERATION loop; walk past
+    # switch frames (which push only to receive breaks). Mirrors
+    # compiler.zc's is_iter walk (#261).
+    var top = c.loopStack.len - 1
+    while top >= 0 and not c.loopStack[top].isIter:
+      dec top
+    if top < 0:
+      c.hadError = true; return
     if c.loopStack[top].haveContinue:
       emitJumpBack(c, Jmp, c.loopStack[top].continueTarget)
     else:
       # Target not yet known (for-style loops: `continue` runs the update
       # step, positioned after the body). Emit a placeholder, patched at
-      # loopSetContinue time.
+      # loopSetContinue time. Record it on the TARGET iteration frame.
       let jmpIdx = emit(c, instI16(Jmp, 0))
-      loopAddContinuePatch(c, jmpIdx)
+      c.loopStack[top].continuePatches.add(jmpIdx)
   of FunctionDecl:
     # A function declaration. Compile the body into a fresh Function,
     # append it to the const pool, LoadConst it, then wrap in
