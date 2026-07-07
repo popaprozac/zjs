@@ -1302,3 +1302,103 @@ suite "slice 4b: register-model + no-spurious-env invariants":
     # ref needs the __outer__ env chain -> deliberately refused.
     expect ValueError:
       discard disasmToString("function o(){ let x=1; return function(){ let y=2; return function(){ return x+y; }; }; }")
+
+# --- Slice 2b: ternary / logical / compound-assign / typeof / void / delete
+# Ground-truth constants captured from `build/zjs disasm` (the oracle).
+const
+  t2b_ternary = "\n=== <program>  code_len=10 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r2   g109  ; a\n    2  JmpIfFalse          r2   -> 6\n    3  LoadGlobal          r2   g110  ; b\n    4  Mov                 r1   <- r2\n    5  Jmp                 -> 8\n    6  LoadGlobal          r2   g111  ; c\n    7  Mov                 r1   <- r2\n    8  DefineGlobal        r1   g108  ; r\n    9  Return              r0\n"
+  t2b_and = "\n=== <program>  code_len=7 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r1   g109  ; a\n    2  JmpIfFalse          r1   -> 5\n    3  LoadGlobal          r2   g110  ; b\n    4  Mov                 r1   <- r2\n    5  DefineGlobal        r1   g108  ; r\n    6  Return              r0\n"
+  t2b_or = "\n=== <program>  code_len=7 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r1   g109  ; a\n    2  JmpIfTrue           r1   -> 5\n    3  LoadGlobal          r2   g110  ; b\n    4  Mov                 r1   <- r2\n    5  DefineGlobal        r1   g108  ; r\n    6  Return              r0\n"
+  t2b_coalesce = "\n=== <program>  code_len=7 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r1   g109  ; a\n    2  JmpIfNotNullish     r1   -> 5\n    3  LoadGlobal          r2   g110  ; b\n    4  Mov                 r1   <- r2\n    5  DefineGlobal        r1   g108  ; r\n    6  Return              r0\n"
+  t2b_addAssign = "\n=== <program>  code_len=7 regs=5 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r1   g108  ; a\n    2  LoadInt             r2   = 1\n    3  Add                 a=3   b=1   c=2   | u16=513 i16=513\n    4  StoreGlobal         r3   g108  ; a\n    5  Mov                 r0   <- r3\n    6  Return              r0\n"
+  t2b_subAssign = "\n=== <program>  code_len=7 regs=5 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r1   g108  ; a\n    2  LoadInt             r2   = 2\n    3  Sub                 a=3   b=1   c=2   | u16=513 i16=513\n    4  StoreGlobal         r3   g108  ; a\n    5  Mov                 r0   <- r3\n    6  Return              r0\n"
+  t2b_memberAssign = "\n=== <program>  code_len=9 regs=7 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r1   g108  ; a\n    2  LoadConst           r2   const#0 = \"x\"\n    3  LoadElem            a=3   b=1   c=2   | u16=513 i16=513\n    4  LoadInt             r4   = 1\n    5  Add                 a=5   b=3   c=4   | u16=1027 i16=1027\n    6  StoreElem           a=1   b=2   c=5   | u16=1282 i16=1282\n    7  Mov                 r0   <- r5\n    8  Return              r0\n"
+  t2b_elemAssign = "\n=== <program>  code_len=9 regs=7 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r1   g108  ; a\n    2  LoadGlobal          r2   g109  ; i\n    3  LoadElem            a=3   b=1   c=2   | u16=513 i16=513\n    4  LoadInt             r4   = 1\n    5  Add                 a=5   b=3   c=4   | u16=1027 i16=1027\n    6  StoreElem           a=1   b=2   c=5   | u16=1282 i16=1282\n    7  Mov                 r0   <- r5\n    8  Return              r0\n"
+  t2b_typeofG = "\n=== <program>  code_len=5 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobalOrUndefinedr1   g109  ; a\n    2  Typeof              a=2   b=1   c=0   | u16=1 i16=1\n    3  DefineGlobal        r2   g108  ; t\n    4  Return              r0\n"
+  t2b_void0 = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadInt             r1   = 0\n    2  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n    3  Mov                 r0   <- r1\n    4  Return              r0\n"
+  t2b_deleteMember = "\n=== <program>  code_len=6 regs=5 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r1   g108  ; a\n    2  LoadConst           r2   const#0 = \"b\"\n    3  DeleteElem          a=3   b=1   c=2   | u16=513 i16=513\n    4  Mov                 r0   <- r3\n    5  Return              r0\n"
+  t2b_ternaryRel = "\n=== <program>  code_len=12 regs=6 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r2   g109  ; a\n    2  LoadGlobal          r3   g110  ; b\n    3  CmpLt               a=4   b=2   c=3   | u16=770 i16=770\n    4  JmpIfFalse          r4   -> 8\n    5  LoadGlobal          r4   g111  ; x\n    6  Mov                 r1   <- r4\n    7  Jmp                 -> 10\n    8  LoadGlobal          r4   g112  ; y\n    9  Mov                 r1   <- r4\n   10  DefineGlobal        r1   g108  ; r\n   11  Return              r0\n"
+  t2b_andChain = "\n=== <program>  code_len=10 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r1   g109  ; a\n    2  JmpIfFalse          r1   -> 5\n    3  LoadGlobal          r2   g110  ; b\n    4  Mov                 r1   <- r2\n    5  JmpIfFalse          r1   -> 8\n    6  LoadGlobal          r2   g111  ; c\n    7  Mov                 r1   <- r2\n    8  DefineGlobal        r1   g108  ; r\n    9  Return              r0\n"
+  t2b_mulAssign = "\n=== <program>  code_len=7 regs=5 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r1   g108  ; a\n    2  LoadGlobal          r2   g109  ; b\n    3  Mul                 a=3   b=1   c=2   | u16=513 i16=513\n    4  StoreGlobal         r3   g108  ; a\n    5  Mov                 r0   <- r3\n    6  Return              r0\n"
+  t2b_orChain = "\n=== <program>  code_len=10 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadGlobal          r1   g109  ; a\n    2  JmpIfTrue           r1   -> 5\n    3  LoadGlobal          r2   g110  ; b\n    4  Mov                 r1   <- r2\n    5  JmpIfTrue           r1   -> 8\n    6  LoadGlobal          r2   g111  ; c\n    7  Mov                 r1   <- r2\n    8  DefineGlobal        r1   g108  ; r\n    9  Return              r0\n"
+  t2b_ifAnd = "\n=== <program>  code_len=10 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    2  LoadGlobal          r1   g108  ; a\n    3  JmpIfFalse          r1   -> 6\n    4  LoadGlobal          r2   g109  ; b\n    5  Mov                 r1   <- r2\n    6  JmpIfFalse          r1   -> 9\n    7  LoadGlobal          r1   g110  ; c\n    8  Mov                 r0   <- r1\n    9  Return              r0\n"
+
+suite "slice 2b: ternary / logical / compound-assign / typeof / void / delete byte-identity":
+  test "a ? b : c -> JmpIfFalse, Mov consequent, Jmp, Mov alternate (shared reg)":
+    check disasmToString("var r = a ? b : c;") == t2b_ternary
+  test "a && b -> JmpIfFalse dst, RHS into fresh reg, Mov dst<-rhs (shared reg)":
+    check disasmToString("var r = a && b;") == t2b_and
+  test "a || b -> JmpIfTrue short-circuit":
+    check disasmToString("var r = a || b;") == t2b_or
+  test "a ?? b -> JmpIfNotNullish short-circuit":
+    check disasmToString("var r = a ?? b;") == t2b_coalesce
+  test "a += 1 -> LoadGlobal, LoadInt, Add (NOT AddImm), StoreGlobal":
+    check disasmToString("a += 1;") == t2b_addAssign
+  test "a -= 2 -> Sub compound":
+    check disasmToString("a -= 2;") == t2b_subAssign
+  test "a.x += 1 -> ELEMENT path (LoadConst key, LoadElem/StoreElem, NOT IC)":
+    check disasmToString("a.x += 1;") == t2b_memberAssign
+  test "a[i] += 1 -> computed ELEMENT compound":
+    check disasmToString("a[i] += 1;") == t2b_elemAssign
+  test "typeof a -> LoadGlobalOrUndefined (no throw), Typeof":
+    check disasmToString("var t = typeof a;") == t2b_typeofG
+  test "void 0 -> compile operand then LoadUndefined into result reg":
+    check disasmToString("void 0;") == t2b_void0
+  test "delete a.b -> LoadConst key, DeleteElem":
+    check disasmToString("delete a.b;") == t2b_deleteMember
+  test "a < b ? x : y -> Cmp* + JmpIfFalse (relational does NOT fuse)":
+    check disasmToString("var r = a < b ? x : y;") == t2b_ternaryRel
+  test "a && b && c -> two JmpIfFalse on the shared reg":
+    check disasmToString("var r = a && b && c;") == t2b_andChain
+  test "a *= b -> Mul compound with LoadGlobal rhs":
+    check disasmToString("a *= b;") == t2b_mulAssign
+  test "a || b || c -> two JmpIfTrue":
+    check disasmToString("var r = a || b || c;") == t2b_orChain
+  test "if (a && b) c -> Logical condition + JmpIfFalse guard":
+    check disasmToString("if (a && b) c;") == t2b_ifAnd
+
+suite "slice 2b: register-model + shape invariants":
+  test "compound global uses Add not AddImm (no imm fusion)":
+    let txt = disasmToString("a += 1;")
+    check "LoadInt             r2   = 1" in txt
+    check "Add                 a=3   b=1   c=2" in txt
+    check "AddImm" notin txt
+  test "compound member assign takes the ELEMENT path (LoadElem/StoreElem, no LoadProp/StoreProp)":
+    let txt = disasmToString("a.x += 1;")
+    check "LoadElem" in txt
+    check "StoreElem" in txt
+    check "LoadProp" notin txt
+    check "StoreProp" notin txt
+  test "typeof of a bare global uses LoadGlobalOrUndefined not LoadGlobal":
+    let txt = disasmToString("typeof a;")
+    check "LoadGlobalOrUndefined" in txt
+  test "typeof of a non-ident expr uses plain compile + Typeof":
+    let txt = disasmToString("typeof a.b;")
+    check "LoadProp" in txt
+    check "Typeof" in txt
+    check "LoadGlobalOrUndefined" notin txt
+  test "delete a[i] -> DeleteElem with computed index (no LoadConst)":
+    let txt = disasmToString("delete a[i];")
+    check "DeleteElem" in txt
+  test "delete of a bare LOCAL -> LoadFalse (non-deletable binding)":
+    let txt = disasmToString("{ let x = 1; delete x; }")
+    check "LoadFalse" in txt
+  test "logical shares the LHS/RHS result reg (single dst)":
+    # a && b: LHS->r1, RHS->r2, Mov r1<-r2 (r1 is the shared dst).
+    let txt = disasmToString("var r = a && b;")
+    check "JmpIfFalse          r1   -> 5" in txt
+    check "Mov                 r1   <- r2" in txt
+
+suite "slice 2b: deferred shapes bail to nim-missing":
+  test "prefix ++ is deferred (later slice)":
+    expect ValueError:
+      discard disasmToString("++a;")
+  test "postfix ++ is deferred":
+    expect ValueError:
+      discard disasmToString("a++;")
+  test "logical-assign &&= is deferred":
+    expect ValueError:
+      discard disasmToString("a &&= b;")
+  test "unary plus is deferred":
+    expect ValueError:
+      discard disasmToString("+a;")

@@ -557,6 +557,26 @@ proc binaryOp(tk: TokenKind): Op =
   of GtGtGt:   UShr
   else:        Halt
 
+# Compound-assignment operator token -> binary Op (mirrors the `op` ladder
+# in compile_assignment / compile_assignment_to_property). Returns `Halt`
+# for a token that isn't an arithmetic/bitwise compound assignment (the
+# logical-assign `&&= ||= ??=` forms are handled separately upstream).
+proc compoundAssignOp(tk: TokenKind): Op =
+  case tk
+  of PlusEq:    Add
+  of MinusEq:   Sub
+  of StarEq:    Mul
+  of SlashEq:   Div
+  of PercentEq: Mod
+  of StarStarEq: Pow
+  of AmpEq:     BitAnd
+  of PipeEq:    BitOr
+  of CaretEq:   BitXor
+  of LtLtEq:    Shl
+  of GtGtEq:    Shr
+  of GtGtGtEq:  UShr
+  else:         Halt
+
 # --- Simple-pure predicate + terminal placement (compiler.zc) -------
 
 proc exprIsSimplePure(n: AstNode): bool =
@@ -1136,15 +1156,107 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
   of Paren:
     return compileExpr(c, node.inner)
   of Unary:
-    # typeof/void/delete/++/-- are later slices -- refuse them so they
-    # surface as nim-missing, never a false match.
+    # slice 2b adds typeof / void / delete. ++/-- (PlusPlus/MinusMinus)
+    # and unary `+` remain later slices -- refuse them so they surface as
+    # nim-missing, never a false match.
+    # --- delete (compiler.zc ~1918) ----------------------------------
+    # `delete obj.name` / `delete obj[expr]` break the receiver + key out
+    # (NOT the loaded value) and emit DeleteElem dst, objReg, keyReg. The
+    # member key is a LoadConst of the property-name string (the ELEMENT
+    # path, like compound member assignment). A bare-ident delete resolving
+    # to a LOCAL emits LoadFalse; anything else (unresolved name / non-
+    # reference) emits LoadTrue. `delete obj.#x` (private) is a SyntaxError
+    # -> deferred. Only the plain Member/Computed/bare-ident shapes here.
+    if node.unOp == KwDelete:
+      var operand = node.operand
+      # Walk through Paren wrappers to probe for a private member (early
+      # SyntaxError -> refuse). is_private_name is a `#`-prefixed name.
+      var probe = operand
+      while probe != nil and probe.kind == Paren:
+        probe = probe.inner
+      if probe != nil and probe.kind == Member and probe.propLength > 0 and
+         c.src[probe.propStart.int] == '#':
+        c.hadError = true
+        return 0
+      if operand != nil and operand.kind == Member:
+        let objReg = compileExpr(c, operand.recv)
+        let name = c.slice(operand.propStart, operand.propStart + operand.propLength)
+        c.constants.add(Constant(kind: ckString, s: name))
+        let keyReg = allocReg(c)
+        emit(c, instAU16(LoadConst, keyReg, uint16(c.constants.len - 1)))
+        let dst = allocReg(c)
+        emit(c, instABC(DeleteElem, dst, objReg, keyReg))
+        releaseReg(c, keyReg)
+        releaseReg(c, objReg)
+        if c.nextReg <= dst: c.nextReg = dst + 1
+        return dst
+      if operand != nil and operand.kind == Computed:
+        let objReg = compileExpr(c, operand.recv)
+        let keyReg = compileExpr(c, operand.index)
+        let dst = allocReg(c)
+        emit(c, instABC(DeleteElem, dst, objReg, keyReg))
+        releaseReg(c, keyReg)
+        releaseReg(c, objReg)
+        if c.nextReg <= dst: c.nextReg = dst + 1
+        return dst
+      # `delete bareIdent`: a local binding is non-deletable -> LoadFalse;
+      # anything else -> LoadTrue. (OptionalMember/OptionalComputed and
+      # other non-reference operands fall to the LoadTrue path.)
+      if operand != nil and operand.kind == IdentExpr:
+        let nm = c.slice(operand.start, operand.`end`)
+        if findLocalIndex(c, nm) >= 0:
+          let dst = allocReg(c)
+          emit(c, instA(LoadFalse, dst))
+          return dst
+      let dst = allocReg(c)
+      emit(c, instA(LoadTrue, dst))
+      return dst
+    # --- typeof (compiler.zc ~1978) ----------------------------------
+    # `typeof bareGlobal` must NOT throw on an undeclared name: detect an
+    # IdentExpr operand (unwrapping Paren) resolving to NO local/outer and
+    # load via LoadGlobalOrUndefined, then Typeof. Non-ident (or local/
+    # outer) operands compile normally then Typeof.
+    if node.unOp == KwTypeof and node.operand != nil:
+      var operand = node.operand
+      while operand != nil and operand.kind == Paren:
+        operand = operand.inner
+      if operand != nil and operand.kind == IdentExpr:
+        let nm = c.slice(operand.start, operand.`end`)
+        let localIdx = findLocalIndex(c, nm)
+        var outerIdx = -1
+        if localIdx < 0 and c.parent != nil:
+          let oi = findLocalIndex(c.parent[], nm)
+          if oi >= 0 and c.parent[].locals[oi].captured: outerIdx = oi
+        if localIdx < 0 and outerIdx < 0:
+          let slot = internGlobal(c, nm)
+          let srcG = allocReg(c)
+          emit(c, instAU16(LoadGlobalOrUndefined, srcG, uint16(slot)))
+          let dstG = allocReg(c)
+          emit(c, instAB(Typeof, dstG, srcG))
+          releaseReg(c, srcG)
+          if c.nextReg <= dstG: c.nextReg = dstG + 1
+          return dstG
+    # --- typeof (non-ident) / void / arithmetic-negate family --------
     case node.unOp
-    of Minus, Bang, Tilde:
+    of Minus, Bang, Tilde, KwTypeof, KwVoid:
       discard
     else:
+      # ++/-- and unary `+` -- later slices.
       c.hadError = true
       return 0
     let src = compileExpr(c, node.operand)
+    # void <expr>: evaluate the operand (done) then yield undefined.
+    if node.unOp == KwVoid:
+      releaseReg(c, src)
+      let dst = allocReg(c)
+      emit(c, instA(LoadUndefined, dst))
+      return dst
+    # typeof <non-ident-expr>: Typeof dst, src.
+    if node.unOp == KwTypeof:
+      let dst = allocReg(c)
+      emit(c, instAB(Typeof, dst, src))
+      releaseReg(c, src)
+      return dst
     let dst = allocReg(c)
     let op =
       case node.unOp
@@ -1214,6 +1326,62 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     releaseReg(c, l)
     if c.nextReg <= dst: c.nextReg = dst + 1
     return dst
+  of Logical:
+    # Short-circuit `a && b` / `a || b` / `a ?? b`. Compile the LHS into a
+    # WRITABLE result reg (`dst`), branch PAST the RHS on short-circuit,
+    # then compile the RHS into a fresh reg and `Mov dst <- rhs`. The LHS
+    # and RHS share the SAME dst. Because we scribble the RHS through dst,
+    # it must NOT be a borrowed local reg, and no outer preferred-dst hint
+    # may reach it: clear borrowLocalOk + preferredDst around the LHS read
+    # (restored after). Mirrors compiler.zc compile_logical (~2278).
+    let savedBorrow = c.borrowLocalOk
+    let savedPd = c.preferredDst
+    c.borrowLocalOk = false
+    c.preferredDst = -1
+    let dst = compileExpr(c, node.lhs)
+    let jmpOp =
+      case node.binOp
+      of PipePipe:         JmpIfTrue
+      of QuestionQuestion: JmpIfNotNullish
+      else:                JmpIfFalse    # AmpAmp
+    let jmpIdx = emit(c, instAI16(jmpOp, dst, 0))
+    let savedNext = c.nextReg
+    let rhs = compileExpr(c, node.rhs)
+    emit(c, instAB(Mov, dst, rhs))
+    c.nextReg = savedNext
+    patchJump(c, jmpIdx)
+    c.borrowLocalOk = savedBorrow
+    c.preferredDst = savedPd
+    return dst
+  of Conditional:
+    # `test ? consequent : alternate`. Materialize both branches into the
+    # SAME register (dst); JmpIfFalse skips the consequent. An outer
+    # preferred-dst hint (e.g. from `result = cond ? a : result + b`) would
+    # cause the first inner alloc_dst to clobber the hint target before the
+    # alt branch reads it, so save+clear here (the Conditional uses
+    # alloc_reg, not the hint). The condition is compiled as a plain
+    # expression + JmpIfFalse -- it does NOT fuse relational compares (the
+    # oracle emits Cmp* + JmpIfFalse, not JmpIfNot*). Mirrors compiler.zc
+    # Conditional arm (~2206).
+    let savedPd = c.preferredDst
+    c.preferredDst = -1
+    let dst = allocReg(c)
+    let testR = compileExpr(c, node.cond)
+    let jmpElse = emit(c, instAI16(JmpIfFalse, testR, 0))
+    releaseReg(c, testR)
+    let savedNext = c.nextReg
+    let consR = compileExpr(c, node.conseq)
+    if consR != dst: emit(c, instAB(Mov, dst, consR))
+    c.nextReg = savedNext
+    let jmpEnd = emit(c, instI16(Jmp, 0))
+    patchJump(c, jmpElse)
+    let altR = compileExpr(c, node.alt)
+    if altR != dst: emit(c, instAB(Mov, dst, altR))
+    c.nextReg = savedNext
+    patchJump(c, jmpEnd)
+    if c.nextReg <= dst: c.nextReg = dst + 1
+    c.preferredDst = savedPd
+    return dst
   of Assignment:
     # Slice 3a: plain `=` to a script-scope local / global target.
     # Slice 5a adds Member (`obj.name = rhs`) and Computed
@@ -1264,7 +1432,45 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       let v = compileExpr(c, node.value)
       emit(c, instABC(StoreElem, objReg, keyReg, v))
       return v
-    if target.kind != IdentExpr or node.assignOp != Eq:
+    # --- Compound member/computed target: `obj.x op= rhs` / `obj[i] op= rhs`
+    # Mirrors compile_assignment_to_property's compound path. QUIRK: even a
+    # Member target goes through the ELEMENT path (LoadConst key + LoadElem/
+    # StoreElem), NOT the IC LoadProp/StoreProp. compile_property_target
+    # loads receiver into obj_r then the key (LoadConst for Member, index
+    # expr for Computed); then LoadElem cur, op, StoreElem. Logical-assign
+    # (`&&= ||= ??=`) is deferred here.
+    if (target.kind == Member or target.kind == Computed) and node.assignOp != Eq:
+      let op = compoundAssignOp(node.assignOp)
+      if op == Halt:
+        c.hadError = true      # logical-assign / unknown -- deferred
+        return 0
+      # Private member (`obj.#x op= rhs`) -> deferred.
+      if target.kind == Member and target.propLength > 0 and
+         c.src[target.propStart.int] == '#':
+        c.hadError = true
+        return 0
+      # compile_property_target: obj_r then key_r.
+      let objReg = compileExpr(c, target.recv)
+      var keyReg: uint8
+      if target.kind == Member:
+        let name = c.slice(target.propStart, target.propStart + target.propLength)
+        c.constants.add(Constant(kind: ckString, s: name))
+        keyReg = allocReg(c)
+        emit(c, instAU16(LoadConst, keyReg, uint16(c.constants.len - 1)))
+      else:
+        keyReg = compileExpr(c, target.index)
+      # cur = LoadElem obj_r, key_r; rhs; op dst, cur, rhs; StoreElem.
+      let cur = allocReg(c)
+      emit(c, instABC(LoadElem, cur, objReg, keyReg))
+      let rhsR = compileExpr(c, node.value)
+      let dst = allocReg(c)
+      emit(c, instABC(op, dst, cur, rhsR))
+      emit(c, instABC(StoreElem, objReg, keyReg, dst))
+      releaseReg(c, rhsR)
+      releaseReg(c, cur)
+      if c.nextReg <= dst: c.nextReg = dst + 1
+      return dst
+    if target.kind != IdentExpr:
       c.hadError = true
       return 0
     let name = c.slice(target.start, target.`end`)
@@ -1276,6 +1482,65 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     if localIdx < 0:
       outerDepth = outerCaptureDepth(c, name)
       if outerDepth > 0: c.hasOuterRefs = true
+    # --- Compound ident assignment: `a op= rhs` (op != Eq) ------------
+    # Mirrors compile_assignment's compound path (~2594): load current
+    # value into `cur`, compile rhs, `op dst, cur, rhs`, store back, return
+    # dst. Uses the GENERAL binary op (no imm fusion -- `a += 1` emits a
+    # LoadInt + Add, not AddImm). Logical-assign (`&&= ||= ??=`) and const
+    # targets are deferred. TDZ ThrowIfHole is out of the current corpus
+    # (a body-top compound assign to an uninitialized let); refuse it.
+    if node.assignOp != Eq:
+      let op = compoundAssignOp(node.assignOp)
+      if op == Halt:
+        c.hadError = true      # logical-assign / unknown -- deferred
+        return 0
+      # const target -> TypeError guard (later slice); refuse.
+      if localIdx >= 0 and c.locals[localIdx].isConst:
+        c.hadError = true
+        return 0
+      # cur = current value (local Mov / captured-env LoadProp / outer-env
+      # LoadProp / global LoadGlobal).
+      let cur = allocReg(c)
+      if localIdx >= 0:
+        if capturedLocal:
+          let er = envForLocal(c, localIdx)
+          discard emitLoadPropAtom(c, cur, er, name)
+        else:
+          # A TDZ-uninitialized local would need a ThrowIfHole guard; out
+          # of the current corpus -- refuse rather than emit an unguarded
+          # load. (Params + initialized locals are fine.)
+          if c.locals[localIdx].isTdz:
+            c.hadError = true
+            return cur
+          emit(c, instAB(Mov, cur, c.locals[localIdx].reg))
+      elif outerDepth > 0:
+        let envR = emitEnvChainWalk(c, outerDepth)
+        discard emitLoadPropAtom(c, cur, envR, name)
+        releaseReg(c, envR)
+      else:
+        let slot = internGlobal(c, name)
+        emit(c, instAU16(LoadGlobal, cur, uint16(slot)))
+      # rhs, then the binary op into a fresh dst, then store back.
+      let rhsR = compileExpr(c, node.value)
+      let dst = allocReg(c)
+      emit(c, instABC(op, dst, cur, rhsR))
+      if localIdx >= 0:
+        if capturedLocal:
+          let er = envForLocal(c, localIdx)
+          discard emitStorePropAtom(c, er, name, dst)
+        else:
+          emit(c, instAB(Mov, c.locals[localIdx].reg, dst))
+      elif outerDepth > 0:
+        let envR = emitEnvChainWalk(c, outerDepth)
+        discard emitStorePropAtom(c, envR, name, dst)
+        releaseReg(c, envR)
+      else:
+        let slot = internGlobal(c, name)
+        emit(c, instAU16(StoreGlobal, dst, uint16(slot)))
+      releaseReg(c, rhsR)
+      releaseReg(c, cur)
+      if c.nextReg <= dst: c.nextReg = dst + 1
+      return dst
     if localIdx < 0 and outerDepth == 0:
       # Global target (non-strict): the RHS is evaluated FIRST — and its
       # globals interned — BEFORE the target's slot, matching Zen-c's
