@@ -8,15 +8,17 @@
 ## The renderer (`disasmToString`) builds the text into a string so tests
 ## can assert on it directly; `main()` streams it to stdout.
 
-import std/[os, strutils, tables]
+import std/[os, strutils, strformat, tables]
 import ../src/zjs/[parser, bytecode, compiler]
 
 # --- C `%g` for doubles (used by LoadConst) -------------------------
-# Not exercised by slice 1, but kept faithful for later slices.
+# Nim's `&"{d:g}"` matches C printf `%g` byte-for-byte for the values a
+# JS NumberExpr can produce (verified against `cc` for the exponential
+# and mantissa-trimming cases: 2.14748e+09, 1e+10, 1e+06, 1.23457e+08).
+# This is the same approach `nim/tools/nim_parse.nim` uses for the AST
+# dump, and it is the oracle-matching path.
 proc formatG(d: float64): string =
-  # Nim's default float formatting differs from C %g; a full match is a
-  # later-slice concern (no doubles emitted in slice 1). Placeholder.
-  $d
+  &"{d:g}"
 
 # --- C printf-style field formatting --------------------------------
 # We reproduce the exact widths/justification of the fprintf calls in
@@ -78,8 +80,17 @@ proc disasmFunction(buf: var string, f: Function, label: string) =
         of ckInt:      buf.add(" = " & $cv.i)
         of ckDouble:   buf.add(" = " & formatG(cv.d))
         of ckString:
-          let disp = if cv.s.len > 24: cv.s[0 ..< 24] & "..." else: cv.s
-          buf.add(" = \"" & disp & "\"")
+          # C prints ` = "%.24s%s"` where `%.24s` walks `s->data` as a
+          # NUL-terminated C string (stops at the first embedded NUL,
+          # capped at 24 bytes), and the `...` suffix is gated on the
+          # STORED length (`s->length > 24`) -- not the displayed slice.
+          var disp = ""
+          for j in 0 ..< cv.s.len:
+            if j >= 24: break
+            if cv.s[j] == '\0': break
+            disp.add(cv.s[j])
+          let ell = if cv.s.len > 24: "..." else: ""
+          buf.add(" = \"" & disp & ell & "\"")
         of ckFunction: buf.add(" = <function>")
     of LoadInt:
       # `r%-3u = %d`

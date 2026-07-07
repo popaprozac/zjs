@@ -506,7 +506,16 @@ nim-disasm: $(NIM_DISASMBIN)
 $(NIM_DISASMBIN): $(NIM_SRCS) nim/tools/nim_disasm.nim | $(NIM_OUT)
 	$(NIM) c --mm:arc -d:release --hints:off --out:$(NIM_DISASMBIN) nim/tools/nim_disasm.nim
 
-.PHONY: nim-lib nim-test262 nim-cabi-smoke nim-test nim-lex nim-difflex nim-parse nim-diffparse nim-disasm
+# Differential-oracle corpus sweep: compare `zjs disasm` vs `nim-disasm`
+# byte-for-byte over a sample of test262 expression files. Override the
+# CORPUS glob to point elsewhere. Expect many nim_missing during the
+# compiler slices (unimplemented ops); text_diff MUST stay ~0.
+DIFFDISASM_CORPUS ?= vendor/test262/test/language/expressions
+nim-diffdisasm: nim-disasm cli
+	@find $(DIFFDISASM_CORPUS) -name '*.js' 2>/dev/null | grep -v _FIXTURE | awk 'NR%40==0' \
+		| bash nim/tests/measure_diffdisasm.sh
+
+.PHONY: nim-lib nim-test262 nim-cabi-smoke nim-test nim-lex nim-difflex nim-parse nim-diffparse nim-disasm nim-diffdisasm
 
 # WinterTC Minimum Common API conformance. Probes ship in
 # tests/wintercg/ — each is a WPT-shaped .js using the harness at
