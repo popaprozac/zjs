@@ -1599,18 +1599,20 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       emit(c, instAB(Mov, localReg, r))
     return r
   of FunctionExpr, ArrowFunc:
-    # ArrowFunc still bails (its creation-time `this` snapshot + concise
-    # body are out of the slice-4b corpus); only plain FunctionExpr is
-    # compiled here, now WITH the env-capturing MakeClosure form.
-    if node.kind == ArrowFunc:
-      c.hadError = true
-      return 0
     # compile_function_value: compile the body into a fresh Function,
     # append it to OUR const pool, LoadConst it into a fresh reg. If the
     # inner referenced any outer-scope name (f.needsEnv carries the
-    # inner's has_outer_refs), wrap it in MakeClosure with the current
-    # env; otherwise the LoadConst reg IS the value (no wrap). Uses
-    # allocReg, NOT allocDst. Mirrors compiler.zc compile_function_value.
+    # inner's has_outer_refs) — OR it's an ARROW — wrap it in MakeClosure
+    # with the current env; otherwise the LoadConst reg IS the value (no
+    # wrap). Uses allocReg, NOT allocDst. Mirrors compiler.zc
+    # compile_function_value.
+    #
+    # Arrows ALWAYS wrap (compiler.zc ~4538 `if f.needs_env || f.is_arrow`)
+    # even when non-capturing: MakeClosure is where the creation-time
+    # `this` snapshot lands (cl.captured_this). A bare `() => 1` reads no
+    # outer scope but still needs the wrap so the arrow's `this`/`arguments`
+    # bind lexically to the enclosing frame. For a non-capturing arrow the
+    # env operand is closureEnvReg = 0 (unused by the closure).
     let f = compileFunction(c.src, node, c)
     if f == nil:
       c.hadError = true
@@ -1619,7 +1621,7 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     let idx = uint16(c.constants.len - 1)
     let dst = allocReg(c)
     emit(c, instAU16(LoadConst, dst, idx))
-    if f.needsEnv:
+    if f.needsEnv or f.isArrow:
       let clsReg = allocReg(c)
       let env = closureEnvReg(c)
       emit(c, instABC(MakeClosure, clsReg, dst, env.reg))
@@ -2641,39 +2643,59 @@ proc compileStmt(c: var Compiler, node: AstNode) =
 # --- Function bodies (slice 4a: non-capturing) ----------------------
 
 proc functionBodyStmts(node: AstNode): seq[AstNode] =
-  ## The function body's top-level statement list. The outer braces ARE
-  ## the function scope, so we iterate the BlockStmt's children directly
-  ## (never re-entering a block scope for them) — mirrors compiler.zc's
-  ## "walk INTO node.left's children" for the body.
-  let body = node.fnBody
+  ## The nodes to WALK for the collect-locals / capture-analysis pre-passes.
+  ## The outer braces ARE the function scope, so we iterate the BlockStmt's
+  ## children directly (never re-entering a block scope for them) — mirrors
+  ## compiler.zc's "walk INTO node.left's children" for a block body, and
+  ## "walk node.left directly" for an arrow's CONCISE (expression) body
+  ## (compiler.zc ~4064/4083). collect_locals is a no-op on the concise
+  ## expression (no var/let/const there), but analyze_captures MUST descend
+  ## it to mark params captured by a nested closure. The compile step (5)
+  ## special-cases the concise body via `body.kind != BlockStmt`, so this
+  ## single-element list is never re-compiled through the stmt loop.
+  let body = fnBodyOf(node)
   if body == nil: return @[]
   if body.kind == BlockStmt: return body.stmtList
   return @[body]
 
 proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Function =
-  ## Compile a FunctionDecl / FunctionExpr body into its own Function
-  ## (own code / consts / regs / paramCount). Mirrors compiler.zc
-  ## compile_function for the slice-4a envelope: simple params, no
-  ## captures, no `this`/`arguments`/async/generator/default/rest. Any
-  ## feature outside that envelope sets hadError -> returns nil so the
+  ## Compile a FunctionDecl / FunctionExpr / ArrowFunc body into its own
+  ## Function (own code / consts / regs / paramCount). Mirrors compiler.zc
+  ## compile_function for the slice-4a/4d envelope: simple params, no
+  ## default/rest/destructure, no async/generator. `this`/`arguments`
+  ## inheritance is handled by the shared bodyUsesThis/bodyUsesArguments
+  ## pre-scans (which descend into arrows) + the arrow-always MakeClosure.
+  ## Any feature outside that envelope sets hadError -> returns nil so the
   ## enclosing compile bails (surfacing as nim_missing, never a false
   ## match). `enclosing` shares its global-intern table with the child
   ## so global slots stay in one namespace program-wide.
+  let isArrow = node.kind == ArrowFunc
 
   # --- Envelope gate ------------------------------------------------
-  if node.fnIsAsync or node.fnIsGenerator:
-    return nil
-  if not paramsAreSimple(node.fnParams):
+  # Arrow params/body live in a different AST variant (arrowParams /
+  # arrowBody / arrowIsAsync); regular functions use fnParams / fnBody /
+  # fnIsAsync|fnIsGenerator. fnParamsOf / fnBodyOf abstract the shape.
+  if isArrow:
+    # DEFER async arrows (`async x => x`). No generator arrows exist.
+    if node.arrowIsAsync:
+      return nil
+  else:
+    if node.fnIsAsync or node.fnIsGenerator:
+      return nil
+  let params = fnParamsOf(node)
+  # Simple params only: identifier params, no default/rest/destructure.
+  if not paramsAreSimple(params):
     return nil
   # A NAMED function expression binds its own name as a self-referencing
   # local visible inside the body (§15.7.1), seeded via a LoadCallee
   # prologue (compiler.zc bind_callee_local). That machinery is slice
   # 4b — bail so `(function foo(){})` surfaces as nim_missing, not a
   # false byte-match. FunctionDecl names bind in the ENCLOSING scope and
-  # get NO LoadCallee, so decls with a name are fine.
+  # get NO LoadCallee, so decls with a name are fine. Arrows are always
+  # anonymous — no self-binding name.
   if node.kind == FunctionExpr and node.fnNameLen > 0:
     return nil
-  let body = node.fnBody
+  let body = fnBodyOf(node)
 
   var c = Compiler(
     src: src,
@@ -2691,13 +2713,13 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
 
   # 1. Bind params to the low fixed regs r0..rN-1 in declaration order.
   var paramNames: seq[string] = @[]
-  for p in node.fnParams:
+  for p in params:
     let nm = c.slice(p.start, p.`end`)
     paramNames.add(nm)
     let reg = allocReg(c)
     addLocalScoped(c, p.start, p.`end` - p.start, uint32(reg), 0'u32)
     c.locals[c.locals.len - 1].isParam = true
-  c.paramCount = uint32(node.fnParams.len)
+  c.paramCount = uint32(params.len)
 
   # 2. Hoist body var/let/const into fixed locals. The body's own braces
   #    ARE the function scope, so walk its children directly (matching
@@ -2815,9 +2837,11 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   #    the program: hoisted FunctionDecls emit before other statements).
   let stmts = functionBodyStmts(node)
   if body != nil and body.kind != BlockStmt:
-    # Arrow concise body path — but arrows bail above, so a non-block
-    # body here is unexpected; treat defensively as an expression whose
-    # value is returned.
+    # Arrow CONCISE (expression) body: `x => expr`. Compile the expression
+    # to a register and Return it directly (compiler.zc ~4370-4373). A
+    # regular function body is always a BlockStmt, so only arrows reach
+    # here. `x=>x` → `Mov r1<-r0; Return r1`; `()=>1` → `LoadInt r0=1;
+    # Return r0`; `(a,b)=>a+b` → `Add r2,r0,r1; Return r2`.
     let r = compileExpr(c, body)
     emit(c, instA(Return, r))
   else:
@@ -2856,6 +2880,10 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
     # ~4454). The ENCLOSING compiler reads this at MakeClosure to decide
     # whether to env-wrap us.
     needsEnv: c.hasOuterRefs,
+    # Arrow flag drives the disasm " arrow" header and (at runtime) the
+    # MakeClosure creation-time `this` snapshot. Set from the node kind
+    # (compiler.zc ~4459 `f.is_arrow = node.kind == ArrowFunc`).
+    isArrow: isArrow,
   )
   # register_count floor: at least param_count (compiler.zc clamp).
   if f.registerCount < f.paramCount: f.registerCount = f.paramCount

@@ -906,9 +906,8 @@ suite "slice 4a structure + capture bail":
   test "nested non-capturing FunctionDecl binds a body local (no false match)":
     check disasmToString("function outer() { function inner() { return 1; } return 2; }") ==
       disasmToString("function outer() { function inner() { return 1; } return 2; }")
-  test "arrow function -> compile error (this-snapshot MakeClosure deferred)":
-    expect ValueError:
-      discard disasmToString("var f = () => 1;")
+  # NOTE: arrow functions COMPILE as of slice 4d — see the "slice 4d:
+  # arrow functions" suite below (`var f = () => 1;` is now byte-identical).
   test "default param -> compile error (deferred)":
     expect ValueError:
       discard disasmToString("function f(a = 1) { return a; }")
@@ -1402,3 +1401,175 @@ suite "slice 2b: deferred shapes bail to nim-missing":
   test "unary plus is deferred":
     expect ValueError:
       discard disasmToString("+a;")
+
+# --- Slice 4d: arrow functions (simple params) ----------------------
+#
+# Arrows compile as a Function unit with isArrow=true (header " arrow").
+# The enclosing site ALWAYS emits MakeClosure (even non-capturing) for
+# the creation-time `this` snapshot; anon arrows bound to a name get
+# SetFunctionName. Concise (expression) body -> compile expr + Return;
+# block body -> like a regular function. this/arguments inherit lexically
+# (the shared bodyUsesThis/bodyUsesArguments pre-scans descend into
+# arrows). Byte-identical to `build/zjs disasm`. See compiler.zc ~4459
+# (is_arrow) and ~4538 (MakeClosure-always-for-arrows).
+
+const
+  # The program shape for `var f = <arrow>;` is identical across arrows:
+  # LoadConst the fn, MakeClosure (arrow-always, env=0), SetFunctionName
+  # "f", DefineGlobal. Only the trailing arrow unit changes.
+  arrowProgF = "\n" &
+    "=== <program>  code_len=7 regs=5 fixed=1 params=0 consts=2 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=2   b=1   c=0   | u16=1 i16=1\n" &
+    "    3  LoadConst           r3   const#1 = \"f\"\n" &
+    "    4  SetFunctionName     a=2   b=3   c=0   | u16=3 i16=3\n" &
+    "    5  DefineGlobal        r2   g108  ; f\n" &
+    "    6  Return              r0\n"
+
+  arrowIdent = arrowProgF &
+    "\n=== <program>/const#0  code_len=2 regs=3 fixed=1 params=1 consts=0 ics=0 arrow ===\n" &
+    "    0  Mov                 r1   <- r0\n" &
+    "    1  Return              r1\n"
+
+  arrowAddParams = arrowProgF &
+    "\n=== <program>/const#0  code_len=2 regs=4 fixed=2 params=2 consts=0 ics=0 arrow ===\n" &
+    "    0  Add                 a=2   b=0   c=1   | u16=256 i16=256\n" &
+    "    1  Return              r2\n"
+
+  arrowConstOne = arrowProgF &
+    "\n=== <program>/const#0  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 arrow ===\n" &
+    "    0  LoadInt             r0   = 1\n" &
+    "    1  Return              r0\n"
+
+  arrowBlockBody = arrowProgF &
+    "\n=== <program>/const#0  code_len=3 regs=4 fixed=1 params=1 consts=0 ics=0 arrow ===\n" &
+    "    0  LoadInt             r1   = 2\n" &
+    "    1  Mul                 a=2   b=0   c=1   | u16=256 i16=256\n" &
+    "    2  Return              r2\n"
+
+  arrowParenAdd = arrowProgF &
+    "\n=== <program>/const#0  code_len=2 regs=3 fixed=1 params=1 consts=0 ics=0 arrow ===\n" &
+    "    0  AddImm              r1   <- r0, imm=1\n" &
+    "    1  Return              r1\n"
+
+  arrowCmpGt = arrowProgF &
+    "\n=== <program>/const#0  code_len=2 regs=3 fixed=1 params=1 consts=0 ics=0 arrow ===\n" &
+    "    0  CmpGtImm            r1   <- r0, imm=0\n" &
+    "    1  Return              r1\n"
+
+  arrowBlockLet = arrowProgF &
+    "\n=== <program>/const#0  code_len=3 regs=2 fixed=1 params=0 consts=0 ics=0 arrow ===\n" &
+    "    0  LoadHole            a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  Return              r0\n"
+
+  # `() => this` at top level: the arrow reserves this_reg=r0 (fixed=1)
+  # and `this` compiles to `Mov r1 <- r0`. The runtime seeds r0 from the
+  # arrow's captured_this snapshot (installed by the arrow-always
+  # MakeClosure). Byte-identical body to `x=>x` but params=0 fixed=1.
+  arrowThisTop = arrowProgF &
+    "\n=== <program>/const#0  code_len=2 regs=3 fixed=1 params=0 consts=0 ics=0 arrow ===\n" &
+    "    0  Mov                 r1   <- r0\n" &
+    "    1  Return              r1\n"
+
+  # `arr.map(x => x)`: the callback is MakeClosure'd into the arg slot.
+  arrowMapCallback = "\n" &
+    "=== <program>  code_len=9 regs=7 fixed=1 params=0 consts=1 ics=1 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadGlobal          r2   g108  ; arr\n" &
+    "    2  LoadProp            r1   <- r2.map  ic#0\n" &
+    "    3  LoadConst           r4   const#0 = <function>\n" &
+    "    4  MakeClosure         a=5   b=4   c=0   | u16=4 i16=4\n" &
+    "    5  Mov                 r3   <- r5\n" &
+    "    6  MethodInvoke        r1   <- base=r1 recv=r2 argc=1\n" &
+    "    7  Mov                 r0   <- r1\n" &
+    "    8  Return              r0\n" &
+    "\n=== <program>/const#0  code_len=2 regs=3 fixed=1 params=1 consts=0 ics=0 arrow ===\n" &
+    "    0  Mov                 r1   <- r0\n" &
+    "    1  Return              r1\n"
+
+suite "slice 4d: arrow functions byte-identity":
+  test "var f = x => x; (concise ident body -> Mov + Return, arrow flag)":
+    check disasmToString("var f = x => x;") == arrowIdent
+  test "var f = (a, b) => a + b; (two params, concise Add)":
+    check disasmToString("var f = (a, b) => a + b;") == arrowAddParams
+  test "var f = () => 1; (zero params, LoadInt + Return)":
+    check disasmToString("var f = () => 1;") == arrowConstOne
+  test "var f = x => { return x * 2; }; (block body)":
+    check disasmToString("var f = x => { return x * 2; };") == arrowBlockBody
+  test "var f = (x) => x + 1; (parenthesized single param, AddImm)":
+    check disasmToString("var f = (x) => x + 1;") == arrowParenAdd
+  test "var g = a => a * a; (self-mul, distinct target name g)":
+    check disasmToString("var g = a => a * a;") ==
+      arrowAddParams
+        .replace("code_len=2 regs=4 fixed=2 params=2 consts=0 ics=0 arrow",
+                 "code_len=2 regs=3 fixed=1 params=1 consts=0 ics=0 arrow")
+        .replace("    0  Add                 a=2   b=0   c=1   | u16=256 i16=256",
+                 "    0  Mul                 a=1   b=0   c=0   | u16=0 i16=0")
+        .replace("    1  Return              r2", "    1  Return              r1")
+        .replace("\"f\"", "\"g\"").replace("; f", "; g")
+  test "var f = (a, b, c) => a + b + c; (three params, chained Add)":
+    check disasmToString("var f = (a, b, c) => a + b + c;") ==
+      (arrowProgF &
+        "\n=== <program>/const#0  code_len=3 regs=6 fixed=3 params=3 consts=0 ics=0 arrow ===\n" &
+        "    0  Add                 a=3   b=0   c=1   | u16=256 i16=256\n" &
+        "    1  Add                 a=4   b=3   c=2   | u16=515 i16=515\n" &
+        "    2  Return              r4\n")
+  test "arr.map(x => x); (arrow as method-call arg, MakeClosure into slot)":
+    check disasmToString("arr.map(x => x);") == arrowMapCallback
+  test "var f = () => { let y = 1; return y; }; (block body, function-top hole seed)":
+    check disasmToString("var f = () => { let y = 1; return y; };") == arrowBlockLet
+  test "var f = x => x > 0; (concise relational -> CmpGtImm)":
+    check disasmToString("var f = x => x > 0;") == arrowCmpGt
+
+suite "slice 4d: this / arguments inheritance byte-identity":
+  test "var f = () => this; (top-level arrow this -> this_reg=r0, Mov)":
+    check disasmToString("var f = () => this;") == arrowThisTop
+  test "var f = () => this.x; (arrow this.x -> LoadProp on this_reg r0)":
+    let txt = disasmToString("var f = () => this.x;")
+    check "fixed=1 params=0 consts=0 ics=1 arrow" in txt
+    check "    0  LoadProp            r1   <- r0.x  ic#0" in txt
+  test "function g(){ return () => this; } (enclosing g reserves this_reg; arrow Mov)":
+    check disasmToString("function g(){ return () => this; }") ==
+      disasmToString("function g(){ return () => this; }")
+  test "var f = () => arguments; (arrow builds its OWN arguments -> BuildArguments)":
+    let txt = disasmToString("var f = () => arguments;")
+    check "    0  BuildArguments" in txt
+  test "function g(){ return () => arguments; } (nested arrow arguments, g no env)":
+    let txt = disasmToString("function g(){ return () => arguments; }")
+    check "BuildArguments" in txt
+  test "var f = (a) => () => a; (arrow param captured by nested arrow -> env)":
+    let txt = disasmToString("var f = (a) => () => a;")
+    check "NewObject" in txt
+    check "StoreProp           r1.a <- r0" in txt
+
+suite "slice 4d: structure + arrow-always MakeClosure invariants":
+  test "arrow is always wrapped in MakeClosure even non-capturing":
+    let txt = disasmToString("var f = () => 1;")
+    check "MakeClosure         a=2   b=1   c=0" in txt
+  test "the arrow unit header carries the ` arrow` flag":
+    check " arrow ===" in disasmToString("var f = x => x;")
+  test "anon arrow bound to a name gets SetFunctionName":
+    check "SetFunctionName" in disasmToString("var f = x => x;")
+  test "arrow assigned to a bare target (no binding) -> NO SetFunctionName":
+    let txt = disasmToString("x = () => 1;")
+    check "MakeClosure" in txt
+    check "SetFunctionName" notin txt
+
+suite "slice 4d: deferred arrow forms bail (nim_missing, not text_diff)":
+  test "default param arrow -> compile error (deferred)":
+    expect ValueError:
+      discard disasmToString("var f = (a = 1) => a;")
+  test "rest param arrow -> compile error (deferred)":
+    expect ValueError:
+      discard disasmToString("var f = (...a) => a;")
+  test "destructuring param arrow -> compile error (deferred)":
+    expect ValueError:
+      discard disasmToString("var f = ({a}) => a;")
+  test "async arrow -> compile error (deferred)":
+    expect ValueError:
+      discard disasmToString("var f = async () => 1;")
+  test "multi-level env chain (f => g => x => f(g(x))) -> compile error (deferred __outer__)":
+    expect ValueError:
+      discard disasmToString("var compose = f => g => x => f(g(x));")
