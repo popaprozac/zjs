@@ -46,6 +46,9 @@ type
     isConst*:    bool
     isTdz*:      bool
     isParam*:    bool            ## true for a formal parameter (slice 4a)
+    captured*:   bool            ## true if a nested function captures this
+                                 ## local -> it lives as a property on the
+                                 ## env object, NOT in its register (slice 4b)
 
   LoopFrame* = object
     ## One iteration-loop context (mirrors `struct LoopFrame` in
@@ -120,6 +123,36 @@ type
     ## `c.arguments_reg`). Reserved AFTER params, BEFORE thisReg; seeded by a
     ## `BuildArguments argumentsReg` prologue op emitted at function entry.
     argumentsReg*: int
+    # --- Closure support (compiler.zc Compiler.parent/needs_env/... ) --
+    ## Link to the ENCLOSING function's compiler (nil for the top-level
+    ## program). Mirrors compiler.zc `parent`. Threaded so a free-variable
+    ## IdentExpr inside a nested body can walk up the lexical chain to find
+    ## the enclosing captured local it resolves to (outerCaptureDepth).
+    ## `ptr` (not ref) so the child can mutate the parent's
+    ## `hasOuterRefs` flag during the passthrough-marking walk, exactly
+    ## like the C's `Compiler*` back-pointer.
+    parent*: ptr Compiler
+    ## True when a nested function captures one of THIS function's locals:
+    ## this function must build an env object (NewObject envReg) and store
+    ## captured params/locals as its properties. Mirrors compiler.zc
+    ## `needs_env`.
+    needsEnv*: bool
+    ## The fixed register holding this function's env object, valid only
+    ## when needsEnv. Mirrors compiler.zc `env_reg`.
+    envReg*: uint8
+    ## Set on THIS compiler whenever its body (or a nested closure inside
+    ## it) references a name that resolves in a PARENT scope. Drives
+    ## whether the enclosing compiler wraps us in an env-capturing
+    ## MakeClosure, and whether we forward an env to our own inner
+    ## closures. Mirrors compiler.zc `has_outer_refs`; copied into
+    ## Function.needsEnv at function-end.
+    hasOuterRefs*: bool
+    ## Hoisted current-closure env for a PASSTHROUGH function (references
+    ## outer captures but has no own env). Seeded once by a prologue
+    ## `LoadEnv` and reused by depth==1 chain walks and the MakeClosure
+    ## env operand. -1 = not allocated. Mirrors compiler.zc
+    ## `cached_outer_env_reg`.
+    cachedOuterEnvReg*: int
     ## The Call AST node in tail position (`return <call>`), or nil. Set by
     ## the ReturnStmt handler around the tail call's compile so
     ## compileCallInner SUPPRESSES InvokeGlobal fusion for it — the TCO
@@ -680,6 +713,244 @@ proc bodyReferencesAnyLocal(c: Compiler, body: AstNode, names: seq[string]): boo
     if subtreeMentionsName(c, body, nm): return true
   return false
 
+# --- Capture analysis (compiler.zc analyze_captures / scan_inner) ----
+#
+# A nested function that references one of THIS function's params/locals
+# CAPTURES it: the captured local moves off its register onto an env
+# object (a data property). analyzeCaptures walks our body for nested
+# functions; scanInnerForCaptures walks each inner body, and for every
+# free variable (a name NOT bound by the inner itself) that matches one
+# of OUR in-scope locals, it flips that local's `captured` flag and sets
+# `needsEnv`. Runs AFTER collectLocals (which assigned each local a
+# register) — a captured local keeps its (now-wasted) register slot but
+# is accessed through the env; that wasted slot is exactly why the
+# oracle's `fixed` count includes it. Mirrors compiler.zc's
+# collect-then-analyze order.
+
+proc fnBodyOf(n: AstNode): AstNode =
+  ## The statement/expression body of a nested function node.
+  if n == nil: return nil
+  case n.kind
+  of FunctionDecl, FunctionExpr: n.fnBody
+  of ArrowFunc: n.arrowBody
+  else: nil
+
+proc fnParamsOf(n: AstNode): seq[AstNode] =
+  if n == nil: return @[]
+  case n.kind
+  of FunctionDecl, FunctionExpr: n.fnParams
+  of ArrowFunc: n.arrowParams
+  else: @[]
+
+proc bodyDeclaresName(c: Compiler, node: AstNode, name: string): bool =
+  ## Does this subtree declare `name` as a var/let/const or a nested
+  ## FunctionDecl name? Does NOT descend into nested function bodies
+  ## (they own their own scope). Mirrors compiler.zc body_declares_name.
+  if node == nil: return false
+  case node.kind
+  of VarDecl:
+    for d in node.declarators:
+      if d.kind == Declarator and d.nameLength > 0 and
+         c.slice(d.nameStart, d.nameStart + d.nameLength) == name:
+        return true
+    return false
+  of FunctionDecl:
+    if node.fnNameLen > 0 and
+       c.slice(node.fnNameStart, node.fnNameStart + node.fnNameLen) == name:
+      return true
+    return false          # don't descend
+  of FunctionExpr, ArrowFunc:
+    return false
+  else:
+    for ch in childNodes(node):
+      if bodyDeclaresName(c, ch, name): return true
+    return false
+
+proc nameIsLocalOfFunction(c: Compiler, fnNode: AstNode, name: string): bool =
+  ## Is `name` bound by the nested function `fnNode` itself (a param or a
+  ## body-declared binding)? If so it is NOT a capture of our scope.
+  ## Mirrors compiler.zc name_is_local_of_function.
+  for p in fnParamsOf(fnNode):
+    if p != nil and p.kind == IdentExpr and c.identName(p) == name:
+      return true
+  return bodyDeclaresName(c, fnBodyOf(fnNode), name)
+
+proc scanInnerForCaptures(c: var Compiler, fnNode: AstNode, body: AstNode) =
+  ## Walk the nested function `fnNode`'s `body`; for each free-variable
+  ## IdentExpr (read OR assignment target) whose name isn't local to the
+  ## inner and matches one of OUR in-scope locals, mark that local
+  ## captured + set needsEnv. Descends nested function bodies so
+  ## transitive captures are found (fnNode is kept as the immediate inner
+  ## for the "is-local-of-inner" gate, matching compiler.zc's
+  ## conservative approach). Mirrors compiler.zc scan_inner_for_captures.
+  if body == nil: return
+  case body.kind
+  of IdentExpr:
+    let name = c.identName(body)
+    if not nameIsLocalOfFunction(c, fnNode, name):
+      let idx = findLocalIndex(c, name)
+      if idx >= 0:
+        c.locals[idx].captured = true
+        c.needsEnv = true
+    return
+  of Assignment:
+    let target = body.target
+    if target != nil and target.kind == IdentExpr:
+      let name = c.identName(target)
+      if not nameIsLocalOfFunction(c, fnNode, name):
+        let idx = findLocalIndex(c, name)
+        if idx >= 0:
+          c.locals[idx].captured = true
+          c.needsEnv = true
+    elif target != nil:
+      scanInnerForCaptures(c, fnNode, target)
+    if body.value != nil:
+      scanInnerForCaptures(c, fnNode, body.value)
+    return
+  of FunctionDecl, FunctionExpr, ArrowFunc:
+    # Descend into the deeper nested function body, keeping the DEEPER
+    # function as the is-local gate (matches C: `scan_inner(c, body, body.left)`).
+    let inner = fnBodyOf(body)
+    if inner != nil:
+      scanInnerForCaptures(c, body, inner)
+    return
+  else:
+    for ch in childNodes(body):
+      scanInnerForCaptures(c, fnNode, ch)
+
+proc analyzeCaptures(c: var Compiler, node: AstNode) =
+  ## Walk OUR body for nested functions; scan each for captures of our
+  ## locals. Enters block/for scopes (by reused id) so a closure declared
+  ## inside a block sees that block's let/const as in-scope. Mirrors
+  ## compiler.zc analyze_captures.
+  if node == nil: return
+  case node.kind
+  of BlockStmt:
+    enterScopeReuse(c, node)
+    for s in node.stmtList:
+      analyzeCaptures(c, s)
+    exitScope(c)
+  of ForStmt:
+    enterScopeReuse(c, node)
+    analyzeCaptures(c, node.forInit)
+    analyzeCaptures(c, node.forTest)
+    analyzeCaptures(c, node.forUpdate)
+    analyzeCaptures(c, node.forBody)
+    exitScope(c)
+  of FunctionDecl, FunctionExpr, ArrowFunc:
+    let inner = fnBodyOf(node)
+    if inner != nil:
+      scanInnerForCaptures(c, node, inner)
+  else:
+    for ch in childNodes(node):
+      analyzeCaptures(c, ch)
+
+# --- Outer-capture resolution (compiler.zc outer_capture_depth / ... ) -
+#
+# When a body references a free variable not bound locally, walk the
+# lexical compiler chain to find the first ANCESTOR whose CAPTURED local
+# matches. Returns the env depth (1 = c.parent). The slice-4b corpus has
+# no per-iteration envs, so `per_iter_depth` is always 0 and env_for_local
+# is a pure `envReg` borrow. Passthrough intermediates between us and the
+# owning ancestor are marked hasOuterRefs so their MakeClosure forwards
+# the env via LoadEnv.
+
+proc compilerHasOwnEnv(c: ptr Compiler): bool =
+  ## An ancestor contributes an env-chain hop only if it has its OWN env.
+  ## needsEnv is set iff some local is captured, so this matches
+  ## compiler.zc compiler_has_own_env (which scans for a captured local).
+  c != nil and c.needsEnv
+
+proc detectOuterRefs(c: var Compiler, body: AstNode): bool =
+  ## Does `body` (descending into nested closures) reference any name
+  ## that is NOT a local of `c` but IS a local of some ancestor? Drives
+  ## hasOuterRefs = "this function forwards / receives an env". Mirrors
+  ## compiler.zc detect_outer_refs. Called only when c.parent != nil.
+  if body == nil: return false
+  if body.kind == IdentExpr:
+    let nm = c.identName(body)
+    if findLocalIndex(c, nm) >= 0: return false
+    var anc = c.parent
+    while anc != nil:
+      if findLocalIndex(anc[], nm) >= 0: return true
+      anc = anc[].parent
+    return false
+  # For a nested function, descend ONLY its body (not its param binding
+  # occurrences), matching compiler.zc's `detect_outer_refs(c, body.left)`.
+  if body.kind in {FunctionDecl, FunctionExpr, ArrowFunc}:
+    return detectOuterRefs(c, fnBodyOf(body))
+  for ch in childNodes(body):
+    if detectOuterRefs(c, ch): return true
+  return false
+
+proc outerCaptureDepth(c: var Compiler, name: string): uint32 =
+  ## Depth (>=1) of the enclosing env that owns captured local `name`, or
+  ## 0 if none. Marks passthrough intermediates hasOuterRefs. Mirrors
+  ## compiler.zc outer_capture_depth (per-iter hop correction omitted:
+  ## no per-iter envs in this slice).
+  var anc = c.parent
+  var envDepth: uint32 = 0
+  while anc != nil:
+    let oi = findLocalIndex(anc[], name)
+    if oi >= 0 and anc[].locals[oi].captured:
+      # Mark every passthrough intermediate from c.parent up to (not
+      # including) anc as hasOuterRefs so their MakeClosure forwards env.
+      var mark = c.parent
+      while mark != anc:
+        mark[].hasOuterRefs = true
+        mark = mark[].parent
+      return envDepth + 1
+    if compilerHasOwnEnv(anc): envDepth += 1
+    anc = anc[].parent
+  return 0
+
+proc emitEnvChainWalk(c: var Compiler, depth: uint32): uint8 =
+  ## A register holding the env `depth` levels up. depth==1 with a cached
+  ## prologue reg returns it (borrow); otherwise LoadEnv into a fresh temp
+  ## then chase `__outer__` (depth-1 times). Mirrors compiler.zc
+  ## emit_env_chain_walk. The slice-4b corpus only reaches depth 1, so the
+  ## __outer__ chase never emits; a deeper walk would need the OUTER_ENV_KEY
+  ## atom + IC slot (not ported — those cases are single-hop here).
+  if depth == 1 and c.cachedOuterEnvReg >= 0:
+    return uint8(c.cachedOuterEnvReg)
+  let envR = allocReg(c)
+  emit(c, instA(LoadEnv, envR))
+  if depth > 1:
+    # Multi-hop __outer__ chase is out of the slice-4b corpus — refuse
+    # rather than emit wrong bytecode.
+    c.hadError = true
+  return envR
+
+proc envForLocal(c: var Compiler, li: int): uint8 =
+  ## The env register that OWNS captured local `li`. No per-iter envs in
+  ## this slice, so this is always the plain envReg borrow (compiler.zc
+  ## env_for_local's `per_iter_envs_open <= lp` fast path).
+  return c.envReg
+
+type ClosureEnvReg = object
+  ## The env register to pass in a MakeClosure emitted inside `c`, plus
+  ## whether it's a caller-owned temp to release. Mirrors compiler.zc
+  ## ClosureEnvReg / closure_env_reg.
+  reg: uint8
+  isTemp: bool
+
+proc closureEnvReg(c: var Compiler): ClosureEnvReg =
+  ## Env operand for a MakeClosure emitted inside `c`:
+  ##   * own env (needsEnv)        -> c.envReg (borrow)
+  ##   * passthrough (hasOuterRefs) -> the cached prologue reg if set,
+  ##     else a fresh LoadEnv temp
+  ##   * neither                    -> 0 (unused by the closure)
+  ## Mirrors compiler.zc closure_env_reg.
+  if c.needsEnv:
+    return ClosureEnvReg(reg: c.envReg, isTemp: false)
+  if c.hasOuterRefs:
+    if c.cachedOuterEnvReg >= 0:
+      return ClosureEnvReg(reg: uint8(c.cachedOuterEnvReg), isTemp: false)
+    let temp = allocReg(c)
+    emit(c, instA(LoadEnv, temp))
+    return ClosureEnvReg(reg: temp, isTemp: true)
+  return ClosureEnvReg(reg: 0, isTemp: false)
+
 # --- `this` / `arguments` pre-scan (slice 4c) -----------------------
 #
 # Mirrors compiler.zc body_uses_this / body_uses_arguments. Both walk the
@@ -802,6 +1073,14 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     # 1. Try our own locals first (script-scope let/const).
     let localIdx = findLocalIndex(c, name)
     if localIdx >= 0:
+      # 1a. Captured local — read through the env that OWNS it as a
+      # property. Mirrors compiler.zc's IdentExpr captured arm
+      # (~1678-1687): a fresh temp, LoadProp dst <- env.name.
+      if c.locals[localIdx].captured:
+        let dst = allocReg(c)
+        let er = envForLocal(c, localIdx)
+        discard emitLoadPropAtom(c, dst, er, name)
+        return dst
       # Non-captured local — hand back the local's reg directly when
       # borrowLocalOk is set (the caller proved the surrounding
       # expression won't mutate this local before its result is
@@ -822,6 +1101,19 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     if c.argumentsReg >= 0 and name == "arguments":
       let dst = allocReg(c)
       emit(c, instAB(Mov, dst, uint8(c.argumentsReg)))
+      return dst
+    # 2b. Walk the lexical compiler chain for an outer captured local
+    # (depth 1 = c.parent). Resolves `x` inside an inner closure that
+    # captured the enclosing function's `x`: LoadEnv then LoadProp
+    # dst <- env.name. Mirrors compiler.zc ~1727-1738.
+    let depth = outerCaptureDepth(c, name)
+    if depth > 0:
+      c.hasOuterRefs = true
+      let envR = emitEnvChainWalk(c, depth)
+      let dst = allocReg(c)
+      discard emitLoadPropAtom(c, dst, envR, name)
+      releaseReg(c, envR)
+      if c.nextReg <= dst: c.nextReg = dst + 1
       return dst
     # 3. Fall through to globals (compiler.zc `3. Fall through to
     # globals`). Uses allocDst so a terminal read consumes a queued hint.
@@ -977,7 +1269,14 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       return 0
     let name = c.slice(target.start, target.`end`)
     let localIdx = findLocalIndex(c, name)
+    let capturedLocal = localIdx >= 0 and c.locals[localIdx].captured
+    # Resolve to an OUTER captured local (inner closure assigning to the
+    # enclosing function's captured var) when we have no local binding.
+    var outerDepth: uint32 = 0
     if localIdx < 0:
+      outerDepth = outerCaptureDepth(c, name)
+      if outerDepth > 0: c.hasOuterRefs = true
+    if localIdx < 0 and outerDepth == 0:
       # Global target (non-strict): the RHS is evaluated FIRST — and its
       # globals interned — BEFORE the target's slot, matching Zen-c's
       # GetValue-then-PutValue order so global-slot numbering stays canonical
@@ -991,12 +1290,32 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       let slot = internGlobal(c, name)
       emit(c, instAU16(StoreGlobal, r, uint16(slot)))
       return r
-    let localReg = c.locals[localIdx].reg
     # const bindings reject all later assignments (TypeError) -- later
     # slice; refuse for now so we don't emit an unguarded store.
-    if c.locals[localIdx].isConst:
+    if localIdx >= 0 and c.locals[localIdx].isConst:
       c.hadError = true
       return 0
+    # Captured / outer target: the store goes to an env PROPERTY, so the
+    # RHS gets NO preferred-dst hint (StoreProp reads a temp), mirroring
+    # compiler.zc's `c.preferred_dst = -1` for these arms (~2557).
+    if capturedLocal:
+      let savedPd = c.preferredDst
+      c.preferredDst = -1
+      let r = compileExpr(c, node.value)
+      c.preferredDst = savedPd
+      let er = envForLocal(c, localIdx)
+      discard emitStorePropAtom(c, er, name, r)
+      return r
+    if outerDepth > 0:
+      let savedPd = c.preferredDst
+      c.preferredDst = -1
+      let r = compileExpr(c, node.value)
+      c.preferredDst = savedPd
+      let envR = emitEnvChainWalk(c, outerDepth)
+      discard emitStorePropAtom(c, envR, name, r)
+      releaseReg(c, envR)
+      return r
+    let localReg = c.locals[localIdx].reg
     # For a local target, hand the RHS a preferred-dst hint so the final
     # ALU op writes straight into localReg -- skips the tail Mov on
     # `local = expr`. #395: bare-simple RHS (local ident / number) is a
@@ -1015,19 +1334,18 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       emit(c, instAB(Mov, localReg, r))
     return r
   of FunctionExpr, ArrowFunc:
-    # Slice 4a: only non-capturing, non-arrow FunctionExpr. ArrowFunc
-    # always wraps in MakeClosure (for the `this` snapshot) — deferred
-    # to 4b — so refuse it here.
+    # ArrowFunc still bails (its creation-time `this` snapshot + concise
+    # body are out of the slice-4b corpus); only plain FunctionExpr is
+    # compiled here, now WITH the env-capturing MakeClosure form.
     if node.kind == ArrowFunc:
       c.hadError = true
       return 0
     # compile_function_value: compile the body into a fresh Function,
-    # append it to OUR const pool, LoadConst it into a fresh reg. A
-    # non-capturing body has needs_env == false, so NO MakeClosure wrap
-    # (that's the arrow / captured-env path in 4b). Note: uses allocReg,
-    # NOT allocDst — compiler.zc's compile_function_value never consumes
-    # a caller's preferred_dst hint, so `let h = function(){}` lands the
-    # LoadConst in a fresh temp and Movs into h afterward.
+    # append it to OUR const pool, LoadConst it into a fresh reg. If the
+    # inner referenced any outer-scope name (f.needsEnv carries the
+    # inner's has_outer_refs), wrap it in MakeClosure with the current
+    # env; otherwise the LoadConst reg IS the value (no wrap). Uses
+    # allocReg, NOT allocDst. Mirrors compiler.zc compile_function_value.
     let f = compileFunction(c.src, node, c)
     if f == nil:
       c.hadError = true
@@ -1036,6 +1354,14 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     let idx = uint16(c.constants.len - 1)
     let dst = allocReg(c)
     emit(c, instAU16(LoadConst, dst, idx))
+    if f.needsEnv:
+      let clsReg = allocReg(c)
+      let env = closureEnvReg(c)
+      emit(c, instABC(MakeClosure, clsReg, dst, env.reg))
+      if env.isTemp: releaseReg(c, env.reg)
+      releaseReg(c, dst)
+      if c.nextReg <= clsReg: c.nextReg = clsReg + 1
+      return clsReg
     return dst
   of Member:
     # `obj.name` -> LoadProp. Mirrors compile_member's IC fast path. The
@@ -1692,12 +2018,26 @@ proc compileVarDecl(c: var Compiler, node: AstNode) =
       let lidx = findLocalIndex(c, name)
       if lidx < 0:
         c.hadError = true; return
+      let cap = c.locals[lidx].captured
       let lreg = c.locals[lidx].reg
       if decl.init != nil:
+        # Captured local: its value lives as an env property, not the
+        # (wasted) register. The initializer gets NO preferred-dst hint
+        # (StoreProp reads a temp), then `StoreProp env.x <- r`. Mirrors
+        # compiler.zc ~7376-7386.
+        if cap:
+          let savedPd = c.preferredDst
+          c.preferredDst = -1
+          let r = compileExpr(c, decl.init)
+          c.preferredDst = savedPd
+          maybeInferAnonName(c, decl.init, r, name)
+          let er = envForLocal(c, lidx)
+          discard emitStorePropAtom(c, er, name, r)
+          releaseReg(c, r)
         # #395: bare-simple initializer (local ident / number) is a
         # terminal read -- place directly into lreg, skipping the temp
         # and the tail Mov.
-        if tryPlaceSimple(c, decl.init, lreg):
+        elif tryPlaceSimple(c, decl.init, lreg):
           discard
         else:
           # Otherwise hand the initializer a preferred-dst hint so its
@@ -1741,9 +2081,13 @@ proc compileStmt(c: var Compiler, node: AstNode) =
     # register locals in THIS scope; captured/env-slot TDZ is stage-3.
     # At script top these gates coincide with the slice-3 behavior (all
     # block targets there return false), so no regression.
+    # A captured local lives on the env (a data property), not a
+    # register, so it is NOT hole-seeded here — env-slot TDZ is stage-3
+    # (compiler.zc ~7296 gates on `!captured`).
     for hi in 0 ..< c.locals.len:
       if c.locals[hi].scopeId == c.curScopeId and
-         c.locals[hi].isTdz and not c.locals[hi].isParam:
+         c.locals[hi].isTdz and not c.locals[hi].isParam and
+         not c.locals[hi].captured:
         if blockNeedsEntryHole(c, node, c.locals[hi].name):
           emit(c, instA(LoadHole, c.locals[hi].reg))
     for s in node.stmtList:
@@ -1923,12 +2267,13 @@ proc compileStmt(c: var Compiler, node: AstNode) =
     # A function declaration. Compile the body into a fresh Function,
     # append it to the const pool, LoadConst it, then wrap in
     # MakeClosure so each enclosing invocation yields a distinct
-    # function value (compiler.zc: nested FunctionDecls ALWAYS wrap; the
-    # non-captures form emits the in-place `MakeClosure dst, dst, dst`,
-    # where dst doubles as fn-src AND env-src — zero extra register
-    # pressure). Finally bind: script-top -> DefineGlobal on globalThis;
-    # a function-body decl -> Mov into the pre-allocated local. Captures
-    # (needs_env) are slice 4b; compileFunction bails there.
+    # function value (compiler.zc: nested FunctionDecls ALWAYS wrap). The
+    # non-captures form emits the in-place `MakeClosure dst, dst, dst`
+    # (dst doubles as fn-src AND env-src — zero extra register pressure);
+    # a body that references outer scope (f.needsEnv) wraps with the
+    # current env in a fresh reg. Finally bind: script-top -> DefineGlobal
+    # on globalThis; a function-body decl -> Mov (or env StoreProp when
+    # the decl name is itself captured) into its binding.
     let f = compileFunction(c.src, node, c)
     if f == nil:
       c.hadError = true
@@ -1937,16 +2282,30 @@ proc compileStmt(c: var Compiler, node: AstNode) =
     let idx = uint16(c.constants.len - 1)
     var r = allocReg(c)
     emit(c, instAU16(LoadConst, r, idx))
-    # Non-capturing form: in-place MakeClosure (dst=src=env). 4a never
-    # produces needs_env functions, so this is the only path.
-    emit(c, instABC(MakeClosure, r, r, r))
+    if not f.needsEnv:
+      # Non-capturing form: in-place MakeClosure (dst=src=env).
+      emit(c, instABC(MakeClosure, r, r, r))
+    else:
+      # The inner reads outer scope — wrap with the current env in a
+      # fresh reg (compiler.zc ~7460-7467).
+      let clsReg = allocReg(c)
+      let env = closureEnvReg(c)
+      emit(c, instABC(MakeClosure, clsReg, r, env.reg))
+      if env.isTemp: releaseReg(c, env.reg)
+      releaseReg(c, r)
+      r = clsReg
     let name = c.slice(node.fnNameStart, node.fnNameStart + node.fnNameLen)
     let isScriptDecl = c.isScript
     if c.isFunction and not isScriptDecl:
-      # Function/module body: bind to the pre-allocated local register.
+      # Function/module body: bind to the pre-allocated local. A captured
+      # decl name lives on the env object; otherwise into its register.
       let lidx = findLocalIndex(c, name)
       if lidx >= 0:
-        emit(c, instAB(Mov, c.locals[lidx].reg, r))
+        if c.locals[lidx].captured:
+          let er = envForLocal(c, lidx)
+          discard emitStorePropAtom(c, er, name, r)
+        else:
+          emit(c, instAB(Mov, c.locals[lidx].reg, r))
     else:
       # Script-top FunctionDecl -> property on globalThis.
       let slot = internGlobal(c, name)
@@ -2059,6 +2418,8 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
     isFunction: true, isScript: false,
     atProgramTop: false,
     thisReg: -1, argumentsReg: -1,   # set in the prologue if the body uses them
+    parent: addr enclosing,          # lexical chain for outer-capture resolution
+    needsEnv: false, envReg: 0, hasOuterRefs: false, cachedOuterEnvReg: -1,
     globals: enclosing.globals,      # SHARED global namespace (see GlobalTable)
     scopeStack: @[0'u32], curScopeId: 0, nextScopeId: 1,
   )
@@ -2081,29 +2442,31 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   for s in functionBodyStmts(node):
     collectLocals(c, s)
 
-  # 2b. Capture bail. Any nested function whose body references one of
-  #     OUR params/lexicals needs an env object (slice 4b) — refuse.
-  #     Walk our body for nested functions and test their bodies against
-  #     our binding names. (analyze_captures' role, reduced to a bail.)
-  var localNames = paramNames
-  for lc in c.locals:
-    if not lc.isParam and lc.name.len > 0:
-      localNames.add(lc.name)
-  proc anyNestedCaptures(c: Compiler, n: AstNode, names: seq[string]): bool =
-    if n == nil: return false
-    if n.kind in {FunctionDecl, FunctionExpr, ArrowFunc}:
-      let innerBody =
-        if n.kind == ArrowFunc: n.arrowBody else: n.fnBody
-      if bodyReferencesAnyLocal(c, innerBody, names): return true
-      # A nested fn can also nest further — but if it captured OUR names
-      # we'd have caught it above; deeper nesting that reaches us is also
-      # covered because bodyReferencesAnyLocal descends nested bodies.
-      return false
-    for ch in childNodes(n):
-      if anyNestedCaptures(c, ch, names): return true
-    return false
-  if body != nil and anyNestedCaptures(c, body, localNames):
-    return nil
+  # 2b. Capture analysis (slice 4b). Walk our body for nested functions;
+  #     each free variable they reference that matches one of OUR locals
+  #     marks that local `captured` and sets needsEnv. Reset the scope
+  #     tracker first so ids line up with what collectLocals assigned
+  #     (both walks must produce the same scope id at each syntactic
+  #     point). Mirrors compiler.zc's analyze_captures pass.
+  resetScopeWalk(c)
+  for s in functionBodyStmts(node):
+    analyzeCaptures(c, s)
+  # 2c. Reset again so compileStmt below re-issues matching ids.
+  resetScopeWalk(c)
+
+  # 2b'. Transitive outer refs: does our body (including nested closures)
+  #      reach past us into ancestor scope? Sets hasOuterRefs — we then
+  #      either receive an env from our caller (we're a Closure) and/or
+  #      forward one to our inner closures. Does NOT itself allocate an
+  #      env (only needsEnv does). Mirrors compiler.zc 2b' / detect_outer_refs.
+  if body != nil and c.parent != nil and detectOuterRefs(c, body):
+    c.hasOuterRefs = true
+
+  # 2c'. If we need an env object for OWN captures, reserve its register.
+  #      Passthroughs (hasOuterRefs but no own captures) forward the
+  #      caller's env at MakeClosure time — no allocation here.
+  if c.needsEnv:
+    c.envReg = allocReg(c)
 
   # 2d. `arguments` — if the body references it AND no local of that name
   #     was hoisted (a user `arguments` binding shadows the implicit one),
@@ -2124,6 +2487,13 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   if needThis:
     c.thisReg = int(allocReg(c))
 
+  # 2f. Hoist current-closure.env for a PASSTHROUGH (references outer
+  #     captures but has no own env). emitEnvChainWalk's depth==1 then
+  #     returns this stable reg and closureEnvReg forwards it, skipping a
+  #     fresh LoadEnv per access. Mirrors compiler.zc 2f.
+  if c.hasOuterRefs and not c.needsEnv:
+    c.cachedOuterEnvReg = int(allocReg(c))
+
   # 3. Locals are now fixed; temps live above this watermark.
   c.fixedRegs = c.nextReg
   # Reset scope tracking so compileStmt re-enters block ids matching
@@ -2135,6 +2505,33 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   if c.argumentsReg >= 0:
     emit(c, instA(BuildArguments, uint8(c.argumentsReg)))
 
+  # 4a'. Seed the cached outer-env reg once (compiler.zc ~4153) so
+  #      depth==1 chain walks and MakeClosure env operands read it directly.
+  if c.cachedOuterEnvReg >= 0:
+    emit(c, instA(LoadEnv, uint8(c.cachedOuterEnvReg)))
+
+  # 4a''. Env construction (compiler.zc ~4232). `NewObject envReg`, then
+  #       if we ALSO forward an outer env, chain it via the __outer__ key,
+  #       then mirror each captured PARAM's value into the env by name
+  #       (body let/const captured locals get stored when their VarDecl
+  #       runs). No captured params reach this in the current corpus, but
+  #       the loop mirrors compiler.zc's env-init exactly. __outer__ chain
+  #       + captured-param mirroring only fire outside the tested shapes.
+  if c.needsEnv:
+    emit(c, instA(NewObject, c.envReg))
+    if c.hasOuterRefs:
+      # Chain to the enclosing env via the __outer__ key so deeper
+      # closures reach past us. Out of the tested corpus (a function with
+      # BOTH own captures AND transitive outer refs); refuse rather than
+      # emit an unvalidated OUTER_ENV_KEY store.
+      c.hadError = true
+    else:
+      var j = 0
+      while j < c.locals.len:
+        if c.locals[j].isParam and c.locals[j].captured and c.locals[j].name.len > 0:
+          discard emitStorePropAtom(c, c.envReg, c.locals[j].name, c.locals[j].reg)
+        inc j
+
   # 4. Function-top TDZ hole seeding. ECMA-262: a body-top let/const is
   #    seeded with LoadHole before its initializer. Params are never
   #    seeded (their value arrives from the caller). Unlike a nested
@@ -2143,8 +2540,10 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
   #    compiler.zc's `tz = param_count .. local_count` loop, which holes
   #    even locals that live in nested blocks (their block handler then
   #    decides whether to RE-hole).
+  #    Captured locals live on the env (a data property), not a register,
+  #    so they are NOT hole-seeded here (compiler.zc ~4346 skips captured).
   for li in 0 ..< c.locals.len:
-    if c.locals[li].isTdz and not c.locals[li].isParam:
+    if c.locals[li].isTdz and not c.locals[li].isParam and not c.locals[li].captured:
       emit(c, instA(LoadHole, c.locals[li].reg))
 
   # 5. Compile the body statements (function-decl-first two-pass, like
@@ -2188,6 +2587,10 @@ proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Funct
     constCount: uint32(c.constants.len),
     icCount: uint32(c.ics.len),
     ics: c.ics,
+    # Repurposed: "body references an outer-scope name" (compiler.zc
+    # ~4454). The ENCLOSING compiler reads this at MakeClosure to decide
+    # whether to env-wrap us.
+    needsEnv: c.hasOuterRefs,
   )
   # register_count floor: at least param_count (compiler.zc clamp).
   if f.registerCount < f.paramCount: f.registerCount = f.paramCount
@@ -2238,6 +2641,8 @@ proc compileProgram*(src: string, root: AstNode): Function =
     isScript: true,
     atProgramTop: true,
     thisReg: -1, argumentsReg: -1,   # program top has no this/arguments regs
+    parent: nil,                     # top-level program has no lexical parent
+    needsEnv: false, envReg: 0, hasOuterRefs: false, cachedOuterEnvReg: -1,
     globals: GlobalTable(),
     scopeStack: @[0'u32],
     curScopeId: 0,
@@ -2249,6 +2654,16 @@ proc compileProgram*(src: string, root: AstNode): Function =
   # reserved, so the completion slot lands AFTER the locals.
   if root != nil and root.kind == Program:
     collectLocals(c, root)
+  # Capture analysis: a top-level FunctionDecl/FunctionExpr may capture a
+  # script-scope let/const, which then lives on a program-level env
+  # object. collect-then-analyze (mirrors compile_program's script arm);
+  # if any local is captured, reserve envReg BEFORE the result reg so the
+  # layout matches (locals, env, then completion slot).
+  resetScopeWalk(c)
+  if root != nil and root.kind == Program:
+    analyzeCaptures(c, root)
+  if c.needsEnv:
+    c.envReg = allocReg(c)
   # Reset scope tracking so compileStmt re-enters each block with the
   # same ids collectLocals just assigned.
   resetScopeWalk(c)
@@ -2258,6 +2673,12 @@ proc compileProgram*(src: string, root: AstNode): Function =
   emit(c, instA(LoadUndefined, resultReg))
   c.fixedRegs = resultReg + 1
   c.lastExprReg = int(resultReg)
+
+  # Script-scope env construction: instantiate the env object right after
+  # the result-reg prologue so subsequent captured-local VarDecls can
+  # StoreProp into it. Mirrors compile_program ~8968.
+  if c.needsEnv:
+    emit(c, instA(NewObject, c.envReg))
 
   if root != nil and root.kind == Program:
     hoistProgramGlobals(c, root)

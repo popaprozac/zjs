@@ -906,9 +906,6 @@ suite "slice 4a structure + capture bail":
   test "nested non-capturing FunctionDecl binds a body local (no false match)":
     check disasmToString("function outer() { function inner() { return 1; } return 2; }") ==
       disasmToString("function outer() { function inner() { return 1; } return 2; }")
-  test "captured outer local -> compile error (env deferred to 4b)":
-    expect ValueError:
-      discard disasmToString("function outer(x) { function inner() { return x; } return inner; }")
   test "arrow function -> compile error (this-snapshot MakeClosure deferred)":
     expect ValueError:
       discard disasmToString("var f = () => 1;")
@@ -1252,3 +1249,56 @@ suite "slice 4c: register-model + shadowing invariants":
     # must NOT reserve a this reg for the inner's usage.
     let txt = disasmToString("function f(){ function g(){ return this; } return g; }")
     check "code_len" in txt   # compiles (both units)
+
+# --- Slice 4b: closures / captured locals (env objects) -------------
+# Ground-truth constants captured from `build/zjs disasm` (the oracle);
+# each covers the whole program AND every nested `/const#N` unit.
+
+const
+  t4b_ret_fnexpr = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; o\n    4  Return              r0\n\n=== <program>/const#0  code_len=6 regs=5 fixed=2 params=0 consts=1 ics=1 ===\n    0  NewObject           a=1   b=0   c=0   | u16=0 i16=0\n    1  LoadInt             r2   = 1\n    2  StoreProp           r1.x <- r2    ic#0\n    3  LoadConst           r2   const#0 = <function>\n    4  MakeClosure         a=3   b=2   c=1   | u16=258 i16=258\n    5  Return              r3\n\n=== <program>/const#0/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=1 ===\n    0  LoadEnv             a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadProp            r1   <- r0.x  ic#0\n    2  Return              r1\n"
+  t4b_fndecl = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; o\n    4  Return              r0\n\n=== <program>/const#0  code_len=7 regs=6 fixed=3 params=0 consts=1 ics=1 ===\n    0  NewObject           a=2   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r3   const#0 = <function>\n    2  MakeClosure         a=4   b=3   c=2   | u16=515 i16=515\n    3  Mov                 r1   <- r4\n    4  LoadInt             r3   = 1\n    5  StoreProp           r2.x <- r3    ic#0\n    6  Return              r1\n\n=== <program>/const#0/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=1 ===\n    0  LoadEnv             a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadProp            r1   <- r0.x  ic#0\n    2  Return              r1\n"
+  t4b_two = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; o\n    4  Return              r0\n\n=== <program>/const#0  code_len=8 regs=6 fixed=3 params=0 consts=1 ics=2 ===\n    0  NewObject           a=2   b=0   c=0   | u16=0 i16=0\n    1  LoadInt             r3   = 1\n    2  StoreProp           r2.x <- r3    ic#0\n    3  LoadInt             r3   = 2\n    4  StoreProp           r2.y <- r3    ic#1\n    5  LoadConst           r3   const#0 = <function>\n    6  MakeClosure         a=4   b=3   c=2   | u16=515 i16=515\n    7  Return              r4\n\n=== <program>/const#0/const#0  code_len=5 regs=5 fixed=1 params=0 consts=0 ics=2 ===\n    0  LoadEnv             a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadProp            r1   <- r0.x  ic#0\n    2  LoadProp            r2   <- r0.y  ic#1\n    3  Add                 a=3   b=1   c=2   | u16=513 i16=513\n    4  Return              r3\n"
+  t4b_param = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; o\n    4  Return              r0\n\n=== <program>/const#0  code_len=5 regs=5 fixed=2 params=1 consts=1 ics=1 ===\n    0  NewObject           a=1   b=0   c=0   | u16=0 i16=0\n    1  StoreProp           r1.a <- r0    ic#0\n    2  LoadConst           r2   const#0 = <function>\n    3  MakeClosure         a=3   b=2   c=1   | u16=258 i16=258\n    4  Return              r3\n\n=== <program>/const#0/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=1 ===\n    0  LoadEnv             a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadProp            r1   <- r0.a  ic#0\n    2  Return              r1\n"
+  t4b_write = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; o\n    4  Return              r0\n\n=== <program>/const#0  code_len=6 regs=5 fixed=2 params=0 consts=1 ics=1 ===\n    0  NewObject           a=1   b=0   c=0   | u16=0 i16=0\n    1  LoadInt             r2   = 1\n    2  StoreProp           r1.x <- r2    ic#0\n    3  LoadConst           r2   const#0 = <function>\n    4  MakeClosure         a=3   b=2   c=1   | u16=258 i16=258\n    5  Return              r3\n\n=== <program>/const#0/const#0  code_len=5 regs=3 fixed=1 params=0 consts=0 ics=1 ===\n    0  LoadEnv             a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadInt             r1   = 2\n    2  StoreProp           r0.x <- r1    ic#0\n    3  LoadProp            r1   <- r0.x  ic#0\n    4  Return              r1\n"
+  t4b_counter = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; make\n    4  Return              r0\n\n=== <program>/const#0  code_len=6 regs=5 fixed=2 params=0 consts=1 ics=1 ===\n    0  NewObject           a=1   b=0   c=0   | u16=0 i16=0\n    1  LoadInt             r2   = 0\n    2  StoreProp           r1.c <- r2    ic#0\n    3  LoadConst           r2   const#0 = <function>\n    4  MakeClosure         a=3   b=2   c=1   | u16=258 i16=258\n    5  Return              r3\n\n=== <program>/const#0/const#0  code_len=6 regs=4 fixed=1 params=0 consts=0 ics=1 ===\n    0  LoadEnv             a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadProp            r1   <- r0.c  ic#0\n    2  AddImm              r2   <- r1, imm=1\n    3  StoreProp           r0.c <- r2    ic#0\n    4  LoadProp            r1   <- r0.c  ic#0\n    5  Return              r1\n"
+  t4b_nested = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; o\n    4  Return              r0\n\n=== <program>/const#0  code_len=6 regs=5 fixed=2 params=0 consts=1 ics=1 ===\n    0  NewObject           a=1   b=0   c=0   | u16=0 i16=0\n    1  LoadInt             r2   = 1\n    2  StoreProp           r1.x <- r2    ic#0\n    3  LoadConst           r2   const#0 = <function>\n    4  MakeClosure         a=3   b=2   c=1   | u16=258 i16=258\n    5  Return              r3\n\n=== <program>/const#0/const#0  code_len=4 regs=4 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadEnv             a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=2   b=1   c=0   | u16=1 i16=1\n    3  Return              r2\n\n=== <program>/const#0/const#0/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=1 ===\n    0  LoadEnv             a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadProp            r1   <- r0.x  ic#0\n    2  Return              r1\n"
+  t4b_scripttop = "\n=== <program>  code_len=8 regs=6 fixed=3 params=0 consts=1 ics=1 ===\n    0  LoadUndefined       a=2   b=0   c=0   | u16=0 i16=0\n    1  NewObject           a=1   b=0   c=0   | u16=0 i16=0\n    2  LoadConst           r3   const#0 = <function>\n    3  MakeClosure         a=4   b=3   c=1   | u16=259 i16=259\n    4  DefineGlobal        r4   g108  ; f\n    5  LoadInt             r3   = 1\n    6  StoreProp           r1.x <- r3    ic#0\n    7  Return              r2\n\n=== <program>/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=1 ===\n    0  LoadEnv             a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadProp            r1   <- r0.x  ic#0\n    2  Return              r1\n"
+  t4b_capparam = "\n=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadConst           r1   const#0 = <function>\n    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n    3  DefineGlobal        r1   g108  ; outer\n    4  Return              r0\n\n=== <program>/const#0  code_len=6 regs=6 fixed=3 params=1 consts=1 ics=1 ===\n    0  NewObject           a=2   b=0   c=0   | u16=0 i16=0\n    1  StoreProp           r2.x <- r0    ic#0\n    2  LoadConst           r3   const#0 = <function>\n    3  MakeClosure         a=4   b=3   c=2   | u16=515 i16=515\n    4  Mov                 r1   <- r4\n    5  Return              r1\n\n=== <program>/const#0/const#0  code_len=3 regs=3 fixed=1 params=0 consts=0 ics=1 ===\n    0  LoadEnv             a=0   b=0   c=0   | u16=0 i16=0\n    1  LoadProp            r1   <- r0.x  ic#0\n    2  Return              r1\n"
+
+suite "slice 4b: closures / captured locals byte-identity":
+  test "return function(){return x} -> env prop x, MakeClosure with env":
+    check disasmToString("function o(){ let x=1; return function(){ return x; }; }") == t4b_ret_fnexpr
+  test "hoisted FunctionDecl i captures x -> Mov iLocal, StoreProp env.x":
+    check disasmToString("function o(){ let x=1; function i(){ return x; } return i; }") == t4b_fndecl
+  test "two captured locals x,y -> two env StoreProp, inner two LoadProp":
+    check disasmToString("function o(){ let x=1; let y=2; return function(){ return x+y; }; }") == t4b_two
+  test "captured PARAM a -> StoreProp env.a <- r0 at entry":
+    check disasmToString("function o(a){ return function(){ return a; }; }") == t4b_param
+  test "inner WRITE to captured x -> StoreProp env.x, then LoadProp":
+    check disasmToString("function o(){ let x=1; return function(){ x=2; return x; }; }") == t4b_write
+  test "counter closure -> LoadProp/AddImm/StoreProp on env.c":
+    check disasmToString("function make(){ let c=0; return function(){ c=c+1; return c; }; }") == t4b_counter
+  test "env-of-env (triple nest) -> passthrough LoadEnv + MakeClosure c=0":
+    check disasmToString("function o(){ let x=1; return function(){ return function(){ return x; }; }; }") == t4b_nested
+  test "script-top let captured -> program env, NewObject after result reg":
+    check disasmToString("let x = 1; function f(){ return x; }") == t4b_scripttop
+  test "captured param + hoisted inner decl -> StoreProp env.x, Mov inner":
+    check disasmToString("function outer(x) { function inner() { return x; } return inner; }") == t4b_capparam
+
+suite "slice 4b: register-model + no-spurious-env invariants":
+  test "non-capturing nested fn stays 4a in-place MakeClosure (no env)":
+    # The inner reads nothing outer; outer must NOT build an env and the
+    # inner's own body must have no NewObject.
+    let txt = disasmToString("function o(){ let x=1; function i(){ return 1; } return x; }")
+    check "NewObject" notin txt
+  test "non-capturing plain function unchanged (no env)":
+    check "NewObject" notin disasmToString("function f(a){ return a+1; }")
+  test "captured local is skipped for TDZ hole (no LoadHole for env var)":
+    # x is captured -> lives on env, so no function-top LoadHole for it.
+    let txt = disasmToString("function o(){ let x=1; return function(){ return x; }; }")
+    check "LoadHole" notin txt
+  test "mixed own-captures + outer-refs bails to nim-missing (no wrong bytecode)":
+    # A middle fn with BOTH its own captured local AND a transitive outer
+    # ref needs the __outer__ env chain -> deliberately refused.
+    expect ValueError:
+      discard disasmToString("function o(){ let x=1; return function(){ let y=2; return function(){ return x+y; }; }; }")

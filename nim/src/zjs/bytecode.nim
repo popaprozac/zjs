@@ -234,6 +234,14 @@ type
     isGenerator*: bool
     isArrow*: bool
     isClassCtor*: bool
+    ## Repurposed exactly as compiler.zc's `Function.needs_env` (slice
+    ## 4b): "this function body references at least one OUTER-scope name"
+    ## (i.e. the compiler's `has_outer_refs`), NOT "this function has its
+    ## own env object". The ENCLOSING compiler reads this at the
+    ## MakeClosure emit site to decide whether to wrap the child in an
+    ## env-capturing MakeClosure (needsEnv/arrow) or the in-place
+    ## no-capture form. See compile.zc ~4454.
+    needsEnv*: bool
     ## Names for the global slots this function references, so disasm can
     ## print `; <name>` for the global ops. Keyed by slot number.
     globalNames*: seq[GlobalName]
