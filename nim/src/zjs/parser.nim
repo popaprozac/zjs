@@ -1033,6 +1033,21 @@ proc isAssignmentOp(k: TokenKind): bool {.inline.} =
         LtLtEq, GtGtEq, GtGtGtEq, AmpEq, PipeEq, CaretEq,
         AmpAmpEq, PipePipeEq, QuestionQuestionEq}
 
+proc checkAssignPatternRest(p: var Parser, node: AstNode) =
+  ## Destructuring ASSIGNMENT target: a rest element (`...x`) must be the LAST
+  ## element and may not carry a default (`[...a, b]`, `[a, ...b, c]`,
+  ## `[...a = 1]`, `({...a, b})` are all SyntaxErrors). Recurses into nesting.
+  if node == nil: return
+  if node.kind in {ArrayPattern, ObjectPattern}:
+    let n = node.patEntries.len
+    for i, en in node.patEntries:
+      if en.patIsRest:
+        if i != n - 1: p.hadError = true                       # rest must be last
+        if en.patDefault != nil or
+           (en.patTarget != nil and en.patTarget.kind == Assignment):
+          p.hadError = true                                    # rest may not have a default
+      if en.patTarget != nil: checkAssignPatternRest(p, en.patTarget)
+
 proc parseAssignmentExpr(p: var Parser): AstNode =
   # Arrow function detection — must come before yield/conditional
   if p.peek().kind == Identifier and p.toks[p.pos+1].kind == Arrow:
@@ -1066,11 +1081,10 @@ proc parseAssignmentExpr(p: var Parser): AstNode =
     let op = p.advance()
     let right = parseAssignmentExpr(p)   # right-associative (recurse self)
     if right == nil: return nil
-    let tgt =
-      if op.kind == Eq and left.kind in {Array, Object}:
-        reinterpretAsPattern(left)
-      else:
-        left
+    var tgt = left
+    if op.kind == Eq and left.kind in {Array, Object}:
+      tgt = reinterpretAsPattern(left)
+      p.checkAssignPatternRest(tgt)   # rest must be last / no default
     return newAssignment(left.start, right.`end`, op.kind, tgt, right)
   return left
 

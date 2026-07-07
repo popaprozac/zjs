@@ -3692,3 +3692,21 @@ suite "parser early errors: reserved word / incomplete expression":
     check not hadErr("a in b")
     check not hadErr("new Foo()")
     check not hadErr("async () => await x")
+
+suite "parser early errors: assignment rest must be last":
+  proc hadErr(src: string): bool =
+    var p = initParser(src); discard p.parseProgram(); p.hadError
+  test "rest not last / with default rejected in an assignment target":
+    check hadErr("[a, ...b, c] = d")
+    check hadErr("[...a, b] = c")
+    check hadErr("[...a = 1] = b")
+    check hadErr("({...a, b} = c)")
+    check hadErr("[a, [b, ...c, d]] = e")   # nested
+    check hadErr("[...a, ...b] = c")
+  test "rest last is fine; literals/bindings unaffected":
+    check not hadErr("[a, ...b] = c")
+    check not hadErr("({a, ...b} = c)")
+    check not hadErr("[a, [b, ...c]] = d")
+    check not hadErr("[...a, b]")            # array LITERAL, not a target
+    check not hadErr("let [a, ...b] = c")    # binding pattern
+    check not hadErr("f(...a, b)")           # call spread
