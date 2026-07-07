@@ -334,3 +334,131 @@ suite "slice 3a register model":
   test "assign to local writes local reg directly":
     let txt = disasmToString("let x=1; x=2;")
     check "LoadInt             r0   = 2" in txt
+
+# --- Slice 3b: if/else + fused compare-and-branch -------------------
+
+const
+  ifPlain = "\n" &
+    "=== <program>  code_len=7 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; a\n" &
+    "    3  JmpIfFalse          r1   -> 6\n" &
+    "    4  LoadGlobal          r1   g109  ; b\n" &
+    "    5  Mov                 r0   <- r1\n" &
+    "    6  Return              r0\n"
+
+  ifElse = "\n" &
+    "=== <program>  code_len=10 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; a\n" &
+    "    3  JmpIfFalse          r1   -> 7\n" &
+    "    4  LoadGlobal          r1   g109  ; b\n" &
+    "    5  Mov                 r0   <- r1\n" &
+    "    6  Jmp                 -> 9\n" &
+    "    7  LoadGlobal          r1   g110  ; c\n" &
+    "    8  Mov                 r0   <- r1\n" &
+    "    9  Return              r0\n"
+
+  ifLtReg = "\n" &
+    "=== <program>  code_len=9 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; a\n" &
+    "    3  LoadGlobal          r2   g109  ; b\n" &
+    "    4  JmpIfNotLt          r1   r2   -> 8  [carrier@5]\n" &
+    "    6  LoadGlobal          r1   g110  ; c\n" &
+    "    7  Mov                 r0   <- r1\n" &
+    "    8  Return              r0\n"
+
+  ifLtImm = "\n" &
+    "=== <program>  code_len=8 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; a\n" &
+    "    3  JmpIfNotLtImm       r1   imm=5    -> 7  [carrier@4]\n" &
+    "    5  LoadGlobal          r1   g109  ; c\n" &
+    "    6  Mov                 r0   <- r1\n" &
+    "    7  Return              r0\n"
+
+  ifElseIf = "\n" &
+    "=== <program>  code_len=13 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; a\n" &
+    "    3  JmpIfFalse          r1   -> 7\n" &
+    "    4  LoadGlobal          r1   g109  ; b\n" &
+    "    5  Mov                 r0   <- r1\n" &
+    "    6  Jmp                 -> 12\n" &
+    "    7  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    8  LoadGlobal          r1   g110  ; c\n" &
+    "    9  JmpIfFalse          r1   -> 12\n" &
+    "   10  LoadGlobal          r1   g111  ; d\n" &
+    "   11  Mov                 r0   <- r1\n" &
+    "   12  Return              r0\n"
+
+  ifBlockLet = "\n" &
+    "=== <program>  code_len=6 regs=4 fixed=2 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r2   g108  ; a\n" &
+    "    3  JmpIfFalse          r2   -> 5\n" &
+    "    4  LoadInt             r0   = 1\n" &
+    "    5  Return              r1\n"
+
+  ifNotNullish = "\n" &
+    "=== <program>  code_len=7 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadGlobal          r1   g108  ; a\n" &
+    "    3  JmpIfNotNullish     r1   -> 6\n" &
+    "    4  LoadGlobal          r1   g109  ; c\n" &
+    "    5  Mov                 r0   <- r1\n" &
+    "    6  Return              r0\n"
+
+suite "slice 3b if/else + fused compare-and-branch byte-identity":
+  test "if (a) b; (plain cond -> JmpIfFalse, double LoadUndefined)":
+    check disasmToString("if (a) b;") == ifPlain
+  test "if (a) b; else c; (else Jmp skip + two patches)":
+    check disasmToString("if (a) b; else c;") == ifElse
+  test "if (a < b) c; (reg-reg fused JmpIfNotLt, carrier)":
+    check disasmToString("if (a < b) c;") == ifLtReg
+  test "if (a < 5) c; (imm fused JmpIfNotLtImm)":
+    check disasmToString("if (a < 5) c;") == ifLtImm
+  test "if (a) b; else if (c) d; (else-if nests, own completion pre-init)":
+    check disasmToString("if (a) b; else if (c) d;") == ifElseIf
+  test "if (a) { let x=1; } (block local pre-alloc shifts completion)":
+    check disasmToString("if (a) { let x=1; }") == ifBlockLet
+  test "if (a == null) c; (nullish peephole -> JmpIfNotNullish)":
+    check disasmToString("if (a == null) c;") == ifNotNullish
+
+suite "slice 3b fusion map coverage":
+  test "if (a <= b) c; -> JmpIfNotLe":
+    check "JmpIfNotLe          r1   r2   -> 8  [carrier@5]" in disasmToString("if (a <= b) c;")
+  test "if (a > b) c; -> JmpIfNotGt":
+    check "JmpIfNotGt          r1   r2   -> 8  [carrier@5]" in disasmToString("if (a > b) c;")
+  test "if (a >= b) c; -> JmpIfNotGe":
+    check "JmpIfNotGe          r1   r2   -> 8  [carrier@5]" in disasmToString("if (a >= b) c;")
+  test "if (a == b) c; -> JmpIfNotEq":
+    check "JmpIfNotEq          r1   r2   -> 8  [carrier@5]" in disasmToString("if (a == b) c;")
+  test "if (a === b) c; -> JmpIfNotStrictEq":
+    check "JmpIfNotStrictEq    r1   r2   -> 8  [carrier@5]" in disasmToString("if (a === b) c;")
+  test "if (a != b) c; -> JmpIfNotNe":
+    check "JmpIfNotNe          r1   r2   -> 8  [carrier@5]" in disasmToString("if (a != b) c;")
+  test "if (a !== b) c; -> JmpIfNotStrictNe":
+    check "JmpIfNotStrictNe    r1   r2   -> 8  [carrier@5]" in disasmToString("if (a !== b) c;")
+  test "if (a != null) c; -> JmpIfNullish (inverse nullish)":
+    check "JmpIfNullish        r1   -> 6" in disasmToString("if (a != null) c;")
+  test "if (a == undefined) c; -> JmpIfNotNullish (undefined literal)":
+    check "JmpIfNotNullish     r1   -> 6" in disasmToString("if (a == undefined) c;")
+  test "if (null == a) c; -> JmpIfNotNullish (swapped operands)":
+    check "JmpIfNotNullish     r1   -> 6" in disasmToString("if (null == a) c;")
+  test "if (!a) c; -> LogicalNot + plain JmpIfFalse (no fusion)":
+    let txt = disasmToString("if (!a) c;")
+    check "LogicalNot" in txt
+    check "JmpIfFalse          r2   -> 7" in txt
+  test "if (a === null) c; -> reg-reg JmpIfNotStrictEq (=== not nullish-fused)":
+    let txt = disasmToString("if (a === null) c;")
+    check "JmpIfNotStrictEq" in txt
+    check "LoadNull" in txt

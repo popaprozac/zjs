@@ -101,6 +101,27 @@ proc disasmFunction(buf: var string, f: Function, label: string) =
     of JmpIfTrue, JmpIfFalse, JmpIfNullish, JmpIfNotNullish:
       let off = instBcI16(inst)
       buf.add("r" & padRight($inst.a, 3) & " -> " & $(i + 1 + int(off)))
+    of JmpIfNotLt, JmpIfNotLe, JmpIfNotGt, JmpIfNotGe,
+       JmpIfNotLtImm, JmpIfNotLeImm, JmpIfNotGtImm, JmpIfNotGeImm,
+       JmpIfNotEq, JmpIfNotNe, JmpIfNotStrictEq, JmpIfNotStrictNe,
+       JmpIfLt, JmpIfLe, JmpIfGt, JmpIfGe,
+       JmpIfLtImm, JmpIfLeImm, JmpIfGtImm, JmpIfGeImm:
+      # 2-slot fused compare-and-branch: operands here, i16 offset in the
+      # J+1 carrier, branch base J+2. *Imm forms carry an i8 immediate in b.
+      let coff = instBcI16(f.code[i + 1])
+      let target = i + 2 + int(coff)
+      let isImm = op in {JmpIfNotLtImm, JmpIfNotLeImm, JmpIfNotGtImm, JmpIfNotGeImm,
+                         JmpIfLtImm, JmpIfLeImm, JmpIfGtImm, JmpIfGeImm}
+      if isImm:
+        buf.add("r" & padRight($inst.a, 3) & " imm=" & padRight($int(cast[int8](inst.b)), 4) &
+          " -> " & $target & "  [carrier@" & $(i + 1) & "]")
+      else:
+        buf.add("r" & padRight($inst.a, 3) & " r" & padRight($inst.b, 3) &
+          " -> " & $target & "  [carrier@" & $(i + 1) & "]")
+      buf.add("\n")
+      i = i + 1        # consume the carrier slot
+      inc i
+      continue
     of Invoke, NewInvoke:
       buf.add("r" & padRight($inst.a, 3) & " <- base=r" & $inst.b & " argc=" & $inst.c)
     of MethodInvoke:

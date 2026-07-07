@@ -107,8 +107,40 @@ proc allocDst(c: var Compiler): uint8 =
 
 # --- Emit -----------------------------------------------------------
 
-proc emit(c: var Compiler, inst: Inst) =
+proc emit(c: var Compiler, inst: Inst): int {.discardable.} =
+  ## Append an instruction, returning its index (mirrors compiler.zc
+  ## `emit`, which returns the slot so callers can back-patch jumps).
   c.code.add(inst)
+  return c.code.len - 1
+
+# --- Fused-branch classification + forward-jump patching -------------
+
+proc isFusedBranchOp(op: Op): bool =
+  ## The 2-slot compare-and-branch family (op in slot J, i16 offset in
+  ## the J+1 carrier). Mirrors compiler.zc `is_fused_branch_op`.
+  op in {
+    JmpIfNotLt, JmpIfNotLe, JmpIfNotGt, JmpIfNotGe,
+    JmpIfNotLtImm, JmpIfNotLeImm, JmpIfNotGtImm, JmpIfNotGeImm,
+    JmpIfNotEq, JmpIfNotNe, JmpIfNotStrictEq, JmpIfNotStrictNe,
+    JmpIfLt, JmpIfLe, JmpIfGt, JmpIfGe,
+    JmpIfLtImm, JmpIfLeImm, JmpIfGtImm, JmpIfGeImm,
+  }
+
+proc patchJump(c: var Compiler, jmpIdx: int) =
+  ## Back-patch the forward jump/branch at `jmpIdx` so it lands on the
+  ## current end-of-code. Offsets are relative to the instruction AFTER
+  ## the jump (the interpreter bumps ip then adds the offset). For a
+  ## 2-slot fused branch the offset lives in the J+1 CARRIER and the base
+  ## is J+2. Mirrors compiler.zc `patch_jump`.
+  let here = int32(c.code.len)
+  let inst = c.code[jmpIdx]
+  if isFusedBranchOp(inst.op):
+    let off2 = here - (int32(jmpIdx) + 2)
+    let carrier = c.code[jmpIdx + 1]
+    c.code[jmpIdx + 1] = instI16(carrier.op, off2)
+    return
+  let off = here - (int32(jmpIdx) + 1)
+  c.code[jmpIdx] = instAI16(inst.op, inst.a, off)
 
 # --- Global interning (mirrors ctx_intern_global at USER_GLOBAL_BASE) --
 
@@ -390,6 +422,12 @@ proc collectLocals(c: var Compiler, node: AstNode) =
     for s in node.stmtList:
       collectLocals(c, s)
     exitScope(c)
+  of IfStmt:
+    # The then/else statements may introduce their own block scopes with
+    # let/const locals — recurse so those get pre-allocated registers,
+    # matching the collect walk order (compiler.zc collect_locals).
+    collectLocals(c, node.thenStmt)
+    collectLocals(c, node.elseStmt)
   of Program:
     for s in node.stmts:
       collectLocals(c, s)
@@ -586,6 +624,93 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     c.hadError = true
     return 0
 
+# --- Fused compare-and-branch (mirrors try_emit_cmp_branch_if_false) -
+#
+# Try to fuse a comparison condition into a single compare-and-branch
+# dispatch (Cmp + JmpIfFalse -> JmpIfNot*). The 2-inst encoding emits the
+# fused op then a placeholder carrier for the offset; patchJump fills it
+# in. Returns the index of the fused op so the caller can patchJump it,
+# or -1 when the cond isn't a fusable comparison (caller falls back to the
+# plain compile_expr + JmpIfFalse path). All fused branches jump when the
+# comparison is FALSE (i.e. skip the then-branch).
+
+proc tryEmitCmpBranchIfFalse(c: var Compiler, cond: AstNode): int =
+  if cond == nil or cond.kind != Binary:
+    return -1
+  let opKind = binaryOp(cond.binOp)
+  let isRelational =
+    opKind in {CmpLt, CmpLe, CmpGt, CmpGe}
+  let isEquality =
+    opKind in {CmpEq, CmpNe, CmpStrictEq, CmpStrictNe}
+  if not isRelational and not isEquality:
+    return -1
+  # Nullish peephole: `x == null`/`x != null`/`x == undefined`/`x !=
+  # undefined` (and operand-swapped). Loose-equality against null checks
+  # nullishness (null == undefined). Emits single-slot JmpIf(Not)Nullish
+  # on the non-literal operand -- drops the LoadNull/LoadUndefined pair.
+  if opKind == CmpEq or opKind == CmpNe:
+    let lIsNullishLit = cond.lhs != nil and
+      (cond.lhs.kind == NullExpr or cond.lhs.kind == UndefinedExpr)
+    let rIsNullishLit = cond.rhs != nil and
+      (cond.rhs.kind == NullExpr or cond.rhs.kind == UndefinedExpr)
+    if lIsNullishLit or rIsNullishLit:
+      let target = if rIsNullishLit: cond.lhs else: cond.rhs
+      let savedBorrow = c.borrowLocalOk
+      c.borrowLocalOk = true
+      let src = compileExpr(c, target)
+      c.borrowLocalOk = savedBorrow
+      # For `x == null` run the body when x IS nullish, so JmpIfNotNullish
+      # jumps to else when x is NOT nullish; `x != null` is the inverse.
+      let fusedOp = if opKind == CmpEq: JmpIfNotNullish else: JmpIfNullish
+      let idx = emit(c, instAI16(fusedOp, src, 0))
+      releaseReg(c, src)
+      return idx
+  # RHS small-int literal fast path: fused JmpIfNot*Imm. Only relational
+  # variants have *Imm encodings -- equality with a small int still goes
+  # through the reg-reg form.
+  if isRelational and cond.rhs != nil and cond.rhs.kind == NumberExpr:
+    let v = cond.rhs.numVal
+    let iv = int32(v)
+    if float64(iv) == v and iv >= -128 and iv <= 127:
+      # RHS is a literal -- LHS is safe to borrow.
+      let savedBorrow = c.borrowLocalOk
+      c.borrowLocalOk = true
+      let src = compileExpr(c, cond.lhs)
+      c.borrowLocalOk = savedBorrow
+      let immByte = uint8(int8(iv))
+      let fusedOp =
+        case opKind
+        of CmpLt: JmpIfNotLtImm
+        of CmpLe: JmpIfNotLeImm
+        of CmpGt: JmpIfNotGtImm
+        else:     JmpIfNotGeImm    # CmpGe
+      let idx = emit(c, instABC(fusedOp, src, immByte, 0))
+      emit(c, instI16(Jmp, 0))    # placeholder carrier; patchJump fills it
+      releaseReg(c, src)
+      return idx
+  # General reg-reg form: JmpIfNotXx reads both operands before branching
+  # -- borrow is always safe.
+  let savedBorrow = c.borrowLocalOk
+  c.borrowLocalOk = true
+  let l = compileExpr(c, cond.lhs)
+  let r = compileExpr(c, cond.rhs)
+  c.borrowLocalOk = savedBorrow
+  let fusedOp =
+    case opKind
+    of CmpLt:       JmpIfNotLt
+    of CmpLe:       JmpIfNotLe
+    of CmpGt:       JmpIfNotGt
+    of CmpGe:       JmpIfNotGe
+    of CmpEq:       JmpIfNotEq
+    of CmpNe:       JmpIfNotNe
+    of CmpStrictEq: JmpIfNotStrictEq
+    else:           JmpIfNotStrictNe    # CmpStrictNe
+  let idx = emit(c, instABC(fusedOp, l, r, 0))
+  emit(c, instI16(Jmp, 0))              # placeholder carrier
+  releaseReg(c, r)
+  releaseReg(c, l)
+  return idx
+
 # --- Statements -----------------------------------------------------
 
 proc compileStmt(c: var Compiler, node: AstNode)
@@ -650,6 +775,31 @@ proc compileStmt(c: var Compiler, node: AstNode) =
     exitScope(c)
   of VarDecl:
     compileVarDecl(c, node)
+  of IfStmt:
+    # ECMA-262 14.6.7 step 7: Return UpdateEmpty(stmtCompletion, undefined).
+    # At the top level, reset the completion register before the branch so
+    # an empty-body `if` produces undefined (not the prior value); the
+    # branch's expression statements overwrite it. Mirrors compile_if.
+    # (In Zen-c this is gated on `c.parent == NULL`; Nim has no nested
+    # functions yet, so lastExprReg >= 0 is the top-level condition.)
+    if c.lastExprReg >= 0:
+      emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
+    var jmpElse = tryEmitCmpBranchIfFalse(c, node.ifCond)
+    if jmpElse < 0:
+      let condReg = compileExpr(c, node.ifCond)
+      jmpElse = emit(c, instAI16(JmpIfFalse, condReg, 0))
+      releaseReg(c, condReg)
+    resetTemps(c)
+
+    compileStmt(c, node.thenStmt)   # then branch
+
+    if node.elseStmt != nil:
+      let jmpEnd = emit(c, instI16(Jmp, 0))
+      patchJump(c, jmpElse)
+      compileStmt(c, node.elseStmt)
+      patchJump(c, jmpEnd)
+    else:
+      patchJump(c, jmpElse)
   else:
     # Default: an expression statement. At the program top level, Mov
     # the result into the reserved completion slot (lastExprReg).
