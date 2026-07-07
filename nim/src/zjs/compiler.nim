@@ -22,6 +22,17 @@ const
   USER_GLOBAL_BASE* = 108'u32
 
 type
+  GlobalTable* = ref object
+    ## The program-wide global-name interning namespace. ONE table is
+    ## shared by the top-level program compiler AND every nested-function
+    ## child compiler (mirrors compiler.zc's single `ctx.realm.globals`),
+    ## so a global read inside a function body (`function f(){ return a }`)
+    ## interns into the SAME slot sequence as the program's own globals.
+    ## Without sharing, the child's `a` would restart at slot 108 and the
+    ## disasm slot numbers would diverge from the oracle.
+    names*: seq[string]
+    slots*: seq[uint32]
+
   Local* = object
     ## One lexical binding (mirrors `struct Local` in src/compiler.zc).
     ## Slice 3a only needs name/reg/scope + const/tdz flags for
@@ -34,6 +45,7 @@ type
     name*:       string          ## decoded name text (atom-equivalent compare)
     isConst*:    bool
     isTdz*:      bool
+    isParam*:    bool            ## true for a formal parameter (slice 4a)
 
   LoopFrame* = object
     ## One iteration-loop context (mirrors `struct LoopFrame` in
@@ -61,10 +73,10 @@ type
     fixedRegs*: uint8            ## params + locals reservation (r0.. slot)
     lastExprReg*: int            ## -1 if no expression yet; the completion slot
     hadError*: bool
-    ## Global interning table: parallel arrays keyed by declaration order.
-    ## First distinct name -> USER_GLOBAL_BASE, next -> +1, etc.
-    globalNames*: seq[string]
-    globalSlots*: seq[uint32]
+    ## Global interning table: SHARED (ref) across the program compiler
+    ## and all nested-function child compilers. First distinct name ->
+    ## USER_GLOBAL_BASE, next -> +1, etc.
+    globals*: GlobalTable
     # --- Register machinery ported from compiler.zc (slice 3a) ---------
     ## "preferred destination" hint (compiler.zc `preferred_dst`). -1 =
     ## none. allocDst() consumes it, resetting to -1, so a caller that
@@ -86,6 +98,17 @@ type
     ## `is_function` + `is_script`.
     isFunction*: bool
     isScript*: bool
+    ## True ONLY on the top-level program compiler (mirrors compiler.zc
+    ## `c.parent == NULL`). Gates the ECMA-262 completion-value machinery
+    ## (the `LoadUndefined <result>` resets before if/loops and the
+    ## expression-statement Mov-into-result). A nested function has no
+    ## completion register: `return` produces its result, so these resets
+    ## must NOT fire in a function body. Slice 4a.
+    atProgramTop*: bool
+    ## Parameter count for a function body (0 for the program). Backs the
+    ## Function.paramCount and the function-top hole-seed start index (a
+    ## param is never TDZ-seeded — its value arrives from the caller).
+    paramCount*: uint32
     # --- Lexical scope tracker (compiler.zc scope_stack / *_scope_id) --
     scopeStack*:  seq[uint32]
     curScopeId*:  uint32
@@ -216,15 +239,17 @@ proc loopAddContinuePatch(c: var Compiler, jmpIdx: int) =
 # --- Global interning (mirrors ctx_intern_global at USER_GLOBAL_BASE) --
 
 proc internGlobal(c: var Compiler, name: string): uint32 =
-  ## Return the slot for `name`, creating a fresh slot at the next base
-  ## offset if unseen. Names compare by decoded text; slice 1 has no
-  ## `\u` escapes so a plain string compare suffices.
-  for i in 0 ..< c.globalNames.len:
-    if c.globalNames[i] == name:
-      return c.globalSlots[i]
-  let slot = USER_GLOBAL_BASE + uint32(c.globalNames.len)
-  c.globalNames.add(name)
-  c.globalSlots.add(slot)
+  ## Return the slot for `name` from the SHARED global table, creating a
+  ## fresh slot at the next base offset if unseen. Names compare by
+  ## decoded text; slice 1 has no `\u` escapes so a plain string compare
+  ## suffices.
+  let g = c.globals
+  for i in 0 ..< g.names.len:
+    if g.names[i] == name:
+      return g.slots[i]
+  let slot = USER_GLOBAL_BASE + uint32(g.names.len)
+  g.names.add(name)
+  g.slots.add(slot)
   return slot
 
 proc slice(c: Compiler, s, e: uint32): string =
@@ -496,6 +521,14 @@ proc collectLocals(c: var Compiler, node: AstNode) =
         discard allocAndAddLocalScoped(c, decl.nameStart, decl.nameLength, scopeId)
         if not isVarKind: c.locals[c.locals.len - 1].isTdz = true
         if node.declKind == KwConst: c.locals[c.locals.len - 1].isConst = true
+  of FunctionDecl:
+    # Script-top FunctionDecl creates a globalThis property, NOT a
+    # script-scope lexical binding (handled by the global emit path).
+    # A function/module body registers the function-name local so
+    # sibling statements resolve it (mirrors compiler.zc collect_locals'
+    # FunctionDecl arm). The body has its own scope — don't recurse.
+    if c.isFunction and not c.isScript and node.fnNameLen > 0:
+      discard allocAndAddLocalScoped(c, node.fnNameStart, node.fnNameLen, 0'u32)
   of BlockStmt:
     enterScopeAssign(c, node)
     for s in node.stmtList:
@@ -526,6 +559,82 @@ proc collectLocals(c: var Compiler, node: AstNode) =
       collectLocals(c, s)
   else:
     discard
+
+# --- Function shape gate + capture pre-scan (slice 4a) --------------
+#
+# Slice 4a compiles ONLY non-capturing functions with simple (plain
+# ident) params. Anything outside that envelope must set hadError so
+# the file surfaces as nim_missing (never a false byte-match): default
+# / pattern / rest params, async / generator, `arguments` / `this`
+# usage, and — the big one — a nested function that CAPTURES one of
+# this function's locals (needs an env object: slice 4b). Non-capturing
+# nested functions are fine and compile independently.
+
+proc paramsAreSimple(params: seq[AstNode]): bool =
+  ## Every formal is a plain identifier: no default (`=`), no binding
+  ## pattern (`{}`/`[]`), no rest (`...`). Mirrors the parser's
+  ## paramsAreSimple but also rejects rest (a RestParam node).
+  for prm in params:
+    if prm == nil: return false
+    if prm.kind != IdentExpr: return false            # RestParam / pattern
+    if prm.identDefault != nil: return false          # `a = 1`
+    if prm.identPattern != nil: return false          # `{a}` / `[a]`
+  return true
+
+proc identName(c: Compiler, n: AstNode): string =
+  ## Source slice for a bare IdentExpr (its declared/referenced name).
+  c.slice(n.start, n.`end`)
+
+proc subtreeMentionsName(c: Compiler, n: AstNode, name: string): bool =
+  ## Does any IdentExpr in this subtree reference `name`? Conservative
+  ## (a shadowed inner binding of the same name is a false positive,
+  ## which just makes us bail — safe). Descends nested function bodies:
+  ## a capture from an inner closure is exactly what we must detect.
+  if n == nil: return false
+  if n.kind == IdentExpr:
+    return c.identName(n) == name
+  for ch in childNodes(n):
+    if subtreeMentionsName(c, ch, name): return true
+  return false
+
+proc bodyReferencesAnyLocal(c: Compiler, body: AstNode, names: seq[string]): bool =
+  ## True if the function `body` (its statements) mentions any name in
+  ## `names` (the enclosing function's params + lexicals). Used as the
+  ## capture bail: a non-empty match means an env object would be
+  ## required (slice 4b), so we refuse to compile the outer function.
+  if body == nil: return false
+  for nm in names:
+    if subtreeMentionsName(c, body, nm): return true
+  return false
+
+proc blockNeedsEntryHole(c: Compiler, blk: AstNode, name: string): bool =
+  ## #387: must this block seed the TDZ hole for `name` at entry?
+  ## Source-order scan of the block's DIRECT children (a block's own
+  ## let/const declarations are always direct children):
+  ##   * hit the simple named declarator first -> decl runs before any
+  ##     read -> hole is dead -> false;
+  ##   * hit any mention of the name first -> a pre-decl read may observe
+  ##     the slot -> true;
+  ##   * declarator not found as a simple name -> true (conservative).
+  ## Mirrors compiler.zc block_needs_entry_hole EXACTLY.
+  for stmt in blk.stmtList:
+    if stmt != nil and stmt.kind == VarDecl and
+       (stmt.declKind == KwLet or stmt.declKind == KwConst):
+      for d in stmt.declarators:
+        if d.kind == Declarator:
+          if d.nameLength > 0 and
+             c.slice(d.nameStart, d.nameStart + d.nameLength) == name:
+            return false        # declaration reached before any read
+          # Earlier declarator's initializer / pattern may read it.
+          if subtreeMentionsName(c, d, name): return true
+    elif subtreeMentionsName(c, stmt, name):
+      return true
+  return true                   # decl not found as a simple declarator
+
+# Forward decls: the recursive body compile calls compileStmt, and the
+# nested-function shape gate below calls compileFunctionValue.
+proc compileStmt(c: var Compiler, node: AstNode)
+proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Function
 
 # --- Expressions ----------------------------------------------------
 
@@ -720,6 +829,29 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
       # borrowed reg) -- fall back to Mov.
       emit(c, instAB(Mov, localReg, r))
     return r
+  of FunctionExpr, ArrowFunc:
+    # Slice 4a: only non-capturing, non-arrow FunctionExpr. ArrowFunc
+    # always wraps in MakeClosure (for the `this` snapshot) — deferred
+    # to 4b — so refuse it here.
+    if node.kind == ArrowFunc:
+      c.hadError = true
+      return 0
+    # compile_function_value: compile the body into a fresh Function,
+    # append it to OUR const pool, LoadConst it into a fresh reg. A
+    # non-capturing body has needs_env == false, so NO MakeClosure wrap
+    # (that's the arrow / captured-env path in 4b). Note: uses allocReg,
+    # NOT allocDst — compiler.zc's compile_function_value never consumes
+    # a caller's preferred_dst hint, so `let h = function(){}` lands the
+    # LoadConst in a fresh temp and Movs into h afterward.
+    let f = compileFunction(c.src, node, c)
+    if f == nil:
+      c.hadError = true
+      return allocReg(c)
+    c.constants.add(Constant(kind: ckFunction, fn: f))
+    let idx = uint16(c.constants.len - 1)
+    let dst = allocReg(c)
+    emit(c, instAU16(LoadConst, dst, idx))
+    return dst
   else:
     # Not yet supported.
     c.hadError = true
@@ -883,9 +1015,37 @@ proc emitCmpBranchBackIfTrue(c: var Compiler, cond: AstNode, bodyHead: uint32) =
   releaseReg(c, r)
   releaseReg(c, l)
 
-# --- Statements -----------------------------------------------------
+# --- Name inference (ECMA-262 NamedEvaluation / SetFunctionName) ----
 
-proc compileStmt(c: var Compiler, node: AstNode)
+proc maybeInferAnonName(c: var Compiler, initExpr: AstNode, valReg: uint8,
+                        targetName: string) =
+  ## If `initExpr` is an ANONYMOUS function-ish value bound to a named
+  ## target, emit the SetFunctionName step: LoadConst <name> into a
+  ## fresh reg, then `SetFunctionName valReg, nameReg`. Peels through
+  ## Paren (`(function(){})`) but not Sequence/Assignment. Named
+  ## function expressions (`function f(){}` as expr) already have a name
+  ## and are skipped. Mirrors compiler.zc maybe_infer_anon_name (the
+  ## FunctionExpr/ArrowFunc/ClassExpr-anon arms; 4a only reaches the
+  ## anonymous-FunctionExpr case).
+  if initExpr == nil or targetName.len == 0: return
+  var expr = initExpr
+  while expr != nil and expr.kind == Paren:
+    expr = expr.inner
+  if expr == nil: return
+  var isAnon = false
+  case expr.kind
+  of FunctionExpr: isAnon = expr.fnNameLen == 0
+  of ArrowFunc:    isAnon = true
+  else:            isAnon = false
+  if not isAnon: return
+  # LoadConst the name string, then SetFunctionName val, nameReg.
+  c.constants.add(Constant(kind: ckString, s: targetName))
+  let nameReg = allocReg(c)
+  emit(c, instAU16(LoadConst, nameReg, uint16(c.constants.len - 1)))
+  emit(c, instAB(SetFunctionName, valReg, nameReg))
+  releaseReg(c, nameReg)
+
+# --- Statements -----------------------------------------------------
 
 proc compileVarDecl(c: var Compiler, node: AstNode) =
   ## Handles all three decl kinds at script top level:
@@ -916,11 +1076,16 @@ proc compileVarDecl(c: var Compiler, node: AstNode) =
         else:
           # Otherwise hand the initializer a preferred-dst hint so its
           # terminal op writes lreg directly -- kills the tail Mov on
-          # `let x = <expr>`.
+          # `let x = <expr>`. (A FunctionExpr init ignores the hint —
+          # compile_function_value uses allocReg — so it lands in a temp
+          # and the tail Mov below binds it.)
           let savedPd = c.preferredDst
           c.preferredDst = int(lreg)
           let r = compileExpr(c, decl.init)
           c.preferredDst = savedPd
+          # ECMA-262 NamedEvaluation: `let h = function(){}` names the
+          # anonymous function "h" BEFORE the binding store.
+          maybeInferAnonName(c, decl.init, r, name)
           if r != lreg:
             emit(c, instAB(Mov, lreg, r))
           releaseReg(c, r)
@@ -931,6 +1096,8 @@ proc compileVarDecl(c: var Compiler, node: AstNode) =
       let slot = internGlobal(c, name)
       if decl.init != nil:
         let r = compileExpr(c, decl.init)
+        # ECMA-262 NamedEvaluation: `var g = function(){}` names it "g".
+        maybeInferAnonName(c, decl.init, r, name)
         emit(c, instAU16(DefineGlobal, r, uint16(slot)))
         releaseReg(c, r)
   resetTemps(c)
@@ -941,6 +1108,18 @@ proc compileStmt(c: var Compiler, node: AstNode) =
   of BlockStmt:
     # Re-enter the scope id collectLocals assigned to this block.
     enterScopeReuse(c, node)
+    # #330/#387 TDZ: seed this block's own let/const regs with the hole
+    # so a read BEFORE the declaration throws — but only when
+    # blockNeedsEntryHole finds a possible pre-decl read (the common
+    # `let t = expr;` shape never observes the hole). Only non-captured
+    # register locals in THIS scope; captured/env-slot TDZ is stage-3.
+    # At script top these gates coincide with the slice-3 behavior (all
+    # block targets there return false), so no regression.
+    for hi in 0 ..< c.locals.len:
+      if c.locals[hi].scopeId == c.curScopeId and
+         c.locals[hi].isTdz and not c.locals[hi].isParam:
+        if blockNeedsEntryHole(c, node, c.locals[hi].name):
+          emit(c, instA(LoadHole, c.locals[hi].reg))
     for s in node.stmtList:
       if c.hadError: break
       compileStmt(c, s)
@@ -952,9 +1131,9 @@ proc compileStmt(c: var Compiler, node: AstNode) =
     # At the top level, reset the completion register before the branch so
     # an empty-body `if` produces undefined (not the prior value); the
     # branch's expression statements overwrite it. Mirrors compile_if.
-    # (In Zen-c this is gated on `c.parent == NULL`; Nim has no nested
-    # functions yet, so lastExprReg >= 0 is the top-level condition.)
-    if c.lastExprReg >= 0:
+    # (Gated on `atProgramTop` == compiler.zc `c.parent == NULL`: a
+    # function body has no completion register, so no reset fires there.)
+    if c.atProgramTop and c.lastExprReg >= 0:
       emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
     var jmpElse = tryEmitCmpBranchIfFalse(c, node.ifCond)
     if jmpElse < 0:
@@ -975,7 +1154,7 @@ proc compileStmt(c: var Compiler, node: AstNode) =
   of WhileStmt:
     # ECMA-262 completion reset (top level only): an empty-iteration
     # while yields undefined, not the prior completion value.
-    if c.lastExprReg >= 0:
+    if c.atProgramTop and c.lastExprReg >= 0:
       emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
     if condIsRotatable(node.whileCond):
       # Rotated (test-at-bottom) shape -- kills the unconditional
@@ -1015,7 +1194,7 @@ proc compileStmt(c: var Compiler, node: AstNode) =
         patchJump(c, bp)
       loopPop(c)
   of DoWhileStmt:
-    if c.lastExprReg >= 0:
+    if c.atProgramTop and c.lastExprReg >= 0:
       emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
     let loopTop = uint32(c.code.len)
     # continue targets the test, only known after the body.
@@ -1043,7 +1222,7 @@ proc compileStmt(c: var Compiler, node: AstNode) =
       compileStmt(c, node.forInit)
     # ECMA-262 ForBodyEvaluation step 1: V <- undefined AFTER init, so
     # the init's expression value doesn't leak into the completion.
-    if c.lastExprReg >= 0:
+    if c.atProgramTop and c.lastExprReg >= 0:
       emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
     if node.forTest != nil and condIsRotatable(node.forTest):
       # Rotated for-loop: `Jmp -> test` skips body AND update on the
@@ -1114,31 +1293,273 @@ proc compileStmt(c: var Compiler, node: AstNode) =
       # loopSetContinue time.
       let jmpIdx = emit(c, instI16(Jmp, 0))
       loopAddContinuePatch(c, jmpIdx)
+  of FunctionDecl:
+    # A function declaration. Compile the body into a fresh Function,
+    # append it to the const pool, LoadConst it, then wrap in
+    # MakeClosure so each enclosing invocation yields a distinct
+    # function value (compiler.zc: nested FunctionDecls ALWAYS wrap; the
+    # non-captures form emits the in-place `MakeClosure dst, dst, dst`,
+    # where dst doubles as fn-src AND env-src — zero extra register
+    # pressure). Finally bind: script-top -> DefineGlobal on globalThis;
+    # a function-body decl -> Mov into the pre-allocated local. Captures
+    # (needs_env) are slice 4b; compileFunction bails there.
+    let f = compileFunction(c.src, node, c)
+    if f == nil:
+      c.hadError = true
+      return
+    c.constants.add(Constant(kind: ckFunction, fn: f))
+    let idx = uint16(c.constants.len - 1)
+    var r = allocReg(c)
+    emit(c, instAU16(LoadConst, r, idx))
+    # Non-capturing form: in-place MakeClosure (dst=src=env). 4a never
+    # produces needs_env functions, so this is the only path.
+    emit(c, instABC(MakeClosure, r, r, r))
+    let name = c.slice(node.fnNameStart, node.fnNameStart + node.fnNameLen)
+    let isScriptDecl = c.isScript
+    if c.isFunction and not isScriptDecl:
+      # Function/module body: bind to the pre-allocated local register.
+      let lidx = findLocalIndex(c, name)
+      if lidx >= 0:
+        emit(c, instAB(Mov, c.locals[lidx].reg, r))
+    else:
+      # Script-top FunctionDecl -> property on globalThis.
+      let slot = internGlobal(c, name)
+      emit(c, instAU16(DefineGlobal, r, uint16(slot)))
+    releaseReg(c, r)
+    resetTemps(c)
+  of ReturnStmt:
+    # `return expr` / `return;`. Slice 4a: no try/finally regions, so
+    # emit_return_sequence reduces to a bare `Return r` (compiler.zc
+    # emit_return_sequence with region_count == 0). Tail-call rewriting
+    # (TailInvoke/TailMethodInvoke) is deferred — calls aren't in 4a.
+    # `return` outside a function is a SyntaxError; the parser accepts it
+    # at program top, so refuse here rather than emit a bogus Return.
+    if c.atProgramTop:
+      c.hadError = true
+      return
+    var r: uint8
+    if node.retArg != nil:
+      # Borrow the source reg directly for a bare IdentExpr — Return
+      # consumes the value immediately, so IdentExpr's defensive Mov is
+      # dead weight (compiler.zc sets borrow_local_ok around the read).
+      let savedBorrow = c.borrowLocalOk
+      c.borrowLocalOk = true
+      r = compileExpr(c, node.retArg)
+      c.borrowLocalOk = savedBorrow
+    else:
+      r = allocReg(c)
+      emit(c, instA(LoadUndefined, r))
+    emit(c, instA(Return, r))
+    c.lastExprReg = int(r)
+    resetTemps(c)
   of EmptyStmt:
     discard
   else:
     # Default: an expression statement. At the program top level, Mov
-    # the result into the reserved completion slot (lastExprReg).
+    # the result into the reserved completion slot (lastExprReg); inside
+    # a function `return` produces the result, so we just remember the
+    # last register for diagnostics (compiler.zc `c.parent == NULL`
+    # split). The gate is atProgramTop, not merely lastExprReg >= 0.
     let r = compileExpr(c, node)
-    if c.lastExprReg >= 0:
+    if c.atProgramTop and c.lastExprReg >= 0:
       let dst = uint8(c.lastExprReg)
       if r != dst: emit(c, instAB(Mov, dst, r))
     else:
       c.lastExprReg = int(r)
     resetTemps(c)
 
+# --- Function bodies (slice 4a: non-capturing) ----------------------
+
+proc functionBodyStmts(node: AstNode): seq[AstNode] =
+  ## The function body's top-level statement list. The outer braces ARE
+  ## the function scope, so we iterate the BlockStmt's children directly
+  ## (never re-entering a block scope for them) — mirrors compiler.zc's
+  ## "walk INTO node.left's children" for the body.
+  let body = node.fnBody
+  if body == nil: return @[]
+  if body.kind == BlockStmt: return body.stmtList
+  return @[body]
+
+proc compileFunction(src: string, node: AstNode, enclosing: var Compiler): Function =
+  ## Compile a FunctionDecl / FunctionExpr body into its own Function
+  ## (own code / consts / regs / paramCount). Mirrors compiler.zc
+  ## compile_function for the slice-4a envelope: simple params, no
+  ## captures, no `this`/`arguments`/async/generator/default/rest. Any
+  ## feature outside that envelope sets hadError -> returns nil so the
+  ## enclosing compile bails (surfacing as nim_missing, never a false
+  ## match). `enclosing` shares its global-intern table with the child
+  ## so global slots stay in one namespace program-wide.
+
+  # --- Envelope gate ------------------------------------------------
+  if node.fnIsAsync or node.fnIsGenerator:
+    return nil
+  if not paramsAreSimple(node.fnParams):
+    return nil
+  # A NAMED function expression binds its own name as a self-referencing
+  # local visible inside the body (§15.7.1), seeded via a LoadCallee
+  # prologue (compiler.zc bind_callee_local). That machinery is slice
+  # 4b — bail so `(function foo(){})` surfaces as nim_missing, not a
+  # false byte-match. FunctionDecl names bind in the ENCLOSING scope and
+  # get NO LoadCallee, so decls with a name are fine.
+  if node.kind == FunctionExpr and node.fnNameLen > 0:
+    return nil
+  let body = node.fnBody
+
+  var c = Compiler(
+    src: src,
+    nextReg: 0, maxReg: 0, fixedRegs: 0,
+    lastExprReg: -1, hadError: false,
+    preferredDst: -1, borrowLocalOk: false,
+    isFunction: true, isScript: false,
+    atProgramTop: false,
+    globals: enclosing.globals,      # SHARED global namespace (see GlobalTable)
+    scopeStack: @[0'u32], curScopeId: 0, nextScopeId: 1,
+  )
+
+  # 1. Bind params to the low fixed regs r0..rN-1 in declaration order.
+  var paramNames: seq[string] = @[]
+  for p in node.fnParams:
+    let nm = c.slice(p.start, p.`end`)
+    paramNames.add(nm)
+    let reg = allocReg(c)
+    addLocalScoped(c, p.start, p.`end` - p.start, uint32(reg), 0'u32)
+    c.locals[c.locals.len - 1].isParam = true
+  c.paramCount = uint32(node.fnParams.len)
+
+  # 2. Hoist body var/let/const into fixed locals. The body's own braces
+  #    ARE the function scope, so walk its children directly (matching
+  #    compiler.zc, so a body-top `let` lands in scope 0, not a nested
+  #    block scope). collectLocals(BlockStmt) would open a fresh scope —
+  #    wrong — so iterate the children ourselves.
+  for s in functionBodyStmts(node):
+    collectLocals(c, s)
+
+  # 2b. Capture bail. Any nested function whose body references one of
+  #     OUR params/lexicals needs an env object (slice 4b) — refuse.
+  #     Walk our body for nested functions and test their bodies against
+  #     our binding names. (analyze_captures' role, reduced to a bail.)
+  var localNames = paramNames
+  for lc in c.locals:
+    if not lc.isParam and lc.name.len > 0:
+      localNames.add(lc.name)
+  proc anyNestedCaptures(c: Compiler, n: AstNode, names: seq[string]): bool =
+    if n == nil: return false
+    if n.kind in {FunctionDecl, FunctionExpr, ArrowFunc}:
+      let innerBody =
+        if n.kind == ArrowFunc: n.arrowBody else: n.fnBody
+      if bodyReferencesAnyLocal(c, innerBody, names): return true
+      # A nested fn can also nest further — but if it captured OUR names
+      # we'd have caught it above; deeper nesting that reaches us is also
+      # covered because bodyReferencesAnyLocal descends nested bodies.
+      return false
+    for ch in childNodes(n):
+      if anyNestedCaptures(c, ch, names): return true
+    return false
+  if body != nil and anyNestedCaptures(c, body, localNames):
+    return nil
+
+  # 3. Locals are now fixed; temps live above this watermark.
+  c.fixedRegs = c.nextReg
+  # Reset scope tracking so compileStmt re-enters block ids matching
+  # what collectLocals assigned.
+  resetScopeWalk(c)
+
+  # 3b. Also gate on `this` / `arguments` usage anywhere in the body —
+  #     those need the LoadThis/BuildArguments prologue machinery (4b+).
+  proc mentionsThisOrArguments(c: Compiler, n: AstNode): bool =
+    if n == nil: return false
+    # Don't descend into nested non-arrow functions: they have their own
+    # `this`/`arguments`. (Arrows inherit — but arrows already bail.)
+    if n.kind in {FunctionDecl, FunctionExpr}: return false
+    if n.kind == ThisExpr: return true
+    if n.kind == IdentExpr and c.identName(n) == "arguments": return true
+    for ch in childNodes(n):
+      if mentionsThisOrArguments(c, ch): return true
+    return false
+  if body != nil and mentionsThisOrArguments(c, body):
+    return nil
+
+  # 4. Function-top TDZ hole seeding. ECMA-262: a body-top let/const is
+  #    seeded with LoadHole before its initializer. Params are never
+  #    seeded (their value arrives from the caller). Unlike a nested
+  #    block (which gates on blockNeedsEntryHole), the function-top seed
+  #    is UNCONDITIONAL for every is_tdz non-param local — matching
+  #    compiler.zc's `tz = param_count .. local_count` loop, which holes
+  #    even locals that live in nested blocks (their block handler then
+  #    decides whether to RE-hole).
+  for li in 0 ..< c.locals.len:
+    if c.locals[li].isTdz and not c.locals[li].isParam:
+      emit(c, instA(LoadHole, c.locals[li].reg))
+
+  # 5. Compile the body statements (function-decl-first two-pass, like
+  #    the program: hoisted FunctionDecls emit before other statements).
+  let stmts = functionBodyStmts(node)
+  if body != nil and body.kind != BlockStmt:
+    # Arrow concise body path — but arrows bail above, so a non-block
+    # body here is unexpected; treat defensively as an expression whose
+    # value is returned.
+    let r = compileExpr(c, body)
+    emit(c, instA(Return, r))
+  else:
+    for s in stmts:
+      if c.hadError: break
+      if s != nil and s.kind == FunctionDecl:
+        compileStmt(c, s)
+    for s in stmts:
+      if c.hadError: break
+      if s == nil or s.kind != FunctionDecl:
+        compileStmt(c, s)
+
+  # 6. Ensure a trailing Return. If control can fall off the end, emit
+  #    `LoadUndefined r; Return r` (compiler.zc need_return).
+  var needReturn = true
+  if c.code.len > 0 and c.code[c.code.len - 1].op == Return:
+    needReturn = false
+  if needReturn:
+    let r = allocReg(c)
+    emit(c, instA(LoadUndefined, r))
+    emit(c, instA(Return, r))
+
+  if c.hadError:
+    return nil
+
+  var f = Function(
+    code: c.code,
+    constants: c.constants,
+    registerCount: uint32(c.maxReg) + 1'u32,
+    fixedRegs: c.fixedRegs,
+    paramCount: c.paramCount,
+    constCount: uint32(c.constants.len),
+    icCount: 0,
+  )
+  # register_count floor: at least param_count (compiler.zc clamp).
+  if f.registerCount < f.paramCount: f.registerCount = f.paramCount
+  if f.registerCount == 0: f.registerCount = 1
+  if f.fixedRegs > f.registerCount: f.fixedRegs = f.registerCount
+  # Attach the SHARED global table so disasm resolves slots this body
+  # references (extra entries for globals it doesn't touch are inert —
+  # disasm only looks up slots that appear in ops).
+  for i in 0 ..< c.globals.names.len:
+    f.globalNames.add(GlobalName(slot: c.globals.slots[i], name: c.globals.names[i]))
+  return f
+
 # --- Program --------------------------------------------------------
 
 proc hoistProgramGlobals(c: var Compiler, root: AstNode) =
-  ## Only `var` hoists into the global object (mirrors
-  ## hoist_program_decls). Interning here fixes slot order to match
-  ## declaration order, independent of when the DefineGlobal emits.
+  ## `var` AND script-top FunctionDecl hoist into the global object
+  ## (mirrors hoist_program_decls). Interning here fixes slot order to
+  ## match declaration order, independent of when the DefineGlobal
+  ## emits — so a forward reference (`f(); function f(){}`) and the
+  ## globals a function body reads both get their canonical slots.
   if root == nil: return
   for stmt in root.stmts:
-    if stmt != nil and stmt.kind == VarDecl and stmt.declKind == KwVar:
+    if stmt == nil: continue
+    if stmt.kind == VarDecl and stmt.declKind == KwVar:
       for decl in stmt.declarators:
         if decl.kind == Declarator and decl.nameLength > 0:
           discard internGlobal(c, c.slice(decl.nameStart, decl.nameStart + decl.nameLength))
+    elif stmt.kind == FunctionDecl and stmt.fnNameLen > 0:
+      discard internGlobal(c, c.slice(stmt.fnNameStart, stmt.fnNameStart + stmt.fnNameLen))
 
 proc compileProgram*(src: string, root: AstNode): Function =
   ## Compile the top-level program. Mirrors compile_program: reserve r0
@@ -1158,6 +1579,8 @@ proc compileProgram*(src: string, root: AstNode): Function =
     # stay on globalThis. Mirrors compile_program's else-branch.
     isFunction: true,
     isScript: true,
+    atProgramTop: true,
+    globals: GlobalTable(),
     scopeStack: @[0'u32],
     curScopeId: 0,
     nextScopeId: 1,
@@ -1180,9 +1603,18 @@ proc compileProgram*(src: string, root: AstNode): Function =
 
   if root != nil and root.kind == Program:
     hoistProgramGlobals(c, root)
+    # ECMA-262 §10.2.11: function declarations are evaluated at scope
+    # entry (calling them before their textual position is valid). Two
+    # passes over the top level: emit FunctionDecl statements first (in
+    # source order), then the rest, skipping the already-emitted decls.
     for stmt in root.stmts:
       if c.hadError: break
-      compileStmt(c, stmt)
+      if stmt != nil and stmt.kind == FunctionDecl:
+        compileStmt(c, stmt)
+    for stmt in root.stmts:
+      if c.hadError: break
+      if stmt == nil or stmt.kind != FunctionDecl:
+        compileStmt(c, stmt)
   else:
     c.hadError = true
 
@@ -1202,7 +1634,7 @@ proc compileProgram*(src: string, root: AstNode): Function =
   )
   if f.registerCount == 0: f.registerCount = 1
   if f.fixedRegs > f.registerCount: f.fixedRegs = f.registerCount
-  # Attach the global-name side table so disasm can print `; <name>`.
-  for i in 0 ..< c.globalNames.len:
-    f.globalNames.add(GlobalName(slot: c.globalSlots[i], name: c.globalNames[i]))
+  # Attach the shared global-name side table so disasm can print `; <name>`.
+  for i in 0 ..< c.globals.names.len:
+    f.globalNames.add(GlobalName(slot: c.globals.slots[i], name: c.globals.names[i]))
   return f

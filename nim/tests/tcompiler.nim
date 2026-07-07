@@ -691,3 +691,245 @@ suite "slice 3c loop structure sanity":
   test "continue with no enclosing loop is a compile error":
     expect ValueError:
       discard disasmToString("continue;")
+
+# --- Slice 4a: non-capturing functions ------------------------------
+# Byte-identical to `build/zjs disasm` for the program AND every nested
+# `/const#N` unit (declarations, expressions, params, return,
+# MakeClosure / SetFunctionName, function-body entry-hole seeding).
+
+const
+  fnEmpty =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; f\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  Return              r0\n"
+
+  fnAddParams =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; f\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=2 regs=4 fixed=2 params=2 consts=0 ics=0 ===\n" &
+    "    0  Add                 a=2   b=0   c=1   | u16=256 i16=256\n" &
+    "    1  Return              r2\n"
+
+  fnLetReturn =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; f\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=3 regs=2 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadHole            a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r0   = 1\n" &
+    "    2  Return              r0\n"
+
+  fnVarReturn =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; f\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=2 regs=2 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadInt             r0   = 1\n" &
+    "    1  Return              r0\n"
+
+  fnParamReturn =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; f\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=1 regs=2 fixed=1 params=1 consts=0 ics=0 ===\n" &
+    "    0  Return              r0\n"
+
+  varGFn =
+    "\n" &
+    "=== <program>  code_len=6 regs=4 fixed=1 params=0 consts=2 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  LoadConst           r2   const#1 = \"g\"\n" &
+    "    3  SetFunctionName     a=1   b=2   c=0   | u16=2 i16=2\n" &
+    "    4  DefineGlobal        r1   g108  ; g\n" &
+    "    5  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadInt             r0   = 1\n" &
+    "    1  Return              r0\n"
+
+  letHFn =
+    "\n" &
+    "=== <program>  code_len=6 regs=5 fixed=2 params=0 consts=2 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r2   const#0 = <function>\n" &
+    "    2  LoadConst           r3   const#1 = \"h\"\n" &
+    "    3  SetFunctionName     a=2   b=3   c=0   | u16=3 i16=3\n" &
+    "    4  Mov                 r0   <- r2\n" &
+    "    5  Return              r1\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  Return              r0\n"
+
+  assignFn =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  StoreGlobal         r1   g108  ; x\n" &
+    "    3  Mov                 r0   <- r1\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  Return              r0\n"
+
+  parenFn =
+    "\n" &
+    "=== <program>  code_len=4 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  Mov                 r0   <- r1\n" &
+    "    3  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=2 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  Return              r0\n"
+
+  fnMulAddParams =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; f\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=3 regs=5 fixed=2 params=2 consts=0 ics=0 ===\n" &
+    "    0  Mul                 a=2   b=0   c=1   | u16=256 i16=256\n" &
+    "    1  AddImm              r3   <- r2, imm=1\n" &
+    "    2  Return              r3\n"
+
+  fnIfReturn =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; f\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=6 regs=2 fixed=0 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadGlobal          r0   g109  ; a\n" &
+    "    1  JmpIfFalse          r0   -> 4\n" &
+    "    2  LoadInt             r0   = 1\n" &
+    "    3  Return              r0\n" &
+    "    4  LoadInt             r0   = 2\n" &
+    "    5  Return              r0\n"
+
+  fnNestedBlk =
+    "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=1 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadConst           r1   const#0 = <function>\n" &
+    "    2  MakeClosure         a=1   b=1   c=1   | u16=257 i16=257\n" &
+    "    3  DefineGlobal        r1   g108  ; f\n" &
+    "    4  Return              r0\n" &
+    "\n" &
+    "=== <program>/const#0  code_len=6 regs=4 fixed=2 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadHole            a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadHole            a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadInt             r0   = 1\n" &
+    "    3  LoadInt             r1   = 2\n" &
+    "    4  Add                 a=2   b=0   c=1   | u16=256 i16=256\n" &
+    "    5  Return              r2\n"
+
+suite "slice 4a non-capturing functions byte-identity":
+  test "function f() {} (decl -> LoadConst + MakeClosure + DefineGlobal)":
+    check disasmToString("function f() {}") == fnEmpty
+  test "function f(a, b) { return a + b; } (params r0/r1, Add, Return)":
+    check disasmToString("function f(a, b) { return a + b; }") == fnAddParams
+  test "function f() { let x = 1; return x; } (function-top LoadHole seed)":
+    check disasmToString("function f() { let x = 1; return x; }") == fnLetReturn
+  test "function f() { const y = 2; return y; } (const == let entry-hole)":
+    # Identical shape to fnLetReturn with the body's LoadInt value 1 -> 2.
+    check disasmToString("function f() { const y = 2; return y; }") ==
+      fnLetReturn.replace("r0   = 1", "r0   = 2")
+  test "function f() { var v = 1; return v; } (var NOT seeded, fixed=1)":
+    check disasmToString("function f() { var v = 1; return v; }") == fnVarReturn
+  test "function f(a) { return a; } (single param, borrowed return)":
+    check disasmToString("function f(a) { return a; }") == fnParamReturn
+  test "var g = function() { return 1; }; (anon expr -> SetFunctionName g)":
+    check disasmToString("var g = function() { return 1; };") == varGFn
+  test "x = function() {}; (assignment RHS, NO SetFunctionName)":
+    check disasmToString("x = function() {};") == assignFn
+  test "(function(){}); (bare expr, no MakeClosure, no name)":
+    check disasmToString("(function(){});") == parenFn
+  test "let h = function(){}; (named-binding infer -> SetFunctionName h)":
+    check disasmToString("let h = function(){};") == letHFn
+  test "function f(a, b) { return a * b + 1; } (Mul + AddImm in body)":
+    check disasmToString("function f(a, b) { return a * b + 1; }") == fnMulAddParams
+  test "function f() { if (a) return 1; return 2; } (if/return, no completion reset)":
+    check disasmToString("function f() { if (a) return 1; return 2; }") == fnIfReturn
+  test "function f() { let x=1; { let y=2; return x+y; } } (two function-top holes)":
+    check disasmToString("function f() { let x=1; { let y=2; return x+y; } }") == fnNestedBlk
+
+suite "slice 4a structure + capture bail":
+  test "const y body seeds the entry hole exactly like let":
+    let txt = disasmToString("function f() { const y = 2; return y; }")
+    check "LoadHole" in txt
+    check "LoadInt             r0   = 2" in txt
+  test "empty function body -> LoadUndefined + Return, fixed=0":
+    check "regs=2 fixed=0 params=0" in disasmToString("function f() {}")
+  test "two params -> fixed=2 params=2":
+    check "fixed=2 params=2" in disasmToString("function f(a,b){return a+b;}")
+  test "nested non-capturing FunctionDecl binds a body local (no false match)":
+    check disasmToString("function outer() { function inner() { return 1; } return 2; }") ==
+      disasmToString("function outer() { function inner() { return 1; } return 2; }")
+  test "captured outer local -> compile error (env deferred to 4b)":
+    expect ValueError:
+      discard disasmToString("function outer(x) { function inner() { return x; } return inner; }")
+  test "arrow function -> compile error (this-snapshot MakeClosure deferred)":
+    expect ValueError:
+      discard disasmToString("var f = () => 1;")
+  test "default param -> compile error (deferred)":
+    expect ValueError:
+      discard disasmToString("function f(a = 1) { return a; }")
+  test "rest param -> compile error (deferred)":
+    expect ValueError:
+      discard disasmToString("function f(...r) { return 1; }")
+  test "named function expression -> compile error (LoadCallee deferred)":
+    expect ValueError:
+      discard disasmToString("(function foo(){});")
+  test "async function -> compile error (deferred)":
+    expect ValueError:
+      discard disasmToString("async function f() { return 1; }")
+  test "generator function -> compile error (deferred)":
+    expect ValueError:
+      discard disasmToString("function* f() { return 1; }")
+  test "body using this -> compile error (this prologue deferred)":
+    expect ValueError:
+      discard disasmToString("function f() { return this; }")
+  test "body using arguments -> compile error (arguments prologue deferred)":
+    expect ValueError:
+      discard disasmToString("function f() { return arguments; }")
