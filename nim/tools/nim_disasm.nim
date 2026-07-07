@@ -122,6 +122,18 @@ proc disasmFunction(buf: var string, f: Function, label: string) =
       i = i + 1        # consume the carrier slot
       inc i
       continue
+    of InvokeGlobal:
+      # 2-slot fused global-callee call: operands here, u16 global slot in
+      # the J+1 carrier. `r%-3u <- g%u(base=r%u argc=%u)  [carrier@N] ; name`.
+      let gslot = instBcU16(f.code[i + 1])
+      let gnm = if gnames.hasKey(uint32(gslot)): gnames[uint32(gslot)] else: ""
+      buf.add("r" & padRight($inst.a, 3) & " <- g" & $gslot &
+        "(base=r" & $inst.b & " argc=" & $inst.c & ")  [carrier@" &
+        $(i + 1) & "] ; " & gnm)
+      buf.add("\n")
+      i = i + 1        # consume the carrier slot
+      inc i
+      continue
     of Invoke, NewInvoke:
       buf.add("r" & padRight($inst.a, 3) & " <- base=r" & $inst.b & " argc=" & $inst.c)
     of MethodInvoke:

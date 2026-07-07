@@ -1063,3 +1063,137 @@ suite "slice 5a deferred forms bail (nim_missing, not text_diff)":
   test "array hole [1,,2] -> compile error":
     expect ValueError:
       discard disasmToString("var a = [1,,2];")
+
+# ====================================================================
+# Slice 5b: function / method / new calls.
+# ====================================================================
+
+const
+  callF = "\n" &
+    "=== <program>  code_len=5 regs=3 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  InvokeGlobal        r1   <- g108(base=r1 argc=0)  [carrier@2] ; f\n" &
+    "    3  Mov                 r0   <- r1\n" &
+    "    4  Return              r0\n"
+  callFab = "\n" &
+    "=== <program>  code_len=7 regs=5 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadGlobal          r1   g108  ; f\n" &
+    "    2  LoadGlobal          r2   g109  ; a\n" &
+    "    3  LoadGlobal          r3   g110  ; b\n" &
+    "    4  Invoke              r1   <- base=r1 argc=2\n" &
+    "    5  Mov                 r0   <- r1\n" &
+    "    6  Return              r0\n"
+  callG123 = "\n" &
+    "=== <program>  code_len=8 regs=6 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadInt             r2   = 1\n" &
+    "    2  LoadInt             r3   = 2\n" &
+    "    3  LoadInt             r4   = 3\n" &
+    "    4  InvokeGlobal        r1   <- g108(base=r1 argc=3)  [carrier@5] ; g\n" &
+    "    6  Mov                 r0   <- r1\n" &
+    "    7  Return              r0\n"
+  methOm = "\n" &
+    "=== <program>  code_len=6 regs=4 fixed=1 params=0 consts=0 ics=1 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadGlobal          r2   g108  ; o\n" &
+    "    2  LoadProp            r1   <- r2.m  ic#0\n" &
+    "    3  MethodInvoke        r1   <- base=r1 recv=r2 argc=0\n" &
+    "    4  Mov                 r0   <- r1\n" &
+    "    5  Return              r0\n"
+  newF = "\n" &
+    "=== <program>  code_len=6 regs=4 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadGlobal          r2   g108  ; F\n" &
+    "    2  Mov                 r1   <- r2\n" &
+    "    3  NewInvoke           r1   <- base=r1 argc=0\n" &
+    "    4  Mov                 r0   <- r1\n" &
+    "    5  Return              r0\n"
+  newFa = "\n" &
+    "=== <program>  code_len=8 regs=5 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadGlobal          r3   g108  ; F\n" &
+    "    2  Mov                 r1   <- r3\n" &
+    "    3  LoadGlobal          r3   g109  ; a\n" &
+    "    4  Mov                 r2   <- r3\n" &
+    "    5  NewInvoke           r1   <- base=r1 argc=1\n" &
+    "    6  Mov                 r0   <- r1\n" &
+    "    7  Return              r0\n"
+  chainFab = "\n" &
+    "=== <program>  code_len=8 regs=6 fixed=1 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadGlobal          r3   g108  ; f\n" &
+    "    2  LoadGlobal          r4   g109  ; a\n" &
+    "    3  Invoke              r1   <- base=r3 argc=1\n" &
+    "    4  LoadGlobal          r2   g110  ; b\n" &
+    "    5  Invoke              r1   <- base=r1 argc=1\n" &
+    "    6  Mov                 r0   <- r1\n" &
+    "    7  Return              r0\n"
+
+suite "slice 5b calls byte-identity":
+  test "f() -> InvokeGlobal fusion (no args = pure)":
+    check disasmToString("f();") == callF
+  test "f(a, b) -> plain Invoke (global args impure = no fuse)":
+    check disasmToString("f(a, b);") == callFab
+  test "g(1, 2, 3) -> InvokeGlobal fusion (literal args pure)":
+    check disasmToString("g(1, 2, 3);") == callG123
+  test "o.m() -> MethodInvoke, recv below base":
+    check disasmToString("o.m();") == methOm
+  test "new F() -> Mov base<-callee then NewInvoke":
+    check disasmToString("new F();") == newF
+  test "new F(a) -> args Mov into window":
+    check disasmToString("new F(a);") == newFa
+  test "f(a)(b) -> chained; inner result is outer callee":
+    check disasmToString("f(a)(b);") == chainFab
+
+suite "slice 5b call structure sanity":
+  test "o.m(a, b) -> MethodInvoke argc=2, 1 ic":
+    let txt = disasmToString("o.m(a, b);")
+    check "MethodInvoke        r1   <- base=r1 recv=r2 argc=2" in txt
+    check "ics=1" in txt
+  test "a.b.c() -> two ic slots, method chain":
+    let txt = disasmToString("a.b.c();")
+    check "ics=2" in txt
+    check "LoadProp            r2   <- r3.b  ic#0" in txt
+    check "LoadProp            r1   <- r2.c  ic#1" in txt
+    check "MethodInvoke        r1   <- base=r1 recv=r2 argc=0" in txt
+  test "o[k]() -> computed method via LoadElem, no ic":
+    let txt = disasmToString("o[k]();")
+    check "ics=0" in txt
+    check "LoadElem" in txt
+    check "MethodInvoke        r1   <- base=r1 recv=r2 argc=0" in txt
+  test "f(g(x)) -> nested call result targets arg slot (no post-Mov)":
+    let txt = disasmToString("f(g(x));")
+    check "Invoke              r2   <- base=r3 argc=1" in txt
+    check "Invoke              r1   <- base=r1 argc=1" in txt
+  test "h(x + 1) -> AddImm arg then Invoke (impure arg = no fuse)":
+    let txt = disasmToString("h(x + 1);")
+    check "AddImm              r2   <- r3, imm=1" in txt
+    check "Invoke              r1   <- base=r1 argc=1" in txt
+  test "f(a, b, c, d) -> 4 args, plain Invoke":
+    check "Invoke              r1   <- base=r1 argc=4" in disasmToString("f(a, b, c, d);")
+  test "new F(a, b) -> NewInvoke argc=2":
+    check "NewInvoke           r1   <- base=r1 argc=2" in disasmToString("new F(a, b);")
+
+suite "slice 5b deferred forms bail (nim_missing, not text_diff)":
+  test "spread call f(...x) -> compile error":
+    expect ValueError:
+      discard disasmToString("f(...x);")
+  test "spread method o.m(...x) -> compile error":
+    expect ValueError:
+      discard disasmToString("o.m(...x);")
+  test "spread new new F(...x) -> compile error":
+    expect ValueError:
+      discard disasmToString("new F(...x);")
+  test "optional call f?.() -> compile error":
+    expect ValueError:
+      discard disasmToString("f?.();")
+  test "optional-member call a?.b() -> compile error":
+    expect ValueError:
+      discard disasmToString("a?.b();")
+  test "Math.sqrt(x) intrinsic -> compile error (deferred fusion)":
+    expect ValueError:
+      discard disasmToString("Math.sqrt(x);")
+  test "Math.floor(x) intrinsic -> compile error (deferred fusion)":
+    expect ValueError:
+      discard disasmToString("Math.floor(x);")

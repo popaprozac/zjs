@@ -698,6 +698,10 @@ proc compileArrayLiteral(c: var Compiler, node: AstNode): uint8
 # maybeInferAnonName is defined later, so forward-declare it.
 proc maybeInferAnonName(c: var Compiler, initExpr: AstNode, valReg: uint8,
                         targetName: string)
+# Function / method / new calls (slice 5b). compileCall reads the outer
+# preferred-dst as its ret_hint (mirrors compiler.zc compile_call).
+proc compileCall(c: var Compiler, node: AstNode): uint8
+proc compileNew(c: var Compiler, node: AstNode): uint8
 
 # --- Expressions ----------------------------------------------------
 
@@ -994,6 +998,10 @@ proc compileExpr(c: var Compiler, node: AstNode): uint8 =
     return compileObjectLiteral(c, node)
   of Array:
     return compileArrayLiteral(c, node)
+  of Call:
+    return compileCall(c, node)
+  of New:
+    return compileNew(c, node)
   else:
     # Not yet supported.
     c.hadError = true
@@ -1113,6 +1121,262 @@ proc compileArrayLiteral(c: var Compiler, node: AstNode): uint8 =
   emit(c, instABC(NewArray, base, base, uint8(count)))
   c.nextReg = base + 1
   if c.nextReg > c.maxReg: c.maxReg = c.nextReg
+  return base
+
+# --- Function / method / new calls (slice 5b) -----------------------
+#
+# The call-frame register discipline is the crux (compiler.zc
+# compile_call_inner). A call reserves a CONTIGUOUS block starting at
+# base = next_reg:
+#   * plain call  -> regs[base]=callee, regs[base+1..]=args
+#   * method call -> regs[base]=method, regs[base+1]=recv, regs[base+2..]=args
+#   * new         -> regs[base]=callee, regs[base+1..]=args
+# The result lands in `base` (or a ret_hint below base, #395), then temps
+# free back to base+1 (or base when the result went to ret_hint).
+#
+# ret_hint == the outer preferred_dst: Invoke/MethodInvoke/NewInvoke carry
+# an explicit ret_dst operand (inst.a), so `f(g())` and `x = f()` write the
+# result straight into the target with NO post-call Mov. New itself never
+# threads ret_hint (compiler.zc's New arm always returns base + a post-Mov).
+
+# fusion_arg_is_pure: is this arg safe to evaluate AFTER the fused
+# InvokeGlobal callee-slot is chosen? Whitelist: literals / this / a
+# LOCAL ident (env slots are data props, no user code) / Paren / sign-not
+# Unary / arithmetic-comparison-bitwise Binary over pure operands. A
+# GLOBAL ident is IMPURE (its ObjectRecord fallback can invoke a
+# globalThis accessor) -- so `f(a,b)` with global args does NOT fuse.
+proc fusionArgIsPure(c: Compiler, node: AstNode): bool =
+  if node == nil: return false
+  case node.kind
+  of NumberExpr, StringExpr, BoolExpr, NullExpr, UndefinedExpr, ThisExpr:
+    return true
+  of IdentExpr:
+    let name = c.slice(node.start, node.`end`)
+    return findLocalIndex(c, name) >= 0
+  of Paren:
+    return fusionArgIsPure(c, node.inner)
+  of Unary:
+    case node.unOp
+    of Minus, Plus, Bang, Tilde:
+      return fusionArgIsPure(c, node.operand)
+    else:
+      return false
+  of Binary:
+    if binaryOp(node.binOp) == Halt: return false
+    return fusionArgIsPure(c, node.lhs) and fusionArgIsPure(c, node.rhs)
+  else:
+    return false
+
+proc callArgsFusionPure(c: Compiler, node: AstNode): bool =
+  for a in node.args:
+    if not fusionArgIsPure(c, a): return false
+  return true
+
+proc callHasSpreadArg(node: AstNode): bool =
+  for a in node.args:
+    if a != nil and a.kind == Spread: return true
+  return false
+
+proc compileCallInner(c: var Compiler, node: AstNode, retHint: int): uint8 =
+  let callee = node.callee
+  let isMethod = callee != nil and (callee.kind == Member or callee.kind == Computed)
+  let argCount = node.args.len
+
+  # DEFER: spread args, super callee, optional chains -> bail (nim_missing).
+  # Optional callee shapes are distinct node kinds (OptionalMember/
+  # OptionalComputed) that never reach the Member/Computed compile arms.
+  if callHasSpreadArg(node):
+    c.hadError = true; return 0
+  if callee != nil and callee.kind == SuperExpr:
+    c.hadError = true; return 0
+  if callee != nil and callee.kind in {OptionalMember, OptionalComputed, OptionalCall}:
+    c.hadError = true; return 0
+  # Math.sqrt/abs/floor/ceil intrinsic fusion is DEFERRED -- the plain
+  # method-call path below still produces correct bytecode for those
+  # (LoadGlobal+LoadProp+MethodInvoke), but the oracle would emit the
+  # specialized op. So bail on the exact intrinsic shape to stay honest.
+  if isMethod and callee.kind == Member and argCount == 1 and
+     callee.recv != nil and callee.recv.kind == IdentExpr and
+     c.slice(callee.recv.start, callee.recv.`end`) == "Math" and
+     findLocalIndex(c, "Math") < 0:
+    let mname = c.slice(callee.propStart, callee.propStart + callee.propLength)
+    if mname in ["sqrt", "abs", "floor", "ceil"]:
+      c.hadError = true; return 0
+
+  if isMethod:
+    # Method call: regs[base]=method, regs[base+1]=recv, regs[base+2..]=args.
+    let slotsNeeded = 2 + argCount
+    let base = c.nextReg
+    for _ in 0 ..< slotsNeeded:
+      discard allocReg(c)
+
+    # Receiver into regs[base+1]. A bare-simple receiver places directly
+    # (one Mov, no defensive temp); otherwise preferred_dst so the recv
+    # expression's terminal op writes base+1 directly.
+    if not tryPlaceSimple(c, callee.recv, base + 1):
+      c.preferredDst = int(base + 1)
+      let recvR = compileExpr(c, callee.recv)
+      c.preferredDst = -1
+      if recvR != base + 1:
+        emit(c, instAB(Mov, base + 1, recvR))
+        releaseReg(c, recvR)
+
+    # Load the method into regs[base].
+    if callee.kind == Member:
+      let name = c.slice(callee.propStart, callee.propStart + callee.propLength)
+      let ic = allocIcSlot(c, name)
+      if ic > 255:
+        c.hadError = true; return base
+      emit(c, instABC(LoadProp, base, base + 1, uint8(ic)))
+    else:
+      # Computed: LoadElem regs[base], recv, key.
+      let keyR = compileExpr(c, callee.index)
+      emit(c, instABC(LoadElem, base, base + 1, keyR))
+      releaseReg(c, keyR)
+
+    # Args into regs[base+2..].
+    var j = 0
+    while j < argCount:
+      let targetSlot = base + 2'u8 + uint8(j)
+      if tryPlaceSimple(c, node.args[j], targetSlot):
+        j += 1
+        continue
+      c.preferredDst = int(targetSlot)
+      let argR = compileExpr(c, node.args[j])
+      c.preferredDst = -1
+      if argR != targetSlot:
+        emit(c, instAB(Mov, targetSlot, argR))
+        releaseReg(c, argR)
+      j += 1
+
+    # #395 result-targeting: a hinted result register becomes the ret_dst
+    # operand (inst.a); the whole window frees. ret_hint is always below
+    # base (allocated before the window).
+    if retHint >= 0:
+      emit(c, instABC(MethodInvoke, uint8(retHint), base, uint8(argCount)))
+      c.nextReg = base
+      if c.nextReg > c.maxReg: c.maxReg = c.nextReg
+      return uint8(retHint)
+    emit(c, instABC(MethodInvoke, base, base, uint8(argCount)))
+    c.nextReg = base + 1
+    if c.nextReg > c.maxReg: c.maxReg = c.nextReg
+    return base
+
+  # Plain call: regs[base] = callee, regs[base+1..] = args.
+  let base = c.nextReg
+  for _ in 0 .. argCount:            # base .. base+argCount inclusive
+    discard allocReg(c)
+
+  # Bare-local-ident callee places directly; otherwise preferred_dst=base
+  # so a LoadGlobal/LoadProp/etc callee writes directly into the slot.
+  let calleePlaced = tryPlaceSimple(c, node.callee, base)
+  var r = base
+  if not calleePlaced:
+    c.preferredDst = int(base)
+    r = compileExpr(c, node.callee)
+    c.preferredDst = -1
+
+  # #394 InvokeGlobal fusion. If the callee compiled to a single terminal
+  # `LoadGlobal base, slot` AND every arg is pure, pop that LoadGlobal
+  # (nothing references its slot yet) and remember the slot; the fused
+  # 2-slot InvokeGlobal is emitted after the args. Tail-call rewriting is
+  # deferred, so there's no tail_call_node guard (statement calls are not
+  # in tail position; ReturnStmt call tails aren't in the slice-5b corpus).
+  var fuseSlot = -1
+  if r == base and c.code.len > 0 and
+     c.code[c.code.len - 1].op == LoadGlobal and
+     c.code[c.code.len - 1].a == base and
+     callArgsFusionPure(c, node):
+    fuseSlot = int(instBcU16(c.code[c.code.len - 1]))
+    c.code.setLen(c.code.len - 1)
+
+  if r != base:
+    emit(c, instAB(Mov, base, r))
+    releaseReg(c, r)
+
+  var j = 0
+  while j < argCount:
+    let targetSlot = base + 1'u8 + uint8(j)
+    if tryPlaceSimple(c, node.args[j], targetSlot):
+      j += 1
+      continue
+    c.preferredDst = int(targetSlot)
+    let argR = compileExpr(c, node.args[j])
+    c.preferredDst = -1
+    if argR != targetSlot:
+      emit(c, instAB(Mov, targetSlot, argR))
+      releaseReg(c, argR)
+    j += 1
+
+  # #395 result-targeting -- see the MethodInvoke twin above.
+  let ret = if retHint >= 0: uint8(retHint) else: base
+  if fuseSlot >= 0:
+    emit(c, instABC(InvokeGlobal, ret, base, uint8(argCount)))
+    # Carrier: u16 global slot in a Jmp placeholder (the JmpIf*
+    # convention). Never dispatched -- the handler skips past it.
+    emit(c, instU16(Jmp, uint16(fuseSlot)))
+  else:
+    emit(c, instABC(Invoke, ret, base, uint8(argCount)))
+
+  if retHint >= 0:
+    c.nextReg = base
+    if c.nextReg > c.maxReg: c.maxReg = c.nextReg
+    return ret
+  c.nextReg = base + 1
+  if c.nextReg > c.maxReg: c.maxReg = c.nextReg
+  return base
+
+proc compileCall(c: var Compiler, node: AstNode): uint8 =
+  # Outer's preferred_dst refers to the call's RESULT register -- not an
+  # internal slot. Save + clear at the boundary so inner compile_expr calls
+  # don't see a stale hint. #395: the hint threads through as ret_hint --
+  # Invoke/MethodInvoke carry an explicit ret_dst operand, so the result
+  # writes straight into the target with no post-call Mov. When inner takes
+  # the hint (returns it), leave it consumed; otherwise restore.
+  let outerPd = c.preferredDst
+  c.preferredDst = -1
+  let r = compileCallInner(c, node, outerPd)
+  if outerPd >= 0 and r == uint8(outerPd):
+    c.preferredDst = -1
+  else:
+    c.preferredDst = outerPd
+  return r
+
+proc compileNew(c: var Compiler, node: AstNode): uint8 =
+  # `new F(args)`: reserve a contiguous block (callee + args), compile the
+  # callee into base (a temp then Mov base<-callee -- New does NOT use
+  # preferred_dst for the callee), args into base+1.., then NewInvoke.
+  # New never threads ret_hint: it clears preferred_dst across the body and
+  # always returns base (compiler.zc's New arm). DEFER spread new args.
+  if callHasSpreadArg(node):
+    c.hadError = true; return 0
+  let newOuterPd = c.preferredDst
+  c.preferredDst = -1
+
+  let argCount = node.args.len
+  let base = c.nextReg
+  for _ in 0 .. argCount:            # base .. base+argCount inclusive
+    discard allocReg(c)
+
+  # Callee -- may be a Member (`new x.y()`); compileExpr handles both.
+  let r = compileExpr(c, node.callee)
+  if r != base:
+    emit(c, instAB(Mov, base, r))
+    releaseReg(c, r)
+
+  var j = 0
+  while j < argCount:
+    let argR = compileExpr(c, node.args[j])
+    let target = base + 1'u8 + uint8(j)
+    if argR != target:
+      emit(c, instAB(Mov, target, argR))
+      releaseReg(c, argR)
+    j += 1
+
+  emit(c, instABC(NewInvoke, base, base, uint8(argCount)))
+  c.nextReg = base + 1
+  if c.nextReg > c.maxReg: c.maxReg = c.nextReg
+  c.preferredDst = newOuterPd
   return base
 
 # --- Fused compare-and-branch (mirrors try_emit_cmp_branch_if_false) -
