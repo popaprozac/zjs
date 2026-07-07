@@ -1778,3 +1778,192 @@ suite "slice 6a: switch structural invariants":
     let txt = disasmToString("switch(x){ case 1: a; }")
     check "    0  LoadUndefined       a=0" in txt
     check "    1  LoadUndefined       a=0" in txt
+
+# --- Slice 6b: try / catch / finally --------------------------------
+
+const
+  tcTryCatch = "\n" &
+    "=== <program>  code_len=11 regs=5 fixed=3 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  EnterTry            a=2   b=4   c=0   | u16=4 i16=4\n" &
+    "    3  LoadGlobal          r3   g108  ; a\n" &
+    "    4  Mov                 r1   <- r3\n" &
+    "    5  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    6  Jmp                 -> 10\n" &
+    "    7  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    8  LoadGlobal          r3   g109  ; b\n" &
+    "    9  Mov                 r1   <- r3\n" &
+    "   10  Return              r1\n"
+
+  tcTryFinally = "\n" &
+    "=== <program>  code_len=17 regs=6 fixed=4 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadFalse           a=2   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  EnterTry            a=1   b=4   c=0   | u16=4 i16=4\n" &
+    "    4  LoadGlobal          r3   g108  ; a\n" &
+    "    5  Mov                 r0   <- r3\n" &
+    "    6  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    7  Jmp                 -> 9\n" &
+    "    8  LoadTrue            a=2   b=0   c=0   | u16=0 i16=0\n" &
+    "    9  Mov                 r3   <- r0\n" &
+    "   10  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "   11  LoadGlobal          r4   g109  ; b\n" &
+    "   12  Mov                 r0   <- r4\n" &
+    "   13  Mov                 r0   <- r3\n" &
+    "   14  JmpIfFalse          r2   -> 16\n" &
+    "   15  Throw               a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "   16  Return              r0\n"
+
+  tcTryCatchFinally = "\n" &
+    "=== <program>  code_len=23 regs=8 fixed=6 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  LoadFalse           a=4   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  EnterTry            a=3   b=10  c=0   | u16=10 i16=10\n" &
+    "    4  EnterTry            a=2   b=4   c=0   | u16=4 i16=4\n" &
+    "    5  LoadGlobal          r5   g108  ; a\n" &
+    "    6  Mov                 r1   <- r5\n" &
+    "    7  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    8  Jmp                 -> 12\n" &
+    "    9  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "   10  LoadGlobal          r5   g109  ; b\n" &
+    "   11  Mov                 r1   <- r5\n" &
+    "   12  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "   13  Jmp                 -> 15\n" &
+    "   14  LoadTrue            a=4   b=0   c=0   | u16=0 i16=0\n" &
+    "   15  Mov                 r5   <- r1\n" &
+    "   16  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "   17  LoadGlobal          r6   g110  ; c\n" &
+    "   18  Mov                 r1   <- r6\n" &
+    "   19  Mov                 r1   <- r5\n" &
+    "   20  JmpIfFalse          r4   -> 22\n" &
+    "   21  Throw               a=3   b=0   c=0   | u16=0 i16=0\n" &
+    "   22  Return              r1\n"
+
+  tcOptionalCatch = "\n" &
+    "=== <program>  code_len=11 regs=4 fixed=2 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  EnterTry            a=1   b=4   c=0   | u16=4 i16=4\n" &
+    "    3  LoadGlobal          r2   g108  ; a\n" &
+    "    4  Mov                 r0   <- r2\n" &
+    "    5  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    6  Jmp                 -> 10\n" &
+    "    7  LoadUndefined       a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    8  LoadGlobal          r2   g109  ; b\n" &
+    "    9  Mov                 r0   <- r2\n" &
+    "   10  Return              r0\n"
+
+  tcTryThrow = "\n" &
+    "=== <program>  code_len=11 regs=5 fixed=3 params=0 consts=0 ics=0 ===\n" &
+    "    0  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    1  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    2  EnterTry            a=2   b=4   c=0   | u16=4 i16=4\n" &
+    "    3  LoadGlobal          r3   g108  ; a\n" &
+    "    4  Mov                 r1   <- r3\n" &
+    "    5  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    6  Jmp                 -> 10\n" &
+    "    7  LoadUndefined       a=1   b=0   c=0   | u16=0 i16=0\n" &
+    "    8  Mov                 r3   <- r2\n" &
+    "    9  Throw               a=3   b=0   c=0   | u16=0 i16=0\n" &
+    "   10  Return              r1\n"
+
+  tcFnTryReturn = "\n" &
+    "=== <program>/const#0  code_len=8 regs=4 fixed=2 params=0 consts=0 ics=0 ===\n" &
+    "    0  EnterTry            a=1   b=5   c=0   | u16=5 i16=5\n" &
+    "    1  LoadGlobal          r2   g109  ; a\n" &
+    "    2  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    3  Return              r2\n" &
+    "    4  LeaveTry            a=0   b=0   c=0   | u16=0 i16=0\n" &
+    "    5  Jmp                 -> 8\n" &
+    "    6  LoadGlobal          r2   g110  ; b\n" &
+    "    7  Return              r2\n"
+
+suite "slice 6b: try/catch/finally byte-identity":
+  test "try { a; } catch(e) { b; }":
+    check disasmToString("try { a; } catch(e) { b; }") == tcTryCatch
+
+  test "try { a; } finally { b; } (pending/flag/rethrow scaffold)":
+    check disasmToString("try { a; } finally { b; }") == tcTryFinally
+
+  test "try { a; } catch(e) { b; } finally { c; } (outer+inner EnterTry)":
+    check disasmToString("try { a; } catch(e) { b; } finally { c; }") == tcTryCatchFinally
+
+  test "try { a; } catch { b; } (optional catch, no param)":
+    check disasmToString("try { a; } catch { b; }") == tcOptionalCatch
+
+  test "try { a; } catch(e) { throw e; } (rethrow)":
+    check disasmToString("try { a; } catch(e) { throw e; }") == tcTryThrow
+
+  test "function h(){ try { return a; } catch(e) { return b; } } (return unwinds catch region)":
+    # The <const#0> body: `return a` inside the try emits LeaveTry (pop the
+    # catch region) BEFORE Return; `return b` in the catch (region already
+    # popped) emits a bare Return.
+    check tcFnTryReturn in disasmToString(
+      "function h(){ try { return a; } catch(e) { return b; } }")
+
+suite "slice 6b: try structural invariants":
+  test "catch param reserves a fixed local slot (fixed bump)":
+    # `e` is collected as a local (r0) then rebound at catch_reg (r2) →
+    # fixed=3. The optional-catch form has no param → fixed=2.
+    check "fixed=3" in disasmToString("try { a; } catch(e) { b; }")
+    check "fixed=2" in disasmToString("try { a; } catch { b; }")
+
+  test "empty catch body resets completion (double LoadUndefined at catch entry)":
+    let txt = disasmToString("try { a; } catch(e) {}")
+    check "EnterTry" in txt
+    check "LeaveTry" in txt
+
+  test "catch param is readable in the catch body (resolves to catch_reg)":
+    # `g(e)` reads e from the catch register (r2) via a Mov into the arg slot.
+    let txt = disasmToString("try { f(); } catch(e) { g(e); }")
+    check "Mov                 r4   <- r2" in txt
+
+  test "nested try/catch: inner + outer handlers, distinct catch regs":
+    let txt = disasmToString("try { try { a; } catch(e) { b; } } catch(f) { c; }")
+    check "EnterTry            a=3" in txt   # outer catch_reg
+    check "EnterTry            a=4" in txt   # inner catch_reg
+
+  test "top-level try pre-inits the completion reg (double LoadUndefined)":
+    let txt = disasmToString("try { a; } catch(e) { b; }")
+    check "    0  LoadUndefined" in txt
+    check "    1  LoadUndefined" in txt
+
+  test "return <call> inside try is NOT tail-called (region suppresses TCO)":
+    # `return f()` inside a try region must stay an Invoke (not TailInvoke) —
+    # the catch handler must run first, so it's not in tail position.
+    let txt = disasmToString("function h(){ try { return f(); } catch(e) { b; } }")
+    check "TailInvoke" notin txt
+    check "TailMethodInvoke" notin txt
+
+  test "return <call> AFTER the try (region closed) still tail-calls":
+    let txt = disasmToString("function h(){ try { a; } catch(e) { b; } return f(); }")
+    check "TailInvoke" in txt
+
+suite "slice 6b: deferred shapes -> compile error (bail)":
+  test "destructuring catch param catch({e}) -> compile error":
+    expect ValueError:
+      discard disasmToString("try { a; } catch({e}) { b; }")
+
+  test "destructuring catch param catch([e]) -> compile error":
+    expect ValueError:
+      discard disasmToString("try { a; } catch([e]) { b; }")
+
+  test "return inside try/finally -> compile error (abrupt-in-finally deferred)":
+    expect ValueError:
+      discard disasmToString("function h(){ try { return a; } finally { b; } }")
+
+  test "break inside try/finally -> compile error (abrupt-in-finally deferred)":
+    expect ValueError:
+      discard disasmToString("while(1){ try { break; } finally { b; } }")
+
+  test "continue inside try/finally -> compile error (abrupt-in-finally deferred)":
+    expect ValueError:
+      discard disasmToString("while(1){ try { continue; } finally { b; } }")
+
+  test "catch param captured by a closure -> compile error (env-bind deferred)":
+    expect ValueError:
+      discard disasmToString(
+        "var p; try { a; } catch(e) { p = function(){ return e; }; }")

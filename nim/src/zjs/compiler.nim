@@ -50,6 +50,20 @@ type
                                  ## local -> it lives as a property on the
                                  ## env object, NOT in its register (slice 4b)
 
+  UnwindRegion* = object
+    ## One protected region open at the current compile point (mirrors
+    ## `struct UnwindRegion` in src/compiler.zc, #402b). Slice 6b needs
+    ## only two kinds:
+    ##   * kind 0 = catch region — a plain try body, or the inner region
+    ##     of try-catch-finally; unwinding it emits a runtime `LeaveTry`.
+    ##   * kind 1 = finally-outer region — the finally body is inlined on
+    ##     the way out (after the handler pop). `finallyBody` is the AST.
+    ## `hasHandler` = a runtime EnterTry was emitted for it (always true
+    ## for the two kinds here). The iterator-wrap kind 2 (for-of / pattern
+    ## IterClose) is a later slice and not modeled.
+    kind*:        uint8
+    hasHandler*:  bool
+    finallyBody*: AstNode
   LoopFrame* = object
     ## One iteration-loop context (mirrors `struct LoopFrame` in
     ## src/compiler.zc). Pushed on loop entry, popped on exit. Slice 3c
@@ -73,6 +87,11 @@ type
     ## switch. Default true; set false when pushing the switch frame (slice
     ## 6a). Mirrors compiler.zc LoopFrame.is_iter (#261).
     isIter*:          bool
+    ## #402b: c.regionCount when this loop was pushed. A break/continue
+    ## targeting this frame unwinds every region opened INSIDE the loop
+    ## (index >= this) via emitUnwindRegions — LeaveTry for catch regions,
+    ## BAIL for finally regions. Snapshotted in loopPush (slice 6b).
+    regionDepthAtEntry*: int
 
   Compiler* = object
     src*: string                 ## source text (for identifier slices)
@@ -178,6 +197,20 @@ type
     ## loop. Slice 3c ports the unlabeled-loop subset (labeled break /
     ## continue, switch frames, and try-region unwinding are later).
     loopStack*: seq[LoopFrame]
+    # --- Unwind-region stack for try/catch/finally (compiler.zc #402b) --
+    ## Innermost-LAST record of every protected region open at the current
+    ## compile point. `regionCount` is the logical top (may be transiently
+    ## lowered while a finally body compiles, so a return/break inside it
+    ## can't re-inline itself — the compiler.zc truncation trick). It also
+    ## doubles as the #326 tail-call suppressor: `return <call>` while
+    ## `regionCount > 0` is NOT in tail position (a live handler must run
+    ## first), so the InvokeGlobal fusion + TCO rewrite are suppressed.
+    regions*: seq[UnwindRegion]
+    regionCount*: int
+    # NOTE: an abrupt completion (return/break/continue) crossing a
+    # try→finally would need emit_unwind_regions to inline the finally body
+    # (not ported this slice) — emitUnwindRegions sets hadError on a kind-1
+    # region, surfacing the file as nim_missing instead of wrong bytecode.
     # --- Inline-cache name table (compiler.zc c.ics / c.ic_count) ------
     ## Per-function IC slots, keyed by property NAME. allocIcSlot dedups
     ## by decoded name: a repeated `.length`/`.prototype` access reuses
@@ -277,6 +310,7 @@ proc loopPush(c: var Compiler) =
     continueTarget: 0, haveContinue: false,
     breakPatches: @[], continuePatches: @[],
     isIter: true,          # real iteration loop; switch frames flip to false
+    regionDepthAtEntry: c.regionCount,   # #402b: unwind regions opened inside
   ))
 
 proc loopPop(c: var Compiler) =
@@ -302,6 +336,63 @@ proc loopAddBreak(c: var Compiler, jmpIdx: int) =
 proc loopAddContinuePatch(c: var Compiler, jmpIdx: int) =
   if c.loopStack.len == 0: return
   c.loopStack[c.loopStack.len - 1].continuePatches.add(jmpIdx)
+
+# --- Unwind-region stack (compiler.zc region_push / region_pop / ...) --
+#
+# `regionCount` is the logical top; the seq may hold stale slots below the
+# cursor after a pop (compiler.zc keeps a flat array + count too). Push
+# writes at index `regionCount` (growing the seq as needed) then bumps.
+
+proc regionPush(c: var Compiler, kind: uint8, hasHandler: bool, body: AstNode) =
+  let entry = UnwindRegion(kind: kind, hasHandler: hasHandler, finallyBody: body)
+  if c.regionCount < c.regions.len:
+    c.regions[c.regionCount] = entry
+  else:
+    c.regions.add(entry)
+  c.regionCount += 1
+
+proc regionPushCatch(c: var Compiler) =
+  regionPush(c, 0'u8, true, nil)
+
+proc regionPushFinally(c: var Compiler, body: AstNode) =
+  regionPush(c, 1'u8, true, body)
+
+proc regionPop(c: var Compiler) =
+  if c.regionCount > 0: c.regionCount -= 1
+
+proc emitUnwindRegions(c: var Compiler, targetDepth: int) =
+  ## Emit the runtime exit sequence for leaving every region above
+  ## `targetDepth`, innermost-first (mirrors compiler.zc
+  ## emit_unwind_regions). Slice 6b ports ONLY the catch-region case: pop
+  ## its handler with `LeaveTry`. A finally-outer region (kind 1) would
+  ## need the finally body inlined here (with the region_count truncation
+  ## trick) — NOT ported, so we BAIL (hadError) rather than emit divergent
+  ## bytecode for an abrupt completion crossing a try→finally. The
+  ## iterator-wrap kind 2 isn't modeled at all in this slice.
+  var i = c.regionCount - 1
+  while i >= targetDepth:
+    let kind = c.regions[i].kind
+    if kind == 1'u8:
+      # Abrupt completion (return/break/continue) crossing a finally —
+      # emit_unwind_regions must inline the finally body here. Deferred.
+      c.hadError = true
+      return
+    if c.regions[i].hasHandler:
+      emit(c, instA(LeaveTry, 0))
+    dec i
+
+proc emitReturnSequence(c: var Compiler, r: uint8) =
+  ## The function-exit tail (compiler.zc emit_return_sequence): unwind
+  ## every open region in nesting order, then `Return r`. `r` is protected
+  ## across the unwind via fixedRegs (finally-body inlining could clobber
+  ## temps — not reached in this slice since kind-1 bails). When
+  ## regionCount == 0 this is just a bare `Return r` (the pre-6b behavior).
+  if c.regionCount > 0:
+    let savedFixed = c.fixedRegs
+    if r + 1 > c.fixedRegs: c.fixedRegs = r + 1
+    emitUnwindRegions(c, 0)
+    c.fixedRegs = savedFixed
+  emit(c, instA(Return, r))
 
 # --- Global interning (mirrors ctx_intern_global at USER_GLOBAL_BASE) --
 
@@ -700,6 +791,25 @@ proc collectLocals(c: var Compiler, node: AstNode) =
       if cnode != nil and cnode.kind == SwitchCase:
         for s in cnode.caseBody:
           collectLocals(c, s)
+  of TryStmt:
+    # Try/catch: a simple-identifier catch parameter binds as a local in
+    # the current scope (mirrors compiler.zc collect_locals' TryStmt arm,
+    # gated on c.is_function — true at both program-top-script and function
+    # scope). This reserves the register that keeps numbering stable; the
+    # ACTUAL catch-body binding is re-allocated in the TryStmt compile
+    # handler (added_catch_local), so the collected slot is otherwise
+    # unused (the same reserve-then-rebind pattern as captured locals).
+    # A destructuring catch param (catchPattern) needs collect_pattern_locals
+    # (not ported) — the compile handler BAILs on that shape, so leaving it
+    # uncollected here is safe. Then descend all three blocks so nested
+    # var/let/const get their registers.
+    if c.isFunction and node.catchParamLen > 0:
+      let nm = c.slice(node.catchParamStart, node.catchParamStart + node.catchParamLen)
+      if findLocalIndex(c, nm) < 0:
+        discard allocAndAddLocalScoped(c, node.catchParamStart, node.catchParamLen, c.curScopeId)
+    collectLocals(c, node.tryBlock)
+    collectLocals(c, node.catchBlock)
+    collectLocals(c, node.finallyBlock)
   of Program:
     for s in node.stmts:
       collectLocals(c, s)
@@ -741,6 +851,20 @@ proc subtreeMentionsName(c: Compiler, n: AstNode, name: string): bool =
     return c.identName(n) == name
   for ch in childNodes(n):
     if subtreeMentionsName(c, ch, name): return true
+  return false
+
+proc catchBodyFnMentions(c: Compiler, n: AstNode, name: string): bool =
+  ## Does any NESTED function (FunctionDecl/Expr/Arrow) inside `n` reference
+  ## `name`? Used by the TryStmt handler to detect a catch parameter
+  ## captured by a closure in the catch body — which needs env-object
+  ## binding (out of the slice-6b corpus) so we BAIL. Only descends into
+  ## function subtrees; a bare same-name mention outside a closure is fine
+  ## (the register bind handles it).
+  if n == nil: return false
+  if n.kind in {FunctionDecl, FunctionExpr, ArrowFunc}:
+    return subtreeMentionsName(c, n, name)
+  for ch in childNodes(n):
+    if catchBodyFnMentions(c, ch, name): return true
   return false
 
 proc bodyReferencesAnyLocal(c: Compiler, body: AstNode, names: seq[string]): bool =
@@ -2662,6 +2786,12 @@ proc compileStmt(c: var Compiler, node: AstNode) =
     # `break` with no enclosing loop is a SyntaxError -> hadError.
     if c.loopStack.len == 0:
       c.hadError = true; return
+    # #402b: unwind every region opened INSIDE this loop before jumping —
+    # LeaveTry per catch region; a crossed finally region BAILs (its
+    # inline-finally-body path is not ported this slice). The innermost
+    # loop is the target (labeled break is out of corpus).
+    emitUnwindRegions(c, c.loopStack[c.loopStack.len - 1].regionDepthAtEntry)
+    if c.hadError: return
     let jmpIdx = emit(c, instI16(Jmp, 0))
     loopAddBreak(c, jmpIdx)
   of ContinueStmt:
@@ -2675,6 +2805,11 @@ proc compileStmt(c: var Compiler, node: AstNode) =
       dec top
     if top < 0:
       c.hadError = true; return
+    # #402b: unwind regions opened inside the target loop (LeaveTry per
+    # catch region; finally region BAILs). Uses the TARGET frame's entry
+    # depth so a continue past a switch frame still unwinds correctly.
+    emitUnwindRegions(c, c.loopStack[top].regionDepthAtEntry)
+    if c.hadError: return
     if c.loopStack[top].haveContinue:
       emitJumpBack(c, Jmp, c.loopStack[top].continueTarget)
     else:
@@ -2732,6 +2867,201 @@ proc compileStmt(c: var Compiler, node: AstNode) =
       emit(c, instAU16(DefineGlobal, r, uint16(slot)))
     releaseReg(c, r)
     resetTemps(c)
+  of ThrowStmt:
+    # `throw expr` -> compile the operand, `Throw r`, release. Mirrors
+    # compiler.zc's ThrowStmt arm (~8277).
+    let r = compileExpr(c, node.throwArg)
+    emit(c, instA(Throw, r))
+    releaseReg(c, r)
+    resetTemps(c)
+  of TryStmt:
+    # try/catch/finally (slice 6b). Mirrors compiler.zc's TryStmt arm
+    # (~8285). Two shapes: no-finally (a single EnterTry whose handler is
+    # the catch body) and finally (an OUTER EnterTry wrapping the try[+catch],
+    # whose handler stashes the thrown value + a rethrow flag and falls into
+    # the finally body). See the inline comments below.
+    #
+    # ECMA-262 14.15.8 step 6: TryStatement returns UpdateEmpty with
+    # undefined when the try produced an empty completion — mirror the
+    # if/while heads by resetting the top-level completion reg first.
+    if c.atProgramTop and c.lastExprReg >= 0:
+      emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
+
+    let hasCatch = node.catchBlock != nil
+    let hasFinally = node.finallyBlock != nil
+
+    # Destructuring catch param (`catch({e})` / `catch([e])`) -> DEFERRED
+    # (destructure_pattern / collect_pattern_locals not ported). Surfaces
+    # as nim_missing rather than a wrong bind.
+    if hasCatch and node.catchPattern != nil:
+      c.hadError = true
+      return
+
+    # CAPTURED catch param -> DEFERRED. When a nested closure in the catch
+    # body references the catch parameter, the binding must live on an env
+    # object (LoadProp/StoreProp), not a plain register — the captured-local
+    # machinery for a block-scoped catch param is out of the slice-6b
+    # corpus. Scan the whole catch body for a nested-function subtree that
+    # mentions the catch-param name and BAIL rather than emit a register
+    # bind the closure can't see (scope-catch-param-lex-close). Simple-ident
+    # catch only.
+    if hasCatch and node.catchParamLen > 0 and node.catchBlock != nil:
+      let cpName = c.slice(node.catchParamStart, node.catchParamStart + node.catchParamLen)
+      if catchBodyFnMentions(c, node.catchBlock, cpName):
+        c.hadError = true
+        return
+
+    # Catch parameter is scoped to the catch block (§14.15.3). Allocate a
+    # register up front (EnterTry deposits the thrown value there) but only
+    # register it as a name-resolvable local while compiling the catch body
+    # — snapshot/restore locals.len so outer code can't see it. A fresh
+    # register is ALWAYS allocated (never reuse an outer same-name local),
+    # matching compiler.zc so nested try/catch don't alias.
+    var catchReg: uint8 = 0
+    var addedCatchLocal = false
+    let savedLocalCount = c.locals.len
+    if hasCatch and node.catchParamLen > 0:
+      catchReg = allocReg(c)
+      addedCatchLocal = true
+      if catchReg + 1 > c.fixedRegs: c.fixedRegs = catchReg + 1
+    elif hasCatch:
+      # Optional catch binding (`catch { … }`) — still need a sink register
+      # for EnterTry to deposit the thrown value so it doesn't clobber a
+      # live local.
+      catchReg = allocReg(c)
+      if catchReg + 1 > c.fixedRegs: c.fixedRegs = catchReg + 1
+
+    # #401 inc6 — env restore on catch entry. Snapshot env_reg before
+    # EnterTry and restore it at every handler entry (a throw out of a
+    # per-iter env would otherwise leave env_reg stale). Only fires when
+    # this function has its own env (needsEnv) — out of the tested corpus,
+    # but ported for fidelity.
+    var envSaveReg = -1
+    if c.needsEnv:
+      let esr = allocReg(c)
+      if esr + 1 > c.fixedRegs: c.fixedRegs = esr + 1
+      emit(c, instAB(Mov, esr, c.envReg))
+      envSaveReg = int(esr)
+
+    if not hasFinally:
+      # --- try/catch, no finally (compiler.zc ~8343) ------------------
+      let enterIdx = emit(c, instAI16(EnterTry, catchReg, 0))
+      # Catch region open during the try body: a `return f()` inside is
+      # not in tail position, and `return`/`break`/`continue` pop this
+      # handler first (emitReturnSequence / emitUnwindRegions).
+      regionPushCatch(c)
+      compileStmt(c, node.tryBlock)
+      regionPop(c)
+      if c.hadError: return
+      emit(c, instA(LeaveTry, 0))
+      let skipIdx = emit(c, instI16(Jmp, 0))
+      patchJump(c, enterIdx)
+      if envSaveReg >= 0:
+        emit(c, instAB(Mov, c.envReg, uint8(envSaveReg)))
+      # Catch entry: reset the result register so an empty catch body
+      # produces undefined (UpdateEmpty per spec).
+      if c.atProgramTop and c.lastExprReg >= 0:
+        emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
+      # Bind the catch parameter for the catch body only.
+      if addedCatchLocal:
+        addLocalScoped(c, node.catchParamStart, node.catchParamLen, uint32(catchReg), c.curScopeId)
+      compileStmt(c, node.catchBlock)
+      if addedCatchLocal: c.locals.setLen(savedLocalCount)
+      if c.hadError: return
+      patchJump(c, skipIdx)
+      return
+
+    # --- try/finally (± catch) (compiler.zc ~8375) --------------------
+    # Wrap (try [+ catch]) in an OUTER try whose handler stashes the
+    # thrown value + rethrow flag and falls into the finally block. After
+    # finally, if the flag is set, re-throw.
+    let pendingReg = allocReg(c)
+    let flagReg = allocReg(c)
+    if flagReg + 1 > c.fixedRegs: c.fixedRegs = flagReg + 1
+    # Initialize flag = false (covers the no-exception path).
+    emit(c, instA(LoadFalse, flagReg))
+
+    # Outer try: any uncaught throw from the try/catch body lands at
+    # outerHandler with the thrown value in pendingReg.
+    let outerEnter = emit(c, instAI16(EnterTry, pendingReg, 0))
+
+    # The finally-outer region: a return/break/continue inside the try or
+    # catch arms must pop this handler FIRST and inline the finally body —
+    # NOT ported this slice, so emitUnwindRegions BAILs when it crosses a
+    # kind-1 region. Get the normal-completion + throw paths byte-exact;
+    # abrupt-in-finally is deferred.
+    regionPushFinally(c, node.finallyBlock)
+
+    if hasCatch:
+      # Inner try: throws from the try body land in catchReg.
+      let innerEnter = emit(c, instAI16(EnterTry, catchReg, 0))
+      regionPushCatch(c)
+      compileStmt(c, node.tryBlock)
+      regionPop(c)
+      if c.hadError: return
+      emit(c, instA(LeaveTry, 0))
+      let skipCatch = emit(c, instI16(Jmp, 0))
+      patchJump(c, innerEnter)
+      if envSaveReg >= 0:
+        emit(c, instAB(Mov, c.envReg, uint8(envSaveReg)))
+      # Reset result register on catch entry per UpdateEmpty.
+      if c.atProgramTop and c.lastExprReg >= 0:
+        emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
+      # Catch parameter bound for the catch body only.
+      if addedCatchLocal:
+        addLocalScoped(c, node.catchParamStart, node.catchParamLen, uint32(catchReg), c.curScopeId)
+      compileStmt(c, node.catchBlock)
+      if addedCatchLocal: c.locals.setLen(savedLocalCount)
+      if c.hadError: return
+      patchJump(c, skipCatch)
+    else:
+      # No catch — the outer try catches throws from the try body directly
+      # and routes them to the finally re-throw path.
+      compileStmt(c, node.tryBlock)
+      if c.hadError: return
+
+    regionPop(c)   # finally-outer region closes here
+
+    emit(c, instA(LeaveTry, 0))   # pop outer
+
+    # Normal (or post-catch) exit: skip the handler entry.
+    let skipOuter = emit(c, instI16(Jmp, 0))
+    patchJump(c, outerEnter)
+    if envSaveReg >= 0:
+      emit(c, instAB(Mov, c.envReg, uint8(envSaveReg)))
+    # Outer handler entry — pendingReg holds the thrown value. Mark the
+    # flag so we re-throw after the finally.
+    emit(c, instA(LoadTrue, flagReg))
+    patchJump(c, skipOuter)
+
+    # Save the try/catch body's result so try-finally spec semantics apply:
+    # if finally completes normally, the body's completion wins (empty →
+    # undefined). Reset result_reg before the finally so an empty finally
+    # doesn't contribute a value.
+    var bodySave = -1
+    if c.atProgramTop and c.lastExprReg >= 0:
+      let saveReg = allocReg(c)
+      if saveReg + 1 > c.fixedRegs: c.fixedRegs = saveReg + 1
+      emit(c, instAB(Mov, saveReg, uint8(c.lastExprReg)))
+      emit(c, instA(LoadUndefined, uint8(c.lastExprReg)))
+      bodySave = int(saveReg)
+
+    # Finally body runs on both paths.
+    compileStmt(c, node.finallyBlock)
+    if c.hadError: return
+
+    # After finally completes normally, restore the body's value
+    # (UpdateEmpty(B, undefined)). Abrupt finally completions take a
+    # different path and never reach this Mov.
+    if bodySave >= 0:
+      emit(c, instAB(Mov, uint8(c.lastExprReg), uint8(bodySave)))
+      releaseReg(c, uint8(bodySave))
+
+    # If we arrived via the outer handler, re-throw pendingReg.
+    let afterFinally = emit(c, instAI16(JmpIfFalse, flagReg, 0))
+    emit(c, instA(Throw, pendingReg))
+    patchJump(c, afterFinally)
+    return
   of ReturnStmt:
     # `return expr` / `return;`. Slice 4c has no try/finally regions, so
     # emit_return_sequence reduces to a bare `Return r` (compiler.zc
@@ -2747,9 +3077,13 @@ proc compileStmt(c: var Compiler, node: AstNode) =
       # Call node so compileCallInner skips InvokeGlobal fusion for it —
       # the TCO rewriter matches `last op == Invoke/MethodInvoke` in place,
       # and a fused 2-slot call there can't be rewritten. Nested calls in
-      # the return expression compare unequal and still fuse. (region_count
-      # == 0 always in this slice: no try/finally yet.)
-      let isTailCandidate = node.retArg.kind == Call
+      # the return expression compare unequal and still fuse.
+      # #326/#402b: a `return` while a try/catch/finally region is open is
+      # NOT in tail position (the handler must run first — emitReturnSequence
+      # unwinds it), so suppress BOTH the fusion-suppressor flag and the TCO
+      # rewrite when regionCount > 0 (mirrors compiler.zc's region_count==0
+      # gate on the tail-call arms).
+      let isTailCandidate = node.retArg.kind == Call and c.regionCount == 0
       if isTailCandidate:
         c.tailCallNode = node.retArg
       # Borrow the source reg directly for a bare IdentExpr — Return
@@ -2774,7 +3108,10 @@ proc compileStmt(c: var Compiler, node: AstNode) =
     else:
       r = allocReg(c)
       emit(c, instA(LoadUndefined, r))
-    emit(c, instA(Return, r))
+    # #402b: unwind every open region (LeaveTry per catch region; finally
+    # region BAILs — abrupt-in-finally deferred) then Return. Reduces to a
+    # bare `Return r` when regionCount == 0 (the pre-6b behavior).
+    emitReturnSequence(c, r)
     c.lastExprReg = int(r)
     resetTemps(c)
   of EmptyStmt:
